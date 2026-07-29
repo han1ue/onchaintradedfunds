@@ -112,6 +112,7 @@ main {
 
 .brandText strong {
   font-size: 0.9rem;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -121,7 +122,7 @@ main {
 .fieldLabel {
   color: var(--text-muted);
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -187,7 +188,7 @@ main {
   gap: 7px;
   padding: 0 10px;
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 650;
 }
 
 .networkDot {
@@ -243,11 +244,13 @@ h2 {
 
 h1 {
   font-size: clamp(1.35rem, 2.6vw, 2rem);
+  font-weight: 600;
   line-height: 1.1;
 }
 
 h2 {
   font-size: 0.96rem;
+  font-weight: 600;
 }
 
 .symbolBadge,
@@ -262,7 +265,7 @@ h2 {
   background: rgb(255 255 255 / 3%);
   color: var(--text-soft);
   font-size: 0.68rem;
-  font-weight: 850;
+  font-weight: 650;
   letter-spacing: 0.08em;
   padding: 6px 8px;
   text-transform: uppercase;
@@ -359,6 +362,7 @@ h2 {
   margin-top: 10px;
   overflow-wrap: anywhere;
   font-size: 1.05rem;
+  font-weight: 600;
   line-height: 1.1;
 }
 
@@ -371,6 +375,11 @@ h2 {
 
 .metricCard.success {
   border-color: rgb(111 220 152 / 24%);
+}
+
+.metricCard.success strong,
+.metricCard.success .metricLabel svg {
+  color: var(--green);
 }
 
 .metricCard.warning {
@@ -445,7 +454,7 @@ h2 {
   gap: 5px;
   color: var(--text-muted);
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -552,7 +561,7 @@ h2 {
   gap: 7px;
   padding: 0 10px;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 650;
 }
 
 .ghostAction {
@@ -614,7 +623,7 @@ button:disabled {
 
 .legendItem strong {
   color: var(--text);
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .legendSwatch {
@@ -664,7 +673,7 @@ button:disabled {
   border-bottom: 1px solid var(--border);
   color: rgb(177 189 207 / 88%);
   font-size: 0.69rem;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.09em;
   padding: 0 0 11px 18px;
   text-align: right;
@@ -704,7 +713,7 @@ button:disabled {
 .priceCell {
   color: var(--text);
   font-size: 0.95rem;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .assetIdentity span {
@@ -721,7 +730,7 @@ button:disabled {
 }
 
 .driftValue {
-  font-weight: 900;
+  font-weight: 650;
 }
 
 .driftValue.warning {
@@ -755,7 +764,7 @@ button:disabled {
   border-radius: 4px;
   padding: 7px 11px;
   font-size: 0.75rem;
-  font-weight: 900;
+  font-weight: 650;
 }
 
 .freshnessBadge.fresh {
@@ -1243,8 +1252,19 @@ input:focus {
   }
 
   .navActions {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px 34px;
+    width: 100%;
+  }
+
+  .navActions > :last-child {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .navActions > :last-child button {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   .metricGrid,

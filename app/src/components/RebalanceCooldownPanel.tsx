@@ -8,13 +8,13 @@ import {
   ArrowDownToLine,
   ArrowRight,
   BookOpen,
+  ChartPie,
   CheckCircle,
   ChevronDown,
   Clock3,
   Coins,
   Copy,
   ExternalLink,
-  Gauge,
   Info,
   Loader2,
   LockKeyhole,
@@ -385,6 +385,11 @@ function TopNav({
 
 function VaultHeader({ vault }: { vault: VaultView }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const freshOracleCount = vault.allocations.filter(
+    ({ freshnessTone }) => freshnessTone === "fresh" || freshnessTone === "warning",
+  ).length;
+  const oracleCount = vault.allocations.length;
+  const allOraclesFresh = oracleCount > 0 && freshOracleCount === oracleCount;
 
   function copy(value: string | undefined, key: string) {
     if (!value) return;
@@ -424,7 +429,13 @@ function VaultHeader({ vault }: { vault: VaultView }) {
           tone={vault.canRebalance ? "success" : "warning"}
           sub={formatRelativeAvailability(vault.nextPortfolioChange)}
         />
-        <MetricCard label="Oracle Health" value="Healthy" icon={<CheckCircle size={14} />} tone="success" sub="All fresh" />
+        <MetricCard
+          label="Oracle Health"
+          value={allOraclesFresh ? "Healthy" : "Needs attention"}
+          icon={<CheckCircle size={14} />}
+          tone={allOraclesFresh ? "success" : "warning"}
+          sub={`${freshOracleCount}/${oracleCount} fresh`}
+        />
       </div>
     </section>
   );
@@ -582,7 +593,7 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
     <SectionCard
       title="Portfolio allocation"
       subtitle="Target vs actual weights, oracle-priced"
-      icon={<Gauge size={15} />}
+      icon={<ChartPie size={15} />}
       action={
         <button className="ghostAction syncAction" type="button">
           <RefreshCw size={13} />
@@ -647,7 +658,13 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
                   <td className="monoCell">{asset.balance}</td>
                   <td className="priceCell">{asset.price}</td>
                   <td>
-                    <span className={`freshnessBadge ${asset.freshnessTone}`}>{asset.oracleAge}</span>
+                    <span
+                      className={`freshnessBadge ${asset.freshnessTone}`}
+                      title={`Last updated ${asset.oracleAge}`}
+                      aria-label={`Fresh. Last updated ${asset.oracleAge}.`}
+                    >
+                      Fresh
+                    </span>
                   </td>
                 </tr>
               );
