@@ -6,7 +6,9 @@ import {
   Activity,
   AlertTriangle,
   ArrowDownToLine,
+  ArrowLeft,
   ArrowRight,
+  BadgeCent,
   BookOpen,
   ChartPie,
   CheckCircle,
@@ -14,15 +16,18 @@ import {
   Clock3,
   Coins,
   Copy,
+  Droplets,
   ExternalLink,
+  HeartPulse,
   Info,
+  ListChecks,
   Loader2,
   LockKeyhole,
   Plus,
   RefreshCw,
+  Scale,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Trash2,
   TrendingUp,
   Wallet,
@@ -90,6 +95,9 @@ type VaultView = {
   maxTurnoverBps: number;
   maxNavLossBps: number;
   maxWeightDeviationBps: number;
+  maxSingleAssetWeightBps: number;
+  minNonZeroAssetWeightBps: number;
+  maxOracleStaleness: number;
   maxAssetCount: number;
   connectedIsManager: boolean;
   enabled: boolean;
@@ -235,6 +243,9 @@ export function RebalanceCooldownPanel() {
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "lastRebalanceTimestamp" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "nextRebalanceTime" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canRebalance" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxSingleAssetWeightBps" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "minNonZeroAssetWeightBps" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxOracleStaleness" },
       ] as const)
     : undefined;
 
@@ -268,6 +279,9 @@ export function RebalanceCooldownPanel() {
     ? Number(resultAt<bigint>(results, 16))
     : undefined;
   const canRebalance = Boolean(resultAt<boolean>(results, 17));
+  const maxSingleAssetWeightBps = resultAt<number>(results, 18) ?? 5_000;
+  const minNonZeroAssetWeightBps = resultAt<number>(results, 19) ?? 100;
+  const maxOracleStaleness = resultAt<number>(results, 20) ?? 600;
   const allocations = normalizeAllocations(assets, targetWeights);
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
   const connectedIsManager =
@@ -293,6 +307,9 @@ export function RebalanceCooldownPanel() {
     maxTurnoverBps,
     maxNavLossBps,
     maxWeightDeviationBps,
+    maxSingleAssetWeightBps,
+    minNonZeroAssetWeightBps,
+    maxOracleStaleness,
     maxAssetCount,
     connectedIsManager: Boolean(connectedIsManager),
     enabled,
@@ -305,6 +322,7 @@ export function RebalanceCooldownPanel() {
 
       <main className="dashboardMain">
         <VaultHeader vault={vault} />
+        <VaultMetrics vault={vault} />
 
         {error ? (
           <div className="warningBanner danger">
@@ -317,15 +335,20 @@ export function RebalanceCooldownPanel() {
           <div className="primaryColumn">
             <RebalanceCooldown vault={vault} />
             <PortfolioAllocation allocations={allocations} />
-            <ThesisModule currentThesis={currentThesis} />
-            <UserActions vaultSymbol={vaultSymbol} />
+            <ManagerRebalanceBuilder vault={vault} />
           </div>
 
           <aside className="sideColumn">
-            <ManagerRebalanceBuilder vault={vault} />
             <SafetyLimits vault={vault} />
+            <ThesisModule currentThesis={currentThesis} />
+            <UserActions vaultSymbol={vaultSymbol} />
           </aside>
         </div>
+
+        <footer className="dashboardFooter">
+          <span>Onchain Traded Funds · experimental, unaudited software</span>
+          <span>ERC-4626 vault · Robinhood Testnet</span>
+        </footer>
       </main>
     </div>
   );
@@ -344,10 +367,12 @@ function TopNav({
     <header className="topNav">
       <div className="topNavInner">
         <div className="logoGroup">
-          <div className="otfLogo">OTF</div>
+          <div className="otfLogo">
+            <TrendingUp size={16} />
+          </div>
           <div className="brandText">
             <strong>Onchain Traded Funds</strong>
-            <span>Protocol console</span>
+            <span>OTF protocol</span>
           </div>
         </div>
 
@@ -385,11 +410,6 @@ function TopNav({
 
 function VaultHeader({ vault }: { vault: VaultView }) {
   const [copied, setCopied] = useState<string | null>(null);
-  const freshOracleCount = vault.allocations.filter(
-    ({ freshnessTone }) => freshnessTone === "fresh" || freshnessTone === "warning",
-  ).length;
-  const oracleCount = vault.allocations.length;
-  const allOraclesFresh = oracleCount > 0 && freshOracleCount === oracleCount;
 
   function copy(value: string | undefined, key: string) {
     if (!value) return;
@@ -400,44 +420,70 @@ function VaultHeader({ vault }: { vault: VaultView }) {
 
   return (
     <section className="vaultHeader">
-      <div className="vaultTitleRow">
-        <div>
-          <div className="titleLine">
-            <h1>{vault.name}</h1>
-            <span className="symbolBadge">{vault.symbol}</span>
-          </div>
-          <div className="addressLine">
-            <AddressPill label="Vault" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
-            <AddressPill label="Manager" address={vault.manager} copied={copied === "manager"} onCopy={() => copy(vault.manager, "manager")} />
-          </div>
-        </div>
-        <div className="auditBadge">
-          <AlertTriangle size={14} />
-          Experimental unaudited
-        </div>
+      <div className="vaultBreadcrumb">
+        <button type="button">
+          <ArrowLeft size={12} />
+          Vaults
+        </button>
+        <span>/</span>
+        <strong>{vault.name}</strong>
       </div>
 
-      <div className="metricGrid">
-        <MetricCard label="NAV" value="$4,821,302.44" icon={<TrendingUp size={14} />} />
-        <MetricCard label="NAV / Share" value="$48.21" icon={<Activity size={14} />} />
-        <MetricCard label="Total Supply" value={vault.totalSupply} icon={<RefreshCw size={14} />} />
-        <MetricCard label="Creator Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} icon={<ShieldCheck size={14} />} />
-        <MetricCard
-          label="Rebalance"
-          value={vault.canRebalance ? "Available" : "Cooling Down"}
-          icon={<Clock3 size={14} />}
-          tone={vault.canRebalance ? "success" : "warning"}
-          sub={formatRelativeAvailability(vault.nextPortfolioChange)}
-        />
-        <MetricCard
-          label="Oracle Health"
-          value={allOraclesFresh ? "Healthy" : "Needs attention"}
-          icon={<CheckCircle size={14} />}
-          tone={allOraclesFresh ? "success" : "warning"}
-          sub={`${freshOracleCount}/${oracleCount} fresh`}
-        />
+      <div className="vaultTitleRow">
+        <div className="vaultIdentity">
+          <div className="vaultMonogram">TECH</div>
+          <div>
+            <div className="titleLine">
+              <h1>{vault.name}</h1>
+              <span className="symbolBadge">{vault.symbol}</span>
+              <span className="auditBadge">
+                <AlertTriangle size={12} />
+                Experimental · unaudited
+              </span>
+            </div>
+            <div className="addressLine">
+              <AddressPill label="Vault" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
+              <AddressPill label="Manager" address={vault.manager} copied={copied === "manager"} onCopy={() => copy(vault.manager, "manager")} />
+            </div>
+          </div>
+        </div>
+        <div className="vaultMetaBadges">
+          <span className="stateBadge muted">ERC-4626 · Testnet</span>
+          <span className="stateBadge info">v1.2.0</span>
+        </div>
       </div>
     </section>
+  );
+}
+
+function VaultMetrics({ vault }: { vault: VaultView }) {
+  const freshOracleCount = vault.allocations.filter(
+    ({ freshnessTone }) => freshnessTone === "fresh" || freshnessTone === "warning",
+  ).length;
+  const oracleCount = vault.allocations.length;
+  const allOraclesFresh = oracleCount > 0 && freshOracleCount === oracleCount;
+
+  return (
+    <div className="metricGrid">
+      <MetricCard label="NAV" value="$4,821,302.44" icon={<TrendingUp size={14} />} tone="success" sub="+1.42% / 24h" />
+      <MetricCard label="NAV / Share" value="$48.21" icon={<Activity size={14} />} sub="USDC terms" />
+      <MetricCard label="Total Supply" value={vault.totalSupply} icon={<Droplets size={14} />} sub={vault.symbol} />
+      <MetricCard label="Creator Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<BadgeCent size={14} />} sub="Annualized" />
+      <MetricCard
+        label="Rebalance"
+        value={vault.canRebalance ? "Available" : "Cooling down"}
+        icon={<Activity size={14} />}
+        tone={vault.canRebalance ? "success" : "warning"}
+        sub={formatRelativeAvailability(vault.nextPortfolioChange)}
+      />
+      <MetricCard
+        label="Oracle Health"
+        value={allOraclesFresh ? "Healthy" : "Needs attention"}
+        icon={<HeartPulse size={14} />}
+        tone={allOraclesFresh ? "success" : "warning"}
+        sub={`${freshOracleCount}/${oracleCount} fresh`}
+      />
+    </div>
   );
 }
 
@@ -524,14 +570,16 @@ function SectionCard({
 function RebalanceCooldown({ vault }: { vault: VaultView }) {
   return (
     <SectionCard
-      title="Rebalance Cooldown"
+      title="Rebalance cooldown"
+      subtitle={`${formatCooldown(vault.cooldownSeconds)} enforced interval between portfolio changes`}
       icon={<Clock3 size={15} />}
       action={<span className={`stateBadge ${vault.canRebalance ? "success" : "warning"}`}>{vault.canRebalance ? "Available now" : "Cooling down"}</span>}
     >
       <div className="cooldownStats">
-        <TimelineItem label="Last Portfolio Change" value={formatTimestamp(vault.lastPortfolioChange)} icon={<RefreshCw size={13} />} />
-        <TimelineItem label="Cooldown Period" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={13} />} highlight />
-        <TimelineItem label="Next Change Available" value={formatTimestamp(vault.nextPortfolioChange)} icon={<LockKeyhole size={13} />} status={vault.canRebalance ? "open" : "locked"} />
+        <TimelineItem label="Cooldown" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
+        <TimelineItem label="Last change" value={formatTimestamp(vault.lastPortfolioChange)} icon={<Clock3 size={13} />} />
+        <TimelineItem label="Next available" value={vault.canRebalance ? "Now" : formatTimestamp(vault.nextPortfolioChange)} icon={<Activity size={13} />} status={vault.canRebalance ? "open" : "locked"} />
+        <TimelineItem label="State" value={vault.canRebalance ? "Unlocked" : "Locked"} icon={<Activity size={13} />} status={vault.canRebalance ? "open" : "locked"} />
       </div>
 
       <div className="progressBlock">
@@ -541,6 +589,7 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
         </div>
         <div className="progressTrack">
           <span style={{ width: `${vault.cooldownProgress}%` }} />
+          <i style={{ left: `calc(${vault.cooldownProgress}% - 5px)` }} />
         </div>
         <div className="progressDates">
           <span>{formatTimestamp(vault.lastPortfolioChange)}</span>
@@ -549,12 +598,13 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
       </div>
 
       <div className="cardFooterAction">
-        <span className={vault.canRebalance ? "successText" : "warningText"}>
-          {vault.canRebalance ? "Rebalance window is open." : "Rebalance transaction is locked until the configured cooldown expires."}
+        <span className="mutedInline">
+          <Info size={14} />
+          {vault.canRebalance ? "Cooldown elapsed. A rebalance may be submitted." : "Thesis amendments and fee accrual do not reset this timer."}
         </span>
         <button className="primaryAction" type="button" disabled={!vault.enabled || !vault.canRebalance || !vault.connectedIsManager}>
           <RefreshCw size={14} />
-          Submit Rebalance
+          {vault.canRebalance ? "Rebalance portfolio" : "Rebalance locked"}
         </button>
       </div>
     </SectionCard>
@@ -592,13 +642,15 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
   return (
     <SectionCard
       title="Portfolio allocation"
-      subtitle="Target vs actual weights, oracle-priced"
+      subtitle="Target vs actual weights · live oracle pricing"
       icon={<ChartPie size={15} />}
       action={
-        <button className="ghostAction syncAction" type="button">
-          <RefreshCw size={13} />
-          Sync
-        </button>
+        <div className="headerActions">
+          <span className="stateBadge muted">{allocations.length} assets</span>
+          <button className="iconOnly compact" type="button" title="Refresh oracle data">
+            <RefreshCw size={13} />
+          </button>
+        </div>
       }
     >
       <div className="allocationBar">
@@ -616,7 +668,7 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
         {allocations.map((asset) => (
           <span className="legendItem" key={asset.address}>
             <span className={`legendSwatch ${asset.tone}`} />
-            <span>{asset.name}</span>
+            <span>{asset.symbol}</span>
             <strong>{bpsToAllocationPercent(asset.actualWeightBps)}</strong>
           </span>
         ))}
@@ -643,7 +695,7 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
                 <tr key={asset.address}>
                   <td>
                     <div className="assetIdentity">
-                      <span className={`assetDot ${asset.tone}`} />
+                      <span className="assetToken">{asset.symbol.replace(/^m/, "").slice(0, 2)}</span>
                       <div>
                         <strong>{asset.symbol}</strong>
                         <span>{shortAssetAddress(asset.address)}</span>
@@ -695,7 +747,7 @@ function ThesisModule({ currentThesis }: { currentThesis: string }) {
   const [draft, setDraft] = useState("");
 
   return (
-    <SectionCard title="Investment Thesis" icon={<BookOpen size={15} />}>
+    <SectionCard title="Thesis" subtitle="Public, append-only record" icon={<BookOpen size={15} />}>
       <div className="thesisBlock">
         <div className="subHeader">
           <span>Current Thesis</span>
@@ -753,6 +805,7 @@ function ThesisModule({ currentThesis }: { currentThesis: string }) {
 }
 
 function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
+  const [activeAction, setActiveAction] = useState<"mint" | "redeem">("mint");
   const [mintAmount, setMintAmount] = useState("");
   const [redeemAmount, setRedeemAmount] = useState("");
   const [approveState, setApproveState] = useState<TxState>("idle");
@@ -763,10 +816,19 @@ function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
   const mintShares = mintAmount ? (Number(mintAmount) / navPerShare).toFixed(4) : "-";
 
   return (
-    <SectionCard title="User Actions" icon={<Wallet size={15} />}>
-      <div className="userActionGrid">
-        <ActionPanel title="Mint Shares" description={`Deposit the proportional basket to receive ${vaultSymbol} shares.`} icon={<Coins size={14} />}>
-          <input value={mintAmount} onChange={(event) => setMintAmount(event.target.value)} type="number" placeholder="Basket value (USD)" />
+    <SectionCard title="Your position" subtitle={`Mint and redeem ${vaultSymbol}`} icon={<Wallet size={15} />}>
+      <div className="actionTabs" role="tablist" aria-label="Vault position actions">
+        <button className={activeAction === "mint" ? "active" : ""} type="button" onClick={() => setActiveAction("mint")}>Mint with basket</button>
+        <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
+      </div>
+
+      {activeAction === "mint" ? (
+        <div className="positionFlow">
+          <label className="fieldLabel">Basket value</label>
+          <div className="inputWithSuffix">
+            <input value={mintAmount} onChange={(event) => setMintAmount(event.target.value)} type="number" placeholder="0.00" />
+            <span>USDC</span>
+          </div>
           <div className="quoteLine">
             <span>You receive approx.</span>
             <strong>{mintShares} {vaultSymbol}</strong>
@@ -787,10 +849,14 @@ function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
             </button>
           </div>
           <TxStatus state={mintState} />
-        </ActionPanel>
-
-        <ActionPanel title="Redeem Shares" description="Burn vault shares and receive underlying assets proportionally." icon={<ArrowDownToLine size={14} />}>
-          <input value={redeemAmount} onChange={(event) => setRedeemAmount(event.target.value)} type="number" placeholder="Shares to redeem" />
+        </div>
+      ) : (
+        <div className="positionFlow">
+          <label className="fieldLabel">Shares to redeem</label>
+          <div className="inputWithSuffix">
+            <input value={redeemAmount} onChange={(event) => setRedeemAmount(event.target.value)} type="number" placeholder="0.00" />
+            <span>{vaultSymbol}</span>
+          </div>
           <div className="redeemPreview">
             <span>Est. mNVDA <strong>{redeemAmount ? (Number(redeemAmount) * 0.162).toFixed(4) : "-"}</strong></span>
             <span>Est. mMSFT <strong>{redeemAmount ? (Number(redeemAmount) * 0.039).toFixed(4) : "-"}</strong></span>
@@ -801,47 +867,35 @@ function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
             Redeem Proportionally
           </button>
           <TxStatus state={redeemState} />
-        </ActionPanel>
-      </div>
+        </div>
+      )}
 
       <div className="feeAction">
         <div>
-          <strong>Accrue Management Fees</strong>
-          <span>Mint fee shares according to elapsed time and configured creator fee.</span>
+          <strong>Accrue creator fees</strong>
+          <span>Fee accrual does not reset the rebalance cooldown.</span>
         </div>
         <button className="secondaryAction" type="button" onClick={() => runMockTx(setFeeState)}>
           <TrendingUp size={14} />
-          {feeState === "confirmed" ? "Fees Accrued" : "Accrue Fees"}
+          {feeState === "confirmed" ? "Accrued" : "Accrue"}
         </button>
       </div>
     </SectionCard>
   );
 }
 
-function ActionPanel({ title, description, icon, children }: { title: string; description: string; icon: ReactNode; children: ReactNode }) {
-  return (
-    <div className="actionPanel">
-      <div className="actionTitle">
-        {icon}
-        <div>
-          <strong>{title}</strong>
-          <span>{description}</span>
-        </div>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function TxStatus({ state }: { state: TxState }) {
-  if (state === "idle") return null;
+function TxStatus({ state, persistent = false }: { state: TxState; persistent?: boolean }) {
+  if (state === "idle" && !persistent) return null;
   const status = txStateLabel(state);
   return (
-    <div className={`txStatus ${status.tone}`}>
-      {state === "pending" || state === "submitted" || state === "simulating" ? <Loader2 size={13} className="spin" /> : null}
-      {state === "confirmed" || state === "ready" ? <CheckCircle size={13} /> : null}
-      {state === "reverted" ? <XCircle size={13} /> : null}
-      {status.label}
+    <div className={`txStatus ${status.tone} ${persistent ? "persistent" : ""}`}>
+      {persistent ? <span>Status</span> : null}
+      <strong>
+        {state === "pending" || state === "submitted" || state === "simulating" ? <Loader2 size={13} className="spin" /> : null}
+        {state === "confirmed" || state === "ready" ? <CheckCircle size={13} /> : null}
+        {state === "reverted" ? <XCircle size={13} /> : null}
+        {status.label}
+      </strong>
     </div>
   );
 }
@@ -860,11 +914,28 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
   const [txState, setTxState] = useState<TxState>("idle");
 
   const totalWeight = targets.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
-  const turnover = Math.max(0, targets.reduce((sum, asset, index) => {
-    const current = vault.allocations[index]?.actualWeightBps ?? 0;
-    return sum + Math.abs((asset.targetWeight * 100) - current);
-  }, 0) / 200);
+  const targetChanges = targets.map((asset, index) => {
+    const current = (vault.allocations[index]?.actualWeightBps ?? 0) / 100;
+    return { ...asset, current, delta: Number(asset.targetWeight || 0) - current };
+  });
+  const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
+  const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
   const weightsValid = Math.abs(totalWeight - 100) < 0.01;
+  const turnoverLimit = vault.maxTurnoverBps / 100;
+  const deviationLimit = vault.maxWeightDeviationBps / 100;
+  const turnoverBreach = turnover > turnoverLimit;
+  const deviationBreach = maxDeviation > deviationLimit;
+  const staleAsset = vault.allocations.find((asset) => asset.freshnessTone === "warning");
+  const reductions = targetChanges.filter((asset) => asset.delta < -0.01);
+  const increases = targetChanges.filter((asset) => asset.delta > 0.01);
+  const tradeInstructions = reductions.flatMap((sell) =>
+    increases.map((buy) => ({
+      from: sell.ticker || "Asset",
+      to: buy.ticker || "Asset",
+      notional: `${Math.min(Math.abs(sell.delta), buy.delta).toFixed(1)}% NAV`,
+      adapter: "Approved adapter",
+    })),
+  ).slice(0, 3);
 
   function updateTarget(index: number, patch: Partial<TargetAsset>) {
     setTargets((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
@@ -872,119 +943,210 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
 
   return (
     <SectionCard
-      title="Rebalance Builder"
-      icon={<SlidersHorizontal size={15} />}
-      action={<span className="stateBadge muted">Manager only</span>}
+      title="Rebalance builder"
+      subtitle="Manager-only · atomic basket execution"
+      icon={<Scale size={15} />}
+      action={<span className={`stateBadge ${vault.connectedIsManager ? "info" : "muted"}`}>Manager</span>}
     >
-      {!vault.canRebalance ? (
-        <div className="warningBanner compact">
-          <Clock3 size={14} />
-          <span>Cooldown active. You may prepare and simulate, but submission is disabled.</span>
-        </div>
-      ) : null}
-
       <div className="builderBlock">
         <div className="subHeader">
-          <span>Target Weights</span>
+          <span>Target weights</span>
           <small className={weightsValid ? "successText" : "warningText"}>Total: {totalWeight.toFixed(1)}%</small>
         </div>
-        <div className="targetRows">
+        <div className="targetCardGrid">
           {targets.map((target, index) => (
-            <div className="targetRow" key={`${target.ticker}-${index}`}>
-              <input value={target.ticker} onChange={(event) => updateTarget(index, { ticker: event.target.value })} placeholder="Ticker" />
-              <input value={target.address} onChange={(event) => updateTarget(index, { address: event.target.value })} placeholder="Token address" />
-              <input
-                value={target.targetWeight}
-                onChange={(event) => updateTarget(index, { targetWeight: Number(event.target.value) })}
-                type="number"
-                min={0}
-                max={100}
-                placeholder="%"
-              />
-              <button type="button" onClick={() => setTargets((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-                <Trash2 size={14} />
-              </button>
+            <div className="targetCard" key={`${target.ticker}-${index}`}>
+              <div className="targetCardHeader">
+                <input
+                  className="targetTicker"
+                  value={target.ticker}
+                  onChange={(event) => updateTarget(index, { ticker: event.target.value })}
+                  placeholder="Ticker"
+                />
+                <button
+                  type="button"
+                  title={`Remove ${target.ticker || "asset"}`}
+                  onClick={() => setTargets((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <label>
+                <span>Target weight</span>
+                <div className="inputWithSuffix">
+                  <input
+                    value={target.targetWeight}
+                    onChange={(event) => updateTarget(index, { targetWeight: Number(event.target.value) })}
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="0"
+                  />
+                  <span>%</span>
+                </div>
+              </label>
+              <small>Current {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
             </div>
           ))}
         </div>
-        <button className="ghostAction" type="button" onClick={() => setTargets((current) => [...current, { ticker: "", address: "", targetWeight: 0 }])} disabled={targets.length >= vault.maxAssetCount}>
+        <button className="ghostAction addAssetAction" type="button" onClick={() => setTargets((current) => [...current, { ticker: "", address: "", targetWeight: 0 }])} disabled={targets.length >= vault.maxAssetCount}>
           <Plus size={13} />
-          Add Asset
+          Add asset
         </button>
       </div>
 
       <div className="previewBlock">
         <div className="subHeader">
-          <span>Weight Preview</span>
+          <span>Current vs target</span>
           <small>Estimated turnover {turnover.toFixed(1)}%</small>
         </div>
-        {targets.map((target, index) => {
-          const current = (vault.allocations[index]?.actualWeightBps ?? 0) / 100;
-          const diff = target.targetWeight - current;
-          return (
-            <div className="previewRow" key={`${target.ticker}-preview-${index}`}>
+        <div className="weightPreviewList">
+          {targetChanges.map((target, index) => (
+            <div className="weightPreviewRow" key={`${target.ticker}-preview-${index}`}>
               <strong>{target.ticker || "Asset"}</strong>
-              <span>{current.toFixed(1)}%</span>
-              <ArrowRight size={13} />
-              <span>{Number(target.targetWeight || 0).toFixed(1)}%</span>
-              <em className={diff >= 0 ? "successText" : "warningText"}>{diff >= 0 ? "+" : ""}{diff.toFixed(1)}%</em>
+              <div className="weightTrack" aria-label={`${target.ticker} current ${target.current.toFixed(1)}%, target ${target.targetWeight.toFixed(1)}%`}>
+                <span style={{ width: `${Math.min(target.current, 100)}%` }} />
+                <i style={{ left: `${Math.min(Number(target.targetWeight || 0), 100)}%` }} />
+              </div>
+              <div>
+                <span>{target.current.toFixed(1)}%</span>
+                <ArrowRight size={12} />
+                <strong>{Number(target.targetWeight || 0).toFixed(1)}%</strong>
+              </div>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
       <div className="builderBlock">
-        <label className="fieldLabel">Rebalance Rationale</label>
-        <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Describe the reasoning behind this rebalance. This is recorded onchain." />
+        <div className="subHeader">
+          <span className="inlineLabel"><ListChecks size={13} /> Trade instructions</span>
+          <small>Approved adapters only</small>
+        </div>
+        <div className="tradeTableWrap">
+          <table className="tradeTable">
+            <thead>
+              <tr>
+                <th>Sell</th>
+                <th>Buy</th>
+                <th>Notional</th>
+                <th>Adapter</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tradeInstructions.length ? tradeInstructions.map((trade, index) => (
+                <tr key={`${trade.from}-${trade.to}-${index}`}>
+                  <td>{trade.from}</td>
+                  <td>{trade.to}</td>
+                  <td>{trade.notional}</td>
+                  <td><span className="stateBadge success">{trade.adapter}</span></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} className="emptyTableCell">No trades required for the current target set.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <TxStatus state={txState} />
-      <div className="buttonStack">
+      <div className="riskMetricGrid">
+        <div className={turnoverBreach ? "danger" : "warning"}>
+          <span>Estimated turnover</span>
+          <strong>{turnover.toFixed(1)}%</strong>
+          <small>Limit {turnoverLimit.toFixed(1)}%</small>
+        </div>
+        <div>
+          <span>Simulated NAV impact</span>
+          <strong>-0.34%</strong>
+          <small>Limit {bpsToPercent(vault.maxNavLossBps)}</small>
+        </div>
+        <div className={deviationBreach ? "danger" : "success"}>
+          <span>Max weight deviation</span>
+          <strong>{maxDeviation.toFixed(1)}%</strong>
+          <small>Limit +/- {deviationLimit.toFixed(1)}%</small>
+        </div>
+      </div>
+
+      <div className="builderBlock">
+        <label className="fieldLabel">Rationale (recorded onchain)</label>
+        <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Why this rotation, and what would invalidate it?" />
+      </div>
+
+      <div className="builderWarnings">
+        {!weightsValid ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to 100%</strong><span>Adjust the proposed weights before simulation.</span></div></div>
+        ) : null}
+        {turnoverBreach ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
+        ) : null}
+        {deviationBreach ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target deviation exceeds the vault limit</strong><span>Reduce the largest portfolio change.</span></div></div>
+        ) : null}
+        {staleAsset ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>{staleAsset.symbol} oracle is approaching staleness</strong><span>Last updated {staleAsset.oracleAge}; refresh before submission.</span></div></div>
+        ) : null}
+        {!vault.canRebalance ? (
+          <div className="riskCallout warning"><Clock3 size={15} /><div><strong>Cooldown active</strong><span>Prepare and simulate now; submission opens {formatRelativeAvailability(vault.nextPortfolioChange)}.</span></div></div>
+        ) : null}
+        {txState === "ready" ? (
+          <div className="riskCallout success"><CheckCircle size={15} /><div><strong>Simulation passed</strong><span>All current adapter, oracle, and portfolio checks passed.</span></div></div>
+        ) : null}
+      </div>
+
+      <TxStatus state={txState} persistent />
+      <div className="builderActions">
         <button className="secondaryAction" type="button" disabled={!weightsValid} onClick={() => { setTxState("simulating"); window.setTimeout(() => setTxState("ready"), 1_200); }}>
           <Zap size={14} />
-          Simulate Transaction
+          Simulate transaction
         </button>
-        <button className="primaryAction" type="button" disabled={!weightsValid || !vault.canRebalance || !vault.connectedIsManager || !rationale.trim()} onClick={() => runMockTx(setTxState)}>
+        <button className="primaryAction" type="button" disabled={!weightsValid || turnoverBreach || deviationBreach || !vault.canRebalance || !vault.connectedIsManager || !rationale.trim() || txState !== "ready"} onClick={() => runMockTx(setTxState)}>
           <RefreshCw size={14} />
-          Submit Atomic Rebalance
+          Submit atomic rebalance
         </button>
       </div>
+      <p className="builderFootnote">Rebalances swap assets inside the vault only. The manager has no withdrawal path.</p>
     </SectionCard>
   );
 }
 
 function SafetyLimits({ vault }: { vault: VaultView }) {
   const limits = [
-    ["Maximum Turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance", "hard"],
-    ["Maximum NAV Loss", bpsToPercent(vault.maxNavLossBps), "Per execution", "hard"],
-    ["Max Weight Deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "Actual vs target", "soft"],
-    ["Maximum Assets", String(vault.maxAssetCount), "Basket size limit", "hard"],
-    ["Cooldown", formatCooldown(vault.cooldownSeconds), "Minimum delay", "time"],
-    ["Approved Adapters", "Enforced", "Whitelisted execution only", "hard"],
+    ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
+    ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
+    ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
+    ["Maximum assets", String(vault.maxAssetCount), "Concurrent positions"],
+    ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
+    ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
+    ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
+    ["Rebalance cooldown", formatCooldown(vault.cooldownSeconds), "Cannot be shortened"],
   ] as const;
 
   return (
     <SectionCard
-      title="Safety Limits"
+      title="Safety limits"
+      subtitle="Immutable at deployment"
       icon={<ShieldCheck size={15} />}
-      action={<span className="immutableTag"><LockKeyhole size={12} /> Immutable</span>}
+      action={<span className="stateBadge muted"><LockKeyhole size={11} /> Immutable</span>}
     >
       <div className="limitList">
-        {limits.map(([label, value, description, type]) => (
+        {limits.map(([label, value, description]) => (
           <div className="limitRow" key={label}>
             <div>
-              <span className={`limitDot ${type}`} />
               <strong>{label}</strong>
               <small>{description}</small>
             </div>
-            <span>{value}</span>
+            <span>{value}<LockKeyhole size={12} /></span>
           </div>
         ))}
       </div>
-      <div className="mutedCallout">
-        <LockKeyhole size={14} />
-        Safety limits are set at creation and cannot be weakened by the manager or protocol.
+      <div className="safetyGuarantees">
+        <span><CheckCircle size={12} /> Approved assets only</span>
+        <span><CheckCircle size={12} /> Approved adapters only</span>
+        <span><CheckCircle size={12} /> Atomic execution</span>
       </div>
+      <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer vault assets out.</p>
     </SectionCard>
   );
 }

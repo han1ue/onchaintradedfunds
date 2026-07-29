@@ -10,5 +10,9 @@ lcov.info
 *.tsbuildinfo
 project-bolt-*.zip
 .bolt-reference/
+base44.zip
+.base44-reference/
+lovable-project-*.zip
+.lovable-reference/
 .env
 .env.local

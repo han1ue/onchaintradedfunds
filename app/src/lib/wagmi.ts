@@ -5,19 +5,21 @@ import { injectedWallet, rainbowWallet, walletConnectWallet } from "@rainbow-me/
 import { createConfig, http } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "./chains";
 
-const walletConnectProjectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "00000000000000000000000000000000";
+const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const wallets = walletConnectProjectId
+  ? [rainbowWallet, injectedWallet, walletConnectWallet]
+  : [injectedWallet];
 
 const connectors = connectorsForWallets(
   [
     {
       groupName: "Recommended",
-      wallets: [rainbowWallet, injectedWallet, walletConnectWallet],
+      wallets,
     },
   ],
   {
     appName: "Onchain Traded Funds",
-    projectId: walletConnectProjectId,
+    projectId: walletConnectProjectId || "injected-wallets-only",
   },
 );
 
