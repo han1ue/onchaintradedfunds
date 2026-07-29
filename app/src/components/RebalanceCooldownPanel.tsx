@@ -13,23 +13,33 @@ import {
   ChartPie,
   CheckCircle,
   ChevronDown,
+  ChevronRight,
+  CircleDollarSign,
   Clock3,
   Coins,
   Copy,
   Droplets,
   ExternalLink,
+  FilePlus2,
   HeartPulse,
   Info,
   ListChecks,
+  LayoutGrid,
   Loader2,
   LockKeyhole,
+  KeyRound,
+  Landmark,
   Plus,
+  Percent,
+  ReceiptText,
   RefreshCw,
   Scale,
+  Search,
   Settings,
   ShieldCheck,
   Trash2,
   TrendingUp,
+  UserCog,
   Wallet,
   XCircle,
   Zap,
@@ -56,6 +66,7 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
+type AppView = "detail" | "vaults" | "create" | "manage";
 
 type Allocation = {
   symbol: string;
@@ -104,7 +115,7 @@ type VaultView = {
   isLoading: boolean;
 };
 
-const navTabs = ["Vaults", "Create", "Manage", "Docs"];
+const navTabs = ["Vaults", "Create", "Manage"];
 
 const demoAllocations: Allocation[] = [
   {
@@ -221,7 +232,7 @@ export function RebalanceCooldownPanel() {
   const vaultAddress = configuredVaultAddress();
   const enabled = Boolean(vaultAddress);
   const { address: connectedAddress } = useAccount();
-  const [activeTab, setActiveTab] = useState("Vaults");
+  const [view, setView] = useState<AppView>("detail");
 
   const readContracts = vaultAddress
     ? ([
@@ -315,39 +326,68 @@ export function RebalanceCooldownPanel() {
     enabled,
     isLoading,
   };
+  const activeTab = view === "create" ? "Create" : view === "manage" ? "Manage" : "Vaults";
+
+  function changeView(tab: string) {
+    if (tab === "Create") setView("create");
+    else if (tab === "Manage") setView("manage");
+    else setView("vaults");
+  }
 
   return (
     <div className="otfAppShell">
-      <TopNav activeTab={activeTab} onTabChange={setActiveTab} onRefresh={() => void refetch()} />
+      <TopNav activeTab={activeTab} onTabChange={changeView} onRefresh={() => void refetch()} />
 
       <main className="dashboardMain">
-        <VaultHeader vault={vault} />
-        <VaultMetrics vault={vault} />
+        {view === "detail" ? (
+          <>
+            <VaultHeader vault={vault} />
+            <VaultMetrics vault={vault} />
 
-        {error ? (
-          <div className="warningBanner danger">
-            <XCircle size={16} />
-            <span>Unable to read live vault data. The dashboard is showing demo fallback values.</span>
-          </div>
+            {error ? (
+              <div className="warningBanner danger">
+                <XCircle size={16} />
+                <span>Unable to read live vault data. The dashboard is showing demo fallback values.</span>
+              </div>
+            ) : null}
+
+            <div className="dashboardGrid">
+              <div className="primaryColumn">
+                <RebalanceCooldown vault={vault} />
+                <PortfolioAllocation allocations={allocations} />
+                <ManagerRebalanceBuilder vault={vault} />
+              </div>
+
+              <aside className="sideColumn">
+                <SafetyLimits vault={vault} />
+                <ThesisModule currentThesis={currentThesis} />
+                <UserActions vaultSymbol={vaultSymbol} />
+              </aside>
+            </div>
+          </>
         ) : null}
 
-        <div className="dashboardGrid">
-          <div className="primaryColumn">
-            <RebalanceCooldown vault={vault} />
-            <PortfolioAllocation allocations={allocations} />
-            <ManagerRebalanceBuilder vault={vault} />
-          </div>
+        {view === "vaults" ? (
+          <VaultsDirectory currentVault={vault} onOpenVault={() => setView("detail")} onCreateVault={() => setView("create")} />
+        ) : null}
 
-          <aside className="sideColumn">
-            <SafetyLimits vault={vault} />
-            <ThesisModule currentThesis={currentThesis} />
-            <UserActions vaultSymbol={vaultSymbol} />
-          </aside>
-        </div>
+        {view === "create" ? (
+          <CreateVaultView connectedAddress={connectedAddress} onCancel={() => setView("vaults")} onManage={() => setView("manage")} />
+        ) : null}
+
+        {view === "manage" ? (
+          <ManageVaultsView vault={vault} onOpenVault={() => setView("detail")} />
+        ) : null}
 
         <footer className="dashboardFooter">
           <span>Onchain Traded Funds · experimental, unaudited software</span>
-          <span>ERC-4626 vault · Robinhood Testnet</span>
+          <div className="footerLinks">
+            <span>ERC-4626 vaults · Robinhood Testnet</span>
+            <a href="https://github.com/han1ue/onchaintradedfunds#readme" target="_blank" rel="noreferrer">
+              Docs
+              <ExternalLink size={11} />
+            </a>
+          </div>
         </footer>
       </main>
     </div>
@@ -578,8 +618,8 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
       <div className="cooldownStats">
         <TimelineItem label="Cooldown" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
         <TimelineItem label="Last change" value={formatTimestamp(vault.lastPortfolioChange)} icon={<Clock3 size={13} />} />
-        <TimelineItem label="Next available" value={vault.canRebalance ? "Now" : formatTimestamp(vault.nextPortfolioChange)} icon={<Activity size={13} />} status={vault.canRebalance ? "open" : "locked"} />
-        <TimelineItem label="State" value={vault.canRebalance ? "Unlocked" : "Locked"} icon={<Activity size={13} />} status={vault.canRebalance ? "open" : "locked"} />
+        <TimelineItem label="Next available" value={vault.canRebalance ? "Now" : formatTimestamp(vault.nextPortfolioChange)} icon={<Activity size={13} />} />
+        <TimelineItem label="State" value={vault.canRebalance ? "Unlocked" : "Locked"} icon={<Activity size={13} />} />
       </div>
 
       <div className="progressBlock">
@@ -1148,5 +1188,580 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
       </div>
       <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer vault assets out.</p>
     </SectionCard>
+  );
+}
+
+function AppPageHeader({
+  title,
+  description,
+  icon,
+  actions,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="appPageHeader">
+      <div>
+        <span className="appPageIcon">{icon}</span>
+        <div>
+          <h1>{title}</h1>
+          <p>{description}</p>
+        </div>
+      </div>
+      {actions ? <div className="appPageActions">{actions}</div> : null}
+    </header>
+  );
+}
+
+function VaultsDirectory({
+  currentVault,
+  onOpenVault,
+  onCreateVault,
+}: {
+  currentVault: VaultView;
+  onOpenVault: () => void;
+  onCreateVault: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"All" | "Available" | "Cooling down">("All");
+  const rows = useMemo(
+    () => [
+      {
+        name: currentVault.name,
+        symbol: currentVault.symbol,
+        monogram: "TECH",
+        nav: "$4,821,302",
+        change: "+1.42%",
+        assets: currentVault.allocations.length,
+        fee: bpsToPercent(currentVault.creatorFeeBps),
+        manager: shortAddress(currentVault.manager),
+        rebalance: currentVault.canRebalance ? "Available" : "Cooling down",
+        oracle: `${currentVault.allocations.length}/${currentVault.allocations.length} fresh`,
+        live: true,
+      },
+      {
+        name: "Onchain Dividend Quality",
+        symbol: "OTF-DIV",
+        monogram: "DIV",
+        nav: "$2,184,930",
+        change: "+0.38%",
+        assets: 8,
+        fee: "0.60%",
+        manager: "0x74e2...B109",
+        rebalance: "Available",
+        oracle: "8/8 fresh",
+        live: false,
+      },
+      {
+        name: "Digital Asset Momentum",
+        symbol: "OTF-MOM",
+        monogram: "MOM",
+        nav: "$1,093,448",
+        change: "-0.72%",
+        assets: 5,
+        fee: "0.75%",
+        manager: "0x1A86...90F4",
+        rebalance: "Cooling down",
+        oracle: "5/5 fresh",
+        live: false,
+      },
+    ],
+    [currentVault],
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleRows = rows.filter((row) => {
+    const matchesSearch =
+      !normalizedQuery ||
+      row.name.toLowerCase().includes(normalizedQuery) ||
+      row.symbol.toLowerCase().includes(normalizedQuery);
+    return matchesSearch && (filter === "All" || row.rebalance === filter);
+  });
+
+  return (
+    <div className="appView">
+      <AppPageHeader
+        title="Vaults"
+        description="Discover and monitor permissionless managed portfolios."
+        icon={<LayoutGrid size={18} />}
+        actions={
+          <button className="primaryAction" type="button" onClick={onCreateVault}>
+            <Plus size={14} />
+            Create vault
+          </button>
+        }
+      />
+
+      <div className="directoryMetrics">
+        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
+        <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
+        <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
+        <MetricCard label="Open Rebalances" value="1" icon={<Activity size={14} />} tone="success" sub="Two vaults cooling down" />
+      </div>
+
+      <section className="sectionCard directoryPanel">
+        <div className="directoryToolbar">
+          <label className="searchField">
+            <Search size={14} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by vault name or symbol" />
+          </label>
+          <div className="segmentedControl" aria-label="Filter vaults by rebalance state">
+            {(["All", "Available", "Cooling down"] as const).map((option) => (
+              <button className={filter === option ? "active" : ""} key={option} type="button" onClick={() => setFilter(option)}>
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="directoryTableWrap">
+          <table className="directoryTable">
+            <thead>
+              <tr>
+                <th>Vault</th>
+                <th>NAV</th>
+                <th>24h</th>
+                <th>Assets</th>
+                <th>Creator fee</th>
+                <th>Manager</th>
+                <th>Oracle health</th>
+                <th>Rebalance</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row) => (
+                <tr
+                  key={row.symbol}
+                  role="button"
+                  tabIndex={0}
+                  onClick={onOpenVault}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onOpenVault();
+                  }}
+                >
+                  <td>
+                    <div className="directoryVault">
+                      <span>{row.monogram}</span>
+                      <div>
+                        <strong>{row.name}</strong>
+                        <small>{row.symbol}{row.live ? " · connected vault" : " · testnet preview"}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{row.nav}</td>
+                  <td className={row.change.startsWith("+") ? "successText" : "dangerText"}>{row.change}</td>
+                  <td>{row.assets}</td>
+                  <td>{row.fee}</td>
+                  <td className="monoValue">{row.manager}</td>
+                  <td><span className="stateBadge success">{row.oracle}</span></td>
+                  <td><span className={`stateBadge ${row.rebalance === "Available" ? "success" : "warning"}`}>{row.rebalance}</span></td>
+                  <td><ChevronRight size={14} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!visibleRows.length ? (
+            <div className="emptyDirectory">
+              <Search size={18} />
+              <strong>No vaults found</strong>
+              <span>Try a different name, symbol, or status filter.</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CreateVaultView({
+  connectedAddress,
+  onCancel,
+  onManage,
+}: {
+  connectedAddress?: string;
+  onCancel: () => void;
+  onManage: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [deployState, setDeployState] = useState<TxState>("idle");
+  const [draft, setDraft] = useState({
+    name: "Onchain Technology Leaders",
+    symbol: "OTF-TECH",
+    thesis: "Concentrated exposure to tokenized technology leaders with durable cash flow and AI infrastructure growth.",
+    manager: connectedAddress ?? "",
+    feeRecipient: connectedAddress ?? "",
+    creatorFee: "0.50",
+    cooldownDays: "7",
+    maxTurnover: "30",
+    maxNavLoss: "2",
+    maxDeviation: "5",
+    maxSingleWeight: "50",
+    minNonzeroWeight: "1",
+    maxAssets: "10",
+    oracleStaleness: "600",
+  });
+  const [portfolio, setPortfolio] = useState<TargetAsset[]>(
+    demoAllocations.map((asset) => ({
+      ticker: asset.symbol,
+      address: asset.address,
+      targetWeight: asset.targetWeightBps / 100,
+    })),
+  );
+  const steps = [
+    { label: "Basics", description: "Identity and roles" },
+    { label: "Portfolio", description: "Assets and weights" },
+    { label: "Safety", description: "Immutable limits" },
+    { label: "Review", description: "Confirm deployment" },
+  ];
+  const totalWeight = portfolio.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
+  const basicsValid =
+    draft.name.trim().length > 2 &&
+    draft.symbol.trim().length > 2 &&
+    draft.thesis.trim().length > 20 &&
+    isAddress(draft.manager) &&
+    isAddress(draft.feeRecipient);
+  const portfolioValid =
+    portfolio.length > 0 &&
+    portfolio.every((asset) => asset.ticker.trim() && isAddress(asset.address) && asset.targetWeight > 0) &&
+    Math.abs(totalWeight - 100) < 0.01;
+  const safetyValid =
+    Number(draft.cooldownDays) >= 7 &&
+    Number(draft.creatorFee) >= 0 &&
+    Number(draft.maxTurnover) > 0 &&
+    Number(draft.maxNavLoss) > 0 &&
+    Number(draft.maxDeviation) > 0 &&
+    Number(draft.maxSingleWeight) <= 100 &&
+    Number(draft.minNonzeroWeight) > 0 &&
+    Number(draft.maxAssets) >= portfolio.length &&
+    Number(draft.oracleStaleness) > 0;
+  const stepValid = [basicsValid, portfolioValid, safetyValid, basicsValid && portfolioValid && safetyValid][step];
+
+  function updateDraft(field: keyof typeof draft, value: string) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updatePortfolio(index: number, patch: Partial<TargetAsset>) {
+    setPortfolio((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
+  }
+
+  return (
+    <div className="appView">
+      <AppPageHeader
+        title="Create vault"
+        description="Deploy a managed ERC-4626 portfolio with immutable safety bounds."
+        icon={<FilePlus2 size={18} />}
+        actions={<button className="secondaryAction" type="button" onClick={onCancel}>Cancel</button>}
+      />
+
+      <div className="createLayout">
+        <aside className="createSteps" aria-label="Vault creation progress">
+          {steps.map((item, index) => (
+            <button className={`${step === index ? "active" : ""} ${index < step ? "complete" : ""}`} key={item.label} type="button" onClick={() => setStep(index)}>
+              <span>{index < step ? <CheckCircle size={14} /> : index + 1}</span>
+              <div>
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </div>
+            </button>
+          ))}
+          <div className="createNotice">
+            <LockKeyhole size={14} />
+            <span>Portfolio limits and cooldown become immutable after deployment.</span>
+          </div>
+        </aside>
+
+        <section className="sectionCard createForm">
+          <div className="sectionTitle">
+            <div className="sectionHeading">
+              <div className="sectionTitleLine">
+                <span className="stepNumber">{step + 1}</span>
+                <h2>{steps[step].label}</h2>
+              </div>
+              <p>{steps[step].description}</p>
+            </div>
+            <span className="stateBadge muted">Step {step + 1} of {steps.length}</span>
+          </div>
+          <div className="sectionBody">
+            {step === 0 ? (
+              <div className="formSection">
+                <div className="formGrid twoColumns">
+                  <label>
+                    <span>Vault name</span>
+                    <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Technology Leaders" />
+                  </label>
+                  <label>
+                    <span>Share symbol</span>
+                    <input value={draft.symbol} onChange={(event) => updateDraft("symbol", event.target.value.toUpperCase())} placeholder="OTF-TECH" />
+                  </label>
+                </div>
+                <label>
+                  <span>Initial investment thesis</span>
+                  <textarea value={draft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
+                  <small>This begins the vault&apos;s permanent, append-only thesis history.</small>
+                </label>
+                <div className="formGrid twoColumns">
+                  <label>
+                    <span>Manager address</span>
+                    <input className={!isAddress(draft.manager) && draft.manager ? "invalid" : ""} value={draft.manager} onChange={(event) => updateDraft("manager", event.target.value)} placeholder="0x..." />
+                    <small>May propose rebalances and amend the thesis.</small>
+                  </label>
+                  <label>
+                    <span>Fee recipient</span>
+                    <input className={!isAddress(draft.feeRecipient) && draft.feeRecipient ? "invalid" : ""} value={draft.feeRecipient} onChange={(event) => updateDraft("feeRecipient", event.target.value)} placeholder="0x..." />
+                    <small>Receives accrued creator-fee shares.</small>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {step === 1 ? (
+              <div className="formSection">
+                <div className="formIntro">
+                  <div>
+                    <strong>Initial target portfolio</strong>
+                    <span>Every asset must be approved by the protocol registry.</span>
+                  </div>
+                  <span className={`stateBadge ${portfolioValid ? "success" : "warning"}`}>Total {totalWeight.toFixed(1)}%</span>
+                </div>
+                <div className="createAssetList">
+                  {portfolio.map((asset, index) => (
+                    <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
+                      <label>
+                        <span>Symbol</span>
+                        <input value={asset.ticker} onChange={(event) => updatePortfolio(index, { ticker: event.target.value })} />
+                      </label>
+                      <label>
+                        <span>Token address</span>
+                        <input value={asset.address} onChange={(event) => updatePortfolio(index, { address: event.target.value })} />
+                      </label>
+                      <label>
+                        <span>Weight</span>
+                        <div className="inputWithSuffix">
+                          <input type="number" min={0} max={100} value={asset.targetWeight} onChange={(event) => updatePortfolio(index, { targetWeight: Number(event.target.value) })} />
+                          <span>%</span>
+                        </div>
+                      </label>
+                      <button type="button" title={`Remove ${asset.ticker}`} onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="secondaryAction" type="button" onClick={() => setPortfolio((current) => [...current, { ticker: "", address: "", targetWeight: 0 }])} disabled={portfolio.length >= Number(draft.maxAssets)}>
+                  <Plus size={14} />
+                  Add asset
+                </button>
+                {!portfolioValid ? (
+                  <div className="riskCallout warning">
+                    <AlertTriangle size={15} />
+                    <div><strong>Portfolio needs attention</strong><span>Use valid token addresses, positive weights, and a 100% total.</span></div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {step === 2 ? (
+              <div className="formSection">
+                <div className="formGrid threeColumns">
+                  <label><span>Creator fee</span><div className="inputWithSuffix"><input type="number" min={0} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div></label>
+                  <label><span>Rebalance cooldown</span><div className="inputWithSuffix"><input type="number" min={7} value={draft.cooldownDays} onChange={(event) => updateDraft("cooldownDays", event.target.value)} /><span>days</span></div><small>Seven-day protocol minimum.</small></label>
+                  <label><span>Maximum assets</span><input type="number" min={portfolio.length} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /></label>
+                  <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div></label>
+                  <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div></label>
+                  <label><span>Maximum deviation</span><div className="inputWithSuffix"><input type="number" value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>%</span></div></label>
+                  <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div></label>
+                  <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div></label>
+                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div></label>
+                </div>
+                <div className="safetyGuarantees createGuarantees">
+                  <span><CheckCircle size={12} /> Approved assets</span>
+                  <span><CheckCircle size={12} /> Approved adapters</span>
+                  <span><CheckCircle size={12} /> Atomic execution</span>
+                  <span><CheckCircle size={12} /> Exact temporary approvals</span>
+                </div>
+              </div>
+            ) : null}
+
+            {step === 3 ? (
+              <div className="formSection reviewSection">
+                <div className="reviewHero">
+                  <span className="vaultMonogram">NEW</span>
+                  <div><h2>{draft.name}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual creator fee</span></div>
+                  <span className="stateBadge warning">Unaudited</span>
+                </div>
+                <div className="reviewGrid">
+                  <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
+                  <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
+                  <div><span>Cooldown</span><strong>{draft.cooldownDays} days</strong></div>
+                  <div><span>Maximum turnover</span><strong>{draft.maxTurnover}%</strong></div>
+                  <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
+                  <div><span>Oracle staleness</span><strong>{draft.oracleStaleness}s</strong></div>
+                </div>
+                <div>
+                  <div className="subHeader"><span>Initial portfolio</span><small>Total {totalWeight.toFixed(1)}%</small></div>
+                  <div className="reviewPortfolio">
+                    {portfolio.map((asset) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}%</span>)}
+                  </div>
+                </div>
+                <div className="riskCallout warning">
+                  <LockKeyhole size={15} />
+                  <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the cooldown after deployment.</span></div>
+                </div>
+                <TxStatus state={deployState} persistent />
+                {deployState === "confirmed" ? (
+                  <div className="deploymentSuccess">
+                    <CheckCircle size={18} />
+                    <div><strong>Vault deployment confirmed</strong><span>The new vault is ready for initial funding and management.</span></div>
+                    <button className="secondaryAction" type="button" onClick={onManage}>Open Manage</button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="createFormActions">
+              <button className="secondaryAction" type="button" onClick={() => step === 0 ? onCancel() : setStep((current) => current - 1)}>
+                <ArrowLeft size={14} />
+                {step === 0 ? "Back to vaults" : "Back"}
+              </button>
+              {step < steps.length - 1 ? (
+                <button className="primaryAction" type="button" disabled={!stepValid} onClick={() => setStep((current) => current + 1)}>
+                  Continue
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button className="primaryAction" type="button" disabled={!stepValid || deployState === "pending" || deployState === "submitted" || deployState === "confirmed"} onClick={() => runMockTx(setDeployState)}>
+                  <FilePlus2 size={14} />
+                  Deploy vault
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ManageVaultsView({
+  vault,
+  onOpenVault,
+}: {
+  vault: VaultView;
+  onOpenVault: () => void;
+}) {
+  const [managerTarget, setManagerTarget] = useState("");
+  const [feeTarget, setFeeTarget] = useState("");
+  const [managerTx, setManagerTx] = useState<TxState>("idle");
+  const [feeTx, setFeeTx] = useState<TxState>("idle");
+  const [accrualTx, setAccrualTx] = useState<TxState>("idle");
+  const [copied, setCopied] = useState(false);
+  const managerValid = isAddress(managerTarget);
+  const feeTargetValid = isAddress(feeTarget);
+
+  function copyVaultAddress() {
+    if (!vault.address) return;
+    void navigator.clipboard.writeText(vault.address);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  }
+
+  return (
+    <div className="appView">
+      <AppPageHeader
+        title="Manage"
+        description="Administer vault roles and routine protocol operations."
+        icon={<UserCog size={18} />}
+        actions={
+          <button className="secondaryAction" type="button" onClick={onOpenVault}>
+            Open vault
+            <ChevronRight size={14} />
+          </button>
+        }
+      />
+
+      <section className="manageVaultHeader">
+        <div className="vaultIdentity">
+          <span className="vaultMonogram">TECH</span>
+          <div>
+            <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span></div>
+            <div className="addressLine"><AddressPill label="Vault" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>
+          </div>
+        </div>
+        <div className="vaultMetaBadges">
+          <span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Read-only mode"}</span>
+          <span className="stateBadge muted">ERC-4626</span>
+        </div>
+      </section>
+
+      <div className="manageMetrics">
+        <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Two-step transfer" />
+        <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Two-step transfer" />
+        <MetricCard label="Creator Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub="Annualized" />
+        <MetricCard label="Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Permanently immutable" />
+      </div>
+
+      <div className="manageGrid">
+        <SectionCard title="Manager transfer" subtitle="Nominate a new portfolio manager" icon={<KeyRound size={15} />} action={<span className="stateBadge muted">Two-step</span>}>
+          <div className="operationFlow">
+            <div className="roleCurrent"><span>Current manager</span><strong>{shortAddress(vault.manager)}</strong></div>
+            <label className="fieldLabel">New manager address</label>
+            <input className={!managerValid && managerTarget ? "invalid" : ""} value={managerTarget} onChange={(event) => setManagerTarget(event.target.value)} placeholder="0x..." />
+            <p>The nominee must accept onchain before the role changes. Portfolio assets never leave the vault.</p>
+            <TxStatus state={managerTx} persistent />
+            <button className="primaryAction" type="button" disabled={!managerValid || !vault.connectedIsManager} onClick={() => runMockTx(setManagerTx)}>
+              <UserCog size={14} />
+              Initiate manager transfer
+            </button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Fee-recipient transfer" subtitle="Update the creator-fee beneficiary" icon={<ReceiptText size={15} />} action={<span className="stateBadge muted">Two-step</span>}>
+          <div className="operationFlow">
+            <div className="roleCurrent"><span>Current recipient</span><strong>{shortAddress(vault.feeRecipient)}</strong></div>
+            <label className="fieldLabel">New fee-recipient address</label>
+            <input className={!feeTargetValid && feeTarget ? "invalid" : ""} value={feeTarget} onChange={(event) => setFeeTarget(event.target.value)} placeholder="0x..." />
+            <p>The recipient must accept before future creator-fee shares are redirected.</p>
+            <TxStatus state={feeTx} persistent />
+            <button className="primaryAction" type="button" disabled={!feeTargetValid || !vault.connectedIsManager} onClick={() => runMockTx(setFeeTx)}>
+              <ReceiptText size={14} />
+              Initiate recipient transfer
+            </button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Fee accrual" subtitle="Mint elapsed protocol and creator-fee shares" icon={<CircleDollarSign size={15} />} action={<span className="stateBadge success">Permissionless</span>}>
+          <div className="operationFlow">
+            <div className="accrualSummary">
+              <div><span>Creator fee</span><strong>{bpsToPercent(vault.creatorFeeBps)} / yr</strong></div>
+              <div><span>Protocol share</span><strong>{bpsToPercent(vault.protocolFeeShareBps)}</strong></div>
+              <div><span>Estimated claimable</span><strong>12,041.82 USDC</strong></div>
+            </div>
+            <div className="riskCallout success"><CheckCircle size={15} /><div><strong>Cooldown unaffected</strong><span>Fee accrual does not count as a portfolio rebalance.</span></div></div>
+            <TxStatus state={accrualTx} persistent />
+            <button className="secondaryAction" type="button" onClick={() => runMockTx(setAccrualTx)}>
+              <CircleDollarSign size={14} />
+              Accrue fees
+            </button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Manager permissions" subtitle="Capabilities constrained by the vault contract" icon={<ShieldCheck size={15} />} action={<span className="stateBadge muted">Onchain</span>}>
+          <div className="permissionList">
+            <div><CheckCircle size={14} /><span><strong>May propose atomic rebalances</strong><small>Only approved assets and adapters, inside immutable limits.</small></span></div>
+            <div><CheckCircle size={14} /><span><strong>May append thesis amendments</strong><small>History remains permanent and public.</small></span></div>
+            <div><XCircle size={14} /><span><strong>Cannot withdraw portfolio assets</strong><small>No arbitrary manager-call or asset-transfer path exists.</small></span></div>
+            <div><XCircle size={14} /><span><strong>Cannot shorten the cooldown</strong><small>The configured delay is permanently immutable.</small></span></div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <div className="riskCallout warning manageNotice">
+        <Info size={15} />
+        <div><strong>Role transfers do not reset the rebalance cooldown</strong><span>Manager and fee-recipient changes are administrative operations, not portfolio changes.</span></div>
+      </div>
+    </div>
   );
 }

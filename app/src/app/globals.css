@@ -471,7 +471,7 @@ h2 {
   color: var(--text);
   font-size: 1rem;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1656,9 +1656,741 @@ textarea::placeholder {
   font-size: 0.64rem;
 }
 
+.footerLinks,
+.footerLinks a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.footerLinks a {
+  gap: 5px;
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
+.footerLinks a:hover {
+  color: var(--teal);
+}
+
+.appView {
+  display: grid;
+  gap: 16px;
+}
+
+.appPageHeader {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.appPageHeader > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.appPageIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(55 183 170 / 28%);
+  border-radius: 6px;
+  background: rgb(55 183 170 / 9%);
+  color: var(--teal);
+}
+
+.appPageHeader h1 {
+  font-size: 1.28rem;
+}
+
+.appPageHeader p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.appPageActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.directoryMetrics,
+.manageMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.directoryToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+}
+
+.searchField {
+  display: flex;
+  width: min(360px, 100%);
+  min-width: 220px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--text-muted);
+  padding-left: 10px;
+}
+
+.searchField:focus-within {
+  border-color: rgb(55 183 170 / 62%);
+  box-shadow: 0 0 0 2px rgb(55 183 170 / 9%);
+}
+
+.searchField input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+}
+
+.segmentedControl {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 3px;
+}
+
+.segmentedControl button {
+  height: 28px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 9px;
+  font-size: 0.65rem;
+}
+
+.segmentedControl button.active {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.directoryTableWrap {
+  overflow-x: auto;
+}
+
+.directoryTable {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.directoryTable th,
+.directoryTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.directoryTable th {
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.directoryTable th:first-child,
+.directoryTable td:first-child {
+  padding-left: 14px;
+  text-align: left;
+}
+
+.directoryTable th:last-child,
+.directoryTable td:last-child {
+  width: 34px;
+  padding-right: 14px;
+}
+
+.directoryTable tbody tr {
+  cursor: pointer;
+  outline: none;
+  transition: background 140ms ease;
+}
+
+.directoryTable tbody tr:hover,
+.directoryTable tbody tr:focus-visible {
+  background: rgb(36 44 55 / 30%);
+}
+
+.directoryTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.directoryVault {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.directoryVault > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgb(55 183 170 / 8%);
+  color: var(--teal);
+  font-size: 0.61rem;
+  font-weight: 700;
+}
+
+.directoryVault strong,
+.directoryVault small {
+  display: block;
+}
+
+.directoryVault strong {
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.directoryVault small {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+}
+
+.monoValue {
+  color: var(--text-soft);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+}
+
+.dangerText {
+  color: var(--danger) !important;
+}
+
+.emptyDirectory {
+  display: grid;
+  min-height: 190px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: var(--text-muted);
+}
+
+.emptyDirectory strong {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.emptyDirectory span {
+  font-size: 0.68rem;
+}
+
+.createLayout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.createSteps {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 8px;
+}
+
+.createSteps > button {
+  display: grid;
+  grid-template-columns: 27px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 9px;
+  text-align: left;
+}
+
+.createSteps > button:hover {
+  background: rgb(36 44 55 / 28%);
+}
+
+.createSteps > button.active {
+  background: rgb(55 183 170 / 9%);
+  color: var(--text);
+}
+
+.createSteps > button > span {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--background);
+  font-size: 0.64rem;
+}
+
+.createSteps > button.active > span,
+.createSteps > button.complete > span {
+  border-color: rgb(55 183 170 / 40%);
+  color: var(--teal);
+}
+
+.createSteps strong,
+.createSteps small {
+  display: block;
+}
+
+.createSteps strong {
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.createSteps small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+}
+
+.createNotice {
+  display: flex;
+  gap: 7px;
+  margin: 8px 4px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 12px 5px 5px;
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.createNotice svg {
+  flex: 0 0 auto;
+}
+
+.createForm {
+  min-height: 620px;
+}
+
+.stepNumber {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border: 1px solid rgb(55 183 170 / 34%);
+  border-radius: 50%;
+  color: var(--teal);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.formSection {
+  display: grid;
+  gap: 18px;
+}
+
+.formSection > label,
+.formGrid > label,
+.createAssetRow > label {
+  display: block;
+  min-width: 0;
+}
+
+.formSection > label > span,
+.formGrid > label > span,
+.createAssetRow > label > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.formSection label > small,
+.formGrid label > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+  line-height: 1.4;
+}
+
+.formGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.formGrid.twoColumns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.formGrid.threeColumns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+input.invalid {
+  border-color: rgb(235 101 112 / 65%);
+}
+
+.formIntro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.formIntro strong,
+.formIntro span {
+  display: block;
+}
+
+.formIntro strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.formIntro > div > span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+}
+
+.createAssetList {
+  display: grid;
+  gap: 8px;
+}
+
+.createAssetRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(260px, 2fr) minmax(110px, 0.7fr) 30px;
+  align-items: end;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 10px;
+}
+
+.createAssetRow > button {
+  display: grid;
+  width: 30px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.createAssetRow > button:hover {
+  background: rgb(235 101 112 / 9%);
+  color: var(--danger);
+}
+
+.createGuarantees {
+  margin-top: 0;
+}
+
+.createFormActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 22px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.reviewSection {
+  gap: 16px;
+}
+
+.reviewHero {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+
+.reviewHero > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.reviewHero h2 {
+  font-size: 0.94rem;
+}
+
+.reviewHero > div > span {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reviewGrid > div {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 10px;
+}
+
+.reviewGrid span,
+.reviewGrid strong {
+  display: block;
+}
+
+.reviewGrid span {
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  text-transform: uppercase;
+}
+
+.reviewGrid strong {
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reviewPortfolio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.reviewPortfolio > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  color: var(--text-muted);
+  padding: 7px 9px;
+  font-size: 0.68rem;
+}
+
+.reviewPortfolio strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.deploymentSuccess {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgb(46 208 154 / 34%);
+  border-radius: 6px;
+  background: rgb(46 208 154 / 7%);
+  color: var(--green);
+  padding: 11px;
+}
+
+.deploymentSuccess > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.deploymentSuccess strong,
+.deploymentSuccess span {
+  display: block;
+}
+
+.deploymentSuccess strong {
+  font-size: 0.72rem;
+}
+
+.deploymentSuccess span {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 0.66rem;
+}
+
+.manageVaultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 14px 16px;
+}
+
+.manageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.operationFlow {
+  display: grid;
+  gap: 11px;
+}
+
+.operationFlow > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.roleCurrent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 9px 10px;
+}
+
+.roleCurrent span {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.roleCurrent strong {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.accrualSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.accrualSummary > div {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 9px;
+}
+
+.accrualSummary span,
+.accrualSummary strong {
+  display: block;
+}
+
+.accrualSummary span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+
+.accrualSummary strong {
+  margin-top: 5px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permissionList {
+  display: grid;
+}
+
+.permissionList > div {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 0;
+}
+
+.permissionList > div:first-child {
+  padding-top: 0;
+}
+
+.permissionList > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.permissionList > div > svg {
+  color: var(--green);
+}
+
+.permissionList > div:nth-last-child(-n + 2) > svg {
+  color: var(--danger);
+}
+
+.permissionList strong,
+.permissionList small {
+  display: block;
+}
+
+.permissionList strong {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.permissionList small {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.manageNotice {
+  margin-top: 0;
+}
+
 @media (max-width: 1120px) {
   .metricGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .directoryMetrics,
+  .manageMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .dashboardGrid {
@@ -1672,6 +2404,18 @@ textarea::placeholder {
 
   .sideColumn > :last-child {
     grid-column: 1 / -1;
+  }
+
+  .createLayout {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .formGrid.threeColumns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .createAssetRow {
+    grid-template-columns: 100px minmax(220px, 2fr) 110px 30px;
   }
 }
 
@@ -1718,6 +2462,16 @@ textarea::placeholder {
 
   .vaultHeader {
     padding: 14px;
+  }
+
+  .appPageHeader,
+  .manageVaultHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .appPageActions {
+    align-self: flex-start;
   }
 
   .vaultTitleRow,
@@ -1780,6 +2534,81 @@ textarea::placeholder {
     grid-column: auto;
   }
 
+  .directoryToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .searchField {
+    width: 100%;
+  }
+
+  .segmentedControl {
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .createLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .createSteps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .createSteps > button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 7px 4px;
+    text-align: center;
+  }
+
+  .createSteps > button small,
+  .createNotice {
+    display: none;
+  }
+
+  .formGrid.twoColumns,
+  .formGrid.threeColumns,
+  .reviewGrid,
+  .manageGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .createAssetRow {
+    grid-template-columns: minmax(0, 1fr) minmax(88px, 0.45fr) 30px;
+    min-width: 0;
+  }
+
+  .createAssetList {
+    overflow: visible;
+  }
+
+  .createAssetRow > label:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .createAssetRow > label:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .createAssetRow > label:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .createAssetRow > button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .accrualSummary {
+    grid-template-columns: 1fr;
+  }
+
   .targetCardGrid,
   .riskMetricGrid {
     grid-template-columns: 1fr;
@@ -1801,6 +2630,12 @@ textarea::placeholder {
   .dashboardFooter {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .footerLinks {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
   }
 }
 
@@ -1834,6 +2669,21 @@ textarea::placeholder {
   }
 
   .buttonRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .directoryMetrics,
+  .manageMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .createSteps > button > div {
+    display: none;
+  }
+
+  .createFormActions,
+  .deploymentSuccess {
     align-items: stretch;
     flex-direction: column;
   }
