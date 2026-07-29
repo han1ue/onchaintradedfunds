@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+struct VaultInitParams {
+    string name;
+    string symbol;
+    string initialThesis;
+    address manager;
+    address feeRecipient;
+    address[] initialAssets;
+    uint16[] initialTargetWeightsBps;
+    uint256[] initialAmounts;
+    uint256 initialShareSupply;
+    uint16 creatorFeeBpsPerYear;
+    uint32 rebalanceCooldown;
+    uint16 maxTurnoverBps;
+    uint16 maxNavLossBps;
+    uint16 maxWeightDeviationBps;
+    uint16 maxSingleAssetWeightBps;
+    uint16 minNonZeroAssetWeightBps;
+    uint8 maxAssetCount;
+    uint32 maxOracleStaleness;
+}
+
+struct TradeInstruction {
+    address adapter;
+    address tokenIn;
+    address tokenOut;
+    uint256 amountIn;
+    uint256 minAmountOut;
+    bytes adapterData;
+}
+
+struct ThesisVersion {
+    uint64 timestamp;
+    address author;
+    bytes32 portfolioHash;
+    string text;
+}
+
+struct RebalanceRecord {
+    uint64 timestamp;
+    address manager;
+    bytes32 oldPortfolioHash;
+    bytes32 newPortfolioHash;
+    uint256 navBefore;
+    uint256 navAfter;
+    uint16 turnoverBps;
+    uint32 thesisVersion;
+}
+

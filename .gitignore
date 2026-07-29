@@ -1,0 +1,13 @@
+node_modules/
+.next/
+dist/
+out/
+cache/
+broadcast/
+coverage/
+lcov.info
+*.log
+*.tsbuildinfo
+.env
+.env.local
+
