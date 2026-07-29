@@ -24,3 +24,32 @@ export function formatTimestamp(seconds?: number): string {
   }).format(new Date(seconds * 1_000));
 }
 
+export function formatRelativeAvailability(seconds?: number): string {
+  if (!seconds) return "Awaiting vault data";
+
+  const delta = seconds - Math.floor(Date.now() / 1_000);
+  if (delta <= 0) return "Available now";
+  if (delta < 60) return `${delta} seconds remaining`;
+
+  const days = Math.floor(delta / 86_400);
+  const hours = Math.floor((delta % 86_400) / 3_600);
+  const minutes = Math.floor((delta % 3_600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  return `${minutes}m remaining`;
+}
+
+export function progressThroughCooldown(
+  lastPortfolioChange?: number,
+  nextPortfolioChange?: number,
+): number {
+  if (!lastPortfolioChange || !nextPortfolioChange || nextPortfolioChange <= lastPortfolioChange) {
+    return 0;
+  }
+
+  const now = Math.floor(Date.now() / 1_000);
+  const elapsed = now - lastPortfolioChange;
+  const total = nextPortfolioChange - lastPortfolioChange;
+  return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+}

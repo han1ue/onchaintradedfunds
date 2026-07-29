@@ -7,24 +7,33 @@ const CooldownExperience = dynamic(
   {
     ssr: false,
     loading: () => (
-      <section className="cooldownPanel">
-        <p className="eyebrow">Vault Controls</p>
-        <h1>Onchain Traded Funds</h1>
-        <dl className="cooldownGrid">
-          <div>
-            <dt>Rebalance cooldown:</dt>
-            <dd>7 days</dd>
+      <div className="vaultShell">
+        <section className="topBar">
+          <div className="brandBlock">
+            <div className="brandMark">OT</div>
+            <div>
+              <p className="eyebrow">Onchain Traded Funds</p>
+              <h1>Loading vault console</h1>
+              <div className="metaRow">
+                <span>Direct RPC reads</span>
+                <span>Wallet loading</span>
+              </div>
+            </div>
           </div>
-          <div>
-            <dt>Last portfolio change:</dt>
-            <dd>Loading</dd>
-          </div>
-          <div>
-            <dt>Next portfolio change available:</dt>
-            <dd>Loading</dd>
-          </div>
-        </dl>
-      </section>
+        </section>
+        <section className="overviewGrid">
+          <article className="metricCard primaryMetric">
+            <div className="metricLabel">Rebalance status</div>
+            <strong>Loading</strong>
+            <span>Checking vault cooldown</span>
+          </article>
+          <article className="metricCard">
+            <div className="metricLabel">Rebalance cooldown</div>
+            <strong>7 days</strong>
+            <span>Minimum delay between portfolio changes</span>
+          </article>
+        </section>
+      </div>
     ),
   },
 );
