@@ -61,6 +61,7 @@ type Allocation = {
   balance: string;
   price: string;
   oracleAge: string;
+  freshnessTone: "fresh" | "warning";
   tone: string;
 };
 
@@ -101,34 +102,37 @@ const demoAllocations: Allocation[] = [
   {
     symbol: "mNVDA",
     name: "Mock NVDA",
-    address: "0x1111111111111111111111111111111111111111",
+    address: "0x2E4c81aB04A82F5dD3e0cA7f1234567890A6612f",
     targetWeightBps: 4_000,
     actualWeightBps: 4_120,
-    balance: "198,442.10",
-    price: "$122.50",
-    oracleAge: "3m ago",
+    balance: "14,208.4471",
+    price: "$118.42",
+    oracleAge: "38s ago",
+    freshnessTone: "fresh",
     tone: "teal",
   },
   {
     symbol: "mMSFT",
     name: "Mock MSFT",
-    address: "0x2222222222222222222222222222222222222222",
+    address: "0x5F91bCe20E82E85199b792A5595728117f8871Ab",
     targetWeightBps: 3_500,
-    actualWeightBps: 3_380,
-    balance: "90,231.00",
-    price: "$420.18",
-    oracleAge: "5m ago",
-    tone: "green",
+    actualWeightBps: 3_410,
+    balance: "3,401.2210",
+    price: "$421.07",
+    oracleAge: "1m 12s ago",
+    freshnessTone: "fresh",
+    tone: "blue",
   },
   {
     symbol: "mGOOGL",
     name: "Mock GOOGL",
-    address: "0x3333333333333333333333333333333333333333",
+    address: "0xC70a3D6b0011391C3Df907c5d2dC180481A4d813",
     targetWeightBps: 2_500,
-    actualWeightBps: 2_500,
-    balance: "64,780.50",
-    price: "$195.72",
-    oracleAge: "4m ago",
+    actualWeightBps: 2_470,
+    balance: "5,912.8830",
+    price: "$176.55",
+    oracleAge: "9m 04s ago",
+    freshnessTone: "warning",
     tone: "gold",
   },
 ];
@@ -145,9 +149,21 @@ function shortAddress(address?: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function shortAssetAddress(address: string): string {
+  return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
 function bpsToPercent(value?: number): string {
   if (value === undefined) return "Not available";
   return `${(value / 100).toFixed(value % 100 === 0 ? 0 : 2)}%`;
+}
+
+function bpsToAllocationPercent(value: number): string {
+  return `${(value / 100).toFixed(1)}%`;
+}
+
+function signedBpsToAllocationPercent(value: number): string {
+  return `${value >= 0 ? "+" : ""}${bpsToAllocationPercent(value)}`;
 }
 
 function resultAt<T extends ContractValue>(results: ReadResult | undefined, index: number): T | undefined {
@@ -171,6 +187,7 @@ function normalizeAllocations(
       balance: "Read contract",
       price: "Oracle",
       oracleAge: "Freshness check",
+      freshnessTone: "fresh",
       tone: allocationTones[index % allocationTones.length],
     };
   });
@@ -465,11 +482,13 @@ function MetricCard({
 
 function SectionCard({
   title,
+  subtitle,
   icon,
   action,
   children,
 }: {
   title: string;
+  subtitle?: string;
   icon?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
@@ -477,9 +496,12 @@ function SectionCard({
   return (
     <section className="sectionCard">
       <div className="sectionTitle">
-        <div>
-          {icon}
-          <h2>{title}</h2>
+        <div className="sectionHeading">
+          <div className="sectionTitleLine">
+            {icon}
+            <h2>{title}</h2>
+          </div>
+          {subtitle ? <p>{subtitle}</p> : null}
         </div>
         {action}
       </div>
@@ -553,32 +575,42 @@ function TimelineItem({
 }
 
 function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
+  const staleAssets = allocations.filter((asset) => asset.freshnessTone === "warning");
+  const staleAsset = staleAssets[0];
+
   return (
     <SectionCard
-      title="Portfolio Allocation"
+      title="Portfolio allocation"
+      subtitle="Target vs actual weights, oracle-priced"
       icon={<Gauge size={15} />}
       action={
-        <button className="ghostAction" type="button">
+        <button className="ghostAction syncAction" type="button">
           <RefreshCw size={13} />
-          Refresh
+          Sync
         </button>
       }
     >
-      <div className="allocationLegend">
-        <span>Target Allocation</span>
-      </div>
       <div className="allocationBar">
         {allocations.map((asset) => (
           <span
             className={`allocationSegment ${asset.tone}`}
             key={asset.address}
-            style={{ width: `${asset.targetWeightBps / 100}%` }}
-            title={`${asset.symbol}: ${bpsToPercent(asset.targetWeightBps)}`}
-          >
-            {asset.targetWeightBps >= 1_500 ? asset.symbol : ""}
+            style={{ width: `${Math.max(asset.actualWeightBps / 100, 1)}%` }}
+            title={`${asset.name}: ${bpsToAllocationPercent(asset.actualWeightBps)}`}
+          />
+        ))}
+      </div>
+
+      <div className="allocationLegend">
+        {allocations.map((asset) => (
+          <span className="legendItem" key={asset.address}>
+            <span className={`legendSwatch ${asset.tone}`} />
+            <span>{asset.name}</span>
+            <strong>{bpsToAllocationPercent(asset.actualWeightBps)}</strong>
           </span>
         ))}
       </div>
+
       <div className="assetTableWrap">
         <table className="assetTable">
           <thead>
@@ -586,14 +618,16 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
               <th>Asset</th>
               <th>Target</th>
               <th>Actual</th>
+              <th>Drift</th>
               <th>Balance</th>
               <th>Oracle Price</th>
-              <th>Oracle Age</th>
+              <th>Freshness</th>
             </tr>
           </thead>
           <tbody>
             {allocations.map((asset) => {
               const diff = asset.actualWeightBps - asset.targetWeightBps;
+              const driftTone = diff > 0 ? "warning" : diff < 0 ? "success" : "neutral";
               return (
                 <tr key={asset.address}>
                   <td>
@@ -601,24 +635,40 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
                       <span className={`assetDot ${asset.tone}`} />
                       <div>
                         <strong>{asset.symbol}</strong>
-                        <span>{asset.name}</span>
+                        <span>{shortAssetAddress(asset.address)}</span>
                       </div>
                     </div>
                   </td>
-                  <td>{bpsToPercent(asset.targetWeightBps)}</td>
+                  <td>{bpsToAllocationPercent(asset.targetWeightBps)}</td>
+                  <td className="actualWeight">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
                   <td>
-                    <span className={`weightText ${asset.tone}`}>{bpsToPercent(asset.actualWeightBps)}</span>
-                    {Math.abs(diff) >= 10 ? <em>{diff > 0 ? "+" : ""}{bpsToPercent(diff)}</em> : null}
+                    <span className={`driftValue ${driftTone}`}>{signedBpsToAllocationPercent(diff)}</span>
                   </td>
-                  <td>{asset.balance}</td>
-                  <td>{asset.price}</td>
-                  <td><span className="successText">{asset.oracleAge}</span></td>
+                  <td className="monoCell">{asset.balance}</td>
+                  <td className="priceCell">{asset.price}</td>
+                  <td>
+                    <span className={`freshnessBadge ${asset.freshnessTone}`}>{asset.oracleAge}</span>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {staleAsset ? (
+        <div className="oracleWarning">
+          <AlertTriangle size={17} />
+          <div>
+            <strong>
+              {staleAssets.length} oracle feed{staleAssets.length === 1 ? "" : "s"} approaching staleness limit
+            </strong>
+            <p>
+              {staleAsset.symbol} last updated {staleAsset.oracleAge}; max staleness is 600s. Rebalances using this feed will revert past the threshold.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }
