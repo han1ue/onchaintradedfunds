@@ -66,7 +66,7 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
-type AppView = "detail" | "vaults" | "create" | "manage";
+type AppView = "detail" | "vaults" | "create" | "manage" | "deposits";
 
 type Allocation = {
   symbol: string;
@@ -115,7 +115,7 @@ type VaultView = {
   isLoading: boolean;
 };
 
-const navTabs = ["Vaults", "Create", "Manage"];
+const navTabs = ["Vaults", "Create"];
 
 const demoAllocations: Allocation[] = [
   {
@@ -326,22 +326,27 @@ export function RebalanceCooldownPanel() {
     enabled,
     isLoading,
   };
-  const activeTab = view === "create" ? "Create" : view === "manage" ? "Manage" : "Vaults";
+  const activeTab = view === "create" ? "Create" : "Vaults";
 
   function changeView(tab: string) {
     if (tab === "Create") setView("create");
-    else if (tab === "Manage") setView("manage");
     else setView("vaults");
   }
 
   return (
     <div className="otfAppShell">
-      <TopNav activeTab={activeTab} onTabChange={changeView} onRefresh={() => void refetch()} />
+      <TopNav
+        activeTab={activeTab}
+        depositsActive={view === "deposits"}
+        onTabChange={changeView}
+        onOpenDeposits={() => setView("deposits")}
+        onRefresh={() => void refetch()}
+      />
 
       <main className="dashboardMain">
         {view === "detail" ? (
           <>
-            <VaultHeader vault={vault} />
+            <VaultHeader vault={vault} onBack={() => setView("vaults")} />
             <VaultMetrics vault={vault} />
 
             {error ? (
@@ -368,15 +373,33 @@ export function RebalanceCooldownPanel() {
         ) : null}
 
         {view === "vaults" ? (
-          <VaultsDirectory currentVault={vault} onOpenVault={() => setView("detail")} onCreateVault={() => setView("create")} />
+          <VaultsDirectory
+            currentVault={vault}
+            onManageVault={() => setView("manage")}
+            onOpenVault={() => setView("detail")}
+            onCreateVault={() => setView("create")}
+          />
         ) : null}
 
         {view === "create" ? (
-          <CreateVaultView connectedAddress={connectedAddress} onCancel={() => setView("vaults")} onManage={() => setView("manage")} />
+          <CreateVaultView connectedAddress={connectedAddress} onBack={() => setView("vaults")} />
         ) : null}
 
         {view === "manage" ? (
-          <ManageVaultsView vault={vault} onOpenVault={() => setView("detail")} />
+          <ManageVaultsView
+            vault={vault}
+            onBack={() => setView("vaults")}
+            onOpenVault={() => setView("detail")}
+          />
+        ) : null}
+
+        {view === "deposits" ? (
+          <DepositsView
+            connectedAddress={connectedAddress}
+            currentVault={vault}
+            onBrowseVaults={() => setView("vaults")}
+            onOpenVault={() => setView("detail")}
+          />
         ) : null}
 
         <footer className="dashboardFooter">
@@ -396,11 +419,15 @@ export function RebalanceCooldownPanel() {
 
 function TopNav({
   activeTab,
+  depositsActive,
   onTabChange,
+  onOpenDeposits,
   onRefresh,
 }: {
   activeTab: string;
+  depositsActive: boolean;
   onTabChange: (tab: string) => void;
+  onOpenDeposits: () => void;
   onRefresh: () => void;
 }) {
   return (
@@ -419,7 +446,7 @@ function TopNav({
         <nav className="navTabs" aria-label="Primary navigation">
           {navTabs.map((tab) => (
             <button
-              className={tab === activeTab ? "active" : ""}
+              className={!depositsActive && tab === activeTab ? "active" : ""}
               key={tab}
               type="button"
               onClick={() => onTabChange(tab)}
@@ -427,9 +454,22 @@ function TopNav({
               {tab}
             </button>
           ))}
+          <a href="https://github.com/han1ue/onchaintradedfunds#readme" target="_blank" rel="noreferrer">
+            Docs
+            <ExternalLink size={11} />
+          </a>
         </nav>
 
         <div className="navActions">
+          <button
+            className={`depositsButton ${depositsActive ? "active" : ""}`}
+            type="button"
+            onClick={onOpenDeposits}
+            title="My deposits"
+          >
+            <Wallet size={14} />
+            <span>My deposits</span>
+          </button>
           <button className="networkButton" type="button">
             <span className="networkDot" />
             Robinhood Testnet
@@ -448,7 +488,7 @@ function TopNav({
   );
 }
 
-function VaultHeader({ vault }: { vault: VaultView }) {
+function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
 
   function copy(value: string | undefined, key: string) {
@@ -461,7 +501,7 @@ function VaultHeader({ vault }: { vault: VaultView }) {
   return (
     <section className="vaultHeader">
       <div className="vaultBreadcrumb">
-        <button type="button">
+        <button type="button" onClick={onBack}>
           <ArrowLeft size={12} />
           Vaults
         </button>
@@ -1218,10 +1258,12 @@ function AppPageHeader({
 
 function VaultsDirectory({
   currentVault,
+  onManageVault,
   onOpenVault,
   onCreateVault,
 }: {
   currentVault: VaultView;
+  onManageVault: () => void;
   onOpenVault: () => void;
   onCreateVault: () => void;
 }) {
@@ -1279,6 +1321,7 @@ function VaultsDirectory({
       row.symbol.toLowerCase().includes(normalizedQuery);
     return matchesSearch && (filter === "All" || row.rebalance === filter);
   });
+  const hasManagerAccess = currentVault.connectedIsManager || !currentVault.enabled;
 
   return (
     <div className="appView">
@@ -1294,6 +1337,51 @@ function VaultsDirectory({
         }
       />
 
+      {hasManagerAccess ? (
+        <section className="sectionCard managedVaultsPanel">
+          <div className="managedVaultsHeading">
+            <div>
+              <span className="appPageIcon"><UserCog size={16} /></span>
+              <div>
+                <h2>Vaults you manage</h2>
+                <p>Manager controls and protocol operations for vaults created by this wallet.</p>
+              </div>
+            </div>
+            <span className="stateBadge success">1 vault</span>
+          </div>
+          <div className="managedVaultRow">
+            <div className="directoryVault">
+              <span>TECH</span>
+              <div>
+                <strong>{currentVault.name}</strong>
+                <small>{currentVault.symbol} · manager workspace</small>
+              </div>
+            </div>
+            <div className="managedVaultStat">
+              <span>NAV</span>
+              <strong>$4,821,302</strong>
+            </div>
+            <div className="managedVaultStat">
+              <span>Oracle health</span>
+              <strong className="successText">{currentVault.allocations.length}/{currentVault.allocations.length} fresh</strong>
+            </div>
+            <div className="managedVaultStat">
+              <span>Rebalance</span>
+              <strong>{currentVault.canRebalance ? "Available" : "Cooling down"}</strong>
+            </div>
+            <div className="managedVaultActions">
+              <button className="secondaryAction" type="button" onClick={onOpenVault}>
+                Open vault
+              </button>
+              <button className="primaryAction" type="button" onClick={onManageVault}>
+                <UserCog size={14} />
+                Manage
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <div className="directoryMetrics">
         <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
         <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
@@ -1302,6 +1390,13 @@ function VaultsDirectory({
       </div>
 
       <section className="sectionCard directoryPanel">
+        <div className="directoryPanelHeading">
+          <div>
+            <h2>All vaults</h2>
+            <p>Public vaults remain discoverable whether or not you manage them.</p>
+          </div>
+          <span className="stateBadge muted">{rows.length} vaults</span>
+        </div>
         <div className="directoryToolbar">
           <label className="searchField">
             <Search size={14} />
@@ -1378,12 +1473,10 @@ function VaultsDirectory({
 
 function CreateVaultView({
   connectedAddress,
-  onCancel,
-  onManage,
+  onBack,
 }: {
   connectedAddress?: string;
-  onCancel: () => void;
-  onManage: () => void;
+  onBack: () => void;
 }) {
   const [step, setStep] = useState(0);
   const [deployState, setDeployState] = useState<TxState>("idle");
@@ -1453,7 +1546,6 @@ function CreateVaultView({
         title="Create vault"
         description="Deploy a managed ERC-4626 portfolio with immutable safety bounds."
         icon={<FilePlus2 size={18} />}
-        actions={<button className="secondaryAction" type="button" onClick={onCancel}>Cancel</button>}
       />
 
       <div className="createLayout">
@@ -1615,14 +1707,14 @@ function CreateVaultView({
                   <div className="deploymentSuccess">
                     <CheckCircle size={18} />
                     <div><strong>Vault deployment confirmed</strong><span>The new vault is ready for initial funding and management.</span></div>
-                    <button className="secondaryAction" type="button" onClick={onManage}>Open Manage</button>
+                    <button className="secondaryAction" type="button" onClick={onBack}>View in Vaults</button>
                   </div>
                 ) : null}
               </div>
             ) : null}
 
             <div className="createFormActions">
-              <button className="secondaryAction" type="button" onClick={() => step === 0 ? onCancel() : setStep((current) => current - 1)}>
+              <button className="secondaryAction" type="button" onClick={() => step === 0 ? onBack() : setStep((current) => current - 1)}>
                 <ArrowLeft size={14} />
                 {step === 0 ? "Back to vaults" : "Back"}
               </button>
@@ -1645,11 +1737,118 @@ function CreateVaultView({
   );
 }
 
+function DepositsView({
+  connectedAddress,
+  currentVault,
+  onBrowseVaults,
+  onOpenVault,
+}: {
+  connectedAddress?: string;
+  currentVault: VaultView;
+  onBrowseVaults: () => void;
+  onOpenVault: () => void;
+}) {
+  return (
+    <div className="appView">
+      <AppPageHeader
+        title="My deposits"
+        description="Track vault shares, current value, and portfolio returns across the protocol."
+        icon={<Wallet size={18} />}
+        actions={
+          <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
+            <LayoutGrid size={14} />
+            Explore vaults
+          </button>
+        }
+      />
+
+      {connectedAddress ? (
+        <>
+          <div className="depositMetrics">
+            <MetricCard label="Current Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 vault positions" />
+            <MetricCard label="Net Deposits" value="$21,442.80" icon={<ArrowDownToLine size={14} />} sub="Lifetime principal" />
+            <MetricCard label="Total Return" value="+$741.52" icon={<TrendingUp size={14} />} tone="success" sub="+3.46% all time" />
+            <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
+          </div>
+
+          <section className="sectionCard depositPositions">
+            <div className="directoryPanelHeading">
+              <div>
+                <h2>Vault positions</h2>
+                <p>Balances are valued with the same fresh onchain prices used by each vault.</p>
+              </div>
+              <span className="stateBadge muted">2 positions</span>
+            </div>
+            <div className="directoryTableWrap">
+              <table className="directoryTable depositsTable">
+                <thead>
+                  <tr>
+                    <th>Vault</th>
+                    <th>Shares</th>
+                    <th>Deposited</th>
+                    <th>Current value</th>
+                    <th>Total return</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr role="button" tabIndex={0} onClick={onOpenVault} onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onOpenVault();
+                  }}>
+                    <td>
+                      <div className="directoryVault">
+                        <span>TECH</span>
+                        <div><strong>{currentVault.name}</strong><small>{currentVault.symbol}</small></div>
+                      </div>
+                    </td>
+                    <td className="monoValue">82.4182</td>
+                    <td>$10,214.40</td>
+                    <td><strong>$10,583.12</strong></td>
+                    <td className="successText">+$368.72 · 3.61%</td>
+                    <td><ChevronRight size={14} /></td>
+                  </tr>
+                  <tr role="button" tabIndex={0} onClick={onOpenVault} onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onOpenVault();
+                  }}>
+                    <td>
+                      <div className="directoryVault">
+                        <span>DIV</span>
+                        <div><strong>Onchain Dividend Quality</strong><small>OTF-DIV</small></div>
+                      </div>
+                    </td>
+                    <td className="monoValue">106.9320</td>
+                    <td>$11,228.40</td>
+                    <td><strong>$11,601.20</strong></td>
+                    <td className="successText">+$372.80 · 3.32%</td>
+                    <td><ChevronRight size={14} /></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="sectionCard depositsEmpty">
+          <span><Wallet size={22} /></span>
+          <h2>Connect your wallet to view deposits</h2>
+          <p>Your vault shares, deposited principal, and returns will appear here after the wallet connection is approved.</p>
+          <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
+            <LayoutGrid size={14} />
+            Browse vaults
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function ManageVaultsView({
   vault,
+  onBack,
   onOpenVault,
 }: {
   vault: VaultView;
+  onBack: () => void;
   onOpenVault: () => void;
 }) {
   const [managerTarget, setManagerTarget] = useState("");
@@ -1670,6 +1869,16 @@ function ManageVaultsView({
 
   return (
     <div className="appView">
+      <div className="vaultBreadcrumb appBreadcrumb">
+        <button type="button" onClick={onBack}>
+          <ArrowLeft size={12} />
+          Vaults
+        </button>
+        <span>/</span>
+        <button type="button" onClick={onOpenVault}>{vault.name}</button>
+        <span>/</span>
+        <strong>Manage</strong>
+      </div>
       <AppPageHeader
         title="Manage"
         description="Administer vault roles and routine protocol operations."

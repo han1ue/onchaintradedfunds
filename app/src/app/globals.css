@@ -135,6 +135,7 @@ main {
 }
 
 .navTabs button,
+.depositsButton,
 .networkButton,
 .iconOnly,
 .ghostAction,
@@ -151,15 +152,21 @@ main {
     opacity 150ms ease;
 }
 
-.navTabs button {
+.navTabs button,
+.navTabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: transparent;
   color: var(--text-muted);
   padding: 7px 11px;
   font-size: 0.79rem;
   font-weight: 500;
+  text-decoration: none;
 }
 
-.navTabs button:hover {
+.navTabs button:hover,
+.navTabs a:hover {
   color: var(--text);
 }
 
@@ -176,6 +183,7 @@ main {
   gap: 8px;
 }
 
+.depositsButton,
 .networkButton,
 .iconOnly {
   display: inline-flex;
@@ -185,6 +193,20 @@ main {
   border-color: var(--border);
   background: rgb(24 30 39 / 84%);
   color: var(--text-soft);
+}
+
+.depositsButton {
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.depositsButton:hover,
+.depositsButton.active {
+  border-color: rgb(55 183 170 / 34%);
+  background: rgb(55 183 170 / 10%);
+  color: var(--teal);
 }
 
 .networkButton {
@@ -1722,11 +1744,87 @@ textarea::placeholder {
   gap: 8px;
 }
 
+.appBreadcrumb {
+  margin-bottom: -6px;
+}
+
 .directoryMetrics,
-.manageMetrics {
+.manageMetrics,
+.depositMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+
+.managedVaultsPanel {
+  overflow: hidden;
+}
+
+.managedVaultsHeading,
+.directoryPanelHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+}
+
+.managedVaultsHeading > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.managedVaultsHeading .appPageIcon {
+  width: 32px;
+  height: 32px;
+}
+
+.managedVaultsHeading h2,
+.directoryPanelHeading h2 {
+  font-size: 0.79rem;
+  font-weight: 600;
+}
+
+.managedVaultsHeading p,
+.directoryPanelHeading p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.managedVaultRow {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.45fr) repeat(3, minmax(110px, 0.7fr)) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px;
+}
+
+.managedVaultStat span,
+.managedVaultStat strong {
+  display: block;
+}
+
+.managedVaultStat span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+.managedVaultStat strong {
+  margin-top: 6px;
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.managedVaultActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .directoryToolbar {
@@ -1907,6 +2005,52 @@ textarea::placeholder {
 
 .emptyDirectory span {
   font-size: 0.68rem;
+}
+
+.depositPositions {
+  overflow: hidden;
+}
+
+.depositsTable {
+  min-width: 820px;
+}
+
+.depositsEmpty {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.depositsEmpty > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgb(55 183 170 / 28%);
+  border-radius: 7px;
+  background: rgb(55 183 170 / 9%);
+  color: var(--teal);
+}
+
+.depositsEmpty h2 {
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+.depositsEmpty p {
+  width: min(430px, 100%);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.depositsEmpty button {
+  margin-top: 4px;
 }
 
 .createLayout {
@@ -2389,8 +2533,19 @@ input.invalid {
   }
 
   .directoryMetrics,
-  .manageMetrics {
+  .manageMetrics,
+  .depositMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .managedVaultRow {
+    grid-template-columns: minmax(230px, 1.5fr) repeat(3, minmax(90px, 1fr));
+  }
+
+  .managedVaultActions {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+    padding-top: 11px;
   }
 
   .dashboardGrid {
@@ -2446,8 +2601,17 @@ input.invalid {
 
   .navActions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 34px 34px;
+    grid-template-columns: 34px minmax(0, 1fr) 34px 34px;
     width: 100%;
+  }
+
+  .depositsButton {
+    width: 34px;
+    padding: 0;
+  }
+
+  .depositsButton span {
+    display: none;
   }
 
   .navActions > :last-child {
@@ -2537,6 +2701,33 @@ input.invalid {
   .directoryToolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .managedVaultsHeading,
+  .directoryPanelHeading {
+    align-items: flex-start;
+  }
+
+  .managedVaultRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .managedVaultRow > .directoryVault,
+  .managedVaultActions {
+    grid-column: 1 / -1;
+  }
+
+  .managedVaultStat:nth-of-type(4) {
+    grid-column: 1 / -1;
+  }
+
+  .managedVaultActions {
+    justify-content: stretch;
+  }
+
+  .managedVaultActions button {
+    flex: 1 1 0;
   }
 
   .searchField {
@@ -2674,8 +2865,14 @@ input.invalid {
   }
 
   .directoryMetrics,
-  .manageMetrics {
+  .manageMetrics,
+  .depositMetrics {
     grid-template-columns: 1fr;
+  }
+
+  .managedVaultsHeading,
+  .directoryPanelHeading {
+    flex-direction: column;
   }
 
   .createSteps > button > div {
