@@ -8,6 +8,7 @@ coverage/
 lcov.info
 *.log
 *.tsbuildinfo
+project-bolt-*.zip
+.bolt-reference/
 .env
 .env.local
-
