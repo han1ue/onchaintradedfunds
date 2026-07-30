@@ -121,7 +121,7 @@ type VaultView = {
   isLoading: boolean;
 };
 
-const navTabs = ["Vaults", "Create"];
+const navTabs = ["OTFs", "Create"];
 
 const demoAllocations: Allocation[] = [
   {
@@ -198,6 +198,18 @@ function shortAddress(address?: string): string {
 
 function shortAssetAddress(address: string): string {
   return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
+function tickerFromName(name: string): string {
+  const normalizedName = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 16)
+    .replace(/-+$/g, "");
+
+  return normalizedName ? `OTF-${normalizedName}` : "OTF-";
 }
 
 function bpsToPercent(value?: number): string {
@@ -357,7 +369,7 @@ export function RebalanceCooldownPanel() {
     enabled,
     isLoading,
   };
-  const activeTab = view === "create" ? "Create" : "Vaults";
+  const activeTab = view === "create" ? "Create" : "OTFs";
 
   function openView(nextView: AppView) {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -398,7 +410,7 @@ export function RebalanceCooldownPanel() {
             {error ? (
               <div className="warningBanner danger">
                 <XCircle size={16} />
-                <span>Unable to read live vault data. The dashboard is showing demo fallback values.</span>
+                <span>Unable to read live OTF data. The dashboard is showing demo fallback values.</span>
               </div>
             ) : null}
 
@@ -451,7 +463,7 @@ export function RebalanceCooldownPanel() {
         <footer className="dashboardFooter">
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
-            <span>ERC-4626 vaults · Robinhood Testnet</span>
+            <span>ERC-4626 OTFs · Robinhood Testnet</span>
             <a href="/docs">Docs</a>
           </div>
         </footer>
@@ -668,7 +680,7 @@ function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }
       <div className="vaultBreadcrumb">
         <button type="button" onClick={onBack}>
           <ArrowLeft size={12} />
-          Vaults
+          OTFs
         </button>
         <span>/</span>
         <strong>{vault.name}</strong>
@@ -683,7 +695,7 @@ function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }
               <span className="symbolBadge">{vault.symbol}</span>
             </div>
             <div className="addressLine">
-              <AddressPill label="Vault" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
+              <AddressPill label="OTF" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
               <AddressPill label="Manager" address={vault.manager} copied={copied === "manager"} onCopy={() => copy(vault.manager, "manager")} />
             </div>
           </div>
@@ -774,7 +786,7 @@ function VaultPerformance({ vaultSymbol }: { vaultSymbol: string }) {
   return (
     <SectionCard
       title="Performance"
-      subtitle="Vault share return · oracle-valued NAV"
+      subtitle="OTF share return · oracle-valued NAV"
       icon={<TrendingUp size={15} />}
       action={
         <div className="performanceRanges" aria-label="Performance period">
@@ -1106,9 +1118,6 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
 }
 
 function ThesisModule({ currentThesis }: { currentThesis: string }) {
-  const [isAppending, setIsAppending] = useState(false);
-  const [draft, setDraft] = useState("");
-
   return (
     <SectionCard title="Thesis" subtitle="Public, append-only record" icon={<BookOpen size={15} />}>
       <div className="thesisBlock">
@@ -1136,33 +1145,58 @@ function ThesisModule({ currentThesis }: { currentThesis: string }) {
         </div>
       </div>
 
-      {!isAppending ? (
-        <div className="cardFooterAction">
-          <span className="mutedInline">
-            <Info size={14} />
-            Thesis amendments do not reset the rebalance cooldown.
-          </span>
-          <button className="secondaryAction" type="button" onClick={() => setIsAppending(true)}>
-            Append Amendment
-          </button>
+      <div className="cardFooterAction">
+        <span className="mutedInline">
+          <Info size={14} />
+          Thesis amendments do not reset the rebalance cooldown.
+        </span>
+      </div>
+    </SectionCard>
+  );
+}
+
+function ThesisAmendmentCard({
+  currentThesis,
+  canManage,
+}: {
+  currentThesis: string;
+  canManage: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const [amendmentTx, setAmendmentTx] = useState<TxState>("idle");
+
+  return (
+    <SectionCard
+      title="Thesis amendment"
+      subtitle="Append to the public investment record"
+      icon={<BookOpen size={15} />}
+      action={<span className="stateBadge muted">Manager</span>}
+    >
+      <div className="operationFlow">
+        <div className="thesisAmendmentCurrent">
+          <span>Current thesis</span>
+          <p>{currentThesis}</p>
         </div>
-      ) : (
-        <div className="appendBox">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Describe the updated investment thesis or rationale..."
-          />
-          <div className="formActions">
-            <button className="ghostAction" type="button" onClick={() => { setDraft(""); setIsAppending(false); }}>
-              Cancel
-            </button>
-            <button className="primaryAction" type="button" disabled={!draft.trim()}>
-              Submit Amendment
-            </button>
-          </div>
-        </div>
-      )}
+        <label className="fieldLabel" htmlFor="thesis-amendment">New amendment</label>
+        <textarea
+          id="thesis-amendment"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Describe the updated investment thesis or rationale..."
+          rows={4}
+        />
+        <p>Amendments are permanent and public. Submitting one does not reset the rebalance cooldown.</p>
+        <TxStatus state={amendmentTx} persistent />
+        <button
+          className="primaryAction"
+          type="button"
+          disabled={!draft.trim() || !canManage}
+          onClick={() => runMockTx(setAmendmentTx)}
+        >
+          <BookOpen size={14} />
+          Submit amendment
+        </button>
+      </div>
     </SectionCard>
   );
 }
@@ -1180,7 +1214,7 @@ function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
 
   return (
     <SectionCard title="Your position" subtitle={`Mint and redeem ${vaultSymbol}`} icon={<Wallet size={15} />}>
-      <div className="actionTabs" role="tablist" aria-label="Vault position actions">
+      <div className="actionTabs" role="tablist" aria-label="OTF position actions">
         <button className={activeAction === "mint" ? "active" : ""} type="button" onClick={() => setActiveAction("mint")}>Mint with basket</button>
         <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
       </div>
@@ -1445,7 +1479,7 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
         ) : null}
         {deviationBreach ? (
-          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target deviation exceeds the vault limit</strong><span>Reduce the largest portfolio change.</span></div></div>
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target deviation exceeds the OTF limit</strong><span>Reduce the largest portfolio change.</span></div></div>
         ) : null}
         {staleAsset ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>{staleAsset.symbol} oracle is approaching staleness</strong><span>Last updated {staleAsset.oracleAge}; refresh before submission.</span></div></div>
@@ -1469,7 +1503,7 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
           Submit atomic rebalance
         </button>
       </div>
-      <p className="builderFootnote">Rebalances swap assets inside the vault only. The manager has no withdrawal path.</p>
+      <p className="builderFootnote">Rebalances swap assets inside the OTF only. The manager has no withdrawal path.</p>
     </SectionCard>
   );
 }
@@ -1511,7 +1545,7 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
           <span>Every rebalance uses listed assets and approved adapters, and settles atomically or fully reverts.</span>
         </div>
       </div>
-      <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer vault assets out.</p>
+      <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</p>
     </SectionCard>
   );
 }
@@ -1609,22 +1643,22 @@ function VaultsDirectory({
   return (
     <div className="appView">
       <AppPageHeader
-        title="Vaults"
-        description="Discover and monitor permissionless managed portfolios."
+        title="Onchain Traded Funds"
+        description="Discover and monitor managed onchain funds."
         icon={<LayoutGrid size={18} />}
         actions={
           <button className="primaryAction" type="button" onClick={onCreateVault}>
             <Plus size={14} />
-            Create vault
+            Create OTF
           </button>
         }
       />
 
       <div className="directoryMetrics">
-        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
-        <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
+        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet OTFs" />
+        <MetricCard label="Active OTFs" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
         <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
-        <MetricCard label="Secondary Liquidity" value="$2.34M" icon={<ArrowRightLeft size={14} />} sub="Across vault share pools" />
+        <MetricCard label="Secondary Liquidity" value="$2.34M" icon={<ArrowRightLeft size={14} />} sub="Across OTF share pools" />
       </div>
 
       {hasManagerAccess ? (
@@ -1633,41 +1667,67 @@ function VaultsDirectory({
             <div>
               <span className="appPageIcon"><UserCog size={16} /></span>
               <div>
-                <h2>Vaults you manage</h2>
-                <p>Manager controls and protocol operations for vaults created by this wallet.</p>
+                <h2>OTFs you manage</h2>
+                <p>Manager controls and protocol operations for OTFs created by this wallet.</p>
               </div>
             </div>
-            <span className="stateBadge success">1 vault</span>
+            <span className="stateBadge success">1 OTF</span>
           </div>
-          <div className="managedVaultRow">
-            <div className="directoryVault">
-              <span>TECH</span>
-              <div>
-                <strong>{currentVault.name}</strong>
-                <small>{currentVault.symbol} · manager workspace</small>
-              </div>
-            </div>
-            <div className="managedVaultStat">
-              <span>NAV</span>
-              <strong>$4,821,302</strong>
-            </div>
-            <div className="managedVaultStat">
-              <span>Oracle health</span>
-              <strong className="successText">{currentVault.allocations.length}/{currentVault.allocations.length} fresh</strong>
-            </div>
-            <div className="managedVaultStat">
-              <span>Rebalance</span>
-              <strong>{currentVault.canRebalance ? "Available" : "Cooling down"}</strong>
-            </div>
-            <div className="managedVaultActions">
-              <button className="secondaryAction" type="button" onClick={onOpenVault}>
-                Open vault
-              </button>
-              <button className="primaryAction" type="button" onClick={onManageVault}>
-                <UserCog size={14} />
-                Manage
-              </button>
-            </div>
+          <div className="directoryTableWrap">
+            <table className="directoryTable managedDirectoryTable">
+              <thead>
+                <tr>
+                  <th>OTF</th>
+                  <th>NAV</th>
+                  <th>24h</th>
+                  <th>Assets</th>
+                  <th>Creator fee</th>
+                  <th>Manager</th>
+                  <th>Oracle health</th>
+                  <th>Liquidity</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                <tr role="button" tabIndex={0} onClick={onOpenVault} onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onOpenVault();
+                }}>
+                  <td>
+                    <div className="directoryVault">
+                      <span>TECH</span>
+                      <div>
+                        <strong>{currentVault.name}</strong>
+                        <small>{currentVault.symbol} · manager workspace</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>$4,821,302</td>
+                  <td className="successText">+1.42%</td>
+                  <td>{currentVault.allocations.length}</td>
+                  <td>{bpsToPercent(currentVault.creatorFeeBps)}</td>
+                  <td className="monoValue">{shortAddress(currentVault.manager)}</td>
+                  <td><span className="stateBadge success">{currentVault.allocations.length}/{currentVault.allocations.length} fresh</span></td>
+                  <td>$1.26M</td>
+                  <td>
+                    <div className="managedTableActions">
+                      <button className="secondaryAction" type="button" onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenVault();
+                      }}>
+                        Open OTF
+                      </button>
+                      <button className="primaryAction" type="button" onClick={(event) => {
+                        event.stopPropagation();
+                        onManageVault();
+                      }}>
+                        <UserCog size={14} />
+                        Manage
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
@@ -1675,15 +1735,15 @@ function VaultsDirectory({
       <section className="sectionCard directoryPanel">
         <div className="directoryPanelHeading">
           <div>
-            <h2>All vaults</h2>
-            <p>Public vaults remain discoverable whether or not you manage them.</p>
+            <h2>All OTFs</h2>
+            <p>Public OTFs remain discoverable whether or not you manage them.</p>
           </div>
-          <span className="stateBadge muted">{rows.length} vaults</span>
+          <span className="stateBadge muted">{rows.length} OTFs</span>
         </div>
         <div className="directoryToolbar">
           <label className="searchField">
             <Search size={14} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by vault name or symbol" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by OTF name or symbol" />
           </label>
         </div>
 
@@ -1691,7 +1751,7 @@ function VaultsDirectory({
           <table className="directoryTable">
             <thead>
               <tr>
-                <th>Vault</th>
+                <th>OTF</th>
                 <th>NAV</th>
                 <th>24h</th>
                 <th>Assets</th>
@@ -1718,7 +1778,7 @@ function VaultsDirectory({
                       <span>{row.monogram}</span>
                       <div>
                         <strong>{row.name}</strong>
-                        <small>{row.symbol}{row.live ? " · connected vault" : " · testnet preview"}</small>
+                        <small>{row.symbol}{row.live ? " · connected OTF" : " · testnet preview"}</small>
                       </div>
                     </div>
                   </td>
@@ -1737,8 +1797,8 @@ function VaultsDirectory({
           {!visibleRows.length ? (
             <div className="emptyDirectory">
               <Search size={18} />
-              <strong>No vaults found</strong>
-              <span>Try a different vault name or symbol.</span>
+              <strong>No OTFs found</strong>
+              <span>Try a different OTF name or symbol.</span>
             </div>
           ) : null}
         </div>
@@ -1757,9 +1817,9 @@ function CreateVaultView({
   const [step, setStep] = useState(0);
   const [deployState, setDeployState] = useState<TxState>("idle");
   const [draft, setDraft] = useState({
-    name: "Onchain Technology Leaders",
-    symbol: "OTF-TECH",
-    thesis: "Concentrated exposure to tokenized technology leaders with durable cash flow and AI infrastructure growth.",
+    name: "",
+    symbol: "OTF-",
+    thesis: "",
     manager: connectedAddress ?? suggestedManagerAddress,
     feeRecipient: connectedAddress ?? suggestedManagerAddress,
     creatorFee: "0.50",
@@ -1786,6 +1846,7 @@ function CreateVaultView({
     { label: "Review", description: "Confirm deployment" },
   ];
   const totalWeight = portfolio.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
+  const totalWeightValid = Math.abs(totalWeight - 100) < 0.01;
   const basicsValid =
     draft.name.trim().length > 2 &&
     draft.symbol.trim().length > 2 &&
@@ -1795,7 +1856,7 @@ function CreateVaultView({
   const portfolioValid =
     portfolio.length > 0 &&
     portfolio.every((asset) => asset.ticker.trim() && isAddress(asset.address) && asset.targetWeight > 0) &&
-    Math.abs(totalWeight - 100) < 0.01;
+    totalWeightValid;
   const safetyValid =
     Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
@@ -1821,7 +1882,11 @@ function CreateVaultView({
   }, [connectedAddress]);
 
   function updateDraft(field: keyof typeof draft, value: string) {
-    setDraft((current) => ({ ...current, [field]: value }));
+    setDraft((current) => (
+      field === "name"
+        ? { ...current, name: value, symbol: tickerFromName(value) }
+        : { ...current, [field]: value }
+    ));
   }
 
   function updatePortfolio(index: number, patch: Partial<TargetAsset>) {
@@ -1843,13 +1908,13 @@ function CreateVaultView({
   return (
     <div className="appView">
       <AppPageHeader
-        title="Create vault"
-        description="Deploy a managed portfolio with immutable safety bounds."
+        title="Create OTF"
+        description="Deploy an onchain traded fund with immutable safety bounds."
         icon={<FilePlus2 size={18} />}
       />
 
       <div className="createLayout">
-        <aside className="createSteps" aria-label="Vault creation progress">
+        <aside className="createSteps" aria-label="OTF creation progress">
           {steps.map((item, index) => (
             <button className={`${step === index ? "active" : ""} ${index < step ? "complete" : ""}`} key={item.label} type="button" onClick={() => setStep(index)}>
               <span>{index < step ? <CheckCircle size={14} /> : index + 1}</span>
@@ -1881,18 +1946,19 @@ function CreateVaultView({
               <div className="formSection">
                 <div className="formGrid twoColumns">
                   <label>
-                    <span>Vault name</span>
+                    <span>OTF name</span>
                     <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Technology Leaders" />
                   </label>
                   <label>
-                    <span>Share symbol</span>
-                    <input value={draft.symbol} onChange={(event) => updateDraft("symbol", event.target.value.toUpperCase())} placeholder="OTF-TECH" />
+                    <span>OTF ticker</span>
+                    <input value={draft.symbol} readOnly aria-readonly="true" />
+                    <small>Generated from the OTF name.</small>
                   </label>
                 </div>
                 <label>
                   <span>Initial investment thesis</span>
                   <textarea value={draft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
-                  <small>This begins the vault&apos;s permanent, append-only thesis history.</small>
+                  <small>This begins the OTF&apos;s permanent, append-only thesis history.</small>
                 </label>
                 <div className="formGrid twoColumns">
                   <label>
@@ -1914,9 +1980,9 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Select from the testnet asset catalog; token addresses resolve automatically.</span>
+                    <span>Select from the approved testnet asset catalog.</span>
                   </div>
-                  <span className={`stateBadge ${portfolioValid ? "success" : "warning"}`}>Total {totalWeight.toFixed(1)}%</span>
+                  <span className={`stateBadge ${totalWeightValid ? "success" : "danger"}`}>Total {totalWeight.toFixed(1)}%</span>
                 </div>
                 <div className="createAssetList">
                   {portfolio.map((asset, index) => (
@@ -1945,13 +2011,7 @@ function CreateVaultView({
                             </option>
                           ))}
                         </select>
-                      </label>
-                      <label>
-                        <span>Token address</span>
-                        <div className="resolvedAssetAddress" title={asset.address}>
-                          <code>{shortAssetAddress(asset.address)}</code>
-                          <span><CheckCircle size={11} /> Resolved</span>
-                        </div>
+                        <small className="assetAddressLabel" title={asset.address}>Token: {shortAssetAddress(asset.address)}</small>
                       </label>
                       <label>
                         <span>Weight</span>
@@ -2035,8 +2095,8 @@ function CreateVaultView({
                 {deployState === "confirmed" ? (
                   <div className="deploymentSuccess">
                     <CheckCircle size={18} />
-                    <div><strong>Vault deployment confirmed</strong><span>The new vault is ready for initial funding and management.</span></div>
-                    <button className="secondaryAction" type="button" onClick={onBack}>View in Vaults</button>
+                    <div><strong>OTF deployment confirmed</strong><span>The new OTF is ready for initial funding and management.</span></div>
+                    <button className="secondaryAction" type="button" onClick={onBack}>View in OTFs</button>
                   </div>
                 ) : null}
               </div>
@@ -2045,7 +2105,7 @@ function CreateVaultView({
             <div className="createFormActions">
               <button className="secondaryAction" type="button" onClick={() => step === 0 ? onBack() : setStep((current) => current - 1)}>
                 <ArrowLeft size={14} />
-                {step === 0 ? "Back to vaults" : "Back"}
+                {step === 0 ? "Back to OTFs" : "Back"}
               </button>
               {step < steps.length - 1 ? (
                 <button className="primaryAction" type="button" disabled={!stepValid} onClick={() => setStep((current) => current + 1)}>
@@ -2055,7 +2115,7 @@ function CreateVaultView({
               ) : (
                 <button className="primaryAction" type="button" disabled={!stepValid || deployState === "pending" || deployState === "submitted" || deployState === "confirmed"} onClick={() => runMockTx(setDeployState)}>
                   <FilePlus2 size={14} />
-                  Deploy vault
+                  Deploy OTF
                 </button>
               )}
             </div>
@@ -2081,12 +2141,12 @@ function DepositsView({
     <div className="appView">
       <AppPageHeader
         title="My deposits"
-        description="Track vault shares, current value, and portfolio returns across the protocol."
+        description="Track OTF shares, current value, and portfolio returns across the protocol."
         icon={<Wallet size={18} />}
         actions={
           <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
             <LayoutGrid size={14} />
-            Explore vaults
+            Explore OTFs
           </button>
         }
       />
@@ -2094,7 +2154,7 @@ function DepositsView({
       {connectedAddress ? (
         <>
           <div className="depositMetrics">
-            <MetricCard label="Current Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 vault positions" />
+            <MetricCard label="Current Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 OTF positions" />
             <MetricCard label="Net Deposits" value="$21,442.80" icon={<ArrowDownToLine size={14} />} sub="Lifetime principal" />
             <MetricCard label="Total Return" value="+$741.52" icon={<TrendingUp size={14} />} tone="success" sub="+3.46% all time" />
             <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
@@ -2103,8 +2163,8 @@ function DepositsView({
           <section className="sectionCard depositPositions">
             <div className="directoryPanelHeading">
               <div>
-                <h2>Vault positions</h2>
-                <p>Balances are valued with the same fresh onchain prices used by each vault.</p>
+                <h2>OTF positions</h2>
+                <p>Balances are valued with the same fresh onchain prices used by each OTF.</p>
               </div>
               <span className="stateBadge muted">2 positions</span>
             </div>
@@ -2112,7 +2172,7 @@ function DepositsView({
               <table className="directoryTable depositsTable">
                 <thead>
                   <tr>
-                    <th>Vault</th>
+                    <th>OTF</th>
                     <th>Shares</th>
                     <th>Deposited</th>
                     <th>Current value</th>
@@ -2160,10 +2220,10 @@ function DepositsView({
         <section className="sectionCard depositsEmpty">
           <span><Wallet size={22} /></span>
           <h2>Connect your wallet to view deposits</h2>
-          <p>Your vault shares, deposited principal, and returns will appear here after the wallet connection is approved.</p>
+          <p>Your OTF shares, deposited principal, and returns will appear here after the wallet connection is approved.</p>
           <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
             <LayoutGrid size={14} />
-            Browse vaults
+            Browse OTFs
           </button>
         </section>
       )}
@@ -2205,7 +2265,7 @@ function ManageVaultsView({
       <div className="vaultBreadcrumb appBreadcrumb">
         <button type="button" onClick={onBack}>
           <ArrowLeft size={12} />
-          Vaults
+          OTFs
         </button>
         <span>/</span>
         <button type="button" onClick={onOpenVault}>{vault.name}</button>
@@ -2214,11 +2274,11 @@ function ManageVaultsView({
       </div>
       <AppPageHeader
         title="Manage"
-        description="Administer vault roles and routine protocol operations."
+        description="Administer OTF roles and routine protocol operations."
         icon={<UserCog size={18} />}
         actions={
           <button className="secondaryAction" type="button" onClick={onOpenVault}>
-            Open vault
+            Open OTF
             <ChevronRight size={14} />
           </button>
         }
@@ -2229,7 +2289,7 @@ function ManageVaultsView({
           <span className="vaultMonogram">TECH</span>
           <div>
             <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span></div>
-            <div className="addressLine"><AddressPill label="Vault" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>
+            <div className="addressLine"><AddressPill label="OTF" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>
           </div>
         </div>
         <div className="vaultMetaBadges">
@@ -2250,7 +2310,7 @@ function ManageVaultsView({
             <div className="roleCurrent"><span>Current manager</span><strong>{shortAddress(vault.manager)}</strong></div>
             <label className="fieldLabel">New manager address</label>
             <input className={!managerValid && managerTarget ? "invalid" : ""} value={managerTarget} onChange={(event) => setManagerTarget(event.target.value)} placeholder="0x..." />
-            <p>The nominee must accept onchain before the role changes. Portfolio assets never leave the vault.</p>
+            <p>The nominee must accept onchain before the role changes. Portfolio assets never leave the OTF.</p>
             <TxStatus state={managerTx} persistent />
             <button className="primaryAction" type="button" disabled={!managerValid || !vault.connectedIsManager} onClick={() => runMockTx(setManagerTx)}>
               <UserCog size={14} />
@@ -2289,7 +2349,9 @@ function ManageVaultsView({
           </div>
         </SectionCard>
 
-        <SectionCard title="Manager permissions" subtitle="Capabilities constrained by the vault contract" icon={<ShieldCheck size={15} />} action={<span className="stateBadge muted">Onchain</span>}>
+        <ThesisAmendmentCard currentThesis={vault.currentThesis} canManage={vault.connectedIsManager} />
+
+        <SectionCard title="Manager permissions" subtitle="Capabilities constrained by the OTF contract" icon={<ShieldCheck size={15} />} action={<span className="stateBadge muted">Onchain</span>}>
           <div className="permissionList">
             <div><CheckCircle size={14} /><span><strong>May propose atomic rebalances</strong><small>Only approved assets and adapters, inside immutable limits.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May append thesis amendments</strong><small>History remains permanent and public.</small></span></div>

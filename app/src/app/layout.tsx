@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
-  description: "Managed ERC-4626 portfolio vaults with immutable onchain safety limits.",
+  description: "Managed onchain traded funds with immutable portfolio safety limits.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
