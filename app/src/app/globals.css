@@ -206,6 +206,73 @@ main {
   gap: 8px;
 }
 
+.walletControl {
+  min-width: 116px;
+}
+
+.walletControl[data-ready="false"] {
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.walletButton {
+  display: inline-flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-raised);
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0 11px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+  white-space: nowrap;
+}
+
+.walletButton:hover {
+  transform: translateY(-1px);
+}
+
+.walletButton.connect {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #071716;
+}
+
+:root[data-theme="light"] .walletButton.connect {
+  color: #ffffff;
+}
+
+.walletButton.account:hover {
+  border-color: rgb(55 183 170 / 42%);
+  background: rgb(55 183 170 / 9%);
+  color: var(--text);
+}
+
+.walletButton.unsupported {
+  border-color: rgb(235 101 112 / 36%);
+  background: rgb(235 101 112 / 9%);
+  color: var(--danger);
+}
+
+.walletStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgb(46 208 154 / 10%);
+}
+
 .depositsButton,
 .iconOnly {
   display: inline-flex;
@@ -2005,7 +2072,7 @@ textarea::placeholder {
 .directoryToolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   border-bottom: 1px solid var(--border);
   padding: 12px 14px;
@@ -2035,33 +2102,6 @@ textarea::placeholder {
   background: transparent;
   box-shadow: none;
   padding-left: 0;
-}
-
-.segmentedControl {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 3px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--background);
-  padding: 3px;
-}
-
-.segmentedControl button {
-  height: 28px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 9px;
-  font-size: 0.65rem;
-}
-
-.segmentedControl button.active {
-  background: var(--surface);
-  color: var(--text);
 }
 
 .directoryTableWrap {
@@ -2919,12 +2959,6 @@ input.invalid {
     width: 100%;
   }
 
-  .segmentedControl {
-    align-self: flex-start;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-
   .createLayout {
     grid-template-columns: 1fr;
   }
@@ -3089,6 +3123,7 @@ input.invalid {
 }
 
 .landingLoading span {
+  position: relative;
   display: grid;
   width: 42px;
   height: 42px;
@@ -3099,11 +3134,90 @@ input.invalid {
   color: var(--teal);
   font-size: 0.65rem;
   font-weight: 700;
+  animation: otfLoadingBreath 1.8s ease-in-out infinite;
+  box-shadow:
+    0 0 0 0 rgb(55 183 170 / 0%),
+    0 8px 28px rgb(0 0 0 / 22%);
+}
+
+.landingLoading span::before {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgb(55 183 170 / 36%);
+  border-radius: 6px;
+  content: "";
+  animation: otfLoadingRing 1.8s ease-out infinite;
 }
 
 .landingLoading strong {
+  color: #a8b4c0;
   font-size: 0.78rem;
   font-weight: 600;
+  animation: otfLoadingText 1.8s ease-in-out infinite;
+}
+
+.landingLoading::after {
+  width: 34px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #37b7aa, transparent);
+  background-size: 200% 100%;
+  content: "";
+  animation: otfLoadingSweep 1.25s linear infinite;
+}
+
+@keyframes otfLoadingBreath {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(55 183 170 / 0%),
+      0 8px 28px rgb(0 0 0 / 22%);
+    transform: scale(0.97);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 8px rgb(55 183 170 / 7%),
+      0 10px 34px rgb(0 0 0 / 28%);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes otfLoadingRing {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+
+  35% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes otfLoadingText {
+  0%,
+  100% {
+    opacity: 0.52;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes otfLoadingSweep {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .landingCanvas {
@@ -3718,6 +3832,13 @@ input.invalid {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .landingLoading span,
+  .landingLoading span::before,
+  .landingLoading strong,
+  .landingLoading::after {
+    animation: none;
+  }
+
   .landingNav > button,
   .landingPrimary,
   .landingSecondary {

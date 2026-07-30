@@ -7,7 +7,7 @@ const CooldownExperience = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="landingLoading">
+      <div className="landingLoading" role="status" aria-label="Loading Onchain Traded Funds">
         <span>OTF</span>
         <strong>Onchain Traded Funds</strong>
       </div>

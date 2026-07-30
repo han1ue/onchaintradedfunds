@@ -8,11 +8,13 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
+  ArrowRightLeft,
   BadgeCent,
   BookOpen,
   ChartPie,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -569,10 +571,55 @@ function TopNav({
               </div>
             ) : null}
           </div>
-          <ConnectButton />
+          <OTFWalletButton />
         </div>
       </div>
     </header>
+  );
+}
+
+function OTFWalletButton() {
+  return (
+    <ConnectButton.Custom>
+      {({
+        account,
+        chain,
+        mounted,
+        authenticationStatus,
+        openAccountModal,
+        openChainModal,
+        openConnectModal,
+      }) => {
+        const ready = mounted && authenticationStatus !== "loading";
+        const connected =
+          ready &&
+          account &&
+          chain &&
+          (!authenticationStatus || authenticationStatus === "authenticated");
+
+        return (
+          <div className="walletControl" data-ready={ready}>
+            {!connected ? (
+              <button className="walletButton connect" type="button" onClick={openConnectModal}>
+                <Wallet size={14} />
+                <span>Connect wallet</span>
+              </button>
+            ) : chain.unsupported ? (
+              <button className="walletButton unsupported" type="button" onClick={openChainModal}>
+                <AlertTriangle size={14} />
+                <span>Switch network</span>
+              </button>
+            ) : (
+              <button className="walletButton account" type="button" onClick={openAccountModal}>
+                <span className="walletStatusDot" />
+                <span>{account.displayName}</span>
+                <ChevronDown size={13} />
+              </button>
+            )}
+          </div>
+        );
+      }}
+    </ConnectButton.Custom>
   );
 }
 
@@ -615,10 +662,6 @@ function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }
             </div>
           </div>
         </div>
-        <div className="vaultMetaBadges">
-          <span className="stateBadge muted">ERC-4626 · Testnet</span>
-          <span className="stateBadge info">v1.2.0</span>
-        </div>
       </div>
     </section>
   );
@@ -638,11 +681,10 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       <MetricCard label="Total Supply" value={vault.totalSupply} icon={<Droplets size={14} />} sub={vault.symbol} />
       <MetricCard label="Creator Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<BadgeCent size={14} />} sub="Annualized" />
       <MetricCard
-        label="Rebalance"
-        value={vault.canRebalance ? "Available" : "Cooling down"}
-        icon={<Activity size={14} />}
-        tone={vault.canRebalance ? "success" : "warning"}
-        sub={formatRelativeAvailability(vault.nextPortfolioChange)}
+        label="Secondary Liquidity"
+        value="$1.26M"
+        icon={<ArrowRightLeft size={14} />}
+        sub={`${vault.symbol} / USDC pool`}
       />
       <MetricCard
         label="Oracle Health"
@@ -1356,7 +1398,6 @@ function VaultsDirectory({
   onCreateVault: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"All" | "Available" | "Cooling down">("All");
   const rows = useMemo(
     () => [
       {
@@ -1368,7 +1409,7 @@ function VaultsDirectory({
         assets: currentVault.allocations.length,
         fee: bpsToPercent(currentVault.creatorFeeBps),
         manager: shortAddress(currentVault.manager),
-        rebalance: currentVault.canRebalance ? "Available" : "Cooling down",
+        liquidity: "$1.26M",
         oracle: `${currentVault.allocations.length}/${currentVault.allocations.length} fresh`,
         live: true,
       },
@@ -1381,7 +1422,7 @@ function VaultsDirectory({
         assets: 8,
         fee: "0.60%",
         manager: "0x74e2...B109",
-        rebalance: "Available",
+        liquidity: "$684K",
         oracle: "8/8 fresh",
         live: false,
       },
@@ -1394,7 +1435,7 @@ function VaultsDirectory({
         assets: 5,
         fee: "0.75%",
         manager: "0x1A86...90F4",
-        rebalance: "Cooling down",
+        liquidity: "$391K",
         oracle: "5/5 fresh",
         live: false,
       },
@@ -1402,13 +1443,12 @@ function VaultsDirectory({
     [currentVault],
   );
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleRows = rows.filter((row) => {
-    const matchesSearch =
+  const visibleRows = rows.filter(
+    (row) =>
       !normalizedQuery ||
       row.name.toLowerCase().includes(normalizedQuery) ||
-      row.symbol.toLowerCase().includes(normalizedQuery);
-    return matchesSearch && (filter === "All" || row.rebalance === filter);
-  });
+      row.symbol.toLowerCase().includes(normalizedQuery),
+  );
   const hasManagerAccess = currentVault.connectedIsManager || !currentVault.enabled;
 
   return (
@@ -1429,7 +1469,7 @@ function VaultsDirectory({
         <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
         <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
         <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
-        <MetricCard label="Open Rebalances" value="1" icon={<Activity size={14} />} tone="success" sub="Two vaults cooling down" />
+        <MetricCard label="Secondary Liquidity" value="$2.34M" icon={<ArrowRightLeft size={14} />} sub="Across vault share pools" />
       </div>
 
       {hasManagerAccess ? (
@@ -1490,13 +1530,6 @@ function VaultsDirectory({
             <Search size={14} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by vault name or symbol" />
           </label>
-          <div className="segmentedControl" aria-label="Filter vaults by rebalance state">
-            {(["All", "Available", "Cooling down"] as const).map((option) => (
-              <button className={filter === option ? "active" : ""} key={option} type="button" onClick={() => setFilter(option)}>
-                {option}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="directoryTableWrap">
@@ -1510,7 +1543,7 @@ function VaultsDirectory({
                 <th>Creator fee</th>
                 <th>Manager</th>
                 <th>Oracle health</th>
-                <th>Rebalance</th>
+                <th>Liquidity</th>
                 <th />
               </tr>
             </thead>
@@ -1540,7 +1573,7 @@ function VaultsDirectory({
                   <td>{row.fee}</td>
                   <td className="monoValue">{row.manager}</td>
                   <td><span className="stateBadge success">{row.oracle}</span></td>
-                  <td><span className={`stateBadge ${row.rebalance === "Available" ? "success" : "warning"}`}>{row.rebalance}</span></td>
+                  <td>{row.liquidity}</td>
                   <td><ChevronRight size={14} /></td>
                 </tr>
               ))}
@@ -1550,7 +1583,7 @@ function VaultsDirectory({
             <div className="emptyDirectory">
               <Search size={18} />
               <strong>No vaults found</strong>
-              <span>Try a different name, symbol, or status filter.</span>
+              <span>Try a different vault name or symbol.</span>
             </div>
           ) : null}
         </div>
@@ -1989,7 +2022,6 @@ function ManageVaultsView({
         </div>
         <div className="vaultMetaBadges">
           <span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Read-only mode"}</span>
-          <span className="stateBadge muted">ERC-4626</span>
         </div>
       </section>
 
