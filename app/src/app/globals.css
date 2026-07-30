@@ -2404,6 +2404,45 @@ textarea::placeholder {
   min-width: 820px;
 }
 
+.walletAssets {
+  overflow: hidden;
+}
+
+.rwaAssetsTable {
+  min-width: 760px;
+}
+
+.rwaAssetsTable th:last-child,
+.rwaAssetsTable td:last-child {
+  width: auto;
+  padding-right: 14px;
+}
+
+.rwaAssetsTable tbody tr {
+  cursor: default;
+}
+
+.rwaAssetsTable tbody tr.emptyBalance {
+  opacity: 0.52;
+}
+
+.rwaAssetIdentity strong,
+.rwaAssetIdentity small {
+  display: block;
+}
+
+.rwaAssetIdentity strong {
+  color: var(--text);
+  font-size: 0.73rem;
+  font-weight: 650;
+}
+
+.rwaAssetIdentity small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
 .depositsEmpty {
   display: grid;
   min-height: 360px;

@@ -186,6 +186,15 @@ const knownCreateAssets = [
   },
 ] as const;
 
+const supportedWalletAssets = [
+  { ...knownCreateAssets[0], balance: "8.2500", price: "$118.42", value: "$976.97" },
+  { ...knownCreateAssets[1], balance: "3.1000", price: "$421.07", value: "$1,305.32" },
+  { ...knownCreateAssets[2], balance: "4.5800", price: "$176.55", value: "$808.60" },
+  { ...knownCreateAssets[3], balance: "0.0000", price: "$232.14", value: "$0.00" },
+  { ...knownCreateAssets[4], balance: "0.0000", price: "$219.46", value: "$0.00" },
+  { ...knownCreateAssets[5], balance: "0.0000", price: "$712.30", value: "$0.00" },
+] as const;
+
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
 
 function configuredVaultAddress(): `0x${string}` | undefined {
@@ -544,10 +553,10 @@ function TopNav({
             className={`depositsButton ${depositsActive ? "active" : ""}`}
             type="button"
             onClick={onOpenDeposits}
-            title="My deposits"
+            title="Wallet"
           >
             <Wallet size={14} />
-            <span>My deposits</span>
+            <span>Wallet</span>
           </button>
           <div className="settingsControl" ref={settingsRef}>
             <button
@@ -1829,6 +1838,7 @@ function CreateVaultView({
   const [step, setStep] = useState(0);
   const [deployState, setDeployState] = useState<TxState>("idle");
   const [customManager, setCustomManager] = useState(false);
+  const [customFeeRecipient, setCustomFeeRecipient] = useState(false);
   const [draft, setDraft] = useState({
     name: "",
     symbol: "OTF-",
@@ -1889,12 +1899,11 @@ function CreateVaultView({
     setDraft((current) => ({
       ...current,
       manager: customManager ? current.manager : connectedAddress ?? suggestedManagerAddress,
-      feeRecipient:
-        current.feeRecipient === suggestedManagerAddress
-          ? connectedAddress ?? current.feeRecipient
-          : current.feeRecipient,
+      feeRecipient: customFeeRecipient
+        ? current.feeRecipient
+        : connectedAddress ?? suggestedManagerAddress,
     }));
-  }, [connectedAddress, customManager]);
+  }, [connectedAddress, customFeeRecipient, customManager]);
 
   function updateDraft(field: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -2014,11 +2023,34 @@ function CreateVaultView({
                           : "Connect a wallet to use the creator address."}
                     </small>
                   </div>
-                  <label>
-                    <span>Fee recipient</span>
-                    <input className={!isAddress(draft.feeRecipient) && draft.feeRecipient ? "invalid" : ""} value={draft.feeRecipient} onChange={(event) => updateDraft("feeRecipient", event.target.value)} placeholder="0x..." />
-                    <small>Receives accrued creator-fee shares.</small>
-                  </label>
+                  <div className="addressRoleField">
+                    <div className="addressRoleFieldHeader">
+                      <label htmlFor="fee-recipient-address">Fee recipient</label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomFeeRecipient((enabled) => !enabled)}
+                      >
+                        {customFeeRecipient ? <Wallet size={12} /> : <Pencil size={12} />}
+                        {customFeeRecipient ? "Use creator wallet" : "Use custom address"}
+                      </button>
+                    </div>
+                    <input
+                      id="fee-recipient-address"
+                      className={!isAddress(draft.feeRecipient) && draft.feeRecipient ? "invalid" : ""}
+                      value={draft.feeRecipient}
+                      readOnly={!customFeeRecipient}
+                      aria-readonly={!customFeeRecipient}
+                      onChange={(event) => updateDraft("feeRecipient", event.target.value)}
+                      placeholder="0x..."
+                    />
+                    <small>
+                      {customFeeRecipient
+                        ? "Custom address receives accrued creator-fee shares."
+                        : connectedAddress
+                          ? "Locked to the wallet creating this OTF."
+                          : "Connect a wallet to use the creator address."}
+                    </small>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -2188,8 +2220,8 @@ function DepositsView({
   return (
     <div className="appView">
       <AppPageHeader
-        title="My deposits"
-        description="Track OTF shares, current value, and portfolio returns across the protocol."
+        title="My wallet"
+        description="View OTF positions and supported RWA assets held by this wallet."
         icon={<Wallet size={18} />}
         actions={
           <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
@@ -2202,9 +2234,9 @@ function DepositsView({
       {connectedAddress ? (
         <>
           <div className="depositMetrics">
-            <MetricCard label="Current Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 OTF positions" />
-            <MetricCard label="Net Deposits" value="$21,442.80" icon={<ArrowDownToLine size={14} />} sub="Lifetime principal" />
-            <MetricCard label="Total Return" value="+$741.52" icon={<TrendingUp size={14} />} tone="success" sub="+3.46% all time" />
+            <MetricCard label="OTF Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 positions" />
+            <MetricCard label="RWA Assets" value="$3,090.89" icon={<Coins size={14} />} sub="3 nonzero balances" />
+            <MetricCard label="OTF Return" value="+$741.52" icon={<TrendingUp size={14} />} tone="success" sub="+3.46% all time" />
             <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
           </div>
 
@@ -2263,12 +2295,51 @@ function DepositsView({
               </table>
             </div>
           </section>
+
+          <section className="sectionCard walletAssets">
+            <div className="directoryPanelHeading">
+              <div>
+                <h2>Supported RWA assets</h2>
+                <p>Protocol-approved assets and their current balances in this wallet.</p>
+              </div>
+              <span className="stateBadge muted">3 held · {supportedWalletAssets.length} supported</span>
+            </div>
+            <div className="directoryTableWrap">
+              <table className="directoryTable rwaAssetsTable">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Token address</th>
+                    <th>Wallet balance</th>
+                    <th>Oracle price</th>
+                    <th>Wallet value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {supportedWalletAssets.map((asset) => (
+                    <tr className={asset.balance === "0.0000" ? "emptyBalance" : ""} key={asset.address}>
+                      <td>
+                        <div className="rwaAssetIdentity">
+                          <strong>{asset.symbol}</strong>
+                          <small>{asset.name}</small>
+                        </div>
+                      </td>
+                      <td className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
+                      <td className="monoValue">{asset.balance}</td>
+                      <td>{asset.price}</td>
+                      <td><strong>{asset.value}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </>
       ) : (
         <section className="sectionCard depositsEmpty">
           <span><Wallet size={22} /></span>
-          <h2>Connect your wallet to view deposits</h2>
-          <p>Your OTF shares, deposited principal, and returns will appear here after the wallet connection is approved.</p>
+          <h2>Connect your wallet to view holdings</h2>
+          <p>Your OTF positions and supported RWA asset balances will appear here after connecting.</p>
           <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
             <LayoutGrid size={14} />
             Browse OTFs
