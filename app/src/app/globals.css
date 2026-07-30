@@ -1137,6 +1137,11 @@ h2 {
   background: var(--card-raised);
 }
 
+a.secondaryAction {
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
 .primaryAction {
   border-color: rgb(55 183 170 / 45%);
   background: var(--teal);

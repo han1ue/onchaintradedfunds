@@ -2348,10 +2348,22 @@ function DepositsView({
         description="View OTF positions and supported RWA assets held by this wallet."
         icon={<Wallet size={18} />}
         actions={
-          <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
-            <LayoutGrid size={14} />
-            Explore OTFs
-          </button>
+          <>
+            <a
+              className="secondaryAction"
+              href="https://faucet.testnet.chain.robinhood.com/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Droplets size={14} />
+              Testnet faucet
+              <ExternalLink size={12} />
+            </a>
+            <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
+              <LayoutGrid size={14} />
+              Explore OTFs
+            </button>
+          </>
         }
       />
 
