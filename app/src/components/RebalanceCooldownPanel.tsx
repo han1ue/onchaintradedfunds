@@ -127,7 +127,7 @@ const demoAllocations: Allocation[] = [
   {
     symbol: "mNVDA",
     name: "Mock NVDA",
-    address: "0x2E4c81aB04A82F5dD3e0cA7f1234567890A6612f",
+    address: "0x2e4c81ab04a82f5dd3e0ca7f1234567890a6612f",
     targetWeightBps: 4_000,
     actualWeightBps: 4_120,
     balance: "14,208.4471",
@@ -139,7 +139,7 @@ const demoAllocations: Allocation[] = [
   {
     symbol: "mMSFT",
     name: "Mock MSFT",
-    address: "0x5F91bCe20E82E85199b792A5595728117f8871Ab",
+    address: "0x5f91bce20e82e85199b792a5595728117f8871ab",
     targetWeightBps: 3_500,
     actualWeightBps: 3_410,
     balance: "3,401.2210",
@@ -151,7 +151,7 @@ const demoAllocations: Allocation[] = [
   {
     symbol: "mGOOGL",
     name: "Mock GOOGL",
-    address: "0xC70a3D6b0011391C3Df907c5d2dC180481A4d813",
+    address: "0xc70a3d6b0011391c3df907c5d2dc180481a4d813",
     targetWeightBps: 2_500,
     actualWeightBps: 2_470,
     balance: "5,912.8830",
@@ -161,6 +161,28 @@ const demoAllocations: Allocation[] = [
     tone: "gold",
   },
 ];
+
+const suggestedVaultAddress = "0x4f9c2a71c8d3e6b5a09f1274ce83d6412a5c1ae3";
+const suggestedManagerAddress = "0x8b1a47e2c0d4a718b8a942c1557f99259fa14d11";
+
+const knownCreateAssets = [
+  ...demoAllocations.map(({ symbol, name, address }) => ({ symbol, name, address })),
+  {
+    symbol: "mAAPL",
+    name: "Mock Apple",
+    address: "0xa11a00000000000000000000000000000000a11a",
+  },
+  {
+    symbol: "mAMZN",
+    name: "Mock Amazon",
+    address: "0xa6a200000000000000000000000000000000a6a2",
+  },
+  {
+    symbol: "mMETA",
+    name: "Mock Meta",
+    address: "0x6e7a000000000000000000000000000000006e7a",
+  },
+] as const;
 
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
 
@@ -274,8 +296,8 @@ export function RebalanceCooldownPanel() {
   const results = data as ReadResult | undefined;
   const vaultName = resultAt<string>(results, 0) ?? "Onchain Technology Leaders";
   const vaultSymbol = resultAt<string>(results, 1) ?? "OTF-TECH";
-  const manager = resultAt<string>(results, 2);
-  const feeRecipient = resultAt<string>(results, 3);
+  const manager = resultAt<string>(results, 2) ?? suggestedManagerAddress;
+  const feeRecipient = resultAt<string>(results, 3) ?? suggestedManagerAddress;
   const creatorFeeBps = resultAt<number>(results, 4) ?? 50;
   const protocolFeeShareBps = resultAt<number>(results, 5) ?? 1_500;
   const totalSupply = resultAt<bigint>(results, 6);
@@ -308,7 +330,7 @@ export function RebalanceCooldownPanel() {
   const vault = {
     name: vaultName,
     symbol: vaultSymbol,
-    address: vaultAddress,
+    address: vaultAddress ?? suggestedVaultAddress,
     manager,
     feeRecipient,
     creatorFeeBps,
@@ -626,11 +648,15 @@ function OTFWalletButton() {
 function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
 
-  function copy(value: string | undefined, key: string) {
+  async function copy(value: string | undefined, key: string) {
     if (!value) return;
-    void navigator.clipboard.writeText(value);
-    setCopied(key);
-    window.setTimeout(() => setCopied(null), 1_500);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(key);
+      window.setTimeout(() => setCopied(null), 1_500);
+    } catch {
+      setCopied(null);
+    }
   }
 
   return (
@@ -651,10 +677,6 @@ function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }
             <div className="titleLine">
               <h1>{vault.name}</h1>
               <span className="symbolBadge">{vault.symbol}</span>
-              <span className="auditBadge">
-                <AlertTriangle size={12} />
-                Experimental · unaudited
-              </span>
             </div>
             <div className="addressLine">
               <AddressPill label="Vault" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
@@ -709,12 +731,13 @@ function AddressPill({
   onCopy: () => void;
 }) {
   return (
-    <span className="addressPill">
+    <span className={`addressPill ${copied ? "copied" : ""}`}>
       <span>{label}</span>
       <strong>{shortAddress(address)}</strong>
-      <button type="button" onClick={onCopy} title={`Copy ${label.toLowerCase()} address`}>
+      <button type="button" onClick={onCopy} title={copied ? "Copied" : `Copy ${label.toLowerCase()} address`}>
         {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
       </button>
+      {copied ? <span className="copyFeedback" role="status" aria-live="polite">Copied</span> : null}
       <button type="button" title="Open explorer">
         <ExternalLink size={13} />
       </button>
@@ -1351,10 +1374,12 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
           </div>
         ))}
       </div>
-      <div className="safetyGuarantees">
-        <span><CheckCircle size={12} /> Approved assets only</span>
-        <span><CheckCircle size={12} /> Approved adapters only</span>
-        <span><CheckCircle size={12} /> Atomic execution</span>
+      <div className="executionPolicy">
+        <ShieldCheck size={14} />
+        <div>
+          <strong>Bounded execution</strong>
+          <span>Every rebalance uses listed assets and approved adapters, and settles atomically or fully reverts.</span>
+        </div>
       </div>
       <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer vault assets out.</p>
     </SectionCard>
@@ -1605,8 +1630,8 @@ function CreateVaultView({
     name: "Onchain Technology Leaders",
     symbol: "OTF-TECH",
     thesis: "Concentrated exposure to tokenized technology leaders with durable cash flow and AI infrastructure growth.",
-    manager: connectedAddress ?? "",
-    feeRecipient: connectedAddress ?? "",
+    manager: connectedAddress ?? suggestedManagerAddress,
+    feeRecipient: connectedAddress ?? suggestedManagerAddress,
     creatorFee: "0.50",
     cooldownDays: "7",
     maxTurnover: "30",
@@ -1652,6 +1677,18 @@ function CreateVaultView({
     Number(draft.maxAssets) >= portfolio.length &&
     Number(draft.oracleStaleness) > 0;
   const stepValid = [basicsValid, portfolioValid, safetyValid, basicsValid && portfolioValid && safetyValid][step];
+  const nextAvailableAsset = knownCreateAssets.find(
+    (candidate) => !portfolio.some((asset) => asset.address === candidate.address),
+  );
+
+  useEffect(() => {
+    if (!connectedAddress) return;
+    setDraft((current) => ({
+      ...current,
+      manager: current.manager === suggestedManagerAddress ? connectedAddress : current.manager,
+      feeRecipient: current.feeRecipient === suggestedManagerAddress ? connectedAddress : current.feeRecipient,
+    }));
+  }, [connectedAddress]);
 
   function updateDraft(field: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -1661,11 +1698,23 @@ function CreateVaultView({
     setPortfolio((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
   }
 
+  function addPortfolioAsset() {
+    if (!nextAvailableAsset) return;
+    setPortfolio((current) => [
+      ...current,
+      {
+        ticker: nextAvailableAsset.symbol,
+        address: nextAvailableAsset.address,
+        targetWeight: 0,
+      },
+    ]);
+  }
+
   return (
     <div className="appView">
       <AppPageHeader
         title="Create vault"
-        description="Deploy a managed ERC-4626 portfolio with immutable safety bounds."
+        description="Deploy a managed portfolio with immutable safety bounds."
         icon={<FilePlus2 size={18} />}
       />
 
@@ -1735,7 +1784,7 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Every asset must be approved by the protocol registry.</span>
+                    <span>Select from the testnet asset catalog; token addresses resolve automatically.</span>
                   </div>
                   <span className={`stateBadge ${portfolioValid ? "success" : "warning"}`}>Total {totalWeight.toFixed(1)}%</span>
                 </div>
@@ -1743,12 +1792,36 @@ function CreateVaultView({
                   {portfolio.map((asset, index) => (
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
                       <label>
-                        <span>Symbol</span>
-                        <input value={asset.ticker} onChange={(event) => updatePortfolio(index, { ticker: event.target.value })} />
+                        <span>Asset</span>
+                        <select
+                          value={asset.address}
+                          onChange={(event) => {
+                            const selected = knownCreateAssets.find((candidate) => candidate.address === event.target.value);
+                            if (selected) {
+                              updatePortfolio(index, { ticker: selected.symbol, address: selected.address });
+                            }
+                          }}
+                        >
+                          {knownCreateAssets.map((candidate) => (
+                            <option
+                              key={candidate.address}
+                              value={candidate.address}
+                              disabled={portfolio.some(
+                                (portfolioAsset, assetIndex) =>
+                                  assetIndex !== index && portfolioAsset.address === candidate.address,
+                              )}
+                            >
+                              {candidate.symbol} · {candidate.name}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label>
                         <span>Token address</span>
-                        <input value={asset.address} onChange={(event) => updatePortfolio(index, { address: event.target.value })} />
+                        <div className="resolvedAssetAddress" title={asset.address}>
+                          <code>{shortAssetAddress(asset.address)}</code>
+                          <span><CheckCircle size={11} /> Resolved</span>
+                        </div>
                       </label>
                       <label>
                         <span>Weight</span>
@@ -1763,14 +1836,19 @@ function CreateVaultView({
                     </div>
                   ))}
                 </div>
-                <button className="secondaryAction" type="button" onClick={() => setPortfolio((current) => [...current, { ticker: "", address: "", targetWeight: 0 }])} disabled={portfolio.length >= Number(draft.maxAssets)}>
+                <button
+                  className="secondaryAction"
+                  type="button"
+                  onClick={addPortfolioAsset}
+                  disabled={!nextAvailableAsset || portfolio.length >= Number(draft.maxAssets)}
+                >
                   <Plus size={14} />
                   Add asset
                 </button>
                 {!portfolioValid ? (
                   <div className="riskCallout warning">
                     <AlertTriangle size={15} />
-                    <div><strong>Portfolio needs attention</strong><span>Use valid token addresses, positive weights, and a 100% total.</span></div>
+                    <div><strong>Portfolio needs attention</strong><span>Use positive weights and make sure the total equals 100%.</span></div>
                   </div>
                 ) : null}
               </div>
@@ -1789,11 +1867,12 @@ function CreateVaultView({
                   <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div></label>
                   <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div></label>
                 </div>
-                <div className="safetyGuarantees createGuarantees">
-                  <span><CheckCircle size={12} /> Approved assets</span>
-                  <span><CheckCircle size={12} /> Approved adapters</span>
-                  <span><CheckCircle size={12} /> Atomic execution</span>
-                  <span><CheckCircle size={12} /> Exact temporary approvals</span>
+                <div className="executionPolicy createGuarantees">
+                  <ShieldCheck size={14} />
+                  <div>
+                    <strong>Trade execution remains constrained</strong>
+                    <span>Rebalances use listed assets, approved adapters, and exact temporary approvals in one atomic transaction.</span>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -1803,7 +1882,6 @@ function CreateVaultView({
                 <div className="reviewHero">
                   <span className="vaultMonogram">NEW</span>
                   <div><h2>{draft.name}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual creator fee</span></div>
-                  <span className="stateBadge warning">Unaudited</span>
                 </div>
                 <div className="reviewGrid">
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
@@ -1981,11 +2059,15 @@ function ManageVaultsView({
   const managerValid = isAddress(managerTarget);
   const feeTargetValid = isAddress(feeTarget);
 
-  function copyVaultAddress() {
+  async function copyVaultAddress() {
     if (!vault.address) return;
-    void navigator.clipboard.writeText(vault.address);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_500);
+    try {
+      await navigator.clipboard.writeText(vault.address);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      setCopied(false);
+    }
   }
 
   return (

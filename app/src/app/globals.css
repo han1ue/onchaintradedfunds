@@ -71,7 +71,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -593,7 +594,6 @@ h2 {
 }
 
 .symbolBadge,
-.auditBadge,
 .stateBadge,
 .immutableTag {
   display: inline-flex;
@@ -619,7 +619,6 @@ h2 {
   color: var(--teal);
 }
 
-.auditBadge,
 .stateBadge.warning {
   border-color: rgb(241 185 61 / 34%);
   background: rgb(241 185 61 / 8%);
@@ -674,6 +673,7 @@ h2 {
 }
 
 .addressPill strong {
+  min-width: 96px;
   color: var(--text-soft);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.69rem;
@@ -695,6 +695,16 @@ h2 {
 .addressPill button:hover {
   background: var(--muted);
   color: var(--text);
+}
+
+.addressPill.copied > button:first-of-type,
+.copyFeedback {
+  color: var(--green);
+}
+
+.copyFeedback {
+  font-size: 0.61rem;
+  font-weight: 650;
 }
 
 .metricGrid {
@@ -1340,7 +1350,8 @@ button:disabled {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -1349,9 +1360,14 @@ textarea {
   color: var(--text);
 }
 
-input {
+input,
+select {
   height: 36px;
   padding: 0 10px;
+}
+
+select {
+  cursor: pointer;
 }
 
 textarea {
@@ -1362,7 +1378,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: rgb(55 183 170 / 62%);
   box-shadow: 0 0 0 2px rgb(55 183 170 / 9%);
 }
@@ -1889,23 +1906,38 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
-.safetyGuarantees {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+.executionPolicy {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  border: 1px solid rgb(46 208 154 / 24%);
+  border-radius: 6px;
+  background: rgb(46 208 154 / 6%);
   margin-top: 13px;
+  padding: 10px;
 }
 
-.safetyGuarantees span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid rgb(46 208 154 / 24%);
-  border-radius: 4px;
-  background: rgb(46 208 154 / 6%);
+.executionPolicy > svg {
   color: var(--green);
-  padding: 5px 7px;
-  font-size: 0.6rem;
+  margin-top: 1px;
+}
+
+.executionPolicy strong,
+.executionPolicy span {
+  display: block;
+}
+
+.executionPolicy strong {
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.executionPolicy span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.45;
 }
 
 .dashboardFooter {
@@ -2360,6 +2392,13 @@ textarea::placeholder {
   min-height: 620px;
 }
 
+.createForm input,
+.createForm textarea,
+.createForm select,
+.createForm .inputWithSuffix {
+  background: var(--card-raised);
+}
+
 .stepNumber {
   display: grid;
   width: 21px;
@@ -2476,6 +2515,39 @@ input.invalid {
 .createAssetRow > button:hover {
   background: rgb(235 101 112 / 9%);
   color: var(--danger);
+}
+
+.resolvedAssetAddress {
+  display: flex;
+  height: 36px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-raised);
+  color: var(--text-soft);
+  padding: 0 10px;
+}
+
+.resolvedAssetAddress code {
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resolvedAssetAddress > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--green);
+  font-size: 0.57rem;
+  font-weight: 650;
+  text-transform: uppercase;
 }
 
 .createGuarantees {
@@ -3058,10 +3130,6 @@ input.invalid {
     align-items: flex-start;
   }
 
-  .auditBadge {
-    white-space: normal;
-  }
-
   .metricCard {
     padding: 11px;
   }
@@ -3092,10 +3160,6 @@ input.invalid {
   .managedVaultsHeading,
   .directoryPanelHeading {
     flex-direction: column;
-  }
-
-  .createSteps > button > div {
-    display: none;
   }
 
   .createFormActions,
