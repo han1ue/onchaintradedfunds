@@ -1,0 +1,243 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { OTFFactory } from "../src/OTFFactory.sol";
+import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
+import { ProtocolTestBase } from "./ProtocolTestBase.sol";
+
+contract ProtocolFuzzTest is ProtocolTestBase {
+    function testFuzzFactoryAcceptsAnyCooldownAtOrAboveMinimum(uint32 rawExtra) public {
+        uint32 extra = uint32(bound(rawExtra, 0, 365 days));
+        VaultInitParams memory params = _defaultParams();
+        params.rebalanceCooldown = uint32(7 days) + extra;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.rebalanceCooldown(), params.rebalanceCooldown);
+        assertEq(vault.nextRebalanceTime(), START + params.rebalanceCooldown);
+    }
+
+    function testFuzzFactoryRejectsEveryCooldownBelowMinimum(uint32 rawCooldown) public {
+        uint32 cooldown = uint32(bound(rawCooldown, 0, 7 days - 1));
+        VaultInitParams memory params = _defaultParams();
+        params.rebalanceCooldown = cooldown;
+
+        vm.expectRevert(OTFFactory.RebalanceCooldownTooShort.selector);
+        factory.createVault(params);
+    }
+
+    function testFuzzRebalanceSucceedsAtConfiguredBoundary(uint32 rawExtra, uint16 rawTargetWeight)
+        public
+    {
+        uint32 cooldown = uint32(7 days + bound(rawExtra, 0, 30 days));
+        uint16 targetA = uint16(bound(rawTargetWeight, 2_000, 8_000));
+        VaultInitParams memory params = _defaultParams();
+        params.rebalanceCooldown = cooldown;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        uint16[] memory weights = new uint16[](2);
+        weights[0] = targetA;
+        weights[1] = uint16(10_000 - targetA);
+
+        TradeInstruction[] memory trades;
+        if (targetA > 5_000) {
+            uint256 amount = uint256(targetA - 5_000) * ONE / 10;
+            trades = _singleTrade(address(tokenB), address(tokenA), amount, amount);
+        } else if (targetA < 5_000) {
+            uint256 amount = uint256(5_000 - targetA) * ONE / 10;
+            trades = _singleTrade(address(tokenA), address(tokenB), amount, amount);
+        } else {
+            trades = new TradeInstruction[](0);
+        }
+
+        uint256 rebalanceTime = START + cooldown;
+        vm.warp(rebalanceTime);
+        feedA.setRoundData(2, 100_00000000, rebalanceTime, rebalanceTime, 2);
+        feedB.setRoundData(2, 100_00000000, rebalanceTime, rebalanceTime, 2);
+        _proposeTarget(vault, assets, weights);
+        if (trades.length != 0) vault.executeRebalanceTrades(trades);
+        vault.completeStrategicRebalance();
+
+        assertEq(vault.lastRebalanceTimestamp(), rebalanceTime);
+        assertEq(vault.rebalanceCount(), 1);
+        uint16[] memory actual = vault.currentWeightsBps();
+        assertApproxEqAbs(actual[0], targetA, 1);
+        assertApproxEqAbs(actual[1], 10_000 - targetA, 1);
+    }
+
+    function testFuzzBasketMintThenRedeemPreservesAccounting(uint96 rawShares) public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = bound(rawShares, 1, 50 * ONE);
+        uint256[] memory amountsIn = vault.previewMint(shares);
+
+        tokenA.mint(ALICE, amountsIn[0]);
+        tokenB.mint(ALICE, amountsIn[1]);
+        vm.startPrank(ALICE);
+        tokenA.approve(address(vault), type(uint256).max);
+        tokenB.approve(address(vault), type(uint256).max);
+        vault.mintWithBasket(shares, ALICE, amountsIn);
+
+        uint256[] memory minimums = new uint256[](2);
+        uint256[] memory amountsOut = vault.redeem(shares, ALICE, ALICE, minimums);
+        vm.stopPrank();
+
+        assertEq(vault.totalSupply(), 100 * ONE);
+        assertLe(amountsIn[0] - amountsOut[0], 1);
+        assertLe(amountsIn[1] - amountsOut[1], 1);
+        assertLe(tokenA.balanceOf(address(vault)) - 500 * ONE, 1);
+        assertLe(tokenB.balanceOf(address(vault)) - 500 * ONE, 1);
+    }
+
+    function testFuzzLockedLiquiditySurvivesFullCirculatingRedemption(
+        uint96 rawInitialSupply,
+        uint96 rawInitialAmount
+    ) public {
+        VaultInitParams memory params = _defaultParams();
+        uint256 minimum = factory.MINIMUM_LIQUIDITY_SHARES();
+        params.initialShareSupply = bound(rawInitialSupply, minimum + 1, 1_000 * ONE);
+        uint256 initialAmount = bound(rawInitialAmount, 1, 1_000 * ONE);
+        params.initialAmounts[0] = initialAmount;
+        params.initialAmounts[1] = initialAmount;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        uint256[] memory minimums = new uint256[](2);
+
+        vault.redeem(vault.balanceOf(address(this)), ALICE, address(this), minimums);
+
+        assertEq(vault.totalSupply(), minimum);
+        assertEq(vault.balanceOf(address(vault)), minimum);
+        assertGt(tokenA.balanceOf(address(vault)), 0);
+        assertGt(tokenB.balanceOf(address(vault)), 0);
+    }
+
+    function testFuzzDonationCannotAwardDonorSharesOrProfitableRounding(
+        uint96 rawDonation,
+        uint96 rawShares
+    ) public {
+        ManagedOTFVault vault = _createVault();
+        uint256 donation = bound(rawDonation, 1, 1_000 * ONE);
+        uint256 shares = bound(rawShares, 1, 50 * ONE);
+        tokenA.mint(ATTACKER, donation);
+        vm.prank(ATTACKER);
+        assertTrue(tokenA.transfer(address(vault), donation));
+
+        uint256[] memory amountsIn = vault.previewMint(shares);
+        tokenA.mint(ALICE, amountsIn[0]);
+        tokenB.mint(ALICE, amountsIn[1]);
+        vm.startPrank(ALICE);
+        tokenA.approve(address(vault), type(uint256).max);
+        tokenB.approve(address(vault), type(uint256).max);
+        vault.mintWithBasket(shares, ALICE, amountsIn);
+        uint256[] memory minimums = new uint256[](2);
+        uint256[] memory amountsOut = vault.redeem(shares, ALICE, ALICE, minimums);
+        vm.stopPrank();
+
+        assertLe(amountsIn[0] - amountsOut[0], 1);
+        assertLe(amountsIn[1] - amountsOut[1], 1);
+        assertEq(vault.balanceOf(ATTACKER), 0);
+        assertEq(tokenA.balanceOf(ATTACKER), 0);
+    }
+
+    function testFuzzRedeemMatchesPreview(uint96 rawShares) public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = bound(rawShares, 1, 99 * ONE);
+        uint256[] memory expected = vault.previewRedeem(shares);
+        uint256[] memory minimums = new uint256[](2);
+
+        uint256[] memory actual = vault.redeem(shares, ALICE, address(this), minimums);
+
+        assertEq(actual[0], expected[0]);
+        assertEq(actual[1], expected[1]);
+        assertEq(tokenA.balanceOf(ALICE), expected[0]);
+        assertEq(tokenB.balanceOf(ALICE), expected[1]);
+    }
+
+    function testFuzzFeeAccrualMatchesDilutionFormula(uint16 rawFeeBps, uint32 rawElapsed) public {
+        uint16 feeBps = uint16(bound(rawFeeBps, 0, 1_000));
+        uint256 elapsed = bound(rawElapsed, 1, 365 days);
+        VaultInitParams memory params = _defaultParams();
+        params.creatorFeeBpsPerYear = feeBps;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        vm.warp(START + elapsed);
+        uint256 numerator = uint256(feeBps) * elapsed;
+        uint256 denominator = 10_000 * 365 days - numerator;
+        uint256 expectedFeeShares = 100 * ONE * numerator / denominator;
+        uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
+
+        uint256 actualFeeShares = vault.accrueFees();
+
+        assertEq(actualFeeShares, expectedFeeShares);
+        assertEq(vault.balanceOf(address(collector)), expectedProtocolShares);
+        assertEq(vault.balanceOf(FEE_RECIPIENT), expectedFeeShares - expectedProtocolShares);
+        assertEq(vault.totalSupply(), 100 * ONE + expectedFeeShares);
+        assertEq(vault.lastFeeAccrualTimestamp(), START + elapsed);
+    }
+
+    function testFuzzLongDormancyNeverBricksFeeAccrual(uint16 rawFeeBps, uint32 rawElapsedDays)
+        public
+    {
+        uint16 feeBps = uint16(bound(rawFeeBps, 1, 1_000));
+        uint256 elapsed = bound(rawElapsedDays, 366 days, 36_500 days);
+        VaultInitParams memory params = _defaultParams();
+        params.creatorFeeBpsPerYear = feeBps;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        vm.warp(START + elapsed);
+        uint256 accrued = vault.accrueFees();
+
+        assertGt(accrued, 0);
+        assertEq(vault.lastFeeAccrualTimestamp(), START + elapsed);
+        assertGt(vault.totalSupply(), 100 * ONE);
+    }
+
+    function testFuzzOraclePricesProduceExpectedNav(uint64 rawPriceA, uint64 rawPriceB) public {
+        ManagedOTFVault vault = _createVault();
+        uint256 priceA = bound(rawPriceA, 1, 1_000_000_000_000);
+        uint256 priceB = bound(rawPriceB, 1, 1_000_000_000_000);
+        feedA.setRoundData(2, int256(priceA), START, START, 2);
+        feedB.setRoundData(2, int256(priceB), START, START, 2);
+
+        uint256 expectedNav = 500 * (priceA + priceB) * 1e10;
+
+        assertEq(vault.totalAssetsValue(), expectedNav);
+        assertEq(vault.navPerShare(), expectedNav / 100);
+    }
+
+    function testFuzzShareTransfersPreserveSupplyAndBalances(address receiver, uint96 rawAmount)
+        public
+    {
+        vm.assume(receiver != address(0));
+        vm.assume(receiver != address(this));
+        ManagedOTFVault vault = _createVault();
+        uint256 initialManagerShares = 100 * ONE - vault.MINIMUM_LIQUIDITY_SHARES();
+        uint256 amount = bound(rawAmount, 0, initialManagerShares);
+
+        vault.transfer(receiver, amount);
+
+        assertEq(vault.totalSupply(), 100 * ONE);
+        assertEq(vault.balanceOf(address(this)), initialManagerShares - amount);
+        assertEq(vault.balanceOf(receiver), amount);
+    }
+
+    function testFuzzTwoStepManagerTransferAcceptsOnlySelectedAddress(address nextManager) public {
+        vm.assume(nextManager != address(0));
+        vm.assume(nextManager != address(this));
+        vm.assume(nextManager != ATTACKER);
+        ManagedOTFVault vault = _createVault();
+
+        vault.beginManagerTransfer(nextManager);
+        vm.prank(ATTACKER);
+        vm.expectRevert(ManagedOTFVaultStorage.NotPendingManager.selector);
+        vault.acceptManagerTransfer();
+        vm.prank(nextManager);
+        vault.acceptManagerTransfer();
+
+        assertEq(vault.manager(), nextManager);
+        assertEq(vault.pendingManager(), address(0));
+    }
+}

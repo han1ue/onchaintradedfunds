@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
-const TICKERS = ["NVDA", "MSFT", "GOOGL"] as const;
+const TICKERS = ["TSLA", "AMZN", "AMD"] as const;
 const STATE_WEIGHTS = [
   [44, 34, 22],
   [40, 35, 25],
@@ -478,9 +478,9 @@ export function ETFChainScene() {
     return (
       <div className="landingSceneFallback" aria-hidden="true">
         <span className="fallbackFrame" />
-        <span className="fallbackAsset teal">NVDA</span>
-        <span className="fallbackAsset blue">MSFT</span>
-        <span className="fallbackAsset gold">GOOGL</span>
+        <span className="fallbackAsset teal">TSLA</span>
+        <span className="fallbackAsset blue">AMZN</span>
+        <span className="fallbackAsset gold">AMD</span>
       </div>
     );
   }

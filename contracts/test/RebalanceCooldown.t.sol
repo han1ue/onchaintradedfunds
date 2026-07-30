@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -69,8 +70,8 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days - 1);
-        vm.expectRevert(ManagedOTFVault.RebalanceCooldownActive.selector);
-        _rebalanceTo6040(vault, 100 * ONE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
+        _propose6040(vault);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
     }
@@ -93,8 +94,8 @@ contract RebalanceCooldownTest is TestBase {
         _rebalanceTo6040(vault, 100 * ONE);
 
         vm.warp(START + 14 days - 1);
-        vm.expectRevert(ManagedOTFVault.RebalanceCooldownActive.selector);
-        _rebalanceTo5050(vault, 100 * ONE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
+        _propose5050(vault);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 7 days));
     }
@@ -111,12 +112,18 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 14 days));
     }
 
-    function testFailedRebalanceDoesNotResetCooldown() public {
+    function testRevertedTargetProposalDoesNotResetCooldown() public {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days);
-        vm.expectRevert(ManagedOTFVault.TargetDeviationTooHigh.selector);
-        _rebalanceTo6040(vault, 50 * ONE);
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        uint256[] memory invalidWeights = new uint256[](2);
+        invalidWeights[0] = 9_000;
+        invalidWeights[1] = 1_000;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooHigh.selector);
+        vault.rebalance(assets, invalidWeights);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
 
@@ -156,8 +163,8 @@ contract RebalanceCooldownTest is TestBase {
     function testManagerCannotShortenCooldown() public {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
-        (bool ok,) =
-            address(vault).call(abi.encodeWithSignature("setRebalanceCooldown(uint32)", uint32(1 days)));
+        (bool ok,) = address(vault)
+            .call(abi.encodeWithSignature("setRebalanceCooldown(uint32)", uint32(1 days)));
 
         assertFalse(ok);
         assertEq(vault.rebalanceCooldown(), uint32(7 days));
@@ -171,8 +178,8 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.nextRebalanceTime(), START + 10 days);
 
         vm.warp(START + 7 days);
-        vm.expectRevert(ManagedOTFVault.RebalanceCooldownActive.selector);
-        _rebalanceTo6040(vault, 100 * ONE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
+        _propose6040(vault);
 
         vm.warp(START + 10 days);
         _rebalanceTo6040(vault, 100 * ONE);
@@ -189,7 +196,11 @@ contract RebalanceCooldownTest is TestBase {
         return ManagedOTFVault(factory.createVault(_params(cooldown, feeBps)));
     }
 
-    function _params(uint32 cooldown, uint16 feeBps) internal view returns (VaultInitParams memory params) {
+    function _params(uint32 cooldown, uint16 feeBps)
+        internal
+        view
+        returns (VaultInitParams memory params)
+    {
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
@@ -217,22 +228,17 @@ contract RebalanceCooldownTest is TestBase {
             maxTurnoverBps: 5_000,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
+            challengeWeightDeviationBps: 250,
             maxSingleAssetWeightBps: 8_000,
             minNonZeroAssetWeightBps: 100,
             maxAssetCount: 10,
-            maxOracleStaleness: 30 days
+            maxOracleStaleness: 30 days,
+            challengeGracePeriod: 3 days
         });
     }
 
     function _rebalanceTo6040(ManagedOTFVault vault, uint256 tokenBAmountIn) internal {
-        address[] memory assets = new address[](2);
-        assets[0] = address(tokenA);
-        assets[1] = address(tokenB);
-
-        uint16[] memory weights = new uint16[](2);
-        weights[0] = 6_000;
-        weights[1] = 4_000;
-
+        _propose6040(vault);
         TradeInstruction[] memory trades = new TradeInstruction[](1);
         trades[0] = TradeInstruction({
             adapter: address(adapter),
@@ -242,19 +248,24 @@ contract RebalanceCooldownTest is TestBase {
             minAmountOut: tokenBAmountIn,
             adapterData: ""
         });
-
-        vault.rebalance(assets, weights, trades, "Move to 60/40.");
+        vault.executeRebalanceTrades(trades);
+        vault.completeStrategicRebalance();
     }
 
-    function _rebalanceTo5050(ManagedOTFVault vault, uint256 tokenAAmountIn) internal {
+    function _propose6040(ManagedOTFVault vault) internal {
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
 
-        uint16[] memory weights = new uint16[](2);
-        weights[0] = 5_000;
-        weights[1] = 5_000;
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 6_000;
+        weights[1] = 4_000;
 
+        vault.rebalance(assets, weights);
+    }
+
+    function _rebalanceTo5050(ManagedOTFVault vault, uint256 tokenAAmountIn) internal {
+        _propose5050(vault);
         TradeInstruction[] memory trades = new TradeInstruction[](1);
         trades[0] = TradeInstruction({
             adapter: address(adapter),
@@ -264,8 +275,19 @@ contract RebalanceCooldownTest is TestBase {
             minAmountOut: tokenAAmountIn,
             adapterData: ""
         });
+        vault.executeRebalanceTrades(trades);
+        vault.completeStrategicRebalance();
+    }
 
-        vault.rebalance(assets, weights, trades, "Return to equal weight.");
+    function _propose5050(ManagedOTFVault vault) internal {
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 5_000;
+        weights[1] = 5_000;
+
+        vault.rebalance(assets, weights);
     }
 }
-

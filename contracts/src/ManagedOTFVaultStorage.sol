@@ -1,0 +1,250 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { ERC20Base } from "./ERC20Base.sol";
+import { RebalanceRecord, ThesisVersion } from "./VaultTypes.sol";
+
+abstract contract ManagedOTFVaultStorage is ERC20Base {
+    uint256 public constant BPS = 10_000;
+    uint256 public constant YEAR = 365 days;
+    uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
+    uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
+    uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
+    uint256 public constant MAX_THESIS_BYTES = 2_048;
+    uint256 public constant MAX_TRADE_COUNT = 20;
+    uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
+    uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 1_000;
+    uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
+    uint256 internal constant RECENT_REBALANCE_CAP = 16;
+    bytes4 internal constant ERC165_INTERFACE_ID = 0x01ffc9a7;
+    bytes4 internal constant ERC173_INTERFACE_ID = 0x7f5828d0;
+    bytes4 internal constant ERC7621_INTERFACE_ID = 0xc9c80f73;
+
+    error AlreadyInitialized();
+    error NotInitialized();
+    error UnauthorizedFactory();
+    error RebalanceCooldownTooShort();
+    error RebalanceCooldownActive(uint256 nextAllowedTime);
+    error NotManager();
+    error NotPendingManager();
+    error NotPendingFeeRecipient();
+    error NotTradeAuthority();
+    error InvalidArrayLength();
+    error EmptyPortfolio();
+    error TooManyAssets(uint256 count, uint256 maximum);
+    error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
+    error InitialAmountZero(address asset);
+    error InitialBalanceMismatch(address asset, uint256 expected, uint256 actual);
+    error AssetTransferMismatch(
+        address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
+    );
+    error InvalidRoleAddress(address account);
+    error InvalidReceiver(address receiver);
+    error AssetNotContract(address asset);
+    error UnapprovedAsset(address asset);
+    error InvalidWeightSum(uint256 sum);
+    error AssetWeightTooHigh(address asset, uint256 weightBps, uint256 maximum);
+    error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
+    error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
+    error InvalidChallengeGracePeriod(uint32 supplied);
+    error ThesisTooLong(uint256 length);
+    error Reentrancy();
+    error ZeroShares();
+    error AmountTooHigh(address asset, uint256 required, uint256 maximum);
+    error AmountTooLow(address asset, uint256 actual, uint256 minimum);
+    error NonProportionalContribution(address asset, uint256 supplied, uint256 required);
+    error OracleFeedMissing(address asset);
+    error InvalidOraclePrice(address asset, int256 answer);
+    error InvalidOracleTimestamp(address asset, uint256 updatedAt);
+    error IncompleteOracleRound(address asset, uint80 roundId, uint80 answeredInRound);
+    error StaleOraclePrice(address asset, uint256 updatedAt, uint256 maxStaleness);
+    error TokenDecimalsUnavailable(address token);
+    error UnsupportedDecimals(address token, uint8 decimals_);
+    error ZeroNav();
+    error TurnoverTooHigh(uint256 turnoverBps, uint256 maximum);
+    error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
+    error OracleSlippageTooHigh(
+        address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
+    );
+    error TradeDoesNotImproveTarget(uint256 distanceBefore, uint256 distanceAfter);
+    error AssetMovedAwayFromTarget(address asset, uint256 deviationBefore, uint256 deviationAfter);
+    error ExposureLimitExceeded(
+        address asset, uint256 weightBefore, uint256 weightAfter, uint16 maximum
+    );
+    error RemovedAssetBalanceRemaining(address asset, uint256 balance);
+    error TooManyTrades(uint256 count, uint256 maximum);
+    error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
+    error TradeAssetNotTracked(address token);
+    error UnapprovedAdapter(address adapter);
+    error InvalidRecordIndex(uint256 index);
+    error StrategyStateLocked();
+    error StrategicRebalanceNotActive();
+    error TargetBandsNotReached();
+    error NoChallengeBreach();
+    error ChallengeAlreadyActive();
+    error ChallengeNotActive();
+    error ExecutorLimitReached();
+    error ExecutorAlreadyAuthorized(address executor);
+    error ExecutorNotAuthorized(address executor);
+    error ManagerFeeTooHigh(uint16 supplied, uint16 maximum);
+    error StrategyModuleCallFailed();
+    error StrategyModuleIntegrityCheckFailed(bytes32 expected, bytes32 actual);
+    error DirectStrategyCall();
+    error UnauthorizedModuleCallback();
+    error LengthMismatch(uint256 tokensLength, uint256 amountsLength);
+    error InvalidWeights(uint256 sum);
+    error ZeroAmount();
+    error NotConstituent(address token);
+    error InsufficientShares(uint256 minimum, uint256 actual);
+    error InsufficientAmount(uint256 index, uint256 minimum, uint256 actual);
+    error DuplicateConstituent(address token);
+    error ZeroAddress();
+
+    enum FeeState {
+        Accruing,
+        Escrowed,
+        Suspended
+    }
+
+    event VaultInitialized(
+        address indexed factory,
+        address indexed manager,
+        address indexed feeRecipient,
+        uint32 rebalanceCooldown
+    );
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
+    event ThesisAmended(
+        uint256 indexed version,
+        uint64 timestamp,
+        address indexed author,
+        bytes32 indexed portfolioHash,
+        string text
+    );
+    event ManagerTransferStarted(address indexed currentManager, address indexed pendingManager);
+    event ManagerTransferred(address indexed oldManager, address indexed newManager);
+    event FeeRecipientTransferStarted(
+        address indexed currentRecipient, address indexed pendingRecipient
+    );
+    event FeeRecipientTransferred(address indexed oldRecipient, address indexed newRecipient);
+    event ExecutorAuthorizationChanged(address indexed executor, bool authorized);
+    event ManagerFeeRateChanged(uint16 oldFeeBps, uint16 newFeeBps);
+    event WeightBandsUpdated(uint16 completionDeviationBps, uint16 challengeDeviationBps);
+    event TargetWeightsProposed(
+        uint256 indexed rebalanceId,
+        address indexed manager,
+        address[] newTokens,
+        uint256[] newWeights,
+        uint16 completionDeviationBps,
+        uint16 challengeDeviationBps,
+        uint64 proposedAt
+    );
+    event StrategicRebalanceCompleted(
+        uint256 indexed rebalanceId,
+        address indexed manager,
+        uint64 completedAt,
+        uint256[] actualWeights
+    );
+    event MaintenanceTradeExecuted(
+        address indexed caller,
+        address indexed adapter,
+        address indexed tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+    event OutOfBandChallengeStarted(
+        address indexed caller, uint64 startedAt, uint64 deadline, address[] breachedAssets
+    );
+    event OutOfBandChallengeResolved(
+        address indexed caller, uint64 resolvedAt, bool resolvedBeforeDeadline
+    );
+    event ChallengeDeadlineMissed(uint64 deadline, uint64 observedAt);
+    event ManagerFeesEscrowed(uint256 newlyEscrowed, uint256 totalEscrowed);
+    event ManagerFeesReleased(address indexed recipient, uint256 amount);
+    event ManagerFeesForfeited(uint256 amount);
+    event ManagerFeeAccrualSuspended(uint64 timestamp);
+    event ManagerFeeAccrualResumed(uint64 timestamp);
+    event Contributed(
+        address indexed caller, address indexed receiver, uint256 lpAmount, uint256[] amounts
+    );
+    event Withdrawn(
+        address indexed caller, address indexed receiver, uint256 lpAmount, uint256[] amounts
+    );
+    event Rebalanced(address[] newTokens, uint256[] newWeights);
+
+    bool internal _initialized;
+    uint256 internal _entered;
+
+    address public factory;
+    address public manager;
+    address public pendingManager;
+    address public feeRecipient;
+    address public pendingFeeRecipient;
+    address public feeCollector;
+    address public assetRegistry;
+    address public oracleRegistry;
+    address public rebalanceExecutor;
+
+    uint16 public creatorFeeBpsPerYear;
+    uint16 public protocolFeeShareBps;
+    uint16 public maxTurnoverBps;
+    uint16 public maxNavLossBps;
+    uint16 public maxWeightDeviationBps;
+    uint16 public challengeWeightDeviationBps;
+    uint16 public maxSingleAssetWeightBps;
+    uint16 public minNonZeroAssetWeightBps;
+    uint8 public maxAssetCount;
+    uint32 public maxOracleStaleness;
+    uint32 public rebalanceCooldown;
+    uint32 public challengeGracePeriod;
+    uint64 public lastRebalanceTimestamp;
+    uint64 public lastFeeAccrualTimestamp;
+    uint64 public lastCompletedStrategicRebalance;
+    uint64 public strategicRebalanceStartedAt;
+
+    uint256 public rebalanceCount;
+    uint256 public escrowedManagerFeeShares;
+    bool public strategicRebalanceActive;
+    bool public challengeActive;
+    address public challengeCaller;
+    uint64 public challengeStartedAt;
+    uint64 public challengeDeadline;
+    mapping(address => uint16) public targetWeightBps;
+    mapping(address => bool) public authorizedExecutor;
+
+    FeeState internal _feeState;
+    bytes32 internal _strategicOldPortfolioHash;
+    uint256 internal _strategicNavBefore;
+    uint16 internal _strategicTurnoverBps;
+    address[] internal _assets;
+    address[] internal _authorizedExecutors;
+    mapping(address => uint256) internal _executorIndexPlusOne;
+    ThesisVersion[] internal _thesisVersions;
+    RebalanceRecord[16] internal _recentRebalances;
+
+    modifier onlyManager() {
+        if (msg.sender != manager) revert NotManager();
+        _;
+    }
+
+    modifier onlyInitialized() {
+        if (!_initialized) revert NotInitialized();
+        _;
+    }
+
+    modifier onlyTradeAuthority() {
+        if (msg.sender != manager && !authorizedExecutor[msg.sender]) {
+            revert NotTradeAuthority();
+        }
+        _;
+    }
+
+    modifier nonReentrant() {
+        if (_entered == 1) revert Reentrancy();
+        _entered = 1;
+        _;
+        _entered = 0;
+    }
+}

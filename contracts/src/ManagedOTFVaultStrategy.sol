@@ -1,0 +1,490 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
+import { PortfolioCalculator } from "./PortfolioCalculator.sol";
+import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
+import { RebalanceExecutor } from "./RebalanceExecutor.sol";
+import { MathEx } from "./libraries/MathEx.sol";
+import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { RebalanceRecord, ThesisVersion, TradeInstruction } from "./VaultTypes.sol";
+
+interface IManagedOTFVaultModuleCallbacks {
+    function moduleAccrueFees() external returns (uint256);
+}
+
+contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
+    using MathEx for uint256;
+    using SafeTransferLib for address;
+
+    PortfolioCalculator private immutable _calculator;
+    address private immutable _self;
+
+    constructor(PortfolioCalculator calculator_) {
+        _calculator = calculator_;
+        _self = address(this);
+    }
+
+    modifier onlyDelegateCall() {
+        if (address(this) == _self) revert DirectStrategyCall();
+        _;
+    }
+
+    function appendThesisAmendment(string calldata text) external onlyDelegateCall onlyManager {
+        uint256 length = bytes(text).length;
+        if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
+        uint256 version = _thesisVersions.length;
+        uint64 timestamp = uint64(block.timestamp);
+        bytes32 portfolioHash = _portfolioHashCurrent();
+        _thesisVersions.push(
+            ThesisVersion({
+                timestamp: timestamp, author: msg.sender, portfolioHash: portfolioHash, text: text
+            })
+        );
+        emit ThesisAmended(version, timestamp, msg.sender, portfolioHash, text);
+    }
+
+    function setManagerFeeBps(uint16 newFeeBps) external onlyDelegateCall onlyManager nonReentrant {
+        if (newFeeBps > MAX_MANAGER_FEE_BPS_PER_YEAR) {
+            revert ManagerFeeTooHigh(newFeeBps, MAX_MANAGER_FEE_BPS_PER_YEAR);
+        }
+        if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+        _accrueViaVault();
+        uint16 oldFeeBps = creatorFeeBpsPerYear;
+        creatorFeeBpsPerYear = newFeeBps;
+        emit ManagerFeeRateChanged(oldFeeBps, newFeeBps);
+    }
+
+    function setExecutor(address executor, bool authorized) external onlyDelegateCall onlyManager {
+        if (executor == address(0) || executor == address(this)) {
+            revert InvalidRoleAddress(executor);
+        }
+        if (authorized) {
+            if (authorizedExecutor[executor]) revert ExecutorAlreadyAuthorized(executor);
+            if (_authorizedExecutors.length >= MAX_AUTHORIZED_EXECUTORS) {
+                revert ExecutorLimitReached();
+            }
+            authorizedExecutor[executor] = true;
+            _authorizedExecutors.push(executor);
+            _executorIndexPlusOne[executor] = _authorizedExecutors.length;
+        } else {
+            if (!authorizedExecutor[executor]) revert ExecutorNotAuthorized(executor);
+            uint256 index = _executorIndexPlusOne[executor] - 1;
+            uint256 lastIndex = _authorizedExecutors.length - 1;
+            if (index != lastIndex) {
+                address moved = _authorizedExecutors[lastIndex];
+                _authorizedExecutors[index] = moved;
+                _executorIndexPlusOne[moved] = index + 1;
+            }
+            _authorizedExecutors.pop();
+            delete _executorIndexPlusOne[executor];
+            authorizedExecutor[executor] = false;
+        }
+        emit ExecutorAuthorizationChanged(executor, authorized);
+    }
+
+    function setWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
+        external
+        onlyDelegateCall
+        onlyManager
+        nonReentrant
+    {
+        if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
+        uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+        _validateWeightBands(completionDeviationBps, challengeDeviationBps_);
+        _accrueViaVault();
+        maxWeightDeviationBps = completionDeviationBps;
+        challengeWeightDeviationBps = challengeDeviationBps_;
+        if (!_isWithinBands(completionDeviationBps)) revert TargetBandsNotReached();
+        lastRebalanceTimestamp = uint64(block.timestamp);
+        emit WeightBandsUpdated(completionDeviationBps, challengeDeviationBps_);
+    }
+
+    function rebalance(address[] calldata newTokens, uint256[] calldata newWeights)
+        external
+        onlyDelegateCall
+        onlyManager
+        nonReentrant
+    {
+        if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
+        uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+
+        _validatePortfolio(newTokens, newWeights);
+        _verifyRemovedAssetsCleared(newTokens);
+        _accrueViaVault();
+
+        (uint256[] memory currentWeights, uint256 navBefore) = _currentWeightsAndNav();
+        uint256 turnover = _turnoverBps(newTokens, newWeights, currentWeights);
+        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
+
+        uint64 proposedAt = uint64(block.timestamp);
+        _strategicOldPortfolioHash = _portfolioHashCurrent();
+        _strategicNavBefore = navBefore;
+        _strategicTurnoverBps = uint16(turnover);
+        strategicRebalanceStartedAt = proposedAt;
+        strategicRebalanceActive = true;
+        lastRebalanceTimestamp = proposedAt;
+        _replacePortfolio(newTokens, newWeights);
+        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
+
+        emit Rebalanced(newTokens, newWeights);
+        emit TargetWeightsProposed(
+            rebalanceCount,
+            msg.sender,
+            newTokens,
+            newWeights,
+            maxWeightDeviationBps,
+            challengeWeightDeviationBps,
+            proposedAt
+        );
+    }
+
+    function executeRebalanceTrades(TradeInstruction[] calldata trades)
+        external
+        onlyDelegateCall
+        onlyTradeAuthority
+        nonReentrant
+    {
+        if (trades.length == 0 || trades.length > MAX_TRADE_COUNT) {
+            revert TooManyTrades(trades.length, MAX_TRADE_COUNT);
+        }
+        _accrueViaVault();
+
+        (uint256[] memory weightsBefore, uint256 navBefore) = _currentWeightsAndNav();
+        uint256 distanceBefore = _distanceFromTarget(weightsBefore);
+        uint256 tradeValue;
+        uint256[] memory valuesIn = new uint256[](trades.length);
+
+        for (uint256 i = 0; i < trades.length; i++) {
+            TradeInstruction calldata trade = trades[i];
+            _validateTrade(trade);
+            valuesIn[i] = _assetValue(trade.tokenIn, trade.amountIn);
+            tradeValue += valuesIn[i];
+        }
+        uint256 turnover = MathEx.mulDiv(tradeValue, BPS, navBefore);
+        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
+
+        for (uint256 i = 0; i < trades.length; i++) {
+            TradeInstruction calldata trade = trades[i];
+            trade.tokenIn.safeApprove(rebalanceExecutor, 0);
+            trade.tokenIn.safeApprove(rebalanceExecutor, trade.amountIn);
+            uint256 amountOut = RebalanceExecutor(rebalanceExecutor).executeTrade(trade);
+            trade.tokenIn.safeApprove(rebalanceExecutor, 0);
+
+            uint256 valueOut = _assetValue(trade.tokenOut, amountOut);
+            uint256 minimumValue = MathEx.mulDiv(valuesIn[i], BPS - maxNavLossBps, BPS);
+            if (valueOut < minimumValue) {
+                revert OracleSlippageTooHigh(
+                    trade.tokenIn, trade.tokenOut, valuesIn[i], valueOut, maxNavLossBps
+                );
+            }
+            emit MaintenanceTradeExecuted(
+                msg.sender, trade.adapter, trade.tokenIn, trade.tokenOut, trade.amountIn, amountOut
+            );
+        }
+
+        (uint256[] memory weightsAfter, uint256 navAfter) = _currentWeightsAndNav();
+        uint256 minimumNav = MathEx.mulDiv(navBefore, BPS - maxNavLossBps, BPS);
+        if (navAfter < minimumNav) {
+            revert NavLossTooHigh(navBefore, navAfter, maxNavLossBps);
+        }
+        uint256 distanceAfter = _distanceFromTarget(weightsAfter);
+        if (distanceAfter >= distanceBefore) {
+            revert TradeDoesNotImproveTarget(distanceBefore, distanceAfter);
+        }
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 target = targetWeightBps[_assets[i]];
+            uint256 beforeDeviation = weightsBefore[i].absDiff(target);
+            uint256 afterDeviation = weightsAfter[i].absDiff(target);
+            if (afterDeviation > beforeDeviation) {
+                revert AssetMovedAwayFromTarget(_assets[i], beforeDeviation, afterDeviation);
+            }
+            if (weightsAfter[i] > maxSingleAssetWeightBps && weightsAfter[i] > weightsBefore[i]) {
+                revert ExposureLimitExceeded(
+                    _assets[i], weightsBefore[i], weightsAfter[i], maxSingleAssetWeightBps
+                );
+            }
+        }
+    }
+
+    function completeStrategicRebalance() external onlyDelegateCall nonReentrant {
+        if (!strategicRebalanceActive) revert StrategicRebalanceNotActive();
+        if (challengeActive) {
+            _resolveOutOfBandChallenge();
+            return;
+        }
+        _accrueViaVault();
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+        _completeStrategicRebalance();
+        _releaseEscrowAndResume();
+    }
+
+    function flagOutOfBand() external onlyDelegateCall nonReentrant {
+        if (challengeActive) revert ChallengeAlreadyActive();
+        _accrueViaVault();
+        address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
+        if (breached.length == 0) revert NoChallengeBreach();
+
+        uint64 startedAt = uint64(block.timestamp);
+        challengeActive = true;
+        challengeCaller = msg.sender;
+        challengeStartedAt = startedAt;
+        challengeDeadline = startedAt + challengeGracePeriod;
+        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
+        emit OutOfBandChallengeStarted(msg.sender, startedAt, challengeDeadline, breached);
+    }
+
+    function resolveOutOfBandChallenge() external onlyDelegateCall nonReentrant {
+        _resolveOutOfBandChallenge();
+    }
+
+    function syncChallengeDeadline() external onlyDelegateCall nonReentrant {
+        if (!challengeActive) revert ChallengeNotActive();
+        _accrueViaVault();
+    }
+
+    function _resolveOutOfBandChallenge() private {
+        if (!challengeActive) revert ChallengeNotActive();
+        _accrueViaVault();
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+
+        bool timely = _feeState != FeeState.Suspended;
+        challengeActive = false;
+        challengeCaller = address(0);
+        challengeStartedAt = 0;
+        challengeDeadline = 0;
+
+        if (strategicRebalanceActive) _completeStrategicRebalance();
+        if (timely) {
+            _releaseEscrowAndResume();
+        } else {
+            _feeState = FeeState.Accruing;
+            lastFeeAccrualTimestamp = uint64(block.timestamp);
+            emit ManagerFeeAccrualResumed(uint64(block.timestamp));
+        }
+        emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), timely);
+    }
+
+    function _completeStrategicRebalance() private {
+        uint64 completedAt = uint64(block.timestamp);
+        (uint256[] memory actualWeights, uint256 navAfter) = _currentWeightsAndNav();
+        uint256 rebalanceId = rebalanceCount;
+        _recentRebalances[rebalanceId % RECENT_REBALANCE_CAP] = RebalanceRecord({
+            timestamp: completedAt,
+            manager: manager,
+            oldPortfolioHash: _strategicOldPortfolioHash,
+            newPortfolioHash: _portfolioHashCurrent(),
+            navBefore: _strategicNavBefore,
+            navAfter: navAfter,
+            turnoverBps: _strategicTurnoverBps,
+            thesisVersion: uint32(_thesisVersions.length - 1)
+        });
+        rebalanceCount = rebalanceId + 1;
+        strategicRebalanceActive = false;
+        strategicRebalanceStartedAt = 0;
+        lastCompletedStrategicRebalance = completedAt;
+        emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
+    }
+
+    function _releaseEscrowAndResume() private {
+        uint256 amount = escrowedManagerFeeShares;
+        escrowedManagerFeeShares = 0;
+        if (amount != 0) {
+            _transfer(address(this), feeRecipient, amount);
+            emit ManagerFeesReleased(feeRecipient, amount);
+        }
+        _feeState = FeeState.Accruing;
+        lastFeeAccrualTimestamp = uint64(block.timestamp);
+        emit ManagerFeeAccrualResumed(uint64(block.timestamp));
+    }
+
+    function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
+        private
+        pure
+    {
+        if (
+            completionDeviationBps == 0 || challengeDeviationBps_ <= completionDeviationBps
+                || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
+        ) {
+            revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
+        }
+    }
+
+    function _validatePortfolio(address[] calldata assets_, uint256[] calldata weights_)
+        private
+        view
+    {
+        if (assets_.length != weights_.length) {
+            revert LengthMismatch(assets_.length, weights_.length);
+        }
+        if (assets_.length == 0) revert EmptyPortfolio();
+        if (assets_.length > maxAssetCount) {
+            revert TooManyAssets(assets_.length, maxAssetCount);
+        }
+        uint256 sum;
+        for (uint256 i = 0; i < assets_.length; i++) {
+            address asset = assets_[i];
+            uint256 weight = weights_[i];
+            if (asset == address(0)) revert ZeroAddress();
+            if (asset.code.length == 0) revert AssetNotContract(asset);
+            if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) {
+                revert UnapprovedAsset(asset);
+            }
+            if (weight > maxSingleAssetWeightBps) {
+                revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
+            }
+            if (weight < minNonZeroAssetWeightBps) {
+                revert AssetWeightTooLow(asset, weight, minNonZeroAssetWeightBps);
+            }
+            _calculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
+            for (uint256 j = i + 1; j < assets_.length; j++) {
+                if (assets_[j] == asset) revert DuplicateConstituent(asset);
+            }
+            sum += weight;
+        }
+        if (sum != BPS) revert InvalidWeights(sum);
+    }
+
+    function _validateTrade(TradeInstruction calldata trade) private view {
+        if (trade.tokenIn == trade.tokenOut || trade.amountIn == 0) {
+            revert BadTrade(trade.tokenIn, trade.tokenOut, trade.amountIn);
+        }
+        if (!_containsCurrentAsset(trade.tokenIn)) {
+            revert TradeAssetNotTracked(trade.tokenIn);
+        }
+        if (!_containsCurrentAsset(trade.tokenOut)) {
+            revert TradeAssetNotTracked(trade.tokenOut);
+        }
+        if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenIn)) {
+            revert UnapprovedAsset(trade.tokenIn);
+        }
+        if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenOut)) {
+            revert UnapprovedAsset(trade.tokenOut);
+        }
+        if (!IAdapterAllowlist(factory).isTradeAdapterApproved(trade.adapter)) {
+            revert UnapprovedAdapter(trade.adapter);
+        }
+        _calculator.validateAsset(trade.tokenIn, oracleRegistry, maxOracleStaleness);
+        _calculator.validateAsset(trade.tokenOut, oracleRegistry, maxOracleStaleness);
+    }
+
+    function _verifyRemovedAssetsCleared(address[] calldata newTokens) private view {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (!_contains(newTokens, _assets[i])) {
+                uint256 balance = IERC20(_assets[i]).balanceOf(address(this));
+                if (balance != 0) revert RemovedAssetBalanceRemaining(_assets[i], balance);
+            }
+        }
+    }
+
+    function _currentWeightsAndNav() private view returns (uint256[] memory weights, uint256 nav) {
+        return
+            _calculator.portfolioState(address(this), _assets, oracleRegistry, maxOracleStaleness);
+    }
+
+    function _isWithinBands(uint16 deviationBps) private view returns (bool) {
+        return _calculator.isWithinBands(
+            address(this),
+            _assets,
+            _targetWeights(),
+            oracleRegistry,
+            maxOracleStaleness,
+            deviationBps
+        );
+    }
+
+    function _breachedAssets(uint16 deviationBps) private view returns (address[] memory) {
+        return _calculator.breachedAssets(
+            address(this),
+            _assets,
+            _targetWeights(),
+            oracleRegistry,
+            maxOracleStaleness,
+            deviationBps
+        );
+    }
+
+    function _distanceFromTarget(uint256[] memory weights) private view returns (uint256 distance) {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            distance += weights[i].absDiff(targetWeightBps[_assets[i]]);
+        }
+    }
+
+    function _turnoverBps(
+        address[] calldata newTokens,
+        uint256[] calldata newWeights,
+        uint256[] memory currentWeights
+    ) private view returns (uint256) {
+        uint256 sumDiff;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 targetWeight = _weightOf(newTokens, newWeights, _assets[i]);
+            sumDiff += currentWeights[i].absDiff(targetWeight);
+        }
+        for (uint256 i = 0; i < newTokens.length; i++) {
+            if (!_containsCurrentAsset(newTokens[i])) sumDiff += newWeights[i];
+        }
+        return (sumDiff + 1) / 2;
+    }
+
+    function _assetValue(address asset, uint256 rawBalance) private view returns (uint256) {
+        return _calculator.assetValue(asset, rawBalance, oracleRegistry, maxOracleStaleness);
+    }
+
+    function _replacePortfolio(address[] calldata assets_, uint256[] calldata weights_) private {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            targetWeightBps[_assets[i]] = 0;
+        }
+        delete _assets;
+        for (uint256 i = 0; i < assets_.length; i++) {
+            _assets.push(assets_[i]);
+            targetWeightBps[assets_[i]] = uint16(weights_[i]);
+        }
+    }
+
+    function _targetWeights() private view returns (uint256[] memory weights) {
+        weights = new uint256[](_assets.length);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            weights[i] = targetWeightBps[_assets[i]];
+        }
+    }
+
+    function _portfolioHashCurrent() private view returns (bytes32) {
+        return keccak256(abi.encode(_assets, _targetWeights()));
+    }
+
+    function _weightOf(address[] calldata assets_, uint256[] calldata weights_, address asset)
+        private
+        pure
+        returns (uint256)
+    {
+        for (uint256 i = 0; i < assets_.length; i++) {
+            if (assets_[i] == asset) return weights_[i];
+        }
+        return 0;
+    }
+
+    function _contains(address[] calldata assets_, address asset) private pure returns (bool) {
+        for (uint256 i = 0; i < assets_.length; i++) {
+            if (assets_[i] == asset) return true;
+        }
+        return false;
+    }
+
+    function _containsCurrentAsset(address asset) private view returns (bool) {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i] == asset) return true;
+        }
+        return false;
+    }
+
+    function _accrueViaVault() private {
+        IManagedOTFVaultModuleCallbacks(address(this)).moduleAccrueFees();
+    }
+}

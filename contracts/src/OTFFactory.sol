@@ -17,17 +17,27 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_TURNOVER_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
+    uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
     uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;
+    uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
+    uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
+    uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
 
     error NotOwner();
     error ZeroAddress();
     error InvalidImplementation();
+    error InvalidDependency(address dependency);
     error RebalanceCooldownTooShort();
+    error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
     error CreatorFeeTooHigh(uint16 feeBps, uint16 maximum);
     error ProtocolFeeShareTooHigh(uint16 shareBps, uint16 maximum);
     error LimitTooHigh();
     error InvalidLimit();
     error InvalidArrayLength();
+    error Reentrancy();
+    error AssetTransferMismatch(
+        address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
+    );
 
     event VaultCreated(
         address indexed creator,
@@ -39,7 +49,9 @@ contract OTFFactory is IAdapterAllowlist {
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
-    event ProtocolTreasuryTransferStarted(address indexed currentTreasury, address indexed pendingTreasury);
+    event ProtocolTreasuryTransferStarted(
+        address indexed currentTreasury, address indexed pendingTreasury
+    );
     event ProtocolTreasuryTransferred(address indexed oldTreasury, address indexed newTreasury);
 
     address public owner;
@@ -58,6 +70,7 @@ contract OTFFactory is IAdapterAllowlist {
     mapping(address => uint256) public creatorNonce;
     mapping(address => bool) public isVault;
     mapping(address => bool) public isTradeAdapterApproved;
+    bool private _creating;
 
     constructor(
         address vaultImplementation_,
@@ -68,7 +81,9 @@ contract OTFFactory is IAdapterAllowlist {
         address rebalanceExecutor_,
         uint16 protocolFeeShareBps_
     ) {
-        if (vaultImplementation_.code.length == 0) revert InvalidImplementation();
+        if (vaultImplementation_.code.length == 0) {
+            revert InvalidImplementation();
+        }
         if (
             protocolTreasury_ == address(0) || feeCollector_ == address(0)
                 || assetRegistry_ == address(0) || oracleRegistry_ == address(0)
@@ -76,6 +91,10 @@ contract OTFFactory is IAdapterAllowlist {
         ) {
             revert ZeroAddress();
         }
+        if (feeCollector_.code.length == 0) revert InvalidDependency(feeCollector_);
+        if (assetRegistry_.code.length == 0) revert InvalidDependency(assetRegistry_);
+        if (oracleRegistry_.code.length == 0) revert InvalidDependency(oracleRegistry_);
+        if (rebalanceExecutor_.code.length == 0) revert InvalidDependency(rebalanceExecutor_);
         if (protocolFeeShareBps_ > MAX_PROTOCOL_FEE_SHARE_BPS) {
             revert ProtocolFeeShareTooHigh(protocolFeeShareBps_, MAX_PROTOCOL_FEE_SHARE_BPS);
         }
@@ -97,6 +116,13 @@ contract OTFFactory is IAdapterAllowlist {
         _;
     }
 
+    modifier nonReentrantCreation() {
+        if (_creating) revert Reentrancy();
+        _creating = true;
+        _;
+        _creating = false;
+    }
+
     function vaultCount() external view returns (uint256) {
         return _vaults.length;
     }
@@ -109,7 +135,11 @@ contract OTFFactory is IAdapterAllowlist {
         return _vaults;
     }
 
-    function createVault(VaultInitParams calldata params) external returns (address vault) {
+    function createVault(VaultInitParams calldata params)
+        external
+        nonReentrantCreation
+        returns (address vault)
+    {
         _validateFactoryBounds(params);
 
         uint256 nonce = creatorNonce[msg.sender];
@@ -119,24 +149,29 @@ contract OTFFactory is IAdapterAllowlist {
         vault = MinimalClones.cloneDeterministic(vaultImplementation, salt);
 
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
-            params.initialAssets[i].safeTransferFrom(msg.sender, vault, params.initialAmounts[i]);
+            _transferInitialAssetExact(
+                params.initialAssets[i], msg.sender, vault, params.initialAmounts[i]
+            );
         }
 
         isVault[vault] = true;
         creatorOf[vault] = msg.sender;
         _vaults.push(vault);
 
-        ManagedOTFVault(vault).initialize(
-            params,
-            address(this),
-            assetRegistry,
-            oracleRegistry,
-            rebalanceExecutor,
-            feeCollector,
-            protocolFeeShareBps
-        );
+        ManagedOTFVault(vault)
+            .initialize(
+                params,
+                address(this),
+                assetRegistry,
+                oracleRegistry,
+                rebalanceExecutor,
+                feeCollector,
+                protocolFeeShareBps
+            );
 
-        emit VaultCreated(msg.sender, vault, nonce, params.name, params.symbol, params.rebalanceCooldown);
+        emit VaultCreated(
+            msg.sender, vault, nonce, params.name, params.symbol, params.rebalanceCooldown
+        );
     }
 
     function predictVaultAddress(address creator, uint256 nonce, VaultInitParams calldata params)
@@ -145,9 +180,7 @@ contract OTFFactory is IAdapterAllowlist {
         returns (address)
     {
         return MinimalClones.predictDeterministicAddress(
-            vaultImplementation,
-            _salt(creator, nonce, params),
-            address(this)
+            vaultImplementation, _salt(creator, nonce, params), address(this)
         );
     }
 
@@ -185,11 +218,21 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
+        if (params.manager == address(0) || params.feeRecipient == address(0)) {
+            revert ZeroAddress();
+        }
+        if (params.initialShareSupply <= MINIMUM_LIQUIDITY_SHARES) {
+            revert InitialShareSupplyTooSmall(
+                params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
+            );
+        }
         if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) revert RebalanceCooldownTooShort();
         if (params.initialAssets.length != params.initialTargetWeightsBps.length) {
             revert InvalidArrayLength();
         }
-        if (params.initialAssets.length != params.initialAmounts.length) revert InvalidArrayLength();
+        if (params.initialAssets.length != params.initialAmounts.length) {
+            revert InvalidArrayLength();
+        }
         if (params.creatorFeeBpsPerYear > MAX_CREATOR_FEE_BPS_PER_YEAR) {
             revert CreatorFeeTooHigh(params.creatorFeeBpsPerYear, MAX_CREATOR_FEE_BPS_PER_YEAR);
         }
@@ -199,9 +242,42 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.maxTurnoverBps > GLOBAL_MAX_TURNOVER_BPS) revert LimitTooHigh();
         if (params.maxNavLossBps > GLOBAL_MAX_NAV_LOSS_BPS) revert LimitTooHigh();
         if (params.maxWeightDeviationBps > GLOBAL_MAX_WEIGHT_DEVIATION_BPS) revert LimitTooHigh();
+        if (
+            params.challengeWeightDeviationBps <= params.maxWeightDeviationBps
+                || params.challengeWeightDeviationBps > GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS
+        ) {
+            revert InvalidLimit();
+        }
+        if (
+            params.challengeGracePeriod < MIN_CHALLENGE_GRACE_PERIOD
+                || params.challengeGracePeriod > MAX_CHALLENGE_GRACE_PERIOD
+        ) {
+            revert InvalidLimit();
+        }
         if (params.maxSingleAssetWeightBps > 10_000) revert LimitTooHigh();
         if (params.minNonZeroAssetWeightBps == 0 || params.minNonZeroAssetWeightBps > 10_000) {
             revert InvalidLimit();
+        }
+        if (params.maxSingleAssetWeightBps < params.minNonZeroAssetWeightBps) {
+            revert InvalidLimit();
+        }
+    }
+
+    function _transferInitialAssetExact(
+        address asset,
+        address sender,
+        address receiver,
+        uint256 amount
+    ) internal {
+        uint256 senderBefore = IERC20(asset).balanceOf(sender);
+        uint256 receiverBefore = IERC20(asset).balanceOf(receiver);
+        asset.safeTransferFrom(sender, receiver, amount);
+        uint256 senderAfter = IERC20(asset).balanceOf(sender);
+        uint256 receiverAfter = IERC20(asset).balanceOf(receiver);
+        uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
+        uint256 receiverDelta = receiverAfter >= receiverBefore ? receiverAfter - receiverBefore : 0;
+        if (senderDelta != amount || receiverDelta != amount) {
+            revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
         }
     }
 

@@ -20,7 +20,7 @@ abstract contract ERC20Base is IERC20Metadata {
 
     bool private _erc20Initialized;
 
-    function transfer(address to, uint256 value) external returns (bool) {
+    function transfer(address to, uint256 value) external virtual returns (bool) {
         _transfer(msg.sender, to, value);
         return true;
     }
@@ -31,13 +31,15 @@ abstract contract ERC20Base is IERC20Metadata {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 value) external returns (bool) {
+    function transferFrom(address from, address to, uint256 value) external virtual returns (bool) {
         _spendAllowance(from, msg.sender, value);
         _transfer(from, to, value);
         return true;
     }
 
-    function _initializeERC20(string memory name_, string memory symbol_, uint8 decimals_) internal {
+    function _initializeERC20(string memory name_, string memory symbol_, uint8 decimals_)
+        internal
+    {
         if (_erc20Initialized) revert ERC20AlreadyInitialized();
         name = name_;
         symbol = symbol_;
@@ -93,4 +95,3 @@ abstract contract ERC20Base is IERC20Metadata {
         }
     }
 }
-

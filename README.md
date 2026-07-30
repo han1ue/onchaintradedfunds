@@ -6,6 +6,10 @@ Onchain Traded Funds, abbreviated OTF, is an experimental MVP for permissionless
 
 This code is not audited, not production ready, and must not be deployed to mainnet.
 
+The normative contract invariants and deployment gates are defined in
+[`docs/PROTOCOL_SECURITY_SPEC.md`](./docs/PROTOCOL_SECURITY_SPEC.md). The threat model and known
+limitations are documented in [`SECURITY.md`](./SECURITY.md).
+
 ## Current Scope
 
 This repository currently implements the first MVP slice:
@@ -19,7 +23,7 @@ This repository currently implements the first MVP slice:
 - Onchain thesis history.
 - Oracle-valued NAV and weight checks.
 - Approved-adapter rebalance execution.
-- Foundry tests for cooldown boundary behavior.
+- Comprehensive Foundry unit, fuzz, and stateful invariant tests.
 - Next.js app with RainbowKit, wagmi, viem, and TanStack Query.
 - A DeFi-style vault dashboard that reads directly from vault contracts.
 
@@ -76,7 +80,7 @@ flowchart LR
 - Deploys deterministic minimal-proxy vault clones.
 - Rejects invalid implementations.
 - Stores vault list and creator mapping.
-- Stores protocol treasury and protocol share of creator fees.
+- Stores protocol treasury and protocol share of manager fees.
 - Stores globally approved trade adapters.
 - Rejects any vault cooldown below seven days.
 - Does not custody vault assets.
@@ -89,6 +93,19 @@ flowchart LR
 - Manager-controlled rebalance engine with immutable safety bounds.
 - Onchain metadata and thesis history source.
 - No arbitrary manager call surface.
+- Delegates strategy-only calls to a fixed `ManagedOTFVaultStrategy` module.
+
+`ManagedOTFVaultStrategy`
+
+- Separates strategy and constrained trade logic from custody and share accounting.
+- Is created with each vault implementation and cannot be replaced after deployment.
+- Executes with the vault storage through `delegatecall`, preserving manager and executor identity.
+- Cannot expose a generic call path or select arbitrary trade recipients.
+
+`PortfolioCalculator`
+
+- Statelessly normalizes oracle values and evaluates portfolio weights and challenge bands.
+- Cannot transfer tokens, approve spenders, or mutate vault state.
 
 `RebalanceExecutor`
 
@@ -109,9 +126,45 @@ flowchart LR
 
 `FeeCollector`
 
-- Receives the protocol portion of creator-selected management fee shares.
+- Receives the protocol portion of manager-selected fee shares.
+- Allows only the configured treasury to claim those shares.
+- Uses a two-step treasury transfer.
 
-## Rebalance Cooldown
+### Basket Share Safety
+
+OTFs are multi-asset basket vaults, not ERC-4626 implementations. Users mint an explicit number of
+shares by supplying every tracked asset proportionally. Required deposits round up and redemption
+outputs round down.
+
+Each OTF permanently locks `1_000_000` share wei inside itself at initialization. This prevents
+total supply from reaching zero and keeps minting operational after every circulating share has
+been redeemed. Initial share supply must be greater than the locked amount.
+
+Factory seeding, basket minting, redemption, and rebalance execution verify exact token balance
+deltas for both sender and receiver. Fee-on-transfer, sender-taxed, and unexpectedly rebasing
+assets therefore revert atomically. Assets with nonstandard transfer accounting must not be
+approved.
+
+Direct donations of tracked assets become backing for every share. A donation can change NAV,
+weights, and required mint amounts, but `maxAmountsIn` and `minAmountsOut` protect users from stale
+previews. Prefunding a predicted vault address is treated as additional backing and cannot block
+factory creation.
+
+### Draft ERC-7621 Surface
+
+The basket implements the current draft ERC-7621 function surface, ERC-165 detection, ERC-173
+ownership, and the exact standard `Contributed`, `Withdrawn`, and `Rebalanced` events.
+`Rebalanced(newTokens, newWeights)` means that target composition changed. It does not imply that
+trades ran or reserves reached the target.
+
+OTF emits richer strategic, maintenance-trade, challenge, and fee-state events alongside the
+standard events. Target proposal, trade execution, and completion are separate transitions.
+
+The implementation does not claim unconditional ERC-7621 compliance. It intentionally accepts
+only proportional basket contributions and rejects ownership renunciation. Constituent removal is
+staged: a constituent must have zero reserve before leaving the standardized list.
+
+## Strategy-Change Cooldown
 
 The rolling 30-day rebalance counter has been removed. There is no `maxRebalancesPer30Days`, timestamp circular buffer for monthly limits, `rebalancesInLast30Days()`, or `remainingRebalancesInWindow()`.
 
@@ -131,13 +184,14 @@ if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) {
 }
 ```
 
-`lastRebalanceTimestamp` is initialized to vault creation time. That means the first rebalance can happen only after:
+`lastRebalanceTimestamp` is initialized to vault creation time. The first strategic target
+proposal can happen only after:
 
 ```text
 vault creation timestamp + rebalanceCooldown
 ```
 
-Before every rebalance:
+Before every target proposal:
 
 ```solidity
 uint256 nextAllowedTime = uint256(lastRebalanceTimestamp) + rebalanceCooldown;
@@ -147,25 +201,8 @@ if (block.timestamp < nextAllowedTime) {
 }
 ```
 
-The timestamp is updated only after all rebalance work succeeds:
-
-1. Fee accrual.
-2. Cooldown check.
-3. Target asset and target weight validation.
-4. Oracle freshness checks.
-5. NAV before calculation.
-6. Turnover calculation.
-7. Approved-adapter trade execution.
-8. Temporary approval clearing.
-9. Removed asset balance checks.
-10. NAV after calculation.
-11. Maximum NAV loss check.
-12. Final target-weight deviation check.
-13. Portfolio storage update.
-14. Rebalance record write.
-15. `lastRebalanceTimestamp` update.
-
-Failed or reverted rebalances do not reset the cooldown because the whole transaction reverts.
+The timestamp updates when a valid strategic target is locked. Failed proposals do not reset it.
+Partial maintenance trades and completion do not reset it.
 
 The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
 
@@ -175,6 +212,9 @@ The following operations do not count as portfolio rebalances and do not update 
 - Fee-recipient transfer start or acceptance.
 - Proportional minting.
 - Proportional redemption.
+- Partial maintenance trades.
+- Challenge creation, synchronization, and resolution.
+- Strategic completion.
 
 The manager cannot shorten the cooldown after deployment. The MVP intentionally provides no setter for `rebalanceCooldown`.
 
@@ -242,20 +282,27 @@ Redemption:
 - Does not use oracles.
 - Remains available when oracle-dependent actions fail.
 
-## Rebalancing
+## Strategic Rebalancing
 
-Managers rebalance through one atomic function:
+Only the manager changes constituents and targets through the draft ERC-7621 function:
 
 ```solidity
 function rebalance(
-    address[] calldata targetAssets,
-    uint16[] calldata targetWeightsBps,
-    TradeInstruction[] calldata trades,
-    string calldata rationale
+    address[] calldata newTokens,
+    uint256[] calldata newWeights
 ) external;
 ```
 
-The manager supplies the target portfolio, approved adapter trades, minimum outputs, and an onchain rationale. The vault does not expose arbitrary calls.
+This call only updates and locks the strategic target. It emits the standard
+`Rebalanced(newTokens, newWeights)` plus `TargetWeightsProposed`. A new target cannot be proposed
+while the old portfolio is outside completion bands, during a challenge, or while an earlier
+strategic target remains unfinished.
+
+The manager or an authorized executor performs one or more partial batches through:
+
+```solidity
+function executeRebalanceTrades(TradeInstruction[] calldata trades) external;
+```
 
 Each trade is typed:
 
@@ -270,7 +317,15 @@ struct TradeInstruction {
 }
 ```
 
-The vault grants exact temporary approvals to `RebalanceExecutor`, and clears them after each trade.
+The vault grants exact temporary approvals to `RebalanceExecutor`, clears them after each trade,
+and receives output directly. There is no generic target/calldata execution function.
+
+Every partial batch must use current constituents and approved adapters, satisfy explicit and
+oracle-valued slippage, stay within turnover and NAV-loss bounds, avoid worsening any constituent,
+and strictly reduce total distance from the active target.
+
+Anyone may call `completeStrategicRebalance()` after all constituents enter the narrower completion
+bands. Only then is `StrategicRebalanceCompleted` emitted and escrowed manager fees released.
 
 Retained rebalance protections:
 
@@ -278,14 +333,35 @@ Retained rebalance protections:
 - Approved trading adapters only.
 - Maximum portfolio turnover.
 - Maximum NAV loss.
-- Maximum deviation from target weights.
+- Narrow completion bands and wider challenge bands.
 - Maximum number of assets.
 - Maximum individual-asset weight.
 - Minimum nonzero asset weight.
 - Fresh onchain prices.
-- Atomic execution.
+- Atomicity of each partial trade transaction.
 - No arbitrary manager calls.
 - Exact temporary approvals cleared after execution.
+
+### Strategy And Execution Authority
+
+The manager alone controls constituents, targets, bands, fee rate, ownership, and the executor
+allowlist. The manager can trade directly and may authorize multiple executor addresses.
+
+Executors can only call the constrained trade-batch function. They cannot change strategy,
+permissions, fees, ownership, or adapters and cannot direct assets to arbitrary recipients.
+All executor authorizations are cleared on manager transfer. Executors receive no bounty or
+reimbursement from vault assets.
+
+### Weight Bands And Challenges
+
+Each target has a wider challenge band and a narrower completion band. Anyone may call
+`flagOutOfBand()`, but fresh approved prices must prove a real challenge-band breach.
+
+A valid challenge locks target changes, starts the configured grace period, and escrows newly
+accrued manager fees. Natural price movement and constrained trades can both restore the basket.
+If the deadline is missed, escrowed manager fees are burned and future manager-fee accrual is
+suspended. Deposits and proportional withdrawals remain enabled. Restoration resumes only future
+fees; forfeited and suspended-period fees are never recovered.
 
 ## NAV And Weight Math
 
@@ -330,7 +406,8 @@ The implementation evaluates the union of current and target assets. Removed ass
 
 ## Management Fees
 
-The only annual vault fee is the creator-selected management fee. The protocol does not add a separate annual fee.
+The only annual vault fee is the manager-selected fee, bounded by the protocol maximum. The
+protocol does not add a separate annual fee.
 
 Fee accrual is lazy and share based. For elapsed time:
 
@@ -341,10 +418,18 @@ fee shares = supply * r / (1 - r)
 
 New fee shares are split between:
 
-- Fee recipient.
+- Manager fee recipient.
 - Protocol fee collector.
 
-The fee rate cannot be increased after deployment because there is no setter in the MVP.
+Manager shares follow the fee state:
+
+- `Accruing`: manager shares are delivered normally.
+- `Escrowed`: manager shares are minted to vault escrow during a strategic rebalance or challenge.
+- `Suspended`: no new manager fee accrues after a missed challenge deadline.
+
+Timely restoration releases escrow. Missing the deadline burns escrow permanently. Restoration
+after the deadline starts a new accrual interval without recovering missed fees. Fee-rate changes
+are allowed only while strategy is unlocked and the portfolio is inside completion bands.
 
 ## Onchain Thesis
 
@@ -381,12 +466,13 @@ The current dashboard shows:
 - Vault name and symbol.
 - Vault address state.
 - Wallet connection state.
-- Rebalance readiness.
-- Rebalance cooldown.
-- Last portfolio change.
-- Next portfolio change available.
+- Target-proposal readiness and cooldown.
+- Last and next strategic target proposal times.
+- Completion-band, strategic-rebalance, and challenge status.
+- Fee state and escrowed manager shares.
+- Authorized executor count.
 - Share supply.
-- Creator fee.
+- Manager fee.
 - Protocol share of fee shares.
 - Target asset allocation.
 - Thesis text.
@@ -418,10 +504,11 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
 NEXT_PUBLIC_RH_RPC_URL=
 NEXT_PUBLIC_RH_TESTNET_RPC_URL=
 NEXT_PUBLIC_FACTORY_ADDRESS=
-NEXT_PUBLIC_EXAMPLE_VAULT_ADDRESS=
 ```
 
 These are public frontend values. Do not put private keys in any `NEXT_PUBLIC_*` variable.
+The frontend reads `allVaults()` from `NEXT_PUBLIC_FACTORY_ADDRESS`; individual OTF
+addresses are discovered from the factory and do not need separate environment variables.
 
 No production Robinhood Chain addresses are hardcoded. Any production address must be verified against official Robinhood Chain documentation before use.
 
@@ -454,18 +541,26 @@ cd app
 corepack pnpm dev --hostname 127.0.0.1 --port 3000
 ```
 
-Foundry commands, once Foundry is installed:
+Foundry commands:
 
 ```bash
 cd contracts
 forge fmt --check
 forge build
-forge test -vvv
+forge test
+forge test --match-contract ProtocolFuzzTest -vv
+forge test --match-contract ProtocolInvariantTest -vv
+forge coverage --report summary
+corepack pnpm contracts:security
 ```
 
 ## Tests
 
-The cooldown test suite covers:
+The Solidity suite contains 118 unit, fuzz-property, and invariant tests: 98 deterministic tests,
+12 fuzz properties, and 8 stateful invariants. Default settings in `contracts/foundry.toml` run
+every fuzz property 1,000 times and each invariant through 128 sequences of 64 generated actions.
+
+Deterministic coverage includes:
 
 - First rebalance before seven days reverts.
 - First rebalance exactly seven days after creation succeeds.
@@ -477,12 +572,29 @@ The cooldown test suite covers:
 - The manager cannot shorten the cooldown.
 - A vault may be created with a cooldown longer than seven days.
 - The factory rejects a cooldown shorter than seven days.
+- Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
+  atomic creation rollback.
+- Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,
+  role transfers, and thesis history.
+- Oracle price validity, timestamps, round completeness, staleness, and missing feeds.
+- Asset, weight, count, turnover, NAV-loss, target-deviation, adapter, trade, approval-clearing,
+  and atomic rollback protections.
+- Draft ERC-7621 views, previews, actions, interface detection, ownership, and exact events.
+- Challenge breaches, natural and traded recovery, deadline forfeiture, suspended intervals,
+  fee resumption, and deposits and withdrawals during challenge states.
+- Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
+  trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
+- Canonical vault/module storage, immutable module identity, runtime code-hash integrity,
+  direct-module-call rejection, and callback isolation.
 
-Additional test coverage should be added before later milestones:
+Fuzz properties cover arbitrary valid and invalid cooldowns, target weights, basket share
+amounts, fee rates and elapsed time, oracle prices, share transfers, and manager addresses.
 
-- Fuzz tests for asset amounts, share amounts, weights, fees, turnover, and decimals.
-- Invariant tests for proportional claims, redemption bounds, target-weight totals, and manager non-custody.
-- More rebalance failure-mode tests around stale prices, adapter slippage, approval clearing, and atomic rollback.
+The stateful handler mixes basket mints, redemptions, share transfers, fee accrual, thesis
+amendments, valid rebalances, and intentionally invalid rebalances. Invariants continuously
+assert share-supply accounting, valid mandate weights, positive backing and NAV, cleared
+executor approvals and balances, cooldown/history consistency, append-only administrative
+history, and immutable factory provenance.
 
 ## Known Limitations
 
@@ -491,9 +603,11 @@ Additional test coverage should be added before later milestones:
 - No payment-token launch router is implemented yet.
 - The UI manager actions are visual states only in this slice.
 - The generated ABI package is currently a hand-maintained MVP subset.
-- Foundry is expected for real Solidity testing, but is not installed in this local environment.
 - The contracts are intentionally compact for MVP exploration and have not been gas optimized.
+- ERC-7621 remains a draft and its interface may change.
 
 ## Next Safest Milestone
 
-The next safest milestone is to install Foundry, run the full Foundry test suite, add invariant tests, then implement direct-basket vault creation UI against a local Anvil deployment.
+The next safest milestone is an independent smart-contract audit, followed by a testnet
+deployment rehearsal with verified Robinhood Chain addresses, live oracle feeds, and an
+approved adapter integration.

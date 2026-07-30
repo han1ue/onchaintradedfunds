@@ -16,10 +16,12 @@ struct VaultInitParams {
     uint16 maxTurnoverBps;
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
+    uint16 challengeWeightDeviationBps;
     uint16 maxSingleAssetWeightBps;
     uint16 minNonZeroAssetWeightBps;
     uint8 maxAssetCount;
     uint32 maxOracleStaleness;
+    uint32 challengeGracePeriod;
 }
 
 struct TradeInstruction {
@@ -48,4 +50,3 @@ struct RebalanceRecord {
     uint16 turnoverBps;
     uint32 thesisVersion;
 }
-

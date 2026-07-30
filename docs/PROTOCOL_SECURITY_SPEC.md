@@ -1,0 +1,359 @@
+# OTF Protocol Security Specification
+
+Status: MVP security baseline
+
+This document defines the required security properties of the Onchain Traded Funds contracts.
+`MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative requirements.
+
+The Solidity contracts and automated checks are authoritative when this document and deployed
+bytecode differ. A deployment MUST NOT claim compliance with this specification unless every
+required verification gate passes for the exact commit and compiler configuration being deployed.
+
+## 1. Security objectives
+
+An OTF MUST:
+
+1. Hold only its tracked constituent portfolio as accounting backing.
+2. Issue and redeem shares proportionally against that portfolio.
+3. Separate strategy authority from constrained trade execution authority.
+4. Prevent managers and executors from making arbitrary calls or transferring portfolio assets to
+   arbitrary recipients.
+5. Fail closed when required oracle data is missing, invalid, incomplete, future-dated, or stale.
+6. Keep strategic target changes, partial trade execution, and rebalance completion as distinct
+   state transitions.
+7. Preserve deposits and proportional withdrawals during challenge and fee-suspension states.
+8. Make the configured strategy module immutable for the lifetime of the vault implementation.
+9. Keep the vault and strategy storage layouts identical by construction.
+
+## 2. Contract architecture
+
+### `ManagedOTFVault`
+
+The vault is the custody and share-accounting boundary. It:
+
+- Holds constituent tokens.
+- Stores all mutable OTF state.
+- Issues the ERC-20 OTF share.
+- Handles proportional contribution and withdrawal.
+- Accrues protocol and manager fee shares.
+- Exposes ERC-7621-compatible views, actions, and events.
+- Routes only an explicit set of strategy selectors to the fixed strategy module.
+
+The vault MUST NOT expose a fallback that delegates arbitrary selectors.
+
+### `ManagedOTFVaultStrategy`
+
+The strategy module contains:
+
+- Manager fee-rate changes.
+- Executor authorization changes.
+- Weight-band changes.
+- Thesis amendments.
+- Strategic target proposals.
+- Constrained partial trade execution.
+- Rebalance completion.
+- Challenge creation, resolution, and deadline synchronization.
+
+The module executes using `delegatecall`, so it operates on the calling vault's storage and
+preserves the original external caller.
+
+The module MUST reject direct calls made against the module contract itself.
+
+### `ManagedOTFVaultStorage`
+
+This abstract contract is the sole canonical persistent-storage definition for both the vault and
+strategy module.
+
+- Both contracts MUST inherit it.
+- Derived contracts MUST NOT declare additional non-immutable state.
+- Existing fields MUST NOT be reordered, removed, or have their types changed.
+- New persistent fields MUST be appended to this base only.
+- Any storage-layout change requires a new security review and complete test run.
+
+### `PortfolioCalculator`
+
+The calculator is stateless. It MAY read token balances, token decimals, registries, and oracle
+feeds. It MUST NOT transfer assets, approve spenders, or mutate vault state.
+
+### `RebalanceExecutor`
+
+The executor is a settlement boundary called only by factory-recognized OTFs. It:
+
+- Verifies that the adapter is approved.
+- Pulls the exact approved input amount.
+- Calls the typed adapter swap function.
+- Measures output by balance delta.
+- Returns output to `msg.sender`, which MUST be the OTF.
+
+It MUST NOT accept a caller-selected output recipient.
+
+## 3. Delegatecall requirements
+
+The strategy delegation boundary MUST satisfy all of the following:
+
+1. The module is deployed in the vault implementation constructor.
+2. The module address is stored as an immutable.
+3. There is no setter, upgrade function, beacon, or governance replacement path.
+4. The module's runtime code hash is captured as an immutable at construction.
+5. Every delegated call verifies the current module code hash against the expected code hash.
+6. The delegation target is never read from calldata or manager-controlled storage.
+7. Only explicit vault wrapper functions may invoke delegation.
+8. Revert data and return data are forwarded unchanged.
+9. The module and vault use the same reentrancy slot from the canonical storage base.
+10. Module-to-vault callbacks MUST require `msg.sender == address(this)`.
+
+The following selectors are allowed to delegate:
+
+| Selector | Required authority |
+| --- | --- |
+| `appendThesisAmendment(string)` | Manager |
+| `setManagerFeeBps(uint16)` | Manager |
+| `setExecutor(address,bool)` | Manager |
+| `setWeightBands(uint16,uint16)` | Manager |
+| `rebalance(address[],uint256[])` | Manager |
+| `executeRebalanceTrades(TradeInstruction[])` | Manager or authorized executor |
+| `completeStrategicRebalance()` | Permissionless |
+| `flagOutOfBand()` | Permissionless |
+| `resolveOutOfBandChallenge()` | Permissionless |
+| `syncChallengeDeadline()` | Permissionless |
+
+No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent selector is allowed.
+
+## 4. Authority model
+
+### Protocol owner
+
+The protocol owner MAY:
+
+- Approve or remove supported assets.
+- Configure price-feed mappings.
+- Approve or remove trade adapters.
+- Transfer registry or factory ownership using their defined controls.
+
+The protocol owner MUST NOT:
+
+- Transfer assets from an OTF.
+- bypass OTF share-holder redemption rules.
+- shorten an existing OTF cooldown.
+- replace an OTF's strategy module.
+
+### Manager
+
+Each OTF has exactly one manager. The manager MAY:
+
+- Select constituents, target weights, and allowed weight bands.
+- Change the manager fee within the protocol maximum.
+- Add and remove authorized executors.
+- Execute constrained trades directly.
+- Amend the thesis.
+- Start manager and fee-recipient transfers.
+
+The manager MUST NOT:
+
+- Make arbitrary external calls from the OTF.
+- Transfer constituent assets to an arbitrary recipient.
+- approve arbitrary spenders.
+- use unsupported assets or adapters.
+- bypass oracle, slippage, turnover, NAV-loss, exposure, or target-improvement checks.
+- shorten the immutable target-change cooldown.
+
+The manager remains accountable for challenge, escrow, forfeiture, and fee suspension regardless
+of whether the manager or an executor submitted a trade.
+
+### Authorized executor
+
+The manager MAY authorize multiple executors, subject to the protocol cap.
+
+An executor MAY only call `executeRebalanceTrades` and permissionless functions available to any
+address. It MUST NOT:
+
+- Change constituents, weights, bands, fees, thesis, manager, or fee recipient.
+- Add or remove executors.
+- choose a settlement recipient.
+- withdraw OTF assets.
+- make arbitrary calls or approvals.
+- receive a bounty or reimbursement from OTF assets.
+
+All executor authorizations MUST be cleared whenever the manager changes through either ownership
+transfer path.
+
+### Share holder
+
+A share holder MAY:
+
+- Contribute the exact proportional live basket.
+- Transfer OTF shares.
+- Withdraw the proportional live basket.
+
+Contributions and withdrawals MUST remain enabled during active or overdue challenges.
+
+## 5. Portfolio and trade invariants
+
+For every successful constrained trade batch:
+
+1. Every `tokenIn` and `tokenOut` is a current constituent.
+2. Every asset remains approved by the asset registry.
+3. Every adapter is approved by the factory.
+4. The input amount is nonzero and input differs from output.
+5. Required oracle prices are valid and fresh.
+6. Batch oracle-valued turnover does not exceed `maxTurnoverBps`.
+7. Explicit adapter output is at least `minAmountOut`.
+8. Oracle-valued output loss does not exceed `maxNavLossBps`.
+9. Total post-trade NAV loss does not exceed `maxNavLossBps`.
+10. Total portfolio distance from target strictly decreases.
+11. No individual constituent moves farther from its target.
+12. A constituent above the single-asset cap cannot increase further.
+13. Output returns to the OTF.
+14. Temporary input approval is exact and is cleared after execution.
+15. The executor and adapter retain no unintended portfolio balance.
+
+If any final check fails, the complete transaction MUST revert, including token transfers and
+approvals.
+
+Multiple partial transactions MAY be used to reach one target. Each transaction MUST independently
+satisfy every invariant above.
+
+## 6. Strategy lifecycle
+
+### Target proposal
+
+`rebalance(newTokens, newWeights)` updates the target only. It MUST NOT imply that trades ran or
+that reserves match the target.
+
+A proposal requires:
+
+- Manager authority.
+- The configured cooldown to have elapsed.
+- No active challenge.
+- No unfinished strategic rebalance.
+- The previous target's completion bands to be satisfied.
+- Valid portfolio shape and approved assets.
+- Removed constituents to have zero reserve.
+- Proposed turnover within the configured limit.
+
+It emits both the standard `Rebalanced` event and the richer `TargetWeightsProposed` event.
+
+### Trade execution
+
+The manager or an authorized executor MAY submit multiple constrained partial trade batches toward
+the current target.
+
+### Completion
+
+`StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
+inside every completion band. Completion releases timely escrowed manager fees.
+
+## 7. Challenge and fee accountability
+
+Anyone MAY flag a challenge only when fresh oracle-valued weights prove that at least one
+constituent is outside its challenge band.
+
+During a challenge:
+
+- Target changes are locked.
+- Newly accrued manager shares enter vault escrow.
+- Corrective constrained trades remain available.
+- Natural price recovery MAY restore compliance.
+- Contributions and withdrawals remain available.
+
+If the grace deadline is observed after expiry:
+
+- Escrowed manager shares are burned.
+- Future manager-fee accrual is suspended.
+- Suspended-period fees cannot be recovered retroactively.
+
+Restoration to completion bands resumes only future manager-fee accrual.
+
+Executors receive no protocol-funded compensation. A manager MAY compensate an executor outside
+the OTF from the manager's own assets or fee revenue.
+
+## 8. Share-accounting invariants
+
+1. Every operational state-changing entry point MUST revert before successful initialization.
+2. Initialization MUST be non-reentrant.
+3. Constituent-token callbacks during factory prefunding MUST NOT mint shares, change roles, or
+   mutate strategy state at the clone's predicted address.
+4. Initial supply MUST exceed the permanently locked minimum-liquidity shares.
+5. Total supply MUST never return to zero.
+6. Contributions MUST be proportional to current reserves and supply.
+7. Contribution requirements round up.
+8. Withdrawal outputs round down.
+9. User-specified maximum inputs and minimum outputs MUST be enforced.
+10. Sender and receiver balance deltas MUST equal expected amounts.
+11. Fee-on-transfer, sender-taxed, and incompatible rebasing behavior MUST revert.
+12. Tracked-asset donations become backing for all shares and MUST NOT create privileged claims.
+13. Unsupported-token donations are excluded from accounting and cannot be rescued by the manager.
+
+## 9. Oracle requirements
+
+Every security-sensitive valuation MUST reject:
+
+- Missing feeds.
+- Nonpositive answers.
+- Zero or future timestamps.
+- Incomplete rounds.
+- Answers older than `maxOracleStaleness`.
+- Unsupported token or feed decimals.
+
+The frontend MUST NOT substitute cached or offchain prices for onchain enforcement.
+
+## 10. ERC-7621 status
+
+The OTF exposes the current draft ERC-7621 surface and exact standard events:
+
+- `Contributed`
+- `Withdrawn`
+- `Rebalanced`
+
+Custom events supplement rather than replace standard events.
+
+The implementation intentionally restricts contributions to the proportional live basket, rejects
+ownership renunciation, and requires a constituent reserve to reach zero before removal. Therefore
+the project MUST document these deviations and MUST NOT claim unconditional ERC-7621 compliance.
+
+## 11. Required verification gates
+
+Before deployment, the exact commit MUST pass:
+
+```bash
+corepack pnpm contracts:security
+cd contracts
+forge fmt --check
+forge build
+forge test
+forge test --match-contract ProtocolFuzzTest -vv
+forge test --match-contract ProtocolInvariantTest -vv
+```
+
+`contracts:security` MUST verify:
+
+- Vault storage equals the canonical storage-base layout.
+- Strategy storage equals the canonical storage-base layout.
+- Every production runtime is at most 24,576 bytes.
+- Every production initcode is at most 49,152 bytes.
+- The vault ABI has no generic `execute`.
+- The strategy ABI has no initializer or upgrade surface.
+- Module identity and code-hash views remain exposed.
+
+The full suite MUST include deterministic, fuzz, invariant, malicious-token, executor-boundary,
+delegatecall-context, oracle, challenge, fee-state, and ERC-7621 event tests.
+
+## 12. Deployment and change control
+
+Every deployment record SHOULD include:
+
+- Git commit.
+- Solidity compiler version.
+- Optimizer and IR settings.
+- Chain ID.
+- Factory, implementation, strategy module, calculator, executor, registry, and treasury addresses.
+- Runtime code hashes.
+- Test and security-command results.
+- Independent audit report references.
+
+Any change to storage, delegation, authorization, token movement, fee math, oracle validation,
+adapter execution, or challenge logic requires a fresh security review.
+
+Passing this specification and its automated checks reduces known implementation risk. It does not
+replace an independent professional audit, deployment review, monitoring, incident procedures, or
+economic analysis.

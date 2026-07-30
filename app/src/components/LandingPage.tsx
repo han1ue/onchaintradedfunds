@@ -50,16 +50,17 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
             <h1>Onchain Traded Funds</h1>
             <p className="landingThesis">The ETF idea,<br />rebuilt onchain.</p>
             <p className="landingIntro">
-              One vault holds a diversified portfolio. Its assets, weights, valuation, and every
+              One OTF holds a diversified portfolio. Its assets, weights, valuation, and every
               successful rebalance advance together as verifiable onchain state.
             </p>
+            <p className="landingStatus">Robinhood Testnet preview · experimental, unaudited software</p>
             <div className="landingActions">
               <button className="landingPrimary" type="button" onClick={onEnter}>
-                Explore vaults
+                Explore OTFs
                 <ArrowRight size={15} />
               </button>
               <button className="landingSecondary" type="button" onClick={onCreate}>
-                Create a vault
+                Create an OTF
               </button>
             </div>
             <div className="landingProof">
@@ -83,7 +84,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
             <Boxes size={22} />
             <h2>Known assets.<br />One portfolio.</h2>
             <p>
-              NVDA, MSFT, and GOOGL can sit behind one vault share. Each constituent keeps its
+              TSLA, AMZN, and AMD can sit behind one OTF share. Each constituent keeps its
               identity while its allocation remains explicit and publicly inspectable.
             </p>
             <div className="landingFactList">

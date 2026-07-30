@@ -1,159 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "./ERC20Base.sol";
+import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
-import { IOracleRegistry } from "./interfaces/IOracleRegistry.sol";
-import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
-import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
-import { RebalanceExecutor } from "./RebalanceExecutor.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { PortfolioCalculator } from "./PortfolioCalculator.sol";
+import { ManagedOTFVaultStrategy } from "./ManagedOTFVaultStrategy.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-import { RebalanceRecord, ThesisVersion, TradeInstruction, VaultInitParams } from "./VaultTypes.sol";
+import {
+    RebalanceRecord,
+    ThesisVersion,
+    TradeInstruction,
+    VaultInitParams
+} from "./VaultTypes.sol";
 
-contract ManagedOTFVault is ERC20Base {
+contract ManagedOTFVault is ManagedOTFVaultStorage {
     using MathEx for uint256;
     using SafeTransferLib for address;
 
-    uint256 public constant BPS = 10_000;
-    uint256 public constant YEAR = 365 days;
-    uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
-    uint256 public constant MAX_THESIS_BYTES = 2_048;
-    uint256 public constant MAX_RATIONALE_BYTES = 1_024;
-    uint256 public constant MAX_TRADE_COUNT = 20;
-    uint256 private constant RECENT_REBALANCE_CAP = 16;
-
-    error AlreadyInitialized();
-    error UnauthorizedFactory();
-    error RebalanceCooldownTooShort();
-    error RebalanceCooldownActive(uint256 nextAllowedTime);
-    error NotManager();
-    error NotPendingManager();
-    error NotPendingFeeRecipient();
-    error ZeroAddress();
-    error InvalidArrayLength();
-    error EmptyPortfolio();
-    error TooManyAssets(uint256 count, uint256 maximum);
-    error InitialShareSupplyZero();
-    error InitialAmountZero(address asset);
-    error InitialBalanceMismatch(address asset, uint256 expected, uint256 actual);
-    error AssetNotContract(address asset);
-    error UnapprovedAsset(address asset);
-    error DuplicateAsset(address asset);
-    error InvalidWeightSum(uint256 sum);
-    error AssetWeightTooHigh(address asset, uint16 weightBps, uint16 maximum);
-    error AssetWeightTooLow(address asset, uint16 weightBps, uint16 minimum);
-    error ThesisTooLong(uint256 length);
-    error RationaleTooLong(uint256 length);
-    error Reentrancy();
-    error RebalanceInProgress();
-    error ZeroShares();
-    error AmountTooHigh(address asset, uint256 required, uint256 maximum);
-    error AmountTooLow(address asset, uint256 actual, uint256 minimum);
-    error OracleFeedMissing(address asset);
-    error InvalidOraclePrice(address asset, int256 answer);
-    error InvalidOracleTimestamp(address asset, uint256 updatedAt);
-    error IncompleteOracleRound(address asset, uint80 roundId, uint80 answeredInRound);
-    error StaleOraclePrice(address asset, uint256 updatedAt, uint256 maxStaleness);
-    error TokenDecimalsUnavailable(address token);
-    error UnsupportedDecimals(address token, uint8 decimals_);
-    error ZeroNav();
-    error TurnoverTooHigh(uint16 turnoverBps, uint16 maximum);
-    error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
-    error TargetDeviationTooHigh(address asset, uint256 actualBps, uint256 targetBps, uint16 maximum);
-    error RemovedAssetBalanceRemaining(address asset, uint256 balance);
-    error TooManyTrades(uint256 count, uint256 maximum);
-    error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
-    error TradeAssetNotTracked(address token);
-    error TradeOutputNotInTarget(address token);
-    error UnapprovedAdapter(address adapter);
-    error InvalidRecordIndex(uint256 index);
-    error FeeElapsedTooLong();
-
-    event VaultInitialized(
-        address indexed factory,
-        address indexed manager,
-        address indexed feeRecipient,
-        uint32 rebalanceCooldown
-    );
-    event FeesAccrued(uint256 feeShares, uint256 creatorShares, uint256 protocolShares);
-    event ThesisAmended(
-        uint256 indexed version,
-        uint64 timestamp,
-        address indexed author,
-        bytes32 indexed portfolioHash,
-        string text
-    );
-    event ManagerTransferStarted(address indexed currentManager, address indexed pendingManager);
-    event ManagerTransferred(address indexed oldManager, address indexed newManager);
-    event FeeRecipientTransferStarted(address indexed currentRecipient, address indexed pendingRecipient);
-    event FeeRecipientTransferred(address indexed oldRecipient, address indexed newRecipient);
-    event Rebalanced(
-        uint256 indexed rebalanceId,
-        address indexed manager,
-        RebalanceRecord record,
-        address[] targetAssets,
-        uint16[] targetWeightsBps,
-        string rationale
-    );
-
-    bool private _initialized;
-    uint256 private _entered;
-    bool private _rebalancing;
-
-    struct PendingRebalance {
-        bytes32 oldPortfolioHash;
-        bytes32 newPortfolioHash;
-        uint256 navBefore;
-        uint256 navAfter;
-        uint16 turnoverBps;
-    }
-
-    address public factory;
-    address public manager;
-    address public pendingManager;
-    address public feeRecipient;
-    address public pendingFeeRecipient;
-    address public feeCollector;
-    address public assetRegistry;
-    address public oracleRegistry;
-    address public rebalanceExecutor;
-
-    uint16 public creatorFeeBpsPerYear;
-    uint16 public protocolFeeShareBps;
-    uint16 public maxTurnoverBps;
-    uint16 public maxNavLossBps;
-    uint16 public maxWeightDeviationBps;
-    uint16 public maxSingleAssetWeightBps;
-    uint16 public minNonZeroAssetWeightBps;
-    uint8 public maxAssetCount;
-    uint32 public maxOracleStaleness;
-    uint32 public rebalanceCooldown;
-    uint64 public lastRebalanceTimestamp;
-    uint64 public lastFeeAccrualTimestamp;
-
-    uint256 public rebalanceCount;
-    mapping(address => uint16) public targetWeightBps;
-
-    address[] private _assets;
-    ThesisVersion[] private _thesisVersions;
-    RebalanceRecord[16] private _recentRebalances;
+    PortfolioCalculator private immutable _portfolioCalculator;
+    address private immutable _strategyModule;
+    bytes32 private immutable _strategyModuleCodehash;
 
     constructor() {
         _initialized = true;
-    }
-
-    modifier onlyManager() {
-        if (msg.sender != manager) revert NotManager();
-        _;
-    }
-
-    modifier nonReentrant() {
-        if (_entered == 1) revert Reentrancy();
-        _entered = 1;
-        _;
-        _entered = 0;
+        _portfolioCalculator = new PortfolioCalculator();
+        _strategyModule = address(new ManagedOTFVaultStrategy(_portfolioCalculator));
+        _strategyModuleCodehash = _strategyModule.codehash;
     }
 
     function initialize(
@@ -164,7 +38,7 @@ contract ManagedOTFVault is ERC20Base {
         address rebalanceExecutor_,
         address feeCollector_,
         uint16 protocolFeeShareBps_
-    ) external {
+    ) external nonReentrant {
         if (_initialized) revert AlreadyInitialized();
         if (msg.sender != factory_ || factory_ == address(0)) revert UnauthorizedFactory();
         if (
@@ -174,9 +48,23 @@ contract ManagedOTFVault is ERC20Base {
         ) {
             revert ZeroAddress();
         }
-        if (params.initialShareSupply == 0) revert InitialShareSupplyZero();
+        if (params.initialShareSupply <= MINIMUM_LIQUIDITY_SHARES) {
+            revert InitialShareSupplyTooSmall(
+                params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
+            );
+        }
         if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) revert RebalanceCooldownTooShort();
-        _validateTextLength(params.initialThesis, MAX_THESIS_BYTES, true);
+        if (params.manager == address(this) || params.feeRecipient == address(this)) {
+            revert InvalidRoleAddress(address(this));
+        }
+        _validateWeightBands(params.maxWeightDeviationBps, params.challengeWeightDeviationBps);
+        if (
+            params.challengeGracePeriod < MIN_CHALLENGE_GRACE_PERIOD
+                || params.challengeGracePeriod > MAX_CHALLENGE_GRACE_PERIOD
+        ) {
+            revert InvalidChallengeGracePeriod(params.challengeGracePeriod);
+        }
+        _validateTextLength(params.initialThesis, MAX_THESIS_BYTES);
 
         _initialized = true;
         _initializeERC20(params.name, params.symbol, 18);
@@ -194,31 +82,95 @@ contract ManagedOTFVault is ERC20Base {
         maxTurnoverBps = params.maxTurnoverBps;
         maxNavLossBps = params.maxNavLossBps;
         maxWeightDeviationBps = params.maxWeightDeviationBps;
+        challengeWeightDeviationBps = params.challengeWeightDeviationBps;
         maxSingleAssetWeightBps = params.maxSingleAssetWeightBps;
         minNonZeroAssetWeightBps = params.minNonZeroAssetWeightBps;
         maxAssetCount = params.maxAssetCount;
         maxOracleStaleness = params.maxOracleStaleness;
+        challengeGracePeriod = params.challengeGracePeriod;
+        _feeState = FeeState.Accruing;
 
-        _validatePortfolio(params.initialAssets, params.initialTargetWeightsBps);
-        _storePortfolio(params.initialAssets, params.initialTargetWeightsBps);
+        _validateInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
+        _storeInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
         _validateInitialBalances(params.initialAssets, params.initialAmounts);
 
         uint64 timestamp = uint64(block.timestamp);
         lastRebalanceTimestamp = timestamp;
         lastFeeAccrualTimestamp = timestamp;
+        lastCompletedStrategicRebalance = timestamp;
 
         _thesisVersions.push(
             ThesisVersion({
                 timestamp: timestamp,
                 author: params.manager,
-                portfolioHash: _portfolioHash(params.initialAssets, params.initialTargetWeightsBps),
+                portfolioHash: _portfolioHashCurrent(),
                 text: params.initialThesis
             })
         );
 
-        _mint(params.manager, params.initialShareSupply);
-        emit VaultInitialized(factory_, params.manager, params.feeRecipient, params.rebalanceCooldown);
+        _mint(address(this), MINIMUM_LIQUIDITY_SHARES);
+        _mint(params.manager, params.initialShareSupply - MINIMUM_LIQUIDITY_SHARES);
+
+        uint256[] memory initialWeights = _weightsAsUint256();
+        emit OwnershipTransferred(address(0), params.manager);
+        emit Rebalanced(params.initialAssets, initialWeights);
+        emit VaultInitialized(
+            factory_, params.manager, params.feeRecipient, params.rebalanceCooldown
+        );
     }
+
+    // ERC-165 / ERC-173
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == ERC165_INTERFACE_ID || interfaceId == ERC173_INTERFACE_ID
+            || interfaceId == ERC7621_INTERFACE_ID;
+    }
+
+    function owner() external view returns (address) {
+        return manager;
+    }
+
+    function transferOwnership(address newOwner) external onlyManager nonReentrant {
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (newOwner == address(this)) revert InvalidRoleAddress(newOwner);
+        _accrueFees();
+        _transferManager(newOwner);
+    }
+
+    // ERC-7621 views
+
+    function getConstituents()
+        external
+        view
+        returns (address[] memory tokens, uint256[] memory weights)
+    {
+        tokens = _assets;
+        weights = _weightsAsUint256();
+    }
+
+    function totalConstituents() external view returns (uint256 count) {
+        return _assets.length;
+    }
+
+    function getReserve(address token) public view returns (uint256 balance) {
+        if (!_containsCurrentAsset(token)) return 0;
+        return IERC20(token).balanceOf(address(this));
+    }
+
+    function getWeight(address token) external view returns (uint256 weight) {
+        if (!_containsCurrentAsset(token)) revert NotConstituent(token);
+        return targetWeightBps[token];
+    }
+
+    function isConstituent(address token) public view returns (bool) {
+        return _containsCurrentAsset(token);
+    }
+
+    function totalBasketValue() public view returns (uint256 value) {
+        return _portfolioCalculator.totalBasketValue(address(this), _assets);
+    }
+
+    // Existing compatibility and protocol views
 
     function assets() external view returns (address[] memory) {
         return _assets;
@@ -256,50 +208,98 @@ contract ManagedOTFVault is ERC20Base {
     }
 
     function canRebalance() external view returns (bool) {
-        return block.timestamp >= nextRebalanceTime();
+        return canProposeTargetWeights();
     }
 
     function totalAssetsValue() public view returns (uint256 nav) {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            nav += _assetValue(_assets[i], IERC20(_assets[i]).balanceOf(address(this)));
-        }
+        return _portfolioValue();
     }
 
     function navPerShare() external view returns (uint256) {
-        uint256 supply = totalSupply;
-        if (supply == 0) revert ZeroNav();
+        uint256 supply = _previewSupplyAfterAccrual();
+        if (supply == 0) return 0;
         return MathEx.mulDiv(totalAssetsValue(), 1e18, supply);
     }
 
     function currentWeightsBps() public view returns (uint16[] memory weights) {
-        uint256 nav = totalAssetsValue();
+        (uint256[] memory current,) = _currentWeightsAndNav();
+        weights = new uint16[](current.length);
+        for (uint256 i = 0; i < current.length; i++) {
+            weights[i] = uint16(current[i]);
+        }
+    }
+
+    function currentWeight(address token) public view returns (uint256 weight) {
+        if (!_containsCurrentAsset(token)) revert NotConstituent(token);
+        uint256 nav = _portfolioValue();
         if (nav == 0) revert ZeroNav();
-
-        weights = new uint16[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 value = _assetValue(_assets[i], IERC20(_assets[i]).balanceOf(address(this)));
-            weights[i] = uint16(MathEx.mulDiv(value, BPS, nav));
-        }
+        return MathEx.mulDiv(_assetValue(token, IERC20(token).balanceOf(address(this))), BPS, nav);
     }
 
-    function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
-        if (shares == 0) revert ZeroShares();
-        uint256 supply = totalSupply;
-        amountsIn = new uint256[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 balance = IERC20(_assets[i]).balanceOf(address(this));
-            amountsIn[i] = MathEx.mulDivUp(shares, balance, supply);
+    function getWeightBands(address token)
+        external
+        view
+        returns (
+            uint256 challengeLower,
+            uint256 challengeUpper,
+            uint256 completionLower,
+            uint256 completionUpper
+        )
+    {
+        if (!_containsCurrentAsset(token)) {
+            revert NotConstituent(token);
         }
+        uint256 target = targetWeightBps[token];
+        (challengeLower, challengeUpper) = _band(target, challengeWeightDeviationBps);
+        (completionLower, completionUpper) = _band(target, maxWeightDeviationBps);
     }
 
-    function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
-        if (shares == 0) revert ZeroShares();
-        uint256 supply = totalSupply;
-        amountsOut = new uint256[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 balance = IERC20(_assets[i]).balanceOf(address(this));
-            amountsOut[i] = MathEx.mulDiv(shares, balance, supply);
+    function isWithinTargetBands() public view returns (bool) {
+        return _isWithinBands(maxWeightDeviationBps);
+    }
+
+    function isWithinChallengeBands() public view returns (bool) {
+        return _isWithinBands(challengeWeightDeviationBps);
+    }
+
+    function canProposeTargetWeights() public view returns (bool) {
+        if (
+            challengeActive || strategicRebalanceActive || block.timestamp < nextRebalanceTime()
+                || feeState() == FeeState.Suspended
+        ) {
+            return false;
         }
+        return _isWithinBands(maxWeightDeviationBps);
+    }
+
+    function challengeTimeRemaining() external view returns (uint256) {
+        if (!challengeActive || block.timestamp >= challengeDeadline) return 0;
+        return uint256(challengeDeadline) - block.timestamp;
+    }
+
+    function feeState() public view returns (FeeState) {
+        if (
+            _feeState == FeeState.Escrowed && challengeActive && block.timestamp > challengeDeadline
+        ) {
+            return FeeState.Suspended;
+        }
+        return _feeState;
+    }
+
+    function feesAccruing() external view returns (bool) {
+        return feeState() == FeeState.Accruing;
+    }
+
+    function feesEscrowed() external view returns (bool) {
+        return feeState() == FeeState.Escrowed;
+    }
+
+    function feesSuspended() external view returns (bool) {
+        return feeState() == FeeState.Suspended;
+    }
+
+    function authorizedExecutors() external view returns (address[] memory) {
+        return _authorizedExecutors;
     }
 
     function recentRebalanceCount() external view returns (uint256) {
@@ -307,111 +307,221 @@ contract ManagedOTFVault is ERC20Base {
     }
 
     function recentRebalanceRecord(uint256 index) external view returns (RebalanceRecord memory) {
-        uint256 storedCount = rebalanceCount < RECENT_REBALANCE_CAP ? rebalanceCount : RECENT_REBALANCE_CAP;
+        uint256 storedCount =
+            rebalanceCount < RECENT_REBALANCE_CAP ? rebalanceCount : RECENT_REBALANCE_CAP;
         if (index >= storedCount) revert InvalidRecordIndex(index);
-        uint256 first = rebalanceCount > RECENT_REBALANCE_CAP ? rebalanceCount - RECENT_REBALANCE_CAP : 0;
+        uint256 first =
+            rebalanceCount > RECENT_REBALANCE_CAP ? rebalanceCount - RECENT_REBALANCE_CAP : 0;
         return _recentRebalances[(first + index) % RECENT_REBALANCE_CAP];
     }
 
-    function accrueFees() public nonReentrant returns (uint256 feeShares) {
-        feeShares = _accrueFees();
+    // ERC-7621 entry and exit
+
+    function previewContribute(uint256[] calldata amounts) public view returns (uint256 lpAmount) {
+        if (amounts.length != _assets.length) {
+            revert LengthMismatch(_assets.length, amounts.length);
+        }
+        bool anyAmount;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            if (amounts[i] != 0) {
+                anyAmount = true;
+                break;
+            }
+        }
+        if (!anyAmount) return 0;
+
+        uint256 supply = _previewSupplyAfterAccrual();
+        lpAmount = type(uint256).max;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
+            if (reserve == 0) {
+                if (amounts[i] != 0) {
+                    revert NonProportionalContribution(_assets[i], amounts[i], 0);
+                }
+                continue;
+            }
+            uint256 candidate = MathEx.mulDiv(amounts[i], supply, reserve);
+            if (candidate < lpAmount) lpAmount = candidate;
+        }
+        if (lpAmount == type(uint256).max) return 0;
+
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
+            uint256 required = MathEx.mulDivUp(lpAmount, reserve, supply);
+            if (amounts[i] != required) {
+                revert NonProportionalContribution(_assets[i], amounts[i], required);
+            }
+        }
+    }
+
+    function contribute(uint256[] calldata amounts, address receiver, uint256 minShares)
+        external
+        onlyInitialized
+        nonReentrant
+        returns (uint256 lpAmount)
+    {
+        if (receiver == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
+        if (amounts.length != _assets.length) {
+            revert LengthMismatch(_assets.length, amounts.length);
+        }
+        bool anyAmount;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            if (amounts[i] != 0) {
+                anyAmount = true;
+                break;
+            }
+        }
+        if (!anyAmount) revert ZeroAmount();
+
+        _accrueFees();
+        lpAmount = _previewContributeCurrentSupply(amounts);
+        if (lpAmount < minShares) revert InsufficientShares(minShares, lpAmount);
+        if (lpAmount == 0) revert InsufficientShares(1, 0);
+
+        for (uint256 i = 0; i < _assets.length; i++) {
+            _pullExact(_assets[i], msg.sender, amounts[i]);
+        }
+        _mint(receiver, lpAmount);
+        emit Contributed(msg.sender, receiver, lpAmount, amounts);
+    }
+
+    function previewWithdraw(uint256 lpAmount) public view returns (uint256[] memory amounts) {
+        amounts = new uint256[](_assets.length);
+        if (lpAmount == 0) return amounts;
+        uint256 supply = _previewSupplyAfterAccrual();
+        for (uint256 i = 0; i < _assets.length; i++) {
+            amounts[i] =
+                MathEx.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), lpAmount, supply);
+        }
+    }
+
+    function withdraw(uint256 lpAmount, address receiver, uint256[] calldata minAmounts)
+        external
+        onlyInitialized
+        nonReentrant
+        returns (uint256[] memory amounts)
+    {
+        if (lpAmount == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
+        if (minAmounts.length != _assets.length) {
+            revert LengthMismatch(_assets.length, minAmounts.length);
+        }
+        _accrueFees();
+        amounts = _withdraw(lpAmount, receiver, msg.sender, minAmounts);
+        emit Withdrawn(msg.sender, receiver, lpAmount, amounts);
+    }
+
+    // Existing explicit-share convenience entry and delegated exit
+
+    function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
+        if (shares == 0) revert ZeroShares();
+        uint256 supply = _previewSupplyAfterAccrual();
+        amountsIn = new uint256[](_assets.length);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            amountsIn[i] =
+                MathEx.mulDivUp(shares, IERC20(_assets[i]).balanceOf(address(this)), supply);
+        }
+    }
+
+    function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
+        if (shares == 0) revert ZeroShares();
+        return previewWithdraw(shares);
     }
 
     function mintWithBasket(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
         external
+        onlyInitialized
         nonReentrant
         returns (uint256[] memory amountsIn)
     {
-        if (_rebalancing) revert RebalanceInProgress();
         if (receiver == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
         if (shares == 0) revert ZeroShares();
         if (maxAmountsIn.length != _assets.length) revert InvalidArrayLength();
 
         _accrueFees();
         uint256 supply = totalSupply;
         amountsIn = new uint256[](_assets.length);
-
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            uint256 required = MathEx.mulDivUp(shares, IERC20(asset).balanceOf(address(this)), supply);
+            uint256 required =
+                MathEx.mulDivUp(shares, IERC20(asset).balanceOf(address(this)), supply);
             if (required > maxAmountsIn[i]) revert AmountTooHigh(asset, required, maxAmountsIn[i]);
             amountsIn[i] = required;
-            asset.safeTransferFrom(msg.sender, address(this), required);
+            _pullExact(asset, msg.sender, required);
         }
-
         _mint(receiver, shares);
+        emit Contributed(msg.sender, receiver, shares, amountsIn);
     }
 
     function redeem(
         uint256 shares,
         address receiver,
-        address owner,
+        address shareOwner,
         uint256[] calldata minAmountsOut
-    ) external nonReentrant returns (uint256[] memory amountsOut) {
-        if (receiver == address(0) || owner == address(0)) revert ZeroAddress();
+    ) external onlyInitialized nonReentrant returns (uint256[] memory amountsOut) {
+        if (receiver == address(0) || shareOwner == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
         if (shares == 0) revert ZeroShares();
         if (minAmountsOut.length != _assets.length) revert InvalidArrayLength();
-
         _accrueFees();
-        uint256 supply = totalSupply;
-        amountsOut = new uint256[](_assets.length);
-
-        if (owner != msg.sender) {
-            _spendAllowance(owner, msg.sender, shares);
-        }
-        _burn(owner, shares);
-
-        for (uint256 i = 0; i < _assets.length; i++) {
-            address asset = _assets[i];
-            uint256 amount = MathEx.mulDiv(shares, IERC20(asset).balanceOf(address(this)), supply);
-            if (amount < minAmountsOut[i]) revert AmountTooLow(asset, amount, minAmountsOut[i]);
-            amountsOut[i] = amount;
-            asset.safeTransfer(receiver, amount);
-        }
+        amountsOut = _withdraw(shares, receiver, shareOwner, minAmountsOut);
+        emit Withdrawn(msg.sender, receiver, shares, amountsOut);
     }
 
-    function appendThesisAmendment(string calldata text) external onlyManager {
-        _validateTextLength(text, MAX_THESIS_BYTES, true);
-        uint256 version = _thesisVersions.length;
-        uint64 timestamp = uint64(block.timestamp);
-        bytes32 portfolioHash = _currentPortfolioHash();
-
-        _thesisVersions.push(
-            ThesisVersion({
-                timestamp: timestamp,
-                author: msg.sender,
-                portfolioHash: portfolioHash,
-                text: text
-            })
-        );
-
-        emit ThesisAmended(version, timestamp, msg.sender, portfolioHash, text);
+    function accrueFees() public onlyInitialized nonReentrant returns (uint256 feeShares) {
+        feeShares = _accrueFees();
     }
 
-    function beginManagerTransfer(address newManager) external onlyManager {
+    // Strategy authority
+
+    function appendThesisAmendment(string calldata text) external {
+        text;
+        _delegateStrategy();
+    }
+
+    function setManagerFeeBps(uint16 newFeeBps) external {
+        newFeeBps;
+        _delegateStrategy();
+    }
+
+    function setWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_) external {
+        completionDeviationBps;
+        challengeDeviationBps_;
+        _delegateStrategy();
+    }
+
+    function setExecutor(address executor, bool authorized) external {
+        executor;
+        authorized;
+        _delegateStrategy();
+    }
+
+    function beginManagerTransfer(address newManager) external onlyManager nonReentrant {
         if (newManager == address(0)) revert ZeroAddress();
+        if (newManager == address(this)) revert InvalidRoleAddress(newManager);
         _accrueFees();
         pendingManager = newManager;
         emit ManagerTransferStarted(manager, newManager);
     }
 
-    function acceptManagerTransfer() external {
+    function acceptManagerTransfer() external nonReentrant {
         if (msg.sender != pendingManager) revert NotPendingManager();
         _accrueFees();
-        address oldManager = manager;
-        manager = msg.sender;
-        pendingManager = address(0);
-        emit ManagerTransferred(oldManager, msg.sender);
+        _transferManager(msg.sender);
     }
 
-    function beginFeeRecipientTransfer(address newFeeRecipient) external onlyManager {
+    function beginFeeRecipientTransfer(address newFeeRecipient) external onlyManager nonReentrant {
         if (newFeeRecipient == address(0)) revert ZeroAddress();
+        if (newFeeRecipient == address(this)) revert InvalidRoleAddress(newFeeRecipient);
         _accrueFees();
         pendingFeeRecipient = newFeeRecipient;
         emit FeeRecipientTransferStarted(feeRecipient, newFeeRecipient);
     }
 
-    function acceptFeeRecipientTransfer() external {
+    function acceptFeeRecipientTransfer() external nonReentrant {
         if (msg.sender != pendingFeeRecipient) revert NotPendingFeeRecipient();
         _accrueFees();
         address oldRecipient = feeRecipient;
@@ -420,338 +530,390 @@ contract ManagedOTFVault is ERC20Base {
         emit FeeRecipientTransferred(oldRecipient, msg.sender);
     }
 
-    function rebalance(
-        address[] calldata targetAssets,
-        uint16[] calldata targetWeights,
-        TradeInstruction[] calldata trades,
-        string calldata rationale
-    ) external onlyManager nonReentrant {
-        uint256 nextAllowedTime = nextRebalanceTime();
-        if (block.timestamp < nextAllowedTime) {
-            revert RebalanceCooldownActive(nextAllowedTime);
+    // ERC-7621 rebalance changes targets only. Trades and completion are separate calls.
+
+    function rebalance(address[] calldata newTokens, uint256[] calldata newWeights) external {
+        newTokens;
+        newWeights;
+        _delegateStrategy();
+    }
+
+    function executeRebalanceTrades(TradeInstruction[] calldata trades) external {
+        trades;
+        _delegateStrategy();
+    }
+
+    function completeStrategicRebalance() external {
+        _delegateStrategy();
+    }
+
+    // Permissionless challenge
+
+    function flagOutOfBand() external {
+        _delegateStrategy();
+    }
+
+    function resolveOutOfBandChallenge() external {
+        _delegateStrategy();
+    }
+
+    function syncChallengeDeadline() external {
+        _delegateStrategy();
+    }
+
+    function moduleAccrueFees() external returns (uint256) {
+        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
+        return _accrueFees();
+    }
+
+    function strategyModule() external view returns (address) {
+        return _strategyModule;
+    }
+
+    function strategyModuleCodehash() external view returns (bytes32) {
+        return _strategyModuleCodehash;
+    }
+
+    // Internal share accounting
+
+    function _previewContributeCurrentSupply(uint256[] calldata amounts)
+        internal
+        view
+        returns (uint256 lpAmount)
+    {
+        if (amounts.length != _assets.length) {
+            revert LengthMismatch(_assets.length, amounts.length);
         }
-        PendingRebalance memory pending =
-            _prepareRebalance(targetAssets, targetWeights, trades, rationale);
-
-        _rebalancing = true;
-        _executeTrades(trades);
-
-        _verifyRemovedAssetsCleared(targetAssets);
-
-        pending.navAfter = _portfolioValue(targetAssets);
-        _verifyNavLoss(pending.navBefore, pending.navAfter);
-        _verifyFinalWeights(targetAssets, targetWeights, pending.navAfter);
-
-        _replacePortfolio(targetAssets, targetWeights);
-        _recordSuccessfulRebalance(targetAssets, targetWeights, rationale, pending);
-        _rebalancing = false;
-    }
-
-    function _prepareRebalance(
-        address[] calldata targetAssets,
-        uint16[] calldata targetWeights,
-        TradeInstruction[] calldata trades,
-        string calldata rationale
-    ) internal returns (PendingRebalance memory pending) {
-        _validateTextLength(rationale, MAX_RATIONALE_BYTES, false);
-        _validatePortfolio(targetAssets, targetWeights);
-        _validateTrades(targetAssets, trades);
-
-        _accrueFees();
-
-        pending.oldPortfolioHash = _currentPortfolioHash();
-        pending.newPortfolioHash = _portfolioHash(targetAssets, targetWeights);
-        pending.navBefore = totalAssetsValue();
-        if (pending.navBefore == 0) revert ZeroNav();
-
-        pending.turnoverBps = _turnoverBps(targetAssets, targetWeights, pending.navBefore);
-        if (pending.turnoverBps > maxTurnoverBps) {
-            revert TurnoverTooHigh(pending.turnoverBps, maxTurnoverBps);
+        uint256 supply = totalSupply;
+        lpAmount = type(uint256).max;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
+            if (reserve == 0) {
+                if (amounts[i] != 0) {
+                    revert NonProportionalContribution(_assets[i], amounts[i], 0);
+                }
+                continue;
+            }
+            uint256 candidate = MathEx.mulDiv(amounts[i], supply, reserve);
+            if (candidate < lpAmount) lpAmount = candidate;
+        }
+        if (lpAmount == type(uint256).max) return 0;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
+            uint256 required = MathEx.mulDivUp(lpAmount, reserve, supply);
+            if (amounts[i] != required) {
+                revert NonProportionalContribution(_assets[i], amounts[i], required);
+            }
         }
     }
 
-    function _executeTrades(TradeInstruction[] calldata trades) internal {
-        for (uint256 i = 0; i < trades.length; i++) {
-            TradeInstruction calldata trade = trades[i];
-            trade.tokenIn.safeApprove(rebalanceExecutor, 0);
-            trade.tokenIn.safeApprove(rebalanceExecutor, trade.amountIn);
-            RebalanceExecutor(rebalanceExecutor).executeTrade(trade);
-            trade.tokenIn.safeApprove(rebalanceExecutor, 0);
+    function _withdraw(
+        uint256 shares,
+        address receiver,
+        address shareOwner,
+        uint256[] calldata minimums
+    ) internal returns (uint256[] memory amounts) {
+        uint256 supply = totalSupply;
+        amounts = new uint256[](_assets.length);
+        if (shareOwner != msg.sender) _spendAllowance(shareOwner, msg.sender, shares);
+        _burn(shareOwner, shares);
+
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            uint256 amount = MathEx.mulDiv(shares, IERC20(asset).balanceOf(address(this)), supply);
+            if (amount < minimums[i]) {
+                revert InsufficientAmount(i, minimums[i], amount);
+            }
+            amounts[i] = amount;
+            _pushExact(asset, receiver, amount);
         }
     }
 
-    function _recordSuccessfulRebalance(
-        address[] calldata targetAssets,
-        uint16[] calldata targetWeights,
-        string calldata rationale,
-        PendingRebalance memory pending
-    ) internal {
-        uint64 timestamp = uint64(block.timestamp);
-        lastRebalanceTimestamp = timestamp;
-        uint256 rebalanceId = rebalanceCount;
-        uint32 thesisVersion = uint32(_thesisVersions.length - 1);
-        RebalanceRecord memory record = RebalanceRecord({
-            timestamp: timestamp,
-            manager: msg.sender,
-            oldPortfolioHash: pending.oldPortfolioHash,
-            newPortfolioHash: pending.newPortfolioHash,
-            navBefore: pending.navBefore,
-            navAfter: pending.navAfter,
-            turnoverBps: pending.turnoverBps,
-            thesisVersion: thesisVersion
-        });
-        _recentRebalances[rebalanceId % RECENT_REBALANCE_CAP] = record;
-        rebalanceCount = rebalanceId + 1;
-
-        emit Rebalanced(rebalanceId, msg.sender, record, targetAssets, targetWeights, rationale);
-    }
+    // Fee state machine
 
     function _accrueFees() internal returns (uint256 feeShares) {
         uint64 previousTimestamp = lastFeeAccrualTimestamp;
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
-        if (elapsed == 0) return 0;
-
-        lastFeeAccrualTimestamp = uint64(block.timestamp);
-
-        uint256 supply = totalSupply;
-        uint256 feeBps = creatorFeeBpsPerYear;
-        if (supply == 0 || feeBps == 0) return 0;
-
-        uint256 feeNumerator = feeBps * elapsed;
-        uint256 annualDenominator = BPS * YEAR;
-        if (feeNumerator >= annualDenominator) revert FeeElapsedTooLong();
-        uint256 feeDenominator = annualDenominator - feeNumerator;
-
-        feeShares = MathEx.mulDiv(supply, feeNumerator, feeDenominator);
-        if (feeShares == 0) {
-            emit FeesAccrued(0, 0, 0);
+        if (elapsed == 0) {
+            if (
+                _feeState == FeeState.Escrowed && challengeActive
+                    && block.timestamp > challengeDeadline
+            ) {
+                _forfeitEscrowAndSuspend();
+            }
             return 0;
         }
 
-        uint256 protocolShares = MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
-        uint256 creatorShares = feeShares - protocolShares;
-        if (protocolShares != 0) _mint(feeCollector, protocolShares);
-        if (creatorShares != 0) _mint(feeRecipient, creatorShares);
+        if (_feeState == FeeState.Suspended) {
+            lastFeeAccrualTimestamp = uint64(block.timestamp);
+            return 0;
+        }
 
-        emit FeesAccrued(feeShares, creatorShares, protocolShares);
+        if (
+            _feeState == FeeState.Escrowed && challengeActive && block.timestamp > challengeDeadline
+        ) {
+            uint256 eligibleElapsed = uint256(challengeDeadline) > previousTimestamp
+                ? uint256(challengeDeadline) - uint256(previousTimestamp)
+                : 0;
+            if (eligibleElapsed != 0) feeShares = _mintFees(eligibleElapsed, true);
+            lastFeeAccrualTimestamp = uint64(block.timestamp);
+            _forfeitEscrowAndSuspend();
+            return feeShares;
+        }
+
+        lastFeeAccrualTimestamp = uint64(block.timestamp);
+        feeShares = _mintFees(elapsed, _feeState == FeeState.Escrowed);
     }
 
-    function _validateTextLength(string calldata text, uint256 maximum, bool thesisText) internal pure {
-        uint256 length = bytes(text).length;
-        if (length > maximum) {
-            if (thesisText) revert ThesisTooLong(length);
-            revert RationaleTooLong(length);
+    function _mintFees(uint256 elapsed, bool escrowManager) internal returns (uint256 feeShares) {
+        uint256 supply = totalSupply;
+        uint256 feeBps = creatorFeeBpsPerYear;
+        if (supply == 0 || feeBps == 0 || elapsed == 0) return 0;
+        feeShares = _feeSharesForElapsed(supply, feeBps, elapsed);
+        if (feeShares == 0) return 0;
+
+        uint256 protocolShares = MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
+        uint256 managerShares = feeShares - protocolShares;
+        if (protocolShares != 0) _mint(feeCollector, protocolShares);
+        if (managerShares != 0) {
+            if (escrowManager) {
+                _mint(address(this), managerShares);
+                escrowedManagerFeeShares += managerShares;
+                emit ManagerFeesEscrowed(managerShares, escrowedManagerFeeShares);
+            } else {
+                _mint(feeRecipient, managerShares);
+            }
+        }
+        emit FeesAccrued(feeShares, managerShares, protocolShares);
+    }
+
+    function _feeSharesForElapsed(uint256 supply, uint256 feeBps, uint256 elapsed)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint256 annualDenominator = BPS * YEAR;
+        uint256 accruedSupply = supply;
+        uint256 remaining = elapsed;
+        while (remaining != 0) {
+            uint256 period = remaining > YEAR ? YEAR : remaining;
+            uint256 feeNumerator = feeBps * period;
+            uint256 feeDenominator = annualDenominator - feeNumerator;
+            accruedSupply += MathEx.mulDiv(accruedSupply, feeNumerator, feeDenominator);
+            remaining -= period;
+        }
+        return accruedSupply - supply;
+    }
+
+    function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
+        supply = totalSupply;
+        uint256 previousTimestamp = lastFeeAccrualTimestamp;
+        if (block.timestamp <= previousTimestamp || _feeState == FeeState.Suspended) return supply;
+
+        uint256 end = block.timestamp;
+        bool deadlineMissed =
+            _feeState == FeeState.Escrowed && challengeActive && end > challengeDeadline;
+        if (deadlineMissed) {
+            end = challengeDeadline;
+            supply -= escrowedManagerFeeShares;
+        }
+        if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
+
+        uint256 feeShares =
+            _feeSharesForElapsed(totalSupply, creatorFeeBpsPerYear, end - previousTimestamp);
+        if (deadlineMissed) {
+            supply += MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
+        } else {
+            supply += feeShares;
         }
     }
 
-    function _validatePortfolio(address[] calldata assets_, uint16[] calldata weights_) internal view {
-        if (assets_.length == 0) revert EmptyPortfolio();
-        if (assets_.length != weights_.length) revert InvalidArrayLength();
-        if (assets_.length > maxAssetCount) revert TooManyAssets(assets_.length, maxAssetCount);
+    function _forfeitEscrowAndSuspend() internal {
+        uint256 amount = escrowedManagerFeeShares;
+        escrowedManagerFeeShares = 0;
+        if (amount != 0) _burn(address(this), amount);
+        _feeState = FeeState.Suspended;
+        emit ChallengeDeadlineMissed(challengeDeadline, uint64(block.timestamp));
+        emit ManagerFeesForfeited(amount);
+        emit ManagerFeeAccrualSuspended(uint64(block.timestamp));
+    }
 
+    // Validation and calculations
+
+    function _validateTextLength(string calldata text, uint256 maximum) internal pure {
+        uint256 length = bytes(text).length;
+        if (length > maximum) revert ThesisTooLong(length);
+    }
+
+    function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
+        internal
+        pure
+    {
+        if (
+            completionDeviationBps == 0 || challengeDeviationBps_ <= completionDeviationBps
+                || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
+        ) {
+            revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
+        }
+    }
+
+    function _validateInitialPortfolio(address[] calldata assets_, uint16[] calldata weights_)
+        internal
+        view
+    {
+        if (assets_.length == 0) revert EmptyPortfolio();
+        if (assets_.length != weights_.length) {
+            revert LengthMismatch(assets_.length, weights_.length);
+        }
+        if (assets_.length > maxAssetCount) revert TooManyAssets(assets_.length, maxAssetCount);
         uint256 sum;
         for (uint256 i = 0; i < assets_.length; i++) {
-            address asset = assets_[i];
-            uint16 weight = weights_[i];
-            if (asset == address(0)) revert ZeroAddress();
-            if (asset.code.length == 0) revert AssetNotContract(asset);
-            if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
-            if (weight > maxSingleAssetWeightBps) {
-                revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
-            }
-            if (weight < minNonZeroAssetWeightBps) {
-                revert AssetWeightTooLow(asset, weight, minNonZeroAssetWeightBps);
-            }
-            _supportedTokenDecimals(asset);
-            sum += weight;
-
-            for (uint256 j = i + 1; j < assets_.length; j++) {
-                if (assets_[j] == asset) revert DuplicateAsset(asset);
-            }
+            _validateAssetAndWeight(assets_, i, weights_[i]);
+            sum += weights_[i];
         }
-
-        if (sum != BPS) revert InvalidWeightSum(sum);
+        if (sum != BPS) revert InvalidWeights(sum);
     }
 
-    function _validateInitialBalances(address[] calldata assets_, uint256[] calldata amounts) internal view {
-        if (assets_.length != amounts.length) revert InvalidArrayLength();
+    function _validateAssetAndWeight(address[] calldata assets_, uint256 index, uint256 weight)
+        internal
+        view
+    {
+        address asset = assets_[index];
+        if (asset == address(0)) revert ZeroAddress();
+        if (asset.code.length == 0) revert AssetNotContract(asset);
+        if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
+        if (weight > maxSingleAssetWeightBps) {
+            revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
+        }
+        if (weight < minNonZeroAssetWeightBps) {
+            revert AssetWeightTooLow(asset, weight, minNonZeroAssetWeightBps);
+        }
+        _portfolioCalculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
+        for (uint256 j = index + 1; j < assets_.length; j++) {
+            if (assets_[j] == asset) revert DuplicateConstituent(asset);
+        }
+    }
+
+    function _validateInitialBalances(address[] calldata assets_, uint256[] calldata amounts)
+        internal
+        view
+    {
+        if (assets_.length != amounts.length) {
+            revert LengthMismatch(assets_.length, amounts.length);
+        }
         for (uint256 i = 0; i < assets_.length; i++) {
             if (amounts[i] == 0) revert InitialAmountZero(assets_[i]);
             uint256 balance = IERC20(assets_[i]).balanceOf(address(this));
-            if (balance != amounts[i]) revert InitialBalanceMismatch(assets_[i], amounts[i], balance);
-        }
-    }
-
-    function _validateTrades(address[] calldata targetAssets, TradeInstruction[] calldata trades) internal view {
-        if (trades.length > MAX_TRADE_COUNT) revert TooManyTrades(trades.length, MAX_TRADE_COUNT);
-
-        for (uint256 i = 0; i < trades.length; i++) {
-            TradeInstruction calldata trade = trades[i];
-            if (trade.tokenIn == trade.tokenOut || trade.amountIn == 0) {
-                revert BadTrade(trade.tokenIn, trade.tokenOut, trade.amountIn);
-            }
-            if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenIn)) {
-                revert UnapprovedAsset(trade.tokenIn);
-            }
-            if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenOut)) {
-                revert UnapprovedAsset(trade.tokenOut);
-            }
-            if (!IAdapterAllowlist(factory).isTradeAdapterApproved(trade.adapter)) {
-                revert UnapprovedAdapter(trade.adapter);
-            }
-            if (!_containsCurrentAsset(trade.tokenIn) && !_containsCalldata(targetAssets, trade.tokenIn)) {
-                revert TradeAssetNotTracked(trade.tokenIn);
-            }
-            if (!_containsCalldata(targetAssets, trade.tokenOut)) {
-                revert TradeOutputNotInTarget(trade.tokenOut);
+            if (balance < amounts[i]) {
+                revert InitialBalanceMismatch(assets_[i], amounts[i], balance);
             }
         }
     }
 
-    function _storePortfolio(address[] calldata assets_, uint16[] calldata weights_) internal {
+    function _currentWeightsAndNav() internal view returns (uint256[] memory weights, uint256 nav) {
+        return _portfolioCalculator.portfolioState(
+            address(this), _assets, oracleRegistry, maxOracleStaleness
+        );
+    }
+
+    function _isWithinBands(uint16 deviationBps) internal view returns (bool) {
+        return _portfolioCalculator.isWithinBands(
+            address(this),
+            _assets,
+            _weightsAsUint256(),
+            oracleRegistry,
+            maxOracleStaleness,
+            deviationBps
+        );
+    }
+
+    function _band(uint256 target, uint256 deviation)
+        internal
+        pure
+        returns (uint256 lower, uint256 upper)
+    {
+        lower = target > deviation ? target - deviation : 0;
+        upper = target + deviation > BPS ? BPS : target + deviation;
+    }
+
+    function _portfolioValue() internal view returns (uint256 nav) {
+        return _portfolioCalculator.portfolioValue(
+            address(this), _assets, oracleRegistry, maxOracleStaleness
+        );
+    }
+
+    function _assetValue(address asset, uint256 rawBalance) internal view returns (uint256) {
+        return
+            _portfolioCalculator.assetValue(asset, rawBalance, oracleRegistry, maxOracleStaleness);
+    }
+
+    // Storage and transfer helpers
+
+    function _storeInitialPortfolio(address[] calldata assets_, uint16[] calldata weights_)
+        internal
+    {
         for (uint256 i = 0; i < assets_.length; i++) {
             _assets.push(assets_[i]);
             targetWeightBps[assets_[i]] = weights_[i];
         }
     }
 
-    function _replacePortfolio(address[] calldata assets_, uint16[] calldata weights_) internal {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            targetWeightBps[_assets[i]] = 0;
-        }
-        delete _assets;
-        _storePortfolio(assets_, weights_);
-    }
-
-    function _verifyRemovedAssetsCleared(address[] calldata targetAssets) internal view {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            address oldAsset = _assets[i];
-            if (!_containsCalldata(targetAssets, oldAsset)) {
-                uint256 balance = IERC20(oldAsset).balanceOf(address(this));
-                if (balance != 0) revert RemovedAssetBalanceRemaining(oldAsset, balance);
-            }
+    function _pullExact(address asset, address from, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 senderBefore = IERC20(asset).balanceOf(from);
+        uint256 receiverBefore = IERC20(asset).balanceOf(address(this));
+        asset.safeTransferFrom(from, address(this), amount);
+        uint256 senderAfter = IERC20(asset).balanceOf(from);
+        uint256 receiverAfter = IERC20(asset).balanceOf(address(this));
+        uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
+        uint256 receiverDelta = receiverAfter >= receiverBefore ? receiverAfter - receiverBefore : 0;
+        if (senderDelta != amount || receiverDelta != amount) {
+            revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
         }
     }
 
-    function _verifyNavLoss(uint256 navBefore, uint256 navAfter) internal view {
-        uint256 minimumNav = MathEx.mulDiv(navBefore, BPS - maxNavLossBps, BPS);
-        if (navAfter < minimumNav) revert NavLossTooHigh(navBefore, navAfter, maxNavLossBps);
-    }
-
-    function _verifyFinalWeights(
-        address[] calldata targetAssets,
-        uint16[] calldata targetWeights,
-        uint256 navAfter
-    ) internal view {
-        if (navAfter == 0) revert ZeroNav();
-        for (uint256 i = 0; i < targetAssets.length; i++) {
-            uint256 value = _assetValue(targetAssets[i], IERC20(targetAssets[i]).balanceOf(address(this)));
-            uint256 actualBps = MathEx.mulDiv(value, BPS, navAfter);
-            uint256 deviation = actualBps.absDiff(targetWeights[i]);
-            if (deviation > maxWeightDeviationBps) {
-                revert TargetDeviationTooHigh(targetAssets[i], actualBps, targetWeights[i], maxWeightDeviationBps);
-            }
+    function _pushExact(address asset, address receiver, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 senderBefore = IERC20(asset).balanceOf(address(this));
+        uint256 receiverBefore = IERC20(asset).balanceOf(receiver);
+        asset.safeTransfer(receiver, amount);
+        uint256 senderAfter = IERC20(asset).balanceOf(address(this));
+        uint256 receiverAfter = IERC20(asset).balanceOf(receiver);
+        uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
+        uint256 receiverDelta = receiverAfter >= receiverBefore ? receiverAfter - receiverBefore : 0;
+        if (senderDelta != amount || receiverDelta != amount) {
+            revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
         }
     }
 
-    function _turnoverBps(
-        address[] calldata targetAssets,
-        uint16[] calldata targetWeights,
-        uint256 navBefore
-    ) internal view returns (uint16) {
-        uint256 sumDiff;
+    function _transferManager(address newManager) internal {
+        address oldManager = manager;
+        _clearExecutors();
+        manager = newManager;
+        pendingManager = address(0);
+        emit OwnershipTransferred(oldManager, newManager);
+        emit ManagerTransferred(oldManager, newManager);
+    }
 
-        for (uint256 i = 0; i < _assets.length; i++) {
-            address asset = _assets[i];
-            uint256 value = _assetValue(asset, IERC20(asset).balanceOf(address(this)));
-            uint256 currentWeight = MathEx.mulDiv(value, BPS, navBefore);
-            uint256 targetWeight = _weightInCalldata(targetAssets, targetWeights, asset);
-            sumDiff += currentWeight.absDiff(targetWeight);
+    function _clearExecutors() internal {
+        for (uint256 i = 0; i < _authorizedExecutors.length; i++) {
+            address executor = _authorizedExecutors[i];
+            delete authorizedExecutor[executor];
+            delete _executorIndexPlusOne[executor];
+            emit ExecutorAuthorizationChanged(executor, false);
         }
-
-        for (uint256 i = 0; i < targetAssets.length; i++) {
-            if (!_containsCurrentAsset(targetAssets[i])) {
-                sumDiff += targetWeights[i];
-            }
-        }
-
-        uint256 turnover = (sumDiff + 1) / 2;
-        return uint16(turnover);
+        delete _authorizedExecutors;
     }
 
-    function _portfolioValue(address[] calldata assets_) internal view returns (uint256 nav) {
-        for (uint256 i = 0; i < assets_.length; i++) {
-            nav += _assetValue(assets_[i], IERC20(assets_[i]).balanceOf(address(this)));
-        }
-    }
-
-    function _assetValue(address asset, uint256 rawBalance) internal view returns (uint256) {
-        if (rawBalance == 0) return 0;
-        (uint256 price, uint8 priceDecimals) = _validPrice(asset);
-        uint8 tokenDecimals = _supportedTokenDecimals(asset);
-        uint256 tokenAdjusted = MathEx.mulDiv(rawBalance, price, 10 ** uint256(tokenDecimals));
-        return MathEx.mulDiv(tokenAdjusted, 1e18, 10 ** uint256(priceDecimals));
-    }
-
-    function _validPrice(address asset) internal view returns (uint256 price, uint8 priceDecimals) {
-        address feed = IOracleRegistry(oracleRegistry).priceFeedFor(asset);
-        if (feed == address(0)) revert OracleFeedMissing(asset);
-
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            IPriceFeed(feed).latestRoundData();
-        if (answer <= 0) revert InvalidOraclePrice(asset, answer);
-        if (updatedAt == 0 || updatedAt > block.timestamp) revert InvalidOracleTimestamp(asset, updatedAt);
-        if (answeredInRound < roundId) revert IncompleteOracleRound(asset, roundId, answeredInRound);
-        if (block.timestamp > updatedAt + maxOracleStaleness) {
-            revert StaleOraclePrice(asset, updatedAt, maxOracleStaleness);
-        }
-
-        priceDecimals = IPriceFeed(feed).decimals();
-        if (priceDecimals > 36) revert UnsupportedDecimals(feed, priceDecimals);
-        price = uint256(answer);
-    }
-
-    function _supportedTokenDecimals(address token) internal view returns (uint8 tokenDecimals) {
-        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
-            if (decimals_ > 36) revert UnsupportedDecimals(token, decimals_);
-            return decimals_;
-        } catch {
-            revert TokenDecimalsUnavailable(token);
-        }
-    }
-
-    function _portfolioHash(address[] calldata assets_, uint16[] calldata weights_)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(assets_, weights_));
-    }
-
-    function _currentPortfolioHash() internal view returns (bytes32) {
-        uint16[] memory weights = new uint16[](_assets.length);
+    function _weightsAsUint256() internal view returns (uint256[] memory weights) {
+        weights = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
             weights[i] = targetWeightBps[_assets[i]];
         }
-        return keccak256(abi.encode(_assets, weights));
     }
 
-    function _weightInCalldata(
-        address[] calldata assets_,
-        uint16[] calldata weights_,
-        address asset
-    ) internal pure returns (uint256) {
-        for (uint256 i = 0; i < assets_.length; i++) {
-            if (assets_[i] == asset) return weights_[i];
-        }
-        return 0;
-    }
-
-    function _containsCalldata(address[] calldata assets_, address asset) internal pure returns (bool) {
-        for (uint256 i = 0; i < assets_.length; i++) {
-            if (assets_[i] == asset) return true;
-        }
-        return false;
+    function _portfolioHashCurrent() internal view returns (bytes32) {
+        return keccak256(abi.encode(_assets, _weightsAsUint256()));
     }
 
     function _containsCurrentAsset(address asset) internal view returns (bool) {
@@ -759,5 +921,21 @@ contract ManagedOTFVault is ERC20Base {
             if (_assets[i] == asset) return true;
         }
         return false;
+    }
+
+    function _delegateStrategy() private {
+        if (!_initialized) revert NotInitialized();
+        address module = _strategyModule;
+        bytes32 actualCodehash = module.codehash;
+        if (actualCodehash != _strategyModuleCodehash) {
+            revert StrategyModuleIntegrityCheckFailed(_strategyModuleCodehash, actualCodehash);
+        }
+        assembly {
+            calldatacopy(0, 0, calldatasize())
+            let success := delegatecall(gas(), module, 0, calldatasize(), 0, 0)
+            returndatacopy(0, 0, returndatasize())
+            if iszero(success) { revert(0, returndatasize()) }
+            return(0, returndatasize())
+        }
     }
 }

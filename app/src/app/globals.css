@@ -706,7 +706,22 @@ h2 {
   cursor: pointer;
 }
 
+.addressPill a {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 3px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
 .addressPill button:hover {
+  background: var(--muted);
+  color: var(--text);
+}
+
+.addressPill a:hover {
   background: var(--muted);
   color: var(--text);
 }
@@ -1252,7 +1267,7 @@ button:disabled {
 
 .assetTable {
   width: 100%;
-  min-width: 820px;
+  min-width: 540px;
   border-collapse: collapse;
   font-size: 0.74rem;
 }
@@ -3020,7 +3035,7 @@ input.invalid {
 
 .accrualSummary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -3098,6 +3113,171 @@ input.invalid {
 
 .manageNotice {
   margin-top: 0;
+}
+
+.provenanceBanner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--card) 86%, var(--background));
+  padding: 10px 12px;
+}
+
+.provenanceBanner.live {
+  border-left-color: var(--green);
+}
+
+.provenanceBanner strong,
+.provenanceBanner > div > span {
+  display: block;
+}
+
+.provenanceBanner strong {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.provenanceBanner > div > span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.provenanceBanner > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--teal);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.riskCallout.info {
+  border-color: rgb(86 172 211 / 34%);
+  background: rgb(86 172 211 / 7%);
+  color: var(--blue);
+}
+
+.validationSummary,
+.inlineEmptyState {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid rgb(241 185 61 / 28%);
+  border-radius: 6px;
+  background: rgb(241 185 61 / 6%);
+  color: var(--gold);
+  padding: 10px 11px;
+}
+
+.validationSummary.danger {
+  border-color: rgb(235 101 112 / 30%);
+  background: rgb(235 101 112 / 6%);
+  color: var(--danger);
+}
+
+.validationSummary svg,
+.inlineEmptyState > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.validationSummary strong,
+.inlineEmptyState strong {
+  color: var(--text);
+  font-size: 0.7rem;
+}
+
+.validationSummary ul {
+  margin: 5px 0 0;
+  padding-left: 16px;
+  color: var(--text-soft);
+  font-size: 0.67rem;
+  line-height: 1.55;
+}
+
+.inlineEmptyState {
+  align-items: center;
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--text-muted);
+  margin: 12px 14px 14px;
+}
+
+.inlineEmptyState span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+
+.stepGuidance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+}
+
+.createSteps > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.createSteps > button:disabled:hover {
+  background: transparent;
+}
+
+.managerOperationTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 4px;
+}
+
+.managerOperationTabs button {
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.managerOperationTabs button:last-child {
+  border-right: 0;
+}
+
+.managerOperationTabs button:hover {
+  color: var(--text);
+}
+
+.managerOperationTabs button.active {
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--teal);
+}
+
+.landingStatus {
+  width: fit-content;
+  margin: 13px 0 0;
+  border-left: 2px solid rgb(55 183 170 / 64%);
+  color: rgb(199 208 220 / 78%);
+  padding-left: 9px;
+  font-size: 0.69rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 1120px) {
@@ -3412,6 +3592,137 @@ input.invalid {
     grid-template-columns: 1fr;
   }
 
+  .provenanceBanner {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .provenanceBanner > .stateBadge {
+    width: fit-content;
+  }
+
+  .managerOperationTabs {
+    overflow-x: auto;
+  }
+
+  .managerOperationTabs button {
+    min-width: 78px;
+  }
+
+  .directoryPanel .directoryTableWrap,
+  .managedVaultsPanel .directoryTableWrap,
+  .depositPositions .directoryTableWrap,
+  .walletAssets .directoryTableWrap {
+    overflow: visible;
+  }
+
+  .directoryPanel .directoryTable,
+  .managedVaultsPanel .directoryTable,
+  .depositPositions .directoryTable,
+  .walletAssets .directoryTable {
+    display: block;
+    min-width: 0;
+  }
+
+  .directoryPanel .directoryTable thead,
+  .managedVaultsPanel .directoryTable thead,
+  .depositPositions .directoryTable thead,
+  .walletAssets .directoryTable thead {
+    display: none;
+  }
+
+  .directoryPanel .directoryTable tbody,
+  .managedVaultsPanel .directoryTable tbody,
+  .depositPositions .directoryTable tbody,
+  .walletAssets .directoryTable tbody {
+    display: grid;
+  }
+
+  .directoryPanel .directoryTable tr,
+  .managedVaultsPanel .directoryTable tr,
+  .depositPositions .directoryTable tr,
+  .walletAssets .directoryTable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    padding: 13px 14px;
+  }
+
+  .directoryPanel .directoryTable tr:last-child,
+  .managedVaultsPanel .directoryTable tr:last-child,
+  .depositPositions .directoryTable tr:last-child,
+  .walletAssets .directoryTable tr:last-child {
+    border-bottom: 0;
+  }
+
+  .directoryPanel .directoryTable td,
+  .managedVaultsPanel .directoryTable td,
+  .depositPositions .directoryTable td,
+  .walletAssets .directoryTable td {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: auto;
+    border: 0;
+    padding: 0;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .directoryPanel .directoryTable td[data-label]::before,
+  .managedVaultsPanel .directoryTable td[data-label]::before,
+  .depositPositions .directoryTable td[data-label]::before,
+  .walletAssets .directoryTable td[data-label]::before {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    content: attr(data-label);
+    font-size: 0.65rem;
+    font-weight: 600;
+  }
+
+  .directoryPanel .directoryTable td:first-child,
+  .managedVaultsPanel .directoryTable td:first-child,
+  .depositPositions .directoryTable td:first-child,
+  .walletAssets .directoryTable td:first-child,
+  .directoryPanel .directoryTable td:last-child,
+  .managedVaultsPanel .directoryTable td:last-child,
+  .depositPositions .directoryTable td:last-child {
+    grid-column: 1 / -1;
+    width: auto;
+    padding: 0;
+  }
+
+  .directoryPanel .directoryTable td:last-child,
+  .managedVaultsPanel .directoryTable td:last-child,
+  .depositPositions .directoryTable td:last-child {
+    justify-content: flex-end;
+  }
+
+  .managedTableActions {
+    width: 100%;
+  }
+
+  .managedTableActions button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .directoryVault small,
+  .monoValue,
+  .stateBadge,
+  .metricCard > span,
+  .operationFlow > p,
+  .permissionList small,
+  .executionPolicy span,
+  .stepGuidance,
+  .validationSummary ul,
+  .inlineEmptyState span {
+    font-size: 0.75rem;
+  }
+
   .targetCardGrid,
   .riskMetricGrid {
     grid-template-columns: 1fr;
@@ -3423,7 +3734,15 @@ input.invalid {
   }
 
   .assetTable {
-    min-width: 760px;
+    min-width: 540px;
+  }
+
+  .assetTable th:first-child,
+  .assetTable td:first-child {
+    position: sticky;
+    z-index: 2;
+    left: 0;
+    background: var(--card);
   }
 
   .builderActions {
@@ -4815,21 +5134,22 @@ input.invalid {
   }
 
   .docsSidebar nav {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: 100%;
-    overflow-x: auto;
+    overflow: visible;
     border: 0;
     gap: 4px;
     padding-bottom: 4px;
   }
 
   .docsSidebar nav a {
-    flex: 0 0 auto;
     border: 1px solid var(--border);
     border-radius: 5px;
     margin: 0;
     background: var(--card);
     padding: 7px 10px;
+    white-space: normal;
   }
 
   .docsStatus {

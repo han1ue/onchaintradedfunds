@@ -1,13 +1,12 @@
 "use client";
 
 import { Providers } from "@/app/providers";
-import { RebalanceCooldownPanel } from "./RebalanceCooldownPanel";
+import { type AppView, RebalanceCooldownPanel } from "./RebalanceCooldownPanel";
 
-export function CooldownExperience() {
+export function CooldownExperience({ initialView = "landing" }: { initialView?: AppView }) {
   return (
     <Providers>
-      <RebalanceCooldownPanel />
+      <RebalanceCooldownPanel initialView={initialView} />
     </Providers>
   );
 }
-

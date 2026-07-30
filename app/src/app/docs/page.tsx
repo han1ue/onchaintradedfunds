@@ -26,6 +26,7 @@ const sections = [
   ["vault-lifecycle", "Vault lifecycle"],
   ["portfolio", "Portfolio model"],
   ["rebalancing", "Rebalancing"],
+  ["challenges", "Challenges"],
   ["cooldown", "Cooldown"],
   ["safety", "Safety limits"],
   ["fees", "Fees and roles"],
@@ -35,6 +36,8 @@ const sections = [
 
 const contractRows = [
   ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
+  ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
+  ["Portfolio calculator", "Stateless oracle valuation, weight, turnover, and challenge-band calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
@@ -44,13 +47,13 @@ const contractRows = [
 
 const safetyRows = [
   ["Approved assets", "Every target asset must be present in the protocol asset registry."],
-  ["Portfolio turnover", "The oracle-valued amount traded cannot exceed the vault's immutable limit."],
+  ["Portfolio turnover", "The oracle-valued amount in each partial batch cannot exceed the vault limit."],
   ["NAV loss", "Post-trade NAV cannot fall beyond the configured maximum loss."],
-  ["Target deviation", "Final actual weights must remain within the configured target tolerance."],
+  ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
   ["Asset count", "Portfolios cannot exceed the configured number of constituents."],
   ["Individual weights", "Maximum and minimum nonzero weights prevent invalid concentration and dust positions."],
   ["Oracle freshness", "Every valuation used for a rebalance must be recent enough for the vault's staleness bound."],
-  ["Execution", "Trades are atomic, use approved adapters, and grant only exact temporary approvals."],
+  ["Execution", "Every partial batch is atomic, uses approved adapters, clears exact approvals, and must reduce target distance."],
 ] as const;
 
 export default function DocsPage() {
@@ -105,10 +108,12 @@ export default function DocsPage() {
             <span className="docsEyebrow">Protocol documentation</span>
             <h1>Onchain funds with legible portfolios and bounded management.</h1>
             <p>
-              Onchain Traded Funds is an experimental protocol for managed ERC-4626-style portfolio
-              vaults. A vault owns a basket of approved tokenized assets, issues transferable shares,
-              and allows its manager to update the portfolio only through a narrow, safety-checked
-              rebalance path.
+              Onchain Traded Funds is an experimental protocol for managed multi-asset basket
+              vaults. An OTF owns approved tokenized assets, issues transferable proportional
+              shares, and allows its manager to update the portfolio only through a narrow,
+              safety-checked strategic and execution paths. OTFs are not ERC-4626 vaults. They
+              expose the current draft ERC-7621 basket interface and exact standard events, with
+              stricter proportional-contribution and ownership rules documented below.
             </p>
             <div className="docsNotice">
               <ShieldCheck size={17} />
@@ -192,7 +197,8 @@ export default function DocsPage() {
             <h3>Creation</h3>
             <p>
               The creator selects a manager, fee recipient, approved assets, target weights, fee,
-              rebalance cooldown, and permanent safety limits. The factory validates these
+              target-change cooldown, challenge and completion bands, grace period, and safety
+              limits. The factory validates these
               parameters, deploys a deterministic clone, transfers the exact initial basket, and
               initializes the vault. Target weights must total <code>10,000 bps</code>.
             </p>
@@ -241,25 +247,55 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
             <div className="docsSectionHeading">
               <Braces size={18} />
               <div>
-                <span>One atomic state transition</span>
+                <span>Targets, execution, and completion</span>
                 <h2>Rebalancing</h2>
               </div>
             </div>
             <p>
-              Only the manager can call <code>rebalance</code>. The call includes the complete
-              target portfolio, target weights, typed trade instructions, minimum outputs, and an
-              onchain rationale. The vault exposes no arbitrary manager call surface.
+              Only the manager can call the standard <code>rebalance</code> function. It updates
+              and locks constituents and target weights but executes no trades. The standard
+              <code>Rebalanced</code> event describes this target change, not successful
+              restoration.
             </p>
-            <pre><code>{`rebalance(
-  address[] targetAssets,
-  uint16[] targetWeightsBps,
-  TradeInstruction[] trades,
-  string rationale
-)`}</code></pre>
+            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)
+
+executeRebalanceTrades(TradeInstruction[] trades)
+
+completeStrategicRebalance()`}</code></pre>
             <p>
-              Each trade names an approved adapter, input asset, output asset, exact input amount,
-              minimum output, and adapter-specific data. Temporary approvals are exact and cleared
-              after execution. If any trade or final check fails, the entire transaction reverts.
+              The manager or an authorized executor may submit multiple partial trade batches.
+              Every batch uses current constituents and approved adapters, returns output directly
+              to the vault, satisfies oracle-valued slippage, turnover, NAV-loss, and exposure
+              limits, and must move every constituent closer to target. Temporary approvals are
+              exact and cleared after execution.
+            </p>
+          </section>
+
+          <section className="docsSection" id="challenges">
+            <div className="docsSectionHeading">
+              <Scale size={18} />
+              <div>
+                <span>Permissionless accountability</span>
+                <h2>Weight bands and challenges</h2>
+              </div>
+            </div>
+            <p>
+              Each constituent has a wider challenge band and a narrower completion band around
+              its active target. Anyone may call <code>flagOutOfBand()</code>, but fresh approved
+              prices must prove a real challenge-band breach. Invalid challenges revert.
+            </p>
+            <pre><code>{`Accruing
+  -> valid challenge or strategic target
+Escrowed
+  -> timely restoration: release manager shares
+  -> missed deadline: burn escrow
+Suspended
+  -> later restoration: resume only future fees`}</code></pre>
+            <p>
+              Deposits and proportional withdrawals stay enabled throughout. Natural price
+              recovery and constrained manager or executor trades can both restore the basket.
+              Target redefinition, ownership transfer, or delayed fee crystallization cannot
+              recover forfeited fees.
             </p>
           </section>
 
@@ -268,13 +304,12 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
               <Clock3 size={18} />
               <div>
                 <span>Minimum seven days</span>
-                <h2>Rebalance cooldown</h2>
+                <h2>Strategy-change cooldown</h2>
               </div>
             </div>
             <p>
-              Every vault has a creation-time cooldown of at least seven days. A creator may select
-              a longer duration, but the protocol rejects a shorter one and provides no manager
-              setter after deployment.
+              Every vault waits at least seven days between strategic target proposals. Partial
+              maintenance trades and completion remain available while the cooldown runs.
             </p>
             <pre><code>{`MIN_REBALANCE_COOLDOWN = 7 days
 nextRebalanceTime =
@@ -283,10 +318,10 @@ nextRebalanceTime =
 canRebalance =
   block.timestamp >= nextRebalanceTime`}</code></pre>
             <ul className="docsChecklist">
-              <li>The first rebalance waits from the vault creation timestamp.</li>
-              <li>Later rebalances wait from the last successful portfolio change.</li>
-              <li>The timestamp updates only after execution and every final safety check pass.</li>
-              <li>Failed rebalances, fee accrual, thesis amendments, and role transfers do not reset it.</li>
+              <li>The first target proposal waits from the vault creation timestamp.</li>
+              <li>Later proposals wait from the last accepted strategic target.</li>
+              <li>Failed proposals do not update the timestamp.</li>
+              <li>Trades, completion, challenges, fees, thesis amendments, and role transfers do not reset it.</li>
             </ul>
           </section>
 
@@ -299,8 +334,8 @@ canRebalance =
               </div>
             </div>
             <p>
-              Vault-level limits are chosen during creation and become part of the vault&apos;s
-              mandate. Rebalances are checked before, during, and after trade execution.
+              Protocol-bounded controls become part of the vault&apos;s mandate. Target proposals
+              and every partial trade batch are independently checked.
             </p>
             <div className="docsTableWrap">
               <table className="docsTable">
@@ -332,20 +367,23 @@ canRebalance =
             </div>
             <h3>Management fee</h3>
             <p>
-              Fees accrue lazily as new shares rather than by removing portfolio assets. Accrual is
-              realized when a state-changing vault operation runs. Fee accrual does not count as a
-              rebalance and cannot change <code>lastRebalanceTimestamp</code>.
+              Fees accrue lazily as shares rather than by removing portfolio assets. Manager
+              shares are delivered normally, escrowed during unfinished strategic work or
+              challenges, and burned if a challenge deadline is missed. Suspended intervals never
+              accrue retroactively.
             </p>
             <h3>Roles</h3>
             <div className="docsRoleGrid">
-              <article><strong>Manager</strong><span>Updates the thesis and submits bounded rebalances.</span></article>
-              <article><strong>Fee recipient</strong><span>Receives the creator portion of accrued fee shares.</span></article>
+              <article><strong>Manager</strong><span>Controls strategy, bounded fees, executors, and constrained trades.</span></article>
+              <article><strong>Executor</strong><span>May only perform constrained partial trades toward the active target.</span></article>
+              <article><strong>Fee recipient</strong><span>Receives released manager-fee shares.</span></article>
               <article><strong>Factory owner</strong><span>Administers protocol registries, adapters, treasury, and hard caps.</span></article>
               <article><strong>Share holder</strong><span>Deposits, holds transferable vault shares, and redeems the proportional basket.</span></article>
             </div>
             <p>
-              Manager and fee-recipient transfers use a two-step pending/acceptance flow. Neither
-              transfer changes the portfolio or its cooldown.
+              ERC-173 ownership transfer and the pending-manager extension both clear all
+              authorized executors. Fee-recipient transfer remains two-step. Role transfer cannot
+              cancel a challenge, recover forfeited fees, or change the cooldown.
             </p>
           </section>
 
@@ -357,12 +395,21 @@ canRebalance =
                 <h2>Contract interfaces</h2>
               </div>
             </div>
-            <pre><code>{`function nextRebalanceTime() external view returns (uint256);
-function canRebalance() external view returns (bool);
-function totalAssets() external view returns (uint256);
-function portfolioAssets() external view returns (address[] memory);
-function currentThesis() external view returns (string memory);
-function accrueFees() external;`}</code></pre>
+            <pre><code>{`function getConstituents() external view returns (address[] memory, uint256[] memory);
+function getReserve(address token) external view returns (uint256);
+function currentWeight(address token) external view returns (uint256);
+function getWeightBands(address token) external view returns (uint256, uint256, uint256, uint256);
+function isWithinTargetBands() external view returns (bool);
+function challengeTimeRemaining() external view returns (uint256);
+function feeState() external view returns (FeeState);
+function canProposeTargetWeights() external view returns (bool);`}</code></pre>
+            <p>
+              The contract emits the exact draft ERC-7621 <code>Contributed</code>,
+              <code>Withdrawn</code>, and <code>Rebalanced</code> events alongside richer OTF
+              events. OTF does not claim unconditional compliance: contributions must match the
+              live basket proportionally, ownership cannot be renounced, and a constituent must
+              have zero reserve before removal.
+            </p>
             <p>
               The generated workspace package exposes the application ABI and addresses. Frontend
               reads use wagmi and viem; writes should simulate first, request wallet confirmation,

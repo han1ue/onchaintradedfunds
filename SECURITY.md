@@ -2,6 +2,9 @@
 
 This repository contains unaudited experimental financial software. Do not deploy it to mainnet.
 
+The normative authority rules, invariants, delegatecall requirements, and deployment gates are in
+[`docs/PROTOCOL_SECURITY_SPEC.md`](./docs/PROTOCOL_SECURITY_SPEC.md).
+
 ## Responsible Disclosure
 
 Please report suspected vulnerabilities privately before public disclosure. Include:
@@ -21,9 +24,12 @@ Primary security goals:
 - Vault assets stay in the vault unless moved through redemption or approved rebalance settlement.
 - Managers cannot make arbitrary external calls from a vault.
 - Managers cannot shorten cooldowns after deployment.
-- Managers cannot increase management fee rates after deployment.
-- Rebalances fail atomically when any safety check fails.
-- Reverted rebalances do not reset cooldowns.
+- Manager fee changes remain within protocol hard caps and cannot occur during locked strategy
+  states.
+- Each partial trade fails atomically when any safety check fails.
+- Reverted target proposals do not reset cooldowns.
+- Anyone can prove an out-of-band portfolio and start manager-fee escrow.
+- Missed challenge deadlines permanently forfeit escrow and suspend manager-fee accrual.
 - Redemption does not depend on oracle health.
 - The frontend is never a security boundary.
 
@@ -39,7 +45,7 @@ The factory owner cannot:
 
 - Transfer vault assets.
 - Change an already deployed vault's cooldown.
-- Change an already deployed vault's creator fee.
+- Bypass a vault's fee cap or challenge state.
 - Bypass vault rebalance safety limits.
 - Block proportional in-kind redemption.
 
@@ -48,7 +54,10 @@ The factory owner cannot:
 A vault manager can:
 
 - Append thesis amendments.
-- Submit atomic rebalance transactions.
+- Propose constituents, target weights, and weight bands while strategy is unlocked.
+- Execute constrained partial rebalance trades.
+- Add and remove authorized trade executors.
+- Change the manager fee within the protocol cap while the portfolio is compliant.
 - Begin manager transfer.
 - Accept manager transfer when pending manager.
 - Begin fee-recipient transfer.
@@ -58,11 +67,15 @@ A vault manager cannot:
 - Transfer underlying assets directly.
 - Call arbitrary targets from the vault.
 - Shorten rebalance cooldown.
-- Increase creator fee.
 - Change protocol fee share.
-- Weaken safety limits.
+- Redefine an unfinished target or change strategy during a challenge.
+- Cancel a challenge or recover forfeited fees.
 - Edit or delete historical thesis entries.
 - Rescue unsupported tokens from the vault.
+
+Authorized executors can execute the same constrained partial-trade path as the manager. They
+cannot change strategy, fees, ownership, recipients, adapters, or executor permissions. Manager
+transfer clears every executor authorization.
 
 ## Rebalance Risks
 
@@ -74,9 +87,29 @@ Rebalancing depends on:
 - Oracle freshness.
 - Final NAV and target-weight validation.
 
-Every rebalance is atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss exceeds the cap, or final weights are outside tolerance, the whole transaction reverts.
+Target proposal, trade execution, and completion are separate. Every partial trade transaction is
+atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss exceeds the cap, or
+the batch does not move all exposures toward target, that transaction reverts while the locked
+strategic target remains active.
 
 The vault grants exact temporary approvals to the executor and clears them after each trade. This reduces approval exposure but does not remove adapter-integration risk.
+
+Strategy-only entry points are delegated to a fixed `ManagedOTFVaultStrategy` module so the custody
+contract remains deployable under the EVM runtime-code limit. The module address and expected
+runtime code hash are embedded in the vault implementation at construction and have no upgrade
+setter. Direct calls to the module revert. Both contracts inherit the same canonical
+`ManagedOTFVaultStorage` definition, and `contracts:security` rejects any compiled layout
+divergence.
+
+## Challenge Risks
+
+Challenges begin only when a caller proves a fresh oracle-valued challenge-band breach. The
+contract cannot know the offchain time at which drift originally occurred; the grace period begins
+when `flagOutOfBand()` succeeds.
+
+Natural price movement can resolve a challenge without trades. A deadline is considered missed
+when an onchain state transition observes it after expiry. Deposits and proportional withdrawals
+remain available during active and overdue challenges.
 
 ## Cooldown Risks
 
@@ -85,9 +118,9 @@ The MVP uses a fixed minimum cooldown of seven days, with optional longer per-va
 Security intent:
 
 - The first rebalance cannot happen immediately after vault creation.
-- Successful portfolio changes cannot happen back to back.
+- Strategic target proposals cannot happen back to back.
 - Failed rebalances do not alter the cooldown.
-- Non-portfolio updates do not alter the cooldown.
+- Partial trades, completion, challenges, and non-portfolio updates do not alter the cooldown.
 
 The cooldown is not a market-risk guarantee. It only limits rebalance frequency.
 
@@ -150,9 +183,11 @@ The UI should always surface contract addresses, connected network state, transa
 
 ## Rounding Risks
 
-Minting rounds required deposits up. Redemption rounds outputs down. This favors vault solvency over perfect user precision.
+Minting rounds required deposits up. Redemption rounds outputs down. This favors vault solvency
+over perfect user precision. A small, permanent share balance is locked inside every vault so
+total supply cannot reach zero.
 
-Rounding should be fuzz tested across:
+The Foundry suite exercises:
 
 - Very small share amounts.
 - Very large share amounts.
@@ -161,23 +196,48 @@ Rounding should be fuzz tested across:
 - Donated underlying assets.
 - Low total supply.
 
+Every supported asset transfer is also checked against sender and receiver balance deltas.
+Fee-on-transfer, sender-taxed, and unexpectedly rebasing assets revert atomically.
+
 ## Fee Risks
 
-Fees are minted as new shares. Fee-share math should be reviewed for:
+Fees are minted as new shares. Long dormant periods are processed in bounded annual intervals so
+fee accrual cannot permanently brick a vault. Fee-share tests cover:
 
 - Long elapsed intervals.
 - Near-zero supply.
 - Zero fee rate.
-- Creator/protocol split precision.
+- Manager/protocol split precision.
 - Multiple accrual calls in the same block.
+- Strategic and challenge escrow.
+- Timely release and deadline forfeiture.
+- Suspended intervals and nonretroactive resumption.
 
-The protocol share is a percentage of creator-selected fee shares. It is not a separate annual fee.
+The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
+Protocol shares held by `FeeCollector` can only be claimed by its configured treasury.
+
+Escrowed manager shares are held by the vault itself and tracked separately from permanently locked
+minimum liquidity. Deadline forfeiture burns only the tracked escrow balance.
+
+## ERC-7621 Status
+
+The contracts implement the current draft ERC-7621 interface identifier, ERC-173 ownership, and
+the exact `Contributed`, `Withdrawn`, and `Rebalanced` events. Custom strategic, challenge,
+executor, and fee-state events are emitted alongside them.
+
+The project does not claim unconditional ERC-7621 compliance. Contributions are intentionally
+restricted to the proportional live basket, ownership renunciation is rejected, and constituents
+must be reduced to zero reserve before removal. ERC-7621 is a draft and may change.
 
 ## Unsupported Token Donations
 
 Unsupported tokens sent directly to a vault are not part of the tracked portfolio, NAV, minting, or redemption. The current MVP intentionally avoids rescue functions to prevent a manager withdrawal backdoor.
 
 Users should avoid sending unsupported tokens to vault addresses.
+
+Tracked assets sent directly to a vault become proportional backing for all shares. Such donations
+can change displayed NAV and portfolio weights. Transaction callers must use `maxAmountsIn` and
+`minAmountsOut`; previews are not price oracles.
 
 ## Audit Requirements Before Production
 
@@ -195,4 +255,3 @@ Before any production deployment:
 ## Current Audit Status
 
 Unaudited. Experimental. Local development only.
-
