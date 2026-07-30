@@ -28,9 +28,11 @@ export const wagmiConfig = createConfig({
   connectors,
   transports: {
     [robinhoodChainTestnet.id]: http(
-      process.env.NEXT_PUBLIC_RH_TESTNET_RPC_URL || "http://127.0.0.1:8545",
+      process.env.NEXT_PUBLIC_RH_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com",
     ),
-    [robinhoodChain.id]: http(process.env.NEXT_PUBLIC_RH_RPC_URL || "https://placeholder.invalid"),
+    [robinhoodChain.id]: http(
+      process.env.NEXT_PUBLIC_RH_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
+    ),
   },
   ssr: true,
 });

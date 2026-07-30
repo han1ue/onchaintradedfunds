@@ -398,8 +398,18 @@ button.settingsOption:hover {
   background: var(--surface);
 }
 
+button.settingsOption:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .settingsOption.selected {
   border-color: rgb(55 183 170 / 26%);
+}
+
+.networkOptions {
+  display: grid;
+  gap: 7px;
 }
 
 .settingsOptionIcon {
@@ -2587,6 +2597,93 @@ textarea::placeholder {
 
 .formGrid.threeColumns {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tickerInput {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-raised);
+}
+
+.tickerInput:focus-within {
+  border-color: rgb(55 183 170 / 62%);
+  box-shadow: 0 0 0 2px rgb(55 183 170 / 9%);
+}
+
+.tickerInput > span {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text-soft);
+  padding: 0 9px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.tickerInput input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.addressRoleField {
+  min-width: 0;
+}
+
+.addressRoleFieldHeader {
+  display: flex;
+  min-height: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.addressRoleFieldHeader > label {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.addressRoleFieldHeader > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--teal);
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.6rem;
+}
+
+.addressRoleFieldHeader > button:hover {
+  color: var(--text);
+}
+
+.addressRoleField > input[readonly] {
+  background: var(--background);
+  color: var(--text-soft);
+  cursor: default;
+}
+
+.addressRoleField > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+  line-height: 1.4;
 }
 
 input.invalid {

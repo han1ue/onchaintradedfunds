@@ -35,6 +35,7 @@ import {
   Network,
   Plus,
   Percent,
+  Pencil,
   ReceiptText,
   RefreshCw,
   Scale,
@@ -51,7 +52,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits, isAddress } from "viem";
-import { useAccount, useReadContracts } from "wagmi";
+import { useAccount, useChainId, useReadContracts, useSwitchChain } from "wagmi";
+import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   formatCooldown,
   formatRelativeAvailability,
@@ -198,18 +200,6 @@ function shortAddress(address?: string): string {
 
 function shortAssetAddress(address: string): string {
   return `${address.slice(0, 10)}...${address.slice(-6)}`;
-}
-
-function tickerFromName(name: string): string {
-  const normalizedName = name
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 16)
-    .replace(/-+$/g, "");
-
-  return normalizedName ? `OTF-${normalizedName}` : "OTF-";
 }
 
 function bpsToPercent(value?: number): string {
@@ -487,6 +477,8 @@ function TopNav({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const chainId = useChainId();
+  const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
   const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -577,13 +569,33 @@ function TopNav({
                 </div>
                 <div className="settingsGroup">
                   <span className="settingsLabel">Network</span>
-                  <div className="settingsOption selected">
-                    <span className="settingsOptionIcon"><Network size={15} /></span>
-                    <span className="settingsOptionText">
-                      <strong>Robinhood Testnet</strong>
-                      <small>Configured network</small>
-                    </span>
-                    <Check className="settingsCheck" size={15} />
+                  <div className="networkOptions">
+                    <button
+                      className={`settingsOption ${chainId === robinhoodChainTestnet.id ? "selected" : ""}`}
+                      type="button"
+                      disabled={networkSwitchPending}
+                      onClick={() => switchChain({ chainId: robinhoodChainTestnet.id })}
+                    >
+                      <span className="settingsOptionIcon"><Network size={15} /></span>
+                      <span className="settingsOptionText">
+                        <strong>Robinhood Testnet</strong>
+                        <small>{chainId === robinhoodChainTestnet.id ? "Connected" : "Chain ID 46630"}</small>
+                      </span>
+                      {chainId === robinhoodChainTestnet.id ? <Check className="settingsCheck" size={15} /> : null}
+                    </button>
+                    <button
+                      className={`settingsOption ${chainId === robinhoodChain.id ? "selected" : ""}`}
+                      type="button"
+                      disabled={networkSwitchPending}
+                      onClick={() => switchChain({ chainId: robinhoodChain.id })}
+                    >
+                      <span className="settingsOptionIcon"><Network size={15} /></span>
+                      <span className="settingsOptionText">
+                        <strong>Robinhood Mainnet</strong>
+                        <small>{chainId === robinhoodChain.id ? "Connected" : "Chain ID 4663"}</small>
+                      </span>
+                      {chainId === robinhoodChain.id ? <Check className="settingsCheck" size={15} /> : null}
+                    </button>
                   </div>
                 </div>
                 <div className="settingsGroup">
@@ -1816,6 +1828,7 @@ function CreateVaultView({
 }) {
   const [step, setStep] = useState(0);
   const [deployState, setDeployState] = useState<TxState>("idle");
+  const [customManager, setCustomManager] = useState(false);
   const [draft, setDraft] = useState({
     name: "",
     symbol: "OTF-",
@@ -1849,7 +1862,7 @@ function CreateVaultView({
   const totalWeightValid = Math.abs(totalWeight - 100) < 0.01;
   const basicsValid =
     draft.name.trim().length > 2 &&
-    draft.symbol.trim().length > 2 &&
+    /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
     draft.thesis.trim().length > 20 &&
     isAddress(draft.manager) &&
     isAddress(draft.feeRecipient);
@@ -1873,20 +1886,18 @@ function CreateVaultView({
   );
 
   useEffect(() => {
-    if (!connectedAddress) return;
     setDraft((current) => ({
       ...current,
-      manager: current.manager === suggestedManagerAddress ? connectedAddress : current.manager,
-      feeRecipient: current.feeRecipient === suggestedManagerAddress ? connectedAddress : current.feeRecipient,
+      manager: customManager ? current.manager : connectedAddress ?? suggestedManagerAddress,
+      feeRecipient:
+        current.feeRecipient === suggestedManagerAddress
+          ? connectedAddress ?? current.feeRecipient
+          : current.feeRecipient,
     }));
-  }, [connectedAddress]);
+  }, [connectedAddress, customManager]);
 
   function updateDraft(field: keyof typeof draft, value: string) {
-    setDraft((current) => (
-      field === "name"
-        ? { ...current, name: value, symbol: tickerFromName(value) }
-        : { ...current, [field]: value }
-    ));
+    setDraft((current) => ({ ...current, [field]: value }));
   }
 
   function updatePortfolio(index: number, patch: Partial<TargetAsset>) {
@@ -1951,8 +1962,22 @@ function CreateVaultView({
                   </label>
                   <label>
                     <span>OTF ticker</span>
-                    <input value={draft.symbol} readOnly aria-readonly="true" />
-                    <small>Generated from the OTF name.</small>
+                    <div className="tickerInput">
+                      <span>OTF-</span>
+                      <input
+                        value={draft.symbol.slice(4)}
+                        onChange={(event) => {
+                          const suffix = event.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9-]/g, "")
+                            .slice(0, 16);
+                          updateDraft("symbol", `OTF-${suffix}`);
+                        }}
+                        placeholder="TECH"
+                        aria-label="OTF ticker suffix"
+                      />
+                    </div>
+                    <small>The OTF- prefix is fixed.</small>
                   </label>
                 </div>
                 <label>
@@ -1961,11 +1986,34 @@ function CreateVaultView({
                   <small>This begins the OTF&apos;s permanent, append-only thesis history.</small>
                 </label>
                 <div className="formGrid twoColumns">
-                  <label>
-                    <span>Manager address</span>
-                    <input className={!isAddress(draft.manager) && draft.manager ? "invalid" : ""} value={draft.manager} onChange={(event) => updateDraft("manager", event.target.value)} placeholder="0x..." />
-                    <small>May propose rebalances and amend the thesis.</small>
-                  </label>
+                  <div className="addressRoleField">
+                    <div className="addressRoleFieldHeader">
+                      <label htmlFor="manager-address">Manager address</label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomManager((enabled) => !enabled)}
+                      >
+                        {customManager ? <Wallet size={12} /> : <Pencil size={12} />}
+                        {customManager ? "Use creator wallet" : "Use custom address"}
+                      </button>
+                    </div>
+                    <input
+                      id="manager-address"
+                      className={!isAddress(draft.manager) && draft.manager ? "invalid" : ""}
+                      value={draft.manager}
+                      readOnly={!customManager}
+                      aria-readonly={!customManager}
+                      onChange={(event) => updateDraft("manager", event.target.value)}
+                      placeholder="0x..."
+                    />
+                    <small>
+                      {customManager
+                        ? "Custom manager may propose rebalances and amend the thesis."
+                        : connectedAddress
+                          ? "Locked to the wallet creating this OTF."
+                          : "Connect a wallet to use the creator address."}
+                    </small>
+                  </div>
                   <label>
                     <span>Fee recipient</span>
                     <input className={!isAddress(draft.feeRecipient) && draft.feeRecipient ? "invalid" : ""} value={draft.feeRecipient} onChange={(event) => updateDraft("feeRecipient", event.target.value)} placeholder="0x..." />
