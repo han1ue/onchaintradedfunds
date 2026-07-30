@@ -556,6 +556,10 @@ button.settingsOption:disabled {
   gap: 18px;
 }
 
+.vaultManageAction {
+  flex: 0 0 auto;
+}
+
 .vaultIdentity {
   display: flex;
   min-width: 0;
@@ -3219,6 +3223,10 @@ input.invalid {
   .feeAction {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .vaultManageAction {
+    align-self: flex-start;
   }
 
   .vaultMetaBadges {

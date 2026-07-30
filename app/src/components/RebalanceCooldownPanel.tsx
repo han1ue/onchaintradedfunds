@@ -435,7 +435,12 @@ export function RebalanceCooldownPanel() {
       <main className="dashboardMain">
         {view === "detail" && isTestnet ? (
           <>
-            <VaultHeader vault={vault} onBack={() => openView("vaults")} />
+            <VaultHeader
+              vault={vault}
+              canManage={vault.connectedIsManager || !vault.enabled}
+              onBack={() => openView("vaults")}
+              onManage={() => openView("manage")}
+            />
             <VaultMetrics vault={vault} />
             <VaultPerformance vaultSymbol={vault.symbol} />
 
@@ -450,7 +455,6 @@ export function RebalanceCooldownPanel() {
               <div className="primaryColumn">
                 <ThesisModule currentThesis={currentThesis} />
                 <PortfolioAllocation allocations={allocations} />
-                <ManagerRebalanceBuilder vault={vault} />
               </div>
 
               <aside className="sideColumn">
@@ -717,7 +721,17 @@ function OTFWalletButton() {
   );
 }
 
-function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }) {
+function VaultHeader({
+  vault,
+  canManage,
+  onBack,
+  onManage,
+}: {
+  vault: VaultView;
+  canManage: boolean;
+  onBack: () => void;
+  onManage: () => void;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
 
   async function copy(value: string | undefined, key: string) {
@@ -756,6 +770,12 @@ function VaultHeader({ vault, onBack }: { vault: VaultView; onBack: () => void }
             </div>
           </div>
         </div>
+        {canManage ? (
+          <button className="primaryAction vaultManageAction" type="button" onClick={onManage}>
+            <UserCog size={14} />
+            Manage OTF
+          </button>
+        ) : null}
       </div>
     </section>
   );
@@ -2560,6 +2580,8 @@ function ManageVaultsView({
         <MetricCard label="Creator Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub="Annualized" />
         <MetricCard label="Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Permanently immutable" />
       </div>
+
+      <ManagerRebalanceBuilder vault={vault} />
 
       <div className="manageGrid">
         <SectionCard title="Manager transfer" subtitle="Nominate a new portfolio manager" icon={<KeyRound size={15} />} action={<span className="stateBadge muted">Two-step</span>}>
