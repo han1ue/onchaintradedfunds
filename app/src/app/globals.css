@@ -105,6 +105,9 @@ main {
   border-radius: 6px;
   background: rgb(55 183 170 / 13%);
   color: var(--teal);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .brandText {
@@ -116,15 +119,6 @@ main {
 .brandText strong {
   font-size: 0.84rem;
   font-weight: 600;
-}
-
-.brandText span {
-  margin-top: 5px;
-  color: rgb(55 183 170 / 82%);
-  font-size: 0.58rem;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
 }
 
 .brandHomeButton {
@@ -3033,26 +3027,18 @@ input.invalid {
   border-radius: 5px;
   background: rgb(55 183 170 / 12%);
   color: var(--teal);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
-.landingBrand > span:last-child,
-.landingBrand strong,
-.landingBrand small {
+.landingBrand strong {
   display: block;
 }
 
 .landingBrand strong {
   font-size: 0.8rem;
   font-weight: 600;
-}
-
-.landingBrand small {
-  margin-top: 4px;
-  color: var(--teal);
-  font-size: 0.55rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .landingNav nav {

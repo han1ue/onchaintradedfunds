@@ -9,7 +9,6 @@ import {
   History,
   RefreshCw,
   ShieldCheck,
-  TrendingUp,
 } from "lucide-react";
 import { ETFChainScene } from "./ETFChainScene";
 
@@ -21,11 +20,8 @@ type LandingPageProps = {
 function LandingBrand() {
   return (
     <span className="landingBrand">
-      <span><TrendingUp size={16} /></span>
-      <span>
-        <strong>Onchain Traded Funds</strong>
-        <small>OTF protocol</small>
-      </span>
+      <span>OTF</span>
+      <strong>Onchain Traded Funds</strong>
     </span>
   );
 }

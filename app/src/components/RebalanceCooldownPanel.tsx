@@ -452,12 +452,9 @@ function TopNav({
     <header className="topNav">
       <div className="topNavInner">
         <button className="logoGroup brandHomeButton" type="button" onClick={onHome} title="Back to homepage">
-          <div className="otfLogo">
-            <TrendingUp size={16} />
-          </div>
+          <div className="otfLogo">OTF</div>
           <div className="brandText">
             <strong>Onchain Traded Funds</strong>
-            <span>OTF protocol</span>
           </div>
         </button>
 
@@ -1355,6 +1352,13 @@ function VaultsDirectory({
         }
       />
 
+      <div className="directoryMetrics">
+        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
+        <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
+        <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
+        <MetricCard label="Open Rebalances" value="1" icon={<Activity size={14} />} tone="success" sub="Two vaults cooling down" />
+      </div>
+
       {hasManagerAccess ? (
         <section className="sectionCard managedVaultsPanel">
           <div className="managedVaultsHeading">
@@ -1399,13 +1403,6 @@ function VaultsDirectory({
           </div>
         </section>
       ) : null}
-
-      <div className="directoryMetrics">
-        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet vaults" />
-        <MetricCard label="Active Vaults" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
-        <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
-        <MetricCard label="Open Rebalances" value="1" icon={<Activity size={14} />} tone="success" sub="Two vaults cooling down" />
-      </div>
 
       <section className="sectionCard directoryPanel">
         <div className="directoryPanelHeading">
