@@ -2957,32 +2957,43 @@ input.invalid {
 }
 
 .fallbackFrame {
-  inset: 8%;
+  top: 58%;
+  right: 5%;
+  bottom: 18%;
+  left: 5%;
   border-width: 2px;
   background: rgb(24 34 45 / 72%);
+  transform: skewY(-3deg);
 }
 
 .fallbackAsset {
-  right: 20%;
-  left: 20%;
-  height: 17%;
+  display: flex;
+  left: 12%;
+  height: 14%;
+  align-items: center;
   border-radius: 2px;
+  color: #07110f;
+  padding-left: 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
 }
 
 .fallbackAsset.teal {
-  top: 24%;
+  top: 12%;
+  right: 16%;
   background: #37b7aa;
 }
 
 .fallbackAsset.blue {
-  top: 43%;
-  right: 29%;
+  top: 30%;
+  right: 25%;
   background: #55a9d2;
 }
 
 .fallbackAsset.gold {
-  top: 62%;
-  right: 38%;
+  top: 48%;
+  right: 36%;
   background: #e6b64a;
 }
 
@@ -3288,7 +3299,7 @@ input.invalid {
   position: relative;
   z-index: 1;
   width: min(460px, 42vw);
-  background: #090e14;
+  text-shadow: 0 2px 18px #090e14;
 }
 
 .landingStoryCopy > svg {
@@ -3362,7 +3373,6 @@ input.invalid {
   min-height: 92svh;
   flex-direction: column;
   justify-content: center;
-  background: rgb(12 18 25 / 26%);
   padding-top: 120px;
   padding-bottom: 36px;
 }
@@ -3416,7 +3426,7 @@ input.invalid {
 
 @media (max-width: 600px) {
   .landingCanvas {
-    opacity: 0.7;
+    opacity: 0.88;
   }
 
   .landingSceneFallback {

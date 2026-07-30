@@ -7,9 +7,9 @@ import {
   CheckCircle,
   ExternalLink,
   History,
+  RefreshCw,
+  ShieldCheck,
   TrendingUp,
-  Wallet,
-  Zap,
 } from "lucide-react";
 import { ETFChainScene } from "./ETFChainScene";
 
@@ -58,8 +58,8 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
             <h1>Onchain Traded Funds</h1>
             <p className="landingThesis">The ETF idea,<br />rebuilt onchain.</p>
             <p className="landingIntro">
-              One vault holds the portfolio. Its ownership, share supply, valuation, and every
-              successful portfolio change advance together, block by block.
+              One vault holds a diversified portfolio. Its assets, weights, valuation, and every
+              successful rebalance advance together as verifiable onchain state.
             </p>
             <div className="landingActions">
               <button className="landingPrimary" type="button" onClick={onEnter}>
@@ -71,87 +71,87 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               </button>
             </div>
             <div className="landingProof">
-              <span><strong>One vault</strong><small>successive states</small></span>
-              <span><strong>Variable</strong><small>share supply</small></span>
-              <span><strong>Recorded</strong><small>block by block</small></span>
+              <span><strong>Known assets</strong><small>approved universe</small></span>
+              <span><strong>Live weights</strong><small>oracle priced</small></span>
+              <span><strong>Atomic</strong><small>portfolio changes</small></span>
             </div>
           </div>
           <a className="landingScrollCue" href="#architecture">
             <span />
             <span>
-              <small>Follow the fund</small>
-              <strong>Into the ledger</strong>
+              <small>Follow the portfolio</small>
+              <strong>Watch weights evolve</strong>
             </span>
           </a>
         </section>
 
         <section className="landingStory" id="architecture">
           <div className="landingStoryCopy">
-            <span className="landingChapter">01 / The first block</span>
+            <span className="landingChapter">01 / The basket</span>
             <Boxes size={22} />
-            <h2>The fund becomes<br />state.</h2>
+            <h2>Known assets.<br />One portfolio.</h2>
             <p>
-              The portfolio and its ownership settle into one contract state. Assets, weights,
-              balances, valuation, and total share supply can be inspected together.
+              NVDA, MSFT, and GOOGL can sit behind one vault share. Each constituent keeps its
+              identity while its allocation remains explicit and publicly inspectable.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Vault holds the underlying basket</span>
-              <span><CheckCircle size={13} /> ERC-4626 represents ownership</span>
-              <span><CheckCircle size={13} /> Portfolio state is publicly readable</span>
+              <span><CheckCircle size={13} /> Approved assets only</span>
+              <span><CheckCircle size={13} /> Public target and actual weights</span>
+              <span><CheckCircle size={13} /> Oracle-priced balances</span>
             </div>
           </div>
         </section>
 
         <section className="landingStory" id="ownership">
           <div className="landingStoryCopy">
-            <span className="landingChapter">02 / The next block</span>
-            <Wallet size={22} />
-            <h2>Shares move with<br />the ledger.</h2>
+            <span className="landingChapter">02 / Each state</span>
+            <History size={22} />
+            <h2>Weights move<br />block by block.</h2>
             <p>
-              Each confirmed state carries fund ownership forward. Deposits mint new claims,
-              redemptions burn them, and balances persist as the chain advances.
+              The same assets settle onto each new portfolio state. Their relative size changes
+              with the fund allocation, while earlier versions remain visible in its history.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Deposits mint proportional shares</span>
-              <span><CheckCircle size={13} /> Redemptions burn shares</span>
-              <span><CheckCircle size={13} /> Ownership survives every state transition</span>
+              <span><CheckCircle size={13} /> Asset identity persists</span>
+              <span><CheckCircle size={13} /> Allocation weights can change</span>
+              <span><CheckCircle size={13} /> Previous states are never overwritten</span>
             </div>
           </div>
         </section>
 
         <section className="landingStory" id="supply">
           <div className="landingStoryCopy">
-            <span className="landingChapter">03 / The supply</span>
-            <History size={22} />
-            <h2>Supply changes<br />in public.</h2>
+            <span className="landingChapter">03 / The rebalance</span>
+            <RefreshCw size={22} />
+            <h2>The mix can<br />evolve.</h2>
             <p>
-              The number of shares can rise or fall while the fund remains the same vault.
-              Every block records the resulting supply and the ownership it represents.
+              A manager can propose new target weights as the thesis evolves. The portfolio only
+              advances when every trade executes and every final safety check passes.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Deposits increase total supply</span>
-              <span><CheckCircle size={13} /> Redemptions reduce total supply</span>
-              <span><CheckCircle size={13} /> Accrued fees mint recipient shares</span>
+              <span><CheckCircle size={13} /> Maximum turnover enforced</span>
+              <span><CheckCircle size={13} /> Approved adapters only</span>
+              <span><CheckCircle size={13} /> Atomic execution or full rollback</span>
             </div>
           </div>
         </section>
 
         <section className="landingStory" id="portfolio">
           <div className="landingStoryCopy">
-            <span className="landingChapter">04 / The portfolio</span>
-            <Zap size={22} />
-            <h2>Every change is<br />recorded.</h2>
+            <span className="landingChapter">04 / The bounds</span>
+            <ShieldCheck size={22} />
+            <h2>Only valid states<br />persist.</h2>
             <p>
-              A rebalance becomes the next valid fund state only after its trades execute and
-              every safety check passes. A failed transaction leaves both state and cooldown intact.
+              The contract bounds portfolio risk before a new allocation can become state.
+              Failed rebalances leave the prior portfolio and its cooldown untouched.
             </p>
             <div className="landingBigStat">
               <strong>7 days</strong>
               <span>Minimum cooldown between successful portfolio changes</span>
             </div>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Approved, atomic execution</span>
-              <span><CheckCircle size={13} /> Portfolio history remains inspectable</span>
+              <span><CheckCircle size={13} /> Fresh onchain prices required</span>
+              <span><CheckCircle size={13} /> Weight and NAV-loss limits enforced</span>
               <span><CheckCircle size={13} /> Failed rebalances change nothing</span>
             </div>
           </div>
@@ -159,10 +159,10 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
 
         <section className="landingFinal" id="enter">
           <span className="landingChapter">The onchain fund</span>
-          <h2>One fund.<br />Every state visible.</h2>
+          <h2>One portfolio.<br />Every version visible.</h2>
           <p>
-            The basket, ownership, share supply, mandate, valuation, and portfolio history remain
-            legible from one onchain structure.
+            Constituents, weights, valuation, mandate, and portfolio history remain legible from
+            one onchain structure.
           </p>
           <div className="landingActions">
             <button className="landingPrimary" type="button" onClick={onEnter}>

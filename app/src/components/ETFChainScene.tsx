@@ -3,9 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
+const TICKERS = ["NVDA", "MSFT", "GOOGL"] as const;
+const STATE_WEIGHTS = [
+  [44, 34, 22],
+  [40, 35, 25],
+  [36, 39, 25],
+  [42, 33, 25],
+  [38, 37, 25],
+] as const;
+
 function smoothRange(value: number, start: number, end: number) {
   const normalized = Math.min(Math.max((value - start) / (end - start), 0), 1);
   return normalized * normalized * (3 - 2 * normalized);
+}
+
+function allocationWidth(weight: number) {
+  return weight * 0.075;
 }
 
 export function ETFChainScene() {
@@ -50,250 +63,229 @@ export function ETFChainScene() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090e14);
-    scene.fog = new THREE.Fog(0x090e14, 18, 34);
+    scene.fog = new THREE.Fog(0x090e14, 17, 30);
 
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 70);
-    camera.position.set(0, 1, 19);
+    const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 60);
+    camera.position.set(0, 3.2, 18);
 
-    const ambient = new THREE.HemisphereLight(0xd9f7f2, 0x101721, 1.5);
-    const key = new THREE.DirectionalLight(0xffffff, 3.6);
-    key.position.set(6, 10, 12);
-    const tealRim = new THREE.PointLight(0x37b7aa, 32, 25, 2);
-    tealRim.position.set(-4, 2, 8);
-    const goldRim = new THREE.PointLight(0xe6b64a, 20, 19, 2);
-    goldRim.position.set(7, -2, 6);
+    const ambient = new THREE.HemisphereLight(0xd9f7f2, 0x0b1017, 1.65);
+    const key = new THREE.DirectionalLight(0xffffff, 3.2);
+    key.position.set(7, 10, 9);
+    const tealRim = new THREE.PointLight(0x37b7aa, 26, 22, 2);
+    tealRim.position.set(-2, 3, 7);
+    const goldRim = new THREE.PointLight(0xe6b64a, 18, 18, 2);
+    goldRim.position.set(8, 0, 7);
     scene.add(ambient, key, tealRim, goldRim);
 
     const sceneRoot = new THREE.Group();
+    sceneRoot.rotation.y = -0.08;
     scene.add(sceneRoot);
 
-    const tealMaterial = new THREE.MeshStandardMaterial({
-      color: 0x37b7aa,
-      emissive: 0x0b302d,
-      emissiveIntensity: 0.56,
-      metalness: 0.76,
-      roughness: 0.25,
-    });
-    const blueMaterial = new THREE.MeshStandardMaterial({
-      color: 0x55a9d2,
-      emissive: 0x0b2432,
-      emissiveIntensity: 0.44,
-      metalness: 0.75,
-      roughness: 0.26,
-    });
-    const goldMaterial = new THREE.MeshStandardMaterial({
-      color: 0xe6b64a,
-      emissive: 0x352407,
-      emissiveIntensity: 0.42,
-      metalness: 0.77,
-      roughness: 0.25,
-    });
+    const stockMaterials = [
+      new THREE.MeshStandardMaterial({
+        color: 0x37b7aa,
+        emissive: 0x0a302d,
+        emissiveIntensity: 0.58,
+        metalness: 0.72,
+        roughness: 0.24,
+        transparent: true,
+      }),
+      new THREE.MeshStandardMaterial({
+        color: 0x55a9d2,
+        emissive: 0x0b2635,
+        emissiveIntensity: 0.48,
+        metalness: 0.72,
+        roughness: 0.24,
+        transparent: true,
+      }),
+      new THREE.MeshStandardMaterial({
+        color: 0xe6b64a,
+        emissive: 0x352407,
+        emissiveIntensity: 0.46,
+        metalness: 0.74,
+        roughness: 0.24,
+        transparent: true,
+      }),
+    ];
 
-    const cage = new THREE.Group();
-    cage.position.set(3.35, 1.15, 0);
-    cage.rotation.set(0.05, -0.23, 0);
-    sceneRoot.add(cage);
+    const textures = new Set<THREE.Texture>();
 
-    const cageGeometry = new THREE.BoxGeometry(5.6, 4.35, 2.8);
-    const cageSurfaceMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0x8199a5,
-      metalness: 0.38,
-      roughness: 0.18,
-      transmission: 0.22,
-      transparent: true,
-      opacity: 0.055,
-      depthWrite: false,
-    });
-    const cageSurface = new THREE.Mesh(cageGeometry, cageSurfaceMaterial);
-    const cageLineMaterial = new THREE.LineBasicMaterial({
-      color: 0x75d8ce,
-      transparent: true,
-      opacity: 0.82,
-    });
-    const cageEdges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(cageGeometry),
-      cageLineMaterial,
-    );
-    cage.add(cageSurface, cageEdges);
+    function createLabel(text: string, color = "#dce7ed", width = 1.25) {
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 512;
+      labelCanvas.height = 128;
+      const context = labelCanvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+        context.fillStyle = "rgba(9, 14, 20, 0.82)";
+        context.fillRect(0, 15, labelCanvas.width, 98);
+        context.strokeStyle = "rgba(128, 151, 166, 0.55)";
+        context.lineWidth = 3;
+        context.strokeRect(2, 17, labelCanvas.width - 4, 94);
+        context.fillStyle = color;
+        context.font = "600 52px ui-monospace, SFMono-Regular, Consolas, monospace";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2 + 1);
+      }
 
-    const barMaterial = new THREE.MeshStandardMaterial({
-      color: 0x53636f,
-      emissive: 0x10272a,
-      emissiveIntensity: 0.35,
-      metalness: 0.88,
-      roughness: 0.22,
-    });
-    const verticalBarGeometry = new THREE.BoxGeometry(0.055, 4.25, 0.055);
-    const horizontalBarGeometry = new THREE.BoxGeometry(5.45, 0.055, 0.055);
-    [-1.87, -0.62, 0.62, 1.87].forEach((x) => {
-      [-1.43, 1.43].forEach((z) => {
-        const bar = new THREE.Mesh(verticalBarGeometry, barMaterial);
-        bar.position.set(x, 0, z);
-        cage.add(bar);
+      const texture = new THREE.CanvasTexture(labelCanvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      textures.add(texture);
+
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
       });
-    });
-    [-1.43, 1.43].forEach((z) => {
-      [-1.42, 0, 1.42].forEach((y) => {
-        const bar = new THREE.Mesh(horizontalBarGeometry, barMaterial);
-        bar.position.set(0, y, z);
-        cage.add(bar);
-      });
-    });
-
-    const assetGeometry = new THREE.BoxGeometry(1, 0.74, 1.22);
-    const assetMaterials = [tealMaterial, blueMaterial, goldMaterial];
-    const assetWidths = [3.25, 2.58, 1.92];
-    const rebalancedWidths = [2.62, 3.02, 2.18];
-    const assetLayers = assetMaterials.map((material, index) => {
-      const asset = new THREE.Mesh(assetGeometry, material);
-      asset.position.set(-0.25, [0.92, 0, -0.92][index], 0);
-      asset.scale.x = assetWidths[index];
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(assetGeometry),
-        new THREE.LineBasicMaterial({ color: 0xd6e4e8, transparent: true, opacity: 0.36 }),
-      );
-      asset.add(edges);
-      cage.add(asset);
-      return asset;
-    });
-
-    const shareRingMaterial = new THREE.MeshBasicMaterial({
-      color: 0x9ec2c8,
-      transparent: true,
-      opacity: 0.42,
-    });
-    const shareRing = new THREE.Mesh(
-      new THREE.TorusGeometry(2.23, 0.025, 8, 96),
-      shareRingMaterial,
-    );
-    shareRing.position.z = 1.46;
-    cage.add(shareRing);
-
-    const shareMaterial = new THREE.MeshBasicMaterial({
-      color: 0xd2dce2,
-      transparent: true,
-      opacity: 0.92,
-    });
-    const shareGeometry = new THREE.BoxGeometry(0.36, 0.16, 0.08);
-    const cageShares: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
-    for (let index = 0; index < 20; index += 1) {
-      const angle = (index / 20) * Math.PI * 2;
-      const share = new THREE.Mesh(shareGeometry, shareMaterial.clone());
-      share.position.set(Math.cos(angle) * 2.23, Math.sin(angle) * 2.23, 1.5);
-      share.rotation.z = angle + Math.PI / 2;
-      cageShares.push(share);
-      cage.add(share);
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(width, width * 0.28, 1);
+      return sprite;
     }
 
     const chainRoot = new THREE.Group();
-    chainRoot.position.y = -6;
-    chainRoot.rotation.y = -0.08;
+    chainRoot.position.y = -0.8;
     sceneRoot.add(chainRoot);
 
-    const blockSpacing = 4.45;
-    const blockGeometry = new THREE.BoxGeometry(3.35, 0.72, 2.55);
-    const blockMaterials: THREE.MeshPhysicalMaterial[] = [];
-    const blockEdgeMaterials: THREE.LineBasicMaterial[] = [];
-    const blockTopMaterials: THREE.MeshBasicMaterial[] = [];
-    const supplyCounts = [8, 12, 15, 13, 18];
-    const snapshotMaterial = new THREE.MeshBasicMaterial({
-      color: 0x5ccfc2,
-      transparent: true,
-      opacity: 0.45,
-    });
-    const snapshotGeometry = new THREE.BoxGeometry(0.3, 0.055, 0.28);
+    const plateSpacing = 5.35;
+    const plateGeometry = new THREE.BoxGeometry(4.2, 0.16, 2.8);
+    const stockGeometry = new THREE.BoxGeometry(1, 0.7, 0.64);
+    const rowY = [2.05, 1.25, 0.45];
 
-    supplyCounts.forEach((count, blockIndex) => {
-      const blockMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x17232d,
-        metalness: 0.6,
+    const plateMaterials: THREE.MeshPhysicalMaterial[] = [];
+    const plateEdgeMaterials: THREE.LineBasicMaterial[] = [];
+    const blockLabelMaterials: THREE.SpriteMaterial[] = [];
+    const snapshotMaterials: THREE.MeshStandardMaterial[][] = [];
+    const snapshotEdgeMaterials: THREE.LineBasicMaterial[][] = [];
+    const snapshotLabelMaterials: THREE.SpriteMaterial[][] = [];
+
+    STATE_WEIGHTS.forEach((weights, stateIndex) => {
+      const plateGroup = new THREE.Group();
+      plateGroup.position.x = stateIndex * plateSpacing;
+
+      const plateMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x17242d,
+        metalness: 0.68,
         roughness: 0.26,
-        transmission: 0.12,
+        transmission: 0.08,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.58,
       });
       const edgeMaterial = new THREE.LineBasicMaterial({
-        color: 0x536675,
+        color: stateIndex === STATE_WEIGHTS.length - 1 ? 0xe6b64a : 0x5fcfc3,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.34,
       });
-      const topMaterial = new THREE.MeshBasicMaterial({
-        color: blockIndex === supplyCounts.length - 1 ? 0xe6b64a : 0x37b7aa,
-        transparent: true,
-        opacity: 0.09,
-        depthWrite: false,
-      });
-      blockMaterials.push(blockMaterial);
-      blockEdgeMaterials.push(edgeMaterial);
-      blockTopMaterials.push(topMaterial);
+      plateMaterials.push(plateMaterial);
+      plateEdgeMaterials.push(edgeMaterial);
 
-      const blockGroup = new THREE.Group();
-      blockGroup.position.x = blockIndex * blockSpacing;
-
-      const block = new THREE.Mesh(blockGeometry, blockMaterial);
+      const plate = new THREE.Mesh(plateGeometry, plateMaterial);
       const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(blockGeometry),
+        new THREE.EdgesGeometry(plateGeometry),
         edgeMaterial,
       );
-      const top = new THREE.Mesh(new THREE.PlaneGeometry(3.05, 2.25), topMaterial);
-      top.rotation.x = -Math.PI / 2;
-      top.position.y = 0.371;
-      blockGroup.add(block, edges, top);
+      plateGroup.add(plate, edges);
 
-      for (let shareIndex = 0; shareIndex < count; shareIndex += 1) {
-        const snapshot = new THREE.Mesh(snapshotGeometry, snapshotMaterial);
-        snapshot.position.set(
-          -1.15 + (shareIndex % 6) * 0.46,
-          0.42,
-          -0.72 + Math.floor(shareIndex / 6) * 0.54,
-        );
-        blockGroup.add(snapshot);
-      }
-
-      chainRoot.add(blockGroup);
-
-      if (blockIndex < supplyCounts.length - 1) {
-        const connector = new THREE.Mesh(
-          new THREE.BoxGeometry(blockSpacing - 3.25, 0.18, 0.34),
-          barMaterial,
-        );
-        connector.position.set(blockIndex * blockSpacing + blockSpacing / 2, 0, 0);
-        chainRoot.add(connector);
-      }
-    });
-
-    const transferMaterial = new THREE.MeshBasicMaterial({
-      color: 0xf2f6f8,
-      transparent: true,
-      opacity: 0,
-    });
-    const transferShares: THREE.Mesh[] = [];
-    for (let index = 0; index < 5; index += 1) {
-      const transferShare = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.18, 0.1),
-        transferMaterial,
+      const blockLabel = createLabel(
+        `BLOCK ${18_420 + stateIndex}`,
+        stateIndex === STATE_WEIGHTS.length - 1 ? "#f0c05a" : "#7ce1d5",
+        1.68,
       );
-      transferShares.push(transferShare);
-      chainRoot.add(transferShare);
-    }
+      blockLabel.position.set(1.15, 0.38, 1.15);
+      blockLabelMaterials.push(blockLabel.material);
+      plateGroup.add(blockLabel);
 
-    const activeBlockBeamMaterial = new THREE.MeshBasicMaterial({
-      color: 0x45c8bb,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
+      const stateMaterials: THREE.MeshStandardMaterial[] = [];
+      const stateEdgeMaterials: THREE.LineBasicMaterial[] = [];
+      const stateLabelMaterials: THREE.SpriteMaterial[] = [];
+      weights.forEach((weight, assetIndex) => {
+        const width = allocationWidth(weight);
+        const material = stockMaterials[assetIndex].clone();
+        material.opacity = 0.9;
+        stateMaterials.push(material);
+
+        const stock = new THREE.Mesh(stockGeometry, material);
+        stock.scale.x = width;
+        stock.position.set(-1.75 + width / 2, rowY[assetIndex], 0);
+        const stockEdgeMaterial = new THREE.LineBasicMaterial({
+          color: 0xe5eef2,
+          transparent: true,
+          opacity: 0.28,
+        });
+        stateEdgeMaterials.push(stockEdgeMaterial);
+        const stockEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(stockGeometry),
+          stockEdgeMaterial,
+        );
+        stock.add(stockEdges);
+        plateGroup.add(stock);
+
+        const label = createLabel(
+          `${TICKERS[assetIndex]}  ${weight}%`,
+          assetIndex === 2 ? "#f3cb72" : "#dce7ed",
+          1.64,
+        );
+        label.position.set(-0.94, rowY[assetIndex], 0.5);
+        stateLabelMaterials.push(label.material);
+        plateGroup.add(label);
+      });
+      snapshotMaterials.push(stateMaterials);
+      snapshotEdgeMaterials.push(stateEdgeMaterials);
+      snapshotLabelMaterials.push(stateLabelMaterials);
+      chainRoot.add(plateGroup);
     });
-    const activeBlockBeam = new THREE.Mesh(
-      new THREE.BoxGeometry(3.28, 0.04, 2.48),
-      activeBlockBeamMaterial,
+
+    const transferGroups = TICKERS.map((ticker, assetIndex) => {
+      const group = new THREE.Group();
+      const material = stockMaterials[assetIndex].clone();
+      material.opacity = 0;
+      const stock = new THREE.Mesh(stockGeometry, material);
+      const edgeMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+      });
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(stockGeometry),
+        edgeMaterial,
+      );
+      stock.add(edges);
+      group.add(stock);
+
+      const label = createLabel(
+        ticker,
+        assetIndex === 2 ? "#f3cb72" : "#eef5f7",
+        1.24,
+      );
+      label.position.z = 0.5;
+      label.material.opacity = 0;
+      group.add(label);
+      chainRoot.add(group);
+      return {
+        group,
+        material,
+        edgeMaterial,
+        labelMaterial: label.material,
+        assetIndex,
+      };
+    });
+
+    const activeOutlineMaterial = new THREE.LineBasicMaterial({
+      color: 0x7ce1d5,
+      transparent: true,
+      opacity: 0.72,
+    });
+    const activeOutline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(4.34, 0.05, 2.94)),
+      activeOutlineMaterial,
     );
-    activeBlockBeam.position.set(3.35, 0.41, 0);
-    sceneRoot.add(activeBlockBeam);
+    activeOutline.position.y = -0.13;
+    sceneRoot.add(activeOutline);
 
     let targetScroll = 0;
     let easedScroll = 0;
     let animationFrame = 0;
-    let previousTime = performance.now();
     let running = true;
     let viewportWidth = window.innerWidth;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -304,24 +296,18 @@ export function ETFChainScene() {
       viewportWidth = width;
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
-      camera.position.z = width < 700 ? 19 : width < 1_000 ? 19.5 : 20;
+      camera.position.z = width < 700 ? 18.5 : width < 1_000 ? 19 : 19.5;
       camera.updateProjectionMatrix();
 
       if (width < 700) {
-        sceneRoot.scale.setScalar(0.62);
-        sceneRoot.position.set(0, 1.45, 0);
-        cage.position.x = 0;
-        activeBlockBeam.position.x = 0;
+        sceneRoot.scale.setScalar(0.72);
+        sceneRoot.position.set(0, 1.55, 0);
       } else if (width < 1_000) {
-        sceneRoot.scale.setScalar(0.82);
-        sceneRoot.position.set(0.9, 0.55, 0);
-        cage.position.x = 2.15;
-        activeBlockBeam.position.x = 2.15;
-      } else {
         sceneRoot.scale.setScalar(1);
+        sceneRoot.position.set(0.8, 0.5, 0);
+      } else {
+        sceneRoot.scale.setScalar(1.2);
         sceneRoot.position.set(0, 0, 0);
-        cage.position.x = 3.35;
-        activeBlockBeam.position.x = 3.35;
       }
     }
 
@@ -333,82 +319,111 @@ export function ETFChainScene() {
     function render(time: number) {
       if (!running) return;
 
-      const delta = Math.min((time - previousTime) / 1_000, 0.05);
-      previousTime = time;
       easedScroll += (targetScroll - easedScroll) * (reduceMotion ? 1 : 0.1);
 
-      const chainReveal = smoothRange(easedScroll, 0.08, 0.24);
-      const stateProgress = smoothRange(easedScroll, 0.22, 0.9) * (supplyCounts.length - 1);
-      const stateIndex = Math.min(Math.floor(stateProgress), supplyCounts.length - 2);
+      const stateProgress =
+        smoothRange(easedScroll, 0.08, 0.9) * (STATE_WEIGHTS.length - 1);
+      const stateIndex = Math.min(
+        Math.floor(stateProgress),
+        STATE_WEIGHTS.length - 2,
+      );
       const stateFraction = stateProgress - stateIndex;
-      const mobileSceneTransition = smoothRange(easedScroll, 0.025, 0.13);
+      const mobileTransition = smoothRange(easedScroll, 0.025, 0.13);
+      const desktopAnchor = viewportWidth < 1_000 ? 2.2 : 3.65;
+      const anchor =
+        viewportWidth < 700
+          ? THREE.MathUtils.lerp(3.6, 1.2, mobileTransition)
+          : desktopAnchor;
 
       if (viewportWidth < 700) {
-        sceneRoot.scale.setScalar(THREE.MathUtils.lerp(0.48, 0.62, mobileSceneTransition));
-        sceneRoot.position.y = THREE.MathUtils.lerp(1.95, 1.45, mobileSceneTransition);
-        cage.position.x = THREE.MathUtils.lerp(4.5, 0, mobileSceneTransition);
-        cage.position.y = THREE.MathUtils.lerp(2.05, 1.15, mobileSceneTransition);
-        activeBlockBeam.position.x = cage.position.x;
+        const finalVisibility = 1 - smoothRange(easedScroll, 0.76, 0.86);
+        sceneRoot.scale.setScalar(
+          THREE.MathUtils.lerp(0.6, 0.72, mobileTransition) * finalVisibility,
+        );
+        sceneRoot.position.y = THREE.MathUtils.lerp(2.2, 1.55, mobileTransition);
       }
 
-      const activeAnchor = cage.position.x;
+      chainRoot.position.x = anchor - stateProgress * plateSpacing;
+      activeOutline.position.x = anchor;
+      activeOutline.position.y = chainRoot.position.y - 0.13;
 
-      chainRoot.position.y = THREE.MathUtils.lerp(-6, -3.12, chainReveal);
-      chainRoot.position.x = activeAnchor - stateProgress * blockSpacing;
-      chainRoot.rotation.z = Math.sin(easedScroll * Math.PI) * -0.018;
-      activeBlockBeam.position.y = chainRoot.position.y + 0.41;
-      activeBlockBeamMaterial.opacity = chainReveal * 0.22;
+      const transferAmount = Math.sin(stateFraction * Math.PI);
+      const transferVisibility =
+        smoothRange(stateFraction, 0.12, 0.32) *
+        (1 - smoothRange(stateFraction, 0.68, 0.88));
+      const staticLabelVisibility = 1 - transferVisibility;
+      const currentVisibility = 1 - smoothRange(stateFraction, 0.08, 0.62);
+      const nextVisibility = smoothRange(stateFraction, 0.38, 0.92);
+      plateMaterials.forEach((material, index) => {
+        const visibility =
+          index === stateIndex
+            ? currentVisibility
+            : index === stateIndex + 1
+              ? nextVisibility
+              : 0;
+        material.opacity = visibility * 0.68;
+        plateEdgeMaterials[index].opacity = visibility * 0.8;
+        blockLabelMaterials[index].opacity = visibility * (1 - transferAmount * 0.82);
+        snapshotMaterials[index].forEach((snapshotMaterial) => {
+          snapshotMaterial.opacity =
+            visibility * (0.92 - transferAmount * 0.78);
+        });
+        snapshotEdgeMaterials[index].forEach((edgeMaterial) => {
+          edgeMaterial.opacity =
+            visibility * (0.3 - transferAmount * 0.25);
+        });
+        snapshotLabelMaterials[index].forEach((labelMaterial) => {
+          labelMaterial.opacity =
+            visibility * staticLabelVisibility * 0.98;
+        });
+      });
 
-      const currentCount = THREE.MathUtils.lerp(
-        supplyCounts[stateIndex],
-        supplyCounts[stateIndex + 1],
-        stateFraction,
+      const moveProgress = smoothRange(stateFraction, 0.1, 0.9);
+      transferGroups.forEach(
+        ({ group, material, edgeMaterial, labelMaterial, assetIndex }) => {
+          const currentWeight = STATE_WEIGHTS[stateIndex][assetIndex];
+          const nextWeight = STATE_WEIGHTS[stateIndex + 1][assetIndex];
+          const currentWidth = allocationWidth(currentWeight);
+          const nextWidth = allocationWidth(nextWeight);
+          const fromX =
+            stateIndex * plateSpacing - 1.75 + currentWidth / 2;
+          const toX =
+            (stateIndex + 1) * plateSpacing - 1.75 + nextWidth / 2;
+          const stagger = Math.min(
+            Math.max(moveProgress * 1.18 - assetIndex * 0.06, 0),
+            1,
+          );
+          const width = THREE.MathUtils.lerp(currentWidth, nextWidth, stagger);
+
+          group.position.set(
+            THREE.MathUtils.lerp(fromX, toX, stagger),
+            rowY[assetIndex] +
+              Math.sin(stagger * Math.PI) * (1.1 + assetIndex * 0.1),
+            0,
+          );
+          group.scale.x = width;
+          group.rotation.z = Math.sin(stagger * Math.PI) * -0.06;
+          material.opacity = transferVisibility * 0.96;
+          edgeMaterial.opacity = transferVisibility * 0.52;
+          labelMaterial.opacity = transferVisibility;
+          labelMaterial.rotation = 0;
+          group.children[1].scale.x = 1.24 / Math.max(width, 0.1);
+        },
       );
-      cageShares.forEach((share, index) => {
-        const visibility = Math.min(Math.max(currentCount - index, 0), 1);
-        share.scale.setScalar(0.25 + visibility * 0.75);
-        share.material.opacity = visibility * 0.92;
-      });
 
-      const moveProgress = smoothRange(stateFraction, 0.16, 0.84);
-      const transferPulse = Math.sin(moveProgress * Math.PI);
-      transferMaterial.opacity = transferPulse * chainReveal;
-      transferShares.forEach((share, index) => {
-        const staggered = Math.min(Math.max(moveProgress * 1.35 - index * 0.08, 0), 1);
-        const fromX = stateIndex * blockSpacing;
-        const toX = (stateIndex + 1) * blockSpacing;
-        share.position.x = THREE.MathUtils.lerp(fromX, toX, staggered);
-        share.position.y = 0.58 + Math.sin(staggered * Math.PI) * (1.8 + index * 0.08);
-        share.position.z = -0.62 + index * 0.31;
-        share.rotation.z = staggered * Math.PI;
-      });
-
-      blockEdgeMaterials.forEach((material, index) => {
-        const distance = Math.abs(index - stateProgress);
-        const highlight = Math.max(1 - distance, 0);
-        material.opacity = 0.2 + highlight * 0.72;
-        blockTopMaterials[index].opacity = 0.05 + highlight * 0.28;
-        blockMaterials[index].opacity = 0.46 + highlight * 0.3;
-      });
-
-      const rebalanceProgress = smoothRange(easedScroll, 0.7, 0.86);
-      assetLayers.forEach((asset, index) => {
-        asset.scale.x = THREE.MathUtils.lerp(
-          assetWidths[index],
-          rebalancedWidths[index],
-          rebalanceProgress,
-        );
-      });
-
-      shareRing.rotation.z += delta * (reduceMotion ? 0 : 0.09);
-      cage.rotation.y = -0.23 + Math.sin(easedScroll * Math.PI * 1.5) * 0.08;
-      cage.rotation.x = 0.05 + Math.sin(time * 0.00024) * (reduceMotion ? 0 : 0.025);
-      cageLineMaterial.opacity = 0.72 + chainReveal * 0.2;
-      activeBlockBeamMaterial.color.setHex(
-        stateIndex === supplyCounts.length - 2 && stateFraction > 0.72 ? 0xe6b64a : 0x45c8bb,
+      activeOutlineMaterial.opacity = 0.48 + Math.sin(time * 0.002) * 0.12;
+      activeOutlineMaterial.color.setHex(
+        stateProgress > STATE_WEIGHTS.length - 1.35 ? 0xe6b64a : 0x7ce1d5,
       );
+      chainRoot.rotation.z =
+        Math.sin(easedScroll * Math.PI) * -0.014 +
+        Math.sin(time * 0.0003) * (reduceMotion ? 0 : 0.006);
+      sceneRoot.rotation.y =
+        -0.08 + Math.sin(easedScroll * Math.PI * 1.4) * 0.055;
+      sceneRoot.position.x =
+        viewportWidth < 700 ? 0 : Math.sin(easedScroll * Math.PI) * 0.16;
 
-      camera.lookAt(0.8, -0.25, 0);
+      camera.lookAt(0.9, 0.2, 0);
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
     }
@@ -421,7 +436,6 @@ export function ETFChainScene() {
       }
       if (!running) {
         running = true;
-        previousTime = performance.now();
         animationFrame = window.requestAnimationFrame(render);
       }
     }
@@ -445,12 +459,17 @@ export function ETFChainScene() {
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
           geometries.add(object.geometry);
-          const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+          const objectMaterials = Array.isArray(object.material)
+            ? object.material
+            : [object.material];
           objectMaterials.forEach((material) => materials.add(material));
+        } else if (object instanceof THREE.Sprite) {
+          materials.add(object.material);
         }
       });
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
+      textures.forEach((texture) => texture.dispose());
       renderer.dispose();
     };
   }, []);
@@ -459,9 +478,9 @@ export function ETFChainScene() {
     return (
       <div className="landingSceneFallback" aria-hidden="true">
         <span className="fallbackFrame" />
-        <span className="fallbackAsset teal" />
-        <span className="fallbackAsset blue" />
-        <span className="fallbackAsset gold" />
+        <span className="fallbackAsset teal">NVDA</span>
+        <span className="fallbackAsset blue">MSFT</span>
+        <span className="fallbackAsset gold">GOOGL</span>
       </div>
     );
   }
