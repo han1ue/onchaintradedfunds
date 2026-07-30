@@ -53,6 +53,7 @@ import {
   formatTimestamp,
   progressThroughCooldown,
 } from "@/lib/time";
+import { LandingPage } from "./LandingPage";
 
 type ContractValue =
   | string
@@ -66,7 +67,7 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
-type AppView = "detail" | "vaults" | "create" | "manage" | "deposits";
+type AppView = "landing" | "detail" | "vaults" | "create" | "manage" | "deposits";
 
 type Allocation = {
   symbol: string;
@@ -232,7 +233,7 @@ export function RebalanceCooldownPanel() {
   const vaultAddress = configuredVaultAddress();
   const enabled = Boolean(vaultAddress);
   const { address: connectedAddress } = useAccount();
-  const [view, setView] = useState<AppView>("detail");
+  const [view, setView] = useState<AppView>("landing");
 
   const readContracts = vaultAddress
     ? ([
@@ -328,9 +329,23 @@ export function RebalanceCooldownPanel() {
   };
   const activeTab = view === "create" ? "Create" : "Vaults";
 
+  function openView(nextView: AppView) {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setView(nextView);
+  }
+
   function changeView(tab: string) {
-    if (tab === "Create") setView("create");
-    else setView("vaults");
+    if (tab === "Create") openView("create");
+    else openView("vaults");
+  }
+
+  if (view === "landing") {
+    return (
+      <LandingPage
+        onCreate={() => openView("create")}
+        onEnter={() => openView("vaults")}
+      />
+    );
   }
 
   return (
@@ -338,15 +353,16 @@ export function RebalanceCooldownPanel() {
       <TopNav
         activeTab={activeTab}
         depositsActive={view === "deposits"}
+        onHome={() => openView("landing")}
         onTabChange={changeView}
-        onOpenDeposits={() => setView("deposits")}
+        onOpenDeposits={() => openView("deposits")}
         onRefresh={() => void refetch()}
       />
 
       <main className="dashboardMain">
         {view === "detail" ? (
           <>
-            <VaultHeader vault={vault} onBack={() => setView("vaults")} />
+            <VaultHeader vault={vault} onBack={() => openView("vaults")} />
             <VaultMetrics vault={vault} />
 
             {error ? (
@@ -375,21 +391,21 @@ export function RebalanceCooldownPanel() {
         {view === "vaults" ? (
           <VaultsDirectory
             currentVault={vault}
-            onManageVault={() => setView("manage")}
-            onOpenVault={() => setView("detail")}
-            onCreateVault={() => setView("create")}
+            onManageVault={() => openView("manage")}
+            onOpenVault={() => openView("detail")}
+            onCreateVault={() => openView("create")}
           />
         ) : null}
 
         {view === "create" ? (
-          <CreateVaultView connectedAddress={connectedAddress} onBack={() => setView("vaults")} />
+          <CreateVaultView connectedAddress={connectedAddress} onBack={() => openView("vaults")} />
         ) : null}
 
         {view === "manage" ? (
           <ManageVaultsView
             vault={vault}
-            onBack={() => setView("vaults")}
-            onOpenVault={() => setView("detail")}
+            onBack={() => openView("vaults")}
+            onOpenVault={() => openView("detail")}
           />
         ) : null}
 
@@ -397,8 +413,8 @@ export function RebalanceCooldownPanel() {
           <DepositsView
             connectedAddress={connectedAddress}
             currentVault={vault}
-            onBrowseVaults={() => setView("vaults")}
-            onOpenVault={() => setView("detail")}
+            onBrowseVaults={() => openView("vaults")}
+            onOpenVault={() => openView("detail")}
           />
         ) : null}
 
@@ -420,12 +436,14 @@ export function RebalanceCooldownPanel() {
 function TopNav({
   activeTab,
   depositsActive,
+  onHome,
   onTabChange,
   onOpenDeposits,
   onRefresh,
 }: {
   activeTab: string;
   depositsActive: boolean;
+  onHome: () => void;
   onTabChange: (tab: string) => void;
   onOpenDeposits: () => void;
   onRefresh: () => void;
@@ -433,7 +451,7 @@ function TopNav({
   return (
     <header className="topNav">
       <div className="topNavInner">
-        <div className="logoGroup">
+        <button className="logoGroup brandHomeButton" type="button" onClick={onHome} title="Back to homepage">
           <div className="otfLogo">
             <TrendingUp size={16} />
           </div>
@@ -441,7 +459,7 @@ function TopNav({
             <strong>Onchain Traded Funds</strong>
             <span>OTF protocol</span>
           </div>
-        </div>
+        </button>
 
         <nav className="navTabs" aria-label="Primary navigation">
           {navTabs.map((tab) => (
