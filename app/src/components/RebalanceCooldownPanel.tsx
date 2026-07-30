@@ -2301,15 +2301,21 @@ function DepositsView({
     contracts: balanceContracts,
     query: { enabled: canReadBalances },
   });
-  const walletAssets = testnetCreateAssets.map((asset, index) => {
-    const balance = balanceResults?.[index * 2]?.result as bigint | undefined;
-    const decimals = Number(balanceResults?.[index * 2 + 1]?.result ?? 18);
-    return {
-      ...asset,
-      balance,
-      displayBalance: balancesLoading ? "Loading" : formatWalletTokenBalance(balance, decimals),
-    };
-  });
+  const walletAssets = testnetCreateAssets
+    .map((asset, index) => {
+      const balance = balanceResults?.[index * 2]?.result as bigint | undefined;
+      const decimals = Number(balanceResults?.[index * 2 + 1]?.result ?? 18);
+      return {
+        ...asset,
+        balance,
+        catalogOrder: index,
+        displayBalance: balancesLoading ? "Loading" : formatWalletTokenBalance(balance, decimals),
+      };
+    })
+    .sort((left, right) => {
+      const heldDifference = Number((right.balance ?? 0n) > 0n) - Number((left.balance ?? 0n) > 0n);
+      return heldDifference || left.catalogOrder - right.catalogOrder;
+    });
   const heldAssetCount = walletAssets.filter((asset) => (asset.balance ?? 0n) > 0n).length;
 
   if (!isTestnet) {
@@ -2447,7 +2453,6 @@ function DepositsView({
                     <th>Asset</th>
                     <th>Token address</th>
                     <th>Wallet balance</th>
-                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2461,11 +2466,6 @@ function DepositsView({
                       </td>
                       <td className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
                       <td className="monoValue">{asset.displayBalance}</td>
-                      <td>
-                        <span className={`stateBadge ${(asset.balance ?? 0n) > 0n ? "success" : "muted"}`}>
-                          {(asset.balance ?? 0n) > 0n ? "Held" : "No balance"}
-                        </span>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
