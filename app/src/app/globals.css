@@ -714,6 +714,10 @@ h2 {
   margin-top: 14px;
 }
 
+.metricGrid + .sectionCard {
+  margin-top: 16px;
+}
+
 .metricCard {
   min-width: 0;
   padding: 12px 14px;
@@ -768,6 +772,134 @@ h2 {
 .metricCard.warning strong,
 .metricCard.warning .metricLabel svg {
   color: var(--gold);
+}
+
+.performanceRanges {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 2px;
+}
+
+.performanceRanges button {
+  display: grid;
+  width: 34px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.59rem;
+  font-weight: 600;
+}
+
+.performanceRanges button:hover {
+  color: var(--text);
+}
+
+.performanceRanges button.active {
+  background: var(--surface);
+  color: var(--teal);
+}
+
+.performanceSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+  padding: 0 0 14px;
+}
+
+.performanceSummary > div {
+  min-width: 0;
+  padding: 0 16px;
+}
+
+.performanceSummary > div:first-child {
+  padding-left: 0;
+}
+
+.performanceSummary > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.performanceSummary span,
+.performanceSummary strong,
+.performanceSummary small {
+  display: block;
+}
+
+.performanceSummary span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+.performanceSummary strong {
+  margin-top: 6px;
+  font-size: 1.05rem;
+  font-weight: 620;
+}
+
+.performanceSummary small {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+}
+
+.performanceChartWrap {
+  margin-top: 12px;
+}
+
+.performanceChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.performanceGridLine {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.performanceAxisLabel {
+  fill: var(--text-muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
+.performanceArea {
+  fill: rgb(55 183 170 / 8%);
+}
+
+.performanceLine {
+  fill: none;
+  stroke: var(--teal);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.performancePoint {
+  fill: var(--card);
+  stroke: var(--teal);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.performanceDates {
+  display: flex;
+  justify-content: space-between;
+  margin: -12px 18px 0 52px;
+  color: var(--text-muted);
+  font-size: 0.59rem;
 }
 
 .dashboardGrid {
@@ -1145,9 +1277,7 @@ button:disabled {
 }
 
 .assetIdentity {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+  display: block;
 }
 
 .assetIdentity strong,
@@ -1168,20 +1298,6 @@ button:disabled {
   color: var(--text-muted);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.62rem;
-}
-
-.assetToken {
-  display: grid !important;
-  width: 25px;
-  height: 25px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--card-raised);
-  color: var(--text-muted);
-  font-size: 0.56rem !important;
-  font-weight: 700;
 }
 
 .driftValue {
@@ -2964,6 +3080,42 @@ input.invalid {
 
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .performanceSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+
+  .performanceSummary > div:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 12px;
+  }
+
+  .performanceSummary > div:nth-child(2) {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .performanceChart {
+    height: 150px;
+  }
+
+  .performanceAxisLabel {
+    display: none;
+  }
+
+  .performancePoint {
+    display: none;
+  }
+
+  .performancePoint:last-of-type {
+    display: block;
+  }
+
+  .performanceDates {
+    margin-left: 0;
   }
 
   .cooldownStats {

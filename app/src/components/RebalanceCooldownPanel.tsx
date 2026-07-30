@@ -296,8 +296,11 @@ export function RebalanceCooldownPanel() {
   const results = data as ReadResult | undefined;
   const vaultName = resultAt<string>(results, 0) ?? "Onchain Technology Leaders";
   const vaultSymbol = resultAt<string>(results, 1) ?? "OTF-TECH";
-  const manager = resultAt<string>(results, 2) ?? suggestedManagerAddress;
-  const feeRecipient = resultAt<string>(results, 3) ?? suggestedManagerAddress;
+  const managerResult = resultAt<string>(results, 2);
+  const feeRecipientResult = resultAt<string>(results, 3);
+  const manager = managerResult && isAddress(managerResult) ? managerResult : suggestedManagerAddress;
+  const feeRecipient =
+    feeRecipientResult && isAddress(feeRecipientResult) ? feeRecipientResult : suggestedManagerAddress;
   const creatorFeeBps = resultAt<number>(results, 4) ?? 50;
   const protocolFeeShareBps = resultAt<number>(results, 5) ?? 1_500;
   const totalSupply = resultAt<bigint>(results, 6);
@@ -390,6 +393,7 @@ export function RebalanceCooldownPanel() {
           <>
             <VaultHeader vault={vault} onBack={() => openView("vaults")} />
             <VaultMetrics vault={vault} />
+            <VaultPerformance vaultSymbol={vault.symbol} />
 
             {error ? (
               <div className="warningBanner danger">
@@ -400,14 +404,14 @@ export function RebalanceCooldownPanel() {
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <RebalanceCooldown vault={vault} />
+                <ThesisModule currentThesis={currentThesis} />
                 <PortfolioAllocation allocations={allocations} />
                 <ManagerRebalanceBuilder vault={vault} />
               </div>
 
               <aside className="sideColumn">
                 <SafetyLimits vault={vault} />
-                <ThesisModule currentThesis={currentThesis} />
+                <RebalanceCooldown vault={vault} />
                 <UserActions vaultSymbol={vaultSymbol} />
               </aside>
             </div>
@@ -719,6 +723,133 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
   );
 }
 
+const performanceSeries = {
+  "1M": {
+    start: "30 days ago",
+    values: [0, 0.4, -0.2, 1.1, 1.8, 1.5, 2.9, 2.4, 3.6, 4.2],
+  },
+  "3M": {
+    start: "3 months ago",
+    values: [0, -1.1, 0.8, 2.4, 1.7, 4.6, 3.9, 6.1, 5.4, 7.2, 8.7],
+  },
+  "1Y": {
+    start: "1 year ago",
+    values: [0, 1.8, -1.2, 3.4, 2.1, 6.3, 8.9, 7.2, 11.8, 10.6, 14.1, 15.9],
+  },
+  ALL: {
+    start: "Since inception",
+    values: [0, -4.8, 2.2, 7.6, 5.1, 13.4, 17.8, 15.2, 24.6, 21.1, 30.4, 27.8, 34.2],
+  },
+} as const;
+
+type PerformanceRange = keyof typeof performanceSeries;
+
+function VaultPerformance({ vaultSymbol }: { vaultSymbol: string }) {
+  const [range, setRange] = useState<PerformanceRange>("1Y");
+  const series = performanceSeries[range];
+  const values = [...series.values];
+  const width = 960;
+  const height = 220;
+  const left = 52;
+  const right = 18;
+  const top = 18;
+  const bottom = 30;
+  const chartWidth = width - left - right;
+  const chartHeight = height - top - bottom;
+  const minimum = Math.floor((Math.min(0, ...values) - 2) / 5) * 5;
+  const maximum = Math.ceil((Math.max(0, ...values) + 2) / 5) * 5;
+  const spread = Math.max(maximum - minimum, 1);
+  const points = values.map((value, index) => ({
+    value,
+    x: left + (index / Math.max(values.length - 1, 1)) * chartWidth,
+    y: top + ((maximum - value) / spread) * chartHeight,
+  }));
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const zeroY = top + ((maximum - 0) / spread) * chartHeight;
+  const areaPath = `${linePath} L ${points.at(-1)?.x ?? left} ${zeroY} L ${left} ${zeroY} Z`;
+  const ticks = Array.from({ length: 5 }, (_, index) => maximum - (spread * index) / 4);
+  const periodReturn = values.at(-1) ?? 0;
+  const navChange = 48.21 - 48.21 / (1 + periodReturn / 100);
+
+  return (
+    <SectionCard
+      title="Performance"
+      subtitle="Vault share return · oracle-valued NAV"
+      icon={<TrendingUp size={15} />}
+      action={
+        <div className="performanceRanges" aria-label="Performance period">
+          {(Object.keys(performanceSeries) as PerformanceRange[]).map((option) => (
+            <button
+              className={range === option ? "active" : ""}
+              key={option}
+              type="button"
+              aria-pressed={range === option}
+              onClick={() => setRange(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <div className="performanceSummary">
+        <div>
+          <span>{range} return</span>
+          <strong className={periodReturn >= 0 ? "successText" : "dangerText"}>
+            {periodReturn >= 0 ? "+" : ""}{periodReturn.toFixed(1)}%
+          </strong>
+          <small>{series.start}</small>
+        </div>
+        <div>
+          <span>Current NAV / share</span>
+          <strong>$48.21</strong>
+          <small>USDC terms</small>
+        </div>
+        <div>
+          <span>Value change / share</span>
+          <strong className={navChange >= 0 ? "successText" : "dangerText"}>
+            {navChange >= 0 ? "+" : "-"}${Math.abs(navChange).toFixed(2)}
+          </strong>
+          <small>{vaultSymbol}</small>
+        </div>
+      </div>
+
+      <div className="performanceChartWrap">
+        <svg
+          className="performanceChart"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`${vaultSymbol} ${range} return chart ending at ${periodReturn.toFixed(1)} percent`}
+        >
+          {ticks.map((tick) => {
+            const y = top + ((maximum - tick) / spread) * chartHeight;
+            return (
+              <g key={tick}>
+                <line className="performanceGridLine" x1={left} x2={width - right} y1={y} y2={y} />
+                <text className="performanceAxisLabel" x={left - 9} y={y + 3} textAnchor="end">
+                  {tick > 0 ? "+" : ""}{tick.toFixed(0)}%
+                </text>
+              </g>
+            );
+          })}
+          <path className="performanceArea" d={areaPath} />
+          <path className="performanceLine" d={linePath} />
+          {points.map((point, index) => (
+            <circle className="performancePoint" cx={point.x} cy={point.y} key={`${point.x}-${point.y}`} r={index === points.length - 1 ? 4 : 2}>
+              <title>{point.value >= 0 ? "+" : ""}{point.value.toFixed(1)}%</title>
+            </circle>
+          ))}
+        </svg>
+        <div className="performanceDates">
+          <span>{series.start}</span>
+          <span>Today</span>
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
 function AddressPill({
   label,
   address,
@@ -928,7 +1059,6 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
                 <tr key={asset.address}>
                   <td>
                     <div className="assetIdentity">
-                      <span className="assetToken">{asset.symbol.replace(/^m/, "").slice(0, 2)}</span>
                       <div>
                         <strong>{asset.symbol}</strong>
                         <span>{shortAssetAddress(asset.address)}</span>
@@ -1370,7 +1500,7 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
               <strong>{label}</strong>
               <small>{description}</small>
             </div>
-            <span>{value}<LockKeyhole size={12} /></span>
+            <span>{value}</span>
           </div>
         ))}
       </div>
