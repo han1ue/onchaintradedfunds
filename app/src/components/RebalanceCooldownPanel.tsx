@@ -746,8 +746,8 @@ function VaultHeader({
   }
 
   return (
-    <section className="vaultHeader">
-      <div className="vaultBreadcrumb">
+    <>
+      <div className="vaultBreadcrumb detailBreadcrumb">
         <button type="button" onClick={onBack}>
           <ArrowLeft size={12} />
           OTFs
@@ -756,28 +756,30 @@ function VaultHeader({
         <strong>{vault.name}</strong>
       </div>
 
-      <div className="vaultTitleRow">
-        <div className="vaultIdentity">
-          <div className="vaultMonogram">TECH</div>
-          <div>
-            <div className="titleLine">
-              <h1>{vault.name}</h1>
-              <span className="symbolBadge">{vault.symbol}</span>
-            </div>
-            <div className="addressLine">
-              <AddressPill label="OTF" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
-              <AddressPill label="Manager" address={vault.manager} copied={copied === "manager"} onCopy={() => copy(vault.manager, "manager")} />
+      <section className="vaultHeader">
+        <div className="vaultTitleRow">
+          <div className="vaultIdentity">
+            <div className="vaultMonogram">TECH</div>
+            <div>
+              <div className="titleLine">
+                <h1>{vault.name}</h1>
+                <span className="symbolBadge">{vault.symbol}</span>
+              </div>
+              <div className="addressLine">
+                <AddressPill label="OTF" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
+                <AddressPill label="Manager" address={vault.manager} copied={copied === "manager"} onCopy={() => copy(vault.manager, "manager")} />
+              </div>
             </div>
           </div>
+          {canManage ? (
+            <button className="primaryAction vaultManageAction" type="button" onClick={onManage}>
+              <UserCog size={14} />
+              Manage OTF
+            </button>
+          ) : null}
         </div>
-        {canManage ? (
-          <button className="primaryAction vaultManageAction" type="button" onClick={onManage}>
-            <UserCog size={14} />
-            Manage OTF
-          </button>
-        ) : null}
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
 

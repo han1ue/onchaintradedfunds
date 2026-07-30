@@ -2157,6 +2157,10 @@ textarea::placeholder {
   margin-bottom: -6px;
 }
 
+.detailBreadcrumb {
+  margin-bottom: 10px;
+}
+
 .directoryMetrics,
 .manageMetrics,
 .depositMetrics {
