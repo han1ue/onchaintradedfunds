@@ -125,75 +125,94 @@ type VaultView = {
 
 const navTabs = ["OTFs", "Create"];
 
-const demoAllocations: Allocation[] = [
+const testnetAllocations: Allocation[] = [
   {
-    symbol: "mNVDA",
-    name: "Mock NVDA",
-    address: "0x2e4c81ab04a82f5dd3e0ca7f1234567890a6612f",
-    targetWeightBps: 4_000,
-    actualWeightBps: 4_120,
-    balance: "14,208.4471",
-    price: "$118.42",
+    symbol: "TSLA",
+    name: "Tesla",
+    address: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+    targetWeightBps: 2_000,
+    actualWeightBps: 2_120,
+    balance: "1,842.4471",
+    price: "$312.05",
     oracleAge: "38s ago",
     freshnessTone: "fresh",
     tone: "teal",
   },
   {
-    symbol: "mMSFT",
-    name: "Mock MSFT",
-    address: "0x5f91bce20e82e85199b792a5595728117f8871ab",
-    targetWeightBps: 3_500,
-    actualWeightBps: 3_410,
-    balance: "3,401.2210",
-    price: "$421.07",
+    symbol: "AMZN",
+    name: "Amazon",
+    address: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+    targetWeightBps: 2_000,
+    actualWeightBps: 1_940,
+    balance: "2,401.2210",
+    price: "$231.44",
     oracleAge: "1m 12s ago",
     freshnessTone: "fresh",
     tone: "blue",
   },
   {
-    symbol: "mGOOGL",
-    name: "Mock GOOGL",
-    address: "0xc70a3d6b0011391c3df907c5d2dc180481a4d813",
-    targetWeightBps: 2_500,
-    actualWeightBps: 2_470,
-    balance: "5,912.8830",
-    price: "$176.55",
-    oracleAge: "9m 04s ago",
-    freshnessTone: "warning",
+    symbol: "PLTR",
+    name: "Palantir Technologies",
+    address: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+    targetWeightBps: 2_000,
+    actualWeightBps: 1_980,
+    balance: "3,912.8830",
+    price: "$154.96",
+    oracleAge: "52s ago",
+    freshnessTone: "fresh",
     tone: "gold",
+  },
+  {
+    symbol: "NFLX",
+    name: "Netflix",
+    address: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+    targetWeightBps: 2_000,
+    actualWeightBps: 2_030,
+    balance: "921.4052",
+    price: "$1,195.18",
+    oracleAge: "44s ago",
+    freshnessTone: "fresh",
+    tone: "rose",
+  },
+  {
+    symbol: "AMD",
+    name: "AMD",
+    address: "0x71178BAc73cBeb415514eB542a8995b82669778d",
+    targetWeightBps: 2_000,
+    actualWeightBps: 1_930,
+    balance: "4,218.7701",
+    price: "$177.44",
+    oracleAge: "1m 03s ago",
+    freshnessTone: "fresh",
+    tone: "violet",
   },
 ];
 
+const testnetCreateAssets = testnetAllocations.map(({ symbol, name, address }) => ({
+  symbol,
+  name,
+  address,
+}));
+
+const erc20BalanceAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "balance", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "decimals", type: "uint8" }],
+  },
+] as const;
+
 const suggestedVaultAddress = "0x4f9c2a71c8d3e6b5a09f1274ce83d6412a5c1ae3";
 const suggestedManagerAddress = "0x8b1a47e2c0d4a718b8a942c1557f99259fa14d11";
-
-const knownCreateAssets = [
-  ...demoAllocations.map(({ symbol, name, address }) => ({ symbol, name, address })),
-  {
-    symbol: "mAAPL",
-    name: "Mock Apple",
-    address: "0xa11a00000000000000000000000000000000a11a",
-  },
-  {
-    symbol: "mAMZN",
-    name: "Mock Amazon",
-    address: "0xa6a200000000000000000000000000000000a6a2",
-  },
-  {
-    symbol: "mMETA",
-    name: "Mock Meta",
-    address: "0x6e7a000000000000000000000000000000006e7a",
-  },
-] as const;
-
-const supportedWalletAssets = [
-  { ...knownCreateAssets[0], balance: "8.2500", price: "$118.42", value: "$976.97" },
-  { ...knownCreateAssets[1], balance: "3.1000", price: "$421.07", value: "$1,305.32" },
-  { ...knownCreateAssets[2], balance: "4.5800", price: "$176.55", value: "$808.60" },
-  { ...knownCreateAssets[3], balance: "0.0000", price: "$232.14", value: "$0.00" },
-  { ...knownCreateAssets[4], balance: "0.0000", price: "$219.46", value: "$0.00" },
-  { ...knownCreateAssets[5], balance: "0.0000", price: "$712.30", value: "$0.00" },
-] as const;
 
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
 
@@ -209,6 +228,12 @@ function shortAddress(address?: string): string {
 
 function shortAssetAddress(address: string): string {
   return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
+function formatWalletTokenBalance(value: bigint | undefined, decimals: number): string {
+  if (value === undefined) return "—";
+  const amount = Number(formatUnits(value, decimals));
+  return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
 function bpsToPercent(value?: number): string {
@@ -232,7 +257,7 @@ function normalizeAllocations(
   assets?: readonly string[],
   weights?: readonly number[] | readonly bigint[],
 ): Allocation[] {
-  if (!assets?.length || !weights?.length) return demoAllocations;
+  if (!assets?.length || !weights?.length) return testnetAllocations;
 
   return assets.map((address, index) => {
     const weight = Number(weights[index] ?? 0);
@@ -269,8 +294,10 @@ function runMockTx(setState: (state: TxState) => void) {
 
 export function RebalanceCooldownPanel() {
   const vaultAddress = configuredVaultAddress();
-  const enabled = Boolean(vaultAddress);
   const { address: connectedAddress } = useAccount();
+  const chainId = useChainId();
+  const isTestnet = chainId === robinhoodChainTestnet.id;
+  const enabled = Boolean(vaultAddress) && isTestnet;
   const [view, setView] = useState<AppView>("landing");
 
   const readContracts = vaultAddress
@@ -301,7 +328,7 @@ export function RebalanceCooldownPanel() {
 
   const { data, error, isLoading } = useReadContracts({
     contracts: readContracts,
-    query: { enabled: Boolean(readContracts) },
+    query: { enabled: Boolean(readContracts) && isTestnet },
   });
 
   const results = data as ReadResult | undefined;
@@ -370,6 +397,12 @@ export function RebalanceCooldownPanel() {
   };
   const activeTab = view === "create" ? "Create" : "OTFs";
 
+  useEffect(() => {
+    if (!isTestnet && (view === "detail" || view === "manage")) {
+      setView("vaults");
+    }
+  }, [isTestnet, view]);
+
   function openView(nextView: AppView) {
     window.scrollTo({ top: 0, behavior: "auto" });
     setView(nextView);
@@ -400,7 +433,7 @@ export function RebalanceCooldownPanel() {
       />
 
       <main className="dashboardMain">
-        {view === "detail" ? (
+        {view === "detail" && isTestnet ? (
           <>
             <VaultHeader vault={vault} onBack={() => openView("vaults")} />
             <VaultMetrics vault={vault} />
@@ -409,7 +442,7 @@ export function RebalanceCooldownPanel() {
             {error ? (
               <div className="warningBanner danger">
                 <XCircle size={16} />
-                <span>Unable to read live OTF data. The dashboard is showing demo fallback values.</span>
+                <span>Unable to read live OTF data. The dashboard is showing testnet preview values.</span>
               </div>
             ) : null}
 
@@ -432,6 +465,7 @@ export function RebalanceCooldownPanel() {
         {view === "vaults" ? (
           <VaultsDirectory
             currentVault={vault}
+            isTestnet={isTestnet}
             onManageVault={() => openView("manage")}
             onOpenVault={() => openView("detail")}
             onCreateVault={() => openView("create")}
@@ -439,10 +473,10 @@ export function RebalanceCooldownPanel() {
         ) : null}
 
         {view === "create" ? (
-          <CreateVaultView connectedAddress={connectedAddress} onBack={() => openView("vaults")} />
+          <CreateVaultView connectedAddress={connectedAddress} isTestnet={isTestnet} onBack={() => openView("vaults")} />
         ) : null}
 
-        {view === "manage" ? (
+        {view === "manage" && isTestnet ? (
           <ManageVaultsView
             vault={vault}
             onBack={() => openView("vaults")}
@@ -454,6 +488,7 @@ export function RebalanceCooldownPanel() {
           <DepositsView
             connectedAddress={connectedAddress}
             currentVault={vault}
+            isTestnet={isTestnet}
             onBrowseVaults={() => openView("vaults")}
             onOpenVault={() => openView("detail")}
           />
@@ -462,7 +497,7 @@ export function RebalanceCooldownPanel() {
         <footer className="dashboardFooter">
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
-            <span>ERC-4626 OTFs · Robinhood Testnet</span>
+            <span>ERC-4626 OTFs · {isTestnet ? "Robinhood Testnet" : "Robinhood Mainnet"}</span>
             <a href="/docs">Docs</a>
           </div>
         </footer>
@@ -1276,9 +1311,9 @@ function UserActions({ vaultSymbol }: { vaultSymbol: string }) {
             <span>{vaultSymbol}</span>
           </div>
           <div className="redeemPreview">
-            <span>Est. mNVDA <strong>{redeemAmount ? (Number(redeemAmount) * 0.162).toFixed(4) : "-"}</strong></span>
-            <span>Est. mMSFT <strong>{redeemAmount ? (Number(redeemAmount) * 0.039).toFixed(4) : "-"}</strong></span>
-            <span>Est. mGOOGL <strong>{redeemAmount ? (Number(redeemAmount) * 0.061).toFixed(4) : "-"}</strong></span>
+            <span>Est. TSLA <strong>{redeemAmount ? (Number(redeemAmount) * 0.042).toFixed(4) : "-"}</strong></span>
+            <span>Est. AMZN <strong>{redeemAmount ? (Number(redeemAmount) * 0.057).toFixed(4) : "-"}</strong></span>
+            <span>Est. PLTR <strong>{redeemAmount ? (Number(redeemAmount) * 0.084).toFixed(4) : "-"}</strong></span>
           </div>
           <button className="dangerAction" type="button" disabled={!redeemAmount} onClick={() => runMockTx(setRedeemState)}>
             <ArrowDownToLine size={14} />
@@ -1598,18 +1633,20 @@ function AppPageHeader({
 
 function VaultsDirectory({
   currentVault,
+  isTestnet,
   onManageVault,
   onOpenVault,
   onCreateVault,
 }: {
   currentVault: VaultView;
+  isTestnet: boolean;
   onManageVault: () => void;
   onOpenVault: () => void;
   onCreateVault: () => void;
 }) {
   const [query, setQuery] = useState("");
   const rows = useMemo(
-    () => [
+    () => isTestnet ? [
       {
         name: currentVault.name,
         symbol: currentVault.symbol,
@@ -1649,8 +1686,8 @@ function VaultsDirectory({
         oracle: "5/5 fresh",
         live: false,
       },
-    ],
-    [currentVault],
+    ] : [],
+    [currentVault, isTestnet],
   );
   const normalizedQuery = query.trim().toLowerCase();
   const visibleRows = rows.filter(
@@ -1659,7 +1696,7 @@ function VaultsDirectory({
       row.name.toLowerCase().includes(normalizedQuery) ||
       row.symbol.toLowerCase().includes(normalizedQuery),
   );
-  const hasManagerAccess = currentVault.connectedIsManager || !currentVault.enabled;
+  const hasManagerAccess = isTestnet && (currentVault.connectedIsManager || !currentVault.enabled);
 
   return (
     <div className="appView">
@@ -1668,18 +1705,18 @@ function VaultsDirectory({
         description="Discover and monitor managed onchain funds."
         icon={<LayoutGrid size={18} />}
         actions={
-          <button className="primaryAction" type="button" onClick={onCreateVault}>
+          <button className="primaryAction" type="button" disabled={!isTestnet} onClick={onCreateVault}>
             <Plus size={14} />
-            Create OTF
+            {isTestnet ? "Create OTF" : "Mainnet unavailable"}
           </button>
         }
       />
 
       <div className="directoryMetrics">
-        <MetricCard label="Protocol NAV" value="$8.10M" icon={<CircleDollarSign size={14} />} sub="Across 3 testnet OTFs" />
-        <MetricCard label="Active OTFs" value="3" icon={<Landmark size={14} />} sub="All accepting deposits" />
-        <MetricCard label="Oracle Health" value="16/16" icon={<HeartPulse size={14} />} tone="success" sub="Feeds currently fresh" />
-        <MetricCard label="Secondary Liquidity" value="$2.34M" icon={<ArrowRightLeft size={14} />} sub="Across OTF share pools" />
+        <MetricCard label="Protocol NAV" value={isTestnet ? "$8.10M" : "$0"} icon={<CircleDollarSign size={14} />} sub={isTestnet ? "Across 3 testnet OTFs" : "No Mainnet deployments"} />
+        <MetricCard label="Active OTFs" value={isTestnet ? "3" : "0"} icon={<Landmark size={14} />} sub={isTestnet ? "All accepting deposits" : "Mainnet not launched"} />
+        <MetricCard label="Oracle Health" value={isTestnet ? "18/18" : "—"} icon={<HeartPulse size={14} />} tone={isTestnet ? "success" : undefined} sub={isTestnet ? "Feeds currently fresh" : "No supported feeds"} />
+        <MetricCard label="Secondary Liquidity" value={isTestnet ? "$2.34M" : "$0"} icon={<ArrowRightLeft size={14} />} sub={isTestnet ? "Across OTF share pools" : "No Mainnet pools"} />
       </div>
 
       {hasManagerAccess ? (
@@ -1757,7 +1794,7 @@ function VaultsDirectory({
         <div className="directoryPanelHeading">
           <div>
             <h2>All OTFs</h2>
-            <p>Public OTFs remain discoverable whether or not you manage them.</p>
+            <p>{isTestnet ? "Public OTFs remain discoverable whether or not you manage them." : "Robinhood Mainnet support has not launched yet."}</p>
           </div>
           <span className="stateBadge muted">{rows.length} OTFs</span>
         </div>
@@ -1818,8 +1855,8 @@ function VaultsDirectory({
           {!visibleRows.length ? (
             <div className="emptyDirectory">
               <Search size={18} />
-              <strong>No OTFs found</strong>
-              <span>Try a different OTF name or symbol.</span>
+              <strong>{isTestnet ? "No OTFs found" : "No Mainnet OTFs"}</strong>
+              <span>{isTestnet ? "Try a different OTF name or symbol." : "Switch to Robinhood Testnet to use the current protocol deployment."}</span>
             </div>
           ) : null}
         </div>
@@ -1830,9 +1867,11 @@ function VaultsDirectory({
 
 function CreateVaultView({
   connectedAddress,
+  isTestnet,
   onBack,
 }: {
   connectedAddress?: string;
+  isTestnet: boolean;
   onBack: () => void;
 }) {
   const [step, setStep] = useState(0);
@@ -1856,7 +1895,7 @@ function CreateVaultView({
     oracleStaleness: "600",
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
-    demoAllocations.map((asset) => ({
+    testnetAllocations.map((asset) => ({
       ticker: asset.symbol,
       address: asset.address,
       targetWeight: asset.targetWeightBps / 100,
@@ -1891,7 +1930,7 @@ function CreateVaultView({
     Number(draft.maxAssets) >= portfolio.length &&
     Number(draft.oracleStaleness) > 0;
   const stepValid = [basicsValid, portfolioValid, safetyValid, basicsValid && portfolioValid && safetyValid][step];
-  const nextAvailableAsset = knownCreateAssets.find(
+  const nextAvailableAsset = testnetCreateAssets.find(
     (candidate) => !portfolio.some((asset) => asset.address === candidate.address),
   );
 
@@ -1904,6 +1943,27 @@ function CreateVaultView({
         : connectedAddress ?? suggestedManagerAddress,
     }));
   }, [connectedAddress, customFeeRecipient, customManager]);
+
+  if (!isTestnet) {
+    return (
+      <div className="appView">
+        <AppPageHeader
+          title="Create OTF"
+          description="Deploy an onchain traded fund with immutable safety bounds."
+          icon={<FilePlus2 size={18} />}
+        />
+        <section className="sectionCard depositsEmpty">
+          <span><Network size={22} /></span>
+          <h2>OTF creation is not available on Mainnet</h2>
+          <p>No assets, adapters, or OTF deployments are supported on Robinhood Mainnet yet. Switch to Robinhood Testnet in Settings to continue.</p>
+          <button className="secondaryAction" type="button" onClick={onBack}>
+            <ArrowLeft size={14} />
+            View OTFs
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   function updateDraft(field: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -2072,13 +2132,13 @@ function CreateVaultView({
                         <select
                           value={asset.address}
                           onChange={(event) => {
-                            const selected = knownCreateAssets.find((candidate) => candidate.address === event.target.value);
+                            const selected = testnetCreateAssets.find((candidate) => candidate.address === event.target.value);
                             if (selected) {
                               updatePortfolio(index, { ticker: selected.symbol, address: selected.address });
                             }
                           }}
                         >
-                          {knownCreateAssets.map((candidate) => (
+                          {testnetCreateAssets.map((candidate) => (
                             <option
                               key={candidate.address}
                               value={candidate.address}
@@ -2209,14 +2269,78 @@ function CreateVaultView({
 function DepositsView({
   connectedAddress,
   currentVault,
+  isTestnet,
   onBrowseVaults,
   onOpenVault,
 }: {
   connectedAddress?: string;
   currentVault: VaultView;
+  isTestnet: boolean;
   onBrowseVaults: () => void;
   onOpenVault: () => void;
 }) {
+  const canReadBalances = isTestnet && Boolean(connectedAddress && isAddress(connectedAddress));
+  const balanceContracts = canReadBalances
+    ? testnetCreateAssets.flatMap((asset) => [
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "balanceOf" as const,
+          args: [connectedAddress as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "decimals" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+      ])
+    : [];
+  const { data: balanceResults, isLoading: balancesLoading } = useReadContracts({
+    contracts: balanceContracts,
+    query: { enabled: canReadBalances },
+  });
+  const walletAssets = testnetCreateAssets.map((asset, index) => {
+    const balance = balanceResults?.[index * 2]?.result as bigint | undefined;
+    const decimals = Number(balanceResults?.[index * 2 + 1]?.result ?? 18);
+    return {
+      ...asset,
+      balance,
+      displayBalance: balancesLoading ? "Loading" : formatWalletTokenBalance(balance, decimals),
+    };
+  });
+  const heldAssetCount = walletAssets.filter((asset) => (asset.balance ?? 0n) > 0n).length;
+
+  if (!isTestnet) {
+    return (
+      <div className="appView">
+        <AppPageHeader
+          title="My wallet"
+          description="View OTF positions and supported RWA assets held by this wallet."
+          icon={<Wallet size={18} />}
+          actions={
+            <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
+              <LayoutGrid size={14} />
+              Explore OTFs
+            </button>
+          }
+        />
+        <div className="depositMetrics">
+          <MetricCard label="OTF Positions" value="0" icon={<CircleDollarSign size={14} />} sub="No Mainnet deployments" />
+          <MetricCard label="RWA Assets" value="0" icon={<Coins size={14} />} sub="No supported assets" />
+          <MetricCard label="OTF Return" value="—" icon={<TrendingUp size={14} />} sub="No position history" />
+          <MetricCard label="Network" value="Mainnet" icon={<Network size={14} />} sub="Support not launched" />
+        </div>
+        <section className="sectionCard depositsEmpty">
+          <span><Network size={22} /></span>
+          <h2>Robinhood Mainnet is not supported yet</h2>
+          <p>This app has no Mainnet OTFs, asset catalog, or wallet integrations. Switch to Robinhood Testnet in Settings to use the current deployment.</p>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="appView">
       <AppPageHeader
@@ -2235,7 +2359,7 @@ function DepositsView({
         <>
           <div className="depositMetrics">
             <MetricCard label="OTF Value" value="$22,184.32" icon={<CircleDollarSign size={14} />} sub="Across 2 positions" />
-            <MetricCard label="RWA Assets" value="$3,090.89" icon={<Coins size={14} />} sub="3 nonzero balances" />
+            <MetricCard label="RWA Holdings" value={String(heldAssetCount)} icon={<Coins size={14} />} sub={`${testnetCreateAssets.length} supported assets scanned`} />
             <MetricCard label="OTF Return" value="+$741.52" icon={<TrendingUp size={14} />} tone="success" sub="+3.46% all time" />
             <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
           </div>
@@ -2302,7 +2426,7 @@ function DepositsView({
                 <h2>Supported RWA assets</h2>
                 <p>Protocol-approved assets and their current balances in this wallet.</p>
               </div>
-              <span className="stateBadge muted">3 held · {supportedWalletAssets.length} supported</span>
+              <span className="stateBadge muted">{heldAssetCount} held · {testnetCreateAssets.length} supported</span>
             </div>
             <div className="directoryTableWrap">
               <table className="directoryTable rwaAssetsTable">
@@ -2311,13 +2435,12 @@ function DepositsView({
                     <th>Asset</th>
                     <th>Token address</th>
                     <th>Wallet balance</th>
-                    <th>Oracle price</th>
-                    <th>Wallet value</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {supportedWalletAssets.map((asset) => (
-                    <tr className={asset.balance === "0.0000" ? "emptyBalance" : ""} key={asset.address}>
+                  {walletAssets.map((asset) => (
+                    <tr className={(asset.balance ?? 0n) === 0n ? "emptyBalance" : ""} key={asset.address}>
                       <td>
                         <div className="rwaAssetIdentity">
                           <strong>{asset.symbol}</strong>
@@ -2325,9 +2448,12 @@ function DepositsView({
                         </div>
                       </td>
                       <td className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
-                      <td className="monoValue">{asset.balance}</td>
-                      <td>{asset.price}</td>
-                      <td><strong>{asset.value}</strong></td>
+                      <td className="monoValue">{asset.displayBalance}</td>
+                      <td>
+                        <span className={`stateBadge ${(asset.balance ?? 0n) > 0n ? "success" : "muted"}`}>
+                          {(asset.balance ?? 0n) > 0n ? "Held" : "No balance"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
