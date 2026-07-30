@@ -11,8 +11,8 @@ import {
   BadgeCent,
   BookOpen,
   ChartPie,
+  Check,
   CheckCircle,
-  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -29,6 +29,8 @@ import {
   LockKeyhole,
   KeyRound,
   Landmark,
+  Moon,
+  Network,
   Plus,
   Percent,
   ReceiptText,
@@ -37,6 +39,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Sun,
   Trash2,
   TrendingUp,
   UserCog,
@@ -44,7 +47,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits, isAddress } from "viem";
 import { useAccount, useReadContracts } from "wagmi";
 import {
@@ -261,7 +264,7 @@ export function RebalanceCooldownPanel() {
       ] as const)
     : undefined;
 
-  const { data, error, isLoading, refetch } = useReadContracts({
+  const { data, error, isLoading } = useReadContracts({
     contracts: readContracts,
     query: { enabled: Boolean(readContracts) },
   });
@@ -356,7 +359,6 @@ export function RebalanceCooldownPanel() {
         onHome={() => openView("landing")}
         onTabChange={changeView}
         onOpenDeposits={() => openView("deposits")}
-        onRefresh={() => void refetch()}
       />
 
       <main className="dashboardMain">
@@ -422,10 +424,7 @@ export function RebalanceCooldownPanel() {
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
             <span>ERC-4626 vaults · Robinhood Testnet</span>
-            <a href="https://github.com/han1ue/onchaintradedfunds#readme" target="_blank" rel="noreferrer">
-              Docs
-              <ExternalLink size={11} />
-            </a>
+            <a href="/docs">Docs</a>
           </div>
         </footer>
       </main>
@@ -439,15 +438,51 @@ function TopNav({
   onHome,
   onTabChange,
   onOpenDeposits,
-  onRefresh,
 }: {
   activeTab: string;
   depositsActive: boolean;
   onHome: () => void;
   onTabChange: (tab: string) => void;
   onOpenDeposits: () => void;
-  onRefresh: () => void;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("otf-theme");
+    const initialTheme = savedTheme === "light" ? "light" : "dark";
+    setTheme(initialTheme);
+    document.documentElement.dataset.theme = initialTheme;
+  }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+
+    function closeOnOutsidePress(event: PointerEvent) {
+      if (!settingsRef.current?.contains(event.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setSettingsOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [settingsOpen]);
+
+  function changeTheme(nextTheme: "dark" | "light") {
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("otf-theme", nextTheme);
+  }
+
   return (
     <header className="topNav">
       <div className="topNavInner">
@@ -469,10 +504,7 @@ function TopNav({
               {tab}
             </button>
           ))}
-          <a href="https://github.com/han1ue/onchaintradedfunds#readme" target="_blank" rel="noreferrer">
-            Docs
-            <ExternalLink size={11} />
-          </a>
+          <a href="/docs">Docs</a>
         </nav>
 
         <div className="navActions">
@@ -485,17 +517,58 @@ function TopNav({
             <Wallet size={14} />
             <span>My deposits</span>
           </button>
-          <button className="networkButton" type="button">
-            <span className="networkDot" />
-            Robinhood Testnet
-            <ChevronDown size={14} />
-          </button>
-          <button className="iconOnly" type="button" onClick={onRefresh} title="Refresh vault data">
-            <RefreshCw size={16} />
-          </button>
-          <button className="iconOnly" type="button" title="Settings">
-            <Settings size={16} />
-          </button>
+          <div className="settingsControl" ref={settingsRef}>
+            <button
+              className={`iconOnly ${settingsOpen ? "active" : ""}`}
+              type="button"
+              title="Settings"
+              aria-label="Open settings"
+              aria-expanded={settingsOpen}
+              aria-haspopup="dialog"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <Settings size={16} />
+            </button>
+            {settingsOpen ? (
+              <div className="settingsMenu" role="dialog" aria-label="Application settings">
+                <div className="settingsMenuHeader">
+                  <strong>Settings</strong>
+                  <span>Network and appearance</span>
+                </div>
+                <div className="settingsGroup">
+                  <span className="settingsLabel">Network</span>
+                  <div className="settingsOption selected">
+                    <span className="settingsOptionIcon"><Network size={15} /></span>
+                    <span className="settingsOptionText">
+                      <strong>Robinhood Testnet</strong>
+                      <small>Configured network</small>
+                    </span>
+                    <Check className="settingsCheck" size={15} />
+                  </div>
+                </div>
+                <div className="settingsGroup">
+                  <span className="settingsLabel">Appearance</span>
+                  <button
+                    className="settingsOption"
+                    type="button"
+                    aria-pressed={theme === "light"}
+                    onClick={() => changeTheme(theme === "light" ? "dark" : "light")}
+                  >
+                    <span className="settingsOptionIcon">
+                      {theme === "light" ? <Sun size={15} /> : <Moon size={15} />}
+                    </span>
+                    <span className="settingsOptionText">
+                      <strong>Light mode</strong>
+                      <small>{theme === "light" ? "On" : "Off"}</small>
+                    </span>
+                    <span className={`themeSwitch ${theme === "light" ? "active" : ""}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
           <ConnectButton />
         </div>
       </div>
