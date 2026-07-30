@@ -2938,6 +2938,54 @@ input.invalid {
   pointer-events: none;
 }
 
+.landingSceneFallback {
+  position: fixed;
+  z-index: 0;
+  top: 50%;
+  right: 9vw;
+  width: min(520px, 42vw);
+  aspect-ratio: 1.18;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.fallbackFrame,
+.fallbackAsset {
+  position: absolute;
+  display: block;
+  border: 1px solid rgb(141 229 220 / 52%);
+}
+
+.fallbackFrame {
+  inset: 8%;
+  border-width: 2px;
+  background: rgb(24 34 45 / 72%);
+}
+
+.fallbackAsset {
+  right: 20%;
+  left: 20%;
+  height: 17%;
+  border-radius: 2px;
+}
+
+.fallbackAsset.teal {
+  top: 24%;
+  background: #37b7aa;
+}
+
+.fallbackAsset.blue {
+  top: 43%;
+  right: 29%;
+  background: #55a9d2;
+}
+
+.fallbackAsset.gold {
+  top: 62%;
+  right: 38%;
+  background: #e6b64a;
+}
+
 .landingNav {
   position: fixed;
   z-index: 40;
@@ -3237,12 +3285,16 @@ input.invalid {
 }
 
 .landingStoryCopy {
+  position: relative;
+  z-index: 1;
   width: min(460px, 42vw);
-  text-shadow: 0 2px 18px #090e14;
+  background: #090e14;
 }
 
 .landingStoryCopy > svg {
-  margin-top: 30px;
+  width: 16px;
+  height: 16px;
+  margin: 0 0 -3px 7px;
   color: #61d4c7;
 }
 
@@ -3310,7 +3362,7 @@ input.invalid {
   min-height: 92svh;
   flex-direction: column;
   justify-content: center;
-  background: #0c1219;
+  background: rgb(12 18 25 / 26%);
   padding-top: 120px;
   padding-bottom: 36px;
 }
@@ -3321,7 +3373,7 @@ input.invalid {
 }
 
 .landingFinal > p {
-  max-width: 610px;
+  max-width: 500px;
   margin: 25px 0 0;
   color: #94a3b4;
   font-size: 0.88rem;
@@ -3364,7 +3416,15 @@ input.invalid {
 
 @media (max-width: 600px) {
   .landingCanvas {
-    opacity: 0.64;
+    opacity: 0.7;
+  }
+
+  .landingSceneFallback {
+    top: 29%;
+    right: 8%;
+    width: 84vw;
+    opacity: 0.62;
+    transform: none;
   }
 
   .landingNav {
@@ -3402,8 +3462,8 @@ input.invalid {
   }
 
   .landingHero h1 {
-    max-width: 350px;
-    font-size: 2.8rem;
+    max-width: 230px;
+    font-size: 2.5rem;
     line-height: 1;
   }
 
