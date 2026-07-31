@@ -1,0 +1,10 @@
+{
+  "/icon.svg/route": "/icon.svg",
+  "/_not-found/page": "/_not-found",
+  "/create/page": "/create",
+  "/otfs/page": "/otfs",
+  "/wallet/page": "/wallet",
+  "/otfs/[...slug]/page": "/otfs/[...slug]",
+  "/page": "/",
+  "/docs/page": "/docs"
+}

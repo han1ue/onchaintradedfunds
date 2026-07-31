@@ -2787,19 +2787,29 @@ input.invalid {
 
 .createAssetRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(110px, 0.32fr) 30px;
-  align-items: end;
-  gap: 9px;
+  grid-template-columns: minmax(220px, 1fr) 132px 32px;
+  align-items: start;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--background);
-  padding: 10px;
+  padding: 12px;
+}
+
+.createAssetRow select,
+.createAssetRow .inputWithSuffix {
+  height: 38px;
+}
+
+.createAssetRow .assetWeightField input {
+  font-variant-numeric: tabular-nums;
 }
 
 .createAssetRow > button {
   display: grid;
-  width: 30px;
-  height: 36px;
+  width: 32px;
+  height: 38px;
+  margin-top: 18px;
   place-items: center;
   border: 0;
   border-radius: 4px;
@@ -3323,7 +3333,7 @@ input.invalid {
   }
 
   .createAssetRow {
-    grid-template-columns: minmax(220px, 1fr) 110px 30px;
+    grid-template-columns: minmax(220px, 1fr) 126px 32px;
   }
 }
 
@@ -3565,8 +3575,10 @@ input.invalid {
   }
 
   .createAssetRow {
-    grid-template-columns: minmax(0, 1fr) minmax(88px, 0.45fr) 30px;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.42fr) 32px;
     min-width: 0;
+    gap: 9px;
+    padding: 10px;
   }
 
   .createAssetList {

@@ -2333,7 +2333,7 @@ function CreateVaultView({
                 <div className="createAssetList">
                   {portfolio.map((asset, index) => (
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
-                      <label>
+                      <label className="assetSelectField">
                         <span>Asset</span>
                         <select
                           value={asset.address}
@@ -2359,8 +2359,8 @@ function CreateVaultView({
                         </select>
                         <small className="assetAddressLabel" title={asset.address}>Token: {shortAssetAddress(asset.address)}</small>
                       </label>
-                      <label>
-                        <span>Weight</span>
+                      <label className="assetWeightField">
+                        <span>Target weight</span>
                         <div className="inputWithSuffix">
                           <input type="number" min={0} max={100} value={asset.targetWeight} onChange={(event) => updatePortfolio(index, { targetWeight: Number(event.target.value) })} />
                           <span>%</span>
