@@ -49,8 +49,17 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { formatUnits, isAddress } from "viem";
-import { useAccount, useBlockNumber, useChainId, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
+import { formatUnits, isAddress, parseUnits } from "viem";
+import {
+  useAccount,
+  useBlockNumber,
+  useChainId,
+  useReadContract,
+  useReadContracts,
+  useSwitchChain,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   formatCooldown,
@@ -88,6 +97,7 @@ type TargetAsset = {
   ticker: string;
   address: string;
   targetWeight: number;
+  initialAmount: string;
 };
 
 type VaultSummary = {
@@ -293,6 +303,22 @@ function txStateLabel(state: TxState): { label: string; tone: "muted" | "info" |
 function runSimulation(setState: (state: TxState) => void) {
   setState("simulating");
   window.setTimeout(() => setState("ready"), 900);
+}
+
+function percentToBps(value: string | number): number {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function daysToSeconds(value: string | number): number {
+  return Math.round(Number(value || 0) * 86_400);
+}
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "shortMessage" in error) {
+    return String((error as { shortMessage?: unknown }).shortMessage);
+  }
+  if (error instanceof Error) return error.message;
+  return "The wallet request could not be completed.";
 }
 
 const viewPaths: Record<AppView, string> = {
@@ -1532,6 +1558,7 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
       ticker: asset.symbol,
       address: shortAddress(asset.address),
       targetWeight: asset.targetWeightBps / 100,
+      initialAmount: "",
     })),
     [vault.allocations],
   );
@@ -1611,7 +1638,7 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={() => setTargets((current) => [...current, { ticker: "", address: "", targetWeight: 0 }])} disabled={targets.length >= vault.maxAssetCount}>
+        <button className="ghostAction addAssetAction" type="button" onClick={() => setTargets((current) => [...current, { ticker: "", address: "", targetWeight: 0, initialAmount: "" }])} disabled={targets.length >= vault.maxAssetCount}>
           <Plus size={13} />
           Add asset
         </button>
@@ -2032,12 +2059,21 @@ function CreateVaultView({
   isTestnet: boolean;
   onBack: () => void;
 }) {
+  const factoryAddress = configuredFactoryAddress();
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
   const [deployState, setDeployState] = useState<TxState>("idle");
+  const [deployTxHash, setDeployTxHash] = useState<`0x${string}`>();
+  const [deployError, setDeployError] = useState<string>();
   const [customManager, setCustomManager] = useState(false);
   const [customFeeRecipient, setCustomFeeRecipient] = useState(false);
+  const { writeContractAsync } = useWriteContract();
+  const { data: deployReceipt } = useWaitForTransactionReceipt({
+    hash: deployTxHash,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(deployTxHash) },
+  });
   const [draft, setDraft] = useState({
     name: "",
     symbol: "OTF-",
@@ -2045,6 +2081,7 @@ function CreateVaultView({
     manager: connectedAddress ?? "",
     feeRecipient: connectedAddress ?? "",
     creatorFee: "0.50",
+    initialShares: "100",
     cooldownDays: "7",
     maxTurnover: "30",
     maxNavLoss: "2",
@@ -2061,6 +2098,7 @@ function CreateVaultView({
       ticker: asset.symbol,
       address: asset.address,
       targetWeight: 100 / testnetCreateAssets.length,
+      initialAmount: "1",
     })),
   );
   const steps = [
@@ -2070,7 +2108,10 @@ function CreateVaultView({
     { label: "Review", description: "Confirm deployment" },
   ];
   const totalWeight = portfolio.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
-  const totalWeightValid = Math.abs(totalWeight - 100) < 0.01;
+  const targetWeightBps = portfolio.map((asset) => percentToBps(asset.targetWeight));
+  const totalWeightBps = targetWeightBps.reduce((sum, weight) => sum + weight, 0);
+  const totalWeightValid = totalWeightBps === 10_000;
+  const hasPositiveSeedAmounts = portfolio.every((asset) => Number(asset.initialAmount) > 0);
   const basicsValid =
     draft.name.trim().length > 2 &&
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -2079,11 +2120,19 @@ function CreateVaultView({
     isAddress(draft.feeRecipient);
   const portfolioValid =
     portfolio.length > 0 &&
-    portfolio.every((asset) => asset.ticker.trim() && isAddress(asset.address) && asset.targetWeight > 0) &&
+    portfolio.every(
+      (asset) =>
+        asset.ticker.trim() &&
+        isAddress(asset.address) &&
+        asset.targetWeight > 0 &&
+        Number(asset.initialAmount) > 0,
+    ) &&
     totalWeightValid;
   const safetyValid =
     Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
+    Number(draft.creatorFee) <= 10 &&
+    Number(draft.initialShares) > 0 &&
     Number(draft.maxTurnover) > 0 &&
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxDeviation) > 0 &&
@@ -2103,10 +2152,13 @@ function CreateVaultView({
   const portfolioIssues = [
     portfolio.length > 0 ? null : "Add at least one approved asset.",
     portfolio.every((asset) => asset.targetWeight > 0) ? null : "Every asset needs a positive target weight.",
-    totalWeightValid ? null : `Adjust target weights to total 100%. Current total: ${totalWeight.toFixed(1)}%.`,
+    hasPositiveSeedAmounts ? null : "Enter a positive seed amount for every asset.",
+    totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
     Number(draft.cooldownDays) >= 7 ? null : "The rebalance cooldown must be at least 7 days.",
+    Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
+    Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
     Number(draft.maxAssets) >= portfolio.length ? null : "Maximum assets cannot be lower than the initial portfolio size.",
     safetyValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
@@ -2118,6 +2170,12 @@ function CreateVaultView({
   const nextAvailableAsset = testnetCreateAssets.find(
     (candidate) => !portfolio.some((asset) => asset.address === candidate.address),
   );
+  const canSubmitDeployment =
+    stepValid &&
+    Boolean(factoryAddress) &&
+    Boolean(connectedAddress) &&
+    deployState !== "pending" &&
+    deployState !== "submitted";
 
   useEffect(() => {
     setDraft((current) => ({
@@ -2128,6 +2186,14 @@ function CreateVaultView({
         : connectedAddress ?? "",
     }));
   }, [connectedAddress, customFeeRecipient, customManager]);
+
+  useEffect(() => {
+    if (!deployReceipt) return;
+    setDeployState(deployReceipt.status === "success" ? "confirmed" : "reverted");
+    if (deployReceipt.status !== "success") {
+      setDeployError("The create transaction reverted.");
+    }
+  }, [deployReceipt]);
 
   if (!isTestnet) {
     return (
@@ -2166,8 +2232,73 @@ function CreateVaultView({
         ticker: nextAvailableAsset.symbol,
         address: nextAvailableAsset.address,
         targetWeight: 0,
+        initialAmount: "1",
       },
     ]);
+  }
+
+  function vaultInitParams() {
+    if (!isAddress(draft.manager) || !isAddress(draft.feeRecipient)) {
+      throw new Error("Manager and fee-recipient addresses must be valid.");
+    }
+    const initialAssets = portfolio.map((asset) => {
+      if (!isAddress(asset.address)) throw new Error(`${asset.ticker || "Asset"} has an invalid token address.`);
+      return asset.address;
+    });
+
+    return {
+      name: draft.name.trim(),
+      symbol: draft.symbol.trim(),
+      initialThesis: draft.thesis.trim(),
+      manager: draft.manager,
+      feeRecipient: draft.feeRecipient,
+      initialAssets,
+      initialTargetWeightsBps: targetWeightBps,
+      initialAmounts: portfolio.map((asset) => parseUnits(asset.initialAmount, 18)),
+      initialShareSupply: parseUnits(draft.initialShares, 18),
+      creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
+      rebalanceCooldown: daysToSeconds(draft.cooldownDays),
+      maxTurnoverBps: percentToBps(draft.maxTurnover),
+      maxNavLossBps: percentToBps(draft.maxNavLoss),
+      maxWeightDeviationBps: percentToBps(draft.maxDeviation),
+      challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
+      maxSingleAssetWeightBps: percentToBps(draft.maxSingleWeight),
+      minNonZeroAssetWeightBps: percentToBps(draft.minNonzeroWeight),
+      maxAssetCount: Number(draft.maxAssets),
+      maxOracleStaleness: Number(draft.oracleStaleness),
+      challengeGracePeriod: daysToSeconds(draft.challengeGraceDays),
+    };
+  }
+
+  async function submitDeployment() {
+    if (!factoryAddress) {
+      setDeployError("Configure NEXT_PUBLIC_FACTORY_ADDRESS before deploying an OTF.");
+      setDeployState("reverted");
+      return;
+    }
+    if (!connectedAddress) {
+      setDeployError("Connect a wallet before deploying an OTF.");
+      setDeployState("reverted");
+      return;
+    }
+
+    setDeployError(undefined);
+    setDeployTxHash(undefined);
+    setDeployState("pending");
+    try {
+      const hash = await writeContractAsync({
+        address: factoryAddress,
+        abi: otfFactoryAbi,
+        functionName: "createVault",
+        args: [vaultInitParams()],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setDeployTxHash(hash);
+      setDeployState("submitted");
+    } catch (error) {
+      setDeployError(errorMessage(error));
+      setDeployState("reverted");
+    }
   }
 
   return (
@@ -2183,7 +2314,7 @@ function CreateVaultView({
           {steps.map((item, index) => {
             const complete =
               (completedSteps.has(index) && stepValidity[index]) ||
-              (index === steps.length - 1 && deployState === "ready");
+              (index === steps.length - 1 && deployState === "confirmed");
             return (
               <button
                 className={`${step === index ? "active" : ""} ${complete ? "complete" : ""}`}
@@ -2366,6 +2497,16 @@ function CreateVaultView({
                           <span>%</span>
                         </div>
                       </label>
+                      <label className="assetSeedField">
+                        <span>Seed amount</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={asset.initialAmount}
+                          onChange={(event) => updatePortfolio(index, { initialAmount: event.target.value })}
+                        />
+                      </label>
                       <button type="button" title={`Remove ${asset.ticker}`} onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
                         <Trash2 size={14} />
                       </button>
@@ -2384,7 +2525,7 @@ function CreateVaultView({
                 {!portfolioValid ? (
                   <div className="riskCallout warning">
                     <AlertTriangle size={15} />
-                    <div><strong>Portfolio needs attention</strong><span>Use positive weights and make sure the total equals 100%.</span></div>
+                    <div><strong>Portfolio needs attention</strong><span>Use positive weights and seed amounts; weights must total exactly 100%.</span></div>
                   </div>
                 ) : null}
               </div>
@@ -2394,6 +2535,7 @@ function CreateVaultView({
               <div className="formSection">
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div></label>
+                  <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Minted to the manager after minimum liquidity is locked.</small></label>
                   <label><span>Target-change cooldown</span><div className="inputWithSuffix"><input type="number" min={7} value={draft.cooldownDays} onChange={(event) => updateDraft("cooldownDays", event.target.value)} /><span>days</span></div><small>Seven-day protocol minimum.</small></label>
                   <label><span>Maximum assets</span><input type="number" min={portfolio.length} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /></label>
                   <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div></label>
@@ -2442,9 +2584,9 @@ function CreateVaultView({
                   <div><span>Oracle staleness</span><strong>{draft.oracleStaleness}s</strong></div>
                 </div>
                 <div>
-                  <div className="subHeader"><span>Initial portfolio</span><small>Total {totalWeight.toFixed(1)}%</small></div>
+                  <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
-                    {portfolio.map((asset) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}%</span>)}
+                    {portfolio.map((asset) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {asset.initialAmount || "0"} seed</span>)}
                   </div>
                 </div>
                 {allIssues.length ? (
@@ -2460,11 +2602,21 @@ function CreateVaultView({
                   <LockKeyhole size={15} />
                   <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the cooldown after deployment.</span></div>
                 </div>
+                <div className="riskCallout info">
+                  <Info size={15} />
+                  <div><strong>Token approvals required</strong><span>The factory pulls the seed basket from your wallet. Approve each selected asset for its seed amount before submitting.</span></div>
+                </div>
                 <TxStatus state={deployState} persistent />
-                {deployState === "ready" ? (
+                {deployError ? (
+                  <div className="validationSummary danger" role="alert">
+                    <XCircle size={15} />
+                    <div><strong>Deployment failed</strong><span>{deployError}</span></div>
+                  </div>
+                ) : null}
+                {deployState === "confirmed" ? (
                   <div className="deploymentSuccess">
                     <CheckCircle size={18} />
-                    <div><strong>Configuration is internally valid</strong><span>No OTF was deployed. Factory simulation and wallet submission are not connected in this frontend yet.</span></div>
+                    <div><strong>OTF deployment confirmed</strong><span>The new OTF will appear in the factory directory after the next refresh.</span></div>
                   </div>
                 ) : null}
               </div>
@@ -2490,18 +2642,12 @@ function CreateVaultView({
                   <ArrowRight size={14} />
                 </button>
               ) : (
-                <button className="primaryAction" type="button" disabled={!stepValid || deployState === "simulating"} onClick={() => runSimulation(setDeployState)}>
-                  <ListChecks size={14} />
-                  Validate configuration
+                <button className="primaryAction" type="button" disabled={!canSubmitDeployment} onClick={submitDeployment}>
+                  <FilePlus2 size={14} />
+                  {connectedAddress ? "Submit deployment" : "Connect wallet to deploy"}
                 </button>
               )}
             </div>
-            {step === 3 ? (
-              <p className="stepGuidance">
-                <Info size={13} />
-                Validation checks the frontend configuration only and does not submit a transaction.
-              </p>
-            ) : null}
           </div>
         </section>
       </div>

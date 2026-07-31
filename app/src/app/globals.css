@@ -2787,7 +2787,7 @@ input.invalid {
 
 .createAssetRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 132px 32px;
+  grid-template-columns: minmax(220px, 1fr) 124px 124px 32px;
   align-items: start;
   gap: 12px;
   border: 1px solid var(--border);
@@ -2797,11 +2797,13 @@ input.invalid {
 }
 
 .createAssetRow select,
+.createAssetRow > label > input,
 .createAssetRow .inputWithSuffix {
   height: 38px;
 }
 
-.createAssetRow .assetWeightField input {
+.createAssetRow .assetWeightField input,
+.createAssetRow .assetSeedField input {
   font-variant-numeric: tabular-nums;
 }
 
@@ -3333,7 +3335,7 @@ input.invalid {
   }
 
   .createAssetRow {
-    grid-template-columns: minmax(220px, 1fr) 126px 32px;
+    grid-template-columns: minmax(220px, 1fr) 112px 112px 32px;
   }
 }
 
@@ -3575,7 +3577,7 @@ input.invalid {
   }
 
   .createAssetRow {
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.42fr) 32px;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.48fr) 32px;
     min-width: 0;
     gap: 9px;
     padding: 10px;
@@ -3586,18 +3588,23 @@ input.invalid {
   }
 
   .createAssetRow > label:nth-child(1) {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 1;
   }
 
   .createAssetRow > label:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .createAssetRow > label:nth-child(3) {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 2;
   }
 
   .createAssetRow > button {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 2;
   }
 
   .accrualSummary {
