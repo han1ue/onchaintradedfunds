@@ -52,8 +52,10 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits, isAddress, parseUnits } from "viem";
 import {
   useAccount,
+  useBalance,
   useBlockNumber,
   useChainId,
+  useDisconnect,
   useReadContract,
   useReadContracts,
   useSwitchChain,
@@ -918,6 +920,58 @@ function TopNav({
 }
 
 function OTFWalletButton() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const { address } = useAccount();
+  const chainId = useChainId();
+  const { disconnect } = useDisconnect();
+  const { data: nativeBalance, isLoading: balanceLoading } = useBalance({
+    address,
+    chainId,
+    query: { enabled: Boolean(address) },
+  });
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function closeOnOutsidePress(event: PointerEvent) {
+      if (!controlRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!address) setMenuOpen(false);
+  }, [address]);
+
+  async function copyConnectedAddress() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  const balanceLabel = nativeBalance
+    ? `${Number(nativeBalance.formatted).toLocaleString(undefined, {
+        maximumFractionDigits: 4,
+      })} ${nativeBalance.symbol}`
+    : balanceLoading
+      ? "Loading ETH"
+      : "ETH unavailable";
+
   return (
     <ConnectButton.Custom>
       {({
@@ -925,7 +979,6 @@ function OTFWalletButton() {
         chain,
         mounted,
         authenticationStatus,
-        openAccountModal,
         openChainModal,
         openConnectModal,
       }) => {
@@ -937,7 +990,7 @@ function OTFWalletButton() {
           (!authenticationStatus || authenticationStatus === "authenticated");
 
         return (
-          <div className="walletControl" data-ready={ready}>
+          <div className="walletControl" data-ready={ready} ref={controlRef}>
             {!connected ? (
               <button className="walletButton connect" type="button" onClick={openConnectModal}>
                 <Wallet size={14} />
@@ -949,11 +1002,47 @@ function OTFWalletButton() {
                 <span>Switch network</span>
               </button>
             ) : (
-              <button className="walletButton account" type="button" onClick={openAccountModal}>
-                <span className="walletStatusDot" />
-                <span>{account.displayName}</span>
-                <ChevronDown size={13} />
-              </button>
+              <>
+                <button
+                  className={`walletButton account ${menuOpen ? "active" : ""}`}
+                  type="button"
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setMenuOpen((open) => !open)}
+                >
+                  <span className="walletStatusDot" />
+                  <span>{account.displayName}</span>
+                  <ChevronDown size={13} />
+                </button>
+                {menuOpen ? (
+                  <div className="walletMenu" role="menu" aria-label="Wallet menu">
+                    <div className="walletMenuHeader">
+                      <span className="walletMenuLabel">Connected wallet</span>
+                      <strong title={address}>{shortAddress(address)}</strong>
+                    </div>
+                    <div className="walletMenuBalance">
+                      <span>ETH balance</span>
+                      <strong>{balanceLabel}</strong>
+                    </div>
+                    <button className="walletMenuAction" type="button" role="menuitem" onClick={copyConnectedAddress}>
+                      {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                      <span>{copied ? "Copied address" : "Copy address"}</span>
+                    </button>
+                    <button
+                      className="walletMenuAction danger"
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        disconnect();
+                      }}
+                    >
+                      <XCircle size={14} />
+                      <span>Disconnect</span>
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         );
