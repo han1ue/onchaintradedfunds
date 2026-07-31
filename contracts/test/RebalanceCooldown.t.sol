@@ -166,6 +166,14 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 7 days));
     }
 
+    function testWeightBandChangeCannotExceedCompletionDeviationCap() public {
+        ManagedOTFVault vault = _createVault(7 days, 0);
+
+        vm.warp(START + 7 days);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidWeightBands.selector);
+        vault.setWeightBands(vault.MAX_COMPLETION_DEVIATION_BPS() + 1, 2_500);
+    }
+
     function testFeeAccrualDoesNotResetCooldown() public {
         ManagedOTFVault vault = _createVault(7 days, 100);
         uint256 supplyBefore = vault.totalSupply();

@@ -26,6 +26,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;
     uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
     uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
+    uint32 public constant MAX_ORACLE_STALENESS = 30 days;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
 
     error NotOwner();
@@ -150,6 +151,7 @@ contract OTFFactory is IAdapterAllowlist {
         creatorNonce[msg.sender] = nonce + 1;
 
         vault = MinimalClones.cloneDeterministic(vaultImplementation, salt);
+        ManagedOTFVault(vault).bindFactory(salt);
 
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
             _transferInitialAssetExact(
@@ -226,6 +228,7 @@ contract OTFFactory is IAdapterAllowlist {
             revert CreatorFeeTooHigh(params.creatorFeeBpsPerYear, MAX_CREATOR_FEE_BPS_PER_YEAR);
         }
         if (params.maxAssetCount == 0 || params.maxOracleStaleness == 0) revert InvalidLimit();
+        if (params.maxOracleStaleness > MAX_ORACLE_STALENESS) revert LimitTooHigh();
         if (params.maxAssetCount > GLOBAL_MAX_ASSET_COUNT) revert LimitTooHigh();
         if (params.initialAssets.length > params.maxAssetCount) revert LimitTooHigh();
         if (params.maxTurnoverBps > GLOBAL_MAX_TURNOVER_BPS) revert LimitTooHigh();

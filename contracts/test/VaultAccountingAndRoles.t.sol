@@ -133,6 +133,22 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(BOB), 50 * ONE);
     }
 
+    function testApproveRequiresZeroResetBeforeNonzeroReplacement() public {
+        ManagedOTFVault vault = _createVault();
+        vault.transfer(ALICE, 20 * ONE);
+
+        vm.startPrank(ALICE);
+        vault.approve(BOB, 10 * ONE);
+        vm.expectPartialRevert(ERC20Base.ERC20NonZeroAllowance.selector);
+        vault.approve(BOB, 5 * ONE);
+
+        vault.approve(BOB, 0);
+        vault.approve(BOB, 5 * ONE);
+        vm.stopPrank();
+
+        assertEq(vault.allowance(ALICE, BOB), 5 * ONE);
+    }
+
     function testFeeAccrualMintsExactCreatorAndProtocolShares() public {
         ManagedOTFVault vault = _createVault();
         uint256 elapsed = 30 days;
@@ -163,6 +179,31 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertGt(first, 0);
         assertEq(second, 0);
         assertEq(vault.totalSupply(), supply);
+    }
+
+    function testZeroShareFeeAccrualDoesNotDiscardElapsedTime() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialShareSupply = 1_000_001;
+        params.creatorFeeBpsPerYear = 1_000;
+        ManagedOTFVault fragmentedVault = ManagedOTFVault(factory.createVault(params));
+        ManagedOTFVault singleIntervalVault = ManagedOTFVault(factory.createVault(params));
+
+        vm.warp(START + 1);
+        assertEq(fragmentedVault.accrueFees(), 0);
+        assertEq(fragmentedVault.lastFeeAccrualTimestamp(), START);
+
+        uint256 fragmentedFees;
+        for (uint256 i = 2; i <= 400; i++) {
+            vm.warp(START + i);
+            fragmentedFees += fragmentedVault.accrueFees();
+        }
+
+        vm.warp(START + 400);
+        uint256 singleIntervalFees = singleIntervalVault.accrueFees();
+
+        assertGt(singleIntervalFees, 0);
+        assertEq(fragmentedFees, singleIntervalFees);
+        assertEq(fragmentedVault.totalSupply(), singleIntervalVault.totalSupply());
     }
 
     function testLongDormancyAccruesWithoutBrickingVault() public {

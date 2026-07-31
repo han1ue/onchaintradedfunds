@@ -30,6 +30,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _strategyModuleCodehash = _strategyModule.codehash;
     }
 
+    function bindFactory(bytes32) external {
+        if (_initialized) revert AlreadyInitialized();
+        if (factory != address(0)) revert UnauthorizedFactory();
+        factory = msg.sender;
+    }
+
     function initialize(
         VaultInitParams calldata params,
         address factory_,
@@ -40,7 +46,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint16 protocolFeeShareBps_
     ) external nonReentrant {
         if (_initialized) revert AlreadyInitialized();
-        if (msg.sender != factory_ || factory_ == address(0)) revert UnauthorizedFactory();
+        if (msg.sender != factory_ || factory_ == address(0) || factory != factory_) {
+            revert UnauthorizedFactory();
+        }
         if (
             params.manager == address(0) || params.feeRecipient == address(0)
                 || assetRegistry_ == address(0) || oracleRegistry_ == address(0)
@@ -327,6 +335,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (amounts.length != _assets.length) {
             revert LengthMismatch(_assets.length, amounts.length);
         }
+        _requireCurrentAssetsApproved();
         bool anyAmount;
         for (uint256 i = 0; i < amounts.length; i++) {
             if (amounts[i] != 0) {
@@ -380,6 +389,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         if (!anyAmount) revert ZeroAmount();
 
+        _requireCurrentAssetsApproved();
         _accrueFees();
         lpAmount = _previewContributeCurrentSupply(amounts);
         if (lpAmount < minShares) revert InsufficientShares(minShares, lpAmount);
@@ -423,6 +433,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
         if (shares == 0) revert ZeroShares();
+        _requireCurrentAssetsApproved();
         uint256 supply = _previewSupplyAfterAccrual();
         amountsIn = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
@@ -447,6 +458,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (shares == 0) revert ZeroShares();
         if (maxAmountsIn.length != _assets.length) revert InvalidArrayLength();
 
+        _requireCurrentAssetsApproved();
         _accrueFees();
         uint256 supply = totalSupply;
         amountsIn = new uint256[](_assets.length);
@@ -665,8 +677,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             return feeShares;
         }
 
-        lastFeeAccrualTimestamp = uint64(block.timestamp);
         feeShares = _mintFees(elapsed, _feeState == FeeState.Escrowed);
+        if (feeShares != 0 || totalSupply == 0 || creatorFeeBpsPerYear == 0) {
+            lastFeeAccrualTimestamp = uint64(block.timestamp);
+        }
     }
 
     function _mintFees(uint256 elapsed, bool escrowManager) internal returns (uint256 feeShares) {
@@ -697,16 +711,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (uint256)
     {
         uint256 annualDenominator = BPS * YEAR;
-        uint256 accruedSupply = supply;
-        uint256 remaining = elapsed;
-        while (remaining != 0) {
-            uint256 period = remaining > YEAR ? YEAR : remaining;
-            uint256 feeNumerator = feeBps * period;
-            uint256 feeDenominator = annualDenominator - feeNumerator;
-            accruedSupply += MathEx.mulDiv(accruedSupply, feeNumerator, feeDenominator);
-            remaining -= period;
-        }
-        return accruedSupply - supply;
+        uint256 maxElapsed = (annualDenominator - 1) / feeBps;
+        if (elapsed > maxElapsed) elapsed = maxElapsed;
+        uint256 feeNumerator = feeBps * elapsed;
+        uint256 feeDenominator = annualDenominator - feeNumerator;
+        return MathEx.mulDiv(supply, feeNumerator, feeDenominator);
     }
 
     function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
@@ -756,7 +765,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         pure
     {
         if (
-            completionDeviationBps == 0 || challengeDeviationBps_ <= completionDeviationBps
+            completionDeviationBps == 0
+                || completionDeviationBps > MAX_COMPLETION_DEVIATION_BPS
+                || challengeDeviationBps_ <= completionDeviationBps
                 || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
         ) {
             revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
@@ -813,6 +824,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             if (balance < amounts[i]) {
                 revert InitialBalanceMismatch(assets_[i], amounts[i], balance);
             }
+        }
+    }
+
+    function _requireCurrentAssetsApproved() internal view {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
         }
     }
 

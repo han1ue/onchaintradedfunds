@@ -79,6 +79,11 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
+        params.maxOracleStaleness = factory.MAX_ORACLE_STALENESS() + 1;
+        vm.expectRevert(OTFFactory.LimitTooHigh.selector);
+        factory.createVault(params);
+
+        params = _defaultParams();
         params.maxSingleAssetWeightBps = 10_001;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
         factory.createVault(params);

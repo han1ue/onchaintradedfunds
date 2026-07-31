@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
@@ -21,6 +20,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     PortfolioCalculator private immutable _calculator;
     address private immutable _self;
+    uint256 private constant WEIGHT_PRECISION_SCALE = 1e12;
 
     constructor(PortfolioCalculator calculator_) {
         _calculator = calculator_;
@@ -132,11 +132,11 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
         _validatePortfolio(newTokens, newWeights);
-        _verifyRemovedAssetsCleared(newTokens);
         _accrueViaVault();
 
-        (uint256[] memory currentWeights, uint256 navBefore) = _currentWeightsAndNav();
-        uint256 turnover = _turnoverBps(newTokens, newWeights, currentWeights);
+        (uint256[] memory currentWeights, uint256 navBefore) = _currentPreciseWeightsAndNav();
+        uint256 turnover =
+            _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
         if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
 
         uint64 proposedAt = uint64(block.timestamp);
@@ -173,8 +173,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
         _accrueViaVault();
 
-        (uint256[] memory weightsBefore, uint256 navBefore) = _currentWeightsAndNav();
-        uint256 distanceBefore = _distanceFromTarget(weightsBefore);
+        (uint256[] memory weightsBefore, uint256 navBefore) = _currentPreciseWeightsAndNav();
+        uint256 distanceBefore = _distanceFromTarget(weightsBefore, WEIGHT_PRECISION_SCALE);
         uint256 tradeValue;
         uint256[] memory valuesIn = new uint256[](trades.length);
 
@@ -206,23 +206,24 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             );
         }
 
-        (uint256[] memory weightsAfter, uint256 navAfter) = _currentWeightsAndNav();
+        (uint256[] memory weightsAfter, uint256 navAfter) = _currentPreciseWeightsAndNav();
         uint256 minimumNav = MathEx.mulDiv(navBefore, BPS - maxNavLossBps, BPS);
         if (navAfter < minimumNav) {
             revert NavLossTooHigh(navBefore, navAfter, maxNavLossBps);
         }
-        uint256 distanceAfter = _distanceFromTarget(weightsAfter);
+        uint256 distanceAfter = _distanceFromTarget(weightsAfter, WEIGHT_PRECISION_SCALE);
         if (distanceAfter >= distanceBefore) {
             revert TradeDoesNotImproveTarget(distanceBefore, distanceAfter);
         }
         for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 target = targetWeightBps[_assets[i]];
+            uint256 target = uint256(targetWeightBps[_assets[i]]) * WEIGHT_PRECISION_SCALE;
             uint256 beforeDeviation = weightsBefore[i].absDiff(target);
             uint256 afterDeviation = weightsAfter[i].absDiff(target);
             if (afterDeviation > beforeDeviation) {
                 revert AssetMovedAwayFromTarget(_assets[i], beforeDeviation, afterDeviation);
             }
-            if (weightsAfter[i] > maxSingleAssetWeightBps && weightsAfter[i] > weightsBefore[i]) {
+            uint256 maxWeight = uint256(maxSingleAssetWeightBps) * WEIGHT_PRECISION_SCALE;
+            if (weightsAfter[i] > maxWeight && weightsAfter[i] > weightsBefore[i]) {
                 revert ExposureLimitExceeded(
                     _assets[i], weightsBefore[i], weightsAfter[i], maxSingleAssetWeightBps
                 );
@@ -336,7 +337,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         pure
     {
         if (
-            completionDeviationBps == 0 || challengeDeviationBps_ <= completionDeviationBps
+            completionDeviationBps == 0
+                || completionDeviationBps > MAX_COMPLETION_DEVIATION_BPS
+                || challengeDeviationBps_ <= completionDeviationBps
                 || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
         ) {
             revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
@@ -361,7 +364,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             if (asset == address(0)) revert ZeroAddress();
             if (asset.code.length == 0) revert AssetNotContract(asset);
             if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) {
-                revert UnapprovedAsset(asset);
+                if (!_containsCurrentAsset(asset) || weight > targetWeightBps[asset]) {
+                    revert UnapprovedAsset(asset);
+                }
             }
             if (weight > maxSingleAssetWeightBps) {
                 revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
@@ -388,9 +393,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (!_containsCurrentAsset(trade.tokenOut)) {
             revert TradeAssetNotTracked(trade.tokenOut);
         }
-        if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenIn)) {
-            revert UnapprovedAsset(trade.tokenIn);
-        }
         if (!IAssetRegistry(assetRegistry).isApprovedAsset(trade.tokenOut)) {
             revert UnapprovedAsset(trade.tokenOut);
         }
@@ -401,18 +403,19 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _calculator.validateAsset(trade.tokenOut, oracleRegistry, maxOracleStaleness);
     }
 
-    function _verifyRemovedAssetsCleared(address[] calldata newTokens) private view {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            if (!_contains(newTokens, _assets[i])) {
-                uint256 balance = IERC20(_assets[i]).balanceOf(address(this));
-                if (balance != 0) revert RemovedAssetBalanceRemaining(_assets[i], balance);
-            }
-        }
-    }
-
     function _currentWeightsAndNav() private view returns (uint256[] memory weights, uint256 nav) {
         return
             _calculator.portfolioState(address(this), _assets, oracleRegistry, maxOracleStaleness);
+    }
+
+    function _currentPreciseWeightsAndNav()
+        private
+        view
+        returns (uint256[] memory weights, uint256 nav)
+    {
+        return _calculator.precisePortfolioState(
+            address(this), _assets, oracleRegistry, maxOracleStaleness
+        );
     }
 
     function _isWithinBands(uint16 deviationBps) private view returns (bool) {
@@ -437,26 +440,31 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         );
     }
 
-    function _distanceFromTarget(uint256[] memory weights) private view returns (uint256 distance) {
+    function _distanceFromTarget(uint256[] memory weights, uint256 targetScale)
+        private
+        view
+        returns (uint256 distance)
+    {
         for (uint256 i = 0; i < _assets.length; i++) {
-            distance += weights[i].absDiff(targetWeightBps[_assets[i]]);
+            distance += weights[i].absDiff(uint256(targetWeightBps[_assets[i]]) * targetScale);
         }
     }
 
     function _turnoverBps(
         address[] calldata newTokens,
         uint256[] calldata newWeights,
-        uint256[] memory currentWeights
+        uint256[] memory currentWeights,
+        uint256 targetScale
     ) private view returns (uint256) {
         uint256 sumDiff;
         for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 targetWeight = _weightOf(newTokens, newWeights, _assets[i]);
+            uint256 targetWeight = _weightOf(newTokens, newWeights, _assets[i]) * targetScale;
             sumDiff += currentWeights[i].absDiff(targetWeight);
         }
         for (uint256 i = 0; i < newTokens.length; i++) {
-            if (!_containsCurrentAsset(newTokens[i])) sumDiff += newWeights[i];
+            if (!_containsCurrentAsset(newTokens[i])) sumDiff += newWeights[i] * targetScale;
         }
-        return (sumDiff + 1) / 2;
+        return MathEx.mulDivUp(sumDiff, 1, 2 * targetScale);
     }
 
     function _assetValue(address asset, uint256 rawBalance) private view returns (uint256) {
@@ -464,13 +472,19 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     }
 
     function _replacePortfolio(address[] calldata assets_, uint256[] calldata weights_) private {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            targetWeightBps[_assets[i]] = 0;
-        }
+        address[] memory previousAssets = _assets;
         delete _assets;
+
         for (uint256 i = 0; i < assets_.length; i++) {
             _assets.push(assets_[i]);
             targetWeightBps[assets_[i]] = uint16(weights_[i]);
+        }
+        for (uint256 i = 0; i < previousAssets.length; i++) {
+            address asset = previousAssets[i];
+            if (!_contains(assets_, asset)) {
+                _assets.push(asset);
+                targetWeightBps[asset] = 0;
+            }
         }
     }
 

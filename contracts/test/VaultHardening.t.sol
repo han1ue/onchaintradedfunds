@@ -132,6 +132,43 @@ contract VaultHardeningTest is ProtocolTestBase {
         assertEq(vault.totalSupply(), params.initialShareSupply);
     }
 
+    function testConstituentCannotInitializePredictedCloneDuringSeedTransfer() public {
+        MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
+        MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
+        assetRegistry.setAssetApproved(address(reentrantToken), true);
+        oracleRegistry.setPriceFeed(address(reentrantToken), address(reentrantFeed));
+        reentrantToken.mint(address(this), 10_000 * ONE);
+        reentrantToken.approve(address(factory), type(uint256).max);
+
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets[0] = address(reentrantToken);
+        address predicted =
+            factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
+        reentrantToken.configureCallback(
+            predicted,
+            abi.encodeCall(
+                ManagedOTFVault.initialize,
+                (
+                    params,
+                    address(reentrantToken),
+                    address(assetRegistry),
+                    address(oracleRegistry),
+                    address(executor),
+                    address(collector),
+                    factory.protocolFeeShareBps()
+                )
+            ),
+            true
+        );
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(address(vault), predicted);
+        assertFalse(reentrantToken.callbackSucceeded());
+        assertEq(vault.factory(), address(factory));
+        assertEq(vault.totalSupply(), params.initialShareSupply);
+    }
+
     function testFeeOnTransferTokenIsRejectedDuringCreationAtomically() public {
         (MockFeeOnTransferToken taxedToken,) = _configureTaxedToken();
         taxedToken.setFeeBps(100);

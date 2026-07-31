@@ -9,6 +9,7 @@ abstract contract ERC20Base is IERC20Metadata {
     error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed);
     error ERC20InvalidReceiver(address receiver);
     error ERC20InvalidSender(address sender);
+    error ERC20NonZeroAllowance(address owner, address spender, uint256 currentAllowance);
 
     string public name;
     string public symbol;
@@ -26,6 +27,10 @@ abstract contract ERC20Base is IERC20Metadata {
     }
 
     function approve(address spender, uint256 value) external virtual returns (bool) {
+        uint256 currentAllowance = allowance[msg.sender][spender];
+        if (currentAllowance != 0 && value != 0) {
+            revert ERC20NonZeroAllowance(msg.sender, spender, currentAllowance);
+        }
         allowance[msg.sender][spender] = value;
         emit Approval(msg.sender, spender, value);
         return true;

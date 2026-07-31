@@ -174,7 +174,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.rebalance(assets, weights);
     }
 
-    function testConstituentCannotBeRemovedWithAReserve() public {
+    function testRemovedConstituentReserveStaysAccountedAtZeroTarget() public {
         VaultInitParams memory params = _defaultParams();
         params.maxSingleAssetWeightBps = 10_000;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
@@ -184,8 +184,59 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         weights[0] = 10_000;
         vm.warp(START + 7 days);
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.RemovedAssetBalanceRemaining.selector);
         vault.rebalance(assets, weights);
+
+        assertTrue(vault.isConstituent(address(tokenB)));
+        assertEq(vault.targetWeightBps(address(tokenB)), 0);
+        assertEq(vault.assetCount(), 2);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenB), address(tokenA), 500 * ONE, 500 * ONE);
+        vault.executeRebalanceTrades(trades);
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertEq(vault.currentWeight(address(tokenA)), 10_000);
+        assertEq(vault.currentWeight(address(tokenB)), 0);
+    }
+
+    function testRevokedConstituentBlocksInflowsButCanBeWoundDown() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 50 * ONE;
+        amounts[1] = 50 * ONE;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
+        vault.previewContribute(amounts);
+
+        tokenA.mint(ALICE, amounts[0]);
+        tokenB.mint(ALICE, amounts[1]);
+        vm.startPrank(ALICE);
+        tokenA.approve(address(vault), type(uint256).max);
+        tokenB.approve(address(vault), type(uint256).max);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
+        vault.contribute(amounts, ALICE, 1);
+        vm.stopPrank();
+
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenB);
+        assets[1] = address(tokenC);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 5_000;
+        weights[1] = 5_000;
+        vm.warp(START + 7 days);
+        vault.rebalance(assets, weights);
+
+        assertTrue(vault.isConstituent(address(tokenA)));
+        assertEq(vault.targetWeightBps(address(tokenA)), 0);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenA), address(tokenC), 500 * ONE, 500 * ONE);
+        vault.executeRebalanceTrades(trades);
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertEq(tokenA.balanceOf(address(vault)), 0);
+        assertEq(vault.currentWeight(address(tokenA)), 0);
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

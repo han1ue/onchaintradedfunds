@@ -10,6 +10,8 @@ contract PortfolioCalculator {
     using MathEx for uint256;
 
     uint256 private constant BPS = 10_000;
+    uint256 private constant WEIGHT_PRECISION_SCALE = 1e12;
+    uint256 private constant PRECISE_BPS = BPS * WEIGHT_PRECISION_SCALE;
 
     error OracleFeedMissing(address asset);
     error InvalidOraclePrice(address asset, int256 answer);
@@ -39,7 +41,7 @@ contract PortfolioCalculator {
         address oracleRegistry,
         uint32 maxStaleness
     ) external view returns (uint256 nav) {
-        (, nav) = _portfolioState(vault, assets, oracleRegistry, maxStaleness, false);
+        (, nav) = _portfolioState(vault, assets, oracleRegistry, maxStaleness, false, BPS);
     }
 
     function portfolioState(
@@ -48,7 +50,16 @@ contract PortfolioCalculator {
         address oracleRegistry,
         uint32 maxStaleness
     ) external view returns (uint256[] memory weights, uint256 nav) {
-        return _portfolioState(vault, assets, oracleRegistry, maxStaleness, true);
+        return _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, BPS);
+    }
+
+    function precisePortfolioState(
+        address vault,
+        address[] calldata assets,
+        address oracleRegistry,
+        uint32 maxStaleness
+    ) external view returns (uint256[] memory weights, uint256 nav) {
+        return _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
     }
 
     function assetValue(
@@ -77,9 +88,9 @@ contract PortfolioCalculator {
         uint16 deviationBps
     ) external view returns (bool) {
         (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true);
+            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
         for (uint256 i = 0; i < assets.length; i++) {
-            (uint256 lower, uint256 upper) = _band(targets[i], deviationBps);
+            (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
             if (weights[i] < lower || weights[i] > upper) return false;
         }
         return true;
@@ -94,16 +105,16 @@ contract PortfolioCalculator {
         uint16 deviationBps
     ) external view returns (address[] memory breached) {
         (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true);
+            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
         uint256 count;
         for (uint256 i = 0; i < assets.length; i++) {
-            (uint256 lower, uint256 upper) = _band(targets[i], deviationBps);
+            (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
             if (weights[i] < lower || weights[i] > upper) count++;
         }
         breached = new address[](count);
         uint256 cursor;
         for (uint256 i = 0; i < assets.length; i++) {
-            (uint256 lower, uint256 upper) = _band(targets[i], deviationBps);
+            (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
             if (weights[i] < lower || weights[i] > upper) {
                 breached[cursor++] = assets[i];
             }
@@ -115,7 +126,8 @@ contract PortfolioCalculator {
         address[] calldata assets,
         address oracleRegistry,
         uint32 maxStaleness,
-        bool requireNonzero
+        bool requireNonzero,
+        uint256 weightScale
     ) private view returns (uint256[] memory weights, uint256 nav) {
         uint256[] memory values = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
@@ -130,7 +142,7 @@ contract PortfolioCalculator {
         }
         weights = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            weights[i] = MathEx.mulDiv(values[i], BPS, nav);
+            weights[i] = MathEx.mulDiv(values[i], weightScale, nav);
         }
     }
 
@@ -186,12 +198,16 @@ contract PortfolioCalculator {
         }
     }
 
-    function _band(uint256 target, uint256 deviation)
+    function _preciseBand(uint256 target, uint256 deviation)
         private
         pure
         returns (uint256 lower, uint256 upper)
     {
-        lower = target > deviation ? target - deviation : 0;
-        upper = target + deviation > BPS ? BPS : target + deviation;
+        uint256 scaledTarget = target * WEIGHT_PRECISION_SCALE;
+        uint256 scaledDeviation = deviation * WEIGHT_PRECISION_SCALE;
+        lower = scaledTarget > scaledDeviation ? scaledTarget - scaledDeviation : 0;
+        upper = scaledTarget + scaledDeviation > PRECISE_BPS
+            ? PRECISE_BPS
+            : scaledTarget + scaledDeviation;
     }
 }
