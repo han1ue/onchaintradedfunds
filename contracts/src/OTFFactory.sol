@@ -8,6 +8,11 @@ import { MinimalClones } from "./libraries/MinimalClones.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { VaultInitParams } from "./VaultTypes.sol";
 
+interface IFeeCollectorTreasury {
+    function treasury() external view returns (address);
+    function pendingTreasury() external view returns (address);
+}
+
 contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
@@ -49,16 +54,9 @@ contract OTFFactory is IAdapterAllowlist {
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
-    event ProtocolTreasuryTransferStarted(
-        address indexed currentTreasury, address indexed pendingTreasury
-    );
-    event ProtocolTreasuryTransferred(address indexed oldTreasury, address indexed newTreasury);
-
     address public owner;
     address public pendingOwner;
     address public vaultImplementation;
-    address public protocolTreasury;
-    address public pendingProtocolTreasury;
     address public feeCollector;
     address public assetRegistry;
     address public oracleRegistry;
@@ -74,7 +72,6 @@ contract OTFFactory is IAdapterAllowlist {
 
     constructor(
         address vaultImplementation_,
-        address protocolTreasury_,
         address feeCollector_,
         address assetRegistry_,
         address oracleRegistry_,
@@ -85,9 +82,8 @@ contract OTFFactory is IAdapterAllowlist {
             revert InvalidImplementation();
         }
         if (
-            protocolTreasury_ == address(0) || feeCollector_ == address(0)
-                || assetRegistry_ == address(0) || oracleRegistry_ == address(0)
-                || rebalanceExecutor_ == address(0)
+            feeCollector_ == address(0) || assetRegistry_ == address(0)
+                || oracleRegistry_ == address(0) || rebalanceExecutor_ == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -101,7 +97,6 @@ contract OTFFactory is IAdapterAllowlist {
 
         owner = msg.sender;
         vaultImplementation = vaultImplementation_;
-        protocolTreasury = protocolTreasury_;
         feeCollector = feeCollector_;
         assetRegistry = assetRegistry_;
         oracleRegistry = oracleRegistry_;
@@ -133,6 +128,14 @@ contract OTFFactory is IAdapterAllowlist {
 
     function allVaults() external view returns (address[] memory) {
         return _vaults;
+    }
+
+    function protocolTreasury() external view returns (address) {
+        return IFeeCollectorTreasury(feeCollector).treasury();
+    }
+
+    function pendingProtocolTreasury() external view returns (address) {
+        return IFeeCollectorTreasury(feeCollector).pendingTreasury();
     }
 
     function createVault(VaultInitParams calldata params)
@@ -201,20 +204,6 @@ contract OTFFactory is IAdapterAllowlist {
         owner = msg.sender;
         pendingOwner = address(0);
         emit OwnershipTransferred(oldOwner, msg.sender);
-    }
-
-    function beginProtocolTreasuryTransfer(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert ZeroAddress();
-        pendingProtocolTreasury = newTreasury;
-        emit ProtocolTreasuryTransferStarted(protocolTreasury, newTreasury);
-    }
-
-    function acceptProtocolTreasuryTransfer() external {
-        if (msg.sender != pendingProtocolTreasury) revert NotOwner();
-        address oldTreasury = protocolTreasury;
-        protocolTreasury = msg.sender;
-        pendingProtocolTreasury = address(0);
-        emit ProtocolTreasuryTransferred(oldTreasury, msg.sender);
     }
 
     function _validateFactoryBounds(VaultInitParams calldata params) internal pure {

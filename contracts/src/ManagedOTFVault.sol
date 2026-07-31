@@ -263,8 +263,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function canProposeTargetWeights() public view returns (bool) {
+        // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
+        // forge-lint: disable-next-line(block-timestamp)
+        bool cooldownActive = block.timestamp < nextRebalanceTime();
         if (
-            challengeActive || strategicRebalanceActive || block.timestamp < nextRebalanceTime()
+            challengeActive || strategicRebalanceActive || cooldownActive
                 || feeState() == FeeState.Suspended
         ) {
             return false;
@@ -273,14 +276,17 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function challengeTimeRemaining() external view returns (uint256) {
+        // Challenge deadlines intentionally use chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (!challengeActive || block.timestamp >= challengeDeadline) return 0;
         return uint256(challengeDeadline) - block.timestamp;
     }
 
     function feeState() public view returns (FeeState) {
-        if (
-            _feeState == FeeState.Escrowed && challengeActive && block.timestamp > challengeDeadline
-        ) {
+        // Fee suspension must reflect the onchain challenge deadline.
+        // forge-lint: disable-next-line(block-timestamp)
+        bool deadlineMissed = block.timestamp > challengeDeadline;
+        if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
             return FeeState.Suspended;
         }
         return _feeState;
@@ -634,11 +640,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _accrueFees() internal returns (uint256 feeShares) {
         uint64 previousTimestamp = lastFeeAccrualTimestamp;
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
+        // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
+        // forge-lint: disable-next-line(block-timestamp)
+        bool deadlineMissed = block.timestamp > challengeDeadline;
         if (elapsed == 0) {
-            if (
-                _feeState == FeeState.Escrowed && challengeActive
-                    && block.timestamp > challengeDeadline
-            ) {
+            if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
                 _forfeitEscrowAndSuspend();
             }
             return 0;
@@ -649,9 +655,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             return 0;
         }
 
-        if (
-            _feeState == FeeState.Escrowed && challengeActive && block.timestamp > challengeDeadline
-        ) {
+        if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
             uint256 eligibleElapsed = uint256(challengeDeadline) > previousTimestamp
                 ? uint256(challengeDeadline) - uint256(previousTimestamp)
                 : 0;
@@ -708,6 +712,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
         supply = totalSupply;
         uint256 previousTimestamp = lastFeeAccrualTimestamp;
+        // Fee previews must use the same chain-time boundary as state-changing accrual.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp <= previousTimestamp || _feeState == FeeState.Suspended) return supply;
 
         uint256 end = block.timestamp;

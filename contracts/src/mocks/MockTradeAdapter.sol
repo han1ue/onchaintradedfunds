@@ -12,7 +12,9 @@ contract MockTradeAdapter is ITradeAdapter {
     error MockSwapFailed();
     error Slippage(uint256 amountOut, uint256 minAmountOut);
 
-    event RateSet(address indexed tokenIn, address indexed tokenOut, uint256 numerator, uint256 denominator);
+    event RateSet(
+        address indexed tokenIn, address indexed tokenOut, uint256 numerator, uint256 denominator
+    );
 
     struct Rate {
         uint256 numerator;
@@ -22,7 +24,9 @@ contract MockTradeAdapter is ITradeAdapter {
     mapping(bytes32 => Rate) public rates;
     bool public failNextSwap;
 
-    function setRate(address tokenIn, address tokenOut, uint256 numerator, uint256 denominator) external {
+    function setRate(address tokenIn, address tokenOut, uint256 numerator, uint256 denominator)
+        external
+    {
         rates[_key(tokenIn, tokenOut)] = Rate({ numerator: numerator, denominator: denominator });
         emit RateSet(tokenIn, tokenOut, numerator, denominator);
     }

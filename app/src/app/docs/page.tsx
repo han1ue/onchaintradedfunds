@@ -267,7 +267,10 @@ completeStrategicRebalance()`}</code></pre>
               Every batch uses current constituents and approved adapters, returns output directly
               to the vault, satisfies oracle-valued slippage, turnover, NAV-loss, and exposure
               limits, and must move every constituent closer to target. Temporary approvals are
-              exact and cleared after execution.
+              exact and cleared after execution. A final successful trade batch automatically
+              completes the strategic rebalance when all weights enter their completion bands.
+              Explicit permissionless completion remains available when no trade is needed or
+              prices naturally restore the portfolio.
             </p>
           </section>
 
@@ -308,8 +311,9 @@ Suspended
               </div>
             </div>
             <p>
-              Every vault waits at least seven days between strategic target proposals. Partial
-              maintenance trades and completion remain available while the cooldown runs.
+              Every vault waits at least seven days after a successfully completed strategic
+              rebalance before another target proposal. Partial maintenance trades and completion
+              remain available while the cooldown runs.
             </p>
             <pre><code>{`MIN_REBALANCE_COOLDOWN = 7 days
 nextRebalanceTime =
@@ -319,9 +323,9 @@ canRebalance =
   block.timestamp >= nextRebalanceTime`}</code></pre>
             <ul className="docsChecklist">
               <li>The first target proposal waits from the vault creation timestamp.</li>
-              <li>Later proposals wait from the last accepted strategic target.</li>
-              <li>Failed proposals do not update the timestamp.</li>
-              <li>Trades, completion, challenges, fees, thesis amendments, and role transfers do not reset it.</li>
+              <li>Later proposals wait from the last successful strategic completion.</li>
+              <li>Failed proposals, failed trades, and partial trades do not update the timestamp.</li>
+              <li>Challenges, fees, thesis amendments, and role transfers do not reset it.</li>
             </ul>
           </section>
 

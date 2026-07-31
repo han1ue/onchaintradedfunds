@@ -61,7 +61,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         feedB.setRoundData(2, 100_00000000, rebalanceTime, rebalanceTime, 2);
         _proposeTarget(vault, assets, weights);
         if (trades.length != 0) vault.executeRebalanceTrades(trades);
-        vault.completeStrategicRebalance();
+        if (vault.strategicRebalanceActive()) vault.completeStrategicRebalance();
 
         assertEq(vault.lastRebalanceTimestamp(), rebalanceTime);
         assertEq(vault.rebalanceCount(), 1);

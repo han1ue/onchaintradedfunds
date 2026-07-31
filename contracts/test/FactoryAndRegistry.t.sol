@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AssetRegistry } from "../src/AssetRegistry.sol";
+import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
@@ -192,14 +193,19 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(factory.pendingOwner(), address(0));
     }
 
-    function testProtocolTreasuryTransferRequiresPendingTreasury() public {
-        factory.beginProtocolTreasuryTransfer(ALICE);
+    function testProtocolTreasuryViewsFollowFeeCollectorAuthority() public {
+        assertEq(factory.protocolTreasury(), TREASURY);
+
+        vm.prank(TREASURY);
+        collector.beginTreasuryTransfer(ALICE);
+        assertEq(factory.pendingProtocolTreasury(), ALICE);
+
         vm.prank(BOB);
-        vm.expectRevert(OTFFactory.NotOwner.selector);
-        factory.acceptProtocolTreasuryTransfer();
+        vm.expectRevert(FeeCollector.NotPendingTreasury.selector);
+        collector.acceptTreasuryTransfer();
 
         vm.prank(ALICE);
-        factory.acceptProtocolTreasuryTransfer();
+        collector.acceptTreasuryTransfer();
         assertEq(factory.protocolTreasury(), ALICE);
         assertEq(factory.pendingProtocolTreasury(), address(0));
     }
@@ -246,7 +252,6 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         vm.expectPartialRevert(OTFFactory.InvalidDependency.selector);
         new OTFFactory(
             implementation,
-            TREASURY,
             ALICE,
             address(assetRegistry),
             address(oracleRegistry),

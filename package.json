@@ -4,12 +4,14 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "contracts:solc": "node scripts/compile-contracts.mjs",
+    "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",
     "lint": "corepack pnpm -r lint",
     "typecheck": "corepack pnpm -r typecheck",
     "build": "corepack pnpm -r build"
   },
   "devDependencies": {
-    "solc": "0.8.30"
+    "solc": "0.8.30",
+    "solhint": "6.2.3"
   }
 }

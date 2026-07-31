@@ -121,6 +121,7 @@ contract ProtocolInvariantHandler is TestBase {
 
     function rebalancePortfolio() external {
         _refreshOracles();
+        uint256 rebalanceCountBefore = vault.rebalanceCount();
         uint16 targetA;
         if (vault.strategicRebalanceActive()) {
             targetA = vault.targetWeightBps(address(tokenA));
@@ -144,9 +145,15 @@ contract ProtocolInvariantHandler is TestBase {
                 return;
             }
         }
-        try vault.completeStrategicRebalance() {
+        if (vault.strategicRebalanceActive()) {
+            try vault.completeStrategicRebalance() { }
+            catch {
+                return;
+            }
+        }
+        if (vault.rebalanceCount() > rebalanceCountBefore) {
             successfulRebalances++;
-        } catch { }
+        }
     }
 
     function attemptInvalidRebalance() external {

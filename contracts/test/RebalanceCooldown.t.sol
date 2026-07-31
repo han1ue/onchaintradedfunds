@@ -52,7 +52,6 @@ contract RebalanceCooldownTest is TestBase {
         FeeCollector collector = new FeeCollector(address(0xCAFE));
         factory = new OTFFactory(
             address(implementation),
-            address(0xCAFE),
             address(collector),
             address(assetRegistry),
             address(oracleRegistry),
@@ -85,6 +84,17 @@ contract RebalanceCooldownTest is TestBase {
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 7 days));
         assertEq(vault.nextRebalanceTime(), START + 14 days);
+    }
+
+    function testTargetProposalDoesNotResetCooldownUntilCompletion() public {
+        ManagedOTFVault vault = _createVault(7 days, 0);
+
+        vm.warp(START + 7 days);
+        _propose6040(vault);
+
+        assertTrue(vault.strategicRebalanceActive());
+        assertEq(vault.lastRebalanceTimestamp(), uint64(START));
+        assertEq(vault.nextRebalanceTime(), START + 7 days);
     }
 
     function testSecondRebalanceBeforeAnotherSevenDaysReverts() public {
@@ -141,6 +151,17 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.thesisVersionCount(), 2);
 
         vm.warp(START + 7 days);
+        _rebalanceTo6040(vault, 100 * ONE);
+        assertEq(vault.lastRebalanceTimestamp(), uint64(START + 7 days));
+    }
+
+    function testWeightBandChangeDoesNotResetPortfolioCooldown() public {
+        ManagedOTFVault vault = _createVault(7 days, 0);
+
+        vm.warp(START + 7 days);
+        vault.setWeightBands(50, 300);
+
+        assertEq(vault.lastRebalanceTimestamp(), uint64(START));
         _rebalanceTo6040(vault, 100 * ONE);
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 7 days));
     }
@@ -249,7 +270,6 @@ contract RebalanceCooldownTest is TestBase {
             adapterData: ""
         });
         vault.executeRebalanceTrades(trades);
-        vault.completeStrategicRebalance();
     }
 
     function _propose6040(ManagedOTFVault vault) internal {
@@ -276,7 +296,6 @@ contract RebalanceCooldownTest is TestBase {
             adapterData: ""
         });
         vault.executeRebalanceTrades(trades);
-        vault.completeStrategicRebalance();
     }
 
     function _propose5050(ManagedOTFVault vault) internal {

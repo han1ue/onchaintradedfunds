@@ -65,7 +65,6 @@ abstract contract ProtocolTestBase is TestBase {
         ManagedOTFVault implementation = new ManagedOTFVault();
         factory = new OTFFactory(
             address(implementation),
-            TREASURY,
             address(collector),
             address(assetRegistry),
             address(oracleRegistry),
@@ -195,7 +194,7 @@ abstract contract ProtocolTestBase is TestBase {
 
     function _executeAndComplete(ManagedOTFVault vault, TradeInstruction[] memory trades) internal {
         vault.executeRebalanceTrades(trades);
-        vault.completeStrategicRebalance();
+        if (vault.strategicRebalanceActive()) vault.completeStrategicRebalance();
     }
 
     function _rebalanceToTarget(

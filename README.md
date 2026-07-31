@@ -8,7 +8,9 @@ This code is not audited, not production ready, and must not be deployed to main
 
 The normative contract invariants and deployment gates are defined in
 [`docs/PROTOCOL_SECURITY_SPEC.md`](./docs/PROTOCOL_SECURITY_SPEC.md). The threat model and known
-limitations are documented in [`SECURITY.md`](./SECURITY.md).
+limitations are documented in [`SECURITY.md`](./SECURITY.md). A reproducible outside-review scope
+is available in
+[`docs/INDEPENDENT_SECURITY_REVIEW.md`](./docs/INDEPENDENT_SECURITY_REVIEW.md).
 
 ## Current Scope
 
@@ -80,7 +82,7 @@ flowchart LR
 - Deploys deterministic minimal-proxy vault clones.
 - Rejects invalid implementations.
 - Stores vault list and creator mapping.
-- Stores protocol treasury and protocol share of manager fees.
+- Reads the protocol treasury from the single authoritative `FeeCollector`.
 - Stores globally approved trade adapters.
 - Rejects any vault cooldown below seven days.
 - Does not custody vault assets.
@@ -150,19 +152,23 @@ weights, and required mint amounts, but `maxAmountsIn` and `minAmountsOut` prote
 previews. Prefunding a predicted vault address is treated as additional backing and cannot block
 factory creation.
 
-### Draft ERC-7621 Surface
+### Draft ERC-7621 Compatibility
 
-The basket implements the current draft ERC-7621 function surface, ERC-165 detection, ERC-173
-ownership, and the exact standard `Contributed`, `Withdrawn`, and `Rebalanced` events.
+The basket implements the function surface pinned from the
+[official ERC-7621 draft assets](https://github.com/ethereum/ERCs/tree/2bc5bccf25aa06f98644c35fc92e6bf82947cfe2/assets/erc-7621),
+ERC-165 detection, ERC-173 ownership, and the exact standard `Contributed`, `Withdrawn`, and
+`Rebalanced` events.
 `Rebalanced(newTokens, newWeights)` means that target composition changed. It does not imply that
 trades ran or reserves reached the target.
 
 OTF emits richer strategic, maintenance-trade, challenge, and fee-state events alongside the
 standard events. Target proposal, trade execution, and completion are separate transitions.
 
-The implementation does not claim unconditional ERC-7621 compliance. It intentionally accepts
-only proportional basket contributions and rejects ownership renunciation. Constituent removal is
-staged: a constituent must have zero reserve before leaving the standardized list.
+The implementation is ERC-7621 interface-compatible with documented restrictions; it does not
+claim full or unconditional compliance. It intentionally accepts only exact proportional basket
+contributions, prevents ownership renunciation, and stages constituent removal until its reserve is
+zero. The proportional-only contribution behavior differs from the draft's generalized monotonic
+contribution and valuation requirements.
 
 ## Strategy-Change Cooldown
 
@@ -201,8 +207,8 @@ if (block.timestamp < nextAllowedTime) {
 }
 ```
 
-The timestamp updates when a valid strategic target is locked. Failed proposals do not reset it.
-Partial maintenance trades and completion do not reset it.
+The timestamp updates only when a strategic rebalance successfully completes inside every final
+completion band. Target proposals, failed trades, and partial trades do not reset it.
 
 The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
 
@@ -214,7 +220,6 @@ The following operations do not count as portfolio rebalances and do not update 
 - Proportional redemption.
 - Partial maintenance trades.
 - Challenge creation, synchronization, and resolution.
-- Strategic completion.
 
 The manager cannot shorten the cooldown after deployment. The MVP intentionally provides no setter for `rebalanceCooldown`.
 
@@ -324,8 +329,11 @@ Every partial batch must use current constituents and approved adapters, satisfy
 oracle-valued slippage, stay within turnover and NAV-loss bounds, avoid worsening any constituent,
 and strictly reduce total distance from the active target.
 
-Anyone may call `completeStrategicRebalance()` after all constituents enter the narrower completion
-bands. Only then is `StrategicRebalanceCompleted` emitted and escrowed manager fees released.
+When a successful strategic trade batch brings every constituent inside the narrower completion
+bands, the vault completes the strategic rebalance atomically, emits
+`StrategicRebalanceCompleted`, updates `lastRebalanceTimestamp`, and releases timely escrowed
+manager fees. Anyone may still call `completeStrategicRebalance()` when no trade is needed or
+natural price movement reaches the bands.
 
 Retained rebalance protections:
 
@@ -544,6 +552,7 @@ corepack pnpm dev --hostname 127.0.0.1 --port 3000
 Foundry commands:
 
 ```bash
+corepack pnpm contracts:security
 cd contracts
 forge fmt --check
 forge build
@@ -551,12 +560,15 @@ forge test
 forge test --match-contract ProtocolFuzzTest -vv
 forge test --match-contract ProtocolInvariantTest -vv
 forge coverage --report summary
-corepack pnpm contracts:security
 ```
+
+`contracts:security` forces a clean production build and enforces warning-free Foundry and Solhint
+security lint, canonical vault/module storage, deployable bytecode sizes, and restricted
+delegation surfaces.
 
 ## Tests
 
-The Solidity suite contains 118 unit, fuzz-property, and invariant tests: 98 deterministic tests,
+The Solidity suite contains 120 unit, fuzz-property, and invariant tests: 100 deterministic tests,
 12 fuzz properties, and 8 stateful invariants. Default settings in `contracts/foundry.toml` run
 every fuzz property 1,000 times and each invariant through 128 sequences of 64 generated actions.
 

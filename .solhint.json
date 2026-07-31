@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "avoid-call-value": "error",
+    "avoid-sha3": "error",
+    "avoid-suicide": "error",
+    "avoid-throw": "error",
+    "avoid-tx-origin": "error",
+    "check-send-result": "error",
+    "compiler-version": ["error", "^0.8.24"],
+    "func-visibility": ["error", { "ignoreConstructors": true }],
+    "multiple-sends": "error",
+    "no-complex-fallback": "error",
+    "no-immutable-before-declaration": "error",
+    "no-unchecked-calls": "error",
+    "not-rely-on-block-hash": "error",
+    "reentrancy": "error",
+    "state-visibility": "error"
+  }
+}

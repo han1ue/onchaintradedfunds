@@ -25,7 +25,7 @@ abstract contract ERC20Base is IERC20Metadata {
         return true;
     }
 
-    function approve(address spender, uint256 value) external returns (bool) {
+    function approve(address spender, uint256 value) external virtual returns (bool) {
         allowance[msg.sender][spender] = value;
         emit Approval(msg.sender, spender, value);
         return true;

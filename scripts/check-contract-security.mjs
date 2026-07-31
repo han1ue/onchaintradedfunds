@@ -35,6 +35,7 @@ function findForge() {
 }
 
 const forge = findForge();
+const solhint = join(root, "node_modules", "solhint", "solhint.js");
 
 function runForge(args, options = {}) {
   return execFileSync(forge, args, {
@@ -59,6 +60,16 @@ function artifact(source, contract) {
   );
 }
 
+function abiSignature(item) {
+  return `${item.name}(${item.inputs.map((input) => input.type).join(",")})`;
+}
+
+function abiSignatures(compiled, type) {
+  return new Set(
+    compiled.abi.filter((item) => item.type === type).map(abiSignature),
+  );
+}
+
 function normalizedStorage(layout) {
   return layout.storage.map((entry) => {
     const type = layout.types[entry.type];
@@ -76,7 +87,14 @@ function normalizedStorage(layout) {
   });
 }
 
+assert(existsSync(solhint), "solhint is not installed; run corepack pnpm install");
+execFileSync(process.execPath, [solhint, "contracts/src/**/*.sol", "--max-warnings", "0"], {
+  cwd: root,
+  stdio: "inherit",
+});
+
 runForge(["build", "--force", "-q"]);
+runForge(["lint", "src", "--deny", "warnings"]);
 
 const vaultLayout = normalizedStorage(
   artifact("ManagedOTFVault.sol", "ManagedOTFVault").storageLayout,
@@ -117,10 +135,85 @@ for (const [source, name] of productionContracts) {
 
 const vault = artifact("ManagedOTFVault.sol", "ManagedOTFVault");
 const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy");
+const erc7621 = artifact("IERC7621.sol", "IERC7621");
 const vaultFunctions = vault.abi.filter((item) => item.type === "function").map((item) => item.name);
 const strategyFunctions = strategy.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
+
+const officialERC7621Functions = new Map([
+  ["contribute(uint256[],address,uint256)", "a1ee8feb"],
+  ["getConstituents()", "10d79f4d"],
+  ["getReserve(address)", "c9a396e9"],
+  ["getWeight(address)", "ac6c5251"],
+  ["isConstituent(address)", "6a76d37b"],
+  ["previewContribute(uint256[])", "d1602deb"],
+  ["previewWithdraw(uint256)", "0a28a477"],
+  ["rebalance(address[],uint256[])", "2be01190"],
+  ["totalBasketValue()", "28b50621"],
+  ["totalConstituents()", "1f39b64e"],
+  ["withdraw(uint256,address,uint256[])", "b06c2075"],
+]);
+const officialERC7621Events = [
+  "Contributed(address,address,uint256,uint256[])",
+  "Rebalanced(address[],uint256[])",
+  "Withdrawn(address,address,uint256,uint256[])",
+];
+const officialERC7621Errors = [
+  "DuplicateConstituent(address)",
+  "InsufficientAmount(uint256,uint256,uint256)",
+  "InsufficientShares(uint256,uint256)",
+  "InvalidWeights(uint256)",
+  "LengthMismatch(uint256,uint256)",
+  "NotConstituent(address)",
+  "ZeroAddress()",
+  "ZeroAmount()",
+];
+const localERC7621Functions = new Map(Object.entries(erc7621.methodIdentifiers));
+assert(
+  localERC7621Functions.size === officialERC7621Functions.size,
+  "IERC7621 function count differs from the pinned official draft",
+);
+let erc7621InterfaceId = 0n;
+for (const [signature, selector] of officialERC7621Functions) {
+  assert(
+    localERC7621Functions.get(signature) === selector,
+    `IERC7621 selector differs for ${signature}`,
+  );
+  erc7621InterfaceId ^= BigInt(`0x${selector}`);
+}
+assert(
+  erc7621InterfaceId === 0xc9c80f73n,
+  `IERC7621 interface ID is 0x${erc7621InterfaceId.toString(16)}, expected 0xc9c80f73`,
+);
+
+const localERC7621Events = abiSignatures(erc7621, "event");
+const localERC7621Errors = abiSignatures(erc7621, "error");
+const vaultMethodIdentifiers = new Map(Object.entries(vault.methodIdentifiers));
+const vaultEvents = abiSignatures(vault, "event");
+const vaultErrors = abiSignatures(vault, "error");
+assert(
+  localERC7621Events.size === officialERC7621Events.length,
+  "IERC7621 event count differs from the pinned official draft",
+);
+assert(
+  localERC7621Errors.size === officialERC7621Errors.length,
+  "IERC7621 error count differs from the pinned official draft",
+);
+for (const [signature, selector] of officialERC7621Functions) {
+  assert(
+    vaultMethodIdentifiers.get(signature) === selector,
+    `vault is missing ERC-7621 function ${signature}`,
+  );
+}
+for (const signature of officialERC7621Events) {
+  assert(localERC7621Events.has(signature), `IERC7621 is missing event ${signature}`);
+  assert(vaultEvents.has(signature), `vault is missing ERC-7621 event ${signature}`);
+}
+for (const signature of officialERC7621Errors) {
+  assert(localERC7621Errors.has(signature), `IERC7621 is missing error ${signature}`);
+  assert(vaultErrors.has(signature), `vault is missing ERC-7621 error ${signature}`);
+}
 
 assert(!vaultFunctions.includes("execute"), "generic execute function found in vault ABI");
 assert(!strategyFunctions.includes("initialize"), "strategy initializer found");
@@ -135,5 +228,5 @@ assert(
 );
 
 console.log(
-  `Contract security checks passed: ${canonicalLayout.length} canonical storage entries and ${productionContracts.length} production bytecode limits verified.`,
+  `Contract security checks passed: ERC-7621 ID 0x${erc7621InterfaceId.toString(16)}, ${canonicalLayout.length} canonical storage entries, and ${productionContracts.length} production bytecode limits verified.`,
 );

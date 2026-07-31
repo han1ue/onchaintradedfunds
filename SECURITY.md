@@ -4,6 +4,8 @@ This repository contains unaudited experimental financial software. Do not deplo
 
 The normative authority rules, invariants, delegatecall requirements, and deployment gates are in
 [`docs/PROTOCOL_SECURITY_SPEC.md`](./docs/PROTOCOL_SECURITY_SPEC.md).
+The reproducible scope and adversarial checklist for outside reviewers are in
+[`docs/INDEPENDENT_SECURITY_REVIEW.md`](./docs/INDEPENDENT_SECURITY_REVIEW.md).
 
 ## Responsible Disclosure
 
@@ -39,7 +41,11 @@ The factory owner can:
 
 - Approve or remove trade adapters for vault rebalances.
 - Start and complete ownership transfer.
-- Start protocol treasury transfer.
+
+The fee collector treasury can:
+
+- Claim protocol fee shares held by `FeeCollector`.
+- Start a two-step treasury transfer that the new treasury must accept.
 
 The factory owner cannot:
 
@@ -48,6 +54,7 @@ The factory owner cannot:
 - Bypass a vault's fee cap or challenge state.
 - Bypass vault rebalance safety limits.
 - Block proportional in-kind redemption.
+- Change the fee collector treasury.
 
 ## Manager Powers
 
@@ -221,13 +228,16 @@ minimum liquidity. Deadline forfeiture burns only the tracked escrow balance.
 
 ## ERC-7621 Status
 
-The contracts implement the current draft ERC-7621 interface identifier, ERC-173 ownership, and
-the exact `Contributed`, `Withdrawn`, and `Rebalanced` events. Custom strategic, challenge,
-executor, and fee-state events are emitted alongside them.
+The contracts implement the function surface and interface identifier pinned from the
+[official ERC-7621 draft assets](https://github.com/ethereum/ERCs/tree/2bc5bccf25aa06f98644c35fc92e6bf82947cfe2/assets/erc-7621),
+ERC-173 ownership, and the exact `Contributed`, `Withdrawn`, and `Rebalanced` events. Custom
+strategic, challenge, executor, and fee-state events are emitted alongside them.
 
-The project does not claim unconditional ERC-7621 compliance. Contributions are intentionally
-restricted to the proportional live basket, ownership renunciation is rejected, and constituents
-must be reduced to zero reserve before removal. ERC-7621 is a draft and may change.
+The project claims interface compatibility with documented restrictions, not full or unconditional
+ERC-7621 compliance. Contributions are intentionally restricted to the exact proportional live
+basket, so arbitrary contribution vectors do not follow the draft's generalized monotonic
+contribution and valuation behavior. Ownership renunciation is prevented, and constituents must be
+reduced to zero reserve before removal. ERC-7621 is a draft and may change.
 
 ## Unsupported Token Donations
 

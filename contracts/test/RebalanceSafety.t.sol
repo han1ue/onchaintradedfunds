@@ -51,7 +51,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.executeRebalanceTrades(first);
         assertTrue(vault.strategicRebalanceActive());
         vault.executeRebalanceTrades(second);
-        vault.completeStrategicRebalance();
 
         assertEq(tokenA.balanceOf(address(vault)), 600 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 400 * ONE);
@@ -60,6 +59,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(executor)), 0);
         assertFalse(vault.strategicRebalanceActive());
         assertEq(vault.rebalanceCount(), 1);
+        assertEq(vault.lastRebalanceTimestamp(), START + 7 days);
         assertEq(vault.lastCompletedStrategicRebalance(), START + 7 days);
 
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);

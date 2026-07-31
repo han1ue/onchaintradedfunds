@@ -178,7 +178,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), 100 * ONE, 100 * ONE);
         vault.executeRebalanceTrades(trades);
-        vault.completeStrategicRebalance();
+        assertFalse(vault.strategicRebalanceActive());
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), 0);
     }

@@ -137,6 +137,12 @@ The protocol owner MUST NOT:
 - shorten an existing OTF cooldown.
 - replace an OTF's strategy module.
 
+### Protocol treasury
+
+`FeeCollector` is the sole source of truth for the protocol treasury. The factory MAY expose
+collector-backed treasury views but MUST NOT maintain independent treasury-transfer state.
+Treasury transfer MUST use the collector's two-step acceptance flow.
+
 ### Manager
 
 Each OTF has exactly one manager. The manager MAY:
@@ -241,7 +247,11 @@ the current target.
 ### Completion
 
 `StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
-inside every completion band. Completion releases timely escrowed manager fees.
+inside every completion band. A successful strategic trade batch that reaches every completion
+band MUST complete atomically after all final trade safety checks. Permissionless explicit
+completion remains available when no trade is required or natural price movement restores the
+portfolio. Completion releases timely escrowed manager fees and is the only point that updates
+`lastRebalanceTimestamp`; proposals, failed trades, and partial trades MUST NOT update it.
 
 ## 7. Challenge and fee accountability
 
@@ -299,7 +309,16 @@ The frontend MUST NOT substitute cached or offchain prices for onchain enforceme
 
 ## 10. ERC-7621 status
 
-The OTF exposes the current draft ERC-7621 surface and exact standard events:
+The conformance baseline is the official Ethereum ERCs repository:
+
+- [ERC-7621 draft specification](https://github.com/ethereum/ERCs/blob/2bc5bccf25aa06f98644c35fc92e6bf82947cfe2/ERCS/erc-7621.md)
+- [Official draft interface and reference assets](https://github.com/ethereum/ERCs/tree/2bc5bccf25aa06f98644c35fc92e6bf82947cfe2/assets/erc-7621)
+
+The pinned upstream snapshot is commit `2bc5bccf25aa06f98644c35fc92e6bf82947cfe2`.
+ERC-7621 remains a draft, so any upstream change requires a new compatibility review.
+
+The OTF exposes the pinned draft ERC-7621 function surface, interface ID `0xc9c80f73`,
+ERC-173 ownership surface, and exact standard events:
 
 - `Contributed`
 - `Withdrawn`
@@ -307,9 +326,19 @@ The OTF exposes the current draft ERC-7621 surface and exact standard events:
 
 Custom events supplement rather than replace standard events.
 
-The implementation intentionally restricts contributions to the proportional live basket, rejects
-ownership renunciation, and requires a constituent reserve to reach zero before removal. Therefore
-the project MUST document these deviations and MUST NOT claim unconditional ERC-7621 compliance.
+The implementation intentionally restricts contributions to an exact proportional live basket.
+Increasing only one constituent can therefore make a contribution invalid instead of producing
+monotonically non-decreasing shares. `totalBasketValue` reports a decimal-normalized sum of current
+reserves, while contribution previews use proportional reserve-to-supply accounting rather than a
+generalized valuation of arbitrary contribution vectors. These are intentional behavioral
+deviations from the current draft.
+
+The implementation also prevents ownership renunciation, as the draft expressly permits to avoid
+permanent management lockout, and requires a constituent reserve to reach zero before removal.
+Factory initialization always establishes nonzero locked liquidity before public contributions.
+
+The project MUST describe itself as ERC-7621 interface-compatible with documented restrictions and
+MUST NOT claim full or unconditional ERC-7621 compliance.
 
 ## 11. Required verification gates
 
@@ -327,12 +356,16 @@ forge test --match-contract ProtocolInvariantTest -vv
 
 `contracts:security` MUST verify:
 
+- Production Solidity passes Foundry lint with warnings denied and the independent Solhint
+  security rules with zero findings.
 - Vault storage equals the canonical storage-base layout.
 - Strategy storage equals the canonical storage-base layout.
 - Every production runtime is at most 24,576 bytes.
 - Every production initcode is at most 49,152 bytes.
 - The vault ABI has no generic `execute`.
 - The strategy ABI has no initializer or upgrade surface.
+- The local ERC-7621 function selectors, interface ID, events, and errors match the pinned official
+  draft, and the vault ABI contains every required item.
 - Module identity and code-hash views remain exposed.
 
 The full suite MUST include deterministic, fuzz, invariant, malicious-token, executor-boundary,
@@ -350,6 +383,10 @@ Every deployment record SHOULD include:
 - Runtime code hashes.
 - Test and security-command results.
 - Independent audit report references.
+
+For production, factory, registry, and treasury authority MUST be assigned to reviewed multisig or
+timelocked governance contracts rather than EOAs. Operational and treasury signers SHOULD be
+separated, and all pending administrative changes MUST be monitored.
 
 Any change to storage, delegation, authorization, token movement, fee math, oracle validation,
 adapter execution, or challenge logic requires a fresh security review.

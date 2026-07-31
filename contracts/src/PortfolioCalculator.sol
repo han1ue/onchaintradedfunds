@@ -157,17 +157,23 @@ contract PortfolioCalculator {
         (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
             IPriceFeed(feed).latestRoundData();
         if (answer <= 0) revert InvalidOraclePrice(asset, answer);
+        // Oracle validity and freshness are necessarily measured against chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (updatedAt == 0 || updatedAt > block.timestamp) {
             revert InvalidOracleTimestamp(asset, updatedAt);
         }
         if (answeredInRound < roundId) {
             revert IncompleteOracleRound(asset, roundId, answeredInRound);
         }
+        // Oracle validity and freshness are necessarily measured against chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > updatedAt + maxStaleness) {
             revert StaleOraclePrice(asset, updatedAt, maxStaleness);
         }
         priceDecimals = IPriceFeed(feed).decimals();
         if (priceDecimals > 36) revert UnsupportedDecimals(feed, priceDecimals);
+        // The positive-answer check above makes this signed-to-unsigned cast lossless.
+        // forge-lint: disable-next-line(unsafe-typecast)
         price = uint256(answer);
     }
 

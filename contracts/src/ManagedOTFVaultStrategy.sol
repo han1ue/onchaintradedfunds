@@ -32,6 +32,18 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _;
     }
 
+    function transfer(address, uint256) external pure override returns (bool) {
+        revert DirectStrategyCall();
+    }
+
+    function approve(address, uint256) external pure override returns (bool) {
+        revert DirectStrategyCall();
+    }
+
+    function transferFrom(address, address, uint256) external pure override returns (bool) {
+        revert DirectStrategyCall();
+    }
+
     function appendThesisAmendment(string calldata text) external onlyDelegateCall onlyManager {
         uint256 length = bytes(text).length;
         if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
@@ -94,6 +106,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     {
         if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
         uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
         _validateWeightBands(completionDeviationBps, challengeDeviationBps_);
@@ -101,7 +115,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         maxWeightDeviationBps = completionDeviationBps;
         challengeWeightDeviationBps = challengeDeviationBps_;
         if (!_isWithinBands(completionDeviationBps)) revert TargetBandsNotReached();
-        lastRebalanceTimestamp = uint64(block.timestamp);
         emit WeightBandsUpdated(completionDeviationBps, challengeDeviationBps_);
     }
 
@@ -113,6 +126,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     {
         if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
         uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
@@ -127,10 +142,11 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint64 proposedAt = uint64(block.timestamp);
         _strategicOldPortfolioHash = _portfolioHashCurrent();
         _strategicNavBefore = navBefore;
+        // Factory bounds cap turnover at BPS, well below uint16.max.
+        // forge-lint: disable-next-line(unsafe-typecast)
         _strategicTurnoverBps = uint16(turnover);
         strategicRebalanceStartedAt = proposedAt;
         strategicRebalanceActive = true;
-        lastRebalanceTimestamp = proposedAt;
         _replacePortfolio(newTokens, newWeights);
         if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
 
@@ -212,6 +228,15 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 );
             }
         }
+
+        if (strategicRebalanceActive && _isWithinBands(maxWeightDeviationBps)) {
+            if (challengeActive) {
+                _resolveOutOfBandChallenge();
+            } else {
+                _completeStrategicRebalance();
+                _releaseEscrowAndResume();
+            }
+        }
     }
 
     function completeStrategicRebalance() external onlyDelegateCall nonReentrant {
@@ -289,6 +314,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         rebalanceCount = rebalanceId + 1;
         strategicRebalanceActive = false;
         strategicRebalanceStartedAt = 0;
+        lastRebalanceTimestamp = completedAt;
         lastCompletedStrategicRebalance = completedAt;
         emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
     }

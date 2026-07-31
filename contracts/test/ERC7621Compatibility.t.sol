@@ -18,9 +18,10 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
     function testSupportsERC165ERC173AndDraftERC7621() public {
         ManagedOTFVault vault = _createVault();
 
+        assertEq(type(IERC7621).interfaceId, bytes4(0xc9c80f73));
         assertTrue(vault.supportsInterface(0x01ffc9a7));
         assertTrue(vault.supportsInterface(0x7f5828d0));
-        assertTrue(vault.supportsInterface(0xc9c80f73));
+        assertTrue(vault.supportsInterface(type(IERC7621).interfaceId));
         assertFalse(vault.supportsInterface(0xffffffff));
         assertEq(vault.owner(), address(this));
     }

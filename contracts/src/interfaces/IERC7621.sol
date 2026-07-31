@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+/// @dev Interface surface synchronized with the official draft at
+/// https://github.com/ethereum/ERCs/blob/2bc5bccf25aa06f98644c35fc92e6bf82947cfe2/assets/erc-7621/contracts/interfaces/IERC7621.sol
+/// Interface equality does not by itself imply behavioral conformance.
 interface IERC7621 {
     error LengthMismatch(uint256 expected, uint256 actual);
     error InvalidWeights(uint256 weightSum);
