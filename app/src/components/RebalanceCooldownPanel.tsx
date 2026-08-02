@@ -261,6 +261,16 @@ const vaultDepositAbi = [
   },
 ] as const;
 
+const vaultFeeAbi = [
+  {
+    type: "function",
+    name: "accrueFees",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [{ name: "feeShares", type: "uint256" }],
+  },
+] as const;
+
 const factoryDependencyAbi = [
   {
     type: "function",
@@ -667,7 +677,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       ] as const)
     : undefined;
 
-  const { data, error, isLoading } = useReadContracts({
+  const { data, error, isLoading, refetch: refetchVaultData } = useReadContracts({
     contracts: readContracts,
     query: { enabled: Boolean(readContracts) && isTestnet },
   });
@@ -983,6 +993,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             vault={vault}
             onBack={() => openView("vaults")}
             onOpenVault={() => openView("detail")}
+            onRefresh={refetchVaultData}
           />
         ) : null}
 
@@ -1951,6 +1962,23 @@ function UserActions({ vault }: { vault: VaultView }) {
     }
   }
 
+  async function approveDepositAsset(asset: (typeof depositAssets)[number]) {
+    if (!asset.balanceSufficient || asset.maxAmount === undefined || asset.allowance === undefined) return;
+    setDepositError(undefined);
+    setApprovalProgress(asset.symbol);
+    try {
+      if (asset.allowance > 0n) await sendDepositApproval(asset, 0n);
+      await sendDepositApproval(asset, asset.maxAmount);
+      await refetchDepositAuthorizations();
+      setDepositState("confirmed");
+    } catch (error) {
+      setDepositError(errorMessage(error));
+      setDepositState("reverted");
+    } finally {
+      setApprovalProgress(undefined);
+    }
+  }
+
   async function depositBasket() {
     if (
       !vault.address ||
@@ -2032,6 +2060,15 @@ function UserActions({ vault }: { vault: VaultView }) {
                         ? asset.allowanceSufficient ? "Approved" : "Approval needed"
                         : "Insufficient balance"}
                   </small>
+                  <button
+                    className="compactApprovalAction"
+                    type="button"
+                    disabled={depositBusy || !asset.balanceSufficient || asset.allowanceSufficient}
+                    onClick={() => approveDepositAsset(asset)}
+                  >
+                    <ShieldCheck size={12} />
+                    {asset.allowanceSufficient ? "Approved" : "Approve"}
+                  </button>
                 </div>
               ))}
             </div>
@@ -2087,16 +2124,6 @@ function UserActions({ vault }: { vault: VaultView }) {
         </div>
       )}
 
-      <div className="feeAction">
-        <div>
-          <strong>Accrue manager fees</strong>
-          <span>Fee accrual does not reset the rebalance cooldown.</span>
-        </div>
-        <button className="secondaryAction" type="button" disabled>
-          <TrendingUp size={14} />
-          Accrue
-        </button>
-      </div>
     </SectionCard>
   );
 }
@@ -2710,7 +2737,11 @@ function CreateVaultView({
     refetch: refetchSeedAuthorizations,
   } = useReadContracts({
     contracts: seedAuthorizationContracts,
-    query: { enabled: canReadSeedAuthorizations },
+    query: {
+      enabled: canReadSeedAuthorizations,
+      refetchInterval: 8_000,
+      refetchOnWindowFocus: true,
+    },
   });
   const { data: assetRegistryAddress, isError: assetRegistryReadFailed } = useReadContract({
     address: factoryAddress,
@@ -2794,6 +2825,9 @@ function CreateVaultView({
   );
   const seedAuthorizations = portfolio.map((asset, index) => {
     const requiredAmount = derivedSeedAmounts[index]?.requiredAmount;
+    const approvalAmount = requiredAmount === undefined
+      ? undefined
+      : (requiredAmount * 10_200n + 9_999n) / 10_000n;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
     const protocolApproved = resultAt<boolean>(protocolAssetResults as ReadResult | undefined, index * 2);
@@ -2803,6 +2837,7 @@ function CreateVaultView({
       ...asset,
       initialAmount: derivedSeedAmounts[index]?.displayAmount ?? "",
       requiredAmount,
+      approvalAmount,
       balance,
       allowance,
       protocolApproved,
@@ -3079,14 +3114,14 @@ function CreateVaultView({
   }
 
   async function approveSeedAsset(asset: (typeof seedAuthorizations)[number]) {
-    if (!connectedAddress || asset.requiredAmount === undefined) return;
+    if (!connectedAddress || asset.approvalAmount === undefined) return;
     setApprovalBatchProgress(undefined);
     setApprovalError(undefined);
     try {
       if (asset.allowance && asset.allowance > 0n && !asset.allowanceSufficient) {
         await sendSeedApproval(asset, 0n);
       }
-      await sendSeedApproval(asset, asset.requiredAmount);
+      await sendSeedApproval(asset, asset.approvalAmount);
       await refetchSeedAuthorizations();
       setApprovalState("confirmed");
     } catch (error) {
@@ -3102,7 +3137,7 @@ function CreateVaultView({
     try {
       for (const [index, asset] of pendingSeedAuthorizations.entries()) {
         activeTicker = asset.ticker;
-        if (asset.requiredAmount === undefined || asset.allowance === undefined) {
+        if (asset.approvalAmount === undefined || asset.allowance === undefined) {
           throw new Error(`${asset.ticker} allowance data is not ready.`);
         }
         if (!asset.balanceSufficient) {
@@ -3116,7 +3151,7 @@ function CreateVaultView({
         if (asset.allowance > 0n && !asset.allowanceSufficient) {
           await sendSeedApproval(asset, 0n);
         }
-        await sendSeedApproval(asset, asset.requiredAmount);
+        await sendSeedApproval(asset, asset.approvalAmount);
       }
       await refetchSeedAuthorizations();
       setApprovalState("confirmed");
@@ -3341,16 +3376,13 @@ function CreateVaultView({
                       <div className="assetOraclePriceField">
                         <span>Oracle price</span>
                         <strong>{derivedSeedAmounts[index]?.price?.display ?? "Loading"}</strong>
-                        <small>{derivedSeedAmounts[index]?.displayTargetValue} target</small>
+                        <small>{derivedSeedAmounts[index]?.displayTargetValue} allocation</small>
                       </div>
-                      <label className="assetSeedField">
+                      <div className="assetSeedField">
                         <span>Seed tokens</span>
-                        <input
-                          value={derivedSeedAmounts[index]?.displayAmount ?? ""}
-                          readOnly
-                          aria-readonly="true"
-                        />
-                      </label>
+                        <strong>{derivedSeedAmounts[index]?.displayAmount || "Loading"}</strong>
+                        <small>{asset.ticker} required</small>
+                      </div>
                       <button type="button" title={`Remove ${asset.ticker}`} onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
                         <Trash2 size={14} />
                       </button>
@@ -3417,6 +3449,7 @@ function CreateVaultView({
                   <div><h2>{draft.name}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
                 </div>
                 <div className="reviewGrid">
+                  <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.creatorFee}%</strong></div>
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
@@ -3440,7 +3473,7 @@ function CreateVaultView({
                     <small>{seedAllowancesSufficient ? "Ready" : `${seedAuthorizations.filter((asset) => !asset.allowanceSufficient).length} remaining`}</small>
                   </div>
                   <div className="seedApprovalToolbar">
-                    <span>Approve each token for the factory. Your wallet will request one transaction per token, plus a reset when required.</span>
+                    <span>Approve each token for the factory. A 2% allowance buffer absorbs small mock-price moves; only the calculated seed amount is transferred.</span>
                     {pendingSeedAuthorizations.length ? (
                       <button
                         className="secondaryAction seedApproveAllAction"
@@ -3472,6 +3505,7 @@ function CreateVaultView({
                             <div>
                               <strong>{asset.ticker}</strong>
                               <small>{asset.initialAmount || "0"} required / {formatWalletTokenBalance(asset.balance, 18)} available</small>
+                              <small>{asset.allowance && asset.allowance > 0n ? `${formatWalletTokenBalance(asset.allowance, 18)} factory allowance` : "No current factory allowance"}</small>
                             </div>
                           </div>
                           <div className="seedApprovalStates">
@@ -3570,7 +3604,7 @@ function CreateVaultView({
                   <LockKeyhole size={15} />
                   <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the cooldown after deployment.</span></div>
                 </div>
-                <TxStatus state={deployState} persistent />
+                <TxStatus state={deployState} />
                 {deployError ? (
                   <div className="validationSummary danger" role="alert">
                     <XCircle size={15} />
@@ -3745,6 +3779,8 @@ function DepositsView({
   onBrowseVaults: () => void;
   onOpenVault: (address: `0x${string}`) => void;
 }) {
+  const [selectedApprovalAssetAddress, setSelectedApprovalAssetAddress] = useState<string>();
+  const factoryAddress = configuredFactoryAddress();
   const canReadBalances = isTestnet && Boolean(connectedAddress && isAddress(connectedAddress));
   const balanceContracts = canReadBalances
     ? testnetCreateAssets.flatMap((asset) => [
@@ -3807,6 +3843,7 @@ function DepositsView({
       return {
         ...asset,
         balance,
+        decimals,
         catalogOrder: index,
         displayBalance: balancesLoading ? "Loading" : formatWalletTokenBalance(balance, decimals),
         displayPrice: oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading",
@@ -3817,6 +3854,42 @@ function DepositsView({
       return heldDifference || left.catalogOrder - right.catalogOrder;
     });
   const heldAssetCount = walletAssets.filter((asset) => (asset.balance ?? 0n) > 0n).length;
+  const selectedApprovalAsset = walletAssets.find(
+    (asset) => asset.address.toLowerCase() === selectedApprovalAssetAddress?.toLowerCase(),
+  );
+  const approvalSpenders = [
+    ...(factoryAddress ? [{ address: factoryAddress, label: "OTF factory", detail: "Creation seed transfers" }] : []),
+    ...vaults.map((vault) => ({
+      address: vault.address,
+      label: vault.symbol,
+      detail: vault.name,
+    })),
+  ];
+  const selectedAllowanceContracts = canReadBalances && selectedApprovalAsset
+    ? approvalSpenders.map((spender) => ({
+        address: selectedApprovalAsset.address as `0x${string}`,
+        abi: erc20BalanceAbi,
+        functionName: "allowance" as const,
+        args: [connectedAddress as `0x${string}`, spender.address],
+        chainId: robinhoodChainTestnet.id,
+      }))
+    : [];
+  const { data: selectedAllowanceResults, isLoading: selectedAllowancesLoading } = useReadContracts({
+    contracts: selectedAllowanceContracts,
+    query: { enabled: selectedAllowanceContracts.length > 0 },
+  });
+  const activeApprovalSpenders = approvalSpenders.flatMap((spender, index) => {
+    const allowance = selectedAllowanceResults?.[index]?.result;
+    return typeof allowance === "bigint" && allowance > 0n
+      ? [{ ...spender, allowance }]
+      : [];
+  });
+  const selectedAllowanceReadFailed = selectedAllowanceResults?.some(
+    (result) => result.status === "failure",
+  ) ?? false;
+  const selectedAllowancesPending = selectedAllowancesLoading || (
+    approvalSpenders.length > 0 && selectedAllowanceResults === undefined
+  );
 
   if (!isTestnet) {
     return (
@@ -3949,6 +4022,7 @@ function DepositsView({
                     <th>Token address</th>
                     <th>Oracle price</th>
                     <th>Wallet balance</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -3962,12 +4036,57 @@ function DepositsView({
                       </td>
                       <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
                       <td data-label="Oracle price" className="monoValue">{asset.displayPrice}</td>
-                      <td data-label="Wallet balance" className="monoValue">{asset.displayBalance}</td>
+                      <td data-label="Wallet balance" className="monoValue walletBalanceValue">{asset.displayBalance}</td>
+                      <td className="rwaApprovalActionCell">
+                        <button
+                          className="compactApprovalAction"
+                          type="button"
+                          aria-expanded={selectedApprovalAssetAddress === asset.address}
+                          onClick={() => setSelectedApprovalAssetAddress(
+                            selectedApprovalAssetAddress === asset.address ? undefined : asset.address,
+                          )}
+                        >
+                          <ShieldCheck size={12} />
+                          See approvals
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {selectedApprovalAsset ? (
+              <div className="walletApprovalInspector">
+                <div className="walletApprovalInspectorHeader">
+                  <div>
+                    <strong>{selectedApprovalAsset.symbol} approvals</strong>
+                    <span>Token spending permissions granted by this wallet.</span>
+                  </div>
+                  <button className="iconOnly" type="button" title="Close approvals" aria-label="Close approvals" onClick={() => setSelectedApprovalAssetAddress(undefined)}>
+                    <XCircle size={15} />
+                  </button>
+                </div>
+                <div className="walletApprovalList">
+                  {activeApprovalSpenders.map((spender) => {
+                    return (
+                      <div className="walletApprovalRow" key={spender.address}>
+                        <div><strong>{spender.label}</strong><small>{spender.detail} · {shortAddress(spender.address)}</small></div>
+                        <span className="stateBadge warning">
+                          {formatWalletTokenBalance(spender.allowance, selectedApprovalAsset.decimals)} approved
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {selectedAllowancesPending ? (
+                    <div className="inlineEmptyState"><Loader2 className="spin" size={16} /><div><strong>Checking approvals</strong><span>Reading active token permissions from the network.</span></div></div>
+                  ) : selectedAllowanceReadFailed ? (
+                    <div className="inlineEmptyState"><RefreshCw size={16} /><div><strong>Approval check unavailable</strong><span>The network did not return every allowance.</span></div></div>
+                  ) : !activeApprovalSpenders.length ? (
+                    <div className="inlineEmptyState"><ShieldCheck size={16} /><div><strong>No approvals</strong><span>This wallet has not approved the factory or any OTF to spend {selectedApprovalAsset.symbol}.</span></div></div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </section>
         </>
       ) : (
@@ -3989,15 +4108,22 @@ function ManageVaultsView({
   vault,
   onBack,
   onOpenVault,
+  onRefresh,
 }: {
   vault: VaultView;
   onBack: () => void;
   onOpenVault: () => void;
+  onRefresh: () => Promise<unknown>;
 }) {
   const [managerTarget, setManagerTarget] = useState("");
   const [feeTarget, setFeeTarget] = useState("");
   const [copied, setCopied] = useState(false);
+  const [feeAccrualState, setFeeAccrualState] = useState<TxState>("idle");
+  const [feeAccrualError, setFeeAccrualError] = useState<string>();
   const [activeOperation, setActiveOperation] = useState<"rebalance" | "roles" | "fees" | "thesis">("rebalance");
+  const { address: connectedAddress } = useAccount();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
   const managerValid = isAddress(managerTarget);
   const feeTargetValid = isAddress(feeTarget);
 
@@ -4009,6 +4135,28 @@ function ManageVaultsView({
       window.setTimeout(() => setCopied(false), 1_500);
     } catch {
       setCopied(false);
+    }
+  }
+
+  async function accrueVaultFees() {
+    if (!vault.address || !connectedAddress || !publicClient) return;
+    setFeeAccrualError(undefined);
+    try {
+      setFeeAccrualState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: vaultFeeAbi,
+        functionName: "accrueFees",
+        chainId: robinhoodChainTestnet.id,
+      });
+      setFeeAccrualState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("Fee accrual reverted.");
+      await onRefresh();
+      setFeeAccrualState("confirmed");
+    } catch (error) {
+      setFeeAccrualError(errorMessage(error));
+      setFeeAccrualState("reverted");
     }
   }
 
@@ -4122,9 +4270,16 @@ function ManageVaultsView({
               <div><span>Escrowed shares</span><strong>{vault.escrowedManagerFeeShares}</strong></div>
             </div>
             <div className="riskCallout success"><CheckCircle size={15} /><div><strong>Cooldown unaffected</strong><span>Fee accrual does not count as a portfolio rebalance.</span></div></div>
-            <button className="secondaryAction" type="button" disabled title="Contract write integration is not configured">
+            {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Accrual failed</strong><span>{feeAccrualError}</span></div></div> : null}
+            <TxStatus state={feeAccrualState} />
+            <button
+              className="secondaryAction"
+              type="button"
+              disabled={!connectedAddress || feeAccrualState === "pending" || feeAccrualState === "submitted"}
+              onClick={accrueVaultFees}
+            >
               <CircleDollarSign size={14} />
-              Accrual unavailable
+              Accrue fees
             </button>
           </div>
         </SectionCard>

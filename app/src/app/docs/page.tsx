@@ -2,14 +2,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowLeft,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   BookOpen,
   Boxes,
   Braces,
+  ChartPie,
+  ChevronDown,
   Clock3,
   Coins,
   ExternalLink,
   FileCode2,
   Landmark,
+  Menu,
+  ReceiptText,
   Scale,
   ShieldCheck,
   Users,
@@ -20,19 +26,52 @@ export const metadata: Metadata = {
   description: "Protocol, vault, rebalance, and developer documentation for Onchain Traded Funds.",
 };
 
-const sections = [
-  ["overview", "Overview"],
-  ["architecture", "Architecture"],
-  ["vault-lifecycle", "Vault lifecycle"],
-  ["portfolio", "Portfolio model"],
-  ["rebalancing", "Rebalancing"],
-  ["challenges", "Challenges"],
-  ["cooldown", "Cooldown"],
-  ["safety", "Safety limits"],
-  ["fees", "Fees and roles"],
-  ["interfaces", "Contract interfaces"],
-  ["developers", "Developer guide"],
-] as const;
+type DocsSection = readonly [id: string, label: string];
+
+type DocsSectionGroup = {
+  readonly label: string;
+  readonly sections: readonly DocsSection[];
+};
+
+const sectionGroups: readonly DocsSectionGroup[] = [
+  {
+    label: "Foundations",
+    sections: [["overview", "Overview"], ["architecture", "Architecture"]],
+  },
+  {
+    label: "Vault lifecycle",
+    sections: [["creation", "Vault creation"], ["deposits", "Deposits"], ["redemptions", "Redemptions"]],
+  },
+  {
+    label: "Portfolio",
+    sections: [["portfolio-structure", "Constituents & weights"], ["valuation", "Valuation & NAV"]],
+  },
+  {
+    label: "Management",
+    sections: [
+      ["target-proposals", "Target proposals"],
+      ["trade-execution", "Trade execution"],
+      ["challenges", "Challenge bands"],
+      ["fee-accountability", "Fee accountability"],
+      ["cooldown", "Cooldown"],
+    ],
+  },
+  {
+    label: "Controls",
+    sections: [
+      ["safety", "Safety limits"],
+      ["management-fees", "Management fees"],
+      ["roles", "Roles"],
+      ["approval-scopes", "Approval scopes"],
+    ],
+  },
+  {
+    label: "Reference",
+    sections: [["interfaces", "Contract interfaces"], ["developers", "Developer guide"]],
+  },
+];
+
+const sections = sectionGroups.flatMap((group) => group.sections);
 
 const contractRows = [
   ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
@@ -85,13 +124,16 @@ export default function DocsPage() {
         <aside className="docsSidebar">
           <div className="docsSidebarTitle">
             <BookOpen size={15} />
-            Protocol guide
+            Documentation index
           </div>
-          <nav aria-label="Documentation sections">
-            {sections.map(([id, label]) => (
-              <a href={`#${id}`} key={id}>
-                {label}
-              </a>
+          <nav className="docsDesktopNav" aria-label="Documentation sections">
+            {sectionGroups.map((group) => (
+              <div className="docsNavGroup" key={group.label}>
+                <span className="docsNavGroupLabel">{group.label}</span>
+                {group.sections.map(([id, label]) => (
+                  <a href={`#${id}`} key={id}>{label}</a>
+                ))}
+              </div>
             ))}
           </nav>
           <div className="docsStatus">
@@ -101,6 +143,24 @@ export default function DocsPage() {
               <small>Robinhood Testnet</small>
             </div>
           </div>
+          <details className="docsMobileMenu">
+            <summary>
+              <Menu size={16} />
+              <span>Browse chapters</span>
+              <small>{sectionGroups.length} chapters / {sections.length} sections</small>
+              <ChevronDown size={15} />
+            </summary>
+            <nav aria-label="Documentation sections">
+              {sectionGroups.map((group) => (
+                <div className="docsNavGroup" key={group.label}>
+                  <span className="docsNavGroupLabel">{group.label}</span>
+                  {group.sections.map(([id, label]) => (
+                    <a href={`#${id}`} key={id}>{label}</a>
+                  ))}
+                </div>
+              ))}
+            </nav>
+          </details>
         </aside>
 
         <main className="docsContent">
@@ -186,15 +246,14 @@ export default function DocsPage() {
             </div>
           </section>
 
-          <section className="docsSection" id="vault-lifecycle">
+          <section className="docsSection" id="creation">
             <div className="docsSectionHeading">
               <Boxes size={18} />
               <div>
-                <span>From creation to redemption</span>
-                <h2>Vault lifecycle</h2>
+                <span>Configuration and funding</span>
+                <h2>Vault creation</h2>
               </div>
             </div>
-            <h3>Creation</h3>
             <p>
               The creator selects a manager, fee recipient, approved assets, target weights, fee,
               target-change cooldown, challenge and completion bands, grace period, and safety
@@ -208,47 +267,82 @@ export default function DocsPage() {
               <li><span>03</span><div><strong>Initialize</strong><p>Rules, thesis version zero, and the creation-time cooldown baseline are stored.</p></div></li>
               <li><span>04</span><div><strong>Issue</strong><p>Initial vault shares are minted to the manager.</p></div></li>
             </ol>
-            <h3>Deposits and redemptions</h3>
+          </section>
+
+          <section className="docsSection" id="deposits">
+            <div className="docsSectionHeading">
+              <ArrowDownToLine size={18} />
+              <div>
+                <span>Proportional entry</span>
+                <h2>Deposits</h2>
+              </div>
+            </div>
             <p>
               New shares require a proportional deposit of every current constituent. Required
-              inputs round up to protect existing holders. Redemptions burn shares for a
-              proportional basket and round outputs down. These operations do not reset the
-              rebalance cooldown, and redemptions remain available if oracle-dependent actions are
-              unavailable.
+              inputs round up to protect existing holders. Before depositing, the holder approves
+              each constituent for the selected vault. Deposits transfer the basket directly into
+              that vault and mint the corresponding vault shares.
             </p>
           </section>
 
-          <section className="docsSection" id="portfolio">
+          <section className="docsSection" id="redemptions">
+            <div className="docsSectionHeading">
+              <ArrowUpFromLine size={18} />
+              <div>
+                <span>Proportional exit</span>
+                <h2>Redemptions</h2>
+              </div>
+            </div>
+            <p>
+              Redemptions burn vault shares and return a proportional amount of every current
+              constituent. Outputs round down to protect remaining holders. Redemptions do not
+              reset the rebalance cooldown and remain available when oracle-dependent management
+              actions are unavailable.
+            </p>
+          </section>
+
+          <section className="docsSection" id="portfolio-structure">
             <div className="docsSectionHeading">
               <Coins size={18} />
               <div>
-                <span>Assets, weights, and valuation</span>
-                <h2>Portfolio model</h2>
+                <span>The live basket</span>
+                <h2>Constituents and weights</h2>
               </div>
             </div>
             <p>
               A portfolio stores its tracked asset addresses and target weights. Actual weights are
-              derived from current balances and fresh oracle prices. NAV is the sum of each
-              constituent&apos;s oracle-valued balance; NAV per share divides that value by the
-              fee-adjusted share supply.
+              derived from current balances and fresh oracle prices. Portfolio reads expose the
+              targets, actual weights, token balances, prices, and feed freshness independently.
+              A thesis is versioned onchain metadata; amending it does not alter constituents or
+              count as a portfolio change.
+            </p>
+          </section>
+
+          <section className="docsSection" id="valuation">
+            <div className="docsSectionHeading">
+              <ChartPie size={18} />
+              <div>
+                <span>Oracle-denominated accounting</span>
+                <h2>Valuation and NAV</h2>
+              </div>
+            </div>
+            <p>
+              NAV is the sum of every constituent&apos;s oracle-valued balance. NAV per share divides
+              that value by the fee-adjusted share supply. Valuation-dependent actions require a
+              positive answer from an approved feed within the vault&apos;s freshness bound.
             </p>
             <pre><code>{`asset value = token balance x oracle price
 portfolio NAV = sum(asset values)
 actual weight = asset value / portfolio NAV
 NAV per share = portfolio NAV / total share supply`}</code></pre>
-            <p>
-              Portfolio reads make targets, actual weights, balances, prices, and feed freshness
-              independently inspectable. A thesis is versioned onchain metadata; amending it does
-              not alter assets and does not count as a portfolio change.
-            </p>
           </section>
 
-          <section className="docsSection" id="rebalancing">
+          <section className="docsSection" id="target-proposals">
             <div className="docsSectionHeading">
               <Braces size={18} />
               <div>
-                <span>Targets, execution, and completion</span>
-                <h2>Rebalancing</h2>
+                <span>Strategic changes</span>
+                <h2>Target proposals</h2>
               </div>
             </div>
             <p>
@@ -257,9 +351,18 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
               <code>Rebalanced</code> event describes this target change, not successful
               restoration.
             </p>
-            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)
+            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)`}</code></pre>
+          </section>
 
-executeRebalanceTrades(TradeInstruction[] trades)
+          <section className="docsSection" id="trade-execution">
+            <div className="docsSectionHeading">
+              <Scale size={18} />
+              <div>
+                <span>Constrained restoration</span>
+                <h2>Trade execution and completion</h2>
+              </div>
+            </div>
+            <pre><code>{`executeRebalanceTrades(TradeInstruction[] trades)
 
 completeStrategicRebalance()`}</code></pre>
             <p>
@@ -287,6 +390,16 @@ completeStrategicRebalance()`}</code></pre>
               its active target. Anyone may call <code>flagOutOfBand()</code>, but fresh approved
               prices must prove a real challenge-band breach. Invalid challenges revert.
             </p>
+          </section>
+
+          <section className="docsSection" id="fee-accountability">
+            <div className="docsSectionHeading">
+              <ReceiptText size={18} />
+              <div>
+                <span>Consequences and recovery</span>
+                <h2>Fee accountability</h2>
+              </div>
+            </div>
             <pre><code>{`Accruing
   -> valid challenge or strategic target
 Escrowed
@@ -361,22 +474,30 @@ canRebalance =
             </div>
           </section>
 
-          <section className="docsSection" id="fees">
+          <section className="docsSection" id="management-fees">
             <div className="docsSectionHeading">
-              <Users size={18} />
+              <ReceiptText size={18} />
               <div>
-                <span>Authority and incentives</span>
-                <h2>Fees and roles</h2>
+                <span>Share-based accrual</span>
+                <h2>Management fees</h2>
               </div>
             </div>
-            <h3>Management fee</h3>
             <p>
               Fees accrue lazily as shares rather than by removing portfolio assets. Manager
               shares are delivered normally, escrowed during unfinished strategic work or
               challenges, and burned if a challenge deadline is missed. Suspended intervals never
               accrue retroactively.
             </p>
-            <h3>Roles</h3>
+          </section>
+
+          <section className="docsSection" id="roles">
+            <div className="docsSectionHeading">
+              <Users size={18} />
+              <div>
+                <span>Authority and responsibility</span>
+                <h2>Protocol roles</h2>
+              </div>
+            </div>
             <div className="docsRoleGrid">
               <article><strong>Manager</strong><span>Controls strategy, bounded fees, executors, and constrained trades.</span></article>
               <article><strong>Executor</strong><span>May only perform constrained partial trades toward the active target.</span></article>
@@ -388,6 +509,27 @@ canRebalance =
               ERC-173 ownership transfer and the pending-manager extension both clear all
               authorized executors. Fee-recipient transfer remains two-step. Role transfer cannot
               cancel a challenge, recover forfeited fees, or change the cooldown.
+            </p>
+          </section>
+
+          <section className="docsSection" id="approval-scopes">
+            <div className="docsSectionHeading">
+              <ShieldCheck size={18} />
+              <div>
+                <span>Who may transfer each token</span>
+                <h2>Approval scopes</h2>
+              </div>
+            </div>
+            <p>
+              Vault creation approvals are granted to the factory so it can transfer the seed
+              basket during deployment. Deposit approvals are granted to the specific vault that
+              receives the assets. The interface supports approving all required constituents or
+              reviewing and approving them one by one; there is no single global approval shared
+              by every vault.
+            </p>
+            <p>
+              During rebalance execution, the vault grants exact temporary token approvals to the
+              approved executor path and clears them after the call.
             </p>
           </section>
 

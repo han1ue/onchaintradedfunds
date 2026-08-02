@@ -1735,7 +1735,7 @@ textarea::placeholder {
 .depositBasketQuoteHeader,
 .depositAssetQuote {
   display: grid;
-  grid-template-columns: minmax(72px, 0.7fr) minmax(90px, 1fr) minmax(100px, 1fr);
+  grid-template-columns: minmax(62px, 0.65fr) minmax(82px, 1fr) minmax(92px, 1fr) auto;
   align-items: center;
   gap: 9px;
   padding: 8px 10px;
@@ -1781,9 +1781,30 @@ textarea::placeholder {
 }
 
 .depositAssetQuote small {
-  justify-self: end;
+  justify-self: start;
   font-size: 0.6rem;
   font-weight: 600;
+}
+
+.compactApprovalAction {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-soft);
+  padding: 0 8px;
+  cursor: pointer;
+  font-size: 0.61rem;
+  font-weight: 600;
+}
+
+.compactApprovalAction:hover:not(:disabled) {
+  border-color: rgb(55 183 170 / 42%);
+  color: var(--teal);
 }
 
 .depositAssetQuote small.success {
@@ -2635,7 +2656,7 @@ textarea::placeholder {
 }
 
 .rwaAssetsTable {
-  min-width: 760px;
+  min-width: 880px;
 }
 
 .rwaAssetsTable th:last-child,
@@ -2648,8 +2669,86 @@ textarea::placeholder {
   cursor: default;
 }
 
-.rwaAssetsTable tbody tr.emptyBalance {
+.rwaAssetsTable tbody tr.emptyBalance td:not(:last-child) {
   opacity: 0.52;
+}
+
+.walletBalanceValue {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.rwaApprovalActionCell {
+  text-align: right;
+}
+
+.rwaApprovalActionCell .compactApprovalAction {
+  margin-left: auto;
+}
+
+.walletApprovalInspector {
+  border-top: 1px solid var(--border);
+  background: var(--background);
+}
+
+.walletApprovalInspectorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.walletApprovalInspectorHeader strong,
+.walletApprovalInspectorHeader span,
+.walletApprovalRow strong,
+.walletApprovalRow small {
+  display: block;
+}
+
+.walletApprovalInspectorHeader strong {
+  font-size: 0.74rem;
+}
+
+.walletApprovalInspectorHeader span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+}
+
+.walletApprovalList {
+  border-top: 1px solid var(--border);
+}
+
+.walletApprovalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 9px 14px;
+}
+
+.walletApprovalRow + .walletApprovalRow {
+  border-top: 1px solid var(--border);
+}
+
+.walletApprovalRow > div {
+  min-width: 0;
+}
+
+.walletApprovalRow strong {
+  font-size: 0.69rem;
+}
+
+.walletApprovalRow small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rwaAssetIdentity strong,
@@ -3013,17 +3112,22 @@ input.invalid {
   line-height: 1.45;
 }
 
-.assetOraclePriceField {
+.assetOraclePriceField,
+.assetSeedField {
   min-width: 0;
 }
 
 .assetOraclePriceField > span,
 .assetOraclePriceField strong,
-.assetOraclePriceField small {
+.assetOraclePriceField small,
+.assetSeedField > span,
+.assetSeedField strong,
+.assetSeedField small {
   display: block;
 }
 
-.assetOraclePriceField > span {
+.assetOraclePriceField > span,
+.assetSeedField > span {
   margin-bottom: 6px;
   color: var(--text-muted);
   font-size: 0.62rem;
@@ -3032,21 +3136,23 @@ input.invalid {
   text-transform: uppercase;
 }
 
-.assetOraclePriceField strong {
+.assetOraclePriceField strong,
+.assetSeedField strong {
+  display: flex;
   min-height: 38px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--card-raised);
-  color: var(--text);
-  padding: 11px 9px;
-  font-size: 0.7rem;
-  font-weight: 600;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 0 1px;
+  font-size: 0.74rem;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.assetOraclePriceField small {
+.assetOraclePriceField small,
+.assetSeedField small {
   margin-top: 5px;
   overflow: hidden;
   color: var(--text-muted);
@@ -3055,13 +3161,8 @@ input.invalid {
   white-space: nowrap;
 }
 
-.assetSeedField input[readonly] {
-  color: var(--text-soft);
-  cursor: default;
-}
-
 .createAssetRow .assetWeightField input,
-.createAssetRow .assetSeedField input {
+.assetSeedField strong {
   font-variant-numeric: tabular-nums;
 }
 
@@ -3149,6 +3250,18 @@ input.invalid {
   border-radius: 5px;
   background: var(--background);
   padding: 10px;
+}
+
+.reviewGrid > .reviewKeyMetric {
+  border-color: rgb(55 183 170 / 34%);
+  background: rgb(55 183 170 / 7%);
+  padding: 12px;
+}
+
+.reviewGrid > .reviewKeyMetric strong {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 .reviewGrid span,
@@ -4400,7 +4513,8 @@ input.invalid {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .depositAssetQuote small {
+  .depositAssetQuote small,
+  .depositAssetQuote .compactApprovalAction {
     grid-column: 1 / -1;
     justify-self: start;
   }
@@ -5349,9 +5463,29 @@ input.invalid {
   color: var(--teal);
 }
 
+.docsMobileMenu {
+  display: none;
+}
+
 .docsSidebar nav {
   display: grid;
   border-left: 1px solid var(--border);
+}
+
+.docsNavGroup {
+  display: grid;
+}
+
+.docsNavGroup + .docsNavGroup {
+  margin-top: 13px;
+}
+
+.docsNavGroupLabel {
+  color: var(--text-faint);
+  padding: 3px 12px 5px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .docsSidebar nav a {
@@ -5511,6 +5645,7 @@ input.invalid {
 
 .docsSection {
   border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 44px 0 54px;
 }
 
@@ -5797,37 +5932,115 @@ input.invalid {
     width: 100%;
     max-width: 100vw;
     grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-    overflow: hidden;
+    gap: 20px;
+    overflow: visible;
   }
 
   .docsSidebar {
-    position: static;
+    position: sticky;
+    z-index: 30;
+    top: 62px;
     min-width: 0;
     max-width: 100%;
   }
 
-  .docsSidebar nav {
+  .docsSidebarTitle,
+  .docsSidebar .docsDesktopNav,
+  .docsStatus {
+    display: none;
+  }
+
+  .docsMobileMenu {
+    position: relative;
+    display: block;
+  }
+
+  .docsMobileMenu summary {
+    display: grid;
+    min-height: 42px;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--text);
+    padding: 0 11px;
+    cursor: pointer;
+    font-size: 0.68rem;
+    font-weight: 650;
+    list-style: none;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  }
+
+  .docsMobileMenu summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .docsMobileMenu summary > svg:first-child {
+    color: var(--teal);
+  }
+
+  .docsMobileMenu summary small {
+    color: var(--text-muted);
+    font-size: 0.59rem;
+  }
+
+  .docsMobileMenu summary > svg:last-child {
+    color: var(--text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .docsMobileMenu[open] summary > svg:last-child {
+    transform: rotate(180deg);
+  }
+
+  .docsMobileMenu nav {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    left: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: 100%;
-    overflow: visible;
-    border: 0;
-    gap: 4px;
-    padding-bottom: 4px;
+    max-height: min(62vh, 430px);
+    overflow-y: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--card);
+    align-items: start;
+    gap: 8px;
+    padding: 7px;
+    box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
   }
 
-  .docsSidebar nav a {
+  .docsMobileMenu .docsNavGroup {
     border: 1px solid var(--border);
     border-radius: 5px;
+    background: var(--card-raised);
+    padding: 6px;
+  }
+
+  .docsMobileMenu .docsNavGroup + .docsNavGroup {
+    margin-top: 0;
+  }
+
+  .docsMobileMenu .docsNavGroupLabel {
+    color: var(--teal);
+    padding: 3px 8px 6px;
+  }
+
+  .docsMobileMenu nav a {
+    border: 0;
+    border-radius: 3px;
     margin: 0;
-    background: var(--card);
-    padding: 7px 10px;
+    background: transparent;
+    padding: 7px 8px;
     white-space: normal;
   }
 
-  .docsStatus {
-    display: none;
+  .docsMobileMenu nav a:hover {
+    background: var(--card);
   }
 
   .docsContent,
@@ -5840,6 +6053,10 @@ input.invalid {
 }
 
 @media (max-width: 620px) {
+  .docsMobileMenu nav {
+    grid-template-columns: 1fr;
+  }
+
   .docsHeaderInner {
     padding: 0 14px;
   }
