@@ -6,5 +6,11 @@ export default async function OTFPage({
   params: Promise<{ slug: string[] }>;
 }) {
   const { slug } = await params;
-  return <AppRoute initialView={slug.at(-1) === "manage" ? "manage" : "detail"} />;
+  const lastSegment = slug.at(-1);
+  const initialView = lastSegment === "manage"
+    ? "manage"
+    : lastSegment === "created"
+      ? "created"
+      : "detail";
+  return <AppRoute initialView={initialView} />;
 }

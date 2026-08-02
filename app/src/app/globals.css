@@ -1688,6 +1688,33 @@ textarea::placeholder {
   font-size: 0.68rem;
 }
 
+.inputWithPrefix {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+}
+
+.inputWithPrefix:focus-within {
+  border-color: rgb(55 183 170 / 62%);
+  box-shadow: 0 0 0 2px rgb(55 183 170 / 9%);
+}
+
+.inputWithPrefix > span {
+  flex: 0 0 auto;
+  padding-left: 10px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.inputWithPrefix input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .quoteLine {
   color: var(--text-muted);
   font-size: 0.68rem;
@@ -2695,7 +2722,8 @@ textarea::placeholder {
 .createForm input,
 .createForm textarea,
 .createForm select,
-.createForm .inputWithSuffix {
+.createForm .inputWithSuffix,
+.createForm .inputWithPrefix {
   background: var(--card-raised);
 }
 
@@ -2878,7 +2906,7 @@ input.invalid {
 
 .createAssetRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 124px 124px 32px;
+  grid-template-columns: minmax(200px, 1fr) 112px 104px 132px 32px;
   align-items: start;
   gap: 12px;
   border: 1px solid var(--border);
@@ -2891,6 +2919,65 @@ input.invalid {
 .createAssetRow > label > input,
 .createAssetRow .inputWithSuffix {
   height: 38px;
+}
+
+.initialPortfolioValueField {
+  width: min(340px, 100%);
+}
+
+.initialPortfolioValueField small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.assetOraclePriceField {
+  min-width: 0;
+}
+
+.assetOraclePriceField > span,
+.assetOraclePriceField strong,
+.assetOraclePriceField small {
+  display: block;
+}
+
+.assetOraclePriceField > span {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.assetOraclePriceField strong {
+  min-height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-raised);
+  color: var(--text);
+  padding: 11px 9px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetOraclePriceField small {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetSeedField input[readonly] {
+  color: var(--text-soft);
+  cursor: default;
 }
 
 .createAssetRow .assetWeightField input,
@@ -3033,6 +3120,30 @@ input.invalid {
   gap: 9px;
 }
 
+.seedApprovalToolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 9px 0;
+}
+
+.seedApprovalToolbar > span:first-child {
+  max-width: 70ch;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.seedApproveAllAction {
+  min-width: 142px;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
 .seedApprovalList {
   display: grid;
   overflow: hidden;
@@ -3143,6 +3254,167 @@ input.invalid {
 .deploymentSuccess strong,
 .deploymentSuccess span {
   display: block;
+}
+
+.createdConfirmation {
+  display: grid;
+  width: min(900px, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.createdStatus {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+}
+
+.createdStatusIcon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(46 208 154 / 34%);
+  border-radius: 8px;
+  background: rgb(46 208 154 / 9%);
+  color: var(--green);
+}
+
+.createdStatus > div {
+  min-width: 0;
+}
+
+.createdStatus h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.15rem;
+}
+
+.createdStatus p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.createdAddressBlock {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  padding: 15px 24px;
+}
+
+.createdAddressBlock > div:first-child {
+  min-width: 0;
+}
+
+.createdAddressBlock span,
+.createdAddressBlock code {
+  display: block;
+}
+
+.createdAddressBlock span {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.createdAddressBlock code {
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.75rem;
+}
+
+.createdAddressActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
+.createdAddressActions a {
+  text-decoration: none;
+}
+
+.createdCopyFeedback {
+  margin: -1px 24px 0;
+  color: var(--green);
+  font-size: 0.65rem;
+}
+
+.createdDetails {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 8px 24px;
+}
+
+.createdDetails > div {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 10px;
+}
+
+.createdDetails span,
+.createdDetails strong {
+  display: block;
+}
+
+.createdDetails span {
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  text-transform: uppercase;
+}
+
+.createdDetails strong {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.createdTransactionLink {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 24px 0;
+  color: var(--text-soft);
+  padding: 10px;
+  font-size: 0.7rem;
+  text-decoration: none;
+}
+
+.createdTransactionLink:hover {
+  color: var(--teal);
+}
+
+.createdTransactionLink code {
+  color: var(--text-muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.65rem;
+}
+
+.createdActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding: 16px 24px;
 }
 
 .deploymentSuccess strong {
@@ -3530,7 +3802,7 @@ input.invalid {
   }
 
   .createAssetRow {
-    grid-template-columns: minmax(220px, 1fr) 112px 112px 32px;
+    grid-template-columns: minmax(160px, 1fr) 100px 96px 120px 32px;
   }
 }
 
@@ -3780,6 +4052,19 @@ input.invalid {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .seedApprovalToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .seedApproveAllAction {
+    align-self: flex-end;
+  }
+
+  .createdDetails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .seedApprovalStates {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -3803,24 +4088,29 @@ input.invalid {
     overflow: visible;
   }
 
-  .createAssetRow > label:nth-child(1) {
+  .createAssetRow > .assetSelectField {
     grid-column: 1 / -1;
     grid-row: 1;
   }
 
-  .createAssetRow > label:nth-child(2) {
+  .createAssetRow > .assetWeightField {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .createAssetRow > label:nth-child(3) {
+  .createAssetRow > .assetOraclePriceField {
     grid-column: 2;
     grid-row: 2;
   }
 
+  .createAssetRow > .assetSeedField {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+
   .createAssetRow > button {
     grid-column: 3;
-    grid-row: 2;
+    grid-row: 3;
   }
 
   .accrualSummary {
@@ -4057,6 +4347,50 @@ input.invalid {
   .deploymentSuccess {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .seedApproveAllAction {
+    width: 100%;
+  }
+
+  .createdStatus,
+  .createdAddressBlock {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .createdAddressActions {
+    align-self: flex-end;
+  }
+
+  .createdCopyFeedback {
+    margin-inline: 18px;
+  }
+
+  .createdDetails {
+    grid-template-columns: 1fr;
+    padding-inline: 18px;
+  }
+
+  .createdTransactionLink {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    margin-inline: 18px;
+  }
+
+  .createdTransactionLink code {
+    display: none;
+  }
+
+  .createdActions {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 16px 18px;
+  }
+
+  .createdActions button {
+    justify-content: center;
+    width: 100%;
   }
 }
 

@@ -49,13 +49,14 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { formatUnits, isAddress, parseUnits } from "viem";
+import { formatUnits, isAddress, parseEventLogs, parseUnits } from "viem";
 import {
   useAccount,
   useBalance,
   useBlockNumber,
   useChainId,
   useDisconnect,
+  usePublicClient,
   useReadContract,
   useReadContracts,
   useSwitchChain,
@@ -83,7 +84,7 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
-export type AppView = "landing" | "detail" | "vaults" | "create" | "manage" | "deposits";
+export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits";
 type DataMode = "live" | "empty" | "unavailable";
 
 type Allocation = {
@@ -101,6 +102,15 @@ type TargetAsset = {
   targetWeight: number;
   initialAmount: string;
 };
+
+type CatalogOraclePrice = {
+  answer?: bigint;
+  decimals?: number;
+  value?: number;
+  display: string;
+};
+
+type CatalogOraclePrices = Record<string, CatalogOraclePrice>;
 
 type VaultSummary = {
   address: `0x${string}`;
@@ -264,6 +274,44 @@ const protocolAssetReadAbi = [
   },
 ] as const;
 
+const vaultCreatedEventAbi = [
+  {
+    type: "event",
+    name: "VaultCreated",
+    inputs: [
+      { indexed: true, name: "creator", type: "address" },
+      { indexed: true, name: "vault", type: "address" },
+      { indexed: true, name: "nonce", type: "uint256" },
+      { indexed: false, name: "name", type: "string" },
+      { indexed: false, name: "symbol", type: "string" },
+      { indexed: false, name: "rebalanceCooldown", type: "uint32" },
+    ],
+  },
+] as const;
+
+const aggregatorV3ReadAbi = [
+  {
+    type: "function",
+    name: "latestRoundData",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+] as const;
+
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
 
 function configuredFactoryAddress(): `0x${string}` | undefined {
@@ -274,6 +322,12 @@ function configuredFactoryAddress(): `0x${string}` | undefined {
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
   const segment = pathname.split("/").filter(Boolean)[1];
   return segment && isAddress(segment) ? segment : undefined;
+}
+
+function transactionHashFromLocation(): `0x${string}` | undefined {
+  if (typeof window === "undefined") return undefined;
+  const value = new URLSearchParams(window.location.search).get("tx");
+  return value && /^0x[0-9a-fA-F]{64}$/.test(value) ? value as `0x${string}` : undefined;
 }
 
 function shortAddress(address?: string): string {
@@ -294,6 +348,22 @@ function formatWalletTokenBalance(value: bigint | undefined, decimals: number): 
   if (value === undefined) return "—";
   const amount = Number(formatUnits(value, decimals));
   return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function formatOraclePrice(value: number | undefined): string {
+  if (value === undefined) return "Loading";
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: value < 10 ? 4 : 2,
+  });
+}
+
+function formatSeedTokenAmount(value: bigint | undefined): string {
+  if (value === undefined) return "";
+  const formatted = Number(formatUnits(value, 18));
+  return formatted.toLocaleString(undefined, { maximumFractionDigits: 8, useGrouping: false });
 }
 
 function formatUsd18(value?: bigint): string | undefined {
@@ -398,6 +468,7 @@ const viewPaths: Record<AppView, string> = {
   vaults: "/otfs",
   detail: "/otfs/unconfigured",
   create: "/create",
+  created: "/otfs/unconfigured/created",
   manage: "/otfs/unconfigured/manage",
   deposits: "/wallet",
 };
@@ -405,6 +476,7 @@ const viewPaths: Record<AppView, string> = {
 function viewFromPathname(pathname: string): AppView {
   if (pathname === "/create") return "create";
   if (pathname === "/wallet") return "deposits";
+  if (pathname.endsWith("/created")) return "created";
   if (pathname.endsWith("/manage")) return "manage";
   if (pathname.startsWith("/otfs/")) return "detail";
   if (pathname === "/otfs") return "vaults";
@@ -419,6 +491,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const [view, setView] = useState<AppView>(initialView);
   const [selectedVaultAddress, setSelectedVaultAddress] = useState<`0x${string}` | undefined>(
     () => typeof window === "undefined" ? undefined : vaultAddressFromPathname(window.location.pathname),
+  );
+  const [createdTxHash, setCreatedTxHash] = useState<`0x${string}` | undefined>(
+    transactionHashFromLocation,
   );
   const [lastReadAt, setLastReadAt] = useState<number>();
 
@@ -437,6 +512,73 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     },
   });
 
+  const { data: catalogOracleRegistryAddress } = useReadContract({
+    address: factoryAddress,
+    abi: factoryDependencyAbi,
+    functionName: "oracleRegistry",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(factoryAddress) && isTestnet },
+  });
+  const catalogFeedContracts = catalogOracleRegistryAddress
+    ? testnetCreateAssets.map((asset) => ({
+        address: catalogOracleRegistryAddress as `0x${string}`,
+        abi: protocolAssetReadAbi,
+        functionName: "priceFeedFor" as const,
+        args: [asset.address as `0x${string}`],
+        chainId: robinhoodChainTestnet.id,
+      }))
+    : undefined;
+  const { data: catalogFeedResults } = useReadContracts({
+    contracts: catalogFeedContracts,
+    query: { enabled: Boolean(catalogFeedContracts) && isTestnet },
+  });
+  const catalogFeedAddresses = testnetCreateAssets.map((_, index) => {
+    const value = catalogFeedResults?.[index]?.result;
+    return typeof value === "string" && isAddress(value) ? value : undefined;
+  });
+  const catalogPricesReady = catalogFeedAddresses.every(
+    (address): address is `0x${string}` => Boolean(address),
+  );
+  const catalogPriceContracts = catalogPricesReady
+    ? catalogFeedAddresses.flatMap((address) => ([
+        {
+          address,
+          abi: aggregatorV3ReadAbi,
+          functionName: "latestRoundData" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address,
+          abi: aggregatorV3ReadAbi,
+          functionName: "decimals" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const))
+    : undefined;
+  const { data: catalogPriceResults } = useReadContracts({
+    contracts: catalogPriceContracts,
+    query: { enabled: Boolean(catalogPriceContracts) && isTestnet },
+  });
+  const catalogOraclePrices = useMemo<CatalogOraclePrices>(() => Object.fromEntries(
+    testnetCreateAssets.map((asset, index) => {
+      const round = catalogPriceResults?.[index * 2]?.result as
+        | readonly [bigint, bigint, bigint, bigint, bigint]
+        | undefined;
+      const decimals = catalogPriceResults?.[index * 2 + 1]?.result;
+      const parsedDecimals = typeof decimals === "number" ? decimals : undefined;
+      const answer = round?.[1];
+      const value = answer !== undefined && answer > 0n && parsedDecimals !== undefined
+        ? Number(formatUnits(answer, parsedDecimals))
+        : undefined;
+      return [asset.address.toLowerCase(), {
+        answer,
+        decimals: parsedDecimals,
+        value,
+        display: formatOraclePrice(value),
+      }];
+    }),
+  ), [catalogPriceResults]);
+
   const factoryVaultAddresses = useMemo(
     () => (factoryVaultData ?? []).filter(
       (address): address is `0x${string}` => isAddress(address),
@@ -449,9 +591,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       (address) => address.toLowerCase() === selectedVaultAddress.toLowerCase(),
     ),
   );
-  const routeNeedsSelectedVault = view === "detail" || view === "manage";
-  const vaultAddress = routeNeedsSelectedVault
-    ? selectedIsFactoryVault ? selectedVaultAddress : undefined
+  const routeNeedsSelectedVault = view === "detail" || view === "created" || view === "manage";
+  const vaultAddress = view === "created"
+    ? selectedVaultAddress
+    : routeNeedsSelectedVault
+      ? selectedIsFactoryVault ? selectedVaultAddress : undefined
     : selectedIsFactoryVault ? selectedVaultAddress : factoryVaultAddresses[0];
   const enabled = Boolean(vaultAddress) && isTestnet;
 
@@ -684,6 +828,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     const syncViewToHistory = () => {
       setView(viewFromPathname(window.location.pathname));
       setSelectedVaultAddress(vaultAddressFromPathname(window.location.pathname));
+      setCreatedTxHash(transactionHashFromLocation());
     };
     window.addEventListener("popstate", syncViewToHistory);
     return () => window.removeEventListener("popstate", syncViewToHistory);
@@ -702,6 +847,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     const otfSlug = nextVaultAddress ?? "unconfigured";
     const nextPath = nextView === "detail"
       ? `/otfs/${otfSlug}`
+      : nextView === "created"
+        ? `/otfs/${otfSlug}/created`
       : nextView === "manage"
         ? `/otfs/${otfSlug}/manage`
         : viewPaths[nextView];
@@ -710,6 +857,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     }
     window.scrollTo({ top: 0, behavior: "auto" });
     setView(nextView);
+  }
+
+  function openCreatedVault(address: `0x${string}`, transactionHash: `0x${string}`) {
+    setSelectedVaultAddress(address);
+    setCreatedTxHash(transactionHash);
+    window.history.pushState({}, "", `/otfs/${address}/created?tx=${transactionHash}`);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setView("created");
   }
 
   function changeView(tab: string) {
@@ -751,7 +906,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             <div className="dashboardGrid">
               <div className="primaryColumn">
                 <ThesisModule currentThesis={currentThesis} />
-                <PortfolioAllocation allocations={allocations} />
+                <PortfolioAllocation allocations={allocations} oraclePrices={catalogOraclePrices} />
               </div>
 
               <aside className="sideColumn">
@@ -783,7 +938,23 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         ) : null}
 
         {view === "create" ? (
-          <CreateVaultView connectedAddress={connectedAddress} isTestnet={isTestnet} onBack={() => openView("vaults")} />
+          <CreateVaultView
+            connectedAddress={connectedAddress}
+            isTestnet={isTestnet}
+            oraclePrices={catalogOraclePrices}
+            onBack={() => openView("vaults")}
+            onCreated={openCreatedVault}
+          />
+        ) : null}
+
+        {view === "created" && vaultAddress ? (
+          <CreatedVaultView
+            vault={vault}
+            transactionHash={createdTxHash}
+            onCreateAnother={() => openView("create")}
+            onManage={() => openView("manage", vaultAddress)}
+            onView={() => openView("detail", vaultAddress)}
+          />
         ) : null}
 
         {view === "manage" && isTestnet && vault.dataMode === "live" ? (
@@ -806,6 +977,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             connectedAddress={connectedAddress}
             vaults={vaultSummaries}
             isTestnet={isTestnet}
+            oraclePrices={catalogOraclePrices}
             onBrowseVaults={() => openView("vaults")}
             onOpenVault={(address) => openView("detail", address)}
           />
@@ -1463,7 +1635,13 @@ function TimelineItem({
   );
 }
 
-function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
+function PortfolioAllocation({
+  allocations,
+  oraclePrices,
+}: {
+  allocations: Allocation[];
+  oraclePrices: CatalogOraclePrices;
+}) {
   return (
     <SectionCard
       title="Portfolio allocation"
@@ -1497,6 +1675,7 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
           <thead>
             <tr>
               <th>Asset</th>
+              <th>Price</th>
               <th>Target</th>
               <th>Actual</th>
               <th>Drift</th>
@@ -1516,6 +1695,7 @@ function PortfolioAllocation({ allocations }: { allocations: Allocation[] }) {
                       </div>
                     </div>
                   </td>
+                  <td>{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
                   <td>{bpsToAllocationPercent(asset.targetWeightBps)}</td>
                   <td className="actualWeight">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
                   <td>
@@ -2212,11 +2392,15 @@ function VaultsDirectory({
 function CreateVaultView({
   connectedAddress,
   isTestnet,
+  oraclePrices,
   onBack,
+  onCreated,
 }: {
   connectedAddress?: string;
   isTestnet: boolean;
+  oraclePrices: CatalogOraclePrices;
   onBack: () => void;
+  onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
 }) {
   const factoryAddress = configuredFactoryAddress();
   const [step, setStep] = useState(0);
@@ -2226,22 +2410,23 @@ function CreateVaultView({
   const [deployTxHash, setDeployTxHash] = useState<`0x${string}`>();
   const [deployError, setDeployError] = useState<string>();
   const [approvalState, setApprovalState] = useState<TxState>("idle");
-  const [approvalTxHash, setApprovalTxHash] = useState<`0x${string}`>();
+  const [, setApprovalTxHash] = useState<`0x${string}`>();
   const [approvalAssetAddress, setApprovalAssetAddress] = useState<`0x${string}`>();
   const [approvalError, setApprovalError] = useState<string>();
+  const [approvalBatchProgress, setApprovalBatchProgress] = useState<{
+    current: number;
+    total: number;
+    ticker: string;
+  }>();
   const [customManager, setCustomManager] = useState(false);
   const [customFeeRecipient, setCustomFeeRecipient] = useState(false);
   const { writeContractAsync } = useWriteContract();
   const { writeContractAsync: writeApprovalContractAsync } = useWriteContract();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { data: deployReceipt } = useWaitForTransactionReceipt({
     hash: deployTxHash,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(deployTxHash) },
-  });
-  const { data: approvalReceipt } = useWaitForTransactionReceipt({
-    hash: approvalTxHash,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(approvalTxHash) },
   });
   const [draft, setDraft] = useState({
     name: "",
@@ -2251,6 +2436,7 @@ function CreateVaultView({
     feeRecipient: connectedAddress ?? "",
     creatorFee: "0.50",
     initialShares: "100",
+    initialPortfolioValue: "5",
     cooldownDays: "7",
     maxTurnover: "30",
     maxNavLoss: "2",
@@ -2267,7 +2453,7 @@ function CreateVaultView({
       ticker: asset.symbol,
       address: asset.address,
       targetWeight: 100 / testnetCreateAssets.length,
-      initialAmount: "1",
+      initialAmount: "",
     })),
   );
   const canReadSeedAuthorizations = Boolean(
@@ -2351,16 +2537,37 @@ function CreateVaultView({
   const targetWeightBps = portfolio.map((asset) => percentToBps(asset.targetWeight));
   const totalWeightBps = targetWeightBps.reduce((sum, weight) => sum + weight, 0);
   const totalWeightValid = totalWeightBps === 10_000;
-  const hasPositiveSeedAmounts = portfolio.every((asset) => Number(asset.initialAmount) > 0);
-  const seedAuthorizations = portfolio.map((asset, index) => {
-    let requiredAmount: bigint | undefined;
-    try {
-      requiredAmount = Number(asset.initialAmount) > 0
-        ? parseUnits(asset.initialAmount, 18)
+  let initialPortfolioValue: bigint | undefined;
+  try {
+    initialPortfolioValue = Number(draft.initialPortfolioValue) > 0
+      ? parseUnits(draft.initialPortfolioValue, 18)
+      : undefined;
+  } catch {
+    initialPortfolioValue = undefined;
+  }
+  const derivedSeedAmounts = portfolio.map((asset, index) => {
+    const price = oraclePrices[asset.address.toLowerCase()];
+    const targetValue = initialPortfolioValue !== undefined
+      ? (initialPortfolioValue * BigInt(targetWeightBps[index] ?? 0)) / 10_000n
+      : undefined;
+    const requiredAmount =
+      targetValue !== undefined && price?.answer !== undefined && price.answer > 0n && price.decimals !== undefined
+        ? (targetValue * (10n ** BigInt(price.decimals))) / price.answer
         : undefined;
-    } catch {
-      requiredAmount = undefined;
-    }
+    return {
+      requiredAmount,
+      displayAmount: formatSeedTokenAmount(requiredAmount),
+      displayTargetValue: targetValue === undefined
+        ? "Loading"
+        : formatOraclePrice(Number(formatUnits(targetValue, 18))),
+      price,
+    };
+  });
+  const allSeedAmountsReady = derivedSeedAmounts.every(
+    (seed) => seed.requiredAmount !== undefined && seed.requiredAmount > 0n,
+  );
+  const seedAuthorizations = portfolio.map((asset, index) => {
+    const requiredAmount = derivedSeedAmounts[index]?.requiredAmount;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
     const protocolApproved = resultAt<boolean>(protocolAssetResults as ReadResult | undefined, index * 2);
@@ -2368,6 +2575,7 @@ function CreateVaultView({
     const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
     return {
       ...asset,
+      initialAmount: derivedSeedAmounts[index]?.displayAmount ?? "",
       requiredAmount,
       balance,
       allowance,
@@ -2398,6 +2606,14 @@ function CreateVaultView({
     seedAuthorizationReadsReady && seedAuthorizations.every((asset) => asset.balanceSufficient);
   const seedAllowancesSufficient =
     seedAuthorizationReadsReady && seedAuthorizations.every((asset) => asset.allowanceSufficient);
+  const pendingSeedAuthorizations = seedAuthorizations.filter((asset) => !asset.allowanceSufficient);
+  const approvalInProgress = approvalState === "pending" || approvalState === "submitted";
+  const canApproveAllSeedAssets =
+    Boolean(connectedAddress) &&
+    pendingSeedAuthorizations.length > 0 &&
+    seedAuthorizationReadsReady &&
+    seedBalancesSufficient &&
+    !approvalInProgress;
   const basicsValid =
     draft.name.trim().length > 2 &&
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -2410,10 +2626,11 @@ function CreateVaultView({
       (asset) =>
         asset.ticker.trim() &&
         isAddress(asset.address) &&
-        asset.targetWeight > 0 &&
-        Number(asset.initialAmount) > 0,
+        asset.targetWeight > 0,
     ) &&
-    totalWeightValid;
+    totalWeightValid &&
+    initialPortfolioValue !== undefined &&
+    allSeedAmountsReady;
   const safetyValid =
     Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
@@ -2438,7 +2655,8 @@ function CreateVaultView({
   const portfolioIssues = [
     portfolio.length > 0 ? null : "Add at least one approved asset.",
     portfolio.every((asset) => asset.targetWeight > 0) ? null : "Every asset needs a positive target weight.",
-    hasPositiveSeedAmounts ? null : "Enter a positive seed amount for every asset.",
+    initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
+    allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
     totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
@@ -2480,22 +2698,27 @@ function CreateVaultView({
 
   useEffect(() => {
     if (!deployReceipt) return;
-    setDeployState(deployReceipt.status === "success" ? "confirmed" : "reverted");
     if (deployReceipt.status !== "success") {
+      setDeployState("reverted");
       setDeployError("The create transaction reverted.");
+      return;
     }
-  }, [deployReceipt]);
 
-  useEffect(() => {
-    if (!approvalReceipt || !approvalAssetAddress) return;
-    if (approvalReceipt.status === "success") {
-      setApprovalError(undefined);
-      void refetchSeedAuthorizations().finally(() => setApprovalState("confirmed"));
-    } else {
-      setApprovalState("reverted");
-      setApprovalError("The token approval transaction reverted.");
+    const [createdEvent] = parseEventLogs({
+      abi: vaultCreatedEventAbi,
+      eventName: "VaultCreated",
+      logs: deployReceipt.logs,
+      strict: true,
+    });
+    const createdVault = createdEvent?.args.vault;
+    if (!createdVault || !isAddress(createdVault)) {
+      setDeployState("reverted");
+      setDeployError("The transaction confirmed, but the new OTF address could not be read from its receipt.");
+      return;
     }
-  }, [approvalAssetAddress, approvalReceipt, refetchSeedAuthorizations]);
+    setDeployState("confirmed");
+    onCreated(createdVault, deployReceipt.transactionHash);
+  }, [deployReceipt, onCreated]);
 
   if (!isTestnet) {
     return (
@@ -2534,7 +2757,7 @@ function CreateVaultView({
         ticker: nextAvailableAsset.symbol,
         address: nextAvailableAsset.address,
         targetWeight: 0,
-        initialAmount: "1",
+        initialAmount: "",
       },
     ]);
   }
@@ -2556,7 +2779,12 @@ function CreateVaultView({
       feeRecipient: draft.feeRecipient,
       initialAssets,
       initialTargetWeightsBps: targetWeightBps,
-      initialAmounts: portfolio.map((asset) => parseUnits(asset.initialAmount, 18)),
+      initialAmounts: derivedSeedAmounts.map((seed, index) => {
+        if (seed.requiredAmount === undefined || seed.requiredAmount <= 0n) {
+          throw new Error(`${portfolio[index]?.ticker ?? "Asset"} seed amount is unavailable.`);
+        }
+        return seed.requiredAmount;
+      }),
       initialShareSupply: parseUnits(draft.initialShares, 18),
       creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
       rebalanceCooldown: daysToSeconds(draft.cooldownDays),
@@ -2603,26 +2831,74 @@ function CreateVaultView({
     }
   }
 
-  async function approveSeedAsset(asset: (typeof seedAuthorizations)[number]) {
-    if (!factoryAddress || !connectedAddress || asset.requiredAmount === undefined) return;
-    const requiresReset = Boolean(asset.allowance && asset.allowance > 0n && !asset.allowanceSufficient);
+  async function sendSeedApproval(
+    asset: (typeof seedAuthorizations)[number],
+    amount: bigint,
+  ) {
+    if (!factoryAddress || !publicClient) throw new Error("The testnet connection is not ready.");
     setApprovalAssetAddress(asset.address as `0x${string}`);
     setApprovalTxHash(undefined);
-    setApprovalError(undefined);
     setApprovalState("pending");
+    const hash = await writeApprovalContractAsync({
+      address: asset.address as `0x${string}`,
+      abi: erc20BalanceAbi,
+      functionName: "approve",
+      args: [factoryAddress, amount],
+      chainId: robinhoodChainTestnet.id,
+    });
+    setApprovalTxHash(hash);
+    setApprovalState("submitted");
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${asset.ticker} approval reverted.`);
+  }
+
+  async function approveSeedAsset(asset: (typeof seedAuthorizations)[number]) {
+    if (!connectedAddress || asset.requiredAmount === undefined) return;
+    setApprovalBatchProgress(undefined);
+    setApprovalError(undefined);
     try {
-      const hash = await writeApprovalContractAsync({
-        address: asset.address as `0x${string}`,
-        abi: erc20BalanceAbi,
-        functionName: "approve",
-        args: [factoryAddress, requiresReset ? 0n : asset.requiredAmount],
-        chainId: robinhoodChainTestnet.id,
-      });
-      setApprovalTxHash(hash);
-      setApprovalState("submitted");
+      if (asset.allowance && asset.allowance > 0n && !asset.allowanceSufficient) {
+        await sendSeedApproval(asset, 0n);
+      }
+      await sendSeedApproval(asset, asset.requiredAmount);
+      await refetchSeedAuthorizations();
+      setApprovalState("confirmed");
     } catch (error) {
-      setApprovalError(errorMessage(error));
+      setApprovalError(`${asset.ticker}: ${errorMessage(error)}`);
       setApprovalState("reverted");
+    }
+  }
+
+  async function approveAllSeedAssets() {
+    if (!connectedAddress || !pendingSeedAuthorizations.length) return;
+    setApprovalError(undefined);
+    let activeTicker: string | undefined;
+    try {
+      for (const [index, asset] of pendingSeedAuthorizations.entries()) {
+        activeTicker = asset.ticker;
+        if (asset.requiredAmount === undefined || asset.allowance === undefined) {
+          throw new Error(`${asset.ticker} allowance data is not ready.`);
+        }
+        if (!asset.balanceSufficient) {
+          throw new Error(`${asset.ticker} balance is below the required seed amount.`);
+        }
+        setApprovalBatchProgress({
+          current: index + 1,
+          total: pendingSeedAuthorizations.length,
+          ticker: asset.ticker,
+        });
+        if (asset.allowance > 0n && !asset.allowanceSufficient) {
+          await sendSeedApproval(asset, 0n);
+        }
+        await sendSeedApproval(asset, asset.requiredAmount);
+      }
+      await refetchSeedAuthorizations();
+      setApprovalState("confirmed");
+    } catch (error) {
+      setApprovalError(`${activeTicker ? `${activeTicker}: ` : ""}${errorMessage(error)}`);
+      setApprovalState("reverted");
+    } finally {
+      setApprovalBatchProgress(undefined);
     }
   }
 
@@ -2786,6 +3062,20 @@ function CreateVaultView({
                   </div>
                   <span className={`stateBadge ${totalWeightValid ? "success" : "danger"}`}>Total {totalWeight.toFixed(1)}%</span>
                 </div>
+                <label className="initialPortfolioValueField">
+                  <span>Initial portfolio value</span>
+                  <div className="inputWithPrefix">
+                    <span>$</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={draft.initialPortfolioValue}
+                      onChange={(event) => updateDraft("initialPortfolioValue", event.target.value)}
+                    />
+                  </div>
+                  <small>Target weights and current oracle prices determine the required seed-token quantities.</small>
+                </label>
                 <div className="createAssetList">
                   {portfolio.map((asset, index) => (
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
@@ -2822,14 +3112,17 @@ function CreateVaultView({
                           <span>%</span>
                         </div>
                       </label>
+                      <div className="assetOraclePriceField">
+                        <span>Oracle price</span>
+                        <strong>{derivedSeedAmounts[index]?.price?.display ?? "Loading"}</strong>
+                        <small>{derivedSeedAmounts[index]?.displayTargetValue} target</small>
+                      </div>
                       <label className="assetSeedField">
-                        <span>Seed amount</span>
+                        <span>Seed tokens</span>
                         <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={asset.initialAmount}
-                          onChange={(event) => updatePortfolio(index, { initialAmount: event.target.value })}
+                          value={derivedSeedAmounts[index]?.displayAmount ?? ""}
+                          readOnly
+                          aria-readonly="true"
                         />
                       </label>
                       <button type="button" title={`Remove ${asset.ticker}`} onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
@@ -2850,7 +3143,7 @@ function CreateVaultView({
                 {!portfolioValid ? (
                   <div className="riskCallout warning">
                     <AlertTriangle size={15} />
-                    <div><strong>Portfolio needs attention</strong><span>Use positive weights and seed amounts; weights must total exactly 100%.</span></div>
+                    <div><strong>Portfolio needs attention</strong><span>Set a positive initial value, use positive weights totaling exactly 100%, and wait for oracle prices.</span></div>
                   </div>
                 ) : null}
               </div>
@@ -2900,6 +3193,7 @@ function CreateVaultView({
                 <div className="reviewGrid">
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
+                  <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
                   <div><span>Cooldown</span><strong>{draft.cooldownDays} days</strong></div>
                   <div><span>Maximum turnover</span><strong>{draft.maxTurnover}%</strong></div>
                   <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
@@ -2911,13 +3205,31 @@ function CreateVaultView({
                 <div>
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
-                    {portfolio.map((asset) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {asset.initialAmount || "0"} seed</span>)}
+                    {portfolio.map((asset, index) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
                   </div>
                 </div>
                 <div className="seedApprovalSection">
                   <div className="subHeader">
                     <span>Seed-token authorization</span>
                     <small>{seedAllowancesSufficient ? "Ready" : `${seedAuthorizations.filter((asset) => !asset.allowanceSufficient).length} remaining`}</small>
+                  </div>
+                  <div className="seedApprovalToolbar">
+                    <span>Approve each token for the factory. Your wallet will request one transaction per token, plus a reset when required.</span>
+                    {pendingSeedAuthorizations.length ? (
+                      <button
+                        className="secondaryAction seedApproveAllAction"
+                        type="button"
+                        disabled={!canApproveAllSeedAssets}
+                        onClick={approveAllSeedAssets}
+                      >
+                        {approvalBatchProgress ? <Loader2 className="spin" size={14} /> : <ListChecks size={14} />}
+                        {approvalBatchProgress
+                          ? `${approvalBatchProgress.ticker} ${approvalBatchProgress.current} of ${approvalBatchProgress.total}`
+                          : `Approve all (${pendingSeedAuthorizations.length})`}
+                      </button>
+                    ) : (
+                      <span className="seedApprovalComplete"><CheckCircle size={14} /> All approved</span>
+                    )}
                   </div>
                   <div className="seedApprovalList">
                     {seedAuthorizations.map((asset) => {
@@ -2975,14 +3287,14 @@ function CreateVaultView({
                               disabled={
                                 !asset.balanceSufficient ||
                                 asset.allowance === undefined ||
-                                (approvalState === "pending" || approvalState === "submitted")
+                                approvalInProgress
                               }
                               onClick={() => approveSeedAsset(asset)}
                             >
                               {approvalInFlight ? <Loader2 className="spin" size={14} /> : <KeyRound size={14} />}
                               {approvalInFlight
                                 ? approvalState === "pending" ? "Confirm in wallet" : "Confirming"
-                                : needsReset ? `Reset ${asset.ticker}` : `Approve ${asset.ticker}`}
+                                : needsReset ? `Reset & approve ${asset.ticker}` : `Approve ${asset.ticker}`}
                             </button>
                           )}
                         </div>
@@ -3039,12 +3351,6 @@ function CreateVaultView({
                     <div><strong>Deployment failed</strong><span>{deployError}</span></div>
                   </div>
                 ) : null}
-                {deployState === "confirmed" ? (
-                  <div className="deploymentSuccess">
-                    <CheckCircle size={18} />
-                    <div><strong>OTF deployment confirmed</strong><span>The new OTF will appear in the factory directory after the next refresh.</span></div>
-                  </div>
-                ) : null}
               </div>
             ) : null}
 
@@ -3078,7 +3384,11 @@ function CreateVaultView({
                         ? "Approve seed assets"
                         : !protocolAssetReadsReady
                           ? "Protocol setup required"
-                          : "Submit deployment"}
+                          : deployState === "pending"
+                            ? "Confirm in wallet"
+                            : deployState === "submitted"
+                              ? "Creating OTF"
+                              : "Create OTF"}
                 </button>
               )}
             </div>
@@ -3089,16 +3399,123 @@ function CreateVaultView({
   );
 }
 
+function CreatedVaultView({
+  vault,
+  transactionHash,
+  onCreateAnother,
+  onManage,
+  onView,
+}: {
+  vault: VaultView;
+  transactionHash?: `0x${string}`;
+  onCreateAnother: () => void;
+  onManage: () => void;
+  onView: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const detailsReady = vault.dataMode === "live";
+
+  async function copyVaultAddress() {
+    if (!vault.address) return;
+    await navigator.clipboard.writeText(vault.address);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_600);
+  }
+
+  return (
+    <div className="appView">
+      <AppPageHeader
+        title="OTF created"
+        description="The deployment is confirmed on Robinhood Testnet."
+        icon={<CheckCircle size={18} />}
+      />
+
+      <section className="createdConfirmation" aria-labelledby="created-otf-title">
+        <div className="createdStatus">
+          <span className="createdStatusIcon"><Check size={24} /></span>
+          <div>
+            <h2 id="created-otf-title">{detailsReady ? vault.name : "Deployment confirmed"}</h2>
+            <p>{detailsReady ? `${vault.symbol} is live and ready to manage.` : "Loading the new OTF's on-chain details."}</p>
+          </div>
+        </div>
+
+        <div className="createdAddressBlock">
+          <div>
+            <span>OTF contract address</span>
+            <code>{vault.address}</code>
+          </div>
+          <div className="createdAddressActions">
+            <button className="iconOnly" type="button" onClick={copyVaultAddress} title="Copy OTF address" aria-label="Copy OTF address">
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+            </button>
+            <a
+              className="iconOnly"
+              href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${vault.address}`}
+              target="_blank"
+              rel="noreferrer"
+              title="Open OTF in explorer"
+              aria-label="Open OTF in explorer"
+            >
+              <ExternalLink size={15} />
+            </a>
+          </div>
+        </div>
+        {copied ? <span className="createdCopyFeedback" role="status" aria-live="polite">Address copied</span> : null}
+
+        <div className="createdDetails" aria-label="Created OTF details">
+          <div><span>Symbol</span><strong>{detailsReady ? vault.symbol : "Loading"}</strong></div>
+          <div><span>Network</span><strong>Robinhood Testnet</strong></div>
+          <div><span>Assets</span><strong>{detailsReady ? vault.allocations.length : "Loading"}</strong></div>
+          <div><span>Initial supply</span><strong>{detailsReady ? vault.totalSupply : "Loading"}</strong></div>
+          <div><span>Manager</span><strong>{detailsReady ? shortAddress(vault.manager) : "Loading"}</strong></div>
+          <div><span>Cooldown</span><strong>{detailsReady ? formatCooldown(vault.cooldownSeconds) : "Loading"}</strong></div>
+        </div>
+
+        {transactionHash ? (
+          <a
+            className="createdTransactionLink"
+            href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ReceiptText size={15} />
+            <span>View deployment transaction</span>
+            <code>{shortAddress(transactionHash)}</code>
+            <ExternalLink size={14} />
+          </a>
+        ) : null}
+
+        <div className="createdActions">
+          <button className="secondaryAction" type="button" onClick={onCreateAnother}>
+            <Plus size={14} />
+            Create another
+          </button>
+          <button className="secondaryAction" type="button" onClick={onManage} disabled={!detailsReady}>
+            <Settings size={14} />
+            Manage OTF
+          </button>
+          <button className="primaryAction" type="button" onClick={onView} disabled={!detailsReady}>
+            <ChartPie size={14} />
+            View OTF
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function DepositsView({
   connectedAddress,
   vaults,
   isTestnet,
+  oraclePrices,
   onBrowseVaults,
   onOpenVault,
 }: {
   connectedAddress?: string;
   vaults: VaultSummary[];
   isTestnet: boolean;
+  oraclePrices: CatalogOraclePrices;
   onBrowseVaults: () => void;
   onOpenVault: (address: `0x${string}`) => void;
 }) {
@@ -3166,6 +3583,7 @@ function DepositsView({
         balance,
         catalogOrder: index,
         displayBalance: balancesLoading ? "Loading" : formatWalletTokenBalance(balance, decimals),
+        displayPrice: oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading",
       };
     })
     .sort((left, right) => {
@@ -3292,7 +3710,7 @@ function DepositsView({
             <div className="directoryPanelHeading">
               <div>
                 <h2>Supported RWA assets</h2>
-                <p>Protocol-approved assets and their current balances in this wallet.</p>
+                <p>Protocol-approved assets, live mock-oracle prices, and current wallet balances.</p>
               </div>
               <span className="stateBadge muted">{heldAssetCount} held · {testnetCreateAssets.length} supported</span>
             </div>
@@ -3302,6 +3720,7 @@ function DepositsView({
                   <tr>
                     <th>Asset</th>
                     <th>Token address</th>
+                    <th>Oracle price</th>
                     <th>Wallet balance</th>
                   </tr>
                 </thead>
@@ -3315,6 +3734,7 @@ function DepositsView({
                         </div>
                       </td>
                       <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
+                      <td data-label="Oracle price" className="monoValue">{asset.displayPrice}</td>
                       <td data-label="Wallet balance" className="monoValue">{asset.displayBalance}</td>
                     </tr>
                   ))}
