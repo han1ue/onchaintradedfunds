@@ -1725,6 +1725,86 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.depositBasketQuote {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+
+.depositBasketQuoteHeader,
+.depositAssetQuote {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.7fr) minmax(90px, 1fr) minmax(100px, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+}
+
+.depositBasketQuoteHeader {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.depositBasketQuoteHeader small {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.depositAssetQuote + .depositAssetQuote {
+  border-top: 1px solid var(--border);
+}
+
+.depositAssetQuote strong,
+.depositAssetQuote span,
+.depositAssetQuote small {
+  min-width: 0;
+}
+
+.depositAssetQuote strong {
+  font-size: 0.68rem;
+}
+
+.depositAssetQuote span {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.depositAssetQuote small {
+  justify-self: end;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+.depositAssetQuote small.success {
+  color: var(--green);
+}
+
+.depositAssetQuote small.danger,
+.depositQuoteLoading.danger {
+  color: var(--danger);
+}
+
+.depositQuoteLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 58px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
 .buttonRow > button,
 .builderActions > button {
   flex: 1 1 0;
@@ -4314,6 +4394,15 @@ input.invalid {
   .buttonRow {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .depositAssetQuote {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .depositAssetQuote small {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 
   .seedApprovalRow {

@@ -240,6 +240,27 @@ const erc20BalanceAbi = [
   },
 ] as const;
 
+const vaultDepositAbi = [
+  {
+    type: "function",
+    name: "previewMint",
+    stateMutability: "view",
+    inputs: [{ name: "shares", type: "uint256" }],
+    outputs: [{ name: "amountsIn", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "mintWithBasket",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "maxAmountsIn", type: "uint256[]" },
+    ],
+    outputs: [{ name: "amountsIn", type: "uint256[]" }],
+  },
+] as const;
+
 const factoryDependencyAbi = [
   {
     type: "function",
@@ -1011,6 +1032,12 @@ function TopNav({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const chainId = useChainId();
+  const testnetMode = chainId === robinhoodChainTestnet.id;
+  const robinhoodNetwork = testnetMode
+    ? "Robinhood Chain Testnet"
+    : chainId === robinhoodChain.id
+      ? "Robinhood Chain"
+      : "Unsupported network";
   const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -1103,31 +1130,31 @@ function TopNav({
                 <div className="settingsGroup">
                   <span className="settingsLabel">Network</span>
                   <div className="networkOptions">
-                    <button
-                      className={`settingsOption ${chainId === robinhoodChainTestnet.id ? "selected" : ""}`}
-                      type="button"
-                      disabled={networkSwitchPending}
-                      onClick={() => switchChain({ chainId: robinhoodChainTestnet.id })}
-                    >
+                    <div className="settingsOption selected">
                       <span className="settingsOptionIcon"><Network size={15} /></span>
                       <span className="settingsOptionText">
-                        <strong>Robinhood Testnet</strong>
-                        <small>{chainId === robinhoodChainTestnet.id ? "Connected" : "Chain ID 46630"}</small>
+                        <strong>Robinhood Chain</strong>
+                        <small>{robinhoodNetwork}</small>
                       </span>
-                      {chainId === robinhoodChainTestnet.id ? <Check className="settingsCheck" size={15} /> : null}
-                    </button>
+                      {chainId === robinhoodChain.id || testnetMode ? <Check className="settingsCheck" size={15} /> : null}
+                    </div>
                     <button
-                      className={`settingsOption ${chainId === robinhoodChain.id ? "selected" : ""}`}
+                      className="settingsOption"
                       type="button"
                       disabled={networkSwitchPending}
-                      onClick={() => switchChain({ chainId: robinhoodChain.id })}
+                      aria-pressed={testnetMode}
+                      onClick={() => switchChain({
+                        chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id,
+                      })}
                     >
-                      <span className="settingsOptionIcon"><Network size={15} /></span>
+                      <span className="settingsOptionIcon"><Zap size={15} /></span>
                       <span className="settingsOptionText">
-                        <strong>Robinhood Mainnet</strong>
-                        <small>{chainId === robinhoodChain.id ? "Connected" : "Chain ID 4663"}</small>
+                        <strong>Testnet mode</strong>
+                        <small>{testnetMode ? "On · Chain ID 46630" : "Off · Chain ID 4663"}</small>
                       </span>
-                      {chainId === robinhoodChain.id ? <Check className="settingsCheck" size={15} /> : null}
+                      <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true">
+                        <span />
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -1805,7 +1832,158 @@ function UserActions({ vault }: { vault: VaultView }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
   const [depositAmount, setDepositAmount] = useState("");
   const [redeemAmount, setRedeemAmount] = useState("");
+  const [depositState, setDepositState] = useState<TxState>("idle");
+  const [depositError, setDepositError] = useState<string>();
+  const [approvalProgress, setApprovalProgress] = useState<string>();
+  const { address: connectedAddress } = useAccount();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
   const isLive = vault.dataMode === "live";
+  let depositShares: bigint | undefined;
+  try {
+    depositShares = Number(depositAmount) > 0 ? parseUnits(depositAmount, 18) : undefined;
+  } catch {
+    depositShares = undefined;
+  }
+  const canQuoteDeposit = Boolean(
+    isLive && vault.address && connectedAddress && depositShares && depositShares > 0n,
+  );
+  const {
+    data: previewDepositAmounts,
+    error: previewDepositError,
+    isLoading: previewDepositLoading,
+    refetch: refetchDepositPreview,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewMint",
+    args: depositShares ? [depositShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canQuoteDeposit },
+  });
+  const depositAuthorizationContracts = canQuoteDeposit && vault.address
+    ? vault.allocations.flatMap((asset) => ([
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "balanceOf" as const,
+          args: [connectedAddress as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "allowance" as const,
+          args: [connectedAddress as `0x${string}`, vault.address as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const))
+    : [];
+  const {
+    data: depositAuthorizationResults,
+    refetch: refetchDepositAuthorizations,
+  } = useReadContracts({
+    contracts: depositAuthorizationContracts,
+    query: { enabled: canQuoteDeposit && depositAuthorizationContracts.length > 0 },
+  });
+  const depositAssets = vault.allocations.map((asset, index) => {
+    const requiredAmount = previewDepositAmounts?.[index];
+    const maxAmount = requiredAmount === undefined
+      ? undefined
+      : (requiredAmount * 10_050n + 9_999n) / 10_000n;
+    const balance = depositAuthorizationResults?.[index * 2]?.result as bigint | undefined;
+    const allowance = depositAuthorizationResults?.[index * 2 + 1]?.result as bigint | undefined;
+    return {
+      ...asset,
+      requiredAmount,
+      maxAmount,
+      balance,
+      allowance,
+      balanceSufficient: maxAmount !== undefined && balance !== undefined && balance >= maxAmount,
+      allowanceSufficient: maxAmount !== undefined && allowance !== undefined && allowance >= maxAmount,
+    };
+  });
+  const quoteReady = Boolean(
+    depositShares &&
+    previewDepositAmounts?.length === vault.allocations.length &&
+    depositAssets.every((asset) => asset.maxAmount !== undefined),
+  );
+  const balancesSufficient = quoteReady && depositAssets.every((asset) => asset.balanceSufficient);
+  const allowancesSufficient = quoteReady && depositAssets.every((asset) => asset.allowanceSufficient);
+  const pendingApprovals = depositAssets.filter((asset) => !asset.allowanceSufficient);
+  const depositBusy = depositState === "pending" || depositState === "submitted";
+
+  async function sendDepositApproval(
+    asset: (typeof depositAssets)[number],
+    amount: bigint,
+  ) {
+    if (!vault.address || !publicClient) throw new Error("The vault connection is not ready.");
+    setDepositState("pending");
+    const hash = await writeContractAsync({
+      address: asset.address as `0x${string}`,
+      abi: erc20BalanceAbi,
+      functionName: "approve",
+      args: [vault.address, amount],
+      chainId: robinhoodChainTestnet.id,
+    });
+    setDepositState("submitted");
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${asset.symbol} approval reverted.`);
+  }
+
+  async function approveDepositAssets() {
+    if (!balancesSufficient || !pendingApprovals.length) return;
+    setDepositError(undefined);
+    try {
+      for (const [index, asset] of pendingApprovals.entries()) {
+        if (asset.maxAmount === undefined || asset.allowance === undefined) continue;
+        setApprovalProgress(`${index + 1} of ${pendingApprovals.length} · ${asset.symbol}`);
+        if (asset.allowance > 0n) await sendDepositApproval(asset, 0n);
+        await sendDepositApproval(asset, asset.maxAmount);
+      }
+      await refetchDepositAuthorizations();
+      setDepositState("confirmed");
+    } catch (error) {
+      setDepositError(errorMessage(error));
+      setDepositState("reverted");
+    } finally {
+      setApprovalProgress(undefined);
+    }
+  }
+
+  async function depositBasket() {
+    if (
+      !vault.address ||
+      !connectedAddress ||
+      !publicClient ||
+      !depositShares ||
+      !quoteReady ||
+      !balancesSufficient ||
+      !allowancesSufficient
+    ) return;
+    const maxAmounts = depositAssets.map((asset) => asset.maxAmount as bigint);
+    setDepositError(undefined);
+    try {
+      setDepositState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: vaultDepositAbi,
+        functionName: "mintWithBasket",
+        args: [depositShares, connectedAddress, maxAmounts],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setDepositState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The basket deposit reverted.");
+      await refetchDepositAuthorizations();
+      await refetchDepositPreview();
+      setDepositState("confirmed");
+      setDepositAmount("");
+    } catch (error) {
+      setDepositError(errorMessage(error));
+      setDepositState("reverted");
+    }
+  }
 
   return (
     <SectionCard title="Your position" subtitle={`Deposit the basket or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
@@ -1817,28 +1995,76 @@ function UserActions({ vault }: { vault: VaultView }) {
       <div className="riskCallout info">
         <Info size={15} />
         <div>
-          <strong>{isLive ? "Wallet writes are not connected yet" : "Live OTF required"}</strong>
-          <span>{isLive ? "Contract values are live, but deposit and redemption transactions are not wired into this MVP frontend." : "Configure a deployed testnet OTF before preparing a portfolio deposit or redemption."}</span>
+          <strong>{isLive ? "Direct basket deposits" : "Live OTF required"}</strong>
+          <span>{isLive ? "Deposits transfer the current constituents directly into this OTF. No swap pool or USDG conversion is required." : "Configure a deployed testnet OTF before preparing a portfolio deposit or redemption."}</span>
         </div>
       </div>
 
       {activeAction === "deposit" ? (
         <div className="positionFlow">
-          <label className="fieldLabel">Basket value</label>
+          <label className="fieldLabel">Shares to mint</label>
           <div className="inputWithSuffix">
             <input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} type="number" placeholder="0.00" disabled={!isLive} />
-            <span>USDC</span>
+            <span>{vault.symbol}</span>
           </div>
           <div className="quoteLine">
-            <span>Estimated OTF shares</span>
-            <strong>{vault.navPerShare ? "Quote requires basket balances" : "--"}</strong>
+            <span>Vault approval scope</span>
+            <strong>{vault.address ? shortAddress(vault.address) : "--"}</strong>
           </div>
+          {depositAmount && connectedAddress ? (
+            <div className="depositBasketQuote">
+              <div className="depositBasketQuoteHeader">
+                <span>Required basket</span>
+                <small>Includes 0.5% input buffer</small>
+              </div>
+              {previewDepositLoading ? (
+                <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading vault quote</div>
+              ) : previewDepositError ? (
+                <div className="depositQuoteLoading danger"><AlertTriangle size={14} /> Quote unavailable</div>
+              ) : depositAssets.map((asset) => (
+                <div className="depositAssetQuote" key={asset.address}>
+                  <strong>{asset.symbol}</strong>
+                  <span>{formatSeedTokenAmount(asset.maxAmount) || "--"}</span>
+                  <small className={asset.balanceSufficient ? "success" : "danger"}>
+                    {asset.balance === undefined
+                      ? "Checking wallet"
+                      : asset.balanceSufficient
+                        ? asset.allowanceSufficient ? "Approved" : "Approval needed"
+                        : "Insufficient balance"}
+                  </small>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {!connectedAddress && depositAmount ? (
+            <div className="riskCallout danger">
+              <AlertTriangle size={15} />
+              <div><strong>Connect a wallet</strong><span>A wallet is required to quote balances and approve the selected OTF.</span></div>
+            </div>
+          ) : null}
+          {depositError ? (
+            <div className="riskCallout danger">
+              <AlertTriangle size={15} />
+              <div><strong>Deposit failed</strong><span>{depositError}</span></div>
+            </div>
+          ) : null}
+          <TxStatus state={depositState} />
           <div className="buttonRow">
-            <button className="secondaryAction" type="button" disabled>
+            <button
+              className="secondaryAction"
+              type="button"
+              disabled={depositBusy || !balancesSufficient || !pendingApprovals.length}
+              onClick={approveDepositAssets}
+            >
               <ShieldCheck size={14} />
-              Approve assets
+              {approvalProgress ? `Approving ${approvalProgress}` : allowancesSufficient ? "Assets approved" : "Approve assets"}
             </button>
-            <button className="primaryAction" type="button" disabled>
+            <button
+              className="primaryAction"
+              type="button"
+              disabled={depositBusy || !quoteReady || !balancesSufficient || !allowancesSufficient}
+              onClick={depositBasket}
+            >
               <Coins size={14} />
               Deposit basket
             </button>
@@ -3652,6 +3878,7 @@ function DepositsView({
             <MetricCard label="OTF Positions" value={String(positions.length)} icon={<CircleDollarSign size={14} />} sub={canReadPositions ? "Live factory OTF balances" : "No factory OTFs discovered"} />
             <MetricCard label="RWA Holdings" value={String(heldAssetCount)} icon={<Coins size={14} />} sub={`${testnetCreateAssets.length} supported assets scanned`} />
             <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
+            <MetricCard label="Deposit approvals" value="Per OTF" icon={<ShieldCheck size={14} />} sub="Status appears in each basket quote" />
           </div>
 
           <section className="sectionCard depositPositions">
