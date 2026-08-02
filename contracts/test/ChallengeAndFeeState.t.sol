@@ -208,6 +208,8 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         tokenA.mint(ALICE, amounts[0]);
         tokenB.mint(ALICE, amounts[1]);
         vm.startPrank(ALICE);
+        tokenA.approve(address(vault), 0);
+        tokenB.approve(address(vault), 0);
         tokenA.approve(address(vault), type(uint256).max);
         tokenB.approve(address(vault), type(uint256).max);
         vault.mintWithBasket(shares, ALICE, amounts);

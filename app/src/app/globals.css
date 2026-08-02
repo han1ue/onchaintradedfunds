@@ -3028,6 +3028,102 @@ input.invalid {
   font-weight: 600;
 }
 
+.seedApprovalSection {
+  display: grid;
+  gap: 9px;
+}
+
+.seedApprovalList {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+
+.seedApprovalRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(230px, auto) minmax(126px, auto);
+  min-height: 62px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 11px;
+}
+
+.seedApprovalRow:last-child {
+  border-bottom: 0;
+}
+
+.seedApprovalIdentity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.assetSymbolMark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(55 183 170 / 28%);
+  border-radius: 5px;
+  background: rgb(55 183 170 / 8%);
+  color: var(--teal);
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.seedApprovalIdentity > div {
+  min-width: 0;
+}
+
+.seedApprovalIdentity strong,
+.seedApprovalIdentity small {
+  display: block;
+}
+
+.seedApprovalIdentity strong {
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.seedApprovalIdentity small {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seedApprovalStates {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.seedApprovalAction {
+  min-width: 126px;
+  justify-content: center;
+}
+
+.seedApprovalComplete {
+  display: inline-flex;
+  min-width: 126px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 0.67rem;
+  font-weight: 650;
+}
+
 .deploymentSuccess {
   display: flex;
   align-items: center;
@@ -3295,6 +3391,14 @@ input.invalid {
 .inlineEmptyState strong {
   color: var(--text);
   font-size: 0.7rem;
+}
+
+.validationSummary > div > span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 0.67rem;
+  line-height: 1.5;
 }
 
 .validationSummary ul {
@@ -3672,6 +3776,22 @@ input.invalid {
     grid-template-columns: 1fr;
   }
 
+  .seedApprovalRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .seedApprovalStates {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .seedApprovalAction,
+  .seedApprovalComplete {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .createAssetRow {
     grid-template-columns: minmax(0, 1fr) minmax(96px, 0.48fr) 32px;
     min-width: 0;
@@ -3904,6 +4024,22 @@ input.invalid {
   .buttonRow {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .seedApprovalRow {
+    grid-template-columns: 1fr;
+  }
+
+  .seedApprovalAction,
+  .seedApprovalComplete,
+  .seedApprovalStates {
+    grid-column: 1;
+  }
+
+  .seedApprovalAction,
+  .seedApprovalComplete {
+    grid-row: 3;
+    width: 100%;
   }
 
   .directoryMetrics,

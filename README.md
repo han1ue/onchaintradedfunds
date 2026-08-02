@@ -518,6 +518,51 @@ These are public frontend values. Do not put private keys in any `NEXT_PUBLIC_*`
 The frontend reads `allVaults()` from `NEXT_PUBLIC_FACTORY_ADDRESS`; individual OTF
 addresses are discovered from the factory and do not need separate environment variables.
 
+Robinhood testnet deployment also requires private deployment configuration:
+
+```text
+DEPLOYER_PRIVATE_KEY=
+APPROVED_ASSETS=0xAsset1,0xAsset2
+PRICE_FEEDS=0xFeed1,0xFeed2
+APPROVED_ADAPTERS=
+```
+
+`APPROVED_ASSETS` and `PRICE_FEEDS` are positional pairs and must have equal lengths. The
+deployment script rejects an empty protocol catalog unless
+`ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
+
+Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
+development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
+artifacts, then configure the five UI catalog assets with owner-controlled mock USD feeds:
+
+```bash
+corepack pnpm contracts:solc
+corepack pnpm contracts:configure:robinhood-testnet-mocks
+```
+
+Advance the existing testnet feeds from their latest answers with a small positive drift and
+bounded random movement:
+
+```powershell
+$env:DEPLOYER_PRIVATE_KEY="0x..."
+corepack pnpm contracts:walk:robinhood-testnet-mocks
+```
+
+The defaults are `+5` bps drift and up to `50` bps random movement per update. Override them with
+`MOCK_PRICE_DRIFT_BPS`, `MOCK_PRICE_VOLATILITY_BPS`, `MOCK_PRICE_STEPS`, and
+`MOCK_PRICE_INTERVAL_MS`. This is an off-chain testnet updater; oracle randomness must not be
+derived from predictable block values.
+
+The configurator initializes new feeds at a synthetic `$1.00`, records every deployment and
+registry transaction in `deployments/robinhood-testnet.json`, and retains existing prices when
+rerun so the walk can continue from the latest round. These feeds are test fixtures, not Chainlink
+or market data.
+
+Robinhood Chain Mainnet uses the official Chainlink proxy directory instead. Its tokenized-equity
+answers already include the Stock Token `uiMultiplier()` for dividends, splits, and other
+corporate actions; consumers must not multiply by `uiMultiplier()` again. See the
+[Chainlink Robinhood tokenized-equity documentation](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood).
+
 No production Robinhood Chain addresses are hardcoded. Any production address must be verified against official Robinhood Chain documentation before use.
 
 ## Local Development

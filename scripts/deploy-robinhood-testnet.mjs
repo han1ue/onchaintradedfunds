@@ -123,9 +123,15 @@ const treasury = parseAddress("TREASURY_ADDRESS", env("TREASURY_ADDRESS", accoun
 const approvedAssets = parseAddressList("APPROVED_ASSETS");
 const priceFeeds = parseAddressList("PRICE_FEEDS");
 const approvedAdapters = parseAddressList("APPROVED_ADAPTERS");
+const allowEmptyProtocolConfig = env("ALLOW_EMPTY_PROTOCOL_CONFIG", "false").toLowerCase() === "true";
 
-if (approvedAssets.length !== priceFeeds.length && priceFeeds.length !== 0) {
+if (approvedAssets.length !== priceFeeds.length) {
   throw new Error("APPROVED_ASSETS and PRICE_FEEDS must have the same number of addresses.");
+}
+if (approvedAssets.length === 0 && !allowEmptyProtocolConfig) {
+  throw new Error(
+    "APPROVED_ASSETS and PRICE_FEEDS are required for a usable deployment. Set ALLOW_EMPTY_PROTOCOL_CONFIG=true only for an intentionally unconfigured deployment.",
+  );
 }
 
 const chain = {

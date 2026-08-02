@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join, relative, sep } from "node:path";
 import solc from "solc";
 
 const root = process.cwd();
@@ -44,6 +44,25 @@ for (const diagnostic of errors) {
 
 if (errors.some((diagnostic) => diagnostic.severity === "error")) {
   process.exit(1);
+}
+
+for (const [source, contracts] of Object.entries(output.contracts ?? {})) {
+  for (const [contractName, compiled] of Object.entries(contracts)) {
+    const artifactDir = join(root, "contracts", "out", basename(source));
+    mkdirSync(artifactDir, { recursive: true });
+    writeFileSync(
+      join(artifactDir, `${contractName}.json`),
+      `${JSON.stringify(
+        {
+          abi: compiled.abi,
+          bytecode: compiled.evm.bytecode,
+          deployedBytecode: compiled.evm.deployedBytecode,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
 }
 
 console.log(`Compiled ${Object.keys(sources).length} Solidity source files with solc ${solc.version()}.`);

@@ -5,6 +5,8 @@
   "scripts": {
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
+    "contracts:configure:robinhood-testnet-mocks": "node scripts/configure-robinhood-testnet-mocks.mjs",
+    "contracts:walk:robinhood-testnet-mocks": "node scripts/walk-robinhood-testnet-mock-prices.mjs",
     "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",
     "lint": "corepack pnpm -r lint",
