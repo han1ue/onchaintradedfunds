@@ -77,6 +77,8 @@ const contractRows = [
   ["Portfolio calculator", "Stateless oracle valuation, weight, turnover, and challenge-band calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
+  ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
+  ["Uniswap adapter", "Provides typed exact-input rebalance and exact-output entry swaps through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
   ["OracleRegistry", "Maps approved assets to fresh, Chainlink-compatible price feeds."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
@@ -280,6 +282,27 @@ export default function DocsPage() {
               each constituent for the selected vault. Deposits transfer the basket directly into
               that vault and mint the corresponding vault shares.
             </p>
+            <div className="docsNotice">
+              <Landmark size={17} />
+              <div>
+                <strong>Optional USDG entry</strong>
+                <span>
+                  A separately deployed entry router can buy the exact required basket through an
+                  approved adapter and mint the requested shares atomically. The user supplies a
+                  maximum USDG amount and deadline; unused USDG is refunded. The Uniswap execution
+                  cost can be above or below the Chainlink-priced OTF basket value because pool
+                  liquidity and OTF NAV are independent price sources.
+                </span>
+              </div>
+            </div>
+            <pre><code>{`enterWithSettlement(
+  vault,
+  shares,
+  receiver,
+  maxSettlementIn,
+  deadline,
+  swaps
+)`}</code></pre>
           </section>
 
           <section className="docsSection" id="redemptions">

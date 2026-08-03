@@ -172,6 +172,31 @@ Adapter review should verify:
 - It handles token approvals safely.
 - It does not depend on centralized offchain promises for correctness.
 
+### Settlement entry adapters
+
+`OTFEntryRouter` is an optional convenience layer for acquiring an exact proportional basket with
+USDG. It is not part of vault custody or valuation. The router accepts only factory-registered
+OTFs, requires an independently approved entry adapter for every non-settlement constituent,
+checks observed token deltas against adapter return values, uses exact temporary approvals, and
+mints shares only after every exact-output purchase succeeds.
+
+The entry path still inherits liquidity and integration risks:
+
+- AMM execution prices may differ materially from Chainlink-priced OTF NAV.
+- Thin or manipulated pools may produce poor quotes even when the vault's oracle value is sound.
+- A compromised approved entry adapter could spend its per-leg allowance incorrectly or attempt to retain funds.
+- Router, adapter, settlement-token, and venue addresses are deployment-critical configuration.
+- Frontend quotes can become stale before inclusion.
+
+Users therefore provide per-leg maximum inputs, an aggregate maximum settlement amount, and a
+deadline. Unspent USDG is refunded atomically. The adapter allowlist is separate from the factory's
+rebalance-adapter allowlist so approval for one authority does not silently grant the other.
+
+For rebalance execution, USDG may appear only as an internal adapter route hop. The vault still
+requires both visible trade endpoints to be current constituents, and output returns through the
+executor directly to the vault. The adapter cannot use USDG as an arbitrary recipient or leave it
+as a new untracked portfolio position through the typed trade call.
+
 ## Frontend Risks
 
 The frontend is a convenience layer only. It must not be trusted for authorization, asset validation, cooldown enforcement, fee math, or rebalance safety.

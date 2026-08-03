@@ -942,6 +942,11 @@ h2 {
   gap: 16px;
 }
 
+.dashboardSafety {
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+
 .sectionCard {
   min-width: 0;
   overflow: hidden;
@@ -1567,7 +1572,7 @@ textarea::placeholder {
 
 .actionTabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1594,6 +1599,10 @@ textarea::placeholder {
   margin-top: 14px;
 }
 
+.positionFlow .depositInfoCallout {
+  margin-top: 0;
+}
+
 .challengeActionBlock {
   display: grid;
   gap: 10px;
@@ -1617,6 +1626,52 @@ textarea::placeholder {
   display: grid;
   gap: 10px;
   margin-top: 14px;
+}
+
+.entryQuoteSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+
+.entryQuoteSummary > div {
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.entryQuoteSummary > div:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+
+.entryQuoteSummary > div:nth-child(n + 3) {
+  border-top: 1px solid var(--border);
+}
+
+.entryQuoteSummary span,
+.entryQuoteSummary strong {
+  display: block;
+}
+
+.entryQuoteSummary span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+
+.entryQuoteSummary strong {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryPriceWarning {
+  margin-top: 0;
 }
 
 .inputWithSuffix {
@@ -1942,6 +1997,7 @@ textarea::placeholder {
 }
 
 .targetTicker {
+  width: 100%;
   height: 24px;
   border: 0;
   background: transparent;
@@ -3611,8 +3667,17 @@ input.invalid {
 .manageGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 16px;
+}
+
+.manageGrid > .sectionCard {
+  height: 100%;
+}
+
+.manageGrid > .sectionCard .sectionBody,
+.manageGrid > .sectionCard .operationFlow {
+  height: 100%;
 }
 
 .operationFlow {
@@ -3650,6 +3715,150 @@ input.invalid {
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.managedThesisHistory {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.managedThesisHistory article {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 11px;
+}
+
+.managedThesisHistory span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.managedThesisHistory p {
+  margin: 7px 0 0;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.managedThesisHistory .mutedCopy,
+.managedThesisHistory time {
+  color: var(--text-muted);
+}
+
+.managedThesisHistory time {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.61rem;
+}
+
+.rebalanceTradeForm {
+  display: grid;
+  gap: 14px;
+}
+
+.tradeAssetPair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+}
+
+.tradeAssetPair > svg {
+  margin-bottom: 11px;
+  color: var(--text-muted);
+}
+
+.tradeAssetPair label,
+.tradeInputGrid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tradeAssetPair label > span,
+.tradeInputGrid label > span {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.tradeInputGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.routeToggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 10px 11px;
+  cursor: pointer;
+}
+
+.routeToggle.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.routeToggle input {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.routeToggle strong,
+.routeToggle small {
+  display: block;
+}
+
+.routeToggle strong {
+  color: var(--text);
+  font-size: 0.69rem;
+}
+
+.routeToggle small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.tradeExecutionQuote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 11px;
+}
+
+.tradeExecutionQuote span,
+.tradeExecutionQuote small {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.tradeExecutionQuote strong {
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.tradeExecutionQuote small {
+  grid-column: 1 / -1;
 }
 
 .roleCurrent {
@@ -3806,14 +4015,9 @@ input.invalid {
   align-items: center;
   gap: 12px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--text-muted);
   border-radius: 6px;
   background: color-mix(in srgb, var(--card) 86%, var(--background));
   padding: 10px 12px;
-}
-
-.provenanceBanner.live {
-  border-left-color: var(--green);
 }
 
 .provenanceBanner strong,
@@ -3931,7 +4135,7 @@ input.invalid {
 
 .managerOperationTabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
@@ -4272,6 +4476,19 @@ input.invalid {
   .reviewGrid,
   .manageGrid {
     grid-template-columns: 1fr;
+  }
+
+  .managedThesisHistory,
+  .tradeInputGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeAssetPair {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeAssetPair > svg {
+    display: none;
   }
 
   .thesisVersionHeader {

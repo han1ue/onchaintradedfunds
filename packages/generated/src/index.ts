@@ -131,6 +131,36 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "rebalance",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "newTokens", type: "address[]" },
+      { name: "newWeights", type: "uint256[]" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "executeRebalanceTrades",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "trades",
+        type: "tuple[]",
+        components: [
+          { name: "adapter", type: "address" },
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "minAmountOut", type: "uint256" },
+          { name: "adapterData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "rebalanceCooldown",
     stateMutability: "view",
     inputs: [],
@@ -341,6 +371,45 @@ export const managedOtfVaultAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "newFeeRecipient", type: "address" }],
     outputs: [],
+  },
+] as const;
+
+export const otfEntryRouterAbi = [
+  {
+    type: "function",
+    name: "settlementToken",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "isEntryAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ name: "adapter", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "enterWithSettlement",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "maxSettlementIn", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      {
+        name: "swaps",
+        type: "tuple[]",
+        components: [
+          { name: "adapter", type: "address" },
+          { name: "maxSettlementIn", type: "uint256" },
+          { name: "adapterData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [{ name: "settlementSpent", type: "uint256" }],
   },
 ] as const;
 

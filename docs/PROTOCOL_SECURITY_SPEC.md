@@ -87,6 +87,25 @@ The executor is a settlement boundary called only by factory-recognized OTFs. It
 
 It MUST NOT accept a caller-selected output recipient.
 
+### `OTFEntryRouter` and entry adapters
+
+The optional entry router converts a configured settlement token into the exact proportional
+basket required to mint a requested number of OTF shares. It is outside the vault's custody and
+strategy authority boundaries. It MUST:
+
+- Accept only vaults registered by the configured factory.
+- Preview and acquire the exact live basket in one atomic transaction.
+- Use only entry adapters approved in the router's independent allowlist.
+- Limit each adapter to an explicit maximum settlement input and clear approvals afterward.
+- Verify adapter-reported input, observed input, and exact output balance deltas.
+- Mint through the vault's proportional `mintWithBasket` function and verify returned amounts.
+- Refund unused settlement tokens and retain no user-funded balance after successful entry.
+- Never change targets, fees, roles, challenge state, or rebalance state.
+
+An entry adapter MAY use a multi-hop venue path. A rebalance adapter MAY similarly route through
+USDG internally, but the vault-visible rebalance endpoints MUST remain active constituents and the
+final output MUST return to the vault through `RebalanceExecutor`.
+
 ## 3. Delegatecall requirements
 
 The strategy delegation boundary MUST satisfy all of the following:
@@ -218,6 +237,23 @@ approvals.
 
 Multiple partial transactions MAY be used to reach one target. Each transaction MUST independently
 satisfy every invariant above.
+
+For every successful settlement-token entry:
+
+1. The requested share amount and aggregate maximum input are nonzero.
+2. The deadline has not expired.
+3. The OTF is registered by the configured factory.
+4. The swap array exactly matches the live constituent array.
+5. Every non-settlement leg uses an independently approved entry adapter.
+6. The sum of per-leg maximum inputs and direct settlement requirements does not exceed the user's aggregate maximum.
+7. Every acquired constituent amount exactly equals the current `previewMint` requirement.
+8. The deposited basket and minted share amount are atomic.
+9. Temporary adapter and vault approvals are cleared after successful execution.
+10. Unused settlement tokens are refunded to the payer.
+
+AMM price and oracle NAV equality is intentionally NOT an invariant. The entrant selects maximum
+pool execution cost; the vault protects existing holders by accepting only the exact proportional
+basket.
 
 ## 6. Strategy lifecycle
 

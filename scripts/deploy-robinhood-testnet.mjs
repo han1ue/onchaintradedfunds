@@ -98,16 +98,19 @@ async function writeContract({ address, abi, functionName, args = [] }) {
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
 
-function updateAppEnv(factoryAddress) {
+function updateAppEnv(values) {
   const appEnvPath = join(root, "app", ".env.local");
-  const line = `NEXT_PUBLIC_FACTORY_ADDRESS=${factoryAddress}`;
   let content = existsSync(appEnvPath) ? readFileSync(appEnvPath, "utf8") : "";
 
-  if (/^NEXT_PUBLIC_FACTORY_ADDRESS=/m.test(content)) {
-    content = content.replace(/^NEXT_PUBLIC_FACTORY_ADDRESS=.*$/m, line);
-  } else {
-    content = content.replace(/\s*$/, "");
-    content = `${content}${content ? "\n" : ""}${line}\n`;
+  for (const [name, value] of Object.entries(values)) {
+    const line = `${name}=${value}`;
+    const matcher = new RegExp(`^${name}=.*$`, "m");
+    if (matcher.test(content)) {
+      content = content.replace(matcher, line);
+    } else {
+      content = content.replace(/\s*$/, "");
+      content = `${content}${content ? "\n" : ""}${line}\n`;
+    }
   }
 
   writeFileSync(appEnvPath, content);
@@ -123,6 +126,15 @@ const treasury = parseAddress("TREASURY_ADDRESS", env("TREASURY_ADDRESS", accoun
 const approvedAssets = parseAddressList("APPROVED_ASSETS");
 const priceFeeds = parseAddressList("PRICE_FEEDS");
 const approvedAdapters = parseAddressList("APPROVED_ADAPTERS");
+const usdgValue = env("USDG_ADDRESS", "");
+const uniswapRouterValue = env("UNISWAP_V2_ROUTER_ADDRESS", "");
+if (Boolean(usdgValue) !== Boolean(uniswapRouterValue)) {
+  throw new Error("USDG_ADDRESS and UNISWAP_V2_ROUTER_ADDRESS must be provided together.");
+}
+const usdgAddress = usdgValue ? parseAddress("USDG_ADDRESS", usdgValue) : undefined;
+const uniswapRouterAddress = uniswapRouterValue
+  ? parseAddress("UNISWAP_V2_ROUTER_ADDRESS", uniswapRouterValue)
+  : undefined;
 const allowEmptyProtocolConfig = env("ALLOW_EMPTY_PROTOCOL_CONFIG", "false").toLowerCase() === "true";
 
 if (approvedAssets.length !== priceFeeds.length) {
@@ -175,10 +187,25 @@ const factory = await deployContract({
   ],
 });
 
+let uniswapAdapter;
+let entryRouter;
+if (usdgAddress && uniswapRouterAddress) {
+  uniswapAdapter = await deployContract({
+    name: "UniswapV2Adapter",
+    args: [account.address, uniswapRouterAddress],
+  });
+  entryRouter = await deployContract({
+    name: "OTFEntryRouter",
+    args: [account.address, factory.address, usdgAddress],
+  });
+}
+
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const assetRegistryAbi = contractArtifact("AssetRegistry").abi;
 const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
+const uniswapAdapterAbi = uniswapAdapter ? contractArtifact("UniswapV2Adapter").abi : undefined;
+const entryRouterAbi = entryRouter ? contractArtifact("OTFEntryRouter").abi : undefined;
 
 const setupTransactions = {
   setExecutorFactory: await writeContract({
@@ -190,6 +217,7 @@ const setupTransactions = {
   approvedAssets: [],
   priceFeeds: [],
   approvedAdapters: [],
+  settlementEntry: [],
 };
 
 for (const asset of approvedAssets) {
@@ -229,6 +257,47 @@ for (const adapter of approvedAdapters) {
   });
 }
 
+if (uniswapAdapter && entryRouter && uniswapAdapterAbi && entryRouterAbi) {
+  setupTransactions.settlementEntry.push(
+    {
+      action: "approve-trade-adapter",
+      ...(await writeContract({
+        address: factory.address,
+        abi: factoryAbi,
+        functionName: "setTradeAdapterApproved",
+        args: [uniswapAdapter.address, true],
+      })),
+    },
+    {
+      action: "approve-entry-adapter",
+      ...(await writeContract({
+        address: entryRouter.address,
+        abi: entryRouterAbi,
+        functionName: "setEntryAdapterApproved",
+        args: [uniswapAdapter.address, true],
+      })),
+    },
+    {
+      action: "authorize-rebalance-executor",
+      ...(await writeContract({
+        address: uniswapAdapter.address,
+        abi: uniswapAdapterAbi,
+        functionName: "setCallerApproved",
+        args: [rebalanceExecutor.address, true],
+      })),
+    },
+    {
+      action: "authorize-entry-router",
+      ...(await writeContract({
+        address: uniswapAdapter.address,
+        abi: uniswapAdapterAbi,
+        functionName: "setCallerApproved",
+        args: [entryRouter.address, true],
+      })),
+    },
+  );
+}
+
 const deployment = {
   network: "robinhood-testnet",
   chainId,
@@ -244,6 +313,8 @@ const deployment = {
     feeCollector,
     vaultImplementation,
     factory,
+    ...(uniswapAdapter ? { uniswapAdapter } : {}),
+    ...(entryRouter ? { entryRouter } : {}),
   },
   setupTransactions,
 };
@@ -252,7 +323,17 @@ const deploymentsDir = join(root, "deployments");
 mkdirSync(deploymentsDir, { recursive: true });
 const outputPath = join(deploymentsDir, "robinhood-testnet.json");
 writeFileSync(outputPath, `${deploymentPayload(deployment)}\n`);
-const appEnvPath = updateAppEnv(factory.address);
+const appEnvPath = updateAppEnv({
+  NEXT_PUBLIC_FACTORY_ADDRESS: factory.address,
+  ...(uniswapAdapter && entryRouter && usdgAddress && uniswapRouterAddress
+    ? {
+        NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS: entryRouter.address,
+        NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS: uniswapAdapter.address,
+        NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS: uniswapRouterAddress,
+        NEXT_PUBLIC_USDG_ADDRESS: usdgAddress,
+      }
+    : {}),
+});
 
 console.log(`Deployment written to ${outputPath}`);
 console.log(`Frontend factory env written to ${appEnvPath}`);

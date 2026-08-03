@@ -21,6 +21,7 @@ This repository currently implements the first MVP slice:
 - Fixed minimum rebalance cooldown model.
 - Direct basket vault creation through the factory.
 - Proportional mint and redeem logic.
+- Optional atomic USDG-only entry through a separately allowlisted router and adapter.
 - Lazy share-based management fee accrual.
 - Onchain thesis history.
 - Oracle-valued NAV and weight checks.
@@ -71,6 +72,10 @@ flowchart LR
   Adapter --> Tokens[Underlying ERC-20 assets]
   Clone --> Collector[FeeCollector]
   User[Share holder] --> Clone
+  User --> EntryRouter[OTFEntryRouter]
+  EntryRouter --> EntryAdapter[Approved entry adapter]
+  EntryAdapter --> Liquidity[Uniswap-compatible liquidity]
+  EntryRouter --> Clone
   App[Next.js app] --> Factory
   App --> Clone
 ```
@@ -115,6 +120,18 @@ flowchart LR
 - Verifies adapter is globally approved.
 - Executes typed adapter swaps only.
 - Prevents arbitrary manager-supplied target calls from the vault.
+
+`OTFEntryRouter`
+
+- Lets a user request an exact number of OTF shares while supplying only the configured settlement token, initially USDG.
+- Buys the exact proportional basket through independently approved entry adapters, deposits it atomically, and refunds unused settlement tokens.
+- Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
+
+`UniswapV2Adapter`
+
+- Implements exact-input rebalance swaps and exact-output settlement entry against a configurable Uniswap V2-compatible router.
+- Validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
+- May route a rebalance internally through USDG while the vault-visible input and output remain active RWA constituents.
 
 `AssetRegistry`
 
@@ -267,6 +284,25 @@ Minting:
 - Enforces caller-provided max inputs.
 - Does not use oracles.
 - Is blocked while a rebalance is executing.
+
+### USDG-only entry
+
+Direct proportional basket deposits remain the base minting primitive. An optional
+`OTFEntryRouter` convenience path lets a user request an exact amount of OTF shares and set a
+maximum USDG spend. The router previews the exact constituent amounts, buys each amount through
+approved exact-output adapters, calls `mintWithBasket`, and refunds unspent USDG in the same
+transaction. Any failed swap, stale quote protection, insufficient output, deposit mismatch, or
+share mint failure reverts the entire operation.
+
+The cost shown by a Uniswap pool is not the OTF's accounting NAV. OTF NAV uses approved Chainlink
+feeds, while entry cost depends on available AMM liquidity and price impact. The frontend displays
+both values and the difference; users protect execution with per-leg maximum inputs, an aggregate
+maximum USDG amount, and a deadline. This route does not subsidize entry from existing OTF assets.
+
+The router and adapter are separate contracts so future RFQ, proprietary AMM, or order-book
+liquidity can be integrated behind additional typed adapters without adding an arbitrary-call path
+to the vault. See Robinhood's documented
+[liquidity-source categories](https://docs.robinhood.com/chain/building-with-stock-tokens/#liquidity-sources).
 
 ### Redemption
 
@@ -512,6 +548,10 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
 NEXT_PUBLIC_RH_RPC_URL=
 NEXT_PUBLIC_RH_TESTNET_RPC_URL=
 NEXT_PUBLIC_FACTORY_ADDRESS=
+NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS=
+NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS=
+NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS=
+NEXT_PUBLIC_USDG_ADDRESS=
 ```
 
 These are public frontend values. Do not put private keys in any `NEXT_PUBLIC_*` variable.
@@ -525,11 +565,19 @@ DEPLOYER_PRIVATE_KEY=
 APPROVED_ASSETS=0xAsset1,0xAsset2
 PRICE_FEEDS=0xFeed1,0xFeed2
 APPROVED_ADAPTERS=
+USDG_ADDRESS=
+UNISWAP_V2_ROUTER_ADDRESS=
 ```
 
 `APPROVED_ASSETS` and `PRICE_FEEDS` are positional pairs and must have equal lengths. The
 deployment script rejects an empty protocol catalog unless
 `ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
+
+`USDG_ADDRESS` and `UNISWAP_V2_ROUTER_ADDRESS` are optional but must be supplied together. When
+present, the deployment script deploys `UniswapV2Adapter` and `OTFEntryRouter`, approves the
+adapter for both trade and entry use, authorizes the executor and entry router as adapter callers,
+and writes all public addresses into `app/.env.local`. No testnet liquidity address is guessed or
+hardcoded; verify both values against the intended deployment before running the script.
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
@@ -613,9 +661,9 @@ delegation surfaces.
 
 ## Tests
 
-The Solidity suite contains 120 unit, fuzz-property, and invariant tests: 100 deterministic tests,
-12 fuzz properties, and 8 stateful invariants. Default settings in `contracts/foundry.toml` run
-every fuzz property 1,000 times and each invariant through 128 sequences of 64 generated actions.
+The Solidity suite contains broad deterministic, fuzz-property, and stateful invariant coverage.
+Default settings in `contracts/foundry.toml` run every fuzz property 1,000 times and each invariant
+through 128 sequences of 64 generated actions.
 
 Deterministic coverage includes:
 
@@ -641,6 +689,8 @@ Deterministic coverage includes:
   fee resumption, and deposits and withdrawals during challenge states.
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
+- Atomic USDG-only entry, unused-input refunds, entry-adapter authorization, exact-output bounds,
+  expired entry rejection, and Uniswap-compatible direct and USDG-hop adapter behavior.
 - Canonical vault/module storage, immutable module identity, runtime code-hash integrity,
   direct-module-call rejection, and callback isolation.
 
@@ -656,9 +706,9 @@ history, and immutable factory provenance.
 ## Known Limitations
 
 - No production Robinhood Chain addresses are verified or configured.
-- No real DEX or RFQ adapter is integrated.
-- No payment-token launch router is implemented yet.
-- The UI manager actions are visual states only in this slice.
+- A Uniswap V2-compatible adapter and USDG entry router are implemented but remain undeployed until verified testnet addresses are supplied.
+- RFQ, proprietary AMM, and order-book adapters are not implemented.
+- USDG entry currently quotes direct USDG-to-constituent pools; more advanced route discovery is not implemented.
 - The generated ABI package is currently a hand-maintained MVP subset.
 - The contracts are intentionally compact for MVP exploration and have not been gas optimized.
 - ERC-7621 remains a draft and its interface may change.

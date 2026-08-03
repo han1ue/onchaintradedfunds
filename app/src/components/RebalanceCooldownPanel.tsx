@@ -1,7 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { managedOtfVaultAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
+import { managedOtfVaultAbi, otfEntryRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import {
   Activity,
   AlertTriangle,
@@ -48,7 +48,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { formatUnits, isAddress, parseEventLogs, parseUnits } from "viem";
+import { encodeAbiParameters, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
 import {
   useAccount,
   useBalance,
@@ -129,6 +129,7 @@ type VaultSummary = {
   navValue?: bigint;
   nav?: string;
   navPerShare?: string;
+  navPerShareValue?: bigint;
 };
 
 type VaultView = {
@@ -351,10 +352,53 @@ const aggregatorV3ReadAbi = [
   },
 ] as const;
 
+const uniswapV2QuoteAbi = [
+  {
+    type: "function",
+    name: "getAmountsIn",
+    stateMutability: "view",
+    inputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "path", type: "address[]" },
+    ],
+    outputs: [{ name: "amounts", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "getAmountsOut",
+    stateMutability: "view",
+    inputs: [
+      { name: "amountIn", type: "uint256" },
+      { name: "path", type: "address[]" },
+    ],
+    outputs: [{ name: "amounts", type: "uint256[]" }],
+  },
+] as const;
+
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
 
 function configuredFactoryAddress(): `0x${string}` | undefined {
   const value = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredEntryRouterAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredEntryAdapterAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredUniswapRouterAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredSettlementTokenAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_USDG_ADDRESS;
   return value && isAddress(value) ? value : undefined;
 }
 
@@ -463,11 +507,6 @@ function txStateLabel(state: TxState): { label: string; tone: "muted" | "info" |
   if (state === "confirmed") return { label: "Confirmed", tone: "success" };
   if (state === "reverted") return { label: "Transaction reverted", tone: "danger" };
   return { label: "Idle", tone: "muted" };
-}
-
-function runSimulation(setState: (state: TxState) => void) {
-  setState("simulating");
-  window.setTimeout(() => setState("ready"), 900);
 }
 
 function percentToBps(value: string | number): number {
@@ -857,6 +896,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     lastReadAt,
     nav: formatUsd18(totalAssetsValue),
     navPerShare: formatUsd18(navPerShareValue),
+    navPerShareValue,
     factoryAddress,
     factoryVaultCount: factoryVaultAddresses.length,
     factoryReadFailed: Boolean(factoryError),
@@ -955,10 +995,13 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               </div>
 
               <aside className="sideColumn">
-                <UserActions vault={vault} />
+                <UserActions vault={vault} oraclePrices={catalogOraclePrices} />
                 <RebalanceCooldown vault={vault} />
-                <SafetyLimits vault={vault} onRefresh={refetchVaultData} />
               </aside>
+
+              <div className="dashboardSafety">
+                <SafetyLimits vault={vault} onRefresh={refetchVaultData} />
+              </div>
             </div>
           </>
         ) : null}
@@ -1694,7 +1737,6 @@ function PortfolioAllocation({
 }
 
 function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
-  const [copiedPortfolioHash, setCopiedPortfolioHash] = useState<string>();
   const {
     data: thesisVersionCount,
     isLoading: thesisCountLoading,
@@ -1735,12 +1777,6 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
   const historyLoading = thesisCountLoading || (versionCount > 0 && thesisVersionsLoading);
   const historyFailed = thesisCountFailed || thesisVersionsFailed;
 
-  async function copyPortfolioHash(hash: string) {
-    await navigator.clipboard.writeText(hash);
-    setCopiedPortfolioHash(hash);
-    window.setTimeout(() => setCopiedPortfolioHash(undefined), 1_800);
-  }
-
   return (
     <SectionCard
       title="Investment thesis"
@@ -1773,22 +1809,6 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
                   <time>{formatTimestamp(Number(version.timestamp))}</time>
                 </div>
                 <p>{version.text}</p>
-                <div className="thesisVersionMeta">
-                  <span>
-                    Author
-                    <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${version.author}`} target="_blank" rel="noreferrer" title="Open author in explorer">
-                      <code>{shortAddress(version.author)}</code>
-                      <ExternalLink size={10} />
-                    </a>
-                  </span>
-                  <span>
-                    Portfolio
-                    <button type="button" onClick={() => copyPortfolioHash(version.portfolioHash)} title="Copy portfolio hash">
-                      <code>{copiedPortfolioHash === version.portfolioHash ? "Copied" : shortAddress(version.portfolioHash)}</code>
-                      {copiedPortfolioHash === version.portfolioHash ? <Check size={10} /> : <Copy size={10} />}
-                    </button>
-                  </span>
-                </div>
               </article>
             );
           })}
@@ -1819,6 +1839,32 @@ function ThesisAmendmentCard({
   const [submitError, setSubmitError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
+  const { data: thesisVersionCount } = useReadContract({
+    address: vaultAddress,
+    abi: managedOtfVaultAbi,
+    functionName: "thesisVersionCount",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vaultAddress), refetchInterval: 12_000 },
+  });
+  const versionCount = Number(thesisVersionCount ?? 0n);
+  const { data: initialThesisVersion, isLoading: initialThesisLoading } = useReadContract({
+    address: vaultAddress,
+    abi: managedOtfVaultAbi,
+    functionName: "getThesisVersion",
+    args: [0n],
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vaultAddress && versionCount > 0), refetchInterval: 12_000 },
+  });
+  const { data: latestThesisVersion, isLoading: latestThesisLoading } = useReadContract({
+    address: vaultAddress,
+    abi: managedOtfVaultAbi,
+    functionName: "getThesisVersion",
+    args: [BigInt(Math.max(0, versionCount - 1))],
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vaultAddress && versionCount > 1), refetchInterval: 12_000 },
+  });
+  const initialThesis = (initialThesisVersion as ThesisVersionResult | undefined)?.text ?? currentThesis;
+  const latestAmendment = latestThesisVersion as ThesisVersionResult | undefined;
   const amendment = draft.trim();
   const amendmentBytes = new TextEncoder().encode(amendment).length;
   const amendmentValid = amendmentBytes > 0 && amendmentBytes <= 2_048;
@@ -1850,15 +1896,28 @@ function ThesisAmendmentCard({
 
   return (
     <SectionCard
-      title="Thesis amendment"
-      subtitle="Append to the public investment record"
+      title="Thesis history and amendment"
+      subtitle="Review the strategy record and append a permanent update"
       icon={<BookOpen size={15} />}
       action={<span className="stateBadge muted">Manager</span>}
     >
       <div className="operationFlow">
-        <div className="thesisAmendmentCurrent">
-          <span>Current thesis</span>
-          <p>{currentThesis}</p>
+        <div className="managedThesisHistory">
+          <article>
+            <span>Initial thesis</span>
+            <p>{initialThesisLoading ? "Loading initial thesis..." : initialThesis}</p>
+          </article>
+          <article>
+            <span>Latest amendment</span>
+            {versionCount > 1 ? (
+              <>
+                <p>{latestThesisLoading ? "Loading latest amendment..." : latestAmendment?.text ?? "Amendment unavailable"}</p>
+                {latestAmendment ? <time>{formatTimestamp(Number(latestAmendment.timestamp))}</time> : null}
+              </>
+            ) : (
+              <p className="mutedCopy">No amendments have been added.</p>
+            )}
+          </article>
         </div>
         <label className="fieldLabel" htmlFor="thesis-amendment">New amendment</label>
         <textarea
@@ -1903,23 +1962,52 @@ function ThesisAmendmentCard({
   );
 }
 
-function UserActions({ vault }: { vault: VaultView }) {
-  const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
+function UserActions({
+  vault,
+  oraclePrices,
+}: {
+  vault: VaultView;
+  oraclePrices: CatalogOraclePrices;
+}) {
+  const [activeAction, setActiveAction] = useState<"usdg" | "deposit" | "redeem">("usdg");
   const [depositAmount, setDepositAmount] = useState("");
+  const [usdgShareAmount, setUsdgShareAmount] = useState("");
+  const [entrySlippage, setEntrySlippage] = useState("1.0");
   const [redeemAmount, setRedeemAmount] = useState("");
   const [depositState, setDepositState] = useState<TxState>("idle");
   const [depositError, setDepositError] = useState<string>();
+  const [entryState, setEntryState] = useState<TxState>("idle");
+  const [entryError, setEntryError] = useState<string>();
   const [approvalProgress, setApprovalProgress] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const isLive = vault.dataMode === "live";
+  const entryRouterAddress = configuredEntryRouterAddress();
+  const entryAdapterAddress = configuredEntryAdapterAddress();
+  const uniswapRouterAddress = configuredUniswapRouterAddress();
+  const entryContractsConfigured = Boolean(
+    entryRouterAddress && entryAdapterAddress && uniswapRouterAddress,
+  );
   let depositShares: bigint | undefined;
   try {
     depositShares = Number(depositAmount) > 0 ? parseUnits(depositAmount, 18) : undefined;
   } catch {
     depositShares = undefined;
   }
+  let requestedEntryShares: bigint | undefined;
+  try {
+    requestedEntryShares = Number(usdgShareAmount) > 0
+      ? parseUnits(usdgShareAmount, 18)
+      : undefined;
+  } catch {
+    requestedEntryShares = undefined;
+  }
+  const parsedEntrySlippage = Number(entrySlippage);
+  const entrySlippageBps = Number.isFinite(parsedEntrySlippage)
+    ? Math.round(parsedEntrySlippage * 100)
+    : 0;
+  const entrySlippageValid = entrySlippageBps >= 1 && entrySlippageBps <= 2_000;
   const canQuoteDeposit = Boolean(
     isLive && vault.address && connectedAddress && depositShares && depositShares > 0n,
   );
@@ -1935,6 +2023,101 @@ function UserActions({ vault }: { vault: VaultView }) {
     args: depositShares ? [depositShares] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteDeposit },
+  });
+  const { data: settlementTokenAddress } = useReadContract({
+    address: entryRouterAddress,
+    abi: otfEntryRouterAbi,
+    functionName: "settlementToken",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: entryContractsConfigured && isLive },
+  });
+  const settlementToken = typeof settlementTokenAddress === "string" && isAddress(settlementTokenAddress)
+    ? settlementTokenAddress
+    : undefined;
+  const { data: entryAdapterApproved } = useReadContract({
+    address: entryRouterAddress,
+    abi: otfEntryRouterAbi,
+    functionName: "isEntryAdapterApproved",
+    args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: entryContractsConfigured && isLive },
+  });
+  const canQuoteEntry = Boolean(
+    isLive &&
+    vault.address &&
+    connectedAddress &&
+    requestedEntryShares &&
+    requestedEntryShares > 0n &&
+    settlementToken &&
+    entryAdapterApproved &&
+    entrySlippageValid,
+  );
+  const {
+    data: previewEntryAmounts,
+    error: previewEntryError,
+    isLoading: previewEntryLoading,
+    refetch: refetchEntryPreview,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewMint",
+    args: requestedEntryShares ? [requestedEntryShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canQuoteEntry },
+  });
+  const entryQuoteContracts = canQuoteEntry && previewEntryAmounts && settlementToken && uniswapRouterAddress
+    ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = previewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        return [{
+          address: uniswapRouterAddress,
+          abi: uniswapV2QuoteAbi,
+          functionName: "getAmountsIn" as const,
+          args: [amountOut, [settlementToken, asset.address as `0x${string}`]],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: entryQuoteResults,
+    isLoading: entryQuotesLoading,
+    refetch: refetchEntryQuotes,
+  } = useReadContracts({
+    contracts: entryQuoteContracts,
+    query: { enabled: entryQuoteContracts.length > 0 },
+  });
+  const entryAuthorizationContracts = ([
+        {
+          address: settlementToken ?? zeroAddress,
+          abi: erc20BalanceAbi,
+          functionName: "balanceOf" as const,
+          args: [(connectedAddress ?? zeroAddress) as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: settlementToken ?? zeroAddress,
+          abi: erc20BalanceAbi,
+          functionName: "allowance" as const,
+          args: [
+            (connectedAddress ?? zeroAddress) as `0x${string}`,
+            (entryRouterAddress ?? zeroAddress) as `0x${string}`,
+          ],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: settlementToken ?? zeroAddress,
+          abi: erc20BalanceAbi,
+          functionName: "decimals" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const);
+  const {
+    data: entryAuthorizationResults,
+    refetch: refetchEntryAuthorization,
+  } = useReadContracts({
+    contracts: entryAuthorizationContracts,
+    query: { enabled: Boolean(settlementToken && connectedAddress && entryRouterAddress) },
   });
   const depositAuthorizationContracts = canQuoteDeposit && vault.address
     ? vault.allocations.flatMap((asset) => ([
@@ -1987,6 +2170,77 @@ function UserActions({ vault }: { vault: VaultView }) {
   const allowancesSufficient = quoteReady && depositAssets.every((asset) => asset.allowanceSufficient);
   const pendingApprovals = depositAssets.filter((asset) => !asset.allowanceSufficient);
   const depositBusy = depositState === "pending" || depositState === "submitted";
+  let entryQuoteIndex = 0;
+  const entryLegs = vault.allocations.map((asset, index) => {
+    const requiredAmount = previewEntryAmounts?.[index];
+    const isSettlement = Boolean(
+      settlementToken && asset.address.toLowerCase() === settlementToken.toLowerCase(),
+    );
+    let quotedSettlement: bigint | undefined;
+    let quoteFailed = false;
+    if (isSettlement) {
+      quotedSettlement = requiredAmount;
+    } else if (requiredAmount !== undefined && requiredAmount > 0n) {
+      const result = entryQuoteResults?.[entryQuoteIndex];
+      entryQuoteIndex += 1;
+      const amounts = result?.result as readonly bigint[] | undefined;
+      quotedSettlement = amounts?.[0];
+      quoteFailed = result?.status === "failure";
+    }
+    const maximumSettlement = quotedSettlement !== undefined && !isSettlement
+      ? (quotedSettlement * BigInt(10_000 + entrySlippageBps) + 9_999n) / 10_000n
+      : isSettlement ? 0n : undefined;
+    return {
+      ...asset,
+      requiredAmount,
+      isSettlement,
+      quotedSettlement,
+      maximumSettlement,
+      quoteFailed,
+    };
+  });
+  const entryQuotesFailed = entryLegs.some((leg) => leg.quoteFailed);
+  const entryQuoteReady = Boolean(
+    requestedEntryShares &&
+    previewEntryAmounts?.length === vault.allocations.length &&
+    entryLegs.every((leg) =>
+      leg.requiredAmount !== undefined &&
+      leg.quotedSettlement !== undefined &&
+      leg.maximumSettlement !== undefined,
+    ),
+  );
+  const quotedSettlementTotal = entryQuoteReady
+    ? entryLegs.reduce((sum, leg) => sum + (leg.quotedSettlement ?? 0n), 0n)
+    : undefined;
+  const maximumSettlementTotal = entryQuoteReady
+    ? entryLegs.reduce(
+        (sum, leg) => sum + (leg.isSettlement ? leg.requiredAmount ?? 0n : leg.maximumSettlement ?? 0n),
+        0n,
+      )
+    : undefined;
+  const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
+  const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
+  const settlementDecimals = Number(entryAuthorizationResults?.[2]?.result ?? 18);
+  const entryBalanceSufficient = maximumSettlementTotal !== undefined &&
+    settlementBalance !== undefined && settlementBalance >= maximumSettlementTotal;
+  const entryAllowanceSufficient = maximumSettlementTotal !== undefined &&
+    settlementAllowance !== undefined && settlementAllowance >= maximumSettlementTotal;
+  const entryOracleValue = entryQuoteReady && entryLegs.every(
+    (leg) => oraclePrices[leg.address.toLowerCase()]?.answer !== undefined,
+  )
+    ? entryLegs.reduce((sum, leg) => {
+        const price = oraclePrices[leg.address.toLowerCase()];
+        if (leg.requiredAmount === undefined || price?.answer === undefined || price.decimals === undefined) {
+          return sum;
+        }
+        return sum + (leg.requiredAmount * price.answer) / (10n ** BigInt(price.decimals));
+      }, 0n)
+    : undefined;
+  const entryPriceDifference = quotedSettlementTotal !== undefined && entryOracleValue && entryOracleValue > 0n
+    ? (Number(formatUnits(quotedSettlementTotal, settlementDecimals)) /
+        Number(formatUnits(entryOracleValue, 18)) - 1) * 100
+    : undefined;
+  const entryBusy = entryState === "pending" || entryState === "submitted";
 
   async function sendDepositApproval(
     asset: (typeof depositAssets)[number],
@@ -2077,23 +2331,193 @@ function UserActions({ vault }: { vault: VaultView }) {
     }
   }
 
+  async function approveSettlementToken() {
+    if (
+      !settlementToken ||
+      !entryRouterAddress ||
+      !publicClient ||
+      maximumSettlementTotal === undefined ||
+      settlementAllowance === undefined
+    ) return;
+    setEntryError(undefined);
+    try {
+      setEntryState("pending");
+      if (settlementAllowance > 0n) {
+        const resetHash = await writeContractAsync({
+          address: settlementToken,
+          abi: erc20BalanceAbi,
+          functionName: "approve",
+          args: [entryRouterAddress, 0n],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setEntryState("submitted");
+        const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
+        if (resetReceipt.status !== "success") throw new Error("The USDG approval reset reverted.");
+      }
+      setEntryState("pending");
+      const hash = await writeContractAsync({
+        address: settlementToken,
+        abi: erc20BalanceAbi,
+        functionName: "approve",
+        args: [entryRouterAddress, maximumSettlementTotal],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setEntryState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The USDG approval reverted.");
+      await refetchEntryAuthorization();
+      setEntryState("confirmed");
+    } catch (error) {
+      setEntryError(errorMessage(error));
+      setEntryState("reverted");
+    }
+  }
+
+  async function enterWithSettlement() {
+    if (
+      !vault.address ||
+      !connectedAddress ||
+      !publicClient ||
+      !entryRouterAddress ||
+      !entryAdapterAddress ||
+      !settlementToken ||
+      !requestedEntryShares ||
+      maximumSettlementTotal === undefined ||
+      !entryQuoteReady ||
+      !entryBalanceSufficient ||
+      !entryAllowanceSufficient
+    ) return;
+    const swaps = entryLegs.map((leg) => leg.isSettlement
+      ? { adapter: zeroAddress, maxSettlementIn: 0n, adapterData: "0x" as `0x${string}` }
+      : {
+          adapter: entryAdapterAddress,
+          maxSettlementIn: leg.maximumSettlement as bigint,
+          adapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[settlementToken, leg.address as `0x${string}`]],
+          ),
+        });
+    setEntryError(undefined);
+    try {
+      setEntryState("pending");
+      const hash = await writeContractAsync({
+        address: entryRouterAddress,
+        abi: otfEntryRouterAbi,
+        functionName: "enterWithSettlement",
+        args: [
+          vault.address,
+          requestedEntryShares,
+          connectedAddress,
+          maximumSettlementTotal,
+          BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
+          swaps,
+        ],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setEntryState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The USDG entry transaction reverted.");
+      await refetchEntryAuthorization();
+      await refetchEntryPreview();
+      await refetchEntryQuotes();
+      setEntryState("confirmed");
+      setUsdgShareAmount("");
+    } catch (error) {
+      setEntryError(errorMessage(error));
+      setEntryState("reverted");
+    }
+  }
+
   return (
-    <SectionCard title="Your position" subtitle={`Deposit the basket or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
+    <SectionCard title="Your position" subtitle={`Buy, deposit, or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
       <div className="actionTabs" role="tablist" aria-label="OTF position actions">
+        <button className={activeAction === "usdg" ? "active" : ""} type="button" onClick={() => setActiveAction("usdg")}>Buy with USDG</button>
         <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>Deposit basket</button>
         <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
       </div>
 
-      <div className="riskCallout info depositInfoCallout">
-        <Info size={15} />
-        <div>
-          <strong>{isLive ? "Direct basket deposits" : "Live OTF required"}</strong>
-          <span>{isLive ? "Deposits transfer the current constituents directly into this OTF. No swap pool or USDG conversion is required." : "Configure a deployed testnet OTF before preparing a portfolio deposit or redemption."}</span>
-        </div>
-      </div>
-
-      {activeAction === "deposit" ? (
+      {activeAction === "usdg" ? (
         <div className="positionFlow">
+          {!entryContractsConfigured ? (
+            <div className="inlineEmptyState">
+              <Landmark size={17} />
+              <div><strong>USDG entry route not deployed</strong><span>The OTF supports direct basket deposits. USDG entry becomes available after the entry router and Uniswap adapter are configured.</span></div>
+            </div>
+          ) : (
+            <>
+              <label className="fieldLabel">OTF shares to receive</label>
+              <div className="inputWithSuffix">
+                <input value={usdgShareAmount} onChange={(event) => setUsdgShareAmount(event.target.value)} type="number" min="0" placeholder="0.00" disabled={!isLive || entryBusy} />
+                <span>{vault.symbol}</span>
+              </div>
+              <label className="fieldLabel">Maximum pool slippage</label>
+              <div className="inputWithSuffix">
+                <input value={entrySlippage} onChange={(event) => setEntrySlippage(event.target.value)} type="number" min="0.01" max="20" step="0.1" disabled={entryBusy} />
+                <span>%</span>
+              </div>
+              {!entrySlippageValid ? <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span> : null}
+
+              {usdgShareAmount ? (
+                <div className="entryQuoteSummary">
+                  <div><span>Uniswap quote</span><strong>{quotedSettlementTotal === undefined ? "Loading" : `${formatWalletTokenBalance(quotedSettlementTotal, settlementDecimals)} USDG`}</strong></div>
+                  <div><span>Maximum spend</span><strong>{maximumSettlementTotal === undefined ? "Loading" : `${formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals)} USDG`}</strong></div>
+                  <div><span>Oracle-priced basket</span><strong>{entryOracleValue === undefined ? "Unavailable" : formatUsd18(entryOracleValue)}</strong></div>
+                  <div><span>Pool vs oracle</span><strong className={entryPriceDifference !== undefined && entryPriceDifference > 0 ? "warningText" : ""}>{entryPriceDifference === undefined ? "Unavailable" : `${entryPriceDifference >= 0 ? "+" : ""}${entryPriceDifference.toFixed(2)}%`}</strong></div>
+                </div>
+              ) : null}
+
+              {previewEntryLoading || entryQuotesLoading ? (
+                <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading vault and Uniswap quotes</div>
+              ) : previewEntryError || entryQuotesFailed ? (
+                <div className="validationSummary danger"><AlertTriangle size={14} /><div><strong>USDG quote unavailable</strong><span>One or more constituent pools could not quote the required output.</span></div></div>
+              ) : null}
+
+              <div className="riskCallout warning entryPriceWarning">
+                <AlertTriangle size={15} />
+                <div>
+                  <strong>Pool price and OTF value can differ</strong>
+                  <span>The OTF is valued from Chainlink-priced holdings. Your USDG cost comes from current Uniswap pool liquidity, so you may pay more or less than the displayed oracle-priced basket value.</span>
+                </div>
+              </div>
+
+              {entryAdapterApproved === false ? (
+                <div className="validationSummary danger"><XCircle size={15} /><div><strong>Entry adapter is not approved</strong><span>The configured Uniswap adapter cannot be used by this entry router.</span></div></div>
+              ) : null}
+              {entryQuoteReady ? (
+                <div className="quoteLine">
+                  <span>Wallet balance</span>
+                  <strong>{settlementBalance === undefined ? "Loading" : `${formatWalletTokenBalance(settlementBalance, settlementDecimals)} USDG`}</strong>
+                </div>
+              ) : null}
+              {entryQuoteReady && !entryBalanceSufficient ? (
+                <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient USDG</strong><span>Your wallet balance is below the maximum spend required by this quote.</span></div></div>
+              ) : null}
+              {entryError ? (
+                <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>USDG entry failed</strong><span>{entryError}</span></div></div>
+              ) : null}
+              <TxStatus state={entryState} />
+              <div className="buttonRow">
+                <button className="secondaryAction" type="button" disabled={entryBusy || !entryQuoteReady || !entryBalanceSufficient || entryAllowanceSufficient} onClick={approveSettlementToken}>
+                  <ShieldCheck size={14} />
+                  {entryAllowanceSufficient ? "USDG approved" : "Approve USDG"}
+                </button>
+                <button className="primaryAction" type="button" disabled={entryBusy || !entryQuoteReady || !entryBalanceSufficient || !entryAllowanceSufficient} onClick={enterWithSettlement}>
+                  <ArrowDownToLine size={14} />
+                  Buy {vault.symbol}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : activeAction === "deposit" ? (
+        <div className="positionFlow">
+          <div className="riskCallout info depositInfoCallout">
+            <Info size={15} />
+            <div>
+              <strong>{isLive ? "Direct basket deposits" : "Live OTF required"}</strong>
+              <span>{isLive ? "Transfer the current constituents directly into this OTF without using a liquidity pool." : "Configure a deployed testnet OTF before preparing a portfolio deposit."}</span>
+            </div>
+          </div>
           <label className="fieldLabel">Shares to mint</label>
           <div className="inputWithSuffix">
             <input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} type="number" placeholder="0.00" disabled={!isLive} />
@@ -2208,11 +2632,11 @@ function TxStatus({ state, persistent = false }: { state: TxState; persistent?: 
   );
 }
 
-function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
+function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
   const initialTargets = useMemo(
     () => vault.allocations.map((asset) => ({
       ticker: asset.symbol,
-      address: shortAddress(asset.address),
+      address: asset.address,
       targetWeight: asset.targetWeightBps / 100,
       initialAmount: "",
     })),
@@ -2220,15 +2644,26 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
   );
   const [targets, setTargets] = useState<TargetAsset[]>(initialTargets);
   const [txState, setTxState] = useState<TxState>("idle");
+  const [txError, setTxError] = useState<string>();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
+
+  useEffect(() => setTargets(initialTargets), [initialTargets]);
 
   const totalWeight = targets.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
-  const targetChanges = targets.map((asset, index) => {
-    const current = (vault.allocations[index]?.actualWeightBps ?? 0) / 100;
+  const targetChanges = targets.map((asset) => {
+    const currentAllocation = vault.allocations.find(
+      (allocation) => allocation.address.toLowerCase() === asset.address.toLowerCase(),
+    );
+    const current = (currentAllocation?.actualWeightBps ?? 0) / 100;
     return { ...asset, current, delta: Number(asset.targetWeight || 0) - current };
   });
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
-  const weightsValid = Math.abs(totalWeight - 100) < 0.01;
+  const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
+  const weightsValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
+  const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
+  const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
   const turnoverLimit = vault.maxTurnoverBps / 100;
   const turnoverBreach = turnover > turnoverLimit;
   const reductions = targetChanges.filter((asset) => asset.delta < -0.01);
@@ -2244,11 +2679,61 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
 
   function updateTarget(index: number, patch: Partial<TargetAsset>) {
     setTargets((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
+    setTxState("idle");
+    setTxError(undefined);
+  }
+
+  function addTarget() {
+    const selectedAddresses = new Set(targets.map((target) => target.address.toLowerCase()));
+    const nextAsset = testnetCreateAssets.find((asset) => !selectedAddresses.has(asset.address.toLowerCase()));
+    if (!nextAsset) return;
+    setTargets((current) => [...current, {
+      ticker: nextAsset.symbol,
+      address: nextAsset.address,
+      targetWeight: 0,
+      initialAmount: "",
+    }]);
+    setTxState("idle");
+  }
+
+  async function submitTargets() {
+    if (!vault.address || !vault.connectedIsManager || !publicClient || !weightsValid || !addressesValid || !targetsUnique) return;
+    setTxError(undefined);
+    try {
+      setTxState("simulating");
+      const args = [
+        targets.map((target) => target.address as `0x${string}`),
+        targetWeightBps.map(BigInt),
+      ] as const;
+      await publicClient.simulateContract({
+        account: vault.manager as `0x${string}`,
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "rebalance",
+        args,
+      });
+      setTxState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "rebalance",
+        args,
+        chainId: robinhoodChainTestnet.id,
+      });
+      setTxState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The target update reverted.");
+      await onRefresh();
+      setTxState("confirmed");
+    } catch (error) {
+      setTxError(errorMessage(error));
+      setTxState("reverted");
+    }
   }
 
   return (
     <SectionCard
-      title="Strategic target proposal"
+      title="Update target weights"
       subtitle="Set the target first; execute constrained partial trades afterward"
       icon={<Scale size={15} />}
       action={<span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Draft mode"}</span>}
@@ -2262,12 +2747,18 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
           {targets.map((target, index) => (
             <div className="targetCard" key={`${target.ticker}-${index}`}>
               <div className="targetCardHeader">
-                <input
+                <select
                   className="targetTicker"
-                  value={target.ticker}
-                  onChange={(event) => updateTarget(index, { ticker: event.target.value })}
-                  placeholder="Ticker"
-                />
+                  value={target.address}
+                  onChange={(event) => {
+                    const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
+                    if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
+                  }}
+                >
+                  {testnetCreateAssets.map((asset) => (
+                    <option key={asset.address} value={asset.address}>{asset.symbol}</option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   title={`Remove ${target.ticker || "asset"}`}
@@ -2294,7 +2785,7 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={() => setTargets((current) => [...current, { ticker: "", address: "", targetWeight: 0, initialAmount: "" }])} disabled={targets.length >= vault.maxAssetCount}>
+        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
           <Plus size={13} />
           Add asset
         </button>
@@ -2376,7 +2867,10 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
 
       <div className="builderWarnings">
         {!weightsValid ? (
-          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to 100%</strong><span>Adjust the proposed weights before validating the draft.</span></div></div>
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to exactly 100%</strong><span>Weights are submitted to the contract in whole basis points.</span></div></div>
+        ) : null}
+        {!targetsUnique ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
         ) : null}
         {turnoverBreach ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
@@ -2384,24 +2878,227 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
         {!vault.canProposeTargetWeights ? (
           <div className="riskCallout warning"><Clock3 size={15} /><div><strong>Target proposal unavailable</strong><span>The cooldown, completion bands, active challenge, and unfinished strategic state are checked onchain.</span></div></div>
         ) : null}
-        {txState === "ready" ? (
-          <div className="riskCallout success"><CheckCircle size={15} /><div><strong>Draft validation passed</strong><span>Weights and estimated turnover passed locally. No contract simulation or transaction was sent.</span></div></div>
+        {txError ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target update failed</strong><span>{txError}</span></div></div>
         ) : null}
-        <div className="riskCallout info"><Info size={15} /><div><strong>Onchain submission is not connected</strong><span>This builder prepares a draft only. Adapter quoting, wallet simulation, and contract writes remain disabled.</span></div></div>
       </div>
 
       <TxStatus state={txState} persistent />
       <div className="builderActions">
-        <button className="secondaryAction" type="button" disabled={!weightsValid} onClick={() => runSimulation(setTxState)}>
-          <Zap size={14} />
-          Validate draft
-        </button>
-        <button className="primaryAction" type="button" disabled title="Contract write integration is not configured">
+        <button
+          className="primaryAction"
+          type="button"
+          disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
+          onClick={submitTargets}
+        >
           <RefreshCw size={14} />
-          Submission unavailable
+          {txState === "simulating" ? "Checking onchain rules" : txState === "pending" ? "Confirm in wallet" : txState === "submitted" ? "Updating targets" : "Update targets"}
         </button>
       </div>
       <p className="builderFootnote">A proposal only locks targets. The manager or an authorized executor then performs one or more constrained trades; neither has a portfolio withdrawal path.</p>
+    </SectionCard>
+  );
+}
+
+function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+  const [tokenIn, setTokenIn] = useState(vault.allocations[0]?.address ?? "");
+  const [tokenOut, setTokenOut] = useState(vault.allocations[1]?.address ?? "");
+  const [amountInText, setAmountInText] = useState("");
+  const [slippageText, setSlippageText] = useState("1.0");
+  const [routeThroughUsdg, setRouteThroughUsdg] = useState(false);
+  const [txState, setTxState] = useState<TxState>("idle");
+  const [txError, setTxError] = useState<string>();
+  const { address: connectedAddress } = useAccount();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
+  const adapterAddress = configuredEntryAdapterAddress();
+  const uniswapRouterAddress = configuredUniswapRouterAddress();
+  const settlementToken = configuredSettlementTokenAddress();
+
+  useEffect(() => {
+    if (!vault.allocations.some((asset) => asset.address === tokenIn)) setTokenIn(vault.allocations[0]?.address ?? "");
+    if (!vault.allocations.some((asset) => asset.address === tokenOut)) setTokenOut(vault.allocations[1]?.address ?? "");
+  }, [tokenIn, tokenOut, vault.allocations]);
+
+  const { data: tokenInDecimalsResult } = useReadContract({
+    address: isAddress(tokenIn) ? tokenIn : undefined,
+    abi: erc20BalanceAbi,
+    functionName: "decimals",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: isAddress(tokenIn) },
+  });
+  const tokenInDecimals = Number(tokenInDecimalsResult ?? 18);
+  const { data: tokenOutDecimalsResult } = useReadContract({
+    address: isAddress(tokenOut) ? tokenOut : undefined,
+    abi: erc20BalanceAbi,
+    functionName: "decimals",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: isAddress(tokenOut) },
+  });
+  const tokenOutDecimals = Number(tokenOutDecimalsResult ?? 18);
+  let amountIn: bigint | undefined;
+  try {
+    amountIn = Number(amountInText) > 0 ? parseUnits(amountInText, tokenInDecimals) : undefined;
+  } catch {
+    amountIn = undefined;
+  }
+  const slippageBps = Math.round(Number(slippageText) * 100);
+  const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
+  const path = routeThroughUsdg && settlementToken
+    ? [tokenIn, settlementToken, tokenOut]
+    : [tokenIn, tokenOut];
+  const routeValid = path.every((address) => isAddress(address)) && tokenIn !== tokenOut;
+  const quoteEnabled = Boolean(uniswapRouterAddress && amountIn && amountIn > 0n && routeValid);
+  const {
+    data: quoteAmounts,
+    error: quoteError,
+    isLoading: quoteLoading,
+    refetch: refetchQuote,
+  } = useReadContract({
+    address: uniswapRouterAddress,
+    abi: uniswapV2QuoteAbi,
+    functionName: "getAmountsOut",
+    args: amountIn && routeValid ? [amountIn, path as `0x${string}`[]] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: quoteEnabled },
+  });
+  const quotedAmountOut = quoteAmounts?.[quoteAmounts.length - 1];
+  const minAmountOut = quotedAmountOut && slippageValid
+    ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
+    : undefined;
+  const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
+  const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
+  const contractsConfigured = Boolean(adapterAddress && uniswapRouterAddress);
+  const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
+  const canSubmit = Boolean(
+    vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
+    amountIn && minAmountOut && routeValid && slippageValid,
+  );
+
+  function resetTradeState() {
+    if (txState !== "idle") setTxState("idle");
+    if (txError) setTxError(undefined);
+  }
+
+  async function executeTrade() {
+    if (!canSubmit || !vault.address || !adapterAddress || !connectedAddress || !publicClient || !amountIn || !minAmountOut) return;
+    setTxError(undefined);
+    try {
+      setTxState("simulating");
+      const trade = {
+        adapter: adapterAddress,
+        tokenIn: tokenIn as `0x${string}`,
+        tokenOut: tokenOut as `0x${string}`,
+        amountIn,
+        minAmountOut,
+        adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
+      };
+      await publicClient.simulateContract({
+        account: connectedAddress,
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "executeRebalanceTrades",
+        args: [[trade]],
+      });
+      setTxState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "executeRebalanceTrades",
+        args: [[trade]],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setTxState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The rebalance trade reverted.");
+      await onRefresh();
+      await refetchQuote();
+      setTxState("confirmed");
+      setAmountInText("");
+    } catch (error) {
+      setTxError(errorMessage(error));
+      setTxState("reverted");
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Execute rebalance trade"
+      subtitle="Move the live basket toward its active target with a constrained partial swap"
+      icon={<RefreshCw size={15} />}
+      action={<span className={`stateBadge ${vault.strategicRebalanceActive ? "warning" : "muted"}`}>{vault.strategicRebalanceActive ? "Target active" : "Maintenance trade"}</span>}
+    >
+      <div className="rebalanceTradeForm">
+        <div className="tradeAssetPair">
+          <label>
+            <span>Sell</span>
+            <select value={tokenIn} onChange={(event) => { setTokenIn(event.target.value); resetTradeState(); }}>
+              {vault.allocations.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol}</option>)}
+            </select>
+          </label>
+          <ArrowRight size={15} />
+          <label>
+            <span>Buy</span>
+            <select value={tokenOut} onChange={(event) => { setTokenOut(event.target.value); resetTradeState(); }}>
+              {vault.allocations.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <div className="tradeInputGrid">
+          <label>
+            <span>Amount to sell</span>
+            <div className="inputWithSuffix">
+              <input type="number" min="0" value={amountInText} onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }} placeholder="0.00" />
+              <span>{inputAsset?.symbol ?? "Asset"}</span>
+            </div>
+          </label>
+          <label>
+            <span>Maximum pool slippage</span>
+            <div className="inputWithSuffix">
+              <input type="number" min="0.01" max="20" step="0.1" value={slippageText} onChange={(event) => { setSlippageText(event.target.value); resetTradeState(); }} />
+              <span>%</span>
+            </div>
+          </label>
+        </div>
+
+        <label className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
+          <input type="checkbox" checked={routeThroughUsdg} disabled={!settlementToken} onChange={(event) => { setRouteThroughUsdg(event.target.checked); resetTradeState(); }} />
+          <span>
+            <strong>Route through USDG</strong>
+            <small>USDG is an internal Uniswap hop and never becomes an OTF constituent or recipient.</small>
+          </span>
+        </label>
+
+        <div className="tradeExecutionQuote">
+          <span>Uniswap quote</span>
+          <strong>
+            {quoteLoading ? "Loading" : quotedAmountOut
+              ? `${formatWalletTokenBalance(quotedAmountOut, tokenOutDecimals)} ${outputAsset?.symbol ?? "tokens"}`
+              : "Enter an amount"}
+          </strong>
+          <small>{routeThroughUsdg ? `${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}` : `${inputAsset?.symbol ?? "Asset"} -> ${outputAsset?.symbol ?? "Asset"}`}</small>
+        </div>
+
+        {!contractsConfigured ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
+        ) : null}
+        {tokenIn === tokenOut ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
+        ) : null}
+        {quoteError ? (
+          <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
+        ) : null}
+        {txError ? (
+          <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>
+        ) : null}
+        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, turnover, and exposure limits, and move every affected asset closer to target.</span></div></div>
+        <TxStatus state={txState} />
+        <button className="primaryAction" type="button" disabled={!canSubmit || busy} onClick={executeTrade}>
+          {busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+          {txState === "simulating" ? "Checking safety limits" : txState === "pending" ? "Confirm in wallet" : txState === "submitted" ? "Executing trade" : "Execute partial trade"}
+        </button>
+      </div>
     </SectionCard>
   );
 }
@@ -4336,7 +5033,7 @@ function ManageVaultsView({
   const [feeTransferError, setFeeTransferError] = useState<string>();
   const [executorState, setExecutorState] = useState<TxState>("idle");
   const [executorError, setExecutorError] = useState<string>();
-  const [activeOperation, setActiveOperation] = useState<"rebalance" | "roles" | "fees" | "thesis">("rebalance");
+  const [activeOperation, setActiveOperation] = useState<"targets" | "rebalance" | "roles" | "fees" | "thesis">("targets");
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -4517,6 +5214,7 @@ function ManageVaultsView({
 
       <div className="managerOperationTabs" role="tablist" aria-label="Manager operations">
         {([
+          ["targets", "Update targets"],
           ["rebalance", "Rebalance"],
           ["roles", "Roles"],
           ["fees", "Fees"],
@@ -4535,9 +5233,11 @@ function ManageVaultsView({
         ))}
       </div>
 
-      {activeOperation === "rebalance" ? <ManagerRebalanceBuilder vault={vault} /> : null}
+      {activeOperation === "targets" ? <TargetWeightsBuilder vault={vault} onRefresh={onRefresh} /> : null}
 
-      {activeOperation !== "rebalance" ? <div className="manageGrid">
+      {activeOperation === "rebalance" ? <RebalanceTradesPanel vault={vault} onRefresh={onRefresh} /> : null}
+
+      {activeOperation !== "targets" && activeOperation !== "rebalance" ? <div className="manageGrid">
         {activeOperation === "roles" ? (
           <>
         <SectionCard title="Manager transfer" subtitle="Transfer strategy authority immediately" icon={<KeyRound size={15} />} action={<span className="stateBadge danger">Immediate</span>}>
@@ -4638,7 +5338,6 @@ function ManageVaultsView({
               <div><span>Protocol share</span><strong>{bpsToPercent(vault.protocolFeeShareBps)}</strong></div>
               <div><span>Escrowed shares</span><strong>{vault.escrowedManagerFeeShares}</strong></div>
             </div>
-            <div className="riskCallout success"><CheckCircle size={15} /><div><strong>Cooldown unaffected</strong><span>Fee accrual does not count as a portfolio rebalance.</span></div></div>
             {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Accrual failed</strong><span>{feeAccrualError}</span></div></div> : null}
             <TxStatus state={feeAccrualState} />
             <button
