@@ -63,6 +63,8 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
     }
 
     function testFactoryRejectsLimitsAboveGlobalBounds() public {
+        assertEq(factory.MAX_ORACLE_STALENESS(), 1 hours);
+
         VaultInitParams memory params = _defaultParams();
         params.maxAssetCount = 21;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);

@@ -174,6 +174,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vault.rebalance(assets, weights);
 
         vm.warp(START + 16 days);
+        _setPrices(100_00000000, 100_00000000);
         vault.activatePendingStrategy();
         vm.expectRevert(ManagedOTFVaultStorage.StrategyStateLocked.selector);
         vault.rebalance(assets, weights);

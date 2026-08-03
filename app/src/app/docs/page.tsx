@@ -174,12 +174,6 @@ export default function DocsPage() {
               expose the current draft ERC-7621 basket interface and exact standard events, with
               stricter proportional-contribution and ownership rules documented below.
             </p>
-            <p>
-              <a href="https://github.com/han1ue/onchaintradedfunds" target="_blank" rel="noreferrer">
-                View the OTF source code on GitHub
-              </a>
-              .
-            </p>
             <div className="docsNotice">
               <ShieldCheck size={17} />
               <div>

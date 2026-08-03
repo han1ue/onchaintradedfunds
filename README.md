@@ -451,6 +451,9 @@ The vault rejects:
 - Stale prices.
 - Unsupported token or oracle decimals.
 
+Each vault fixes its oracle freshness threshold at creation. The factory caps that threshold at
+one hour; the frontend defaults to 30 minutes.
+
 Current weights:
 
 ```text

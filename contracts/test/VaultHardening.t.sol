@@ -238,7 +238,14 @@ contract VaultHardeningTest is ProtocolTestBase {
             adapterData: ""
         });
 
-        _proposeTarget(vault, assets, weights);
+        vm.warp(vault.nextStrategyChangeTime());
+        _refreshPrices();
+        _refreshPrice(taxedFeed);
+        vault.rebalance(assets, _uint256Weights(weights));
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        _refreshPrice(taxedFeed);
+        vault.activatePendingStrategy();
         vm.expectPartialRevert(RebalanceExecutor.TokenTransferMismatch.selector);
         vault.executeRebalanceTrades(trades);
 
@@ -296,6 +303,7 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testProtocolFeeSharesCanBeClaimedOnlyByTreasury() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 30 days);
+        _refreshPrices();
         vault.accrueFees();
         uint256 protocolShares = vault.balanceOf(address(collector));
         assertGt(protocolShares, 0);

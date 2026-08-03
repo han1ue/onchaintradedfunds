@@ -128,7 +128,7 @@ abstract contract ProtocolTestBase is TestBase {
             maxSingleAssetWeightBps: 8_000,
             minNonZeroAssetWeightBps: 100,
             maxAssetCount: 10,
-            maxOracleStaleness: uint32(30 days),
+            maxOracleStaleness: uint32(1 hours),
             challengeGracePeriod: uint32(3 days)
         });
     }
@@ -191,14 +191,28 @@ abstract contract ProtocolTestBase is TestBase {
     {
         uint256 nextStrategyTime = vault.nextStrategyChangeTime();
         if (block.timestamp < nextStrategyTime) vm.warp(nextStrategyTime);
+        _refreshPrices();
         vault.rebalance(assets, _uint256Weights(weights));
         vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
         vault.activatePendingStrategy();
     }
 
     function _executeAndComplete(ManagedOTFVault vault, TradeInstruction[] memory trades) internal {
+        _refreshPrices();
         vault.executeRebalanceTrades(trades);
         if (vault.strategicRebalanceActive()) vault.completeStrategicRebalance();
+    }
+
+    function _refreshPrices() internal {
+        _refreshPrice(feedA);
+        _refreshPrice(feedB);
+        _refreshPrice(feedC);
+    }
+
+    function _refreshPrice(MockPriceFeed feed) internal {
+        uint80 nextRound = feed.roundId() + 1;
+        feed.setRoundData(nextRound, feed.answer(), block.timestamp, block.timestamp, nextRound);
     }
 
     function _rebalanceToTarget(

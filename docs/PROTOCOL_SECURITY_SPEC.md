@@ -363,6 +363,9 @@ Every security-sensitive valuation MUST reject:
 - Answers older than `maxOracleStaleness`.
 - Unsupported token or feed decimals.
 
+The factory MUST reject a per-vault `maxOracleStaleness` above one hour. The value is fixed when
+the vault is created.
+
 The frontend MUST NOT substitute cached or offchain prices for onchain enforcement.
 
 ## 10. ERC-7621 status

@@ -5,6 +5,7 @@ import {
   BookOpen,
   Boxes,
   CheckCircle,
+  ExternalLink,
   History,
   RefreshCw,
   ShieldCheck,
@@ -35,7 +36,10 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
         <nav aria-label="Landing navigation">
           <a href="#architecture">Fund model</a>
           <a href="#portfolio">Controls</a>
-          <a href="/docs">Docs</a>
+          <a href="/docs" target="_blank" rel="noreferrer">
+            Docs
+            <ExternalLink size={12} />
+          </a>
         </nav>
         <button type="button" onClick={onEnter}>
           Enter app
@@ -162,9 +166,10 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               Enter the app
               <ArrowRight size={15} />
             </button>
-            <a className="landingSecondary" href="/docs">
+            <a className="landingSecondary" href="/docs" target="_blank" rel="noreferrer">
               <BookOpen size={14} />
               Read the docs
+              <ExternalLink size={12} />
             </a>
           </div>
           <footer>

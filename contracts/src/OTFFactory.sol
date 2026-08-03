@@ -26,7 +26,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;
     uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
     uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
-    uint32 public constant MAX_ORACLE_STALENESS = 30 days;
+    uint32 public constant MAX_ORACLE_STALENESS = 1 hours;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
 
     error NotOwner();

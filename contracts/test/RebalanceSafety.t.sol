@@ -122,6 +122,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         vm.warp(START + 14 days);
+        _refreshPrices();
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.TurnoverTooHigh.selector);
         vault.rebalance(assets, _uint256Weights(weights));
@@ -148,6 +149,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
     function testPortfolioShapeProtectionsUseERC7621Errors() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 14 days);
+        _refreshPrices();
 
         address[] memory emptyAssets = new address[](0);
         uint256[] memory emptyWeights = new uint256[](0);
@@ -183,9 +185,11 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         uint256[] memory weights = new uint256[](1);
         weights[0] = 10_000;
         vm.warp(START + 14 days);
+        _refreshPrices();
 
         vault.rebalance(assets, weights);
         vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
         vault.activatePendingStrategy();
 
         assertTrue(vault.isConstituent(address(tokenB)));
@@ -227,8 +231,10 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         weights[0] = 5_000;
         weights[1] = 5_000;
         vm.warp(START + 14 days);
+        _refreshPrices();
         vault.rebalance(assets, weights);
         vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
         vault.activatePendingStrategy();
 
         assertTrue(vault.isConstituent(address(tokenA)));

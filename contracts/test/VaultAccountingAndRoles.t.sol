@@ -153,6 +153,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         uint256 elapsed = 30 days;
         vm.warp(START + elapsed);
+        _refreshPrices();
 
         uint256 numerator = uint256(100) * elapsed;
         uint256 annualDenominator = 10_000 * 365 days;
@@ -171,6 +172,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testFeeAccrualTwiceAtSameTimestampMintsOnlyOnce() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 1 days);
+        _refreshPrices();
 
         uint256 first = vault.accrueFees();
         uint256 supply = vault.totalSupply();
@@ -258,6 +260,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testFeeRecipientTransferIsImmediate() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 1 days);
+        _refreshPrices();
         uint256 oldRecipientBalance = vault.balanceOf(FEE_RECIPIENT);
         vault.setFeeRecipient(ALICE);
 
@@ -265,6 +268,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertGt(vault.balanceOf(FEE_RECIPIENT), oldRecipientBalance);
 
         vm.warp(START + 2 days);
+        _refreshPrices();
         vault.accrueFees();
         assertGt(vault.balanceOf(ALICE), 0);
     }

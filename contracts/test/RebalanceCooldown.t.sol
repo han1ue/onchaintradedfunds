@@ -73,6 +73,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days - 1);
+        _refreshPrices();
         vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
         _propose6040(vault);
 
@@ -83,6 +84,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days);
+        _refreshPrices();
         assertEq(vault.nextRebalanceTime(), START + 7 days);
         assertFalse(vault.canProposeTargetWeights());
         vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
@@ -103,6 +105,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 14 days);
+        _refreshPrices();
         _propose6040(vault);
 
         assertTrue(vault.strategyProposalPending());
@@ -114,6 +117,7 @@ contract RebalanceCooldownTest is TestBase {
     function testPendingStrategyCannotActivateBeforeFortyEightHoursAndUsersCanExit() public {
         ManagedOTFVault vault = _createVault(7 days, 0);
         vm.warp(START + 14 days);
+        _refreshPrices();
         _propose6040(vault);
 
         assertEq(vault.pendingStrategyActivationTime(), uint64(START + 16 days));
@@ -128,6 +132,7 @@ contract RebalanceCooldownTest is TestBase {
         assertTrue(vault.strategyProposalPending());
 
         vm.warp(START + 16 days);
+        _refreshPrices();
         vault.activatePendingStrategy();
         assertFalse(vault.strategyProposalPending());
         assertTrue(vault.strategicRebalanceActive());
@@ -141,6 +146,7 @@ contract RebalanceCooldownTest is TestBase {
         _rebalanceTo6040(vault, 100 * ONE);
 
         vm.warp(START + 30 days - 1);
+        _refreshPrices();
         vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
         _propose5050(vault);
 
@@ -165,6 +171,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 14 days);
+        _refreshPrices();
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
@@ -198,6 +205,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days);
+        _refreshPrices();
         vault.setWeightBands(50, 300);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
@@ -210,6 +218,7 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault vault = _createVault(7 days, 0);
 
         vm.warp(START + 7 days);
+        _refreshPrices();
         uint16 invalidCompletionDeviation = vault.MAX_COMPLETION_DEVIATION_BPS() + 1;
         vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidWeightBands.selector);
         vault.setWeightBands(invalidCompletionDeviation, 2_500);
@@ -220,6 +229,7 @@ contract RebalanceCooldownTest is TestBase {
         uint256 supplyBefore = vault.totalSupply();
 
         vm.warp(START + 1 days);
+        _refreshPrices();
         vault.accrueFees();
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
@@ -248,10 +258,12 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.nextRebalanceTime(), START + 10 days);
 
         vm.warp(START + 7 days);
+        _refreshPrices();
         vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
         _propose6040(vault);
 
         vm.warp(START + 10 days);
+        _refreshPrices();
         vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
         _propose6040(vault);
 
@@ -306,14 +318,16 @@ contract RebalanceCooldownTest is TestBase {
             maxSingleAssetWeightBps: 8_000,
             minNonZeroAssetWeightBps: 100,
             maxAssetCount: 10,
-            maxOracleStaleness: 30 days,
+            maxOracleStaleness: 1 hours,
             challengeGracePeriod: 3 days
         });
     }
 
     function _rebalanceTo6040(ManagedOTFVault vault, uint256 tokenBAmountIn) internal {
+        _refreshPrices();
         _propose6040(vault);
         vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
         vault.activatePendingStrategy();
         TradeInstruction[] memory trades = new TradeInstruction[](1);
         trades[0] = TradeInstruction({
@@ -340,8 +354,10 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function _rebalanceTo5050(ManagedOTFVault vault, uint256 tokenAAmountIn) internal {
+        _refreshPrices();
         _propose5050(vault);
         vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
         vault.activatePendingStrategy();
         TradeInstruction[] memory trades = new TradeInstruction[](1);
         trades[0] = TradeInstruction({
@@ -365,5 +381,12 @@ contract RebalanceCooldownTest is TestBase {
         weights[1] = 5_000;
 
         vault.rebalance(assets, weights);
+    }
+
+    function _refreshPrices() internal {
+        uint80 nextRoundA = feedA.roundId() + 1;
+        uint80 nextRoundB = feedB.roundId() + 1;
+        feedA.setRoundData(nextRoundA, feedA.answer(), block.timestamp, block.timestamp, nextRoundA);
+        feedB.setRoundData(nextRoundB, feedB.answer(), block.timestamp, block.timestamp, nextRoundB);
     }
 }

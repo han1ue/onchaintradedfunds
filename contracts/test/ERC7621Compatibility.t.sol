@@ -132,6 +132,7 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         (address[] memory assets, uint16[] memory narrowWeights) = _sixtyFortyPortfolio();
         uint256[] memory weights = _uint256Weights(narrowWeights);
         vm.warp(START + 14 days);
+        _refreshPrices();
         vault.rebalance(assets, weights);
 
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
@@ -140,6 +141,7 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         assertFalse(vault.strategicRebalanceActive());
 
         vm.warp(START + 16 days);
+        _refreshPrices();
         vm.expectEmit(false, false, false, true, address(vault));
         emit Rebalanced(assets, weights);
         vault.activatePendingStrategy();

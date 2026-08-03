@@ -1190,7 +1190,10 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         <footer className="dashboardFooter">
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
-            <a href="/docs">Docs</a>
+          <a href="/docs" target="_blank" rel="noreferrer">
+              Docs
+              <ExternalLink size={12} />
+            </a>
             <a href="https://github.com/han1ue/onchaintradedfunds" target="_blank" rel="noreferrer">
               GitHub
               <ExternalLink size={12} />
@@ -1292,7 +1295,10 @@ function TopNav({
               {tab}
             </button>
           ))}
-          <a href="/docs">Docs</a>
+          <a href="/docs" target="_blank" rel="noreferrer">
+            Docs
+            <ExternalLink size={12} />
+          </a>
         </nav>
 
         <div className="navActions">
@@ -4006,7 +4012,7 @@ function CreateVaultView({
     maxSingleWeight: "50",
     minNonzeroWeight: "1",
     maxAssets: "10",
-    oracleStaleness: "604800",
+    oracleStaleness: "1800",
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
     testnetCreateAssets.map((asset) => ({
@@ -4091,6 +4097,17 @@ function CreateVaultView({
     contracts: protocolAssetContracts,
     query: { enabled: canReadProtocolAssets },
   });
+  const protocolAssetReadFailed = Boolean(protocolAssetResults?.some((result) => result?.error !== undefined));
+  const protocolAssetResultReady = Boolean(
+    canReadProtocolAssets &&
+    !protocolAssetsLoading &&
+    !protocolAssetReadFailed &&
+    !assetRegistryReadFailed &&
+    !oracleRegistryReadFailed &&
+    protocolAssetResults &&
+    protocolAssetResults.length === protocolAssetContracts.length &&
+    protocolAssetResults.every((result) => result?.error === undefined && result?.status === "success"),
+  );
   const steps = [
     { label: "Basics", description: "Identity and roles" },
     { label: "Portfolio", description: "Assets and weights" },
@@ -4137,8 +4154,12 @@ function CreateVaultView({
       : (requiredAmount * 10_200n + 9_999n) / 10_000n;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
-    const protocolApproved = resultAt<boolean>(protocolAssetResults as ReadResult | undefined, index * 2);
-    const priceFeed = resultAt<string>(protocolAssetResults as ReadResult | undefined, index * 2 + 1);
+    const protocolApproved = protocolAssetResultReady
+      ? resultAt<boolean>(protocolAssetResults as ReadResult | undefined, index * 2)
+      : undefined;
+    const priceFeed = protocolAssetResultReady
+      ? resultAt<string>(protocolAssetResults as ReadResult | undefined, index * 2 + 1)
+      : undefined;
     const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
     return {
       ...asset,
@@ -4162,11 +4183,7 @@ function CreateVaultView({
       (asset) => asset.requiredAmount !== undefined && asset.balance !== undefined && asset.allowance !== undefined,
     );
   const protocolAssetReadsReady =
-    canReadProtocolAssets &&
-    !protocolAssetsLoading &&
-    !assetRegistryReadFailed &&
-    !oracleRegistryReadFailed &&
-    !protocolAssetsReadFailed &&
+    protocolAssetResultReady &&
     seedAuthorizations.every(
       (asset) => asset.protocolApproved === true && asset.hasPriceFeed,
     );
@@ -4199,7 +4216,10 @@ function CreateVaultView({
     totalWeightValid &&
     initialPortfolioValue !== undefined &&
     allSeedAmountsReady;
-  const safetyValid =
+  const oracleStaleness = Number(draft.oracleStaleness);
+  const oracleStalenessValid =
+    Number.isInteger(oracleStaleness) && oracleStaleness >= 1 && oracleStaleness <= 3_600;
+  const remainingSafetyLimitsValid =
     Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
     Number(draft.creatorFee) <= 10 &&
@@ -4211,8 +4231,8 @@ function CreateVaultView({
     Number(draft.challengeGraceDays) > 0 &&
     Number(draft.maxSingleWeight) <= 100 &&
     Number(draft.minNonzeroWeight) > 0 &&
-    Number(draft.maxAssets) >= portfolio.length &&
-    Number(draft.oracleStaleness) > 0;
+    Number(draft.maxAssets) >= portfolio.length;
+  const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid;
   const basicsIssues = [
     draft.name.trim().length > 2 ? null : "Enter an OTF name with at least 3 characters.",
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Add a ticker suffix after OTF-.",
@@ -4232,7 +4252,8 @@ function CreateVaultView({
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
     Number(draft.maxAssets) >= portfolio.length ? null : "Maximum assets cannot be lower than the initial portfolio size.",
-    safetyValid ? null : "Review the remaining safety limits and enter positive values.",
+    oracleStalenessValid ? null : "Oracle max staleness must be between 1 and 3,600 seconds.",
+    remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
   const allIssues = [...basicsIssues, ...portfolioIssues, ...safetyIssues];
   const stepValidity = [basicsValid, portfolioValid, safetyValid, basicsValid && portfolioValid && safetyValid];
@@ -4253,6 +4274,16 @@ function CreateVaultView({
     approvalState !== "submitted" &&
     deployState !== "pending" &&
     deployState !== "submitted";
+
+  const deploymentBlockers: string[] = [];
+  if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
+  if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
+  if (!connectedAddress) deploymentBlockers.push("Connect wallet");
+  if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
+  if (!seedAllowancesSufficient) deploymentBlockers.push("Approve seed assets");
+  if (!protocolAssetReadsReady) deploymentBlockers.push("Complete protocol setup");
+  if (approvalState === "pending" || approvalState === "submitted") deploymentBlockers.push("Wait for the approval transaction");
+  if (deployState === "pending" || deployState === "submitted") deploymentBlockers.push("Wait for the creation transaction");
 
   useEffect(() => {
     setDraft((current) => ({
@@ -4728,7 +4759,7 @@ function CreateVaultView({
                   <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={1} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div></label>
                   <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div></label>
                   <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div></label>
-                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Testnet mock feeds are refreshed manually. Default: seven days.</small></label>
+                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Default: 30 minutes. Protocol maximum: 1 hour.</small></label>
                 </div>
                 <div className="executionPolicy createGuarantees">
                   <ShieldCheck size={14} />
@@ -4828,26 +4859,26 @@ function CreateVaultView({
                                   : asset.balanceSufficient ? "Balance ready" : "Insufficient balance"}
                             </span>
                             <span className={`stateBadge ${
-                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed
+                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "danger"
                                 : asset.protocolApproved === undefined
                                   ? "muted"
                                   : asset.protocolApproved ? "success" : "danger"
                             }`}>
-                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed
+                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "Protocol read failed"
                                 : asset.protocolApproved === undefined
-                                  ? "Checking approval"
-                                  : asset.protocolApproved ? "Approved" : "Disapproved"}
+                                  ? "Checking protocol approval"
+                                  : asset.protocolApproved ? "Registry approved" : "Registry disapproved"}
                             </span>
                             <span className={`stateBadge ${
-                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed
+                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "danger"
                                 : asset.priceFeed === undefined
                                   ? "muted"
                                   : asset.hasPriceFeed ? "success" : "danger"
                             }`}>
-                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed
+                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "Feed read failed"
                                 : asset.priceFeed === undefined
                                   ? "Checking feed"
@@ -4855,7 +4886,7 @@ function CreateVaultView({
                             </span>
                           </div>
                           {asset.allowanceSufficient ? (
-                            <span className="seedApprovalComplete"><CheckCircle size={14} /> Approved</span>
+                            <span className="seedApprovalComplete"><CheckCircle size={14} /> Seed allowance ready</span>
                           ) : (
                             <button
                               className="secondaryAction seedApprovalAction"
@@ -4890,7 +4921,8 @@ function CreateVaultView({
                     </div>
                   ) : null}
                   {connectedAddress && seedAuthorizations.some(
-                    (asset) => asset.protocolApproved === false || (asset.priceFeed !== undefined && !asset.hasPriceFeed),
+                    (asset) => protocolAssetResultReady && (
+                      asset.protocolApproved === false || (asset.priceFeed !== undefined && !asset.hasPriceFeed)),
                   ) ? (
                     <div className="validationSummary danger" role="alert">
                       <AlertTriangle size={15} />
@@ -4900,7 +4932,7 @@ function CreateVaultView({
                       </div>
                     </div>
                   ) : null}
-                  {connectedAddress && (seedAuthorizationsFailed || assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed) ? (
+                  {connectedAddress && (seedAuthorizationsFailed || assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed || protocolAssetReadFailed) ? (
                     <div className="validationSummary danger" role="alert">
                       <RefreshCw size={15} />
                       <div><strong>Preflight checks could not be loaded</strong><span>Check the testnet connection, then reload these contract reads before approving or deploying.</span></div>
@@ -4921,6 +4953,15 @@ function CreateVaultView({
                   <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the portfolio change unlock after deployment.</span></div>
                 </div>
                 <TxStatus state={deployState} />
+                {!canSubmitDeployment ? (
+                  <div className="validationSummary danger" role="alert">
+                    <AlertTriangle size={15} />
+                    <div>
+                      <strong>Cannot create yet</strong>
+                      <ul>{deploymentBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+                    </div>
+                  </div>
+                ) : null}
                 {deployError ? (
                   <div className="validationSummary danger" role="alert">
                     <XCircle size={15} />
@@ -4952,19 +4993,9 @@ function CreateVaultView({
               ) : (
                 <button className="primaryAction" type="button" disabled={!canSubmitDeployment} onClick={submitDeployment}>
                   <FilePlus2 size={14} />
-                  {!connectedAddress
-                    ? "Connect wallet to deploy"
-                    : !seedBalancesSufficient
-                      ? "Fund seed assets"
-                      : !seedAllowancesSufficient
-                        ? "Approve seed assets"
-                        : !protocolAssetReadsReady
-                          ? "Protocol setup required"
-                          : deployState === "pending"
-                            ? "Confirm in wallet"
-                            : deployState === "submitted"
-                              ? "Creating OTF"
-                              : "Create OTF"}
+                  {canSubmitDeployment
+                    ? "Create OTF"
+                    : deploymentBlockers[0] ?? "Resolve deployment requirements"}
                 </button>
               )}
             </div>
@@ -5237,6 +5268,13 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
     contracts: approvalContracts,
     query: { enabled: approvalContracts.length > 0 },
   });
+  const catalogApprovalFailed = Boolean(
+    approvalResults?.some((result) => result?.error !== undefined),
+  );
+  const catalogApprovalsReady = !approvalsLoading
+    && approvalResults
+    && approvalResults.length === testnetCreateAssets.length
+    && approvalResults.every((result) => result?.error === undefined && result?.status === "success");
   return (
     <div className="appView">
       <AppPageHeader
@@ -5254,7 +5292,7 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
             <thead><tr><th>Asset</th><th>Token address</th><th>Approval</th><th>Oracle price</th><th /></tr></thead>
             <tbody>{testnetCreateAssets.map((asset, index) => {
               const approved = approvalResults?.[index]?.result as boolean | undefined;
-              const approvalFailed = assetRegistryReadFailed || approvalResults?.[index]?.status === "failure";
+              const approvalFailed = assetRegistryReadFailed || !catalogApprovalsReady || approvalResults?.[index]?.error !== undefined;
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><strong>{asset.symbol}</strong><small>{asset.name}</small></div></td>
@@ -5791,3 +5829,4 @@ function ManageVaultsView({
     </div>
   );
 }
+
