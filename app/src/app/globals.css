@@ -207,160 +207,6 @@ main {
   gap: 8px;
 }
 
-.walletControl {
-  position: relative;
-  min-width: 116px;
-}
-
-.walletControl[data-ready="false"] {
-  opacity: 0;
-  pointer-events: none;
-  user-select: none;
-}
-
-.walletButton {
-  display: inline-flex;
-  width: 100%;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card-raised);
-  color: var(--text-soft);
-  cursor: pointer;
-  padding: 0 11px;
-  font-size: 0.7rem;
-  font-weight: 650;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    color 150ms ease,
-    transform 150ms ease;
-  white-space: nowrap;
-}
-
-.walletButton:hover {
-  transform: translateY(-1px);
-}
-
-.walletButton.connect {
-  border-color: var(--teal);
-  background: var(--teal);
-  color: #071716;
-}
-
-:root[data-theme="light"] .walletButton.connect {
-  color: #ffffff;
-}
-
-.walletButton.account:hover,
-.walletButton.account.active {
-  border-color: rgb(55 183 170 / 42%);
-  background: rgb(55 183 170 / 9%);
-  color: var(--text);
-}
-
-.walletButton.unsupported {
-  border-color: rgb(235 101 112 / 36%);
-  background: rgb(235 101 112 / 9%);
-  color: var(--danger);
-}
-
-.walletStatusDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgb(46 208 154 / 10%);
-}
-
-.walletMenu {
-  position: absolute;
-  z-index: 45;
-  top: calc(100% + 9px);
-  right: 0;
-  width: 244px;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--card);
-  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
-}
-
-.walletMenuHeader,
-.walletMenuBalance {
-  display: grid;
-  gap: 5px;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 13px;
-}
-
-.walletMenuLabel,
-.walletMenuBalance span {
-  color: var(--text-muted);
-  font-size: 0.57rem;
-  font-weight: 650;
-  text-transform: uppercase;
-}
-
-.walletMenuHeader strong,
-.walletMenuBalance strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.72rem;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.walletMenuBalance strong {
-  color: var(--green);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.68rem;
-}
-
-.walletMenuAction {
-  display: flex;
-  width: 100%;
-  min-height: 38px;
-  align-items: center;
-  gap: 9px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-  padding: 0 13px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-align: left;
-}
-
-.walletMenuAction:last-child {
-  border-bottom: 0;
-}
-
-.walletMenuAction:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.walletMenuAction svg {
-  flex: 0 0 auto;
-  color: var(--teal);
-}
-
-.walletMenuAction.danger {
-  color: var(--danger);
-}
-
-.walletMenuAction.danger svg {
-  color: var(--danger);
-}
-
 .depositsButton,
 .iconOnly {
   display: inline-flex;
@@ -409,12 +255,41 @@ main {
   color: var(--teal);
 }
 
-.settingsControl {
+.settingsControl,
+.networkControl {
   position: relative;
   display: flex;
 }
 
-.settingsMenu {
+.networkButton {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-raised);
+  cursor: pointer;
+  padding: 0;
+}
+
+.networkButton:hover,
+.networkButton.active {
+  border-color: rgb(204 255 0 / 42%);
+  background: rgb(204 255 0 / 7%);
+}
+
+.robinhoodNetworkIcon {
+  display: block;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: url("/networks/robinhood-icon.png") center / cover no-repeat;
+}
+
+.settingsMenu,
+.networkMenu {
   position: absolute;
   z-index: 40;
   top: calc(100% + 9px);
@@ -425,6 +300,10 @@ main {
   border-radius: 7px;
   background: var(--card);
   box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+}
+
+.networkMenu {
+  width: 244px;
 }
 
 .settingsMenuHeader {
@@ -494,9 +373,8 @@ button.settingsOption:disabled {
   border-color: rgb(55 183 170 / 26%);
 }
 
-.networkOptions {
-  display: grid;
-  gap: 7px;
+.settingsOption + .settingsOption {
+  margin-top: 7px;
 }
 
 .settingsOptionIcon {
@@ -507,6 +385,10 @@ button.settingsOption:disabled {
   border-radius: 5px;
   background: rgb(55 183 170 / 10%);
   color: var(--teal);
+}
+
+.settingsOptionIcon.network {
+  background: transparent;
 }
 
 .settingsOptionText {
@@ -578,11 +460,8 @@ button.settingsOption:disabled {
   background: rgb(248 250 251 / 92%);
 }
 
-:root[data-theme="light"] .settingsMenu {
-  box-shadow: 0 18px 45px rgb(29 45 53 / 16%);
-}
-
-:root[data-theme="light"] .walletMenu {
+:root[data-theme="light"] .settingsMenu,
+:root[data-theme="light"] .networkMenu {
   box-shadow: 0 18px 45px rgb(29 45 53 / 16%);
 }
 
@@ -882,6 +761,32 @@ h2 {
   font-size: 0.68rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.walletAddressValue {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.walletAddressValue strong {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.walletAddressValue .iconOnly {
+  flex: 0 0 auto;
+}
+
+.walletAddressMetric > span.copied {
+  color: var(--green);
+}
+
+.walletDisconnectAction {
+  color: var(--danger);
 }
 
 .metricCard.success strong,
@@ -1510,13 +1415,6 @@ button:disabled {
   line-height: 1.45;
 }
 
-.thesisBlock {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgb(24 30 39 / 42%);
-  padding: 12px;
-}
-
 .subHeader,
 .fieldLabel {
   color: var(--text-muted);
@@ -1534,54 +1432,71 @@ button:disabled {
   text-transform: none;
 }
 
-.thesisBlock p {
-  margin: 10px 0 0;
+.thesisHistory {
+  display: grid;
+}
+
+.thesisVersion {
+  border-bottom: 1px solid var(--border);
+  padding: 13px 2px;
+}
+
+.thesisVersion:first-child {
+  padding-top: 0;
+}
+
+.thesisVersion:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.thesisVersionHeader,
+.thesisVersionHeader > div,
+.thesisVersionMeta {
+  display: flex;
+  align-items: center;
+}
+
+.thesisVersionHeader {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.thesisVersionHeader > div {
+  min-width: 0;
+  gap: 7px;
+}
+
+.thesisVersionHeader > div > strong {
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.thesisVersionHeader time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+}
+
+.thesisVersion > p {
+  margin: 10px 0;
   color: var(--text-soft);
   font-size: 0.76rem;
   line-height: 1.6;
+  white-space: pre-wrap;
 }
 
-.historyList {
-  display: grid;
-  gap: 0;
-  margin-top: 14px;
-}
-
-.historyItem {
-  position: relative;
-  border-left: 1px solid var(--border);
-  margin-left: 3px;
-  padding: 7px 0 9px 13px;
-}
-
-.historyItem > div {
-  min-width: 0;
-}
-
-.historyItem > span {
-  position: absolute;
-  top: 12px;
-  left: -3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
-.historyItem.active > span {
-  background: var(--teal);
-}
-
-.historyItem strong {
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.historyItem p {
-  margin: 4px 0 0;
+.thesisVersionMeta {
+  flex-wrap: wrap;
+  gap: 7px 16px;
   color: var(--text-muted);
-  font-size: 0.67rem;
-  line-height: 1.4;
+  font-size: 0.61rem;
+}
+
+.thesisVersionMeta code {
+  margin-left: 4px;
+  color: var(--text-soft);
+  font-size: 0.61rem;
 }
 
 .appendBox {
@@ -2403,6 +2318,10 @@ textarea::placeholder {
   gap: 10px;
 }
 
+.directoryMetrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .managedVaultsPanel {
   overflow: hidden;
 }
@@ -2440,6 +2359,12 @@ textarea::placeholder {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.65rem;
+}
+
+.directoryPanelMeta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
 }
 
 .managedVaultRow {
@@ -3776,6 +3701,7 @@ input.invalid {
 }
 
 .manageNotice {
+  grid-column: 1 / -1;
   margin-top: 0;
 }
 
@@ -4007,61 +3933,72 @@ input.invalid {
   }
 
   .topNavInner {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 10px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .logoGroup {
-    min-height: 34px;
+    display: none;
   }
 
   .navTabs {
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
+    width: auto;
+    gap: 0;
+    overflow: visible;
+  }
+
+  .navTabs button {
+    min-height: 36px;
+    padding-right: 10px;
+    padding-left: 10px;
+    font-weight: 600;
+  }
+
+  .navTabs a {
+    display: none;
   }
 
   .navActions {
     display: grid;
-    grid-template-columns: 34px 34px minmax(0, 1fr);
+    min-width: 0;
+    grid-template-columns: minmax(72px, auto) 34px 34px;
+    gap: 6px;
+    justify-content: end;
     width: 100%;
   }
 
   .depositsButton {
-    width: 34px;
-    padding: 0;
+    width: auto;
+    min-width: 72px;
+    padding: 0 10px;
   }
 
   .depositsButton span {
-    display: none;
-  }
-
-  .navActions > :last-child {
-    grid-column: auto;
-    justify-self: stretch;
-  }
-
-  .navActions > :last-child button {
-    width: 100% !important;
-    justify-content: center !important;
-  }
-
-  .walletMenu {
-    right: 0;
-    width: min(244px, calc(100vw - 28px));
+    display: inline;
   }
 
   .settingsControl {
     width: 34px;
   }
 
+  .networkButton {
+    width: 34px;
+  }
+
   .settingsMenu {
-    right: auto;
-    left: 0;
+    right: 0;
+    left: auto;
     width: min(292px, calc(100vw - 28px));
+  }
+
+  .networkMenu {
+    right: 0;
+    left: auto;
+    width: min(244px, calc(100vw - 28px));
   }
 
   .vaultHeader {
@@ -4076,6 +4013,7 @@ input.invalid {
 
   .appPageActions {
     align-self: flex-start;
+    flex-wrap: wrap;
   }
 
   .vaultTitleRow,
@@ -4239,6 +4177,12 @@ input.invalid {
   .reviewGrid,
   .manageGrid {
     grid-template-columns: 1fr;
+  }
+
+  .thesisVersionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .seedApprovalRow {
@@ -5958,7 +5902,7 @@ input.invalid {
   .docsMobileMenu summary {
     display: grid;
     min-height: 42px;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     border: 1px solid var(--border-strong);

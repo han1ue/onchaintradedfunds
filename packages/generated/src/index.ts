@@ -99,6 +99,38 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "thesisVersionCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getThesisVersion",
+    stateMutability: "view",
+    inputs: [{ name: "index", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "timestamp", type: "uint64" },
+          { name: "author", type: "address" },
+          { name: "portfolioHash", type: "bytes32" },
+          { name: "text", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
+    name: "appendThesisAmendment",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "text", type: "string" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "rebalanceCooldown",
     stateMutability: "view",
     inputs: [],

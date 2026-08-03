@@ -71,8 +71,6 @@ const sectionGroups: readonly DocsSectionGroup[] = [
   },
 ];
 
-const sections = sectionGroups.flatMap((group) => group.sections);
-
 const contractRows = [
   ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
   ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
@@ -146,8 +144,7 @@ export default function DocsPage() {
           <details className="docsMobileMenu">
             <summary>
               <Menu size={16} />
-              <span>Browse chapters</span>
-              <small>{sectionGroups.length} chapters / {sections.length} sections</small>
+              <span>Documentation index</span>
               <ChevronDown size={15} />
             </summary>
             <nav aria-label="Documentation sections">

@@ -13,7 +13,6 @@ import {
   ChartPie,
   Check,
   CheckCircle,
-  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -112,6 +111,13 @@ type CatalogOraclePrice = {
 
 type CatalogOraclePrices = Record<string, CatalogOraclePrice>;
 
+type ThesisVersionResult = {
+  timestamp: bigint;
+  author: `0x${string}`;
+  portfolioHash: `0x${string}`;
+  text: string;
+};
+
 type VaultSummary = {
   address: `0x${string}`;
   name: string;
@@ -120,6 +126,7 @@ type VaultSummary = {
   creator?: string;
   creatorFeeBps?: number;
   assetCount: number;
+  navValue?: bigint;
   nav?: string;
   navPerShare?: string;
 };
@@ -479,7 +486,7 @@ function errorMessage(error: unknown): string {
     }
   })();
   if (serialized.includes("0xf4059071")) {
-    return "A seed-token transfer was rejected. Approve every selected token for the factory and confirm that your balance covers each seed amount.";
+    return "A seed-token transfer was rejected. Approve every selected token for OTF creation and confirm that your balance covers each seed amount.";
   }
   if (serialized.includes("0x3cb104db")) {
     return "A selected token is not enabled in the protocol asset registry.";
@@ -726,6 +733,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         creator: creatorValue && isAddress(creatorValue) ? creatorValue : undefined,
         creatorFeeBps: creatorFee,
         assetCount: vaultAssets?.length ?? 0,
+        navValue: totalValue,
         nav: formatUsd18(totalValue),
         navPerShare: formatUsd18(shareValue),
       };
@@ -936,7 +944,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <ThesisModule currentThesis={currentThesis} />
+                <ThesisModule vaultAddress={vault.address} />
                 <PortfolioAllocation allocations={allocations} oraclePrices={catalogOraclePrices} />
               </div>
 
@@ -962,6 +970,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             vaults={vaultSummaries}
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
+            aumLoading={factoryLoading || directoryLoading}
             onManageVault={(address) => openView("manage", address)}
             onOpenVault={(address) => openView("detail", address)}
             onCreateVault={() => openView("create")}
@@ -1040,16 +1049,13 @@ function TopNav({
   onTabChange: (tab: string) => void;
   onOpenDeposits: () => void;
 }) {
+  const [networkOpen, setNetworkOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const chainId = useChainId();
   const testnetMode = chainId === robinhoodChainTestnet.id;
-  const robinhoodNetwork = testnetMode
-    ? "Robinhood Chain Testnet"
-    : chainId === robinhoodChain.id
-      ? "Robinhood Chain"
-      : "Unsupported network";
   const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
+  const networkRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1060,16 +1066,19 @@ function TopNav({
   }, []);
 
   useEffect(() => {
-    if (!settingsOpen) return;
+    if (!networkOpen && !settingsOpen) return;
 
     function closeOnOutsidePress(event: PointerEvent) {
-      if (!settingsRef.current?.contains(event.target as Node)) {
-        setSettingsOpen(false);
-      }
+      const target = event.target as Node;
+      if (networkOpen && !networkRef.current?.contains(target)) setNetworkOpen(false);
+      if (settingsOpen && !settingsRef.current?.contains(target)) setSettingsOpen(false);
     }
 
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setSettingsOpen(false);
+      if (event.key === "Escape") {
+        setNetworkOpen(false);
+        setSettingsOpen(false);
+      }
     }
 
     document.addEventListener("pointerdown", closeOnOutsidePress);
@@ -1078,7 +1087,17 @@ function TopNav({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [settingsOpen]);
+  }, [networkOpen, settingsOpen]);
+
+  function selectRobinhoodNetwork() {
+    const nextChainId = testnetMode ? robinhoodChainTestnet.id : robinhoodChain.id;
+    if (chainId !== nextChainId) switchChain({ chainId: nextChainId });
+    setNetworkOpen(false);
+  }
+
+  function toggleTestnetMode() {
+    switchChain({ chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id });
+  }
 
   function changeTheme(nextTheme: "dark" | "light") {
     setTheme(nextTheme);
@@ -1120,6 +1139,49 @@ function TopNav({
             <Wallet size={14} />
             <span>Wallet</span>
           </button>
+          <div className="networkControl" ref={networkRef}>
+            <button
+              className={`networkButton ${networkOpen ? "active" : ""}`}
+              type="button"
+              title="Robinhood Chain"
+              aria-label="Current network: Robinhood Chain. Open networks"
+              aria-expanded={networkOpen}
+              aria-haspopup="menu"
+              onClick={() => {
+                setSettingsOpen(false);
+                setNetworkOpen((open) => !open);
+              }}
+            >
+              <span className="robinhoodNetworkIcon" aria-hidden="true" />
+            </button>
+            {networkOpen ? (
+              <div className="networkMenu" role="menu" aria-label="Networks">
+                <div className="settingsMenuHeader">
+                  <strong>Networks</strong>
+                  <span>Choose a supported ecosystem</span>
+                </div>
+                <div className="settingsGroup">
+                  <button
+                    className="settingsOption selected"
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chainId === robinhoodChain.id || testnetMode}
+                    disabled={networkSwitchPending}
+                    onClick={selectRobinhoodNetwork}
+                  >
+                    <span className="settingsOptionIcon network">
+                      <span className="robinhoodNetworkIcon" aria-hidden="true" />
+                    </span>
+                    <span className="settingsOptionText">
+                      <strong>Robinhood Chain</strong>
+                      <small>Selected network</small>
+                    </span>
+                    <Check className="settingsCheck" size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="settingsControl" ref={settingsRef}>
             <button
               className={`iconOnly ${settingsOpen ? "active" : ""}`}
@@ -1128,7 +1190,10 @@ function TopNav({
               aria-label="Open settings"
               aria-expanded={settingsOpen}
               aria-haspopup="dialog"
-              onClick={() => setSettingsOpen((open) => !open)}
+              onClick={() => {
+                setNetworkOpen(false);
+                setSettingsOpen((open) => !open);
+              }}
             >
               <Settings size={16} />
             </button>
@@ -1136,38 +1201,26 @@ function TopNav({
               <div className="settingsMenu" role="dialog" aria-label="Application settings">
                 <div className="settingsMenuHeader">
                   <strong>Settings</strong>
-                  <span>Network and appearance</span>
+                  <span>Environment and appearance</span>
                 </div>
                 <div className="settingsGroup">
-                  <span className="settingsLabel">Network</span>
-                  <div className="networkOptions">
-                    <div className="settingsOption selected">
-                      <span className="settingsOptionIcon"><Network size={15} /></span>
-                      <span className="settingsOptionText">
-                        <strong>Robinhood Chain</strong>
-                        <small>{robinhoodNetwork}</small>
-                      </span>
-                      {chainId === robinhoodChain.id || testnetMode ? <Check className="settingsCheck" size={15} /> : null}
-                    </div>
-                    <button
-                      className="settingsOption"
-                      type="button"
-                      disabled={networkSwitchPending}
-                      aria-pressed={testnetMode}
-                      onClick={() => switchChain({
-                        chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id,
-                      })}
-                    >
-                      <span className="settingsOptionIcon"><Zap size={15} /></span>
-                      <span className="settingsOptionText">
-                        <strong>Testnet mode</strong>
-                        <small>{testnetMode ? "On · Chain ID 46630" : "Off · Chain ID 4663"}</small>
-                      </span>
-                      <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true">
-                        <span />
-                      </span>
-                    </button>
-                  </div>
+                  <span className="settingsLabel">Environment</span>
+                  <button
+                    className="settingsOption"
+                    type="button"
+                    aria-pressed={testnetMode}
+                    disabled={networkSwitchPending}
+                    onClick={toggleTestnetMode}
+                  >
+                    <span className="settingsOptionIcon"><Zap size={15} /></span>
+                    <span className="settingsOptionText">
+                      <strong>Testnet mode</strong>
+                      <small>{testnetMode ? "On" : "Off"}</small>
+                    </span>
+                    <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  </button>
                 </div>
                 <div className="settingsGroup">
                   <span className="settingsLabel">Appearance</span>
@@ -1192,139 +1245,43 @@ function TopNav({
               </div>
             ) : null}
           </div>
-          <OTFWalletButton />
         </div>
       </div>
     </header>
   );
 }
 
-function OTFWalletButton() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const controlRef = useRef<HTMLDivElement | null>(null);
-  const { address } = useAccount();
-  const chainId = useChainId();
+function WalletConnectionAction() {
   const { disconnect } = useDisconnect();
-  const { data: nativeBalance, isLoading: balanceLoading } = useBalance({
-    address,
-    chainId,
-    query: { enabled: Boolean(address) },
-  });
-
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    function closeOnOutsidePress(event: PointerEvent) {
-      if (!controlRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOnOutsidePress);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePress);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  useEffect(() => {
-    if (!address) setMenuOpen(false);
-  }, [address]);
-
-  async function copyConnectedAddress() {
-    if (!address) return;
-    await navigator.clipboard.writeText(address);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  }
-
-  const balanceLabel = nativeBalance
-    ? `${Number(nativeBalance.formatted).toLocaleString(undefined, {
-        maximumFractionDigits: 4,
-      })} ${nativeBalance.symbol}`
-    : balanceLoading
-      ? "Loading ETH"
-      : "ETH unavailable";
 
   return (
     <ConnectButton.Custom>
       {({
         account,
-        chain,
         mounted,
         authenticationStatus,
-        openChainModal,
         openConnectModal,
       }) => {
         const ready = mounted && authenticationStatus !== "loading";
         const connected =
           ready &&
           account &&
-          chain &&
           (!authenticationStatus || authenticationStatus === "authenticated");
 
+        if (!ready) return <button className="secondaryAction" type="button" disabled>Loading wallet</button>;
+        if (!connected) {
+          return (
+            <button className="primaryAction" type="button" onClick={openConnectModal}>
+              <Wallet size={14} />
+              Connect wallet
+            </button>
+          );
+        }
         return (
-          <div className="walletControl" data-ready={ready} ref={controlRef}>
-            {!connected ? (
-              <button className="walletButton connect" type="button" onClick={openConnectModal}>
-                <Wallet size={14} />
-                <span>Connect wallet</span>
-              </button>
-            ) : chain.unsupported ? (
-              <button className="walletButton unsupported" type="button" onClick={openChainModal}>
-                <AlertTriangle size={14} />
-                <span>Switch network</span>
-              </button>
-            ) : (
-              <>
-                <button
-                  className={`walletButton account ${menuOpen ? "active" : ""}`}
-                  type="button"
-                  aria-expanded={menuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setMenuOpen((open) => !open)}
-                >
-                  <span className="walletStatusDot" />
-                  <span>{account.displayName}</span>
-                  <ChevronDown size={13} />
-                </button>
-                {menuOpen ? (
-                  <div className="walletMenu" role="menu" aria-label="Wallet menu">
-                    <div className="walletMenuHeader">
-                      <span className="walletMenuLabel">Connected wallet</span>
-                      <strong title={address}>{shortAddress(address)}</strong>
-                    </div>
-                    <div className="walletMenuBalance">
-                      <span>ETH balance</span>
-                      <strong>{balanceLabel}</strong>
-                    </div>
-                    <button className="walletMenuAction" type="button" role="menuitem" onClick={copyConnectedAddress}>
-                      {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
-                      <span>{copied ? "Copied address" : "Copy address"}</span>
-                    </button>
-                    <button
-                      className="walletMenuAction danger"
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        disconnect();
-                      }}
-                    >
-                      <XCircle size={14} />
-                      <span>Disconnect</span>
-                    </button>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
+          <button className="secondaryAction walletDisconnectAction" type="button" onClick={() => disconnect()}>
+            <XCircle size={14} />
+            Disconnect
+          </button>
         );
       }}
     </ConnectButton.Custom>
@@ -1450,39 +1407,30 @@ function AddressPill({
 function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?: boolean }) {
   if (factory) {
     const hasFactory = Boolean(vault.factoryAddress);
+    if (hasFactory && !vault.factoryReadFailed) return null;
     return (
       <div className={`provenanceBanner ${vault.dataMode}`} role="status">
         <span className={`stateBadge ${hasFactory && !vault.factoryReadFailed ? "success" : "muted"}`}>
           {vault.factoryReadFailed
-            ? "Factory read failed"
+            ? "OTFs unavailable"
             : hasFactory
               ? `${vault.factoryVaultCount} OTF${vault.factoryVaultCount === 1 ? "" : "s"}`
-              : "No factory configured"}
+              : "Protocol unavailable"}
         </span>
         <div>
           <strong>
             {vault.factoryReadFailed
-              ? "The configured Robinhood Testnet factory could not be read."
+              ? "OTFs could not be loaded from Robinhood Testnet."
               : hasFactory
-                ? "OTF addresses are discovered directly from factory allVaults()."
-                : "Set the deployed testnet factory address to populate this directory."}
+                ? "The protocol connection is unavailable."
+                : "The Robinhood Testnet deployment is not configured."}
           </strong>
           <span>
             {hasFactory
-              ? `${shortAddress(vault.factoryAddress)} · refreshes automatically`
-              : "Use NEXT_PUBLIC_FACTORY_ADDRESS; no individual OTF configuration is required."}
+              ? "Retry after confirming the network is available."
+              : "OTFs will appear here when the deployment is connected."}
           </span>
         </div>
-        {vault.factoryAddress ? (
-          <a
-            href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${vault.factoryAddress}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Verify factory
-            <ExternalLink size={13} />
-          </a>
-        ) : null}
       </div>
     );
   }
@@ -1492,11 +1440,11 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
   const label = isLive
     ? "Live contract data"
     : isEmpty && vault.factoryReadFailed
-      ? "Factory read failed"
+      ? "OTF data unavailable"
       : isEmpty && vault.factoryAddress
-        ? `${vault.factoryVaultCount} factory OTF${vault.factoryVaultCount === 1 ? "" : "s"}`
+        ? `${vault.factoryVaultCount} OTF${vault.factoryVaultCount === 1 ? "" : "s"}`
         : isEmpty
-          ? "No factory configured"
+          ? "Protocol unavailable"
           : "Network unavailable";
   const tone = isLive ? "success" : "muted";
 
@@ -1509,10 +1457,10 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
             ? "Values are being read from Robinhood Chain Testnet."
             : isEmpty
               ? vault.factoryReadFailed
-                ? "The configured factory could not be read on Robinhood Chain Testnet."
+                ? "OTF data could not be loaded from Robinhood Chain Testnet."
                 : vault.factoryAddress
-                  ? "OTFs are discovered directly from the configured factory."
-                  : "The frontend needs the deployed testnet factory address."
+                  ? "No OTF data was returned by the protocol."
+                  : "The Robinhood Testnet deployment is not configured."
               : "Robinhood Chain Mainnet has no supported OTF deployment."}
         </strong>
         <span>
@@ -1520,8 +1468,8 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
             ? `Block ${vault.blockNumber?.toLocaleString() ?? "loading"}${vault.lastReadAt ? ` · refreshed ${formatTimestamp(vault.lastReadAt)}` : ""}`
             : isEmpty
               ? vault.factoryAddress
-                ? `${shortAddress(vault.factoryAddress)} · ${vault.factoryVaultCount} OTF${vault.factoryVaultCount === 1 ? "" : "s"} returned`
-                : "Set NEXT_PUBLIC_FACTORY_ADDRESS once; individual OTF addresses are discovered automatically."
+                ? `${vault.factoryVaultCount} OTF${vault.factoryVaultCount === 1 ? "" : "s"} found`
+                : "OTFs will appear when the deployment is connected."
               : "Switch to Robinhood Chain Testnet to use the MVP."}
         </span>
       </div>
@@ -1532,16 +1480,6 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
           rel="noreferrer"
         >
           Verify contract
-          <ExternalLink size={13} />
-        </a>
-      ) : null}
-      {!isLive && vault.factoryAddress ? (
-        <a
-          href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${vault.factoryAddress}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Verify factory
           <ExternalLink size={13} />
         </a>
       ) : null}
@@ -1750,40 +1688,94 @@ function PortfolioAllocation({
   );
 }
 
-function ThesisModule({ currentThesis }: { currentThesis: string }) {
+function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
+  const {
+    data: thesisVersionCount,
+    isLoading: thesisCountLoading,
+    isError: thesisCountFailed,
+  } = useReadContract({
+    address: vaultAddress,
+    abi: managedOtfVaultAbi,
+    functionName: "thesisVersionCount",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vaultAddress), refetchInterval: 12_000 },
+  });
+  const versionCount = Number(thesisVersionCount ?? 0n);
+  const thesisVersionContracts = vaultAddress
+    ? Array.from({ length: versionCount }, (_, index) => ({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "getThesisVersion" as const,
+        args: [BigInt(index)],
+        chainId: robinhoodChainTestnet.id,
+      }))
+    : [];
+  const {
+    data: thesisVersionResults,
+    isLoading: thesisVersionsLoading,
+    isError: thesisVersionsFailed,
+  } = useReadContracts({
+    contracts: thesisVersionContracts,
+    query: {
+      enabled: thesisVersionContracts.length > 0,
+      refetchInterval: 12_000,
+    },
+  });
+  const versions = (thesisVersionResults ?? []).flatMap((entry, index) => {
+    if (entry.status !== "success") return [];
+    const version = entry.result as ThesisVersionResult;
+    return [{ ...version, index }];
+  }).reverse();
+  const historyLoading = thesisCountLoading || (versionCount > 0 && thesisVersionsLoading);
+  const historyFailed = thesisCountFailed || thesisVersionsFailed;
+
   return (
-    <SectionCard title="Thesis" subtitle="Public, append-only record" icon={<BookOpen size={15} />}>
-      <div className="thesisBlock">
-        <div className="subHeader">
-          <span>Current Thesis</span>
-          <small>Latest onchain version</small>
+    <SectionCard
+      title="Investment thesis"
+      subtitle="Permanent onchain history of the manager's strategy statements"
+      icon={<BookOpen size={15} />}
+      action={<span className="stateBadge muted">{versionCount} version{versionCount === 1 ? "" : "s"}</span>}
+    >
+      {historyLoading ? (
+        <div className="inlineEmptyState">
+          <Loader2 className="spin" size={17} />
+          <div><strong>Loading thesis history</strong><span>Reading every version from the OTF contract.</span></div>
         </div>
-        <p>{currentThesis}</p>
-      </div>
-
-      <div className="historyList">
-        <div className="historyItem active">
-          <span />
-          <div>
-            <strong>Latest amendment</strong>
-            <p>Manager thesis is appended onchain and linked to the current portfolio hash.</p>
-          </div>
+      ) : historyFailed ? (
+        <div className="inlineEmptyState">
+          <RefreshCw size={17} />
+          <div><strong>Thesis history unavailable</strong><span>The contract did not return every stored version.</span></div>
         </div>
-        <div className="historyItem">
-          <span />
-          <div>
-            <strong>Initial thesis</strong>
-            <p>Original thesis remains permanently retrievable and cannot be edited.</p>
-          </div>
+      ) : versions.length ? (
+        <div className="thesisHistory">
+          {versions.map((version) => {
+            const isCurrent = version.index === versionCount - 1;
+            const isInitial = version.index === 0;
+            return (
+              <article className={`thesisVersion ${isCurrent ? "current" : ""}`} key={version.index}>
+                <div className="thesisVersionHeader">
+                  <div>
+                    <strong>Version {version.index + 1}</strong>
+                    {isCurrent ? <span className="stateBadge success">Current</span> : null}
+                    {isInitial ? <span className="stateBadge muted">Initial</span> : null}
+                  </div>
+                  <time>{formatTimestamp(Number(version.timestamp))}</time>
+                </div>
+                <p>{version.text}</p>
+                <div className="thesisVersionMeta">
+                  <span>Author <code title={version.author}>{shortAddress(version.author)}</code></span>
+                  <span>Portfolio <code title={version.portfolioHash}>{shortAddress(version.portfolioHash)}</code></span>
+                </div>
+              </article>
+            );
+          })}
         </div>
-      </div>
-
-      <div className="cardFooterAction">
-        <span className="mutedInline">
-          <Info size={14} />
-          Thesis amendments do not reset the rebalance cooldown.
-        </span>
-      </div>
+      ) : (
+        <div className="inlineEmptyState">
+          <BookOpen size={17} />
+          <div><strong>No thesis versions found</strong><span>This OTF did not return an initialized thesis record.</span></div>
+        </div>
+      )}
     </SectionCard>
   );
 }
@@ -1791,11 +1783,47 @@ function ThesisModule({ currentThesis }: { currentThesis: string }) {
 function ThesisAmendmentCard({
   currentThesis,
   canManage,
+  vaultAddress,
+  onRefresh,
 }: {
   currentThesis: string;
   canManage: boolean;
+  vaultAddress?: `0x${string}`;
+  onRefresh: () => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState("");
+  const [submitState, setSubmitState] = useState<TxState>("idle");
+  const [submitError, setSubmitError] = useState<string>();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
+  const amendment = draft.trim();
+  const amendmentBytes = new TextEncoder().encode(amendment).length;
+  const amendmentValid = amendmentBytes > 0 && amendmentBytes <= 2_048;
+  const submitting = submitState === "pending" || submitState === "submitted";
+
+  async function submitAmendment() {
+    if (!canManage || !vaultAddress || !publicClient || !amendmentValid) return;
+    setSubmitError(undefined);
+    try {
+      setSubmitState("pending");
+      const hash = await writeContractAsync({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "appendThesisAmendment",
+        args: [amendment],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setSubmitState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The thesis amendment reverted.");
+      await onRefresh();
+      setDraft("");
+      setSubmitState("confirmed");
+    } catch (error) {
+      setSubmitError(errorMessage(error));
+      setSubmitState("reverted");
+    }
+  }
 
   return (
     <SectionCard
@@ -1813,26 +1841,39 @@ function ThesisAmendmentCard({
         <textarea
           id="thesis-amendment"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (submitState === "confirmed" || submitState === "reverted") setSubmitState("idle");
+            if (submitError) setSubmitError(undefined);
+          }}
           placeholder="Describe the updated investment thesis or rationale..."
           rows={4}
+          aria-invalid={amendmentBytes > 2_048}
+          disabled={!canManage || submitting}
         />
-        <p>Amendments are permanent and public. Submitting one does not reset the rebalance cooldown.</p>
-        <div className="riskCallout info">
-          <Info size={15} />
-          <div>
-            <strong>Contract write integration pending</strong>
-            <span>You can prepare the amendment here, but this interface cannot submit it yet.</span>
+        <p>{amendmentBytes.toLocaleString()} / 2,048 bytes. Amendments are permanent, public, and do not reset the rebalance cooldown.</p>
+        {amendmentBytes > 2_048 ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div><strong>Amendment is too long</strong><span>Shorten it to 2,048 UTF-8 bytes or fewer.</span></div>
           </div>
-        </div>
+        ) : null}
+        {submitError ? (
+          <div className="validationSummary danger" role="alert">
+            <XCircle size={15} />
+            <div><strong>Amendment failed</strong><span>{submitError}</span></div>
+          </div>
+        ) : null}
+        <TxStatus state={submitState} />
         <button
           className="primaryAction"
           type="button"
-          disabled
-          title={!canManage ? "Connect the manager wallet to submit amendments" : "Contract write integration is not configured"}
+          disabled={!canManage || !vaultAddress || !amendmentValid || submitting}
+          title={!canManage ? "Connect the manager wallet to submit amendments" : !amendmentValid ? "Enter an amendment within the contract limit" : undefined}
+          onClick={submitAmendment}
         >
-          <BookOpen size={14} />
-          Submission unavailable
+          {submitting ? <Loader2 className="spin" size={14} /> : <BookOpen size={14} />}
+          {submitState === "pending" ? "Confirm in wallet" : submitState === "submitted" ? "Confirming amendment" : "Submit amendment"}
         </button>
       </div>
     </SectionCard>
@@ -2426,7 +2467,7 @@ function UnconfiguredOtfView({
       </div>
       <AppPageHeader
         title={isLoading ? "Loading OTF" : "No OTF connected"}
-        description={isLoading ? "Reading the configured Robinhood Testnet factory." : "This address was not returned by the configured factory."}
+        description={isLoading ? "Loading OTF data from Robinhood Testnet." : "This OTF is not available in the current protocol deployment."}
         icon={isLoading ? <RefreshCw className="spin" size={18} /> : <Landmark size={18} />}
       />
       <section className="sectionCard depositsEmpty">
@@ -2435,7 +2476,7 @@ function UnconfiguredOtfView({
         <p>
           {isLoading
             ? "The interface will open the OTF as soon as its contract reads complete."
-            : "Configure NEXT_PUBLIC_FACTORY_ADDRESS so the frontend can discover deployed OTFs."}
+            : "No OTF is available in the current network deployment yet."}
         </p>
         <button className="secondaryAction" type="button" onClick={onBack}>
           <ArrowLeft size={14} />
@@ -2451,6 +2492,7 @@ function VaultsDirectory({
   vaults,
   connectedAddress,
   isTestnet,
+  aumLoading,
   onManageVault,
   onOpenVault,
   onCreateVault,
@@ -2459,6 +2501,7 @@ function VaultsDirectory({
   vaults: VaultSummary[];
   connectedAddress?: string;
   isTestnet: boolean;
+  aumLoading: boolean;
   onManageVault: (address: `0x${string}`) => void;
   onOpenVault: (address: `0x${string}`) => void;
   onCreateVault: () => void;
@@ -2477,6 +2520,15 @@ function VaultsDirectory({
         (row) => row.manager?.toLowerCase() === connectedAddress.toLowerCase(),
       )
     : [];
+  const readableNavCount = vaults.filter((vault) => vault.navValue !== undefined).length;
+  const totalAumValue = vaults.reduce((total, vault) => total + (vault.navValue ?? 0n), 0n);
+  const totalAum = !isTestnet
+    ? "$0.00"
+    : aumLoading
+      ? "Loading"
+      : readableNavCount === vaults.length
+        ? formatUsd18(totalAumValue) ?? "$0.00"
+        : "Unavailable";
 
   return (
     <div className="appView">
@@ -2495,9 +2547,9 @@ function VaultsDirectory({
       <DataProvenance vault={currentVault} factory />
 
       <div className="directoryMetrics">
-        <MetricCard label="Factory OTFs" value={String(vaults.length)} icon={<Landmark size={14} />} sub={isTestnet ? "Discovered on Robinhood Testnet" : "Mainnet not launched"} />
-        <MetricCard label="Supported RWA Assets" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={<Coins size={14} />} sub={isTestnet ? "Testnet catalog with mock USD feeds" : "No Mainnet catalog"} />
-        <MetricCard label="Network" value={isTestnet ? "Testnet" : "Mainnet"} icon={<Network size={14} />} sub={isTestnet ? "Robinhood Chain" : "Support not launched"} />
+        <MetricCard label="Total AUM" value={totalAum} icon={<CircleDollarSign size={14} />} />
+        <MetricCard label="OTFs" value={String(vaults.length)} icon={<Landmark size={14} />} />
+        <MetricCard label="Supported RWA Assets" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={<Coins size={14} />} />
       </div>
 
       {managedVaults.length ? (
@@ -2579,7 +2631,9 @@ function VaultsDirectory({
             <h2>All OTFs</h2>
             <p>{isTestnet ? "Public OTFs remain discoverable whether or not you manage them." : "Robinhood Mainnet support has not launched yet."}</p>
           </div>
-          <span className="stateBadge muted">{vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
+          <div className="directoryPanelMeta">
+            <span className="stateBadge muted">{vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
+          </div>
         </div>
         <div className="directoryToolbar">
           <label className="searchField">
@@ -2633,7 +2687,7 @@ function VaultsDirectory({
             <div className="emptyDirectory">
               <Search size={18} />
               <strong>{isTestnet && vaults.length ? "No matching OTFs" : isTestnet ? "No testnet OTFs yet" : "No Mainnet OTFs"}</strong>
-              <span>{isTestnet && vaults.length ? "Try a different OTF name, symbol, or address." : isTestnet ? "OTFs created through the configured factory will appear here automatically." : "Switch to Robinhood Testnet to use the current protocol deployment."}</span>
+              <span>{isTestnet && vaults.length ? "Try a different OTF name, symbol, or address." : isTestnet ? "New OTFs will appear here automatically." : "Switch to Robinhood Testnet to use the current protocol deployment."}</span>
             </div>
           ) : null}
         </div>
@@ -3063,7 +3117,7 @@ function CreateVaultView({
 
   async function submitDeployment() {
     if (!factoryAddress) {
-      setDeployError("Configure NEXT_PUBLIC_FACTORY_ADDRESS before deploying an OTF.");
+      setDeployError("OTF creation is not available in the current network deployment.");
       setDeployState("reverted");
       return;
     }
@@ -3473,7 +3527,7 @@ function CreateVaultView({
                     <small>{seedAllowancesSufficient ? "Ready" : `${seedAuthorizations.filter((asset) => !asset.allowanceSufficient).length} remaining`}</small>
                   </div>
                   <div className="seedApprovalToolbar">
-                    <span>Approve each token for the factory. A 2% allowance buffer absorbs small mock-price moves; only the calculated seed amount is transferred.</span>
+                    <span>Approve each token for OTF creation. A 2% allowance buffer absorbs small price moves; only the calculated seed amount is transferred.</span>
                     {pendingSeedAuthorizations.length ? (
                       <button
                         className="secondaryAction seedApproveAllAction"
@@ -3505,7 +3559,7 @@ function CreateVaultView({
                             <div>
                               <strong>{asset.ticker}</strong>
                               <small>{asset.initialAmount || "0"} required / {formatWalletTokenBalance(asset.balance, 18)} available</small>
-                              <small>{asset.allowance && asset.allowance > 0n ? `${formatWalletTokenBalance(asset.allowance, 18)} factory allowance` : "No current factory allowance"}</small>
+                              <small>{asset.allowance && asset.allowance > 0n ? `${formatWalletTokenBalance(asset.allowance, 18)} creation allowance` : "No current creation allowance"}</small>
                             </div>
                           </div>
                           <div className="seedApprovalStates">
@@ -3780,8 +3834,14 @@ function DepositsView({
   onOpenVault: (address: `0x${string}`) => void;
 }) {
   const [selectedApprovalAssetAddress, setSelectedApprovalAssetAddress] = useState<string>();
+  const [addressCopied, setAddressCopied] = useState(false);
   const factoryAddress = configuredFactoryAddress();
   const canReadBalances = isTestnet && Boolean(connectedAddress && isAddress(connectedAddress));
+  const { data: nativeBalance, isLoading: nativeBalanceLoading } = useBalance({
+    address: canReadBalances ? connectedAddress as `0x${string}` : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canReadBalances },
+  });
   const balanceContracts = canReadBalances
     ? testnetCreateAssets.flatMap((asset) => [
         {
@@ -3858,7 +3918,7 @@ function DepositsView({
     (asset) => asset.address.toLowerCase() === selectedApprovalAssetAddress?.toLowerCase(),
   );
   const approvalSpenders = [
-    ...(factoryAddress ? [{ address: factoryAddress, label: "OTF factory", detail: "Creation seed transfers" }] : []),
+    ...(factoryAddress ? [{ address: factoryAddress, label: "OTF creation", detail: "Initial asset transfers" }] : []),
     ...vaults.map((vault) => ({
       address: vault.address,
       label: vault.symbol,
@@ -3890,6 +3950,18 @@ function DepositsView({
   const selectedAllowancesPending = selectedAllowancesLoading || (
     approvalSpenders.length > 0 && selectedAllowanceResults === undefined
   );
+  const nativeBalanceLabel = nativeBalance
+    ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}`
+    : nativeBalanceLoading
+      ? "Loading"
+      : "Unavailable";
+
+  async function copyWalletAddress() {
+    if (!connectedAddress) return;
+    await navigator.clipboard.writeText(connectedAddress);
+    setAddressCopied(true);
+    window.setTimeout(() => setAddressCopied(false), 1800);
+  }
 
   if (!isTestnet) {
     return (
@@ -3899,10 +3971,13 @@ function DepositsView({
           description="View OTF positions and supported RWA assets held by this wallet."
           icon={<Wallet size={18} />}
           actions={
-            <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
-              <LayoutGrid size={14} />
-              Explore OTFs
-            </button>
+            <>
+              <WalletConnectionAction />
+              <button className="secondaryAction" type="button" onClick={onBrowseVaults}>
+                <LayoutGrid size={14} />
+                Explore OTFs
+              </button>
+            </>
           }
         />
         <div className="depositMetrics">
@@ -3927,6 +4002,7 @@ function DepositsView({
         icon={<Wallet size={18} />}
         actions={
           <>
+            <WalletConnectionAction />
             <a
               className="secondaryAction"
               href="https://faucet.testnet.chain.robinhood.com/"
@@ -3948,10 +4024,21 @@ function DepositsView({
       {connectedAddress ? (
         <>
           <div className="depositMetrics">
-            <MetricCard label="OTF Positions" value={String(positions.length)} icon={<CircleDollarSign size={14} />} sub={canReadPositions ? "Live factory OTF balances" : "No factory OTFs discovered"} />
+            <MetricCard label="OTF Positions" value={String(positions.length)} icon={<CircleDollarSign size={14} />} sub={canReadPositions ? "Live OTF balances" : "No OTFs found"} />
             <MetricCard label="RWA Holdings" value={String(heldAssetCount)} icon={<Coins size={14} />} sub={`${testnetCreateAssets.length} supported assets scanned`} />
-            <MetricCard label="Wallet" value={shortAddress(connectedAddress)} icon={<Wallet size={14} />} sub="Robinhood Testnet" />
-            <MetricCard label="Deposit approvals" value="Per OTF" icon={<ShieldCheck size={14} />} sub="Status appears in each basket quote" />
+            <div className="metricCard walletAddressMetric">
+              <div className="metricLabel"><span>Wallet address</span><Wallet size={14} /></div>
+              <div className="walletAddressValue">
+                <strong title={connectedAddress}>{shortAddress(connectedAddress)}</strong>
+                <button className="iconOnly compact" type="button" title="Copy wallet address" aria-label="Copy wallet address" onClick={copyWalletAddress}>
+                  {addressCopied ? <CheckCircle size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
+              <span className={addressCopied ? "copied" : ""} role="status" aria-live="polite">
+                {addressCopied ? "Address copied" : "Robinhood Testnet"}
+              </span>
+            </div>
+            <MetricCard label="ETH Balance" value={nativeBalanceLabel} icon={<Coins size={14} />} sub="Native wallet balance" />
           </div>
 
           <section className="sectionCard depositPositions">
@@ -4001,7 +4088,7 @@ function DepositsView({
             </div> : (
               <div className="inlineEmptyState">
                 <CircleDollarSign size={18} />
-                <div><strong>No live OTF positions found</strong><span>Positions from every OTF discovered through the factory are checked automatically.</span></div>
+                <div><strong>No live OTF positions found</strong><span>Your positions across available OTFs are checked automatically.</span></div>
               </div>
             )}
           </section>
@@ -4082,7 +4169,7 @@ function DepositsView({
                   ) : selectedAllowanceReadFailed ? (
                     <div className="inlineEmptyState"><RefreshCw size={16} /><div><strong>Approval check unavailable</strong><span>The network did not return every allowance.</span></div></div>
                   ) : !activeApprovalSpenders.length ? (
-                    <div className="inlineEmptyState"><ShieldCheck size={16} /><div><strong>No approvals</strong><span>This wallet has not approved the factory or any OTF to spend {selectedApprovalAsset.symbol}.</span></div></div>
+                    <div className="inlineEmptyState"><ShieldCheck size={16} /><div><strong>No approvals</strong><span>This wallet has not approved OTF creation or any OTF to spend {selectedApprovalAsset.symbol}.</span></div></div>
                   ) : null}
                 </div>
               </div>
@@ -4285,7 +4372,14 @@ function ManageVaultsView({
         </SectionCard>
         ) : null}
 
-        {activeOperation === "thesis" ? <ThesisAmendmentCard currentThesis={vault.currentThesis} canManage={vault.connectedIsManager && vault.enabled} /> : null}
+        {activeOperation === "thesis" ? (
+          <ThesisAmendmentCard
+            currentThesis={vault.currentThesis}
+            canManage={vault.connectedIsManager && vault.enabled}
+            vaultAddress={vault.address}
+            onRefresh={onRefresh}
+          />
+        ) : null}
 
         {activeOperation === "roles" ? (
         <SectionCard title="Manager permissions" subtitle="Capabilities constrained by the OTF contract" icon={<ShieldCheck size={15} />} action={<span className="stateBadge muted">Onchain</span>}>
@@ -4299,12 +4393,13 @@ function ManageVaultsView({
           </div>
         </SectionCard>
         ) : null}
+        {activeOperation === "roles" ? (
+          <div className="riskCallout info manageNotice">
+            <Info size={15} />
+            <div><strong>Role transfers leave the cooldown unchanged</strong><span>The next eligible rebalance time stays the same because changing an address does not change the portfolio.</span></div>
+          </div>
+        ) : null}
       </div> : null}
-
-      <div className="riskCallout warning manageNotice">
-        <Info size={15} />
-        <div><strong>Role transfers do not reset the rebalance cooldown</strong><span>Manager and fee-recipient changes are administrative operations, not portfolio changes.</span></div>
-      </div>
     </div>
   );
 }
