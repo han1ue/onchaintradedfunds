@@ -1548,14 +1548,15 @@ function ChallengeCountdownBanner({ vault }: { vault: VaultView }) {
   const progress = vault.challengeGracePeriod > 0
     ? Math.max(0, Math.min(100, ((vault.challengeGracePeriod - remaining) / vault.challengeGracePeriod) * 100))
     : 0;
+  const elapsed = Math.max(0, vault.challengeGracePeriod - remaining);
   const expired = remaining === 0;
   return (
     <div className={`challengeCountdownBanner ${expired ? "danger" : "warning"}`} role="alert">
       <div className="challengeCountdownHeading">
         <span><AlertTriangle size={16} /><strong>{expired ? "Strategy challenge deadline passed" : "Strategy challenge active"}</strong></span>
-        <strong>{expired ? "Expired" : formatCooldown(remaining)}</strong>
+        <strong>{expired ? "Expired" : `Time remaining: ${formatCooldown(remaining)}`}</strong>
       </div>
-      <div className="challengeCountdownTrack" aria-label={`${progress.toFixed(0)}% of challenge response period elapsed`}>
+      <div className="challengeCountdownTrack" aria-label={`${progress.toFixed(0)}% of challenge response period elapsed, ${formatCooldown(remaining)} remaining`}>
         <span style={{ width: `${progress}%` }} />
       </div>
       <p>{expired ? "Manager fees from the missed challenge window are forfeitable; 10% becomes the caller reward and the rest is never minted." : "The manager cannot withdraw fees until the portfolio returns to its completion band."}</p>
@@ -2649,14 +2650,38 @@ function UserActions({
   return (
     <SectionCard title="Your position" subtitle={`Deposit into or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
       <div className="actionTabs" role="tablist" aria-label="OTF position actions">
-        <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>Deposit</button>
-        <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
+        <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>
+          <div className="positionTabIcon"><ArrowDownToLine size={13} /></div>
+          <span className="positionTabContent">
+            <strong>Deposit</strong>
+            <small>Add USDG and mint OTF shares</small>
+          </span>
+        </button>
+        <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>
+          <div className="positionTabIcon"><ArrowRight size={13} /></div>
+          <span className="positionTabContent">
+            <strong>Redeem</strong>
+            <small>Exit holdings and receive USDG</small>
+          </span>
+        </button>
       </div>
 
       {activeAction === "deposit" ? (
         <div className="positionModeTabs" role="tablist" aria-label="Deposit route">
-          <button className={depositMode === "underlying" ? "active" : ""} type="button" onClick={() => setDepositMode("underlying")}>Mint through underlying pools</button>
-          <button className={depositMode === "market" ? "active" : ""} type="button" onClick={() => setDepositMode("market")}>Trade existing shares</button>
+          <button className={depositMode === "underlying" ? "active" : ""} type="button" onClick={() => setDepositMode("underlying")}>
+            <div className="positionTabIcon"><Landmark size={13} /></div>
+            <span className="positionTabContent">
+              <strong>Use underlying pools</strong>
+              <small>Buy each constituent and mint shares from the basket</small>
+            </span>
+          </button>
+          <button className={depositMode === "market" ? "active" : ""} type="button" onClick={() => setDepositMode("market")}>
+            <div className="positionTabIcon"><Droplets size={13} /></div>
+            <span className="positionTabContent">
+              <strong>Buy in OTF market</strong>
+              <small>Trade already minted shares in the USDG pool</small>
+            </span>
+          </button>
         </div>
       ) : null}
 
@@ -2741,8 +2766,20 @@ function UserActions({
       ) : (
         <div className="positionFlow">
           <div className="redeemModeTabs" role="tablist" aria-label="Redemption route">
-            <button className={redeemMode === "underlying" ? "active" : ""} type="button" onClick={() => setRedeemMode("underlying")}>Redeem through underlying pools</button>
-            <button className={redeemMode === "market" ? "active" : ""} type="button" onClick={() => setRedeemMode("market")}>Trade existing shares</button>
+            <button className={redeemMode === "underlying" ? "active" : ""} type="button" onClick={() => setRedeemMode("underlying")}>
+              <div className="positionTabIcon"><Landmark size={13} /></div>
+              <span className="positionTabContent">
+                <strong>Redeem underlying basket</strong>
+                <small>Burn shares and sell underlying assets for USDG</small>
+              </span>
+            </button>
+            <button className={redeemMode === "market" ? "active" : ""} type="button" onClick={() => setRedeemMode("market")}>
+              <div className="positionTabIcon"><Droplets size={13} /></div>
+              <span className="positionTabContent">
+                <strong>Sell in OTF market</strong>
+                <small>Exit via the OTF / USDG market</small>
+              </span>
+            </button>
           </div>
           {redeemMode === "underlying" ? <>
             <label className="fieldLabel">Shares to redeem</label>
@@ -3531,8 +3568,8 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
             : "The response deadline has passed. Anyone may finalize fee forfeiture, or resolve after the portfolio returns to its completion band."
             : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
       </p>
-      <div className="challengeRewardLine">
-        <span>Claimable caller reward</span>
+        <div className="challengeRewardLine">
+        <span>Caller reward</span>
         <strong>{vault.claimableChallengeRewardShares}</strong>
       </div>
       {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
