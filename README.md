@@ -125,6 +125,7 @@ flowchart LR
 
 - Lets a user request an exact number of OTF shares while supplying only the configured settlement token, initially USDG.
 - Buys the exact proportional basket through independently approved entry adapters, deposits it atomically, and refunds unused settlement tokens.
+- Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
 `UniswapV2Adapter`
@@ -322,6 +323,14 @@ Redemption:
 - Enforces min outputs.
 - Does not use oracles.
 - Remains available when oracle-dependent actions fail.
+
+An optional settlement exit lets a holder redeem to USDG in one transaction. The holder approves
+the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
+proportional `redeem` path, sells each received constituent through an approved adapter, enforces
+per-leg and aggregate minimum USDG outputs plus a deadline, and transfers the resulting USDG to the
+chosen receiver. Pool proceeds may differ from the Chainlink-priced basket value, and the frontend
+shows that difference before signing. A failed leg or insufficient aggregate output reverts the
+share burn and every swap atomically.
 
 ## Strategic Rebalancing
 
@@ -691,6 +700,8 @@ Deterministic coverage includes:
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
 - Atomic USDG-only entry, unused-input refunds, entry-adapter authorization, exact-output bounds,
   expired entry rejection, and Uniswap-compatible direct and USDG-hop adapter behavior.
+- Atomic USDG redemption, exact share approval, per-leg and aggregate minimum outputs, deadline
+  enforcement, and complete rollback when an exit adapter or quote is invalid.
 - Canonical vault/module storage, immutable module identity, runtime code-hash integrity,
   direct-module-call rejection, and callback isolation.
 

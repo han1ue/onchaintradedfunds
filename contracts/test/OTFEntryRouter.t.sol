@@ -2,24 +2,31 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { EntrySwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
+import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
 import { MockEntryAdapter } from "../src/mocks/MockEntryAdapter.sol";
+import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract OTFEntryRouterTest is ProtocolTestBase {
     OTFEntryRouter private entryRouter;
     MockEntryAdapter private entryAdapter;
+    MockTradeAdapter private exitAdapter;
 
     function setUp() public override {
         super.setUp();
         entryRouter = new OTFEntryRouter(address(this), address(factory), address(tokenC));
         entryAdapter = new MockEntryAdapter();
+        exitAdapter = new MockTradeAdapter();
         entryRouter.setEntryAdapterApproved(address(entryAdapter), true);
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), true);
         entryAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
         entryAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         tokenA.mint(address(entryAdapter), 10_000 * ONE);
         tokenB.mint(address(entryAdapter), 10_000 * ONE);
         tokenC.mint(ALICE, 10_000 * ONE);
+        exitAdapter.setRate(address(tokenA), address(tokenC), 1, 1);
+        exitAdapter.setRate(address(tokenB), address(tokenC), 1, 1);
+        tokenC.mint(address(exitAdapter), 10_000 * ONE);
     }
 
     function testUserCanEnterWithOnlySettlementTokenAndReceiveExactShares() public {
@@ -106,6 +113,66 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         entryRouter.setEntryAdapterApproved(address(entryAdapter), false);
     }
 
+    function testUserCanRedeemBasketToSettlementTokenAtomically() public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = 10 * ONE;
+        vault.transfer(ALICE, shares);
+        uint256[] memory expectedAssets = vault.previewRedeem(shares);
+        uint256 expectedSettlement = expectedAssets[0] + expectedAssets[1];
+        ExitSwap[] memory swaps = _exitSwaps(expectedAssets[0], expectedAssets[1]);
+
+        vm.startPrank(ALICE);
+        vault.approve(address(entryRouter), shares);
+        uint256 received = entryRouter.redeemToSettlement(
+            address(vault),
+            shares,
+            ALICE,
+            expectedSettlement,
+            block.timestamp + 1 hours,
+            swaps
+        );
+        vm.stopPrank();
+
+        assertEq(received, expectedSettlement);
+        assertEq(vault.balanceOf(ALICE), 0);
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE + expectedSettlement);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
+        assertEq(vault.allowance(ALICE, address(entryRouter)), 0);
+    }
+
+    function testSettlementExitMinimumAndAdapterApprovalRevertAtomically() public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = 10 * ONE;
+        vault.transfer(ALICE, shares);
+        uint256[] memory expectedAssets = vault.previewRedeem(shares);
+        ExitSwap[] memory swaps = _exitSwaps(0, 0);
+
+        vm.startPrank(ALICE);
+        vault.approve(address(entryRouter), shares);
+        vm.expectRevert(OTFEntryRouter.MinimumOutputNotMet.selector);
+        entryRouter.redeemToSettlement(
+            address(vault),
+            shares,
+            ALICE,
+            expectedAssets[0] + expectedAssets[1] + 1,
+            block.timestamp + 1 hours,
+            swaps
+        );
+        vm.stopPrank();
+        assertEq(vault.balanceOf(ALICE), shares);
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE);
+
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
+        vm.prank(ALICE);
+        vm.expectRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
+        entryRouter.redeemToSettlement(
+            address(vault), shares, ALICE, 1, block.timestamp + 1 hours, swaps
+        );
+        assertEq(vault.balanceOf(ALICE), shares);
+    }
+
     function _swaps(uint256 maxA, uint256 maxB)
         private
         view
@@ -117,6 +184,20 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         });
         swaps[1] = EntrySwap({
             adapter: address(entryAdapter), maxSettlementIn: maxB, adapterData: ""
+        });
+    }
+
+    function _exitSwaps(uint256 minA, uint256 minB)
+        private
+        view
+        returns (ExitSwap[] memory swaps)
+    {
+        swaps = new ExitSwap[](2);
+        swaps[0] = ExitSwap({
+            adapter: address(exitAdapter), minSettlementOut: minA, adapterData: ""
+        });
+        swaps[1] = ExitSwap({
+            adapter: address(exitAdapter), minSettlementOut: minB, adapterData: ""
         });
     }
 }

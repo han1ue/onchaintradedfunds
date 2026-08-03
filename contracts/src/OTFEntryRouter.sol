@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IEntryAdapter } from "./interfaces/IEntryAdapter.sol";
+import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IEntryVault {
@@ -14,11 +15,24 @@ interface IEntryVault {
     function mintWithBasket(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
         external
         returns (uint256[] memory amountsIn);
+
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address shareOwner,
+        uint256[] calldata minAmountsOut
+    ) external returns (uint256[] memory amountsOut);
 }
 
 struct EntrySwap {
     address adapter;
     uint256 maxSettlementIn;
+    bytes adapterData;
+}
+
+struct ExitSwap {
+    address adapter;
+    uint256 minSettlementOut;
     bytes adapterData;
 }
 
@@ -33,6 +47,7 @@ contract OTFEntryRouter {
     error InvalidArrayLength();
     error ZeroShares();
     error ZeroMaximumInput();
+    error ZeroMinimumOutput();
     error DeadlineExpired(uint256 deadline);
     error UnapprovedEntryAdapter(address adapter);
     error InvalidSettlementLeg(uint256 index);
@@ -40,6 +55,8 @@ contract OTFEntryRouter {
     error AdapterInputMismatch(uint256 index, uint256 reported, uint256 observed);
     error AdapterOutputMismatch(uint256 index, uint256 expected, uint256 observed);
     error VaultInputMismatch(uint256 index, uint256 expected, uint256 actual);
+    error VaultOutputMismatch(uint256 index, uint256 reported, uint256 observed);
+    error MinimumOutputNotMet(uint256 minimum, uint256 actual);
     error TokenTransferMismatch(
         address token, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
@@ -54,6 +71,13 @@ contract OTFEntryRouter {
         uint256 shares,
         uint256 settlementSpent,
         uint256 settlementRefunded
+    );
+    event RedeemedToSettlement(
+        address indexed owner,
+        address indexed receiver,
+        address indexed vault,
+        uint256 shares,
+        uint256 settlementReceived
     );
 
     address public owner;
@@ -197,6 +221,87 @@ contract OTFEntryRouter {
         uint256 refund = maxSettlementIn - settlementSpent;
         if (refund != 0) _pushExact(settlementToken, msg.sender, refund);
         emit EnteredWithSettlement(msg.sender, receiver, vault, shares, settlementSpent, refund);
+    }
+
+    function redeemToSettlement(
+        address vault,
+        uint256 shares,
+        address receiver,
+        uint256 minSettlementOut,
+        uint256 deadline,
+        ExitSwap[] calldata swaps
+    ) external nonReentrant returns (uint256 settlementReceived) {
+        if (block.timestamp > deadline) revert DeadlineExpired(deadline);
+        if (shares == 0) revert ZeroShares();
+        if (minSettlementOut == 0) revert ZeroMinimumOutput();
+        if (receiver == address(0) || receiver == address(this) || receiver == vault) {
+            revert InvalidReceiver(receiver);
+        }
+        if (!IAdapterAllowlist(factory).isVault(vault)) revert InvalidVault(vault);
+
+        address[] memory assets = IEntryVault(vault).assets();
+        if (swaps.length != assets.length) revert InvalidArrayLength();
+        uint256[] memory balancesBefore = new uint256[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            address asset = assets[i];
+            balancesBefore[i] = IERC20(asset).balanceOf(address(this));
+            if (asset == settlementToken) {
+                if (
+                    swaps[i].adapter != address(0) || swaps[i].minSettlementOut != 0
+                        || swaps[i].adapterData.length != 0
+                ) {
+                    revert InvalidSettlementLeg(i);
+                }
+            } else if (!isEntryAdapterApproved[swaps[i].adapter]) {
+                revert UnapprovedEntryAdapter(swaps[i].adapter);
+            }
+        }
+
+        uint256[] memory minimums = new uint256[](assets.length);
+        uint256[] memory redeemed =
+            IEntryVault(vault).redeem(shares, address(this), msg.sender, minimums);
+        if (redeemed.length != assets.length) revert InvalidArrayLength();
+
+        for (uint256 i = 0; i < assets.length; i++) {
+            address asset = assets[i];
+            uint256 observedRedeemed = IERC20(asset).balanceOf(address(this)) - balancesBefore[i];
+            if (redeemed[i] != observedRedeemed) {
+                revert VaultOutputMismatch(i, redeemed[i], observedRedeemed);
+            }
+            if (asset == settlementToken) {
+                settlementReceived += observedRedeemed;
+                continue;
+            }
+
+            ExitSwap calldata swap = swaps[i];
+            if (observedRedeemed == 0) {
+                if (swap.minSettlementOut != 0) {
+                    revert MinimumOutputNotMet(swap.minSettlementOut, 0);
+                }
+                continue;
+            }
+            _pushExact(asset, swap.adapter, observedRedeemed);
+            uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
+            uint256 reportedOutput = ITradeAdapter(swap.adapter).executeSwap(
+                asset,
+                settlementToken,
+                observedRedeemed,
+                swap.minSettlementOut,
+                swap.adapterData
+            );
+            uint256 observedOutput =
+                IERC20(settlementToken).balanceOf(address(this)) - settlementBefore;
+            if (reportedOutput != observedOutput) {
+                revert AdapterOutputMismatch(i, reportedOutput, observedOutput);
+            }
+            settlementReceived += observedOutput;
+        }
+
+        if (settlementReceived < minSettlementOut) {
+            revert MinimumOutputNotMet(minSettlementOut, settlementReceived);
+        }
+        _pushExact(settlementToken, receiver, settlementReceived);
+        emit RedeemedToSettlement(msg.sender, receiver, vault, shares, settlementReceived);
     }
 
     function _pullExact(address token, address from, address to, uint256 amount) private {

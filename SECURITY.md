@@ -188,6 +188,13 @@ The entry path still inherits liquidity and integration risks:
 - Router, adapter, settlement-token, and venue addresses are deployment-critical configuration.
 - Frontend quotes can become stale before inclusion.
 
+The same router supports settlement-token exits. It first calls the vault's normal proportional
+redemption with the user as share owner and the router as basket receiver, then sells only those
+received constituents through approved adapters. Users authorize an exact OTF share amount and
+set per-leg minimums, an aggregate minimum USDG output, and a deadline. Output remains inside the
+router until every leg succeeds, after which the exact aggregate is transferred to the selected
+receiver. Failure reverts the share burn and all swaps.
+
 Users therefore provide per-leg maximum inputs, an aggregate maximum settlement amount, and a
 deadline. Unspent USDG is refunded atomically. The adapter allowlist is separate from the factory's
 rebalance-adapter allowlist so approval for one authority does not silently grant the other.

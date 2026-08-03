@@ -268,6 +268,25 @@ const vaultDepositAbi = [
     ],
     outputs: [{ name: "amountsIn", type: "uint256[]" }],
   },
+  {
+    type: "function",
+    name: "previewRedeem",
+    stateMutability: "view",
+    inputs: [{ name: "shares", type: "uint256" }],
+    outputs: [{ name: "amountsOut", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "redeem",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "shareOwner", type: "address" },
+      { name: "minAmountsOut", type: "uint256[]" },
+    ],
+    outputs: [{ name: "amountsOut", type: "uint256[]" }],
+  },
 ] as const;
 
 const vaultFeeAbi = [
@@ -990,12 +1009,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <ThesisModule vaultAddress={vault.address} />
+                <UserActions vault={vault} oraclePrices={catalogOraclePrices} />
                 <PortfolioAllocation allocations={allocations} oraclePrices={catalogOraclePrices} />
               </div>
 
               <aside className="sideColumn">
-                <UserActions vault={vault} oraclePrices={catalogOraclePrices} />
+                <ThesisModule vaultAddress={vault.address} />
                 <RebalanceCooldown vault={vault} />
               </aside>
 
@@ -1974,10 +1993,14 @@ function UserActions({
   const [usdgShareAmount, setUsdgShareAmount] = useState("");
   const [entrySlippage, setEntrySlippage] = useState("1.0");
   const [redeemAmount, setRedeemAmount] = useState("");
+  const [redeemMode, setRedeemMode] = useState<"usdg" | "basket">("usdg");
+  const [redeemSlippage, setRedeemSlippage] = useState("1.0");
   const [depositState, setDepositState] = useState<TxState>("idle");
   const [depositError, setDepositError] = useState<string>();
   const [entryState, setEntryState] = useState<TxState>("idle");
   const [entryError, setEntryError] = useState<string>();
+  const [redeemState, setRedeemState] = useState<TxState>("idle");
+  const [redeemError, setRedeemError] = useState<string>();
   const [approvalProgress, setApprovalProgress] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
@@ -2003,11 +2026,24 @@ function UserActions({
   } catch {
     requestedEntryShares = undefined;
   }
+  let requestedRedeemShares: bigint | undefined;
+  try {
+    requestedRedeemShares = Number(redeemAmount) > 0
+      ? parseUnits(redeemAmount, 18)
+      : undefined;
+  } catch {
+    requestedRedeemShares = undefined;
+  }
   const parsedEntrySlippage = Number(entrySlippage);
   const entrySlippageBps = Number.isFinite(parsedEntrySlippage)
     ? Math.round(parsedEntrySlippage * 100)
     : 0;
   const entrySlippageValid = entrySlippageBps >= 1 && entrySlippageBps <= 2_000;
+  const parsedRedeemSlippage = Number(redeemSlippage);
+  const redeemSlippageBps = Number.isFinite(parsedRedeemSlippage)
+    ? Math.round(parsedRedeemSlippage * 100)
+    : 0;
+  const redeemSlippageValid = redeemSlippageBps >= 1 && redeemSlippageBps <= 2_000;
   const canQuoteDeposit = Boolean(
     isLive && vault.address && connectedAddress && depositShares && depositShares > 0n,
   );
@@ -2118,6 +2154,70 @@ function UserActions({
   } = useReadContracts({
     contracts: entryAuthorizationContracts,
     query: { enabled: Boolean(settlementToken && connectedAddress && entryRouterAddress) },
+  });
+  const canPreviewRedeem = Boolean(
+    isLive && vault.address && connectedAddress && requestedRedeemShares && requestedRedeemShares > 0n,
+  );
+  const {
+    data: previewRedeemAmounts,
+    error: previewRedeemError,
+    isLoading: previewRedeemLoading,
+    refetch: refetchRedeemPreview,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewRedeem",
+    args: requestedRedeemShares ? [requestedRedeemShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canPreviewRedeem },
+  });
+  const redeemQuoteContracts = previewRedeemAmounts && settlementToken && uniswapRouterAddress && redeemSlippageValid
+    ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountIn = previewRedeemAmounts[index];
+        if (amountIn === undefined || amountIn === 0n) return [];
+        return [{
+          address: uniswapRouterAddress,
+          abi: uniswapV2QuoteAbi,
+          functionName: "getAmountsOut" as const,
+          args: [amountIn, [asset.address as `0x${string}`, settlementToken]],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: redeemQuoteResults,
+    isLoading: redeemQuotesLoading,
+    refetch: refetchRedeemQuotes,
+  } = useReadContracts({
+    contracts: redeemQuoteContracts,
+    query: { enabled: redeemMode === "usdg" && redeemQuoteContracts.length > 0 },
+  });
+  const redeemAuthorizationContracts = ([
+    {
+      address: vault.address ?? zeroAddress,
+      abi: erc20BalanceAbi,
+      functionName: "balanceOf" as const,
+      args: [(connectedAddress ?? zeroAddress) as `0x${string}`],
+      chainId: robinhoodChainTestnet.id,
+    },
+    {
+      address: vault.address ?? zeroAddress,
+      abi: erc20BalanceAbi,
+      functionName: "allowance" as const,
+      args: [
+        (connectedAddress ?? zeroAddress) as `0x${string}`,
+        (entryRouterAddress ?? zeroAddress) as `0x${string}`,
+      ],
+      chainId: robinhoodChainTestnet.id,
+    },
+  ] as const);
+  const {
+    data: redeemAuthorizationResults,
+    refetch: refetchRedeemAuthorization,
+  } = useReadContracts({
+    contracts: redeemAuthorizationContracts,
+    query: { enabled: Boolean(vault.address && connectedAddress) },
   });
   const depositAuthorizationContracts = canQuoteDeposit && vault.address
     ? vault.allocations.flatMap((asset) => ([
@@ -2241,6 +2341,68 @@ function UserActions({
         Number(formatUnits(entryOracleValue, 18)) - 1) * 100
     : undefined;
   const entryBusy = entryState === "pending" || entryState === "submitted";
+  const redeemShareBalance = redeemAuthorizationResults?.[0]?.result as bigint | undefined;
+  const redeemShareAllowance = redeemAuthorizationResults?.[1]?.result as bigint | undefined;
+  const redeemBalanceSufficient = requestedRedeemShares !== undefined && redeemShareBalance !== undefined &&
+    redeemShareBalance >= requestedRedeemShares;
+  const redeemAllowanceSufficient = requestedRedeemShares !== undefined && redeemShareAllowance !== undefined &&
+    redeemShareAllowance >= requestedRedeemShares;
+  let redeemQuoteIndex = 0;
+  const redeemLegs = vault.allocations.map((asset, index) => {
+    const amountIn = previewRedeemAmounts?.[index];
+    const isSettlement = Boolean(
+      settlementToken && asset.address.toLowerCase() === settlementToken.toLowerCase(),
+    );
+    let quotedSettlement: bigint | undefined;
+    let quoteFailed = false;
+    if (isSettlement) {
+      quotedSettlement = amountIn;
+    } else if (amountIn !== undefined && amountIn > 0n) {
+      const result = redeemQuoteResults?.[redeemQuoteIndex];
+      redeemQuoteIndex += 1;
+      const amounts = result?.result as readonly bigint[] | undefined;
+      quotedSettlement = amounts?.[amounts.length - 1];
+      quoteFailed = result?.status === "failure";
+    } else if (amountIn === 0n) {
+      quotedSettlement = 0n;
+    }
+    const minimumSettlement = quotedSettlement !== undefined && !isSettlement
+      ? quotedSettlement * BigInt(10_000 - redeemSlippageBps) / 10_000n
+      : isSettlement ? 0n : undefined;
+    return { ...asset, amountIn, isSettlement, quotedSettlement, minimumSettlement, quoteFailed };
+  });
+  const redeemQuotesFailed = redeemLegs.some((leg) => leg.quoteFailed);
+  const redeemBasketReady = Boolean(
+    requestedRedeemShares && previewRedeemAmounts?.length === vault.allocations.length,
+  );
+  const redeemQuoteReady = Boolean(
+    redeemBasketReady && settlementToken && redeemLegs.every((leg) =>
+      leg.amountIn !== undefined && leg.quotedSettlement !== undefined && leg.minimumSettlement !== undefined,
+    ),
+  );
+  const quotedRedeemSettlement = redeemQuoteReady
+    ? redeemLegs.reduce((sum, leg) => sum + (leg.quotedSettlement ?? 0n), 0n)
+    : undefined;
+  const minimumRedeemSettlement = redeemQuoteReady
+    ? redeemLegs.reduce(
+        (sum, leg) => sum + (leg.isSettlement ? leg.amountIn ?? 0n : leg.minimumSettlement ?? 0n),
+        0n,
+      )
+    : undefined;
+  const redeemOracleValue = redeemBasketReady && redeemLegs.every(
+    (leg) => oraclePrices[leg.address.toLowerCase()]?.answer !== undefined,
+  )
+    ? redeemLegs.reduce((sum, leg) => {
+        const price = oraclePrices[leg.address.toLowerCase()];
+        if (leg.amountIn === undefined || price?.answer === undefined || price.decimals === undefined) return sum;
+        return sum + (leg.amountIn * price.answer) / (10n ** BigInt(price.decimals));
+      }, 0n)
+    : undefined;
+  const redeemPriceDifference = quotedRedeemSettlement !== undefined && redeemOracleValue && redeemOracleValue > 0n
+    ? (Number(formatUnits(quotedRedeemSettlement, settlementDecimals)) /
+        Number(formatUnits(redeemOracleValue, 18)) - 1) * 100
+    : undefined;
+  const redeemBusy = redeemState === "pending" || redeemState === "submitted";
 
   async function sendDepositApproval(
     asset: (typeof depositAssets)[number],
@@ -2428,6 +2590,115 @@ function UserActions({
     }
   }
 
+  async function approveSharesForSettlementExit() {
+    if (!vault.address || !entryRouterAddress || !publicClient || !requestedRedeemShares || redeemShareAllowance === undefined) return;
+    setRedeemError(undefined);
+    try {
+      setRedeemState("pending");
+      if (redeemShareAllowance > 0n) {
+        const resetHash = await writeContractAsync({
+          address: vault.address,
+          abi: erc20BalanceAbi,
+          functionName: "approve",
+          args: [entryRouterAddress, 0n],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setRedeemState("submitted");
+        const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
+        if (resetReceipt.status !== "success") throw new Error("The OTF share approval reset reverted.");
+      }
+      setRedeemState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: erc20BalanceAbi,
+        functionName: "approve",
+        args: [entryRouterAddress, requestedRedeemShares],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setRedeemState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The OTF share approval reverted.");
+      await refetchRedeemAuthorization();
+      setRedeemState("confirmed");
+    } catch (error) {
+      setRedeemError(errorMessage(error));
+      setRedeemState("reverted");
+    }
+  }
+
+  async function redeemToSettlement() {
+    if (
+      !vault.address || !connectedAddress || !publicClient || !entryRouterAddress || !entryAdapterAddress ||
+      !settlementToken || !requestedRedeemShares || !minimumRedeemSettlement || !redeemQuoteReady ||
+      !redeemBalanceSufficient || !redeemAllowanceSufficient
+    ) return;
+    const swaps = redeemLegs.map((leg) => leg.isSettlement
+      ? { adapter: zeroAddress, minSettlementOut: 0n, adapterData: "0x" as `0x${string}` }
+      : {
+          adapter: entryAdapterAddress,
+          minSettlementOut: leg.minimumSettlement as bigint,
+          adapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[leg.address as `0x${string}`, settlementToken]],
+          ),
+        });
+    setRedeemError(undefined);
+    try {
+      setRedeemState("pending");
+      const hash = await writeContractAsync({
+        address: entryRouterAddress,
+        abi: otfEntryRouterAbi,
+        functionName: "redeemToSettlement",
+        args: [
+          vault.address,
+          requestedRedeemShares,
+          connectedAddress,
+          minimumRedeemSettlement,
+          BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
+          swaps,
+        ],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setRedeemState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The USDG redemption reverted.");
+      await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
+      setRedeemAmount("");
+      setRedeemState("confirmed");
+    } catch (error) {
+      setRedeemError(errorMessage(error));
+      setRedeemState("reverted");
+    }
+  }
+
+  async function redeemBasket() {
+    if (
+      !vault.address || !connectedAddress || !publicClient || !requestedRedeemShares ||
+      !previewRedeemAmounts || !redeemBasketReady || !redeemBalanceSufficient
+    ) return;
+    const minimums = previewRedeemAmounts.map((amount) => amount * 9_950n / 10_000n);
+    setRedeemError(undefined);
+    try {
+      setRedeemState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: vaultDepositAbi,
+        functionName: "redeem",
+        args: [requestedRedeemShares, connectedAddress, connectedAddress, minimums],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setRedeemState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The basket redemption reverted.");
+      await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview()]);
+      setRedeemAmount("");
+      setRedeemState("confirmed");
+    } catch (error) {
+      setRedeemError(errorMessage(error));
+      setRedeemState("reverted");
+    }
+  }
+
   return (
     <SectionCard title="Your position" subtitle={`Buy, deposit, or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
       <div className="actionTabs" role="tablist" aria-label="OTF position actions">
@@ -2597,18 +2868,76 @@ function UserActions({
         </div>
       ) : (
         <div className="positionFlow">
+          <div className="redeemModeTabs" role="tablist" aria-label="Redemption output">
+            <button className={redeemMode === "usdg" ? "active" : ""} type="button" onClick={() => setRedeemMode("usdg")}>Receive USDG</button>
+            <button className={redeemMode === "basket" ? "active" : ""} type="button" onClick={() => setRedeemMode("basket")}>Receive basket</button>
+          </div>
           <label className="fieldLabel">Shares to redeem</label>
           <div className="inputWithSuffix">
-            <input value={redeemAmount} onChange={(event) => setRedeemAmount(event.target.value)} type="number" placeholder="0.00" disabled={!isLive} />
+            <input value={redeemAmount} onChange={(event) => { setRedeemAmount(event.target.value); setRedeemState("idle"); setRedeemError(undefined); }} type="number" min="0" placeholder="0.00" disabled={!isLive || redeemBusy} />
             <span>{vault.symbol}</span>
           </div>
-          <div className="redeemPreview">
-            <span>Basket quote <strong>Not available</strong></span>
-          </div>
-          <button className="dangerAction" type="button" disabled>
-            <ArrowDownToLine size={14} />
-            Redeem proportionally
-          </button>
+          <div className="quoteLine"><span>Wallet balance</span><strong>{redeemShareBalance === undefined ? "Loading" : `${formatWalletTokenBalance(redeemShareBalance, 18)} ${vault.symbol}`}</strong></div>
+          {requestedRedeemShares && !redeemBalanceSufficient ? (
+            <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient OTF shares</strong><span>Your wallet balance is below the requested redemption amount.</span></div></div>
+          ) : null}
+
+          {redeemMode === "usdg" ? !entryContractsConfigured ? (
+            <div className="inlineEmptyState"><Landmark size={17} /><div><strong>USDG exit route not deployed</strong><span>You can still redeem the proportional basket directly.</span></div></div>
+          ) : (
+            <>
+              <label className="fieldLabel">Maximum pool slippage</label>
+              <div className="inputWithSuffix">
+                <input value={redeemSlippage} onChange={(event) => { setRedeemSlippage(event.target.value); setRedeemState("idle"); }} type="number" min="0.01" max="20" step="0.1" disabled={redeemBusy} />
+                <span>%</span>
+              </div>
+              {!redeemSlippageValid ? <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span> : null}
+              {redeemAmount ? (
+                <div className="entryQuoteSummary">
+                  <div><span>Uniswap quote</span><strong>{quotedRedeemSettlement === undefined ? "Loading" : `${formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals)} USDG`}</strong></div>
+                  <div><span>Minimum received</span><strong>{minimumRedeemSettlement === undefined ? "Loading" : `${formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals)} USDG`}</strong></div>
+                  <div><span>Oracle-priced basket</span><strong>{redeemOracleValue === undefined ? "Unavailable" : formatUsd18(redeemOracleValue)}</strong></div>
+                  <div><span>Pool vs oracle</span><strong className={redeemPriceDifference !== undefined && redeemPriceDifference < 0 ? "warningText" : ""}>{redeemPriceDifference === undefined ? "Unavailable" : `${redeemPriceDifference >= 0 ? "+" : ""}${redeemPriceDifference.toFixed(2)}%`}</strong></div>
+                </div>
+              ) : null}
+              {previewRedeemLoading || redeemQuotesLoading ? (
+                <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading OTF and Uniswap quotes</div>
+              ) : previewRedeemError || redeemQuotesFailed ? (
+                <div className="validationSummary danger"><AlertTriangle size={14} /><div><strong>USDG exit quote unavailable</strong><span>One or more constituent pools could not quote the redemption.</span></div></div>
+              ) : null}
+              <div className="riskCallout warning entryPriceWarning"><AlertTriangle size={15} /><div><strong>Pool proceeds and OTF value can differ</strong><span>The redeemed basket is valued with Chainlink feeds, while the USDG you receive depends on current Uniswap liquidity and price impact.</span></div></div>
+              {entryAdapterApproved === false ? <div className="validationSummary danger"><XCircle size={15} /><div><strong>Exit adapter is not approved</strong><span>The configured Uniswap adapter cannot process this redemption.</span></div></div> : null}
+              {redeemError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Redemption failed</strong><span>{redeemError}</span></div></div> : null}
+              <TxStatus state={redeemState} />
+              <div className="buttonRow">
+                <button className="secondaryAction" type="button" disabled={redeemBusy || !redeemQuoteReady || !redeemBalanceSufficient || redeemAllowanceSufficient} onClick={approveSharesForSettlementExit}>
+                  <ShieldCheck size={14} />
+                  {redeemAllowanceSufficient ? "Shares approved" : "Approve OTF shares"}
+                </button>
+                <button className="dangerAction" type="button" disabled={redeemBusy || !redeemQuoteReady || !minimumRedeemSettlement || !redeemBalanceSufficient || !redeemAllowanceSufficient} onClick={redeemToSettlement}>
+                  <ArrowDownToLine size={14} />
+                  Redeem to USDG
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {redeemAmount ? (
+                <div className="depositBasketQuote">
+                  <div className="depositBasketQuoteHeader"><span>Proportional output</span><small>0.5% minimum-output buffer</small></div>
+                  {previewRedeemLoading ? <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading OTF quote</div> :
+                    previewRedeemError ? <div className="depositQuoteLoading danger"><AlertTriangle size={14} /> Quote unavailable</div> :
+                    redeemLegs.map((asset) => <div className="redeemAssetQuote" key={asset.address}><strong>{asset.symbol}</strong><span>{formatSeedTokenAmount(asset.amountIn) || "--"}</span></div>)}
+                </div>
+              ) : null}
+              {redeemError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Redemption failed</strong><span>{redeemError}</span></div></div> : null}
+              <TxStatus state={redeemState} />
+              <button className="dangerAction" type="button" disabled={redeemBusy || !redeemBasketReady || !redeemBalanceSufficient} onClick={redeemBasket}>
+                <ArrowDownToLine size={14} />
+                Redeem proportional basket
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -5202,6 +5531,20 @@ function ManageVaultsView({
           </span>
         </div>
       </section>
+
+      {vault.challengeActive ? (
+        <div className={`riskCallout ${vault.challengeTimeRemaining > 0 ? "warning" : "danger"} manageChallengeWarning`} role="alert">
+          <AlertTriangle size={17} />
+          <div>
+            <strong>{vault.challengeTimeRemaining > 0 ? "Fee challenge active" : "Fee challenge deadline passed"}</strong>
+            <span>
+              {vault.challengeTimeRemaining > 0
+                ? `Manager-fee shares remain in escrow for ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
+                : "Manager fees are eligible for suspension and escrow forfeiture until the portfolio returns to its completion band and the challenge is resolved."}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       <DataProvenance vault={vault} />
 

@@ -319,6 +319,19 @@ export default function DocsPage() {
               reset the rebalance cooldown and remain available when oracle-dependent management
               actions are unavailable.
             </p>
+            <div className="docsNotice">
+              <Landmark size={17} />
+              <div>
+                <strong>Optional USDG output</strong>
+                <span>
+                  The settlement router can receive the proportional basket, sell every
+                  constituent through approved adapters, and return only USDG. The holder approves
+                  the exact OTF share amount and sets per-leg minimums, an aggregate minimum, and a
+                  deadline. Uniswap proceeds can differ from the Chainlink-priced basket value;
+                  failure of any leg reverts the share burn and all swaps atomically.
+                </span>
+              </div>
+            </div>
           </section>
 
           <section className="docsSection" id="portfolio-structure">

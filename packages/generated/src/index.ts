@@ -411,6 +411,28 @@ export const otfEntryRouterAbi = [
     ],
     outputs: [{ name: "settlementSpent", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "redeemToSettlement",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "minSettlementOut", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      {
+        name: "swaps",
+        type: "tuple[]",
+        components: [
+          { name: "adapter", type: "address" },
+          { name: "minSettlementOut", type: "uint256" },
+          { name: "adapterData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [{ name: "settlementReceived", type: "uint256" }],
+  },
 ] as const;
 
 export const otfFactoryAbi = [

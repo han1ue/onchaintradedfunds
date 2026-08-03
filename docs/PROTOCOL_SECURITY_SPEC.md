@@ -100,6 +100,8 @@ strategy authority boundaries. It MUST:
 - Verify adapter-reported input, observed input, and exact output balance deltas.
 - Mint through the vault's proportional `mintWithBasket` function and verify returned amounts.
 - Refund unused settlement tokens and retain no user-funded balance after successful entry.
+- Redeem an exact approved share amount through the vault's proportional exit before performing any settlement swaps.
+- Enforce per-leg and aggregate minimum settlement outputs for atomic settlement-token exits.
 - Never change targets, fees, roles, challenge state, or rebalance state.
 
 An entry adapter MAY use a multi-hop venue path. A rebalance adapter MAY similarly route through
@@ -254,6 +256,12 @@ For every successful settlement-token entry:
 AMM price and oracle NAV equality is intentionally NOT an invariant. The entrant selects maximum
 pool execution cost; the vault protects existing holders by accepting only the exact proportional
 basket.
+
+For every successful settlement-token exit, the router MUST verify the OTF is factory-registered,
+validate all adapters before burning shares, receive exactly the basket amounts reported by the
+vault, return every swap output to itself, satisfy every per-leg minimum and the aggregate minimum,
+and transfer the exact aggregate settlement output to the selected receiver. Any failure MUST
+revert the share burn, basket transfers, swaps, and approvals atomically.
 
 ## 6. Strategy lifecycle
 
