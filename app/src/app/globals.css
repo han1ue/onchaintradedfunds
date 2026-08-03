@@ -783,6 +783,33 @@ h2 {
   color: var(--green);
 }
 
+.walletAddressMetric {
+  position: relative;
+}
+
+.walletAddressCopyAction {
+  position: absolute;
+  top: 11px;
+  right: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.walletAddressMetric .walletAddressCopyAction {
+  pointer-events: auto;
+}
+
+.walletAddressMetric .walletAddressValue {
+  padding-right: 30px;
+}
+
+.walletAddressCopyFeedback {
+  font-size: 0.67rem;
+  font-weight: 650;
+  color: var(--green);
+  white-space: nowrap;
+}
+
 .walletDisconnectAction {
   color: var(--danger);
 }

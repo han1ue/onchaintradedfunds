@@ -3759,9 +3759,9 @@ function VaultsDirectory({
       <DataProvenance vault={currentVault} factory />
 
       <div className="directoryMetrics">
-        <MetricCard label="Total AUM" value={totalAum} icon={<CircleDollarSign size={14} />} />
-        <MetricCard label="OTFs" value={String(vaults.length)} icon={<Landmark size={14} />} />
-        <MetricCard label="Supported RWA Assets" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={<Coins size={14} />} />
+        <MetricCard label="Total AUM" value={totalAum} icon={null} />
+        <MetricCard label="OTFs" value={String(vaults.length)} icon={null} />
+        <MetricCard label="Supported RWA Assets" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
       </div>
 
       {managedVaults.length ? (
@@ -5121,17 +5121,28 @@ function WalletView({
       ) : connectedAddress ? (
         <>
           <div className="depositMetrics walletMetrics">
-            <MetricCard label="OTF Positions" value={positionsLoading ? "..." : String(positions.length)} />
             <div className="metricCard walletAddressMetric">
-              <div className="metricLabel"><span>Wallet address</span></div>
+              <div className="metricLabel">
+                <span>Wallet address</span>
+                {addressCopied ? (
+                  <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Address copied</span>
+                ) : (
+                  <button
+                    className="iconOnly compact walletAddressCopyAction"
+                    type="button"
+                    title="Copy wallet address"
+                    aria-label="Copy wallet address"
+                    onClick={copyWalletAddress}
+                  >
+                    <Copy size={13} />
+                  </button>
+                )}
+              </div>
               <div className="walletAddressValue">
                 <strong title={connectedAddress}>{shortAddress(connectedAddress)}</strong>
-                <button className="iconOnly compact" type="button" title="Copy wallet address" aria-label="Copy wallet address" onClick={copyWalletAddress}>
-                  {addressCopied ? <CheckCircle size={13} /> : <Copy size={13} />}
-                </button>
               </div>
-              <span className={addressCopied ? "copied" : ""} role="status" aria-live="polite">{addressCopied ? "Address copied" : "Robinhood Testnet"}</span>
             </div>
+            <MetricCard label="OTF Positions" value={positionsLoading ? "..." : String(positions.length)} />
             <MetricCard label="ETH Balance" value={nativeBalanceLabel} />
           </div>
 
