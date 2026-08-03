@@ -155,6 +155,8 @@ contract PortfolioCalculator {
         (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry, maxStaleness);
         if (rawBalance == 0) return 0;
         uint8 tokenDecimals = _tokenDecimals(asset);
+        // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
+        // Applying uiMultiplier() here would count corporate-action scaling twice.
         uint256 tokenAdjusted = MathEx.mulDiv(rawBalance, price, 10 ** uint256(tokenDecimals));
         return MathEx.mulDiv(tokenAdjusted, 1e18, 10 ** uint256(priceDecimals));
     }

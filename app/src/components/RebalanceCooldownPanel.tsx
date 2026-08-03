@@ -47,7 +47,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits, isAddress, parseEventLogs, parseUnits } from "viem";
 import {
   useAccount,
@@ -619,10 +619,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   ), [catalogPriceResults]);
 
   const factoryVaultAddresses = useMemo(
-    () => (factoryVaultData ?? []).filter(
-      (address): address is `0x${string}` => isAddress(address),
-    ),
-    [factoryVaultData],
+    () => isTestnet
+      ? (factoryVaultData ?? []).filter(
+          (address): address is `0x${string}` => isAddress(address),
+        )
+      : [],
+    [factoryVaultData, isTestnet],
   );
   const selectedIsFactoryVault = Boolean(
     selectedVaultAddress &&
@@ -1499,14 +1501,14 @@ function MetricCard({
 }: {
   label: string;
   value: string;
-  icon: ReactNode;
+  icon?: ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger";
   sub?: string;
 }) {
   return (
     <div className={`metricCard ${tone}`}>
       <div className="metricLabel">
-        {icon}
+        {icon ?? null}
         {label}
       </div>
       <strong>{value}</strong>
@@ -2601,6 +2603,24 @@ function VaultsDirectory({
   onCreateVault: () => void;
 }) {
   const [query, setQuery] = useState("");
+
+  if (!isTestnet) {
+    return (
+      <div className="appView">
+        <AppPageHeader
+          title="Onchain Traded Funds"
+          description="Discover and monitor managed onchain funds."
+          icon={<LayoutGrid size={18} />}
+        />
+        <section className="sectionCard depositsEmpty">
+          <span><Network size={22} /></span>
+          <h2>Robinhood Mainnet is not supported yet</h2>
+          <p>No assets, liquidity adapters, or OTF deployments are configured on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p>
+        </section>
+      </div>
+    );
+  }
+
   const normalizedQuery = query.trim().toLowerCase();
   const visibleRows = vaults.filter(
     (row) =>
@@ -4118,10 +4138,10 @@ function DepositsView({
       {connectedAddress ? (
         <>
           <div className="depositMetrics">
-            <MetricCard label="OTF Positions" value={String(positions.length)} icon={<CircleDollarSign size={14} />} sub={canReadPositions ? "Live OTF balances" : "No OTFs found"} />
-            <MetricCard label="RWA Holdings" value={String(heldAssetCount)} icon={<Coins size={14} />} sub={`${testnetCreateAssets.length} supported assets scanned`} />
+            <MetricCard label="OTF Positions" value={String(positions.length)} sub={canReadPositions ? "Live OTF balances" : "No OTFs found"} />
+            <MetricCard label="RWA Holdings" value={String(heldAssetCount)} sub={`${testnetCreateAssets.length} supported assets scanned`} />
             <div className="metricCard walletAddressMetric">
-              <div className="metricLabel"><span>Wallet address</span><Wallet size={14} /></div>
+              <div className="metricLabel"><span>Wallet address</span></div>
               <div className="walletAddressValue">
                 <strong title={connectedAddress}>{shortAddress(connectedAddress)}</strong>
                 <button className="iconOnly compact" type="button" title="Copy wallet address" aria-label="Copy wallet address" onClick={copyWalletAddress}>
@@ -4132,7 +4152,7 @@ function DepositsView({
                 {addressCopied ? "Address copied" : "Robinhood Testnet"}
               </span>
             </div>
-            <MetricCard label="ETH Balance" value={nativeBalanceLabel} icon={<Coins size={14} />} sub="Native wallet balance" />
+            <MetricCard label="ETH Balance" value={nativeBalanceLabel} sub="Native wallet balance" />
           </div>
 
           <section className="sectionCard depositPositions">
@@ -4191,7 +4211,7 @@ function DepositsView({
             <div className="directoryPanelHeading">
               <div>
                 <h2>Supported RWA assets</h2>
-                <p>Protocol-approved assets, live mock-oracle prices, and current wallet balances.</p>
+                <p>Protocol-approved assets, live onchain oracle prices, and current wallet balances.</p>
               </div>
               <span className="stateBadge muted">{heldAssetCount} held · {testnetCreateAssets.length} supported</span>
             </div>
@@ -4207,67 +4227,75 @@ function DepositsView({
                   </tr>
                 </thead>
                 <tbody>
-                  {walletAssets.map((asset) => (
-                    <tr className={(asset.balance ?? 0n) === 0n ? "emptyBalance" : ""} key={asset.address}>
-                      <td>
-                        <div className="rwaAssetIdentity">
-                          <strong>{asset.symbol}</strong>
-                          <small>{asset.name}</small>
-                        </div>
-                      </td>
-                      <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
-                      <td data-label="Oracle price" className="monoValue">{asset.displayPrice}</td>
-                      <td data-label="Wallet balance" className="monoValue walletBalanceValue">{asset.displayBalance}</td>
-                      <td className="rwaApprovalActionCell">
-                        <button
-                          className="compactApprovalAction"
-                          type="button"
-                          aria-expanded={selectedApprovalAssetAddress === asset.address}
-                          onClick={() => setSelectedApprovalAssetAddress(
-                            selectedApprovalAssetAddress === asset.address ? undefined : asset.address,
-                          )}
-                        >
-                          <ShieldCheck size={12} />
-                          See approvals
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {walletAssets.map((asset) => {
+                    const approvalsExpanded = selectedApprovalAssetAddress?.toLowerCase() === asset.address.toLowerCase();
+                    return (
+                      <Fragment key={asset.address}>
+                        <tr className={(asset.balance ?? 0n) === 0n ? "emptyBalance" : ""}>
+                          <td>
+                            <div className="rwaAssetIdentity">
+                              <strong>{asset.symbol}</strong>
+                              <small>{asset.name}</small>
+                            </div>
+                          </td>
+                          <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
+                          <td data-label="Oracle price" className="monoValue">{asset.displayPrice}</td>
+                          <td data-label="Wallet balance" className="monoValue walletBalanceValue">{asset.displayBalance}</td>
+                          <td className="rwaApprovalActionCell">
+                            <button
+                              className="compactApprovalAction"
+                              type="button"
+                              aria-expanded={approvalsExpanded}
+                              aria-controls={`approvals-${asset.address}`}
+                              onClick={() => setSelectedApprovalAssetAddress(
+                                approvalsExpanded ? undefined : asset.address,
+                              )}
+                            >
+                              <ShieldCheck size={12} />
+                              See approvals
+                            </button>
+                          </td>
+                        </tr>
+                        {approvalsExpanded ? (
+                          <tr className="rwaApprovalDetailRow">
+                            <td colSpan={5} className="rwaApprovalDetailCell">
+                              <div className="walletApprovalInspector" id={`approvals-${asset.address}`}>
+                                <div className="walletApprovalInspectorHeader">
+                                  <div>
+                                    <strong>{asset.symbol} approvals</strong>
+                                    <span>Token spending permissions granted by this wallet.</span>
+                                  </div>
+                                  <button className="iconOnly" type="button" title="Close approvals" aria-label="Close approvals" onClick={() => setSelectedApprovalAssetAddress(undefined)}>
+                                    <XCircle size={15} />
+                                  </button>
+                                </div>
+                                <div className="walletApprovalList">
+                                  {activeApprovalSpenders.map((spender) => (
+                                    <div className="walletApprovalRow" key={spender.address}>
+                                      <div><strong>{spender.label}</strong><small>{spender.detail} · {shortAddress(spender.address)}</small></div>
+                                      <span className="stateBadge warning">
+                                        {formatWalletTokenBalance(spender.allowance, asset.decimals)} approved
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {selectedAllowancesPending ? (
+                                    <div className="inlineEmptyState"><Loader2 className="spin" size={16} /><div><strong>Checking approvals</strong><span>Reading active token permissions from the network.</span></div></div>
+                                  ) : selectedAllowanceReadFailed ? (
+                                    <div className="inlineEmptyState"><RefreshCw size={16} /><div><strong>Approval check unavailable</strong><span>The network did not return every allowance.</span></div></div>
+                                  ) : !activeApprovalSpenders.length ? (
+                                    <div className="inlineEmptyState"><ShieldCheck size={16} /><div><strong>No approvals</strong><span>This wallet has not approved OTF creation or any OTF to spend {asset.symbol}.</span></div></div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-            {selectedApprovalAsset ? (
-              <div className="walletApprovalInspector">
-                <div className="walletApprovalInspectorHeader">
-                  <div>
-                    <strong>{selectedApprovalAsset.symbol} approvals</strong>
-                    <span>Token spending permissions granted by this wallet.</span>
-                  </div>
-                  <button className="iconOnly" type="button" title="Close approvals" aria-label="Close approvals" onClick={() => setSelectedApprovalAssetAddress(undefined)}>
-                    <XCircle size={15} />
-                  </button>
-                </div>
-                <div className="walletApprovalList">
-                  {activeApprovalSpenders.map((spender) => {
-                    return (
-                      <div className="walletApprovalRow" key={spender.address}>
-                        <div><strong>{spender.label}</strong><small>{spender.detail} · {shortAddress(spender.address)}</small></div>
-                        <span className="stateBadge warning">
-                          {formatWalletTokenBalance(spender.allowance, selectedApprovalAsset.decimals)} approved
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {selectedAllowancesPending ? (
-                    <div className="inlineEmptyState"><Loader2 className="spin" size={16} /><div><strong>Checking approvals</strong><span>Reading active token permissions from the network.</span></div></div>
-                  ) : selectedAllowanceReadFailed ? (
-                    <div className="inlineEmptyState"><RefreshCw size={16} /><div><strong>Approval check unavailable</strong><span>The network did not return every allowance.</span></div></div>
-                  ) : !activeApprovalSpenders.length ? (
-                    <div className="inlineEmptyState"><ShieldCheck size={16} /><div><strong>No approvals</strong><span>This wallet has not approved OTF creation or any OTF to spend {selectedApprovalAsset.symbol}.</span></div></div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
           </section>
         </>
       ) : (

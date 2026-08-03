@@ -2655,8 +2655,17 @@ textarea::placeholder {
   margin-left: auto;
 }
 
+.rwaApprovalDetailRow:hover {
+  background: transparent;
+}
+
+.rwaApprovalDetailCell {
+  padding: 0 !important;
+}
+
 .walletApprovalInspector {
   border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--background);
 }
 
