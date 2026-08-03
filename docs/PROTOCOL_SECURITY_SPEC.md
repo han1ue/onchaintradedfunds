@@ -267,13 +267,13 @@ revert the share burn, basket transfers, swaps, and approvals atomically.
 
 ### Target proposal
 
-`rebalance(newTokens, newWeights)` updates the target only. It MUST NOT imply that trades ran or
-that reserves match the target.
+`rebalance(newTokens, newWeights)` records a pending target only. It MUST NOT change the active
+target, imply that trades ran, or imply that reserves match the proposed target.
 
 A proposal requires:
 
 - Manager authority.
-- The configured cooldown to have elapsed.
+- The configured portfolio cooldown and fixed 14-day strategy cooldown to have elapsed.
 - No active challenge.
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
@@ -281,7 +281,18 @@ A proposal requires:
 - Removed constituents to have zero reserve.
 - Proposed turnover within the configured limit.
 
-It emits both the standard `Rebalanced` event and the richer `TargetWeightsProposed` event.
+It emits `TargetWeightsProposed`. The standard `Rebalanced` event MUST NOT be emitted until the
+target becomes active.
+
+### Delayed activation
+
+The active constituents and target weights MUST remain unchanged for at least 48 hours after a
+proposal. Deposits and proportional redemptions MUST remain available during this notice period.
+After the deadline, `activatePendingStrategy()` MUST revalidate asset approval, oracle freshness,
+portfolio shape, turnover, challenge state, fee state, and completion bands before changing the
+active target. Activation emits the standard `Rebalanced` event and `TargetWeightsActivated`, but
+performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
+cancel any proposal authored under the previous authority.
 
 ### Trade execution
 

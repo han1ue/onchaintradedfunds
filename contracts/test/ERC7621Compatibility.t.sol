@@ -131,14 +131,19 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory narrowWeights) = _sixtyFortyPortfolio();
         uint256[] memory weights = _uint256Weights(narrowWeights);
-        vm.warp(START + 7 days);
-
-        vm.expectEmit(false, false, false, true, address(vault));
-        emit Rebalanced(assets, weights);
+        vm.warp(START + 14 days);
         vault.rebalance(assets, weights);
 
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
+        assertTrue(vault.strategyProposalPending());
+        assertFalse(vault.strategicRebalanceActive());
+
+        vm.warp(START + 16 days);
+        vm.expectEmit(false, false, false, true, address(vault));
+        emit Rebalanced(assets, weights);
+        vault.activatePendingStrategy();
+
         assertTrue(vault.strategicRebalanceActive());
         assertEq(vault.rebalanceCount(), 0);
     }

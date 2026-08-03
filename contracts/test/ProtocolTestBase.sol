@@ -189,7 +189,11 @@ abstract contract ProtocolTestBase is TestBase {
     function _proposeTarget(ManagedOTFVault vault, address[] memory assets, uint16[] memory weights)
         internal
     {
+        uint256 nextStrategyTime = vault.nextStrategyChangeTime();
+        if (block.timestamp < nextStrategyTime) vm.warp(nextStrategyTime);
         vault.rebalance(assets, _uint256Weights(weights));
+        vm.warp(vault.pendingStrategyActivationTime());
+        vault.activatePendingStrategy();
     }
 
     function _executeAndComplete(ManagedOTFVault vault, TradeInstruction[] memory trades) internal {

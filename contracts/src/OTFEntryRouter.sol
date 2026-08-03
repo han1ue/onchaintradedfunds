@@ -133,6 +133,8 @@ contract OTFEntryRouter {
         uint256 deadline,
         EntrySwap[] calldata swaps
     ) external nonReentrant returns (uint256 settlementSpent) {
+        // User-supplied swap deadlines intentionally use chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlineExpired(deadline);
         if (shares == 0) revert ZeroShares();
         if (maxSettlementIn == 0) revert ZeroMaximumInput();
@@ -231,6 +233,8 @@ contract OTFEntryRouter {
         uint256 deadline,
         ExitSwap[] calldata swaps
     ) external nonReentrant returns (uint256 settlementReceived) {
+        // User-supplied swap deadlines intentionally use chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlineExpired(deadline);
         if (shares == 0) revert ZeroShares();
         if (minSettlementOut == 0) revert ZeroMinimumOutput();

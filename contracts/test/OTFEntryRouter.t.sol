@@ -62,7 +62,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 120 * ONE);
-        vm.expectRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
+        vm.expectPartialRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
         entryRouter.enterWithSettlement(
             address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
         );
@@ -79,7 +79,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 120 * ONE);
-        vm.expectRevert(MockEntryAdapter.MaximumInputExceeded.selector);
+        vm.expectPartialRevert(MockEntryAdapter.MaximumInputExceeded.selector);
         entryRouter.enterWithSettlement(
             address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
         );
@@ -95,13 +95,13 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         EntrySwap[] memory swaps = _swaps(60 * ONE, 60 * ONE);
 
         vm.prank(ALICE);
-        vm.expectRevert(OTFEntryRouter.DeadlineExpired.selector);
+        vm.expectPartialRevert(OTFEntryRouter.DeadlineExpired.selector);
         entryRouter.enterWithSettlement(
             address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp - 1, swaps
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(OTFEntryRouter.InvalidVault.selector);
+        vm.expectPartialRevert(OTFEntryRouter.InvalidVault.selector);
         entryRouter.enterWithSettlement(
             address(entryAdapter), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
         );
@@ -151,7 +151,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         vault.approve(address(entryRouter), shares);
-        vm.expectRevert(OTFEntryRouter.MinimumOutputNotMet.selector);
+        vm.expectPartialRevert(OTFEntryRouter.MinimumOutputNotMet.selector);
         entryRouter.redeemToSettlement(
             address(vault),
             shares,
@@ -166,7 +166,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
         vm.prank(ALICE);
-        vm.expectRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
+        vm.expectPartialRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
         entryRouter.redeemToSettlement(
             address(vault), shares, ALICE, 1, block.timestamp + 1 hours, swaps
         );

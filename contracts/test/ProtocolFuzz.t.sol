@@ -55,15 +55,16 @@ contract ProtocolFuzzTest is ProtocolTestBase {
             trades = new TradeInstruction[](0);
         }
 
-        uint256 rebalanceTime = START + cooldown;
-        vm.warp(rebalanceTime);
-        feedA.setRoundData(2, 100_00000000, rebalanceTime, rebalanceTime, 2);
-        feedB.setRoundData(2, 100_00000000, rebalanceTime, rebalanceTime, 2);
+        uint256 proposalTime = START + cooldown;
+        if (proposalTime < START + 14 days) proposalTime = START + 14 days;
+        vm.warp(proposalTime);
+        feedA.setRoundData(2, 100_00000000, proposalTime, proposalTime, 2);
+        feedB.setRoundData(2, 100_00000000, proposalTime, proposalTime, 2);
         _proposeTarget(vault, assets, weights);
         if (trades.length != 0) vault.executeRebalanceTrades(trades);
         if (vault.strategicRebalanceActive()) vault.completeStrategicRebalance();
 
-        assertEq(vault.lastRebalanceTimestamp(), rebalanceTime);
+        assertEq(vault.lastRebalanceTimestamp(), proposalTime + 48 hours);
         assertEq(vault.rebalanceCount(), 1);
         uint16[] memory actual = vault.currentWeightsBps();
         assertApproxEqAbs(actual[0], targetA, 1);

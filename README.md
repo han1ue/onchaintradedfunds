@@ -188,7 +188,7 @@ contributions, prevents ownership renunciation, and stages constituent removal u
 zero. The proportional-only contribution behavior differs from the draft's generalized monotonic
 contribution and valuation requirements.
 
-## Strategy-Change Cooldown
+## Portfolio And Strategy Timing
 
 The rolling 30-day rebalance counter has been removed. There is no `maxRebalancesPer30Days`, timestamp circular buffer for monthly limits, `rebalancesInLast30Days()`, or `remainingRebalancesInWindow()`.
 
@@ -196,7 +196,10 @@ Each vault stores:
 
 ```solidity
 uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
+uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
+uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
 uint64 public lastRebalanceTimestamp;
+uint64 public lastStrategyChangeTimestamp;
 uint32 public rebalanceCooldown;
 ```
 
@@ -208,25 +211,24 @@ if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) {
 }
 ```
 
-`lastRebalanceTimestamp` is initialized to vault creation time. The first strategic target
-proposal can happen only after:
+Both timestamps are initialized at creation. A target proposal must satisfy the configured
+portfolio cooldown and the fixed strategy cooldown:
 
 ```text
-vault creation timestamp + rebalanceCooldown
+lastRebalanceTimestamp + rebalanceCooldown
+lastStrategyChangeTimestamp + 14 days
 ```
 
-Before every target proposal:
+The manager's valid proposal is stored as pending and leaves the current target untouched. It can
+only be activated after the holder notice window:
 
 ```solidity
-uint256 nextAllowedTime = uint256(lastRebalanceTimestamp) + rebalanceCooldown;
-
-if (block.timestamp < nextAllowedTime) {
-    revert RebalanceCooldownActive(nextAllowedTime);
-}
+pendingStrategyActivationTime = block.timestamp + 48 hours;
 ```
 
-The timestamp updates only when a strategic rebalance successfully completes inside every final
-completion band. Target proposals, failed trades, and partial trades do not reset it.
+`lastStrategyChangeTimestamp` updates on activation. `lastRebalanceTimestamp` updates only when a
+strategic rebalance successfully completes inside every final completion band. Pending proposals,
+cancelled proposals, failed trades, and partial trades do not update either completion timestamp.
 
 The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
 
@@ -343,10 +345,17 @@ function rebalance(
 ) external;
 ```
 
-This call only updates and locks the strategic target. It emits the standard
-`Rebalanced(newTokens, newWeights)` plus `TargetWeightsProposed`. A new target cannot be proposed
-while the old portfolio is outside completion bands, during a challenge, or while an earlier
+This call validates and records a pending strategic target and emits `TargetWeightsProposed`. The
+active target and ERC-7621 constituent views remain unchanged for 48 hours so holders can redeem
+against the current basket. A new target cannot be proposed while the old portfolio is outside
+completion bands, during a challenge, while another proposal is pending, or while an earlier
 strategic target remains unfinished.
+
+After the notice period, `activatePendingStrategy()` revalidates assets, prices, turnover, fee and
+challenge state, makes the target active, and emits the standard
+`Rebalanced(newTokens, newWeights)` plus `TargetWeightsActivated`. Activation performs no trades.
+Anyone may activate the already-authorized proposal; only the manager may cancel it. Manager
+transfer automatically cancels a pending proposal.
 
 The manager or an authorized executor performs one or more partial batches through:
 

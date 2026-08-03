@@ -104,7 +104,7 @@ contract UniswapV2AdapterTest is TestBase {
         );
 
         adapter.setCallerApproved(address(this), false);
-        vm.expectRevert(UniswapV2Adapter.UnauthorizedCaller.selector);
+        vm.expectPartialRevert(UniswapV2Adapter.UnauthorizedCaller.selector);
         adapter.executeSwap(
             address(rwaA), address(rwaB), 1 ether, 1 ether, abi.encode(wrongPath)
         );

@@ -832,7 +832,7 @@ h2 {
 
 .performanceSummary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   border-bottom: 1px solid var(--border);
   padding: 0 0 14px;
 }
@@ -1623,12 +1623,75 @@ textarea::placeholder {
   justify-content: center;
 }
 
+.portfolioMandate,
+.portfolioChallenge {
+  margin-top: 14px;
+}
+
+.challengeCountdownBanner {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 12px;
+  border: 1px solid rgb(234 179 8 / 34%);
+  border-radius: var(--radius);
+  background: rgb(234 179 8 / 7%);
+  padding: 12px 14px;
+}
+
+.challengeCountdownBanner.danger {
+  border-color: rgb(248 113 113 / 38%);
+  background: rgb(248 113 113 / 8%);
+}
+
+.challengeCountdownHeading,
+.challengeCountdownHeading > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.challengeCountdownHeading {
+  justify-content: space-between;
+  color: var(--gold);
+  font-size: 0.7rem;
+}
+
+.challengeCountdownBanner.danger .challengeCountdownHeading {
+  color: var(--danger);
+}
+
+.challengeCountdownTrack {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgb(135 148 167 / 18%);
+}
+
+.challengeCountdownTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gold);
+}
+
+.challengeCountdownBanner.danger .challengeCountdownTrack > span {
+  background: var(--danger);
+}
+
+.challengeCountdownBanner > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
 .positionFlow {
   display: grid;
   gap: 10px;
   margin-top: 14px;
 }
 
+.positionModeTabs,
 .redeemModeTabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1639,6 +1702,7 @@ textarea::placeholder {
   padding: 3px;
 }
 
+.positionModeTabs button,
 .redeemModeTabs button {
   min-height: 31px;
   border: 0;
@@ -1650,9 +1714,14 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.positionModeTabs button.active,
 .redeemModeTabs button.active {
   background: var(--surface);
   color: var(--teal);
+}
+
+.positionModeTabs {
+  margin-top: 10px;
 }
 
 .entryQuoteSummary {
@@ -2021,6 +2090,43 @@ textarea::placeholder {
   display: grid;
   gap: 10px;
   margin-bottom: 18px;
+}
+
+.pendingStrategyNotice {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid rgb(234 179 8 / 28%);
+  border-radius: 6px;
+  background: rgb(234 179 8 / 6%);
+  padding: 12px;
+}
+
+.pendingStrategyNotice > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.pendingStrategyAssets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pendingStrategyAssets > span {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  color: var(--text-muted);
+  padding: 5px 7px;
+  font-size: 0.64rem;
+}
+
+.pendingStrategyAssets strong {
+  margin-left: 4px;
+  color: var(--text);
 }
 
 .targetCardGrid {

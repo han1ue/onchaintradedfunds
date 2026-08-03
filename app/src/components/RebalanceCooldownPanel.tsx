@@ -8,7 +8,6 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
-  BadgeCent,
   BookOpen,
   ChartPie,
   Check,
@@ -41,7 +40,6 @@ import {
   ShieldCheck,
   Sun,
   Trash2,
-  TrendingUp,
   UserCog,
   Wallet,
   XCircle,
@@ -156,6 +154,9 @@ type VaultView = {
   withinCompletionBands: boolean;
   withinChallengeBands: boolean;
   strategicRebalanceActive: boolean;
+  strategyProposalPending: boolean;
+  pendingStrategyActivationTime?: number;
+  nextStrategyChangeTime?: number;
   challengeActive: boolean;
   challengeStartedAt?: number;
   challengeDeadline?: number;
@@ -743,6 +744,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canProposeTargetWeights" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "authorizedExecutors" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "isWithinChallengeBands" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "strategyProposalPending" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "pendingStrategyActivationTime" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "nextStrategyChangeTime" },
       ] as const)
     : undefined;
 
@@ -855,6 +859,13 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const canProposeTargetWeights = Boolean(resultAt<boolean>(results, 35));
   const authorizedExecutors = resultAt<readonly string[]>(results, 36) ?? [];
   const withinChallengeBands = Boolean(resultAt<boolean>(results, 37));
+  const strategyProposalPending = Boolean(resultAt<boolean>(results, 38));
+  const pendingStrategyActivationTime = resultAt<bigint>(results, 39)
+    ? Number(resultAt<bigint>(results, 39))
+    : undefined;
+  const nextStrategyChangeTime = resultAt<bigint>(results, 40)
+    ? Number(resultAt<bigint>(results, 40))
+    : undefined;
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
   const connectedIsManager =
@@ -892,6 +903,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     withinCompletionBands,
     withinChallengeBands,
     strategicRebalanceActive,
+    strategyProposalPending,
+    pendingStrategyActivationTime,
+    nextStrategyChangeTime,
     challengeActive,
     challengeStartedAt,
     challengeDeadline,
@@ -1004,13 +1018,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               onBack={() => openView("vaults")}
               onManage={() => openView("manage")}
             />
+            <ChallengeCountdownBanner vault={vault} />
             <DataProvenance vault={vault} />
             <VaultMetrics vault={vault} />
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
                 <UserActions vault={vault} oraclePrices={catalogOraclePrices} />
-                <PortfolioAllocation allocations={allocations} oraclePrices={catalogOraclePrices} />
+                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} onRefresh={refetchVaultData} />
               </div>
 
               <aside className="sideColumn">
@@ -1425,15 +1440,45 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       : vault.withinCompletionBands
         ? "Within bands"
         : "Outside completion";
-  const feeStateLabel = ["Accruing", "Escrowed", "Suspended"][vault.feeState] ?? "Unavailable";
   return (
     <div className="metricGrid">
-      <MetricCard label="NAV" value={vault.nav ?? "Oracle read failed"} icon={<TrendingUp size={14} />} tone={vault.nav ? "success" : "neutral"} sub="Contract valuation" />
-      <MetricCard label="NAV / Share" value={vault.navPerShare ?? "Oracle read failed"} icon={<Activity size={14} />} sub="USDC terms" />
-      <MetricCard label="Total Supply" value={vault.totalSupply} icon={<Droplets size={14} />} sub={vault.symbol} />
-      <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<BadgeCent size={14} />} sub={feeStateLabel} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
-      <MetricCard label="Portfolio Status" value={portfolioState} icon={<Scale size={14} />} sub={vault.withinCompletionBands ? "Completion bands satisfied" : "Target differs from reserves"} tone={vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
-      <MetricCard label="Authorized Executors" value={String(vault.authorizedExecutors.length)} icon={<KeyRound size={14} />} sub="Manager remains accountable" />
+      <MetricCard label="NAV" value={vault.nav ?? "Oracle read failed"} tone={vault.nav ? "success" : "neutral"} />
+      <MetricCard label="NAV / Share" value={vault.navPerShare ?? "Oracle read failed"} />
+      <MetricCard label="Total Supply" value={vault.totalSupply} />
+      <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
+      <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
+      <MetricCard label="Authorized Executors" value={String(vault.authorizedExecutors.length)} />
+    </div>
+  );
+}
+
+function useLiveCountdown(deadline?: number) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1_000));
+  useEffect(() => {
+    if (!deadline) return;
+    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1_000)), 1_000);
+    return () => window.clearInterval(timer);
+  }, [deadline]);
+  return deadline ? Math.max(0, deadline - now) : 0;
+}
+
+function ChallengeCountdownBanner({ vault }: { vault: VaultView }) {
+  const remaining = useLiveCountdown(vault.challengeDeadline);
+  if (!vault.challengeActive) return null;
+  const progress = vault.challengeGracePeriod > 0
+    ? Math.max(0, Math.min(100, (remaining / vault.challengeGracePeriod) * 100))
+    : 0;
+  const expired = remaining === 0;
+  return (
+    <div className={`challengeCountdownBanner ${expired ? "danger" : "warning"}`} role="alert">
+      <div className="challengeCountdownHeading">
+        <span><AlertTriangle size={16} /><strong>{expired ? "Strategy challenge deadline passed" : "Strategy challenge active"}</strong></span>
+        <strong>{expired ? "Expired" : formatCooldown(remaining)}</strong>
+      </div>
+      <div className="challengeCountdownTrack" aria-label={`${progress.toFixed(0)}% of challenge response period remaining`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <p>{expired ? "Manager fees are eligible for suspension and escrow forfeiture until the portfolio returns to its completion band." : "Manager-fee shares remain in escrow while the portfolio returns to its completion band."}</p>
     </div>
   );
 }
@@ -1611,18 +1656,20 @@ function SectionCard({
 
 function RebalanceCooldown({ vault }: { vault: VaultView }) {
   const isLive = vault.dataMode === "live";
+  const portfolioCooldownRemaining = useLiveCountdown(vault.nextPortfolioChange);
+  const portfolioCooldownAvailable = isLive && portfolioCooldownRemaining === 0;
   return (
     <SectionCard
-      title="Strategy-change cooldown"
-      subtitle={`${formatCooldown(vault.cooldownSeconds)} enforced interval between target proposals`}
+      title="Portfolio-change cooldown"
+      subtitle={`${formatCooldown(vault.cooldownSeconds)} interval between successful portfolio changes`}
       icon={<Clock3 size={15} />}
-      action={<span className={`stateBadge ${isLive ? (vault.canRebalance ? "success" : "warning") : "muted"}`}>{isLive ? (vault.canRebalance ? "Available now" : "Cooling down") : "Live data required"}</span>}
+      action={<span className={`stateBadge ${isLive ? (portfolioCooldownAvailable ? "success" : "warning") : "muted"}`}>{isLive ? (portfolioCooldownAvailable ? "Available now" : "Cooling down") : "Live data required"}</span>}
     >
       <div className="cooldownStats">
         <TimelineItem label="Cooldown" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
-        <TimelineItem label="Last target proposal" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
-        <TimelineItem label="Next available" value={isLive ? (vault.canRebalance ? "Now" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
-        <TimelineItem label="State" value={isLive ? (vault.canRebalance ? "Unlocked" : "Locked") : "Not available"} icon={<Activity size={13} />} />
+        <TimelineItem label="Last portfolio change" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
+        <TimelineItem label="Next portfolio change" value={isLive ? (portfolioCooldownAvailable ? "Now" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
+        <TimelineItem label="State" value={isLive ? (portfolioCooldownAvailable ? "Available" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
       </div>
 
       {isLive ? <div className="progressBlock">
@@ -1644,10 +1691,10 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
         <span className="mutedInline">
           <Info size={14} />
           {isLive
-            ? vault.canRebalance
-              ? "Cooldown elapsed. A new target may be proposed when the portfolio is inside its completion bands."
+            ? portfolioCooldownAvailable
+              ? "Portfolio cooldown elapsed. Strategy proposals also follow the fixed 14-day schedule and 48-hour notice period."
               : "Maintenance trades, challenges, thesis amendments, and fee accrual do not reset this timer."
-            : "Connect a deployed OTF to read the target-proposal schedule."}
+            : "Connect a deployed OTF to read the portfolio-change schedule."}
         </span>
       </div>
     </SectionCard>
@@ -1679,11 +1726,15 @@ function TimelineItem({
 }
 
 function PortfolioAllocation({
+  vault,
   allocations,
   oraclePrices,
+  onRefresh,
 }: {
+  vault: VaultView;
   allocations: Allocation[];
   oraclePrices: CatalogOraclePrices;
+  onRefresh: () => Promise<unknown>;
 }) {
   return (
     <SectionCard
@@ -1750,6 +1801,15 @@ function PortfolioAllocation({
           </tbody>
         </table>
       </div>
+
+      <div className="executionPolicy portfolioMandate">
+        <ShieldCheck size={14} />
+        <div>
+          <strong>Bounded portfolio authority</strong>
+          <span>The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</span>
+        </div>
+      </div>
+      <StrategyChallenge vault={vault} onRefresh={onRefresh} />
 
     </SectionCard>
   );
@@ -1988,7 +2048,8 @@ function UserActions({
   vault: VaultView;
   oraclePrices: CatalogOraclePrices;
 }) {
-  const [activeAction, setActiveAction] = useState<"usdg" | "deposit" | "redeem">("usdg");
+  const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
+  const [depositMode, setDepositMode] = useState<"usdg" | "basket">("usdg");
   const [depositAmount, setDepositAmount] = useState("");
   const [usdgShareAmount, setUsdgShareAmount] = useState("");
   const [entrySlippage, setEntrySlippage] = useState("1.0");
@@ -2700,14 +2761,20 @@ function UserActions({
   }
 
   return (
-    <SectionCard title="Your position" subtitle={`Buy, deposit, or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
+    <SectionCard title="Your position" subtitle={`Deposit into or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
       <div className="actionTabs" role="tablist" aria-label="OTF position actions">
-        <button className={activeAction === "usdg" ? "active" : ""} type="button" onClick={() => setActiveAction("usdg")}>Buy with USDG</button>
-        <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>Deposit basket</button>
+        <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>Deposit</button>
         <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
       </div>
 
-      {activeAction === "usdg" ? (
+      {activeAction === "deposit" ? (
+        <div className="positionModeTabs" role="tablist" aria-label="Deposit source">
+          <button className={depositMode === "usdg" ? "active" : ""} type="button" onClick={() => setDepositMode("usdg")}>USDG</button>
+          <button className={depositMode === "basket" ? "active" : ""} type="button" onClick={() => setDepositMode("basket")}>RWA basket</button>
+        </div>
+      ) : null}
+
+      {activeAction === "deposit" && depositMode === "usdg" ? (
         <div className="positionFlow">
           {!entryContractsConfigured ? (
             <div className="inlineEmptyState">
@@ -2869,8 +2936,8 @@ function UserActions({
       ) : (
         <div className="positionFlow">
           <div className="redeemModeTabs" role="tablist" aria-label="Redemption output">
-            <button className={redeemMode === "usdg" ? "active" : ""} type="button" onClick={() => setRedeemMode("usdg")}>Receive USDG</button>
-            <button className={redeemMode === "basket" ? "active" : ""} type="button" onClick={() => setRedeemMode("basket")}>Receive basket</button>
+            <button className={redeemMode === "usdg" ? "active" : ""} type="button" onClick={() => setRedeemMode("usdg")}>USDG</button>
+            <button className={redeemMode === "basket" ? "active" : ""} type="button" onClick={() => setRedeemMode("basket")}>RWA basket</button>
           </div>
           <label className="fieldLabel">Shares to redeem</label>
           <div className="inputWithSuffix">
@@ -2976,6 +3043,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [txError, setTxError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
+  const activationRemaining = useLiveCountdown(vault.pendingStrategyActivationTime);
 
   useEffect(() => setTargets(initialTargets), [initialTargets]);
 
@@ -3060,6 +3128,28 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     }
   }
 
+  async function submitPendingAction(action: "activatePendingStrategy" | "cancelPendingStrategy") {
+    if (!vault.address || !vault.connectedIsManager || !publicClient) return;
+    setTxError(undefined);
+    try {
+      setTxState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: action,
+        chainId: robinhoodChainTestnet.id,
+      });
+      setTxState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The strategy transaction reverted.");
+      await onRefresh();
+      setTxState("confirmed");
+    } catch (error) {
+      setTxError(errorMessage(error));
+      setTxState("reverted");
+    }
+  }
+
   return (
     <SectionCard
       title="Update target weights"
@@ -3067,6 +3157,15 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       icon={<Scale size={15} />}
       action={<span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Draft mode"}</span>}
     >
+      {vault.strategyProposalPending ? (
+        <div className="pendingStrategyNotice">
+          <div className="subHeader">
+            <span>Pending strategy</span>
+            <small>{activationRemaining > 0 ? `Activates in ${formatCooldown(activationRemaining)}` : "Ready to activate"}</small>
+          </div>
+          <p>Current targets remain active during the 48-hour notice period, and holders may redeem before activation.</p>
+        </div>
+      ) : null}
       <div className="builderBlock">
         <div className="subHeader">
           <span>Target weights</span>
@@ -3079,6 +3178,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <select
                   className="targetTicker"
                   value={target.address}
+                  disabled={vault.strategyProposalPending}
                   onChange={(event) => {
                     const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
                     if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
@@ -3091,6 +3191,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <button
                   type="button"
                   title={`Remove ${target.ticker || "asset"}`}
+                  disabled={vault.strategyProposalPending}
                   onClick={() => setTargets((current) => current.filter((_, itemIndex) => itemIndex !== index))}
                 >
                   <Trash2 size={13} />
@@ -3106,6 +3207,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                     min={0}
                     max={100}
                     placeholder="0"
+                    disabled={vault.strategyProposalPending}
                   />
                   <span>%</span>
                 </div>
@@ -3114,7 +3216,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
+        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={vault.strategyProposalPending || targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
           <Plus size={13} />
           Add asset
         </button>
@@ -3214,17 +3316,24 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
 
       <TxStatus state={txState} persistent />
       <div className="builderActions">
-        <button
-          className="primaryAction"
-          type="button"
-          disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
-          onClick={submitTargets}
-        >
-          <RefreshCw size={14} />
-          {txState === "simulating" ? "Checking onchain rules" : txState === "pending" ? "Confirm in wallet" : txState === "submitted" ? "Updating targets" : "Update targets"}
-        </button>
+        {vault.strategyProposalPending ? <>
+          <button className="secondaryAction" type="button" disabled={!vault.connectedIsManager || txState === "pending" || txState === "submitted"} onClick={() => submitPendingAction("cancelPendingStrategy")}>
+            <XCircle size={14} /> Cancel proposal
+          </button>
+          <button className="primaryAction" type="button" disabled={!vault.connectedIsManager || activationRemaining > 0 || txState === "pending" || txState === "submitted"} onClick={() => submitPendingAction("activatePendingStrategy")}>
+            <CheckCircle size={14} /> {activationRemaining > 0 ? `Available in ${formatCooldown(activationRemaining)}` : "Activate strategy"}
+          </button>
+        </> : <button
+            className="primaryAction"
+            type="button"
+            disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            onClick={submitTargets}
+          >
+            <RefreshCw size={14} />
+            {txState === "simulating" ? "Checking onchain rules" : txState === "pending" ? "Confirm in wallet" : txState === "submitted" ? "Submitting proposal" : "Propose target update"}
+          </button>}
       </div>
-      <p className="builderFootnote">A proposal only locks targets. The manager or an authorized executor then performs one or more constrained trades; neither has a portfolio withdrawal path.</p>
+      <p className="builderFootnote">A proposal waits 48 hours before activation. Once active, the manager or an authorized executor may perform constrained trades; neither has a portfolio withdrawal path.</p>
     </SectionCard>
   );
 }
@@ -3432,23 +3541,12 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   );
 }
 
-function SafetyLimits({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
   const [challengeState, setChallengeState] = useState<TxState>("idle");
   const [challengeError, setChallengeError] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
-  const limits = [
-    ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
-    ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
-    ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
-    ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
-    ["Maximum assets", String(vault.maxAssetCount), "Concurrent positions"],
-    ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
-    ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
-    ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
-    ["Target-change cooldown", formatCooldown(vault.cooldownSeconds), "Cannot be shortened"],
-  ] as const;
   const challengeBusy = challengeState === "pending" || challengeState === "submitted";
   const challengeAction = !vault.challengeActive
     ? vault.withinChallengeBands ? undefined : "flagOutOfBand"
@@ -3494,6 +3592,44 @@ function SafetyLimits({ vault, onRefresh }: { vault: VaultView; onRefresh: () =>
   }
 
   return (
+    <div className="challengeActionBlock portfolioChallenge">
+      <div className="subHeader">
+        <span>Strategy challenge</span>
+        <small>{vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}</small>
+      </div>
+      <p>
+        {vault.challengeActive
+          ? vault.challengeTimeRemaining > 0
+            ? `Manager fees are escrowed for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
+            : "The response deadline has passed. Anyone may finalize fee suspension, or resolve after the portfolio returns to its completion band."
+          : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
+      </p>
+      {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
+      <TxStatus state={challengeState} />
+      <button className="secondaryAction" type="button" disabled={!connectedAddress || !challengeAction || challengeBusy} onClick={submitChallengeAction}>
+        <ShieldCheck size={14} />
+        {challengeButtonLabel}
+      </button>
+    </div>
+  );
+}
+
+function SafetyLimits({ vault }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+  const limits = [
+    ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
+    ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
+    ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
+    ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
+    ["Maximum assets", String(vault.maxAssetCount), "Concurrent positions"],
+    ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
+    ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
+    ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
+    ["Portfolio-change cooldown", formatCooldown(vault.cooldownSeconds), "Cannot be shortened"],
+    ["Strategy-change cooldown", "14 days", "Fixed protocol minimum"],
+    ["Strategy activation delay", "48 hours", "Holder exit window"],
+  ] as const;
+
+  return (
     <SectionCard
       title="Safety limits"
       subtitle="Immutable at deployment"
@@ -3518,31 +3654,6 @@ function SafetyLimits({ vault, onRefresh }: { vault: VaultView; onRefresh: () =>
           <span>Every rebalance uses listed assets and approved adapters, and settles atomically or fully reverts.</span>
         </div>
       </div>
-      <div className="challengeActionBlock">
-        <div className="subHeader">
-          <span>Strategy challenge</span>
-          <small>{vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}</small>
-        </div>
-        <p>
-          {vault.challengeActive
-            ? vault.challengeTimeRemaining > 0
-              ? `Manager fees are escrowed for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
-              : "The response deadline has passed. Anyone may finalize fee suspension, or resolve after the portfolio returns to its completion band."
-            : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
-        </p>
-        {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
-        <TxStatus state={challengeState} />
-        <button
-          className="secondaryAction"
-          type="button"
-          disabled={!connectedAddress || !challengeAction || challengeBusy}
-          onClick={submitChallengeAction}
-        >
-          <ShieldCheck size={14} />
-          {challengeButtonLabel}
-        </button>
-      </div>
-      <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</p>
     </SectionCard>
   );
 }
@@ -5532,19 +5643,7 @@ function ManageVaultsView({
         </div>
       </section>
 
-      {vault.challengeActive ? (
-        <div className={`riskCallout ${vault.challengeTimeRemaining > 0 ? "warning" : "danger"} manageChallengeWarning`} role="alert">
-          <AlertTriangle size={17} />
-          <div>
-            <strong>{vault.challengeTimeRemaining > 0 ? "Fee challenge active" : "Fee challenge deadline passed"}</strong>
-            <span>
-              {vault.challengeTimeRemaining > 0
-                ? `Manager-fee shares remain in escrow for ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
-                : "Manager fees are eligible for suspension and escrow forfeiture until the portfolio returns to its completion band and the challenge is resolved."}
-            </span>
-          </div>
-        </div>
-      ) : null}
+      <ChallengeCountdownBanner vault={vault} />
 
       <DataProvenance vault={vault} />
 

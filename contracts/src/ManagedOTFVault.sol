@@ -106,6 +106,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         lastRebalanceTimestamp = timestamp;
         lastFeeAccrualTimestamp = timestamp;
         lastCompletedStrategicRebalance = timestamp;
+        lastStrategyChangeTimestamp = timestamp;
 
         _thesisVersions.push(
             ThesisVersion({
@@ -273,9 +274,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function canProposeTargetWeights() public view returns (bool) {
         // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
-        bool cooldownActive = block.timestamp < nextRebalanceTime();
+        bool rebalanceCooldownActive = block.timestamp < nextRebalanceTime();
+        // Validator timestamp drift is immaterial to the fixed 14-day strategy delay.
+        // forge-lint: disable-next-line(block-timestamp)
+        bool strategyCooldownActive = block.timestamp < nextStrategyChangeTime();
+        bool cooldownActive = rebalanceCooldownActive || strategyCooldownActive;
         if (
-            challengeActive || strategicRebalanceActive || cooldownActive
+            challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
                 || feeState() == FeeState.Suspended
         ) {
             return false;
@@ -288,6 +293,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         // forge-lint: disable-next-line(block-timestamp)
         if (!challengeActive || block.timestamp >= challengeDeadline) return 0;
         return uint256(challengeDeadline) - block.timestamp;
+    }
+
+    function nextStrategyChangeTime() public view returns (uint256) {
+        return uint256(lastStrategyChangeTimestamp) + STRATEGY_CHANGE_COOLDOWN;
     }
 
     function feeState() public view returns (FeeState) {
@@ -531,6 +540,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function rebalance(address[] calldata newTokens, uint256[] calldata newWeights) external {
         newTokens;
         newWeights;
+        _delegateStrategy();
+    }
+
+    function activatePendingStrategy() external {
+        _delegateStrategy();
+    }
+
+    function cancelPendingStrategy() external {
         _delegateStrategy();
     }
 
@@ -890,6 +907,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _transferManager(address newManager) internal {
         address oldManager = manager;
+        if (strategyProposalPending) {
+            delete _pendingAssets;
+            delete _pendingTargetWeightsBps;
+            strategyProposalPending = false;
+            pendingStrategyProposedAt = 0;
+            pendingStrategyActivationTime = 0;
+            emit TargetWeightsProposalCancelled(rebalanceCount, oldManager);
+        }
         _clearExecutors();
         manager = newManager;
         emit OwnershipTransferred(oldManager, newManager);

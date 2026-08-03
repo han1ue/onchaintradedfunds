@@ -379,12 +379,15 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
               </div>
             </div>
             <p>
-              Only the manager can call the standard <code>rebalance</code> function. It updates
-              and locks constituents and target weights but executes no trades. The standard
-              <code>Rebalanced</code> event describes this target change, not successful
-              restoration.
+              Only the manager can call the standard <code>rebalance</code> function. It records a
+              pending constituent and weight proposal but leaves the active basket unchanged for
+              48 hours, giving holders time to redeem. After that notice period, activation
+              revalidates every safety rule and makes the target active without executing trades.
+              The standard <code>Rebalanced</code> event is emitted on activation, not proposal,
+              and does not mean the portfolio has reached its target.
             </p>
-            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)`}</code></pre>
+            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)
+activatePendingStrategy()`}</code></pre>
           </section>
 
           <section className="docsSection" id="trade-execution">
@@ -452,24 +455,28 @@ Suspended
             <div className="docsSectionHeading">
               <Clock3 size={18} />
               <div>
-                <span>Minimum seven days</span>
-                <h2>Strategy-change cooldown</h2>
+                <span>Two independent controls</span>
+                <h2>Portfolio and strategy timing</h2>
               </div>
             </div>
             <p>
-              Every vault waits at least seven days after a successfully completed strategic
-              rebalance before another target proposal. Partial maintenance trades and completion
-              remain available while the cooldown runs.
+              Successful portfolio changes remain separated by the vault&apos;s immutable cooldown of
+              at least seven days. Target composition changes are stricter: proposals are limited
+              to one every 14 days and remain pending for a 48-hour holder exit window.
             </p>
             <pre><code>{`MIN_REBALANCE_COOLDOWN = 7 days
+STRATEGY_CHANGE_COOLDOWN = 14 days
+STRATEGY_ACTIVATION_DELAY = 48 hours
+
 nextRebalanceTime =
   lastRebalanceTimestamp + rebalanceCooldown
 
 canRebalance =
   block.timestamp >= nextRebalanceTime`}</code></pre>
             <ul className="docsChecklist">
-              <li>The first target proposal waits from the vault creation timestamp.</li>
-              <li>Later proposals wait from the last successful strategic completion.</li>
+              <li>The first target proposal waits 14 days from vault creation.</li>
+              <li>Later proposals wait 14 days from the previous strategy activation.</li>
+              <li>Current targets remain active throughout the 48-hour notice period.</li>
               <li>Failed proposals, failed trades, and partial trades do not update the timestamp.</li>
               <li>Challenges, fees, thesis amendments, and role transfers do not reset it.</li>
             </ul>

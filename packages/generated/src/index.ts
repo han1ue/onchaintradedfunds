@@ -141,6 +141,48 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "activatePendingStrategy",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "cancelPendingStrategy",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "strategyProposalPending",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "pendingStrategyActivationTime",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "lastStrategyChangeTimestamp",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "nextStrategyChangeTime",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "executeRebalanceTrades",
     stateMutability: "nonpayable",
     inputs: [

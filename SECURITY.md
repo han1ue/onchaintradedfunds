@@ -93,10 +93,12 @@ Rebalancing depends on:
 - Oracle freshness.
 - Final NAV and target-weight validation.
 
-Target proposal, trade execution, and completion are separate. Every partial trade transaction is
-atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss exceeds the cap, or
-the batch does not move all exposures toward target, that transaction reverts while the locked
-strategic target remains active.
+Target proposal, delayed activation, trade execution, and completion are separate. A proposal is
+inert for 48 hours, during which holders can redeem against the unchanged active basket. Activation
+revalidates the proposal and is limited to one strategy change per 14 days. Every partial trade
+transaction is atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss
+exceeds the cap, or the batch does not move all exposures toward target, that transaction reverts
+while the activated strategic target remains active.
 
 The vault grants exact temporary approvals to the executor and clears them after each trade. This reduces approval exposure but does not remove adapter-integration risk.
 

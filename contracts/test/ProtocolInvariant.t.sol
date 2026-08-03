@@ -122,15 +122,25 @@ contract ProtocolInvariantHandler is TestBase {
         if (vault.strategicRebalanceActive()) {
             targetA = vault.targetWeightBps(address(tokenA));
         } else {
-            vm.warp(block.timestamp + vault.rebalanceCooldown());
+            uint256 nextAllowed = vault.nextStrategyChangeTime();
+            if (vault.nextRebalanceTime() > nextAllowed) nextAllowed = vault.nextRebalanceTime();
+            if (block.timestamp < nextAllowed) vm.warp(nextAllowed);
             _refreshOracles();
             targetA = successfulRebalances % 2 == 0 ? 6_000 : 5_000;
         }
         (address[] memory assets, uint16[] memory weights, TradeInstruction[] memory trades) =
             _rebalanceInputs(targetA, false);
 
-        if (!vault.strategicRebalanceActive()) {
+        if (!vault.strategicRebalanceActive() && !vault.strategyProposalPending()) {
             try vault.rebalance(assets, _uint256Weights(weights)) { }
+            catch {
+                return;
+            }
+        }
+        if (vault.strategyProposalPending()) {
+            vm.warp(vault.pendingStrategyActivationTime());
+            _refreshOracles();
+            try vault.activatePendingStrategy() { }
             catch {
                 return;
             }

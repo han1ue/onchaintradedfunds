@@ -8,6 +8,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
     uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
+    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
+    uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
     uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
     uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
     uint256 public constant MAX_THESIS_BYTES = 2_048;
@@ -27,6 +29,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnauthorizedFactory();
     error RebalanceCooldownTooShort();
     error RebalanceCooldownActive(uint256 nextAllowedTime);
+    error StrategyChangeCooldownActive(uint256 nextAllowedTime);
+    error StrategyActivationPending(uint256 activationTime);
+    error NoPendingStrategy();
+    error PendingStrategyExists();
     error NotManager();
     error NotTradeAuthority();
     error InvalidArrayLength();
@@ -135,6 +141,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         uint16 challengeDeviationBps,
         uint64 proposedAt
     );
+    event TargetWeightsActivated(
+        uint256 indexed rebalanceId,
+        address indexed activator,
+        address[] newTokens,
+        uint256[] newWeights,
+        uint64 activatedAt
+    );
+    event TargetWeightsProposalCancelled(uint256 indexed rebalanceId, address indexed manager);
     event StrategicRebalanceCompleted(
         uint256 indexed rebalanceId,
         address indexed manager,
@@ -196,10 +210,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint64 public lastFeeAccrualTimestamp;
     uint64 public lastCompletedStrategicRebalance;
     uint64 public strategicRebalanceStartedAt;
+    uint64 public lastStrategyChangeTimestamp;
+    uint64 public pendingStrategyProposedAt;
+    uint64 public pendingStrategyActivationTime;
 
     uint256 public rebalanceCount;
     uint256 public escrowedManagerFeeShares;
     bool public strategicRebalanceActive;
+    bool public strategyProposalPending;
     bool public challengeActive;
     address public challengeCaller;
     uint64 public challengeStartedAt;
@@ -212,6 +230,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 internal _strategicNavBefore;
     uint16 internal _strategicTurnoverBps;
     address[] internal _assets;
+    address[] internal _pendingAssets;
+    uint16[] internal _pendingTargetWeightsBps;
     address[] internal _authorizedExecutors;
     mapping(address => uint256) internal _executorIndexPlusOne;
     ThesisVersion[] internal _thesisVersions;

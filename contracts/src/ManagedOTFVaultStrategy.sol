@@ -124,33 +124,38 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         onlyManager
         nonReentrant
     {
+        if (strategyProposalPending) revert PendingStrategyExists();
         if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
         uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        uint256 nextStrategyAllowed =
+            uint256(lastStrategyChangeTimestamp) + STRATEGY_CHANGE_COOLDOWN;
         // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < nextStrategyAllowed) {
+            revert StrategyChangeCooldownActive(nextStrategyAllowed);
+        }
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
         _validatePortfolio(newTokens, newWeights);
-        _accrueViaVault();
 
-        (uint256[] memory currentWeights, uint256 navBefore) = _currentPreciseWeightsAndNav();
+        (uint256[] memory currentWeights,) = _currentPreciseWeightsAndNav();
         uint256 turnover =
             _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
         if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
 
         uint64 proposedAt = uint64(block.timestamp);
-        _strategicOldPortfolioHash = _portfolioHashCurrent();
-        _strategicNavBefore = navBefore;
-        // Factory bounds cap turnover at BPS, well below uint16.max.
+        strategyProposalPending = true;
+        pendingStrategyProposedAt = proposedAt;
+        // The fixed 48-hour delay is far below uint64.max.
         // forge-lint: disable-next-line(unsafe-typecast)
-        _strategicTurnoverBps = uint16(turnover);
-        strategicRebalanceStartedAt = proposedAt;
-        strategicRebalanceActive = true;
-        _replacePortfolio(newTokens, newWeights);
-        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
+        pendingStrategyActivationTime = proposedAt + uint64(STRATEGY_ACTIVATION_DELAY);
+        for (uint256 i = 0; i < newTokens.length; i++) {
+            _pendingAssets.push(newTokens[i]);
+            _pendingTargetWeightsBps.push(uint16(newWeights[i]));
+        }
 
-        emit Rebalanced(newTokens, newWeights);
         emit TargetWeightsProposed(
             rebalanceCount,
             msg.sender,
@@ -160,6 +165,54 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             challengeWeightDeviationBps,
             proposedAt
         );
+    }
+
+    function activatePendingStrategy() external onlyDelegateCall nonReentrant {
+        if (!strategyProposalPending) revert NoPendingStrategy();
+        // The notice period is enforced by chain time so holders receive the full exit window.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < pendingStrategyActivationTime) {
+            revert StrategyActivationPending(pendingStrategyActivationTime);
+        }
+        if (challengeActive || strategicRebalanceActive || _feeState == FeeState.Suspended) {
+            revert StrategyStateLocked();
+        }
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+
+        _validatePendingPortfolio();
+        _accrueViaVault();
+
+        address[] memory newTokens = _pendingAssets;
+        uint256[] memory newWeights = _pendingWeightsAsUint256();
+        (uint256[] memory currentWeights, uint256 navBefore) = _currentPreciseWeightsAndNav();
+        uint256 turnover =
+            _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
+        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
+
+        uint64 activatedAt = uint64(block.timestamp);
+        _strategicOldPortfolioHash = _portfolioHashCurrent();
+        _strategicNavBefore = navBefore;
+        // Factory bounds cap turnover at BPS, well below uint16.max.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _strategicTurnoverBps = uint16(turnover);
+        strategicRebalanceStartedAt = activatedAt;
+        strategicRebalanceActive = true;
+        lastStrategyChangeTimestamp = activatedAt;
+        _replacePortfolio(newTokens, newWeights);
+        _clearPendingStrategy();
+        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
+
+        emit Rebalanced(newTokens, newWeights);
+        emit TargetWeightsActivated(
+            rebalanceCount, msg.sender, newTokens, newWeights, activatedAt
+        );
+    }
+
+    function cancelPendingStrategy() external onlyDelegateCall onlyManager {
+        if (!strategyProposalPending) revert NoPendingStrategy();
+        uint256 rebalanceId = rebalanceCount;
+        _clearPendingStrategy();
+        emit TargetWeightsProposalCancelled(rebalanceId, msg.sender);
     }
 
     function executeRebalanceTrades(TradeInstruction[] calldata trades)
@@ -346,7 +399,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
     }
 
-    function _validatePortfolio(address[] calldata assets_, uint256[] calldata weights_)
+    function _validatePortfolio(address[] memory assets_, uint256[] memory weights_)
         private
         view
     {
@@ -381,6 +434,11 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             sum += weight;
         }
         if (sum != BPS) revert InvalidWeights(sum);
+    }
+
+    function _validatePendingPortfolio() private view {
+        uint256[] memory weights = _pendingWeightsAsUint256();
+        _validatePortfolio(_pendingAssets, weights);
     }
 
     function _validateTrade(TradeInstruction calldata trade) private view {
@@ -451,8 +509,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     }
 
     function _turnoverBps(
-        address[] calldata newTokens,
-        uint256[] calldata newWeights,
+        address[] memory newTokens,
+        uint256[] memory newWeights,
         uint256[] memory currentWeights,
         uint256 targetScale
     ) private view returns (uint256) {
@@ -471,7 +529,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return _calculator.assetValue(asset, rawBalance, oracleRegistry, maxOracleStaleness);
     }
 
-    function _replacePortfolio(address[] calldata assets_, uint256[] calldata weights_) private {
+    function _replacePortfolio(address[] memory assets_, uint256[] memory weights_) private {
         address[] memory previousAssets = _assets;
         delete _assets;
 
@@ -488,6 +546,21 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
     }
 
+    function _pendingWeightsAsUint256() private view returns (uint256[] memory weights) {
+        weights = new uint256[](_pendingTargetWeightsBps.length);
+        for (uint256 i = 0; i < weights.length; i++) {
+            weights[i] = _pendingTargetWeightsBps[i];
+        }
+    }
+
+    function _clearPendingStrategy() private {
+        delete _pendingAssets;
+        delete _pendingTargetWeightsBps;
+        strategyProposalPending = false;
+        pendingStrategyProposedAt = 0;
+        pendingStrategyActivationTime = 0;
+    }
+
     function _targetWeights() private view returns (uint256[] memory weights) {
         weights = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
@@ -499,7 +572,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return keccak256(abi.encode(_assets, _targetWeights()));
     }
 
-    function _weightOf(address[] calldata assets_, uint256[] calldata weights_, address asset)
+    function _weightOf(address[] memory assets_, uint256[] memory weights_, address asset)
         private
         pure
         returns (uint256)
@@ -510,7 +583,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return 0;
     }
 
-    function _contains(address[] calldata assets_, address asset) private pure returns (bool) {
+    function _contains(address[] memory assets_, address asset) private pure returns (bool) {
         for (uint256 i = 0; i < assets_.length; i++) {
             if (assets_[i] == asset) return true;
         }

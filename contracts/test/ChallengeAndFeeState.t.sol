@@ -148,7 +148,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory narrowWeights) = _sixtyFortyPortfolio();
         uint256[] memory weights = _uint256Weights(narrowWeights);
-        vm.warp(START + 7 days);
+        vm.warp(START + 14 days);
         _setPrices(120_00000000, 100_00000000);
 
         vm.expectRevert(ManagedOTFVaultStorage.TargetBandsNotReached.selector);
@@ -163,14 +163,19 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory narrowWeights) = _sixtyFortyPortfolio();
         uint256[] memory weights = _uint256Weights(narrowWeights);
-        vm.warp(START + 7 days);
+        vm.warp(START + 14 days);
         _setPrices(100_00000000, 100_00000000);
         vault.rebalance(assets, weights);
 
+        vm.expectRevert(ManagedOTFVaultStorage.PendingStrategyExists.selector);
+        vault.rebalance(assets, weights);
+
+        vm.warp(START + 16 days);
+        vault.activatePendingStrategy();
         vm.expectRevert(ManagedOTFVaultStorage.StrategyStateLocked.selector);
         vault.rebalance(assets, weights);
 
-        vm.warp(START + 8 days);
+        vm.warp(START + 17 days);
         _setPrices(100_00000000, 100_00000000);
         vault.accrueFees();
         assertGt(vault.escrowedManagerFeeShares(), 0);
