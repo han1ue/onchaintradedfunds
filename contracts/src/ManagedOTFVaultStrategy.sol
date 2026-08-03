@@ -44,6 +44,60 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         revert DirectStrategyCall();
     }
 
+    function transferOwnership(address newOwner)
+        external
+        onlyDelegateCall
+        onlyManager
+        nonReentrant
+    {
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (newOwner == address(this)) revert InvalidRoleAddress(newOwner);
+        _accrueViaVault();
+
+        address oldManager = manager;
+        if (strategyProposalPending) {
+            delete _pendingAssets;
+            delete _pendingTargetWeightsBps;
+            strategyProposalPending = false;
+            pendingStrategyProposedAt = 0;
+            pendingStrategyActivationTime = 0;
+            emit TargetWeightsProposalCancelled(rebalanceCount, oldManager);
+        }
+        _clearExecutors();
+        manager = newOwner;
+        authorizedExecutor[newOwner] = true;
+        _authorizedExecutors.push(newOwner);
+        _executorIndexPlusOne[newOwner] = 1;
+        emit OwnershipTransferred(oldManager, newOwner);
+        emit ManagerTransferred(oldManager, newOwner);
+    }
+
+    function setFeeRecipient(address newFeeRecipient)
+        external
+        onlyDelegateCall
+        onlyManager
+        nonReentrant
+    {
+        if (newFeeRecipient == address(0)) revert ZeroAddress();
+        if (newFeeRecipient == address(this)) revert InvalidRoleAddress(newFeeRecipient);
+        _accrueViaVault();
+        address oldRecipient = feeRecipient;
+        feeRecipient = newFeeRecipient;
+        emit FeeRecipientTransferred(oldRecipient, newFeeRecipient);
+    }
+
+    function claimChallengeReward()
+        external
+        onlyDelegateCall
+        nonReentrant
+        returns (uint256 rewardShares)
+    {
+        rewardShares = challengeRewardShares[msg.sender];
+        challengeRewardShares[msg.sender] = 0;
+        if (rewardShares != 0) _mint(msg.sender, rewardShares);
+        emit ChallengeRewardClaimed(msg.sender, rewardShares);
+    }
+
     function appendThesisAmendment(string calldata text) external onlyDelegateCall onlyManager {
         uint256 length = bytes(text).length;
         if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
@@ -333,9 +387,12 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function _resolveOutOfBandChallenge() private {
         if (!challengeActive) revert ChallengeNotActive();
+        // Challenge deadlines intentionally use chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > challengeDeadline) _accrueViaVault();
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
+        // forge-lint: disable-next-line(block-timestamp)
         bool timely = block.timestamp <= challengeDeadline;
         challengeActive = false;
         challengeCaller = address(0);
@@ -553,6 +610,15 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         strategyProposalPending = false;
         pendingStrategyProposedAt = 0;
         pendingStrategyActivationTime = 0;
+    }
+
+    function _clearExecutors() private {
+        for (uint256 i = 0; i < _authorizedExecutors.length; i++) {
+            address executor = _authorizedExecutors[i];
+            delete authorizedExecutor[executor];
+            delete _executorIndexPlusOne[executor];
+        }
+        delete _authorizedExecutors;
     }
 
     function _targetWeights() private view returns (uint256[] memory weights) {

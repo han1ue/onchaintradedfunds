@@ -209,6 +209,8 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testLongDormancyAccruesWithoutBrickingVault() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 36_500 days);
+        feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
+        feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
 
         uint256 accrued = vault.accrueFees();
 

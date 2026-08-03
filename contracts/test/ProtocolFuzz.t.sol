@@ -165,6 +165,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + elapsed);
+        feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
+        feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         uint256 numerator = uint256(feeBps) * elapsed;
         uint256 denominator = 10_000 * 365 days - numerator;
         uint256 expectedFeeShares = 100 * ONE * numerator / denominator;
@@ -189,6 +191,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + elapsed);
+        feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
+        feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         uint256 accrued = vault.accrueFees();
 
         assertGt(accrued, 0);

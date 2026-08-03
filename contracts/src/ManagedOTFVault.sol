@@ -78,7 +78,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _initializeERC20(params.name, params.symbol, 18);
 
         factory = factory_;
-        _authorizeManagerExecutor(params.manager);
+        manager = params.manager;
+        authorizedExecutor[params.manager] = true;
+        _authorizedExecutors.push(params.manager);
+        _executorIndexPlusOne[params.manager] = 1;
         feeRecipient = params.feeRecipient;
         assetRegistry = assetRegistry_;
         oracleRegistry = oracleRegistry_;
@@ -139,11 +142,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return manager;
     }
 
-    function transferOwnership(address newOwner) external onlyManager nonReentrant {
-        if (newOwner == address(0)) revert ZeroAddress();
-        if (newOwner == address(this)) revert InvalidRoleAddress(newOwner);
-        _accrueFees();
-        _transferManager(newOwner);
+    function transferOwnership(address newOwner) external {
+        newOwner;
+        _delegateStrategy();
     }
 
     // ERC-7621 views
@@ -547,16 +548,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         feeShares = _accrueFees();
     }
 
-    function claimChallengeReward()
-        external
-        onlyInitialized
-        nonReentrant
-        returns (uint256 rewardShares)
-    {
-        rewardShares = challengeRewardShares[msg.sender];
-        challengeRewardShares[msg.sender] = 0;
-        if (rewardShares != 0) _mint(msg.sender, rewardShares);
-        emit ChallengeRewardClaimed(msg.sender, rewardShares);
+    function claimChallengeReward() external returns (uint256) {
+        _delegateStrategy();
     }
 
     // Strategy authority
@@ -583,13 +576,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function setFeeRecipient(address newFeeRecipient) external onlyManager nonReentrant {
-        if (newFeeRecipient == address(0)) revert ZeroAddress();
-        if (newFeeRecipient == address(this)) revert InvalidRoleAddress(newFeeRecipient);
-        _accrueFees();
-        address oldRecipient = feeRecipient;
-        feeRecipient = newFeeRecipient;
-        emit FeeRecipientTransferred(oldRecipient, newFeeRecipient);
+    function setFeeRecipient(address newFeeRecipient) external {
+        newFeeRecipient;
+        _delegateStrategy();
     }
 
     // ERC-7621 rebalance changes targets only. Trades and completion are separate calls.
@@ -768,6 +757,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 forfeitureStart = uint256(lastFeeAccrualTimestamp) > uint256(challengeStartedAt)
             ? uint256(lastFeeAccrualTimestamp)
             : uint256(challengeStartedAt);
+        // Challenge fee forfeiture intentionally uses chain time.
+        // forge-lint: disable-next-line(block-timestamp)
         uint256 elapsed = block.timestamp > forfeitureStart ? block.timestamp - forfeitureStart : 0;
         uint256 forfeitedShares = creatorFeeBpsPerYear == 0 || elapsed == 0
             ? 0
@@ -959,38 +950,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (senderDelta != amount || receiverDelta != amount) {
             revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
         }
-    }
-
-    function _transferManager(address newManager) internal {
-        address oldManager = manager;
-        if (strategyProposalPending) {
-            delete _pendingAssets;
-            delete _pendingTargetWeightsBps;
-            strategyProposalPending = false;
-            pendingStrategyProposedAt = 0;
-            pendingStrategyActivationTime = 0;
-            emit TargetWeightsProposalCancelled(rebalanceCount, oldManager);
-        }
-        _clearExecutors();
-        _authorizeManagerExecutor(newManager);
-        emit OwnershipTransferred(oldManager, newManager);
-        emit ManagerTransferred(oldManager, newManager);
-    }
-
-    function _clearExecutors() internal {
-        for (uint256 i = 0; i < _authorizedExecutors.length; i++) {
-            address executor = _authorizedExecutors[i];
-            delete authorizedExecutor[executor];
-            delete _executorIndexPlusOne[executor];
-        }
-        delete _authorizedExecutors;
-    }
-
-    function _authorizeManagerExecutor(address manager_) internal {
-        manager = manager_;
-        authorizedExecutor[manager_] = true;
-        _authorizedExecutors.push(manager_);
-        _executorIndexPlusOne[manager_] = 1;
     }
 
     function _weightsAsUint256() internal view returns (uint256[] memory weights) {
