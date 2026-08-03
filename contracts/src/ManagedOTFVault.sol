@@ -78,7 +78,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _initializeERC20(params.name, params.symbol, 18);
 
         factory = factory_;
-        manager = params.manager;
+        _authorizeManagerExecutor(params.manager);
         feeRecipient = params.feeRecipient;
         assetRegistry = assetRegistry_;
         oracleRegistry = oracleRegistry_;
@@ -281,7 +281,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         bool cooldownActive = rebalanceCooldownActive || strategyCooldownActive;
         if (
             challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
-                || feeState() == FeeState.Suspended
         ) {
             return false;
         }
@@ -300,13 +299,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function feeState() public view returns (FeeState) {
-        // Fee suspension must reflect the onchain challenge deadline.
+        if (!challengeActive) return FeeState.Accruing;
+        // Challenge deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
-        bool deadlineMissed = block.timestamp > challengeDeadline;
-        if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
-            return FeeState.Suspended;
-        }
-        return _feeState;
+        return block.timestamp > challengeDeadline ? FeeState.Suspended : FeeState.Escrowed;
     }
 
     function feesAccruing() external view returns (bool) {
@@ -498,8 +494,69 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         emit Withdrawn(msg.sender, receiver, shares, amountsOut);
     }
 
-    function accrueFees() public onlyInitialized nonReentrant returns (uint256 feeShares) {
+    function accrueFees()
+        public
+        onlyInitialized
+        onlyManager
+        nonReentrant
+        returns (uint256 feeShares)
+    {
+        feeShares = _withdrawManagerFees();
+    }
+
+    function withdrawManagerFees()
+        external
+        onlyInitialized
+        onlyManager
+        nonReentrant
+        returns (uint256 feeShares)
+    {
+        feeShares = _withdrawManagerFees();
+    }
+
+    function _withdrawManagerFees() internal returns (uint256 feeShares) {
+        if (challengeActive) {
+            // Challenge deadlines intentionally use chain time.
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp > challengeDeadline) {
+                _forfeitChallengeFees();
+                return 0;
+            }
+            if (!_isWithinBands(maxWeightDeviationBps)) return 0;
+            feeShares = _mintFees(block.timestamp - uint256(lastFeeAccrualTimestamp));
+            if (feeShares != 0 || totalSupply == 0 || creatorFeeBpsPerYear == 0) {
+                lastFeeAccrualTimestamp = uint64(block.timestamp);
+            }
+            challengeActive = false;
+            challengeCaller = address(0);
+            challengeStartedAt = 0;
+            challengeDeadline = 0;
+            emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), true);
+            emit ManagerFeeAccrualResumed(uint64(block.timestamp));
+            return feeShares;
+        }
+
+        if (!_isWithinBands(maxWeightDeviationBps)) {
+            address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
+            if (breached.length != 0) {
+                _startChallenge(msg.sender, breached);
+            }
+            return 0;
+        }
+
         feeShares = _accrueFees();
+    }
+
+    function claimChallengeReward()
+        external
+        onlyInitialized
+        nonReentrant
+        returns (uint256 rewardShares)
+    {
+        rewardShares = challengeRewardShares[msg.sender];
+        challengeRewardShares[msg.sender] = 0;
+        if (rewardShares != 0) _mint(msg.sender, rewardShares);
+        emit ChallengeRewardClaimed(msg.sender, rewardShares);
     }
 
     // Strategy authority
@@ -571,6 +628,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function syncChallengeDeadline() external {
+        _delegateStrategy();
+    }
+
+    function stopChallengeFees() external {
         _delegateStrategy();
     }
 
@@ -647,38 +708,21 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _accrueFees() internal returns (uint256 feeShares) {
         uint64 previousTimestamp = lastFeeAccrualTimestamp;
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
-        // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
-        // forge-lint: disable-next-line(block-timestamp)
-        bool deadlineMissed = block.timestamp > challengeDeadline;
-        if (elapsed == 0) {
-            if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
-                _forfeitEscrowAndSuspend();
-            }
+        if (challengeActive) {
+            // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp > challengeDeadline) _forfeitChallengeFees();
             return 0;
         }
+        if (elapsed == 0) return 0;
 
-        if (_feeState == FeeState.Suspended) {
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-            return 0;
-        }
-
-        if (_feeState == FeeState.Escrowed && challengeActive && deadlineMissed) {
-            uint256 eligibleElapsed = uint256(challengeDeadline) > previousTimestamp
-                ? uint256(challengeDeadline) - uint256(previousTimestamp)
-                : 0;
-            if (eligibleElapsed != 0) feeShares = _mintFees(eligibleElapsed, true);
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-            _forfeitEscrowAndSuspend();
-            return feeShares;
-        }
-
-        feeShares = _mintFees(elapsed, _feeState == FeeState.Escrowed);
+        feeShares = _mintFees(elapsed);
         if (feeShares != 0 || totalSupply == 0 || creatorFeeBpsPerYear == 0) {
             lastFeeAccrualTimestamp = uint64(block.timestamp);
         }
     }
 
-    function _mintFees(uint256 elapsed, bool escrowManager) internal returns (uint256 feeShares) {
+    function _mintFees(uint256 elapsed) internal returns (uint256 feeShares) {
         uint256 supply = totalSupply;
         uint256 feeBps = creatorFeeBpsPerYear;
         if (supply == 0 || feeBps == 0 || elapsed == 0) return 0;
@@ -688,15 +732,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 protocolShares = MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
         uint256 managerShares = feeShares - protocolShares;
         if (protocolShares != 0) _mint(feeCollector, protocolShares);
-        if (managerShares != 0) {
-            if (escrowManager) {
-                _mint(address(this), managerShares);
-                escrowedManagerFeeShares += managerShares;
-                emit ManagerFeesEscrowed(managerShares, escrowedManagerFeeShares);
-            } else {
-                _mint(feeRecipient, managerShares);
-            }
-        }
+        if (managerShares != 0) _mint(feeRecipient, managerShares);
         emit FeesAccrued(feeShares, managerShares, protocolShares);
     }
 
@@ -718,34 +754,34 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 previousTimestamp = lastFeeAccrualTimestamp;
         // Fee previews must use the same chain-time boundary as state-changing accrual.
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp <= previousTimestamp || _feeState == FeeState.Suspended) return supply;
+        if (block.timestamp <= previousTimestamp || challengeActive) return supply;
 
         uint256 end = block.timestamp;
-        bool deadlineMissed =
-            _feeState == FeeState.Escrowed && challengeActive && end > challengeDeadline;
-        if (deadlineMissed) {
-            end = challengeDeadline;
-            supply -= escrowedManagerFeeShares;
-        }
         if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
 
         uint256 feeShares =
             _feeSharesForElapsed(totalSupply, creatorFeeBpsPerYear, end - previousTimestamp);
-        if (deadlineMissed) {
-            supply += MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
-        } else {
-            supply += feeShares;
-        }
+        supply += feeShares;
     }
 
-    function _forfeitEscrowAndSuspend() internal {
-        uint256 amount = escrowedManagerFeeShares;
-        escrowedManagerFeeShares = 0;
-        if (amount != 0) _burn(address(this), amount);
-        _feeState = FeeState.Suspended;
+    function _forfeitChallengeFees() internal {
+        uint256 forfeitureStart = uint256(lastFeeAccrualTimestamp) > uint256(challengeStartedAt)
+            ? uint256(lastFeeAccrualTimestamp)
+            : uint256(challengeStartedAt);
+        uint256 elapsed = block.timestamp > forfeitureStart ? block.timestamp - forfeitureStart : 0;
+        uint256 forfeitedShares = creatorFeeBpsPerYear == 0 || elapsed == 0
+            ? 0
+            : _feeSharesForElapsed(totalSupply, creatorFeeBpsPerYear, elapsed);
+        uint256 rewardShares = MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
+        address caller = challengeCaller;
+        if (rewardShares != 0 && caller != address(0)) {
+            challengeRewardShares[caller] += rewardShares;
+        }
+        forfeitedManagerFeeShares += forfeitedShares;
+        lastFeeAccrualTimestamp = uint64(block.timestamp);
         emit ChallengeDeadlineMissed(challengeDeadline, uint64(block.timestamp));
-        emit ManagerFeesForfeited(amount);
-        emit ManagerFeeAccrualSuspended(uint64(block.timestamp));
+        emit ManagerFeesForfeited(forfeitedShares);
+        emit ChallengeRewardAccrued(caller, rewardShares, forfeitedShares);
     }
 
     // Validation and calculations
@@ -846,6 +882,26 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         );
     }
 
+    function _breachedAssets(uint16 deviationBps) internal view returns (address[] memory) {
+        return _portfolioCalculator.breachedAssets(
+            address(this),
+            _assets,
+            _weightsAsUint256(),
+            oracleRegistry,
+            maxOracleStaleness,
+            deviationBps
+        );
+    }
+
+    function _startChallenge(address caller, address[] memory breached) internal {
+        uint64 startedAt = uint64(block.timestamp);
+        challengeActive = true;
+        challengeCaller = caller;
+        challengeStartedAt = startedAt;
+        challengeDeadline = startedAt + challengeGracePeriod;
+        emit OutOfBandChallengeStarted(caller, startedAt, challengeDeadline, breached);
+    }
+
     function _band(uint256 target, uint256 deviation)
         internal
         pure
@@ -916,7 +972,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             emit TargetWeightsProposalCancelled(rebalanceCount, oldManager);
         }
         _clearExecutors();
-        manager = newManager;
+        _authorizeManagerExecutor(newManager);
         emit OwnershipTransferred(oldManager, newManager);
         emit ManagerTransferred(oldManager, newManager);
     }
@@ -926,9 +982,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             address executor = _authorizedExecutors[i];
             delete authorizedExecutor[executor];
             delete _executorIndexPlusOne[executor];
-            emit ExecutorAuthorizationChanged(executor, false);
         }
         delete _authorizedExecutors;
+    }
+
+    function _authorizeManagerExecutor(address manager_) internal {
+        manager = manager_;
+        authorizedExecutor[manager_] = true;
+        _authorizedExecutors.push(manager_);
+        _executorIndexPlusOne[manager_] = 1;
     }
 
     function _weightsAsUint256() internal view returns (uint256[] memory weights) {

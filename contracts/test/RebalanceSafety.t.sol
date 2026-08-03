@@ -32,7 +32,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
         assertTrue(vault.strategicRebalanceActive());
-        assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Escrowed));
+        assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
         assertEq(vault.rebalanceCount(), 0);
         vm.expectRevert(ManagedOTFVaultStorage.TargetBandsNotReached.selector);
         vault.completeStrategicRebalance();
@@ -324,15 +324,17 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         assertTrue(vault.authorizedExecutor(ALICE));
         assertTrue(vault.authorizedExecutor(BOB));
-        assertEq(vault.authorizedExecutors().length, 2);
+        assertTrue(vault.authorizedExecutor(address(this)));
+        assertEq(vault.authorizedExecutors().length, 3);
 
         vault.setExecutor(ALICE, false);
 
         assertFalse(vault.authorizedExecutor(ALICE));
         assertTrue(vault.authorizedExecutor(BOB));
         address[] memory remaining = vault.authorizedExecutors();
-        assertEq(remaining.length, 1);
-        assertEq(remaining[0], BOB);
+        assertEq(remaining.length, 2);
+        assertTrue(remaining[0] == address(this) || remaining[1] == address(this));
+        assertTrue(remaining[0] == BOB || remaining[1] == BOB);
     }
 
     function testExecutorCannotWithdrawAssetsOrSelectARecipient() public {
@@ -392,10 +394,28 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.transferOwnership(BOB);
 
         assertFalse(vault.authorizedExecutor(ALICE));
-        assertEq(vault.authorizedExecutors().length, 0);
+        assertFalse(vault.authorizedExecutor(address(this)));
+        assertTrue(vault.authorizedExecutor(BOB));
+        assertEq(vault.authorizedExecutors().length, 1);
+        assertEq(vault.authorizedExecutors()[0], BOB);
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotTradeAuthority.selector);
         vault.executeRebalanceTrades(trades);
+    }
+
+    function testManagerCanRemoveAndRestoreOwnExecutorPermission() public {
+        ManagedOTFVault vault = _createVault();
+        assertTrue(vault.authorizedExecutor(address(this)));
+
+        vault.setExecutor(address(this), false);
+        assertFalse(vault.authorizedExecutor(address(this)));
+
+        TradeInstruction[] memory trades = _singleTrade(address(tokenA), address(tokenB), ONE, ONE);
+        vm.expectRevert(ManagedOTFVaultStorage.NotTradeAuthority.selector);
+        vault.executeRebalanceTrades(trades);
+
+        vault.setExecutor(address(this), true);
+        assertTrue(vault.authorizedExecutor(address(this)));
     }
 
     function testExecutorCannotBypassTradeSizeLimit() public {

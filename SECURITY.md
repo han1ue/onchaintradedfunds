@@ -30,8 +30,8 @@ Primary security goals:
   states.
 - Each partial trade fails atomically when any safety check fails.
 - Reverted target proposals do not reset cooldowns.
-- Anyone can prove an out-of-band portfolio and start manager-fee escrow.
-- Missed challenge deadlines permanently forfeit escrow and suspend manager-fee accrual.
+- Anyone can prove an out-of-band portfolio and lock manager-fee withdrawals.
+- Missed challenge deadlines forfeit challenge-window manager fees, credit 10% to the caller, and leave the rest unminted.
 - Redemption does not depend on oracle health.
 - The frontend is never a security boundary.
 
@@ -79,9 +79,10 @@ A vault manager cannot:
 - Edit or delete historical thesis entries.
 - Rescue unsupported tokens from the vault.
 
-Authorized executors can execute the same constrained partial-trade path as the manager. They
+The manager is automatically recorded as an authorized executor and can remove or restore that
+permission. Additional authorized executors use the same constrained partial-trade path. They
 cannot change strategy, fees, ownership, recipients, adapters, or executor permissions. Manager
-transfer clears every executor authorization.
+transfer clears the previous executor set and records the new manager as the sole executor.
 
 ## Rebalance Risks
 
@@ -249,15 +250,15 @@ fee accrual cannot permanently brick a vault. Fee-share tests cover:
 - Zero fee rate.
 - Manager/protocol split precision.
 - Multiple accrual calls in the same block.
-- Strategic and challenge escrow.
-- Timely release and deadline forfeiture.
-- Suspended intervals and nonretroactive resumption.
+- Challenge-window fee forfeiture.
+- Caller reward claims for missed challenge deadlines.
+- Timely challenge resolution and fee-withdrawal resumption.
 
 The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
 Protocol shares held by `FeeCollector` can only be claimed by its configured treasury.
 
-Escrowed manager shares are held by the vault itself and tracked separately from permanently locked
-minimum liquidity. Deadline forfeiture burns only the tracked escrow balance.
+Missed challenge-window fees are not minted to the manager. The challenge caller can claim 10% as
+OTF shares; the remaining 90% is skipped rather than minted and burned.
 
 ## ERC-7621 Status
 

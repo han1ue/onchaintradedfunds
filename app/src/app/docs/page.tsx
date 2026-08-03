@@ -285,13 +285,12 @@ export default function DocsPage() {
             <div className="docsNotice">
               <Landmark size={17} />
               <div>
-                <strong>Optional USDG entry</strong>
+                <strong>Two USDG entry routes</strong>
                 <span>
-                  A separately deployed entry router can buy the exact required basket through an
-                  approved adapter and mint the requested shares atomically. The user supplies a
-                  maximum USDG amount and deadline; unused USDG is refunded. The Uniswap execution
-                  cost can be above or below the Chainlink-priced OTF basket value because pool
-                  liquidity and OTF NAV are independent price sources.
+                  The app can buy existing shares from an optional OTF/USDG market, or use the
+                  settlement router to buy the exact constituent basket and mint new shares
+                  atomically. The manager creates and seeds the direct share market from their own
+                  wallet. Either route can price above or below the Chainlink-priced OTF value.
                 </span>
               </div>
             </div>
@@ -322,13 +321,12 @@ export default function DocsPage() {
             <div className="docsNotice">
               <Landmark size={17} />
               <div>
-                <strong>Optional USDG output</strong>
+                <strong>Two USDG exit routes</strong>
                 <span>
-                  The settlement router can receive the proportional basket, sell every
-                  constituent through approved adapters, and return only USDG. The holder approves
-                  the exact OTF share amount and sets per-leg minimums, an aggregate minimum, and a
-                  deadline. Uniswap proceeds can differ from the Chainlink-priced basket value;
-                  failure of any leg reverts the share burn and all swaps atomically.
+                  The app can sell existing shares into the optional OTF/USDG market, or use the
+                  settlement router to redeem and sell every constituent through approved adapters.
+                  The latter path enforces per-leg and aggregate minimums and reverts the share burn
+                  and all swaps atomically if any leg fails.
                 </span>
               </div>
             </div>
@@ -402,7 +400,8 @@ activatePendingStrategy()`}</code></pre>
 
 completeStrategicRebalance()`}</code></pre>
             <p>
-              The manager or an authorized executor may submit multiple partial trade batches.
+              The manager is added to the executor allowlist automatically and may remove or
+              restore their own execution permission. Any authorized executor may submit multiple partial trade batches.
               Every batch uses current constituents and approved adapters, returns output directly
               to the vault, satisfies oracle-valued slippage, turnover, NAV-loss, and exposure
               limits, and must move every constituent closer to target. Temporary approvals are
@@ -539,15 +538,15 @@ canRebalance =
               </div>
             </div>
             <div className="docsRoleGrid">
-              <article><strong>Manager</strong><span>Controls strategy, bounded fees, executors, and constrained trades.</span></article>
+              <article><strong>Manager</strong><span>Controls strategy, bounded fees, and the executor allowlist; starts with execution permission.</span></article>
               <article><strong>Executor</strong><span>May only perform constrained partial trades toward the active target.</span></article>
               <article><strong>Fee recipient</strong><span>Receives released manager-fee shares.</span></article>
               <article><strong>Factory owner</strong><span>Administers protocol registries, adapters, treasury, and hard caps.</span></article>
               <article><strong>Share holder</strong><span>Deposits, holds transferable vault shares, and redeems the proportional basket.</span></article>
             </div>
             <p>
-              ERC-173 ownership transfer takes effect immediately and clears all authorized
-              executors. Fee-recipient updates are also immediate. Role changes cannot cancel a
+              ERC-173 ownership transfer takes effect immediately, clears the previous executor
+              set, and authorizes the new manager as the sole executor. Fee-recipient updates are also immediate. Role changes cannot cancel a
               challenge, recover forfeited fees, or change the cooldown.
             </p>
           </section>

@@ -343,6 +343,20 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "forfeitedManagerFeeShares",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "challengeRewardShares",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "lastCompletedStrategicRebalance",
     stateMutability: "view",
     inputs: [],
@@ -399,6 +413,27 @@ export const managedOtfVaultAbi = [
     stateMutability: "nonpayable",
     inputs: [],
     outputs: [],
+  },
+  {
+    type: "function",
+    name: "stopChallengeFees",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "withdrawManagerFees",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [{ name: "feeShares", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "claimChallengeReward",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [{ name: "rewardShares", type: "uint256" }],
   },
   {
     type: "function",

@@ -171,7 +171,8 @@ Each OTF has exactly one manager. The manager MAY:
 - Select constituents, target weights, and allowed weight bands.
 - Change the manager fee within the protocol maximum.
 - Add and remove authorized executors.
-- Execute constrained trades directly.
+- Receive execution permission automatically, remove or restore their own permission, and execute
+  constrained trades while authorized.
 - Amend the thesis.
 - Start manager and fee-recipient transfers.
 
@@ -184,12 +185,14 @@ The manager MUST NOT:
 - bypass oracle, slippage, turnover, NAV-loss, exposure, or target-improvement checks.
 - shorten the immutable target-change cooldown.
 
-The manager remains accountable for challenge, escrow, forfeiture, and fee suspension regardless
+The manager remains accountable for challenge, forfeiture, and caller-reward outcomes regardless
 of whether the manager or an executor submitted a trade.
 
 ### Authorized executor
 
-The manager MAY authorize multiple executors, subject to the protocol cap.
+The manager MUST be authorized automatically at OTF initialization and after manager transfer. The
+manager MAY remove or restore their own executor permission and MAY authorize multiple additional
+executors, subject to the protocol cap.
 
 An executor MAY only call `executeRebalanceTrades` and permissionless functions available to any
 address. It MUST NOT:
@@ -201,8 +204,8 @@ address. It MUST NOT:
 - make arbitrary calls or approvals.
 - receive a bounty or reimbursement from OTF assets.
 
-All executor authorizations MUST be cleared whenever the manager changes through either ownership
-transfer path.
+All prior executor authorizations MUST be cleared whenever the manager changes through either
+ownership transfer path. The new manager MUST then become the sole authorized executor.
 
 ### Share holder
 
@@ -305,7 +308,7 @@ the current target.
 inside every completion band. A successful strategic trade batch that reaches every completion
 band MUST complete atomically after all final trade safety checks. Permissionless explicit
 completion remains available when no trade is required or natural price movement restores the
-portfolio. Completion releases timely escrowed manager fees and is the only point that updates
+portfolio. Completion resumes manager-fee withdrawals and is the only point that updates
 `lastRebalanceTimestamp`; proposals, failed trades, and partial trades MUST NOT update it.
 
 ## 7. Challenge and fee accountability
@@ -316,16 +319,16 @@ constituent is outside its challenge band.
 During a challenge:
 
 - Target changes are locked.
-- Newly accrued manager shares enter vault escrow.
+- Manager-fee withdrawals are locked while the challenge is active.
 - Corrective constrained trades remain available.
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 
 If the grace deadline is observed after expiry:
 
-- Escrowed manager shares are burned.
-- Future manager-fee accrual is suspended.
-- Suspended-period fees cannot be recovered retroactively.
+- Manager fees from the challenge window are forfeited.
+- 10% of the forfeited amount becomes a claimable reward for the challenge caller.
+- The remaining 90% is never minted.
 
 Restoration to completion bands resumes only future manager-fee accrual.
 

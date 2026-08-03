@@ -385,8 +385,8 @@ and strictly reduce total distance from the active target.
 
 When a successful strategic trade batch brings every constituent inside the narrower completion
 bands, the vault completes the strategic rebalance atomically, emits
-`StrategicRebalanceCompleted`, updates `lastRebalanceTimestamp`, and releases timely escrowed
-manager fees. Anyone may still call `completeStrategicRebalance()` when no trade is needed or
+`StrategicRebalanceCompleted`, updates `lastRebalanceTimestamp`, and resumes fee withdrawals.
+Anyone may still call `completeStrategicRebalance()` when no trade is needed or
 natural price movement reaches the bands.
 
 Retained rebalance protections:
@@ -407,11 +407,13 @@ Retained rebalance protections:
 ### Strategy And Execution Authority
 
 The manager alone controls constituents, targets, bands, fee rate, ownership, and the executor
-allowlist. The manager can trade directly and may authorize multiple executor addresses.
+allowlist. A manager is automatically added to that allowlist and may authorize multiple additional
+executor addresses. The manager may also remove or restore their own trade-execution permission.
 
 Executors can only call the constrained trade-batch function. They cannot change strategy,
 permissions, fees, ownership, or adapters and cannot direct assets to arbitrary recipients.
-All executor authorizations are cleared on manager transfer. Executors receive no bounty or
+All executor authorizations are cleared on manager transfer, then the new manager is added as the
+sole authorized executor. Executors receive no bounty or
 reimbursement from vault assets.
 
 ### Weight Bands And Challenges
@@ -419,11 +421,12 @@ reimbursement from vault assets.
 Each target has a wider challenge band and a narrower completion band. Anyone may call
 `flagOutOfBand()`, but fresh approved prices must prove a real challenge-band breach.
 
-A valid challenge locks target changes, starts the configured grace period, and escrows newly
-accrued manager fees. Natural price movement and constrained trades can both restore the basket.
-If the deadline is missed, escrowed manager fees are burned and future manager-fee accrual is
-suspended. Deposits and proportional withdrawals remain enabled. Restoration resumes only future
-fees; forfeited and suspended-period fees are never recovered.
+A valid challenge locks target changes and manager-fee withdrawals while the configured grace
+period runs. Natural price movement and constrained trades can both restore the basket. If the
+manager stops the challenge before the deadline, accrued fees are withdrawn normally. If the
+deadline is missed, manager fees from the challenge window are forfeited: 10% becomes a claimable
+reward for the challenge caller and the remaining 90% is never minted. Deposits and proportional
+withdrawals remain enabled.
 
 ## NAV And Weight Math
 
@@ -486,12 +489,13 @@ New fee shares are split between:
 Manager shares follow the fee state:
 
 - `Accruing`: manager shares are delivered normally.
-- `Escrowed`: manager shares are minted to vault escrow during a strategic rebalance or challenge.
-- `Suspended`: no new manager fee accrues after a missed challenge deadline.
+- `Escrowed`: a strategy challenge is active and manager-fee withdrawals are locked.
+- `Suspended`: the challenge deadline has passed and challenge-window fees are forfeitable.
 
-Timely restoration releases escrow. Missing the deadline burns escrow permanently. Restoration
-after the deadline starts a new accrual interval without recovering missed fees. Fee-rate changes
-are allowed only while strategy is unlocked and the portfolio is inside completion bands.
+Timely restoration lets the manager stop the challenge and withdraw accrued fees. Missing the
+deadline credits 10% of the lost challenge-window fees to the caller and skips minting the rest.
+Fee-rate changes are allowed only while strategy is unlocked and the portfolio is inside completion
+bands.
 
 ## Onchain Thesis
 
@@ -531,7 +535,7 @@ The current dashboard shows:
 - Target-proposal readiness and cooldown.
 - Last and next strategic target proposal times.
 - Completion-band, strategic-rebalance, and challenge status.
-- Fee state and escrowed manager shares.
+- Fee state, forfeited manager fees, and claimable challenge rewards.
 - Authorized executor count.
 - Share supply.
 - Manager fee.
@@ -703,7 +707,7 @@ Deterministic coverage includes:
 - Asset, weight, count, turnover, NAV-loss, target-deviation, adapter, trade, approval-clearing,
   and atomic rollback protections.
 - Draft ERC-7621 views, previews, actions, interface detection, ownership, and exact events.
-- Challenge breaches, natural and traded recovery, deadline forfeiture, suspended intervals,
+- Challenge breaches, natural and traded recovery, deadline forfeiture, caller rewards,
   fee resumption, and deposits and withdrawals during challenge states.
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.

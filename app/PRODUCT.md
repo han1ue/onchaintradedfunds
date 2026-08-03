@@ -32,8 +32,8 @@ Investors use the web application with an EVM wallet to:
 
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
 - Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, thesis history, safety limits, cooldown state, and return history.
-- Review their OTF positions and supported RWA token balances.
-- Deposit the current proportional basket to mint shares and redeem shares for the underlying basket.
+- Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
+- Acquire or sell OTF shares with USDG either through a direct OTF/USDG market or through atomic constituent-pool routing.
 - Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
 
 Creators and managers use the application to:
@@ -50,8 +50,9 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket.
 - OTF creation is permissionless within factory-level validation and registry constraints.
-- Deposits mint shares by supplying the current proportional basket.
-- Redemptions return the proportional underlying basket and do not depend on oracle availability.
+- The investor frontend exposes USDG entry and exit through either an optional direct share market or atomic constituent-pool routing; direct basket controls remain contract-level primitives.
+- Managers may create and seed an OTF/USDG market from their own wallet without using OTF-held portfolio assets.
+- Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
 - Only the configured manager may append thesis amendments or submit rebalances.
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.

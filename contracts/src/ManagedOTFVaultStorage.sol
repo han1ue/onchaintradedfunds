@@ -16,6 +16,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 1_000;
     uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
     uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
@@ -173,6 +174,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     event ManagerFeesEscrowed(uint256 newlyEscrowed, uint256 totalEscrowed);
     event ManagerFeesReleased(address indexed recipient, uint256 amount);
     event ManagerFeesForfeited(uint256 amount);
+    event ChallengeRewardAccrued(address indexed caller, uint256 rewardShares, uint256 forfeitedShares);
+    event ChallengeRewardClaimed(address indexed caller, uint256 rewardShares);
     event ManagerFeeAccrualSuspended(uint64 timestamp);
     event ManagerFeeAccrualResumed(uint64 timestamp);
     event Contributed(
@@ -216,6 +219,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     uint256 public rebalanceCount;
     uint256 public escrowedManagerFeeShares;
+    uint256 public forfeitedManagerFeeShares;
     bool public strategicRebalanceActive;
     bool public strategyProposalPending;
     bool public challengeActive;
@@ -224,6 +228,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint64 public challengeDeadline;
     mapping(address => uint16) public targetWeightBps;
     mapping(address => bool) public authorizedExecutor;
+    mapping(address => uint256) public challengeRewardShares;
 
     FeeState internal _feeState;
     bytes32 internal _strategicOldPortfolioHash;
@@ -248,7 +253,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     modifier onlyTradeAuthority() {
-        if (msg.sender != manager && !authorizedExecutor[msg.sender]) {
+        if (!authorizedExecutor[msg.sender]) {
             revert NotTradeAuthority();
         }
         _;

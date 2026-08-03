@@ -174,7 +174,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (block.timestamp < pendingStrategyActivationTime) {
             revert StrategyActivationPending(pendingStrategyActivationTime);
         }
-        if (challengeActive || strategicRebalanceActive || _feeState == FeeState.Suspended) {
+        if (challengeActive || strategicRebalanceActive) {
             revert StrategyStateLocked();
         }
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
@@ -200,7 +200,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         lastStrategyChangeTimestamp = activatedAt;
         _replacePortfolio(newTokens, newWeights);
         _clearPendingStrategy();
-        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
 
         emit Rebalanced(newTokens, newWeights);
         emit TargetWeightsActivated(
@@ -288,7 +287,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 _resolveOutOfBandChallenge();
             } else {
                 _completeStrategicRebalance();
-                _releaseEscrowAndResume();
+                _resumeFeeClock();
             }
         }
     }
@@ -302,7 +301,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _accrueViaVault();
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
         _completeStrategicRebalance();
-        _releaseEscrowAndResume();
+        _resumeFeeClock();
     }
 
     function flagOutOfBand() external onlyDelegateCall nonReentrant {
@@ -316,7 +315,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         challengeCaller = msg.sender;
         challengeStartedAt = startedAt;
         challengeDeadline = startedAt + challengeGracePeriod;
-        if (_feeState == FeeState.Accruing) _feeState = FeeState.Escrowed;
         emit OutOfBandChallengeStarted(msg.sender, startedAt, challengeDeadline, breached);
     }
 
@@ -329,12 +327,16 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _accrueViaVault();
     }
 
+    function stopChallengeFees() external onlyDelegateCall onlyManager nonReentrant {
+        _resolveOutOfBandChallenge();
+    }
+
     function _resolveOutOfBandChallenge() private {
         if (!challengeActive) revert ChallengeNotActive();
-        _accrueViaVault();
+        if (block.timestamp > challengeDeadline) _accrueViaVault();
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
-        bool timely = _feeState != FeeState.Suspended;
+        bool timely = block.timestamp <= challengeDeadline;
         challengeActive = false;
         challengeCaller = address(0);
         challengeStartedAt = 0;
@@ -342,11 +344,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
         if (strategicRebalanceActive) _completeStrategicRebalance();
         if (timely) {
-            _releaseEscrowAndResume();
+            _accrueViaVault();
         } else {
-            _feeState = FeeState.Accruing;
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-            emit ManagerFeeAccrualResumed(uint64(block.timestamp));
+            _resumeFeeClock();
         }
         emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), timely);
     }
@@ -373,13 +373,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
     }
 
-    function _releaseEscrowAndResume() private {
-        uint256 amount = escrowedManagerFeeShares;
-        escrowedManagerFeeShares = 0;
-        if (amount != 0) {
-            _transfer(address(this), feeRecipient, amount);
-            emit ManagerFeesReleased(feeRecipient, amount);
-        }
+    function _resumeFeeClock() private {
         _feeState = FeeState.Accruing;
         lastFeeAccrualTimestamp = uint64(block.timestamp);
         emit ManagerFeeAccrualResumed(uint64(block.timestamp));

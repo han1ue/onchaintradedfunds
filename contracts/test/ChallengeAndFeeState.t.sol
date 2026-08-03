@@ -45,7 +45,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vault.flagOutOfBand();
     }
 
-    function testNaturalPriceRecoveryBeforeDeadlineReleasesEscrow() public {
+    function testNaturalPriceRecoveryBeforeDeadlineWithdrawsFees() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
@@ -78,29 +78,32 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertTrue(vault.isWithinTargetBands());
     }
 
-    function testDeadlineForfeitsEscrowAndSuspendsFutureAccrual() public {
+    function testDeadlineForfeitsChallengeWindowFeesAndCreditsCallerReward() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
 
         vm.warp(START + 1 days);
         _setPrices(120_00000000, 100_00000000);
-        vault.accrueFees();
-        uint256 escrowBefore = vault.escrowedManagerFeeShares();
-        assertGt(escrowBefore, 0);
+        assertEq(vault.accrueFees(), 0);
+        assertEq(vault.escrowedManagerFeeShares(), 0);
 
         vm.warp(START + 3 days + 1);
         _setPrices(120_00000000, 100_00000000);
         vault.syncChallengeDeadline();
-        uint256 supplyWhenSuspended = vault.totalSupply();
+        uint256 forfeited = vault.forfeitedManagerFeeShares();
+        uint256 supplyBeforeReward = vault.totalSupply();
 
+        assertGt(forfeited, 0);
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Suspended));
+        assertEq(vault.challengeRewardShares(address(this)), forfeited / 10);
 
-        vm.warp(START + 10 days);
-        _setPrices(120_00000000, 100_00000000);
-        vault.accrueFees();
-        assertEq(vault.totalSupply(), supplyWhenSuspended);
+        uint256 balanceBeforeReward = vault.balanceOf(address(this));
+        vault.claimChallengeReward();
+        assertEq(vault.challengeRewardShares(address(this)), 0);
+        assertEq(vault.balanceOf(address(this)), balanceBeforeReward + forfeited / 10);
+        assertEq(vault.totalSupply(), supplyBeforeReward + forfeited / 10);
     }
 
     function testRestorationAfterDeadlineResumesOnlyFutureFees() public {
@@ -159,7 +162,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vault.rebalance(assets, weights);
     }
 
-    function testUnfinishedStrategicTargetCannotBeRedefinedAndFeesAreEscrowed() public {
+    function testUnfinishedStrategicTargetCannotBeRedefinedAndFeeWithdrawStartsChallenge() public {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory narrowWeights) = _sixtyFortyPortfolio();
         uint256[] memory weights = _uint256Weights(narrowWeights);
@@ -177,8 +180,8 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         vm.warp(START + 17 days);
         _setPrices(100_00000000, 100_00000000);
-        vault.accrueFees();
-        assertGt(vault.escrowedManagerFeeShares(), 0);
+        assertEq(vault.accrueFees(), 0);
+        assertTrue(vault.challengeActive());
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), 100 * ONE, 100 * ONE);
