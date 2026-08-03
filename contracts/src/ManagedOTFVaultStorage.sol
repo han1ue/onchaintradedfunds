@@ -28,8 +28,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error RebalanceCooldownTooShort();
     error RebalanceCooldownActive(uint256 nextAllowedTime);
     error NotManager();
-    error NotPendingManager();
-    error NotPendingFeeRecipient();
     error NotTradeAuthority();
     error InvalidArrayLength();
     error EmptyPortfolio();
@@ -123,11 +121,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         bytes32 indexed portfolioHash,
         string text
     );
-    event ManagerTransferStarted(address indexed currentManager, address indexed pendingManager);
     event ManagerTransferred(address indexed oldManager, address indexed newManager);
-    event FeeRecipientTransferStarted(
-        address indexed currentRecipient, address indexed pendingRecipient
-    );
     event FeeRecipientTransferred(address indexed oldRecipient, address indexed newRecipient);
     event ExecutorAuthorizationChanged(address indexed executor, bool authorized);
     event ManagerFeeRateChanged(uint16 oldFeeBps, uint16 newFeeBps);
@@ -180,9 +174,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     address public factory;
     address public manager;
-    address public pendingManager;
     address public feeRecipient;
-    address public pendingFeeRecipient;
     address public feeCollector;
     address public assetRegistry;
     address public oracleRegistry;

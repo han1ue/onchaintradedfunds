@@ -290,6 +290,58 @@ export const managedOtfVaultAbi = [
     inputs: [],
     outputs: [{ name: "", type: "address[]" }],
   },
+  {
+    type: "function",
+    name: "setExecutor",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "executor", type: "address" },
+      { name: "authorized", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isWithinChallengeBands",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "flagOutOfBand",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "resolveOutOfBandChallenge",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "syncChallengeDeadline",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "transferOwnership",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "setFeeRecipient",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newFeeRecipient", type: "address" }],
+    outputs: [],
+  },
 ] as const;
 
 export const otfFactoryAbi = [

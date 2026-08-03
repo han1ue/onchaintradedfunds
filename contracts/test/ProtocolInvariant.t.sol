@@ -49,10 +49,6 @@ contract ProtocolInvariantHandler is TestBase {
         initialHolder = initialHolder_;
     }
 
-    function acceptManagement() external {
-        vault.acceptManagerTransfer();
-    }
-
     function mintBasket(uint256 actorSeed, uint96 rawShares) external {
         address actor = _actor(actorSeed);
         uint256 shares = bound(rawShares, 1, 5 * ONE);
@@ -261,8 +257,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         handler = new ProtocolInvariantHandler(
             vault, tokenA, tokenB, feedA, feedB, adapter, address(this)
         );
-        vault.beginManagerTransfer(address(handler));
-        handler.acceptManagement();
+        vault.transferOwnership(address(handler));
 
         bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = handler.mintBasket.selector;

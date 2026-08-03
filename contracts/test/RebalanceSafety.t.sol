@@ -309,7 +309,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.beginFeeRecipientTransfer(BOB);
+        vault.setFeeRecipient(BOB);
     }
 
     function testManagerCanAuthorizeAndRemoveMultipleExecutors() public {
@@ -385,9 +385,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.executeRebalanceTrades(trades);
 
         vault.setExecutor(ALICE, true);
-        vault.beginManagerTransfer(BOB);
-        vm.prank(BOB);
-        vault.acceptManagerTransfer();
+        vault.transferOwnership(BOB);
 
         assertFalse(vault.authorizedExecutor(ALICE));
         assertEq(vault.authorizedExecutors().length, 0);

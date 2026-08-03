@@ -224,20 +224,21 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(vault.balanceOf(receiver), amount);
     }
 
-    function testFuzzTwoStepManagerTransferAcceptsOnlySelectedAddress(address nextManager) public {
+    function testFuzzManagerTransferImmediatelyChangesAuthority(address nextManager) public {
         vm.assume(nextManager != address(0));
         vm.assume(nextManager != address(this));
         vm.assume(nextManager != ATTACKER);
         ManagedOTFVault vault = _createVault();
 
-        vault.beginManagerTransfer(nextManager);
-        vm.prank(ATTACKER);
-        vm.expectRevert(ManagedOTFVaultStorage.NotPendingManager.selector);
-        vault.acceptManagerTransfer();
-        vm.prank(nextManager);
-        vault.acceptManagerTransfer();
-
+        vault.transferOwnership(nextManager);
         assertEq(vault.manager(), nextManager);
-        assertEq(vault.pendingManager(), address(0));
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
+        vault.transferOwnership(ATTACKER);
+
+        vm.prank(nextManager);
+        vault.transferOwnership(ATTACKER);
+        assertEq(vault.manager(), ATTACKER);
     }
 }

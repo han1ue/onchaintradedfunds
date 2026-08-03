@@ -503,9 +503,9 @@ canRebalance =
               <article><strong>Share holder</strong><span>Deposits, holds transferable vault shares, and redeems the proportional basket.</span></article>
             </div>
             <p>
-              ERC-173 ownership transfer and the pending-manager extension both clear all
-              authorized executors. Fee-recipient transfer remains two-step. Role transfer cannot
-              cancel a challenge, recover forfeited fees, or change the cooldown.
+              ERC-173 ownership transfer takes effect immediately and clears all authorized
+              executors. Fee-recipient updates are also immediate. Role changes cannot cancel a
+              challenge, recover forfeited fees, or change the cooldown.
             </p>
           </section>
 

@@ -517,35 +517,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function beginManagerTransfer(address newManager) external onlyManager nonReentrant {
-        if (newManager == address(0)) revert ZeroAddress();
-        if (newManager == address(this)) revert InvalidRoleAddress(newManager);
-        _accrueFees();
-        pendingManager = newManager;
-        emit ManagerTransferStarted(manager, newManager);
-    }
-
-    function acceptManagerTransfer() external nonReentrant {
-        if (msg.sender != pendingManager) revert NotPendingManager();
-        _accrueFees();
-        _transferManager(msg.sender);
-    }
-
-    function beginFeeRecipientTransfer(address newFeeRecipient) external onlyManager nonReentrant {
+    function setFeeRecipient(address newFeeRecipient) external onlyManager nonReentrant {
         if (newFeeRecipient == address(0)) revert ZeroAddress();
         if (newFeeRecipient == address(this)) revert InvalidRoleAddress(newFeeRecipient);
         _accrueFees();
-        pendingFeeRecipient = newFeeRecipient;
-        emit FeeRecipientTransferStarted(feeRecipient, newFeeRecipient);
-    }
-
-    function acceptFeeRecipientTransfer() external nonReentrant {
-        if (msg.sender != pendingFeeRecipient) revert NotPendingFeeRecipient();
-        _accrueFees();
         address oldRecipient = feeRecipient;
-        feeRecipient = msg.sender;
-        pendingFeeRecipient = address(0);
-        emit FeeRecipientTransferred(oldRecipient, msg.sender);
+        feeRecipient = newFeeRecipient;
+        emit FeeRecipientTransferred(oldRecipient, newFeeRecipient);
     }
 
     // ERC-7621 rebalance changes targets only. Trades and completion are separate calls.
@@ -914,7 +892,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address oldManager = manager;
         _clearExecutors();
         manager = newManager;
-        pendingManager = address(0);
         emit OwnershipTransferred(oldManager, newManager);
         emit ManagerTransferred(oldManager, newManager);
     }

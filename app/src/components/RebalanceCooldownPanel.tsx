@@ -153,6 +153,7 @@ type VaultView = {
   challengeWeightDeviationBps: number;
   challengeGracePeriod: number;
   withinCompletionBands: boolean;
+  withinChallengeBands: boolean;
   strategicRebalanceActive: boolean;
   challengeActive: boolean;
   challengeStartedAt?: number;
@@ -681,6 +682,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "lastCompletedStrategicRebalance" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canProposeTargetWeights" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "authorizedExecutors" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "isWithinChallengeBands" },
       ] as const)
     : undefined;
 
@@ -792,6 +794,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     : undefined;
   const canProposeTargetWeights = Boolean(resultAt<boolean>(results, 35));
   const authorizedExecutors = resultAt<readonly string[]>(results, 36) ?? [];
+  const withinChallengeBands = Boolean(resultAt<boolean>(results, 37));
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
   const connectedIsManager =
@@ -827,6 +830,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     challengeWeightDeviationBps,
     challengeGracePeriod,
     withinCompletionBands,
+    withinChallengeBands,
     strategicRebalanceActive,
     challengeActive,
     challengeStartedAt,
@@ -949,9 +953,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               </div>
 
               <aside className="sideColumn">
-                <SafetyLimits vault={vault} />
-                <RebalanceCooldown vault={vault} />
                 <UserActions vault={vault} />
+                <RebalanceCooldown vault={vault} />
+                <SafetyLimits vault={vault} onRefresh={refetchVaultData} />
               </aside>
             </div>
           </>
@@ -1027,7 +1031,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         <footer className="dashboardFooter">
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
-            <span>Managed portfolio protocol · {isTestnet ? "Robinhood Testnet" : "Robinhood Mainnet"}</span>
             <a href="/docs">Docs</a>
           </div>
         </footer>
@@ -1689,6 +1692,7 @@ function PortfolioAllocation({
 }
 
 function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
+  const [copiedPortfolioHash, setCopiedPortfolioHash] = useState<string>();
   const {
     data: thesisVersionCount,
     isLoading: thesisCountLoading,
@@ -1729,22 +1733,28 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
   const historyLoading = thesisCountLoading || (versionCount > 0 && thesisVersionsLoading);
   const historyFailed = thesisCountFailed || thesisVersionsFailed;
 
+  async function copyPortfolioHash(hash: string) {
+    await navigator.clipboard.writeText(hash);
+    setCopiedPortfolioHash(hash);
+    window.setTimeout(() => setCopiedPortfolioHash(undefined), 1_800);
+  }
+
   return (
     <SectionCard
       title="Investment thesis"
       subtitle="Permanent onchain history of the manager's strategy statements"
       icon={<BookOpen size={15} />}
-      action={<span className="stateBadge muted">{versionCount} version{versionCount === 1 ? "" : "s"}</span>}
+      action={<span className="stateBadge muted">{versionCount} entr{versionCount === 1 ? "y" : "ies"}</span>}
     >
       {historyLoading ? (
         <div className="inlineEmptyState">
           <Loader2 className="spin" size={17} />
-          <div><strong>Loading thesis history</strong><span>Reading every version from the OTF contract.</span></div>
+          <div><strong>Loading thesis history</strong><span>Reading every thesis entry from the OTF contract.</span></div>
         </div>
       ) : historyFailed ? (
         <div className="inlineEmptyState">
           <RefreshCw size={17} />
-          <div><strong>Thesis history unavailable</strong><span>The contract did not return every stored version.</span></div>
+          <div><strong>Thesis history unavailable</strong><span>The contract did not return every stored entry.</span></div>
         </div>
       ) : versions.length ? (
         <div className="thesisHistory">
@@ -1755,16 +1765,27 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
               <article className={`thesisVersion ${isCurrent ? "current" : ""}`} key={version.index}>
                 <div className="thesisVersionHeader">
                   <div>
-                    <strong>Version {version.index + 1}</strong>
+                    <strong>{isInitial ? "Initial thesis" : `Amendment ${version.index}`}</strong>
                     {isCurrent ? <span className="stateBadge success">Current</span> : null}
-                    {isInitial ? <span className="stateBadge muted">Initial</span> : null}
                   </div>
                   <time>{formatTimestamp(Number(version.timestamp))}</time>
                 </div>
                 <p>{version.text}</p>
                 <div className="thesisVersionMeta">
-                  <span>Author <code title={version.author}>{shortAddress(version.author)}</code></span>
-                  <span>Portfolio <code title={version.portfolioHash}>{shortAddress(version.portfolioHash)}</code></span>
+                  <span>
+                    Author
+                    <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${version.author}`} target="_blank" rel="noreferrer" title="Open author in explorer">
+                      <code>{shortAddress(version.author)}</code>
+                      <ExternalLink size={10} />
+                    </a>
+                  </span>
+                  <span>
+                    Portfolio
+                    <button type="button" onClick={() => copyPortfolioHash(version.portfolioHash)} title="Copy portfolio hash">
+                      <code>{copiedPortfolioHash === version.portfolioHash ? "Copied" : shortAddress(version.portfolioHash)}</code>
+                      {copiedPortfolioHash === version.portfolioHash ? <Check size={10} /> : <Copy size={10} />}
+                    </button>
+                  </span>
                 </div>
               </article>
             );
@@ -1773,7 +1794,7 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
       ) : (
         <div className="inlineEmptyState">
           <BookOpen size={17} />
-          <div><strong>No thesis versions found</strong><span>This OTF did not return an initialized thesis record.</span></div>
+          <div><strong>No thesis entries found</strong><span>This OTF did not return an initialized thesis record.</span></div>
         </div>
       )}
     </SectionCard>
@@ -2061,7 +2082,7 @@ function UserActions({ vault }: { vault: VaultView }) {
         <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>Redeem</button>
       </div>
 
-      <div className="riskCallout info">
+      <div className="riskCallout info depositInfoCallout">
         <Info size={15} />
         <div>
           <strong>{isLive ? "Direct basket deposits" : "Live OTF required"}</strong>
@@ -2135,7 +2156,7 @@ function UserActions({ vault }: { vault: VaultView }) {
               onClick={approveDepositAssets}
             >
               <ShieldCheck size={14} />
-              {approvalProgress ? `Approving ${approvalProgress}` : allowancesSufficient ? "Assets approved" : "Approve assets"}
+              {approvalProgress ? `Approving ${approvalProgress}` : allowancesSufficient ? "All assets approved" : "Approve all assets"}
             </button>
             <button
               className="primaryAction"
@@ -2383,17 +2404,66 @@ function ManagerRebalanceBuilder({ vault }: { vault: VaultView }) {
   );
 }
 
-function SafetyLimits({ vault }: { vault: VaultView }) {
+function SafetyLimits({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+  const [challengeState, setChallengeState] = useState<TxState>("idle");
+  const [challengeError, setChallengeError] = useState<string>();
+  const { address: connectedAddress } = useAccount();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
+  const { writeContractAsync } = useWriteContract();
   const limits = [
     ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
     ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
+    ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
     ["Maximum assets", String(vault.maxAssetCount), "Concurrent positions"],
     ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
     ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
     ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
     ["Target-change cooldown", formatCooldown(vault.cooldownSeconds), "Cannot be shortened"],
   ] as const;
+  const challengeBusy = challengeState === "pending" || challengeState === "submitted";
+  const challengeAction = !vault.challengeActive
+    ? vault.withinChallengeBands ? undefined : "flagOutOfBand"
+    : vault.withinCompletionBands
+      ? "resolveOutOfBandChallenge"
+      : vault.challengeTimeRemaining === 0
+        ? "syncChallengeDeadline"
+        : undefined;
+  const challengeButtonLabel = !connectedAddress
+    ? "Connect wallet to challenge"
+    : challengeBusy
+      ? challengeState === "pending" ? "Confirm in wallet" : "Confirming transaction"
+      : challengeAction === "flagOutOfBand"
+        ? "Challenge strategy"
+        : challengeAction === "resolveOutOfBandChallenge"
+          ? "Resolve challenge"
+          : challengeAction === "syncChallengeDeadline"
+            ? "Finalize missed deadline"
+            : vault.challengeActive
+              ? "Challenge active"
+              : "Within challenge band";
+
+  async function submitChallengeAction() {
+    if (!challengeAction || !vault.address || !connectedAddress || !publicClient) return;
+    setChallengeError(undefined);
+    try {
+      setChallengeState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: challengeAction,
+        chainId: robinhoodChainTestnet.id,
+      });
+      setChallengeState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The challenge transaction reverted.");
+      await onRefresh();
+      setChallengeState("confirmed");
+    } catch (error) {
+      setChallengeError(errorMessage(error));
+      setChallengeState("reverted");
+    }
+  }
 
   return (
     <SectionCard
@@ -2419,6 +2489,30 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
           <strong>Bounded execution</strong>
           <span>Every rebalance uses listed assets and approved adapters, and settles atomically or fully reverts.</span>
         </div>
+      </div>
+      <div className="challengeActionBlock">
+        <div className="subHeader">
+          <span>Strategy challenge</span>
+          <small>{vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}</small>
+        </div>
+        <p>
+          {vault.challengeActive
+            ? vault.challengeTimeRemaining > 0
+              ? `Manager fees are escrowed for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
+              : "The response deadline has passed. Anyone may finalize fee suspension, or resolve after the portfolio returns to its completion band."
+            : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
+        </p>
+        {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
+        <TxStatus state={challengeState} />
+        <button
+          className="secondaryAction"
+          type="button"
+          disabled={!connectedAddress || !challengeAction || challengeBusy}
+          onClick={submitChallengeAction}
+        >
+          <ShieldCheck size={14} />
+          {challengeButtonLabel}
+        </button>
       </div>
       <p className="safetyFootnote">The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</p>
     </SectionCard>
@@ -4204,15 +4298,35 @@ function ManageVaultsView({
 }) {
   const [managerTarget, setManagerTarget] = useState("");
   const [feeTarget, setFeeTarget] = useState("");
+  const [executorTarget, setExecutorTarget] = useState("");
   const [copied, setCopied] = useState(false);
   const [feeAccrualState, setFeeAccrualState] = useState<TxState>("idle");
   const [feeAccrualError, setFeeAccrualError] = useState<string>();
+  const [managerTransferState, setManagerTransferState] = useState<TxState>("idle");
+  const [managerTransferError, setManagerTransferError] = useState<string>();
+  const [feeTransferState, setFeeTransferState] = useState<TxState>("idle");
+  const [feeTransferError, setFeeTransferError] = useState<string>();
+  const [executorState, setExecutorState] = useState<TxState>("idle");
+  const [executorError, setExecutorError] = useState<string>();
   const [activeOperation, setActiveOperation] = useState<"rebalance" | "roles" | "fees" | "thesis">("rebalance");
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
-  const managerValid = isAddress(managerTarget);
-  const feeTargetValid = isAddress(feeTarget);
+  const managerValid = isAddress(managerTarget)
+    && !/^0x0{40}$/i.test(managerTarget)
+    && managerTarget.toLowerCase() !== vault.manager?.toLowerCase()
+    && managerTarget.toLowerCase() !== vault.address?.toLowerCase();
+  const feeTargetValid = isAddress(feeTarget)
+    && !/^0x0{40}$/i.test(feeTarget)
+    && feeTarget.toLowerCase() !== vault.feeRecipient?.toLowerCase()
+    && feeTarget.toLowerCase() !== vault.address?.toLowerCase();
+  const executorValid = isAddress(executorTarget)
+    && !/^0x0{40}$/i.test(executorTarget)
+    && executorTarget.toLowerCase() !== vault.address?.toLowerCase()
+    && !vault.authorizedExecutors.some((executor) => executor.toLowerCase() === executorTarget.toLowerCase());
+  const managerTransferBusy = managerTransferState === "pending" || managerTransferState === "submitted";
+  const feeTransferBusy = feeTransferState === "pending" || feeTransferState === "submitted";
+  const executorBusy = executorState === "pending" || executorState === "submitted";
 
   async function copyVaultAddress() {
     if (!vault.address) return;
@@ -4245,6 +4359,84 @@ function ManageVaultsView({
       setFeeAccrualError(errorMessage(error));
       setFeeAccrualState("reverted");
     }
+  }
+
+  async function runRoleWrite(
+    submit: () => Promise<`0x${string}`>,
+    setState: (state: TxState) => void,
+    setError: (message?: string) => void,
+    failureMessage: string,
+    onSuccess?: () => void,
+  ) {
+    if (!publicClient) return;
+    setError(undefined);
+    try {
+      setState("pending");
+      const hash = await submit();
+      setState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error(failureMessage);
+      await onRefresh();
+      onSuccess?.();
+      setState("confirmed");
+    } catch (error) {
+      setError(errorMessage(error));
+      setState("reverted");
+    }
+  }
+
+  async function transferManager() {
+    if (!vault.address || !vault.connectedIsManager || !managerValid) return;
+    const vaultAddress = vault.address;
+    await runRoleWrite(
+      () => writeContractAsync({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "transferOwnership",
+        args: [managerTarget as `0x${string}`],
+        chainId: robinhoodChainTestnet.id,
+      }),
+      setManagerTransferState,
+      setManagerTransferError,
+      "The manager transfer reverted.",
+      () => setManagerTarget(""),
+    );
+  }
+
+  async function updateFeeRecipient() {
+    if (!vault.address || !vault.connectedIsManager || !feeTargetValid) return;
+    const vaultAddress = vault.address;
+    await runRoleWrite(
+      () => writeContractAsync({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "setFeeRecipient",
+        args: [feeTarget as `0x${string}`],
+        chainId: robinhoodChainTestnet.id,
+      }),
+      setFeeTransferState,
+      setFeeTransferError,
+      "The fee-recipient update reverted.",
+      () => setFeeTarget(""),
+    );
+  }
+
+  async function setExecutorAuthorization(executor: string, authorized: boolean) {
+    if (!vault.address || !vault.connectedIsManager || !isAddress(executor)) return;
+    const vaultAddress = vault.address;
+    await runRoleWrite(
+      () => writeContractAsync({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "setExecutor",
+        args: [executor, authorized],
+        chainId: robinhoodChainTestnet.id,
+      }),
+      setExecutorState,
+      setExecutorError,
+      authorized ? "Authorizing the executor reverted." : "Removing the executor reverted.",
+      authorized ? () => setExecutorTarget("") : undefined,
+    );
   }
 
   return (
@@ -4289,8 +4481,8 @@ function ManageVaultsView({
       <DataProvenance vault={vault} />
 
       <div className="manageMetrics">
-        <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Two-step transfer" />
-        <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Two-step transfer" />
+        <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Immediate transfer" />
+        <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Immediate update" />
         <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub={["Accruing", "Escrowed", "Suspended"][vault.feeState] ?? "Unavailable"} />
         <MetricCard label="Target Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Permanently immutable" />
       </div>
@@ -4320,29 +4512,91 @@ function ManageVaultsView({
       {activeOperation !== "rebalance" ? <div className="manageGrid">
         {activeOperation === "roles" ? (
           <>
-        <SectionCard title="Manager transfer" subtitle="Nominate a new portfolio manager" icon={<KeyRound size={15} />} action={<span className="stateBadge muted">Two-step</span>}>
+        <SectionCard title="Manager transfer" subtitle="Transfer strategy authority immediately" icon={<KeyRound size={15} />} action={<span className="stateBadge danger">Immediate</span>}>
           <div className="operationFlow">
             <div className="roleCurrent"><span>Current manager</span><strong>{shortAddress(vault.manager)}</strong></div>
             <label className="fieldLabel">New manager address</label>
             <input className={!managerValid && managerTarget ? "invalid" : ""} value={managerTarget} onChange={(event) => setManagerTarget(event.target.value)} placeholder="0x..." disabled={!vault.enabled || !vault.connectedIsManager} />
-            <p>The nominee must accept onchain before the role changes. Portfolio assets never leave the OTF.</p>
-            <button className="primaryAction" type="button" disabled title="Contract write integration is not configured">
+            <div className="riskCallout danger managerTransferWarning">
+              <AlertTriangle size={17} />
+              <div>
+                <strong>You cannot undo this transfer from your current wallet</strong>
+                <span>You will immediately lose every manager permission. The new manager can change the manager fee within the protocol cap, redirect its fee recipient, change strategy, and appoint executors.</span>
+              </div>
+            </div>
+            <p>All currently authorized executors are cleared when manager authority changes.</p>
+            {managerTransferError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Manager transfer failed</strong><span>{managerTransferError}</span></div></div> : null}
+            <TxStatus state={managerTransferState} />
+            {vault.connectedIsManager ? <button className="dangerAction" type="button" disabled={!managerValid || managerTransferBusy} onClick={transferManager}>
               <UserCog size={14} />
-              Transfer unavailable
-            </button>
+              {managerTransferBusy ? "Confirming transfer" : "Transfer manager now"}
+            </button> : null}
           </div>
         </SectionCard>
 
-        <SectionCard title="Fee-recipient transfer" subtitle="Update the manager-fee beneficiary" icon={<ReceiptText size={15} />} action={<span className="stateBadge muted">Two-step</span>}>
+        <SectionCard title="Fee-recipient transfer" subtitle="Update the manager-fee beneficiary immediately" icon={<ReceiptText size={15} />} action={<span className="stateBadge muted">Immediate</span>}>
           <div className="operationFlow">
             <div className="roleCurrent"><span>Current recipient</span><strong>{shortAddress(vault.feeRecipient)}</strong></div>
             <label className="fieldLabel">New fee-recipient address</label>
             <input className={!feeTargetValid && feeTarget ? "invalid" : ""} value={feeTarget} onChange={(event) => setFeeTarget(event.target.value)} placeholder="0x..." disabled={!vault.enabled || !vault.connectedIsManager} />
-            <p>The recipient must accept before future manager-fee shares are redirected.</p>
-            <button className="primaryAction" type="button" disabled title="Contract write integration is not configured">
+            <p>Accrued fees are settled first. Future manager-fee shares are sent to the new recipient as soon as this transaction confirms.</p>
+            {feeTransferError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Fee-recipient transfer failed</strong><span>{feeTransferError}</span></div></div> : null}
+            <TxStatus state={feeTransferState} />
+            {vault.connectedIsManager ? <button className="primaryAction" type="button" disabled={!feeTargetValid || feeTransferBusy} onClick={updateFeeRecipient}>
               <ReceiptText size={14} />
-              Transfer unavailable
-            </button>
+              {feeTransferBusy ? "Confirming update" : "Update fee recipient"}
+            </button> : null}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Authorized executors"
+          subtitle="Addresses permitted to submit constrained rebalance trades"
+          icon={<KeyRound size={15} />}
+          action={<span className="stateBadge muted">{vault.authorizedExecutors.length} active</span>}
+        >
+          <div className="operationFlow">
+            {vault.authorizedExecutors.length ? (
+              <div className="executorList">
+                {vault.authorizedExecutors.map((executor) => (
+                  <div className="executorRow" key={executor}>
+                    <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${executor}`} target="_blank" rel="noreferrer" title="Open executor in explorer">
+                      <code>{shortAddress(executor)}</code>
+                      <ExternalLink size={11} />
+                    </a>
+                    <button
+                      className="iconOnly compact"
+                      type="button"
+                      title="Remove executor"
+                      aria-label={`Remove executor ${executor}`}
+                      disabled={!vault.connectedIsManager || executorBusy}
+                      onClick={() => setExecutorAuthorization(executor, false)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="inlineEmptyState"><KeyRound size={16} /><div><strong>No authorized executors</strong><span>The manager remains able to execute constrained trades directly.</span></div></div>
+            )}
+            <label className="fieldLabel">Executor address</label>
+            <input
+              className={!executorValid && executorTarget ? "invalid" : ""}
+              value={executorTarget}
+              onChange={(event) => setExecutorTarget(event.target.value)}
+              placeholder="0x..."
+              disabled={!vault.enabled || !vault.connectedIsManager || executorBusy}
+            />
+            <p>Executors cannot change strategy, fees, ownership, recipients, adapters, or transfer assets out of the OTF.</p>
+            {executorError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Executor update failed</strong><span>{executorError}</span></div></div> : null}
+            <TxStatus state={executorState} />
+            {vault.connectedIsManager ? (
+              <button className="primaryAction" type="button" disabled={!executorValid || executorBusy} onClick={() => setExecutorAuthorization(executorTarget, true)}>
+                <Plus size={14} />
+                {executorBusy ? "Confirming executor" : "Add executor"}
+              </button>
+            ) : null}
           </div>
         </SectionCard>
           </>

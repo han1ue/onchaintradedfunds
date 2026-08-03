@@ -1499,6 +1499,26 @@ button:disabled {
   font-size: 0.61rem;
 }
 
+.thesisVersionMeta a,
+.thesisVersionMeta button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.thesisVersionMeta a:hover,
+.thesisVersionMeta button:hover,
+.thesisVersionMeta a:hover code,
+.thesisVersionMeta button:hover code {
+  color: var(--teal);
+}
+
 .appendBox {
   display: grid;
   gap: 10px;
@@ -1568,6 +1588,29 @@ textarea::placeholder {
 .actionTabs button.active {
   background: var(--surface);
   color: var(--text);
+}
+
+.depositInfoCallout {
+  margin-top: 14px;
+}
+
+.challengeActionBlock {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.challengeActionBlock > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.challengeActionBlock > .secondaryAction {
+  justify-content: center;
 }
 
 .positionFlow {
@@ -3620,6 +3663,49 @@ input.invalid {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.68rem;
   font-weight: 500;
+}
+
+.managerTransferWarning {
+  padding: 13px;
+}
+
+.managerTransferWarning strong {
+  font-size: 0.74rem;
+}
+
+.executorList {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.executorRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--background);
+  padding: 8px 9px;
+}
+
+.executorRow + .executorRow {
+  border-top: 1px solid var(--border);
+}
+
+.executorRow a {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.67rem;
+  text-decoration: none;
+}
+
+.executorRow a:hover {
+  color: var(--teal);
 }
 
 .accrualSummary {

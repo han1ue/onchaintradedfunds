@@ -258,9 +258,9 @@ contract VaultHardeningTest is ProtocolTestBase {
         vault.redeem(ONE, address(vault), address(this), minimums);
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidRoleAddress.selector);
-        vault.beginManagerTransfer(address(vault));
+        vault.transferOwnership(address(vault));
         vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidRoleAddress.selector);
-        vault.beginFeeRecipientTransfer(address(vault));
+        vault.setFeeRecipient(address(vault));
     }
 
     function testMaliciousConstituentCannotReenterMintOrRedeem() public {

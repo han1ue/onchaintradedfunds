@@ -239,21 +239,13 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vault.appendThesisAmendment(oversized);
     }
 
-    function testManagerTransferIsTwoStepAndAccruesFees() public {
+    function testManagerTransferIsImmediateAndAccruesFees() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 1 days);
-        vault.beginManagerTransfer(ALICE);
+        vault.transferOwnership(ALICE);
 
-        assertEq(vault.pendingManager(), ALICE);
         assertGt(vault.totalSupply(), 100 * ONE);
-        vm.prank(BOB);
-        vm.expectRevert(ManagedOTFVaultStorage.NotPendingManager.selector);
-        vault.acceptManagerTransfer();
-
-        vm.prank(ALICE);
-        vault.acceptManagerTransfer();
         assertEq(vault.manager(), ALICE);
-        assertEq(vault.pendingManager(), address(0));
 
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
         vault.appendThesisAmendment("Old manager cannot amend.");
@@ -261,17 +253,18 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vault.appendThesisAmendment("New manager amendment.");
     }
 
-    function testFeeRecipientTransferIsTwoStep() public {
+    function testFeeRecipientTransferIsImmediate() public {
         ManagedOTFVault vault = _createVault();
-        vault.beginFeeRecipientTransfer(ALICE);
-        vm.prank(BOB);
-        vm.expectRevert(ManagedOTFVaultStorage.NotPendingFeeRecipient.selector);
-        vault.acceptFeeRecipientTransfer();
+        vm.warp(START + 1 days);
+        uint256 oldRecipientBalance = vault.balanceOf(FEE_RECIPIENT);
+        vault.setFeeRecipient(ALICE);
 
-        vm.prank(ALICE);
-        vault.acceptFeeRecipientTransfer();
         assertEq(vault.feeRecipient(), ALICE);
-        assertEq(vault.pendingFeeRecipient(), address(0));
+        assertGt(vault.balanceOf(FEE_RECIPIENT), oldRecipientBalance);
+
+        vm.warp(START + 2 days);
+        vault.accrueFees();
+        assertGt(vault.balanceOf(ALICE), 0);
     }
 
     function testERC20RejectsZeroReceiverAndInsufficientAllowance() public {

@@ -65,9 +65,8 @@ A vault manager can:
 - Execute constrained partial rebalance trades.
 - Add and remove authorized trade executors.
 - Change the manager fee within the protocol cap while the portfolio is compliant.
-- Begin manager transfer.
-- Accept manager transfer when pending manager.
-- Begin fee-recipient transfer.
+- Transfer manager authority immediately to a new nonzero address.
+- Update the fee recipient immediately to a new nonzero address.
 
 A vault manager cannot:
 

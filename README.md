@@ -214,8 +214,8 @@ The following operations do not count as portfolio rebalances and do not update 
 
 - Thesis amendments.
 - Fee accrual.
-- Manager transfer start or acceptance.
-- Fee-recipient transfer start or acceptance.
+- Immediate manager transfer.
+- Immediate fee-recipient update.
 - Proportional minting.
 - Proportional redemption.
 - Partial maintenance trades.
