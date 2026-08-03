@@ -1191,6 +1191,10 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           <span>Onchain Traded Funds · experimental, unaudited software</span>
           <div className="footerLinks">
             <a href="/docs">Docs</a>
+            <a href="https://github.com/han1ue/onchaintradedfunds" target="_blank" rel="noreferrer">
+              GitHub
+              <ExternalLink size={12} />
+            </a>
           </div>
         </footer>
       </main>
