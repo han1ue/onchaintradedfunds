@@ -614,8 +614,8 @@ The script deploys `OTFV3MarketRegistry`, permanently configures it on the facto
 OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
 OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fixed 0.05% fee tier,
 initializes a new pool from NAV per share, and records it as the immutable official pool. No
-liquidity is taken from the OTF. The manager adds liquidity separately and owns the resulting
-Uniswap position; the pool association cannot be removed or replaced.
+liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
+Uniswap position it creates; the pool association cannot be removed or replaced.
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current

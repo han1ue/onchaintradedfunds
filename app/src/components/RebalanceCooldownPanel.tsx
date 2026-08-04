@@ -5814,24 +5814,22 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
             <div className="accrualSummary">
               <div><span>Fee tier</span><strong>0.05%</strong></div>
               <div><span>Pool association</span><strong>Permanent</strong></div>
-              <div><span>Liquidity ownership</span><strong>Manager owned</strong></div>
+              <div><span>Position ownership</span><strong>Liquidity providers</strong></div>
               <div><span>Active liquidity</span><strong>{liquidityLoading ? "Checking" : liquidityError ? "Read unavailable" : liquidityAvailable ? "Available" : "Zero"}</strong></div>
             </div>
             {!liquidityLoading && !liquidityError && !liquidityAvailable ? (
               <div className="validationSummary warning">
                 <AlertTriangle size={15} />
-                <div><strong>Secondary-market trading is not active yet</strong><span>The official pool exists, but direct OTF / USDG trading stays disabled until the manager adds liquidity.</span></div>
+                <div><strong>Secondary-market trading is not active yet</strong><span>The official pool exists, but direct OTF / USDG trading stays disabled until someone adds liquidity.</span></div>
               </div>
             ) : null}
             <div className="riskCallout info">
               <Info size={15} />
-              <div><strong>Manager-owned liquidity</strong><span>Add liquidity from the manager wallet. The resulting Uniswap position belongs to that wallet and does not use assets held by the OTF portfolio.</span></div>
+              <div><strong>Permissionless liquidity</strong><span>Any wallet can supply OTF shares and USDG. Each resulting Uniswap position belongs to the supplying wallet and does not use assets held by the OTF portfolio.</span></div>
             </div>
-            {vault.connectedIsManager ? (
-              <a className="primaryAction" href={addLiquidityUrl} target="_blank" rel="noreferrer">
-                <Droplets size={14} />Add liquidity on Uniswap<ExternalLink size={12} />
-              </a>
-            ) : null}
+            <a className="primaryAction" href={addLiquidityUrl} target="_blank" rel="noreferrer">
+              <Droplets size={14} />Add liquidity on Uniswap<ExternalLink size={12} />
+            </a>
           </>
         ) : registry && !poolLoading ? (
           <div className="validationSummary danger" role="alert">
