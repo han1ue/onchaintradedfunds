@@ -619,30 +619,25 @@ hardcoded; verify both values against the intended deployment before running the
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
-artifacts, then configure the five UI catalog assets with owner-controlled mock USD feeds:
+artifacts, then configure the five UI catalog assets with self-updating synthetic USD feeds:
 
 ```bash
 corepack pnpm contracts:solc
 corepack pnpm contracts:configure:robinhood-testnet-mocks
 ```
 
-Advance the existing testnet feeds from their latest answers with a small positive drift and
-bounded random movement:
+Each feed derives a deterministic synthetic path from chain time: a `$1.00` baseline, `+5` bps of
+daily drift, and bounded `+/-50` bps pseudo-random movement that changes every five minutes. Every
+read reports the current block timestamp as `updatedAt`, so testnet OTF operations do not depend on
+an owner, keeper, cron job, or manual refresh transaction. The answer remains stable within a
+timestamp, and the owner-only `setAnswer` function is retained solely as an optional baseline
+reset.
 
-```powershell
-$env:DEPLOYER_PRIVATE_KEY="0x..."
-corepack pnpm contracts:walk:robinhood-testnet-mocks
-```
-
-The defaults are `+5` bps drift and up to `50` bps random movement per update. Override them with
-`MOCK_PRICE_DRIFT_BPS`, `MOCK_PRICE_VOLATILITY_BPS`, `MOCK_PRICE_STEPS`, and
-`MOCK_PRICE_INTERVAL_MS`. This is an off-chain testnet updater; oracle randomness must not be
-derived from predictable block values.
-
-The configurator initializes new feeds at a synthetic `$1.00`, records every deployment and
-registry transaction in `deployments/robinhood-testnet.json`, and retains existing prices when
-rerun so the walk can continue from the latest round. These feeds are test fixtures, not Chainlink
-or market data.
+The configurator records every deployment and registry transaction in
+`deployments/robinhood-testnet.json`. It automatically replaces legacy version-1 manually updated
+feeds and retains version-2 self-updating feeds on later runs. The synthetic path is intentionally
+predictable from public chain data; these feeds are UI and integration fixtures, not Chainlink,
+market data, or suitable adversarial-test price sources.
 
 Robinhood Chain Mainnet uses the official Chainlink proxy directory instead. Its tokenized-equity
 answers already include the Stock Token `uiMultiplier()` for dividends, splits, and other

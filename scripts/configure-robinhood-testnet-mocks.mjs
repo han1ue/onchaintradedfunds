@@ -93,6 +93,15 @@ const registryOwnerAbi = [
     outputs: [{ name: "", type: "address" }],
   },
 ];
+const feedVersionAbi = [
+  {
+    type: "function",
+    name: "version",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+];
 const assetRegistryArtifact = artifact("AssetRegistry.sol", "AssetRegistry");
 const oracleRegistryArtifact = artifact("OracleRegistry.sol", "OracleRegistry");
 const mockFeedArtifact = artifact("TestnetMockPriceFeed.sol", "TestnetMockPriceFeed");
@@ -154,9 +163,9 @@ if (balance === 0n) throw new Error("Configurator account has no testnet ETH for
 console.log(`Configurator: ${account.address}`);
 console.log(`Balance: ${formatEther(balance)} ETH`);
 
-deployment.oracleMode = "owner-controlled-testnet-mock";
+deployment.oracleMode = "self-updating-testnet-synthetic";
 deployment.oracleDisclaimer =
-  "Owner-updated synthetic USD random-walk answers for Robinhood testnet development; not Chainlink or market data.";
+  "Time-derived synthetic USD drift and bounded pseudo-random movement for Robinhood testnet development; predictable and not Chainlink or market data.";
 deployment.setupTransactions ??= {};
 deployment.setupTransactions.approvedAssets ??= [];
 deployment.setupTransactions.priceFeeds ??= [];
@@ -170,14 +179,26 @@ for (const item of catalog) {
   let feedDeployment = existing?.feedDeployment;
   let feed = existing?.feed ? getAddress(existing.feed) : undefined;
   const existingCode = feed ? await publicClient.getCode({ address: feed }) : undefined;
+  let existingVersion;
+  if (feed && existingCode && existingCode !== "0x") {
+    try {
+      existingVersion = await publicClient.readContract({
+        address: feed,
+        abi: feedVersionAbi,
+        functionName: "version",
+      });
+    } catch {
+      existingVersion = undefined;
+    }
+  }
 
-  if (!feed || !existingCode || existingCode === "0x") {
+  if (!feed || !existingCode || existingCode === "0x" || existingVersion !== 2n) {
     feedDeployment = await deployMockFeed(item.symbol);
     feed = feedDeployment.address;
-    console.log(`${item.symbol} mock feed: ${feed}`);
+    console.log(`${item.symbol} self-updating synthetic feed: ${feed}`);
   } else {
     feedDeployment = { ...feedDeployment, address: feed };
-    console.log(`${item.symbol} mock feed retained: ${feed}`);
+    console.log(`${item.symbol} self-updating synthetic feed retained: ${feed}`);
   }
 
   const approved = await publicClient.readContract({
@@ -215,7 +236,10 @@ for (const item of catalog) {
     asset,
     feed,
     decimals: mockDecimals,
-    answer: mockAnswer,
+    baseAnswer: mockAnswer,
+    priceEpochSeconds: 300,
+    driftBpsPerDay: 5,
+    volatilityBps: 50,
     feedDeployment,
     assetApproval,
     priceFeed,

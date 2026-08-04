@@ -19,29 +19,67 @@ contract TestnetMockPriceFeedTest is TestBase {
         (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
         = feed.latestRoundData();
 
-        assertEq(roundId, 1);
+        assertEq(roundId, 1_000);
         assertTrue(answer == UNIT_PRICE);
-        assertEq(startedAt, 1_000);
+        assertLe(startedAt, 1_000);
+        assertGe(startedAt, 988);
         assertEq(updatedAt, 1_000);
-        assertEq(answeredInRound, 1);
+        assertEq(answeredInRound, roundId);
         assertEq(feed.decimals(), 8);
         assertEq(feed.description(), "TSLA mock USD");
-        assertEq(feed.version(), 1);
+        assertEq(feed.version(), 2);
     }
 
-    function testOwnerCanPublishNextRound() public {
+    function testFeedStaysFreshAndMovesWithoutOwnerTransactions() public {
+        vm.warp(1_000 + 100 days);
+
+        (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        = feed.latestRoundData();
+
+        assertEq(roundId, uint80(block.timestamp));
+        assertEq(updatedAt, block.timestamp);
+        assertLe(startedAt, updatedAt);
+        assertGe(startedAt, updatedAt - 12);
+        assertEq(answeredInRound, roundId);
+        assertTrue(answer > 0);
+        assertTrue(answer != UNIT_PRICE);
+    }
+
+    function testSyntheticAnswerIsStableWithinTimestamp() public view {
+        (uint80 firstRound, int256 firstAnswer, uint256 firstStartedAt, uint256 firstUpdatedAt,) =
+            feed.latestRoundData();
+        (uint80 secondRound, int256 secondAnswer, uint256 secondStartedAt, uint256 secondUpdatedAt,) =
+            feed.latestRoundData();
+
+        assertEq(firstRound, secondRound);
+        assertTrue(firstAnswer == secondAnswer);
+        assertEq(firstStartedAt, secondStartedAt);
+        assertEq(firstUpdatedAt, secondUpdatedAt);
+    }
+
+    function testOwnerCanResetBaselineButIsNotRequiredForFreshness() public {
         vm.warp(2_000);
         feed.setAnswer(2_00000000);
 
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            feed.getRoundData(2);
-        assertEq(roundId, 2);
+        (, int256 answer,, uint256 updatedAt,) = feed.latestRoundData();
         assertTrue(answer == 2_00000000);
         assertEq(updatedAt, 2_000);
-        assertEq(answeredInRound, 2);
+        assertTrue(feed.baseAnswer() == 2_00000000);
+        assertEq(feed.baseTimestamp(), 2_000);
     }
 
-    function testNonOwnerCannotPublish() public {
+    function testCurrentRoundCanBeReadById() public view {
+        (uint80 latestRound,,,,) = feed.latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+            feed.getRoundData(latestRound);
+
+        assertEq(roundId, latestRound);
+        assertTrue(answer == UNIT_PRICE);
+        assertEq(updatedAt, block.timestamp);
+        assertEq(answeredInRound, latestRound);
+    }
+
+    function testNonOwnerCannotResetBaseline() public {
         vm.prank(ATTACKER);
         vm.expectRevert(TestnetMockPriceFeed.NotOwner.selector);
         feed.setAnswer(2_00000000);
@@ -63,6 +101,6 @@ contract TestnetMockPriceFeedTest is TestBase {
 
     function testRejectsUnknownRound() public {
         vm.expectPartialRevert(TestnetMockPriceFeed.RoundUnavailable.selector);
-        feed.getRoundData(2);
+        feed.getRoundData(uint80(block.timestamp + 1));
     }
 }

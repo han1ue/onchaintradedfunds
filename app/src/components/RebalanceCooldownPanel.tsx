@@ -56,7 +56,6 @@ import {
   useReadContract,
   useReadContracts,
   useSwitchChain,
-  useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
@@ -102,6 +101,7 @@ type TargetAsset = {
 type CatalogOraclePrice = {
   answer?: bigint;
   decimals?: number;
+  updatedAt?: bigint;
   value?: number;
   display: string;
 };
@@ -611,6 +611,9 @@ function errorMessage(error: unknown): string {
   if (serialized.includes("0x7d3ae914")) {
     return "A selected token does not have a configured protocol price feed.";
   }
+  if (serialized.includes("0xdab4498d")) {
+    return "A selected oracle price is older than the configured maximum age. The testnet deployment may still be using a legacy mock feed.";
+  }
   if (error && typeof error === "object" && "shortMessage" in error) {
     return String((error as { shortMessage?: unknown }).shortMessage);
   }
@@ -714,7 +717,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     : undefined;
   const { data: catalogPriceResults } = useReadContracts({
     contracts: catalogPriceContracts,
-    query: { enabled: Boolean(catalogPriceContracts) && isTestnet },
+    query: {
+      enabled: Boolean(catalogPriceContracts) && isTestnet,
+      refetchInterval: 12_000,
+      refetchOnWindowFocus: true,
+    },
   });
   const catalogOraclePrices = useMemo<CatalogOraclePrices>(() => Object.fromEntries(
     testnetCreateAssets.map((asset, index) => {
@@ -724,12 +731,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       const decimals = catalogPriceResults?.[index * 2 + 1]?.result;
       const parsedDecimals = typeof decimals === "number" ? decimals : undefined;
       const answer = round?.[1];
+      const updatedAt = round?.[3];
       const value = answer !== undefined && answer > 0n && parsedDecimals !== undefined
         ? Number(formatUnits(answer, parsedDecimals))
         : undefined;
       return [asset.address.toLowerCase(), {
         answer,
         decimals: parsedDecimals,
+        updatedAt,
         value,
         display: formatOraclePrice(value),
       }];
@@ -3991,11 +4000,7 @@ function CreateVaultView({
   const { writeContractAsync } = useWriteContract();
   const { writeContractAsync: writeApprovalContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
-  const { data: deployReceipt } = useWaitForTransactionReceipt({
-    hash: deployTxHash,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(deployTxHash) },
-  });
+  const [currentTimestamp, setCurrentTimestamp] = useState(() => BigInt(Math.floor(Date.now() / 1_000)));
   const [draft, setDraft] = useState({
     name: "",
     symbol: "OTF-",
@@ -4129,6 +4134,22 @@ function CreateVaultView({
       price,
     };
   });
+  const oracleStaleness = Number(draft.oracleStaleness);
+  const configuredMaxOracleAge = Number.isInteger(oracleStaleness) && oracleStaleness > 0
+    ? BigInt(oracleStaleness)
+    : 0n;
+  const staleSeedAssets = portfolio.filter((asset, index) => {
+    const updatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
+    return updatedAt !== undefined && updatedAt > 0n && configuredMaxOracleAge > 0n
+      ? currentTimestamp > updatedAt + configuredMaxOracleAge
+      : false;
+  });
+  const seedOracleFreshnessReady = derivedSeedAmounts.every((seed) => {
+    const updatedAt = seed.price?.updatedAt;
+    return updatedAt !== undefined && updatedAt > 0n && configuredMaxOracleAge > 0n
+      ? currentTimestamp <= updatedAt + configuredMaxOracleAge
+      : false;
+  });
   const allSeedAmountsReady = derivedSeedAmounts.every(
     (seed) => seed.requiredAmount !== undefined && seed.requiredAmount > 0n,
   );
@@ -4143,6 +4164,7 @@ function CreateVaultView({
       ? resultAt<string>(protocolAssetResults as ReadResult | undefined, index)
       : undefined;
     const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
+    const oracleUpdatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
     return {
       ...asset,
       initialAmount: derivedSeedAmounts[index]?.displayAmount ?? "",
@@ -4152,6 +4174,11 @@ function CreateVaultView({
       allowance,
       priceFeed,
       hasPriceFeed,
+      oracleUpdatedAt,
+      oracleFresh: oracleUpdatedAt !== undefined
+        && oracleUpdatedAt > 0n
+        && configuredMaxOracleAge > 0n
+        && currentTimestamp <= oracleUpdatedAt + configuredMaxOracleAge,
       balanceSufficient: requiredAmount !== undefined && balance !== undefined && balance >= requiredAmount,
       allowanceSufficient: requiredAmount !== undefined && allowance !== undefined && allowance >= requiredAmount,
     };
@@ -4195,7 +4222,6 @@ function CreateVaultView({
     totalWeightValid &&
     initialPortfolioValue !== undefined &&
     allSeedAmountsReady;
-  const oracleStaleness = Number(draft.oracleStaleness);
   const oracleStalenessValid =
     Number.isInteger(oracleStaleness) && oracleStaleness >= 1 && oracleStaleness <= 3_600;
   const challengeGraceDays = Number(draft.challengeGraceDays);
@@ -4252,6 +4278,7 @@ function CreateVaultView({
     seedBalancesSufficient &&
     seedAllowancesSufficient &&
     protocolAssetReadsReady &&
+    seedOracleFreshnessReady &&
     approvalState !== "pending" &&
     approvalState !== "submitted" &&
     deployState !== "pending" &&
@@ -4264,6 +4291,7 @@ function CreateVaultView({
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
   if (!seedAllowancesSufficient) deploymentBlockers.push("Approve seed assets");
   if (!protocolAssetReadsReady) deploymentBlockers.push("Oracle feeds must be configured for seed assets");
+  if (!seedOracleFreshnessReady) deploymentBlockers.push("Oracle prices are stale");
   if (approvalState === "pending" || approvalState === "submitted") deploymentBlockers.push("Wait for the approval transaction");
   if (deployState === "pending" || deployState === "submitted") deploymentBlockers.push("Wait for the creation transaction");
 
@@ -4278,28 +4306,11 @@ function CreateVaultView({
   }, [connectedAddress, customFeeRecipient, customManager]);
 
   useEffect(() => {
-    if (!deployReceipt) return;
-    if (deployReceipt.status !== "success") {
-      setDeployState("reverted");
-      setDeployError("The create transaction reverted.");
-      return;
-    }
-
-    const [createdEvent] = parseEventLogs({
-      abi: vaultCreatedEventAbi,
-      eventName: "VaultCreated",
-      logs: deployReceipt.logs,
-      strict: true,
-    });
-    const createdVault = createdEvent?.args.vault;
-    if (!createdVault || !isAddress(createdVault)) {
-      setDeployState("reverted");
-      setDeployError("The transaction confirmed, but the new OTF address could not be read from its receipt.");
-      return;
-    }
-    setDeployState("confirmed");
-    onCreated(createdVault, deployReceipt.transactionHash);
-  }, [deployReceipt, onCreated]);
+    const interval = window.setInterval(() => {
+      setCurrentTimestamp(BigInt(Math.floor(Date.now() / 1_000)));
+    }, 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   if (!isTestnet) {
     return (
@@ -4392,20 +4403,49 @@ function CreateVaultView({
       setDeployState("reverted");
       return;
     }
+    if (!publicClient) {
+      setDeployError("The testnet connection is not ready. Check the RPC connection and retry.");
+      setDeployState("reverted");
+      return;
+    }
 
     setDeployError(undefined);
     setDeployTxHash(undefined);
     setDeployState("pending");
     try {
+      const params = vaultInitParams();
+      await publicClient.simulateContract({
+        address: factoryAddress,
+        abi: otfFactoryAbi,
+        functionName: "createVault",
+        args: [params],
+        account: connectedAddress as `0x${string}`,
+      });
       const hash = await writeContractAsync({
         address: factoryAddress,
         abi: otfFactoryAbi,
         functionName: "createVault",
-        args: [vaultInitParams()],
+        args: [params],
         chainId: robinhoodChainTestnet.id,
       });
       setDeployTxHash(hash);
       setDeployState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error("The create transaction reverted onchain. No OTF was created and no seed tokens were transferred.");
+      }
+      const [createdEvent] = parseEventLogs({
+        abi: vaultCreatedEventAbi,
+        eventName: "VaultCreated",
+        logs: receipt.logs,
+        strict: true,
+      });
+      const createdVault = createdEvent?.args.vault;
+      if (!createdVault || !isAddress(createdVault)) {
+        throw new Error("The transaction confirmed, but the new OTF address could not be read from its receipt.");
+      }
+      setDeployState("confirmed");
+      onCreated(createdVault, receipt.transactionHash);
     } catch (error) {
       setDeployError(errorMessage(error));
       setDeployState("reverted");
@@ -4639,7 +4679,7 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Select from the testnet catalog. Valuation uses owner-controlled mock USD feeds.</span>
+                    <span>Select from the testnet catalog. Valuation uses self-updating synthetic USD feeds.</span>
                   </div>
                   <span className={`stateBadge ${totalWeightValid ? "success" : "danger"}`}>Total {totalWeight.toFixed(1)}%</span>
                 </div>
@@ -4845,13 +4885,15 @@ function CreateVaultView({
                                 ? "danger"
                                 : asset.priceFeed === undefined
                                   ? "muted"
-                                  : asset.hasPriceFeed ? "success" : "danger"
+                                  : asset.hasPriceFeed && asset.oracleFresh ? "success" : "danger"
                             }`}>
                               {oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "Feed read failed"
                                 : asset.priceFeed === undefined
                                   ? "Checking feed"
-                                  : asset.hasPriceFeed ? "Oracle feed ready" : "Price feed missing"}
+                                  : !asset.hasPriceFeed
+                                    ? "Price feed missing"
+                                    : asset.oracleFresh ? "Oracle price fresh" : "Oracle price stale"}
                             </span>
                           </div>
                           {asset.allowanceSufficient ? (
@@ -4900,6 +4942,15 @@ function CreateVaultView({
                       </div>
                     </div>
                   ) : null}
+                  {connectedAddress && staleSeedAssets.length ? (
+                    <div className="validationSummary danger" role="alert">
+                      <Clock3 size={15} />
+                      <div>
+                        <strong>{staleSeedAssets.map((asset) => asset.ticker).join(", ")} oracle prices are stale</strong>
+                        <span>Self-updating testnet feeds should remain current. This deployment may still reference a legacy feed; reconfigure the testnet catalog before creating this OTF.</span>
+                      </div>
+                    </div>
+                  ) : null}
                   {connectedAddress && (seedAuthorizationsFailed || oracleRegistryReadFailed || protocolAssetsReadFailed || protocolAssetReadFailed) ? (
                     <div className="validationSummary danger" role="alert">
                       <RefreshCw size={15} />
@@ -4924,7 +4975,15 @@ function CreateVaultView({
                 {deployError ? (
                   <div className="validationSummary danger" role="alert">
                     <XCircle size={15} />
-                    <div><strong>Deployment failed</strong><span>{deployError}</span></div>
+                    <div>
+                      <strong>Deployment failed</strong>
+                      <span>{deployError}</span>
+                      {deployTxHash ? (
+                        <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${deployTxHash}`} target="_blank" rel="noreferrer">
+                          View failed transaction <ExternalLink size={12} />
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
