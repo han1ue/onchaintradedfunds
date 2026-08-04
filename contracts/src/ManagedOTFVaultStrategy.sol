@@ -341,7 +341,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             }
         }
 
-        if (strategicRebalanceActive && _isWithinBands(maxWeightDeviationBps)) {
+        if (
+            (challengeActive || strategicRebalanceActive)
+                && _isWithinBands(maxWeightDeviationBps)
+        ) {
             if (challengeActive) {
                 _resolveOutOfBandChallenge();
             } else {

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -62,7 +63,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
     }
 
-    function testPartialManagerTradesCanResolveChallenge() public {
+    function testManagerTradesAutomaticallyResolveChallenge() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
@@ -73,11 +74,122 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
             _singleTrade(address(tokenA), address(tokenB), 65 * ONE / 3, 26 * ONE - 1);
         adapter.setRate(address(tokenA), address(tokenB), 12, 10);
         vault.executeRebalanceTrades(first);
+        assertTrue(vault.challengeActive());
+
         vault.executeRebalanceTrades(second);
+
+        assertFalse(vault.challengeActive());
+        assertEq(vault.challengeCaller(), address(0));
+        assertEq(vault.challengeDeadline(), 0);
+        assertTrue(vault.isWithinTargetBands());
+        assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
+
+        vm.expectRevert(ManagedOTFVaultStorage.ChallengeNotActive.selector);
         vault.resolveOutOfBandChallenge();
+    }
+
+    function testAuthorizedExecutorTradesAutomaticallyResolveChallenge() public {
+        ManagedOTFVault vault = _createVault();
+        vault.setExecutor(ALICE, true);
+        _setPrices(120_00000000, 100_00000000);
+        vm.prank(BOB);
+        vault.flagOutOfBand();
+
+        TradeInstruction[] memory first =
+            _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);
+        TradeInstruction[] memory second =
+            _singleTrade(address(tokenA), address(tokenB), 65 * ONE / 3, 26 * ONE - 1);
+        adapter.setRate(address(tokenA), address(tokenB), 12, 10);
+
+        vm.startPrank(ALICE);
+        vault.executeRebalanceTrades(first);
+        vault.executeRebalanceTrades(second);
+        vm.stopPrank();
 
         assertFalse(vault.challengeActive());
         assertTrue(vault.isWithinTargetBands());
+        assertEq(vault.challengeRewardShares(BOB), 0);
+    }
+
+    function testPartialCorrectiveTradeLeavesChallengeActiveOutsideCompletionBands() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vault.flagOutOfBand();
+
+        TradeInstruction[] memory partialTrades =
+            _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);
+        adapter.setRate(address(tokenA), address(tokenB), 12, 10);
+        vault.executeRebalanceTrades(partialTrades);
+
+        assertTrue(vault.challengeActive());
+        assertFalse(vault.isWithinTargetBands());
+    }
+
+    function testFailedCorrectiveTradeLeavesChallengeStateAndBalancesUnchanged() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vault.flagOutOfBand();
+        uint256 deadline = vault.challengeDeadline();
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);
+        adapter.setRate(address(tokenA), address(tokenB), 12, 10);
+        adapter.setFailNextSwap(true);
+
+        vm.expectRevert(MockTradeAdapter.MockSwapFailed.selector);
+        vault.executeRebalanceTrades(trades);
+
+        assertTrue(vault.challengeActive());
+        assertEq(vault.challengeDeadline(), deadline);
+        assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
+        assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
+    }
+
+    function testStaleOraclesBlockCorrectiveTradesAndDirectResolution() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vault.flagOutOfBand();
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);
+        adapter.setRate(address(tokenA), address(tokenB), 12, 10);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.StaleOraclePrice.selector);
+        vault.executeRebalanceTrades(trades);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.StaleOraclePrice.selector);
+        vault.resolveOutOfBandChallenge();
+
+        assertTrue(vault.challengeActive());
+    }
+
+    function testOverdueCorrectiveTradesPreserveForfeitureAndResolveLate() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vm.prank(ALICE);
+        vault.flagOutOfBand();
+        uint256 deadline = vault.challengeDeadline();
+
+        vm.warp(deadline + 1);
+        _setPrices(120_00000000, 100_00000000);
+        TradeInstruction[] memory first =
+            _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);
+        TradeInstruction[] memory second =
+            _singleTrade(address(tokenA), address(tokenB), 65 * ONE / 3, 26 * ONE - 1);
+        adapter.setRate(address(tokenA), address(tokenB), 12, 10);
+
+        vault.executeRebalanceTrades(first);
+        uint256 forfeited = vault.forfeitedManagerFeeShares();
+        uint256 reward = vault.challengeRewardShares(ALICE);
+        vault.executeRebalanceTrades(second);
+
+        assertGt(forfeited, 0);
+        assertEq(reward, forfeited / 2);
+        assertEq(vault.forfeitedManagerFeeShares(), forfeited);
+        assertEq(vault.challengeRewardShares(ALICE), reward);
+        assertFalse(vault.challengeActive());
+        assertEq(vault.lastFeeAccrualTimestamp(), block.timestamp);
+        assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
     }
 
     function testDeadlineForfeitsChallengeWindowFeesAndCreditsCallerReward() public {
@@ -307,6 +419,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), 100 * ONE, 100 * ONE);
         vault.executeRebalanceTrades(trades);
+        assertFalse(vault.challengeActive());
         assertFalse(vault.strategicRebalanceActive());
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), 0);

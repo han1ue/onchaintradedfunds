@@ -343,7 +343,8 @@ During a challenge:
 
 - Target changes are locked.
 - Manager-fee withdrawals are locked while the challenge is active.
-- Corrective constrained trades remain available.
+- Corrective constrained trades remain available and MUST resolve the challenge atomically when
+  their final fresh oracle-valued weights are inside every completion band.
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 

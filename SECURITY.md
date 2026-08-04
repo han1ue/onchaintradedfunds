@@ -118,9 +118,11 @@ Challenges begin only when a caller proves a fresh oracle-valued challenge-band 
 contract cannot know the offchain time at which drift originally occurred; the grace period begins
 when `flagOutOfBand()` succeeds.
 
-Natural price movement can resolve a challenge without trades. A deadline is considered missed
-when an onchain state transition observes it after expiry. Deposits and proportional withdrawals
-remain available during active and overdue challenges.
+Corrective trade batches automatically resolve an active challenge when their final fresh
+oracle-valued weights are inside every completion band. Natural price movement can instead be
+resolved through the permissionless resolution call. A deadline is considered missed when an
+onchain state transition observes it after expiry. Deposits and proportional withdrawals remain
+available during active and overdue challenges.
 
 ## Cooldown Risks
 
