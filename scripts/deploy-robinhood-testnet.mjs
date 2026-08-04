@@ -126,15 +126,26 @@ const treasury = parseAddress("TREASURY_ADDRESS", env("TREASURY_ADDRESS", accoun
 const approvedAssets = parseAddressList("APPROVED_ASSETS");
 const priceFeeds = parseAddressList("PRICE_FEEDS");
 const approvedAdapters = parseAddressList("APPROVED_ADAPTERS");
-const usdgValue = env("USDG_ADDRESS", "");
+const usdgValue = requiredEnv("USDG_ADDRESS");
 const uniswapRouterValue = env("UNISWAP_V2_ROUTER_ADDRESS", "");
-if (Boolean(usdgValue) !== Boolean(uniswapRouterValue)) {
-  throw new Error("USDG_ADDRESS and UNISWAP_V2_ROUTER_ADDRESS must be provided together.");
-}
-const usdgAddress = usdgValue ? parseAddress("USDG_ADDRESS", usdgValue) : undefined;
+const uniswapV3FactoryValue = requiredEnv("UNISWAP_V3_FACTORY_ADDRESS");
+const uniswapV3PositionManagerValue = requiredEnv("UNISWAP_V3_POSITION_MANAGER_ADDRESS");
+const uniswapV3SwapRouterValue = requiredEnv("UNISWAP_V3_SWAP_ROUTER_ADDRESS");
+const uniswapV3QuoterValue = requiredEnv("UNISWAP_V3_QUOTER_ADDRESS");
+const usdgAddress = parseAddress("USDG_ADDRESS", usdgValue);
 const uniswapRouterAddress = uniswapRouterValue
   ? parseAddress("UNISWAP_V2_ROUTER_ADDRESS", uniswapRouterValue)
   : undefined;
+const uniswapV3FactoryAddress = parseAddress("UNISWAP_V3_FACTORY_ADDRESS", uniswapV3FactoryValue);
+const uniswapV3PositionManagerAddress = parseAddress(
+  "UNISWAP_V3_POSITION_MANAGER_ADDRESS",
+  uniswapV3PositionManagerValue,
+);
+const uniswapV3SwapRouterAddress = parseAddress(
+  "UNISWAP_V3_SWAP_ROUTER_ADDRESS",
+  uniswapV3SwapRouterValue,
+);
+const uniswapV3QuoterAddress = parseAddress("UNISWAP_V3_QUOTER_ADDRESS", uniswapV3QuoterValue);
 const allowEmptyProtocolConfig = env("ALLOW_EMPTY_PROTOCOL_CONFIG", "false").toLowerCase() === "true";
 
 if (approvedAssets.length !== priceFeeds.length) {
@@ -200,6 +211,16 @@ if (usdgAddress && uniswapRouterAddress) {
   });
 }
 
+const v3MarketRegistry = await deployContract({
+  name: "OTFV3MarketRegistry",
+  args: [
+    factory.address,
+    usdgAddress,
+    uniswapV3FactoryAddress,
+    uniswapV3PositionManagerAddress,
+  ],
+});
+
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const assetRegistryAbi = contractArtifact("AssetRegistry").abi;
 const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
@@ -218,6 +239,12 @@ const setupTransactions = {
   priceFeeds: [],
   approvedAdapters: [],
   settlementEntry: [],
+  setOfficialMarketRegistry: await writeContract({
+    address: factory.address,
+    abi: factoryAbi,
+    functionName: "setOfficialMarketRegistry",
+    args: [v3MarketRegistry.address],
+  }),
 };
 
 for (const asset of approvedAssets) {
@@ -315,6 +342,7 @@ const deployment = {
     factory,
     ...(uniswapAdapter ? { uniswapAdapter } : {}),
     ...(entryRouter ? { entryRouter } : {}),
+    ...(v3MarketRegistry ? { v3MarketRegistry } : {}),
   },
   setupTransactions,
 };
@@ -325,12 +353,19 @@ const outputPath = join(deploymentsDir, "robinhood-testnet.json");
 writeFileSync(outputPath, `${deploymentPayload(deployment)}\n`);
 const appEnvPath = updateAppEnv({
   NEXT_PUBLIC_FACTORY_ADDRESS: factory.address,
-  ...(uniswapAdapter && entryRouter && usdgAddress && uniswapRouterAddress
+  ...(usdgAddress ? { NEXT_PUBLIC_USDG_ADDRESS: usdgAddress } : {}),
+  ...(uniswapAdapter && entryRouter && uniswapRouterAddress
     ? {
         NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS: entryRouter.address,
         NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS: uniswapAdapter.address,
         NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS: uniswapRouterAddress,
-        NEXT_PUBLIC_USDG_ADDRESS: usdgAddress,
+      }
+    : {}),
+  ...(v3MarketRegistry && uniswapV3SwapRouterAddress && uniswapV3QuoterAddress
+    ? {
+        NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS: v3MarketRegistry.address,
+        NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS: uniswapV3SwapRouterAddress,
+        NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS: uniswapV3QuoterAddress,
       }
     : {}),
 });

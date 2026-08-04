@@ -121,6 +121,7 @@ const productionContracts = [
   ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
   ["OracleRegistry.sol", "OracleRegistry"],
   ["OTFFactory.sol", "OTFFactory"],
+  ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RebalanceExecutor.sol", "RebalanceExecutor"],
 ];

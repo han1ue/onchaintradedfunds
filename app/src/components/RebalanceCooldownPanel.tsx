@@ -1,7 +1,12 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { managedOtfVaultAbi, otfEntryRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
+import {
+  managedOtfVaultAbi,
+  otfEntryRouterAbi,
+  otfFactoryAbi,
+  otfV3MarketRegistryAbi,
+} from "@onchaintradedfunds/generated";
 import {
   Activity,
   AlertTriangle,
@@ -437,38 +442,59 @@ const uniswapV2QuoteAbi = [
   },
 ] as const;
 
-const uniswapV2FactoryAbi = [
+const uniswapV3PoolAbi = [
   {
     type: "function",
-    name: "getPair",
+    name: "liquidity",
     stateMutability: "view",
-    inputs: [{ name: "tokenA", type: "address" }, { name: "tokenB", type: "address" }],
-    outputs: [{ name: "pair", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "createPair",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "tokenA", type: "address" }, { name: "tokenB", type: "address" }],
-    outputs: [{ name: "pair", type: "address" }],
+    inputs: [],
+    outputs: [{ name: "", type: "uint128" }],
   },
 ] as const;
 
-const uniswapV2PairAbi = [
+const uniswapV3QuoterAbi = [
   {
     type: "function",
-    name: "getReserves",
+    name: "quoteExactInputSingle",
     stateMutability: "view",
-    inputs: [],
-    outputs: [
-      { name: "reserve0", type: "uint112" },
-      { name: "reserve1", type: "uint112" },
-      { name: "blockTimestampLast", type: "uint32" },
+    inputs: [
+      { name: "tokenIn", type: "address" },
+      { name: "tokenOut", type: "address" },
+      { name: "fee", type: "uint24" },
+      { name: "amountIn", type: "uint256" },
+      { name: "sqrtPriceLimitX96", type: "uint160" },
     ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+] as const;
+
+const uniswapV3SwapRouterAbi = [
+  {
+    type: "function",
+    name: "exactInputSingle",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "recipient", type: "address" },
+          { name: "deadline", type: "uint256" },
+          { name: "amountIn", type: "uint256" },
+          { name: "amountOutMinimum", type: "uint256" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
   },
 ] as const;
 
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
+const robinhoodTestnetUsdgAddress = "0x7E955252E15c84f5768B83c41a71F9eba181802F" as const;
 
 function configuredFactoryAddress(): `0x${string}` | undefined {
   const value = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
@@ -492,7 +518,7 @@ function configuredUniswapRouterAddress(): `0x${string}` | undefined {
 
 function configuredSettlementTokenAddress(): `0x${string}` | undefined {
   const value = process.env.NEXT_PUBLIC_USDG_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return value && isAddress(value) ? value : robinhoodTestnetUsdgAddress;
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -1750,20 +1776,22 @@ function MetricCard({
   label,
   value,
   icon,
+  action,
   tone = "neutral",
   sub,
 }: {
   label: string;
   value: string;
   icon?: ReactNode;
+  action?: ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger";
   sub?: string;
 }) {
   return (
-    <div className={`metricCard ${tone}`}>
+    <div className={`metricCard ${tone}${action ? " hasMetricAction" : ""}`}>
       <div className="metricLabel">
-        {icon ?? null}
-        {label}
+        <span>{label}</span>
+        {action ?? icon ?? null}
       </div>
       <strong>{value}</strong>
       {sub ? <span>{sub}</span> : null}
@@ -2212,6 +2240,9 @@ function UserActions({
   const entryRouterAddress = configuredEntryRouterAddress();
   const entryAdapterAddress = configuredEntryAdapterAddress();
   const uniswapRouterAddress = configuredUniswapRouterAddress();
+  const v3MarketRegistryAddress = configuredV3MarketRegistryAddress();
+  const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
+  const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress();
   const entryContractsConfigured = Boolean(
     entryRouterAddress && entryAdapterAddress && uniswapRouterAddress,
@@ -2471,77 +2502,55 @@ function UserActions({
   } catch {
     requestedUsdgAmount = undefined;
   }
-  const {
-    data: marketFactoryResult,
-    isLoading: marketFactoryLoading,
-  } = useReadContract({
-    address: uniswapRouterAddress,
-    abi: uniswapV2QuoteAbi,
-    functionName: "factory",
+  const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
+    address: v3MarketRegistryAddress,
+    abi: otfV3MarketRegistryAbi,
+    functionName: "officialPool",
+    args: vault.address ? [vault.address] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(uniswapRouterAddress) },
+    query: { enabled: Boolean(v3MarketRegistryAddress && vault.address) },
   });
-  const marketFactory = typeof marketFactoryResult === "string" && isAddress(marketFactoryResult)
-    ? marketFactoryResult
+  const marketPool = officialPoolResult && officialPoolResult !== zeroAddress
+    ? officialPoolResult as `0x${string}`
     : undefined;
-  const {
-    data: marketPairResult,
-    isLoading: marketPairLoading,
-  } = useReadContract({
-    address: marketFactory,
-    abi: uniswapV2FactoryAbi,
-    functionName: "getPair",
-    args: vault.address && settlementToken ? [vault.address, settlementToken] : undefined,
+  const { data: marketLiquidity, isLoading: marketLiquidityLoading } = useReadContract({
+    address: marketPool,
+    abi: uniswapV3PoolAbi,
+    functionName: "liquidity",
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(marketFactory && vault.address && settlementToken) },
+    query: { enabled: Boolean(marketPool) },
   });
-  const marketPair = typeof marketPairResult === "string" && isAddress(marketPairResult) && marketPairResult !== zeroAddress
-    ? marketPairResult
-    : undefined;
-  const {
-    data: marketReservesResult,
-    isLoading: marketReservesLoading,
-  } = useReadContract({
-    address: marketPair,
-    abi: uniswapV2PairAbi,
-    functionName: "getReserves",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(marketPair) },
-  });
-  const marketReserves = marketReservesResult as readonly [bigint, bigint, number] | undefined;
-  const marketLiquidityReady = Boolean(
-    marketPair && marketReserves && marketReserves[0] > 0n && marketReserves[1] > 0n,
+  const marketLiquidityReady = Boolean(marketPool && typeof marketLiquidity === "bigint" && marketLiquidity > 0n);
+  const marketPoolChecking = Boolean(v3MarketRegistryAddress && vault.address) && (
+    officialPoolLoading || (Boolean(marketPool) && marketLiquidityLoading)
   );
-  const marketPoolChecking = Boolean(uniswapRouterAddress && settlementToken && vault.address) && (
-    marketFactoryLoading || marketPairLoading || (Boolean(marketPair) && marketReservesLoading)
-  );
-  const marketPath = activeAction === "deposit"
-    ? [settlementToken ?? zeroAddress, vault.address ?? zeroAddress]
-    : [vault.address ?? zeroAddress, settlementToken ?? zeroAddress];
   const marketInputAmount = activeAction === "deposit" ? requestedUsdgAmount : requestedRedeemShares;
+  const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
+  const marketOutputToken = activeAction === "deposit" ? vault.address : settlementToken;
   const {
     data: marketQuoteResult,
     error: marketQuoteError,
     isLoading: marketQuoteLoading,
     refetch: refetchMarketQuote,
   } = useReadContract({
-    address: uniswapRouterAddress,
-    abi: uniswapV2QuoteAbi,
-    functionName: "getAmountsOut",
-    args: marketInputAmount ? [marketInputAmount, marketPath] : undefined,
+    address: uniswapV3QuoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInputSingle",
+    args: marketInputAmount && marketInputToken && marketOutputToken
+      ? [marketInputToken, marketOutputToken, 500, marketInputAmount, 0n]
+      : undefined,
     chainId: robinhoodChainTestnet.id,
     query: {
       enabled: Boolean(
-        marketLiquidityReady && marketInputAmount && marketInputAmount > 0n && slippageValid,
+        uniswapV3QuoterAddress && marketLiquidityReady && marketInputAmount &&
+        marketInputAmount > 0n && marketInputToken && marketOutputToken && slippageValid,
       ),
     },
   });
-  const marketQuoteAmounts = marketQuoteResult as readonly bigint[] | undefined;
-  const marketQuotedOutput = marketQuoteAmounts?.[marketQuoteAmounts.length - 1];
+  const marketQuotedOutput = marketQuoteResult as bigint | undefined;
   const marketMinimumOutput = marketQuotedOutput === undefined || !slippageValid
     ? undefined
     : marketQuotedOutput * BigInt(10_000 - slippageBps) / 10_000n;
-  const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
   const marketRequiredInput = marketInputAmount;
   const marketAuthorizationContracts = ([
     {
@@ -2557,7 +2566,7 @@ function UserActions({
       functionName: "allowance" as const,
       args: [
         (connectedAddress ?? zeroAddress) as `0x${string}`,
-        (uniswapRouterAddress ?? zeroAddress) as `0x${string}`,
+        (uniswapV3SwapRouterAddress ?? zeroAddress) as `0x${string}`,
       ],
       chainId: robinhoodChainTestnet.id,
     },
@@ -2567,7 +2576,7 @@ function UserActions({
     refetch: refetchMarketAuthorization,
   } = useReadContracts({
     contracts: marketAuthorizationContracts,
-    query: { enabled: Boolean(marketInputToken && connectedAddress && uniswapRouterAddress) },
+    query: { enabled: Boolean(marketInputToken && connectedAddress && uniswapV3SwapRouterAddress) },
   });
   const marketInputBalance = marketAuthorizationResults?.[0]?.result as bigint | undefined;
   const marketInputAllowance = marketAuthorizationResults?.[1]?.result as bigint | undefined;
@@ -2577,6 +2586,9 @@ function UserActions({
     marketInputAllowance >= marketRequiredInput;
   const marketQuoteReady = Boolean(
     marketLiquidityReady && marketInputAmount && marketQuotedOutput && marketMinimumOutput && !marketQuoteError,
+  );
+  const marketRouteAvailable = Boolean(
+    marketLiquidityReady && uniswapV3QuoterAddress && uniswapV3SwapRouterAddress,
   );
   const entryBalanceSufficient = maximumSettlementTotal !== undefined &&
     settlementBalance !== undefined && settlementBalance >= maximumSettlementTotal;
@@ -2856,7 +2868,7 @@ function UserActions({
   async function approveMarketInput() {
     if (
       !marketInputToken ||
-      !uniswapRouterAddress ||
+      !uniswapV3SwapRouterAddress ||
       !marketRequiredInput ||
       !publicClient
     ) return;
@@ -2868,7 +2880,7 @@ function UserActions({
           address: marketInputToken,
           abi: erc20BalanceAbi,
           functionName: "approve",
-          args: [uniswapRouterAddress, 0n],
+          args: [uniswapV3SwapRouterAddress, 0n],
           chainId: robinhoodChainTestnet.id,
         });
         setMarketState("submitted");
@@ -2880,7 +2892,7 @@ function UserActions({
         address: marketInputToken,
         abi: erc20BalanceAbi,
         functionName: "approve",
-        args: [uniswapRouterAddress, marketRequiredInput],
+        args: [uniswapV3SwapRouterAddress, marketRequiredInput],
         chainId: robinhoodChainTestnet.id,
       });
       setMarketState("submitted");
@@ -2896,9 +2908,11 @@ function UserActions({
 
   async function executeMarketTrade() {
     if (
-      !uniswapRouterAddress ||
+      !uniswapV3SwapRouterAddress ||
       !vault.address ||
       !settlementToken ||
+      !marketInputToken ||
+      !marketOutputToken ||
       !connectedAddress ||
       !publicClient ||
       !marketInputAmount ||
@@ -2912,16 +2926,19 @@ function UserActions({
       setMarketState("pending");
       const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
       const hash = await writeContractAsync({
-        address: uniswapRouterAddress,
-        abi: uniswapV2QuoteAbi,
-        functionName: "swapExactTokensForTokens",
-        args: [
-          marketInputAmount,
-          marketMinimumOutput,
-          marketPath,
-          connectedAddress,
+        address: uniswapV3SwapRouterAddress,
+        abi: uniswapV3SwapRouterAbi,
+        functionName: "exactInputSingle",
+        args: [{
+          tokenIn: marketInputToken,
+          tokenOut: marketOutputToken,
+          fee: 500,
+          recipient: connectedAddress,
           deadline,
-        ],
+          amountIn: marketInputAmount,
+          amountOutMinimum: marketMinimumOutput,
+          sqrtPriceLimitX96: 0n,
+        }],
         chainId: robinhoodChainTestnet.id,
       });
       setMarketState("submitted");
@@ -3068,15 +3085,15 @@ function UserActions({
                 type="button"
                 role="radio"
                 aria-checked={selectedRoute === "market"}
-                disabled={!marketLiquidityReady}
+                disabled={!marketRouteAvailable}
                 onClick={() => setSelectedRoute("market")}
               >
                 <span className="positionRouteIcon"><Droplets size={18} /></span>
-                <span className="positionRouteName">Open market</span>
+                <span className="positionRouteName">Manager-owned V3 market</span>
                 <strong className="positionRouteQuote">
                   {marketPoolChecking
                     ? <Loader2 className="spin" size={18} />
-                    : !marketLiquidityReady
+                    : !marketRouteAvailable
                       ? "Unavailable"
                       : marketQuoteLoading
                         ? <Loader2 className="spin" size={18} />
@@ -3090,8 +3107,8 @@ function UserActions({
                             : "—"}
                 </strong>
                 <small>
-                  {!marketLiquidityReady
-                    ? "No funded OTF / USDG pool"
+                  {!marketRouteAvailable
+                    ? marketLiquidityReady ? "V3 trade route is not configured" : "No funded OTF / USDG pool"
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares received`
                       : "USDG received"}
@@ -3344,6 +3361,21 @@ function UserActions({
       </div>
     </SectionCard>
   );
+}
+
+function configuredV3MarketRegistryAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredUniswapV3SwapRouterAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
+}
+
+function configuredUniswapV3QuoterAddress(): `0x${string}` | undefined {
+  const value = process.env.NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS;
+  return value && isAddress(value) ? value : undefined;
 }
 
 function TxStatus({ state, persistent = false }: { state: TxState; persistent?: boolean }) {
@@ -5508,6 +5540,18 @@ function WalletView({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canRead },
   });
+  const {
+    data: usdgBalance,
+    isLoading: usdgBalanceLoading,
+    isError: usdgBalanceError,
+  } = useReadContract({
+    address: robinhoodTestnetUsdgAddress,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: canRead ? [connectedAddress as `0x${string}`] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canRead },
+  });
   const positionContracts = canRead
     ? vaults.flatMap((vault) => [
         {
@@ -5538,6 +5582,9 @@ function WalletView({
   const nativeBalanceLabel = nativeBalance
     ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}`
     : nativeBalanceLoading ? "Loading" : "Unavailable";
+  const usdgBalanceLabel = typeof usdgBalance === "bigint"
+    ? `${formatWalletTokenBalance(usdgBalance, 6)} USDG`
+    : usdgBalanceLoading ? "Loading" : usdgBalanceError ? "Read failed" : "0 USDG";
 
   async function copyWalletAddress() {
     if (!connectedAddress) return;
@@ -5555,7 +5602,6 @@ function WalletView({
         actions={
           <>
             <WalletConnectionAction />
-            {isTestnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : null}
             <button className="secondaryAction" type="button" onClick={onBrowseVaults}><LayoutGrid size={14} />Explore OTFs</button>
           </>
         }
@@ -5573,26 +5619,68 @@ function WalletView({
             <div className="metricCard walletAddressMetric">
               <div className="metricLabel">
                 <span>Wallet address</span>
-                {addressCopied ? (
-                  <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Address copied</span>
-                ) : (
+                <div className="walletAddressActions">
+                  {addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}
                   <button
-                    className="iconOnly compact walletAddressCopyAction"
+                    className="iconOnly compact"
                     type="button"
-                    title="Copy wallet address"
-                    aria-label="Copy wallet address"
+                    title={addressCopied ? "Wallet address copied" : "Copy wallet address"}
+                    aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}
                     onClick={copyWalletAddress}
                   >
-                    <Copy size={13} />
+                    {addressCopied ? <Check size={13} /> : <Copy size={13} />}
                   </button>
-                )}
+                  <a
+                    className="iconOnly compact"
+                    href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${connectedAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open wallet in block explorer"
+                    aria-label="Open wallet in block explorer in a new tab"
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                </div>
               </div>
               <div className="walletAddressValue">
                 <strong title={connectedAddress}>{shortAddress(connectedAddress)}</strong>
               </div>
             </div>
             <MetricCard label="OTF Positions" value={positionsLoading ? "..." : String(positions.length)} />
-            <MetricCard label="ETH Balance" value={nativeBalanceLabel} />
+            <MetricCard
+              label="USDG Balance"
+              value={usdgBalanceLabel}
+              action={(
+                <a
+                  className="metricCardFaucetAction"
+                  href="https://faucet.paxos.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open USDG faucet"
+                  aria-label="Open USDG faucet in a new tab"
+                >
+                  Faucet
+                  <ExternalLink size={10} />
+                </a>
+              )}
+            />
+            <MetricCard
+              label="ETH Balance"
+              value={nativeBalanceLabel}
+              action={(
+                <a
+                  className="metricCardFaucetAction"
+                  href="https://faucet.testnet.chain.robinhood.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open Robinhood testnet ETH faucet"
+                  aria-label="Open Robinhood testnet ETH faucet in a new tab"
+                >
+                  Faucet
+                  <ExternalLink size={10} />
+                </a>
+              )}
+            />
           </div>
 
           <section className="sectionCard depositPositions">
@@ -5657,133 +5745,93 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
 }
 
 function ShareMarketPanel({ vault }: { vault: VaultView }) {
-  const [otfAmount, setOtfAmount] = useState("");
-  const [usdgAmount, setUsdgAmount] = useState("");
-  const [txState, setTxState] = useState<TxState>("idle");
-  const [txError, setTxError] = useState<string>();
-  const { address: connectedAddress } = useAccount();
-  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
-  const { writeContractAsync } = useWriteContract();
-  const router = configuredUniswapRouterAddress();
+  const registry = configuredV3MarketRegistryAddress();
   const settlementToken = configuredSettlementTokenAddress();
-  const { data: factoryResult } = useReadContract({
-    address: router,
-    abi: uniswapV2QuoteAbi,
-    functionName: "factory",
+  const { data: officialPoolResult, isLoading: poolLoading } = useReadContract({
+    address: registry,
+    abi: otfV3MarketRegistryAbi,
+    functionName: "officialPool",
+    args: vault.address ? [vault.address] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(router) },
+    query: { enabled: Boolean(registry && vault.address) },
   });
-  const factory = typeof factoryResult === "string" && isAddress(factoryResult) ? factoryResult : undefined;
-  const { data: pairResult, isLoading: pairLoading, refetch: refetchPair } = useReadContract({
-    address: factory,
-    abi: uniswapV2FactoryAbi,
-    functionName: "getPair",
-    args: vault.address && settlementToken ? [vault.address, settlementToken] : undefined,
+  const pool = officialPoolResult && officialPoolResult !== zeroAddress
+    ? officialPoolResult as `0x${string}`
+    : undefined;
+  const { data: liquidity, isLoading: liquidityLoading, isError: liquidityError } = useReadContract({
+    address: pool,
+    abi: uniswapV3PoolAbi,
+    functionName: "liquidity",
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(factory && vault.address && settlementToken) },
+    query: { enabled: Boolean(pool) },
   });
-  const pair = typeof pairResult === "string" && isAddress(pairResult) && pairResult !== zeroAddress ? pairResult : undefined;
-  const { data: settlementDecimalsResult } = useReadContract({
-    address: settlementToken,
-    abi: erc20BalanceAbi,
-    functionName: "decimals",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(settlementToken) },
-  });
-  const settlementDecimals = Number(settlementDecimalsResult ?? 18);
-  let parsedOtf: bigint | undefined;
-  let parsedUsdg: bigint | undefined;
-  try { parsedOtf = Number(otfAmount) > 0 ? parseUnits(otfAmount, 18) : undefined; } catch { parsedOtf = undefined; }
-  try { parsedUsdg = Number(usdgAmount) > 0 ? parseUnits(usdgAmount, settlementDecimals) : undefined; } catch { parsedUsdg = undefined; }
-  const authorizationContracts = ([
-    { address: vault.address ?? zeroAddress, abi: erc20BalanceAbi, functionName: "balanceOf" as const, args: [connectedAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-    { address: vault.address ?? zeroAddress, abi: erc20BalanceAbi, functionName: "allowance" as const, args: [connectedAddress ?? zeroAddress, router ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-    { address: settlementToken ?? zeroAddress, abi: erc20BalanceAbi, functionName: "balanceOf" as const, args: [connectedAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-    { address: settlementToken ?? zeroAddress, abi: erc20BalanceAbi, functionName: "allowance" as const, args: [connectedAddress ?? zeroAddress, router ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-  ] as const);
-  const { data: authorization, refetch: refetchAuthorization } = useReadContracts({ contracts: authorizationContracts, query: { enabled: Boolean(vault.address && settlementToken && connectedAddress && router) } });
-  const otfBalance = authorization?.[0]?.result as bigint | undefined;
-  const otfAllowance = authorization?.[1]?.result as bigint | undefined;
-  const usdgBalance = authorization?.[2]?.result as bigint | undefined;
-  const usdgAllowance = authorization?.[3]?.result as bigint | undefined;
-  const amountsReady = Boolean(parsedOtf && parsedUsdg);
-  const balancesReady = amountsReady && (otfBalance ?? 0n) >= (parsedOtf ?? 0n) && (usdgBalance ?? 0n) >= (parsedUsdg ?? 0n);
-  const approvalsReady = amountsReady && (otfAllowance ?? 0n) >= (parsedOtf ?? 0n) && (usdgAllowance ?? 0n) >= (parsedUsdg ?? 0n);
-  const busy = txState === "pending" || txState === "submitted";
-
-  async function createPair() {
-    if (!factory || !vault.address || !settlementToken || !publicClient) return;
-    setTxError(undefined);
-    try {
-      setTxState("pending");
-      const hash = await writeContractAsync({ address: factory, abi: uniswapV2FactoryAbi, functionName: "createPair", args: [vault.address, settlementToken], chainId: robinhoodChainTestnet.id });
-      setTxState("submitted");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("Pool creation reverted.");
-      await refetchPair();
-      setTxState("confirmed");
-    } catch (error) { setTxError(errorMessage(error)); setTxState("reverted"); }
-  }
-
-  async function setExactApproval(token: `0x${string}`, current: bigint, amount: bigint) {
-    if (!router || !publicClient) throw new Error("The Uniswap router is not configured.");
-    if (current > 0n) {
-      const resetHash = await writeContractAsync({ address: token, abi: erc20BalanceAbi, functionName: "approve", args: [router, 0n], chainId: robinhoodChainTestnet.id });
-      const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
-      if (resetReceipt.status !== "success") throw new Error("Approval reset reverted.");
-    }
-    const hash = await writeContractAsync({ address: token, abi: erc20BalanceAbi, functionName: "approve", args: [router, amount], chainId: robinhoodChainTestnet.id });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("Approval reverted.");
-  }
-
-  async function approveLiquidity() {
-    if (!vault.address || !settlementToken || !parsedOtf || !parsedUsdg) return;
-    setTxError(undefined);
-    try {
-      setTxState("pending");
-      if ((otfAllowance ?? 0n) < parsedOtf) await setExactApproval(vault.address, otfAllowance ?? 0n, parsedOtf);
-      if ((usdgAllowance ?? 0n) < parsedUsdg) await setExactApproval(settlementToken, usdgAllowance ?? 0n, parsedUsdg);
-      await refetchAuthorization();
-      setTxState("confirmed");
-    } catch (error) { setTxError(errorMessage(error)); setTxState("reverted"); }
-  }
-
-  async function addLiquidity() {
-    if (!router || !vault.address || !settlementToken || !connectedAddress || !publicClient || !parsedOtf || !parsedUsdg) return;
-    setTxError(undefined);
-    try {
-      setTxState("pending");
-      const hash = await writeContractAsync({
-        address: router,
-        abi: uniswapV2QuoteAbi,
-        functionName: "addLiquidity",
-        args: [vault.address, settlementToken, parsedOtf, parsedUsdg, parsedOtf * 95n / 100n, parsedUsdg * 95n / 100n, connectedAddress, BigInt(Math.floor(Date.now() / 1_000) + 20 * 60)],
-        chainId: robinhoodChainTestnet.id,
-      });
-      setTxState("submitted");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("Adding liquidity reverted.");
-      await refetchAuthorization();
-      setOtfAmount(""); setUsdgAmount(""); setTxState("confirmed");
-    } catch (error) { setTxError(errorMessage(error)); setTxState("reverted"); }
-  }
+  const liquidityAvailable = typeof liquidity === "bigint" && liquidity > 0n;
+  const checking = poolLoading || (Boolean(pool) && liquidityLoading);
+  const addLiquidityUrl = vault.address && settlementToken
+    ? `https://app.uniswap.org/positions/create/v3?currencyA=${vault.address}&currencyB=${settlementToken}&fee=500`
+    : "https://app.uniswap.org/positions/create";
 
   return (
-    <SectionCard title="OTF share market" subtitle="Create and seed the direct OTF / USDG market" icon={<Droplets size={15} />} action={<span className={`stateBadge ${pair ? "success" : "muted"}`}>{pairLoading ? "Checking" : pair ? "Pool created" : "No pool"}</span>}>
+    <SectionCard
+      title="Official OTF share pool"
+      subtitle="Permanent Uniswap V3 market for this OTF"
+      icon={<Droplets size={15} />}
+      action={
+        <span className={`stateBadge ${liquidityAvailable ? "success" : "muted"}`}>
+          {checking ? "Checking" : liquidityAvailable ? "Liquidity available" : "Awaiting liquidity"}
+        </span>
+      }
+    >
       <div className="operationFlow shareMarketSetup">
-        <div className="riskCallout info"><Info size={15} /><div><strong>Liquidity comes from the manager wallet</strong><span>This does not move assets held by the OTF. The pool price can differ from the OTF’s oracle-priced portfolio value.</span></div></div>
-        <div className="roleCurrent"><span>OTF / USDG pair</span><strong>{pair ? shortAddress(pair) : "Not created"}</strong></div>
-        {!pair ? <button className="primaryAction" type="button" disabled={!vault.connectedIsManager || !factory || busy} onClick={createPair}><Plus size={14} />Create share pool</button> : <>
-          <div className="liquidityAmountGrid">
-            <div><label className="fieldLabel">OTF shares</label><div className="inputWithSuffix"><input value={otfAmount} onChange={(event) => setOtfAmount(event.target.value)} type="number" min="0" placeholder="0.00" disabled={busy} /><span>{vault.symbol}</span></div></div>
-            <div><label className="fieldLabel">USDG</label><div className="inputWithSuffix"><input value={usdgAmount} onChange={(event) => setUsdgAmount(event.target.value)} type="number" min="0" placeholder="0.00" disabled={busy} /><span>USDG</span></div></div>
+        <div className="riskCallout info">
+          <LockKeyhole size={15} />
+          <div>
+            <strong>Immutable official market</strong>
+            <span>This OTF is permanently paired with USDG at the 0.05% fee tier. The manager cannot remove, replace, or change the pool association.</span>
           </div>
-          {amountsReady && !balancesReady ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient wallet balance</strong><span>The manager wallet must supply both OTF shares and USDG.</span></div></div> : null}
-          {txError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Share-market setup failed</strong><span>{txError}</span></div></div> : null}
-          <TxStatus state={txState} />
-          <div className="buttonRow"><button className="secondaryAction" type="button" disabled={!vault.connectedIsManager || busy || !balancesReady || approvalsReady} onClick={approveLiquidity}><ShieldCheck size={14} />{approvalsReady ? "Assets approved" : "Approve liquidity"}</button><button className="primaryAction" type="button" disabled={!vault.connectedIsManager || busy || !balancesReady || !approvalsReady} onClick={addLiquidity}><Droplets size={14} />Add liquidity</button></div>
-        </>}
+        </div>
+
+        {!registry ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div><strong>Official pool registry is not configured</strong><span>Set NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS to load this OTF&apos;s market.</span></div>
+          </div>
+        ) : null}
+
+        {pool ? (
+          <>
+            <div className="roleCurrent">
+              <span>Official OTF / USDG pool</span>
+              <strong><a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${pool}`} target="_blank" rel="noreferrer">{shortAddress(pool)} <ExternalLink size={11} /></a></strong>
+            </div>
+            <div className="accrualSummary">
+              <div><span>Fee tier</span><strong>0.05%</strong></div>
+              <div><span>Pool association</span><strong>Permanent</strong></div>
+              <div><span>Liquidity ownership</span><strong>Manager owned</strong></div>
+              <div><span>Active liquidity</span><strong>{liquidityLoading ? "Checking" : liquidityError ? "Read unavailable" : liquidityAvailable ? "Available" : "Zero"}</strong></div>
+            </div>
+            {!liquidityLoading && !liquidityError && !liquidityAvailable ? (
+              <div className="validationSummary warning">
+                <AlertTriangle size={15} />
+                <div><strong>Secondary-market trading is not active yet</strong><span>The official pool exists, but direct OTF / USDG trading stays disabled until the manager adds liquidity.</span></div>
+              </div>
+            ) : null}
+            <div className="riskCallout info">
+              <Info size={15} />
+              <div><strong>Manager-owned liquidity</strong><span>Add liquidity from the manager wallet. The resulting Uniswap position belongs to that wallet and does not use assets held by the OTF portfolio.</span></div>
+            </div>
+            {vault.connectedIsManager ? (
+              <a className="primaryAction" href={addLiquidityUrl} target="_blank" rel="noreferrer">
+                <Droplets size={14} />Add liquidity on Uniswap<ExternalLink size={12} />
+              </a>
+            ) : null}
+          </>
+        ) : registry && !poolLoading ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div><strong>Official pool was not found</strong><span>This OTF may predate automatic pool creation. Verify the deployment before accepting deposits.</span></div>
+          </div>
+        ) : null}
       </div>
     </SectionCard>
   );

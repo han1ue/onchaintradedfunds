@@ -8,6 +8,7 @@ import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
+import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
@@ -73,6 +74,7 @@ abstract contract ProtocolTestBase is TestBase {
         );
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
+        factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
 
         tokenA.mint(address(this), 1_000_000 * ONE);
         tokenB.mint(address(this), 1_000_000 * ONE);

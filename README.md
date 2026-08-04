@@ -590,6 +590,9 @@ NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS=
 NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS=
 NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS=
 NEXT_PUBLIC_USDG_ADDRESS=
+NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS=
+NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS=
+NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS=
 ```
 
 These are public frontend values. Do not put private keys in any `NEXT_PUBLIC_*` variable.
@@ -605,17 +608,29 @@ PRICE_FEEDS=0xFeed1,0xFeed2
 APPROVED_ADAPTERS=
 USDG_ADDRESS=
 UNISWAP_V2_ROUTER_ADDRESS=
+UNISWAP_V3_FACTORY_ADDRESS=
+UNISWAP_V3_POSITION_MANAGER_ADDRESS=
+UNISWAP_V3_SWAP_ROUTER_ADDRESS=
+UNISWAP_V3_QUOTER_ADDRESS=
 ```
 
 `APPROVED_ASSETS` and `PRICE_FEEDS` are positional pairs and must have equal lengths. The
 deployment script rejects an empty protocol catalog unless
 `ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
 
-`USDG_ADDRESS` and `UNISWAP_V2_ROUTER_ADDRESS` are optional but must be supplied together. When
-present, the deployment script deploys `UniswapV2Adapter` and `OTFEntryRouter`, approves the
+`USDG_ADDRESS` and all four Uniswap V3 addresses are required because every new OTF receives an
+official OTF/USDG pool during its factory transaction. `UNISWAP_V2_ROUTER_ADDRESS` remains
+optional. When present, the deployment script deploys `UniswapV2Adapter` and `OTFEntryRouter`, approves the
 adapter for both trade and entry use, authorizes the executor and entry router as adapter callers,
 and writes all public addresses into `app/.env.local`. No testnet liquidity address is guessed or
 hardcoded; verify both values against the intended deployment before running the script.
+
+The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
+OTF can be created, and writes the registry, swap-router, and quoter addresses into `app/.env.local`.
+OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fixed 0.05% fee tier,
+initializes a new pool from NAV per share, and records it as the immutable official pool. No
+liquidity is taken from the OTF. The manager adds liquidity separately and owns the resulting
+Uniswap position; the pool association cannot be removed or replaced.
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current

@@ -39,6 +39,7 @@ Investors use the web application with an EVM wallet to:
 Creators and managers use the application to:
 
 - Create an OTF with a name, fixed `OTF-` ticker prefix, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, cooldown, and permanent safety limits.
+- Open the immutable official OTF/USDG pool and add manager-owned liquidity without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Append permanent public thesis amendments without resetting the rebalance cooldown.
 - Accrue creator fees without counting the action as a portfolio change.
@@ -50,8 +51,10 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket.
 - OTF creation is permissionless within factory-level validation and registry constraints.
-- The investor frontend exposes USDG entry and exit through either an optional direct share market or atomic constituent-pool routing; direct basket controls remain contract-level primitives.
-- Managers may create and seed an OTF/USDG market from their own wallet without using OTF-held portfolio assets.
+- The investor frontend exposes USDG entry and exit through either the official direct share market or atomic constituent-pool routing; direct basket controls remain contract-level primitives.
+- Every OTF factory transaction creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.
+- Managers add liquidity from their own wallets without using OTF-held portfolio assets and own the resulting Uniswap positions.
+- The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
 - Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
 - Only the configured manager may append thesis amendments or submit rebalances.
 - The manager has no arbitrary call or asset-withdrawal surface.

@@ -13,6 +13,10 @@ interface IFeeCollectorTreasury {
     function pendingTreasury() external view returns (address);
 }
 
+interface IOfficialMarketRegistry {
+    function createOfficialPool(address vault) external returns (address pool);
+}
+
 contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
@@ -46,6 +50,8 @@ contract OTFFactory is IAdapterAllowlist {
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
+    error OfficialMarketRegistryNotConfigured();
+    error OfficialMarketRegistryLocked();
 
     event VaultCreated(
         address indexed creator,
@@ -56,6 +62,7 @@ contract OTFFactory is IAdapterAllowlist {
         uint32 rebalanceCooldown
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
+    event OfficialMarketRegistryConfigured(address indexed registry);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     address public owner;
     address public pendingOwner;
@@ -65,6 +72,7 @@ contract OTFFactory is IAdapterAllowlist {
     address public oracleRegistry;
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
+    address public officialMarketRegistry;
 
     address[] private _vaults;
     mapping(address => address) public creatorOf;
@@ -146,6 +154,8 @@ contract OTFFactory is IAdapterAllowlist {
         nonReentrantCreation
         returns (address vault)
     {
+        address marketRegistry = officialMarketRegistry;
+        if (marketRegistry == address(0)) revert OfficialMarketRegistryNotConfigured();
         _validateFactoryBounds(params);
 
         uint256 nonce = creatorNonce[msg.sender];
@@ -176,6 +186,8 @@ contract OTFFactory is IAdapterAllowlist {
                 protocolFeeShareBps
             );
 
+        IOfficialMarketRegistry(marketRegistry).createOfficialPool(vault);
+
         emit VaultCreated(
             msg.sender, vault, nonce, params.name, params.symbol, params.rebalanceCooldown
         );
@@ -195,6 +207,17 @@ contract OTFFactory is IAdapterAllowlist {
         if (adapter == address(0) || adapter.code.length == 0) revert ZeroAddress();
         isTradeAdapterApproved[adapter] = approved;
         emit TradeAdapterApprovalChanged(adapter, approved);
+    }
+
+    /// @notice Configures the official market registry before the first OTF is created.
+    /// @dev It becomes permanently locked as soon as a vault exists.
+    function setOfficialMarketRegistry(address registry) external onlyOwner {
+        if (_vaults.length != 0) revert OfficialMarketRegistryLocked();
+        if (registry == address(0) || registry.code.length == 0) {
+            revert InvalidDependency(registry);
+        }
+        officialMarketRegistry = registry;
+        emit OfficialMarketRegistryConfigured(registry);
     }
 
     function beginOwnershipTransfer(address newOwner) external onlyOwner {
