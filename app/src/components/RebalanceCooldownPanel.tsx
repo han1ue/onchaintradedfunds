@@ -181,6 +181,7 @@ type VaultView = {
   lastReadAt?: number;
   nav?: string;
   navPerShare?: string;
+  navPerShareValue?: bigint;
   factoryAddress?: `0x${string}`;
   factoryVaultCount: number;
   factoryReadFailed: boolean;
@@ -449,6 +450,20 @@ const uniswapV2FactoryAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "tokenA", type: "address" }, { name: "tokenB", type: "address" }],
     outputs: [{ name: "pair", type: "address" }],
+  },
+] as const;
+
+const uniswapV2PairAbi = [
+  {
+    type: "function",
+    name: "getReserves",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "reserve0", type: "uint112" },
+      { name: "reserve1", type: "uint112" },
+      { name: "blockTimestampLast", type: "uint32" },
+    ],
   },
 ] as const;
 
@@ -2144,16 +2159,15 @@ function UserActions({
   oraclePrices: CatalogOraclePrices;
 }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
-  const [depositMode, setDepositMode] = useState<"underlying" | "market">("underlying");
-  const [usdgShareAmount, setUsdgShareAmount] = useState("");
-  const [entrySlippage, setEntrySlippage] = useState("1.0");
-  const [redeemAmount, setRedeemAmount] = useState("");
-  const [redeemMode, setRedeemMode] = useState<"underlying" | "market">("underlying");
-  const [redeemSlippage, setRedeemSlippage] = useState("1.0");
+  const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
+  const [usdgAmount, setUsdgAmount] = useState("");
+  const [maxSlippage, setMaxSlippage] = useState("1.0");
   const [entryState, setEntryState] = useState<TxState>("idle");
   const [entryError, setEntryError] = useState<string>();
   const [redeemState, setRedeemState] = useState<TxState>("idle");
   const [redeemError, setRedeemError] = useState<string>();
+  const [marketState, setMarketState] = useState<TxState>("idle");
+  const [marketError, setMarketError] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -2161,35 +2175,35 @@ function UserActions({
   const entryRouterAddress = configuredEntryRouterAddress();
   const entryAdapterAddress = configuredEntryAdapterAddress();
   const uniswapRouterAddress = configuredUniswapRouterAddress();
+  const configuredSettlementToken = configuredSettlementTokenAddress();
   const entryContractsConfigured = Boolean(
     entryRouterAddress && entryAdapterAddress && uniswapRouterAddress,
   );
+  const parsedSlippage = Number(maxSlippage);
+  const slippageBps = Number.isFinite(parsedSlippage)
+    ? Math.round(parsedSlippage * 100)
+    : 0;
+  const slippageValid = slippageBps >= 1 && slippageBps <= 2_000;
+  let normalizedUsdgAmount: bigint | undefined;
+  try {
+    normalizedUsdgAmount = Number(usdgAmount) > 0
+      ? parseUnits(usdgAmount, 18)
+      : undefined;
+  } catch {
+    normalizedUsdgAmount = undefined;
+  }
+  const navEstimatedShares = normalizedUsdgAmount && vault.navPerShareValue
+    ? normalizedUsdgAmount * 10n ** 18n / vault.navPerShareValue
+    : undefined;
   let requestedEntryShares: bigint | undefined;
-  try {
-    requestedEntryShares = Number(usdgShareAmount) > 0
-      ? parseUnits(usdgShareAmount, 18)
-      : undefined;
-  } catch {
-    requestedEntryShares = undefined;
+  if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
+    requestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
-  let requestedRedeemShares: bigint | undefined;
-  try {
-    requestedRedeemShares = Number(redeemAmount) > 0
-      ? parseUnits(redeemAmount, 18)
-      : undefined;
-  } catch {
-    requestedRedeemShares = undefined;
-  }
-  const parsedEntrySlippage = Number(entrySlippage);
-  const entrySlippageBps = Number.isFinite(parsedEntrySlippage)
-    ? Math.round(parsedEntrySlippage * 100)
-    : 0;
-  const entrySlippageValid = entrySlippageBps >= 1 && entrySlippageBps <= 2_000;
-  const parsedRedeemSlippage = Number(redeemSlippage);
-  const redeemSlippageBps = Number.isFinite(parsedRedeemSlippage)
-    ? Math.round(parsedRedeemSlippage * 100)
-    : 0;
-  const redeemSlippageValid = redeemSlippageBps >= 1 && redeemSlippageBps <= 2_000;
+  const requestedRedeemShares = activeAction === "redeem" ? navEstimatedShares : undefined;
+  const entrySlippageBps = slippageBps;
+  const entrySlippageValid = slippageValid;
+  const redeemSlippageBps = slippageBps;
+  const redeemSlippageValid = slippageValid;
   const { data: settlementTokenAddress } = useReadContract({
     address: entryRouterAddress,
     abi: otfEntryRouterAbi,
@@ -2199,7 +2213,14 @@ function UserActions({
   });
   const settlementToken = typeof settlementTokenAddress === "string" && isAddress(settlementTokenAddress)
     ? settlementTokenAddress
-    : undefined;
+    : configuredSettlementToken;
+  const { data: settlementDecimalsRead } = useReadContract({
+    address: settlementToken,
+    abi: erc20BalanceAbi,
+    functionName: "decimals",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(settlementToken) },
+  });
   const { data: entryAdapterApproved } = useReadContract({
     address: entryRouterAddress,
     abi: otfEntryRouterAbi,
@@ -2211,7 +2232,6 @@ function UserActions({
   const canQuoteEntry = Boolean(
     isLive &&
     vault.address &&
-    connectedAddress &&
     requestedEntryShares &&
     requestedEntryShares > 0n &&
     settlementToken &&
@@ -2286,7 +2306,7 @@ function UserActions({
     query: { enabled: Boolean(settlementToken && connectedAddress && entryRouterAddress) },
   });
   const canPreviewRedeem = Boolean(
-    isLive && vault.address && connectedAddress && requestedRedeemShares && requestedRedeemShares > 0n,
+    isLive && vault.address && requestedRedeemShares && requestedRedeemShares > 0n,
   );
   const {
     data: previewRedeemAmounts,
@@ -2321,7 +2341,7 @@ function UserActions({
     refetch: refetchRedeemQuotes,
   } = useReadContracts({
     contracts: redeemQuoteContracts,
-    query: { enabled: redeemMode === "underlying" && redeemQuoteContracts.length > 0 },
+    query: { enabled: redeemQuoteContracts.length > 0 },
   });
   const redeemAuthorizationContracts = ([
     {
@@ -2399,9 +2419,129 @@ function UserActions({
     : undefined;
   const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
   const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
-  const settlementDecimals = Number(entryAuthorizationResults?.[2]?.result ?? 18);
+  const settlementDecimals = Number(settlementDecimalsRead ?? entryAuthorizationResults?.[2]?.result ?? 18);
+  let requestedUsdgAmount: bigint | undefined;
+  try {
+    requestedUsdgAmount = Number(usdgAmount) > 0
+      ? parseUnits(usdgAmount, settlementDecimals)
+      : undefined;
+  } catch {
+    requestedUsdgAmount = undefined;
+  }
+  const {
+    data: marketFactoryResult,
+    isLoading: marketFactoryLoading,
+  } = useReadContract({
+    address: uniswapRouterAddress,
+    abi: uniswapV2QuoteAbi,
+    functionName: "factory",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(uniswapRouterAddress) },
+  });
+  const marketFactory = typeof marketFactoryResult === "string" && isAddress(marketFactoryResult)
+    ? marketFactoryResult
+    : undefined;
+  const {
+    data: marketPairResult,
+    isLoading: marketPairLoading,
+  } = useReadContract({
+    address: marketFactory,
+    abi: uniswapV2FactoryAbi,
+    functionName: "getPair",
+    args: vault.address && settlementToken ? [vault.address, settlementToken] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(marketFactory && vault.address && settlementToken) },
+  });
+  const marketPair = typeof marketPairResult === "string" && isAddress(marketPairResult) && marketPairResult !== zeroAddress
+    ? marketPairResult
+    : undefined;
+  const {
+    data: marketReservesResult,
+    isLoading: marketReservesLoading,
+  } = useReadContract({
+    address: marketPair,
+    abi: uniswapV2PairAbi,
+    functionName: "getReserves",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(marketPair) },
+  });
+  const marketReserves = marketReservesResult as readonly [bigint, bigint, number] | undefined;
+  const marketLiquidityReady = Boolean(
+    marketPair && marketReserves && marketReserves[0] > 0n && marketReserves[1] > 0n,
+  );
+  const marketPoolChecking = Boolean(uniswapRouterAddress && settlementToken && vault.address) && (
+    marketFactoryLoading || marketPairLoading || (Boolean(marketPair) && marketReservesLoading)
+  );
+  const marketPath = activeAction === "deposit"
+    ? [settlementToken ?? zeroAddress, vault.address ?? zeroAddress]
+    : [vault.address ?? zeroAddress, settlementToken ?? zeroAddress];
+  const {
+    data: marketQuoteResult,
+    error: marketQuoteError,
+    isLoading: marketQuoteLoading,
+    refetch: refetchMarketQuote,
+  } = useReadContract({
+    address: uniswapRouterAddress,
+    abi: uniswapV2QuoteAbi,
+    functionName: activeAction === "deposit" ? "getAmountsOut" : "getAmountsIn",
+    args: requestedUsdgAmount ? [requestedUsdgAmount, marketPath] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(
+        marketLiquidityReady && requestedUsdgAmount && requestedUsdgAmount > 0n && slippageValid,
+      ),
+    },
+  });
+  const marketQuoteAmounts = marketQuoteResult as readonly bigint[] | undefined;
+  const marketQuotedShares = activeAction === "deposit"
+    ? marketQuoteAmounts?.[marketQuoteAmounts.length - 1]
+    : marketQuoteAmounts?.[0];
+  const marketGuardedShares = marketQuotedShares === undefined || !slippageValid
+    ? undefined
+    : activeAction === "deposit"
+      ? marketQuotedShares * BigInt(10_000 - slippageBps) / 10_000n
+      : (marketQuotedShares * BigInt(10_000 + slippageBps) + 9_999n) / 10_000n;
+  const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
+  const marketRequiredInput = activeAction === "deposit" ? requestedUsdgAmount : marketGuardedShares;
+  const marketAuthorizationContracts = ([
+    {
+      address: marketInputToken ?? zeroAddress,
+      abi: erc20BalanceAbi,
+      functionName: "balanceOf" as const,
+      args: [(connectedAddress ?? zeroAddress) as `0x${string}`],
+      chainId: robinhoodChainTestnet.id,
+    },
+    {
+      address: marketInputToken ?? zeroAddress,
+      abi: erc20BalanceAbi,
+      functionName: "allowance" as const,
+      args: [
+        (connectedAddress ?? zeroAddress) as `0x${string}`,
+        (uniswapRouterAddress ?? zeroAddress) as `0x${string}`,
+      ],
+      chainId: robinhoodChainTestnet.id,
+    },
+  ] as const);
+  const {
+    data: marketAuthorizationResults,
+    refetch: refetchMarketAuthorization,
+  } = useReadContracts({
+    contracts: marketAuthorizationContracts,
+    query: { enabled: Boolean(marketInputToken && connectedAddress && uniswapRouterAddress) },
+  });
+  const marketInputBalance = marketAuthorizationResults?.[0]?.result as bigint | undefined;
+  const marketInputAllowance = marketAuthorizationResults?.[1]?.result as bigint | undefined;
+  const marketBalanceSufficient = marketRequiredInput !== undefined && marketInputBalance !== undefined &&
+    marketInputBalance >= marketRequiredInput;
+  const marketAllowanceSufficient = marketRequiredInput !== undefined && marketInputAllowance !== undefined &&
+    marketInputAllowance >= marketRequiredInput;
+  const marketQuoteReady = Boolean(
+    marketLiquidityReady && requestedUsdgAmount && marketQuotedShares && marketGuardedShares && !marketQuoteError,
+  );
   const entryBalanceSufficient = maximumSettlementTotal !== undefined &&
     settlementBalance !== undefined && settlementBalance >= maximumSettlementTotal;
+  const entryWithinBudget = maximumSettlementTotal !== undefined && requestedUsdgAmount !== undefined &&
+    maximumSettlementTotal <= requestedUsdgAmount;
   const entryAllowanceSufficient = maximumSettlementTotal !== undefined &&
     settlementAllowance !== undefined && settlementAllowance >= maximumSettlementTotal;
   const entryOracleValue = entryQuoteReady && entryLegs.every(
@@ -2482,6 +2622,21 @@ function UserActions({
         Number(formatUnits(redeemOracleValue, 18)) - 1) * 100
     : undefined;
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
+  const marketBusy = marketState === "pending" || marketState === "submitted";
+  const routeInputsReady = Boolean(requestedUsdgAmount && requestedUsdgAmount > 0n && slippageValid);
+  const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false;
+  const underlyingQuoteReady = activeAction === "deposit"
+    ? entryQuoteReady && entryWithinBudget
+    : redeemQuoteReady;
+  const underlyingQuoteLoading = activeAction === "deposit"
+    ? previewEntryLoading || entryQuotesLoading
+    : previewRedeemLoading || redeemQuotesLoading;
+  const underlyingQuoteFailed = activeAction === "deposit"
+    ? Boolean(previewEntryError || entryQuotesFailed)
+    : Boolean(previewRedeemError || redeemQuotesFailed);
+  const underlyingQuotedShares = activeAction === "deposit"
+    ? requestedEntryShares
+    : requestedRedeemShares;
 
   async function approveSettlementToken() {
     if (
@@ -2537,7 +2692,8 @@ function UserActions({
       maximumSettlementTotal === undefined ||
       !entryQuoteReady ||
       !entryBalanceSufficient ||
-      !entryAllowanceSufficient
+      !entryAllowanceSufficient ||
+      !entryWithinBudget
     ) return;
     const swaps = entryLegs.map((leg) => leg.isSettlement
       ? { adapter: zeroAddress, maxSettlementIn: 0n, adapterData: "0x" as `0x${string}` }
@@ -2573,7 +2729,7 @@ function UserActions({
       await refetchEntryPreview();
       await refetchEntryQuotes();
       setEntryState("confirmed");
-      setUsdgShareAmount("");
+      setUsdgAmount("");
     } catch (error) {
       setEntryError(errorMessage(error));
       setEntryState("reverted");
@@ -2653,7 +2809,7 @@ function UserActions({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The USDG redemption reverted.");
       await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
-      setRedeemAmount("");
+      setUsdgAmount("");
       setRedeemState("confirmed");
     } catch (error) {
       setRedeemError(errorMessage(error));
@@ -2661,329 +2817,452 @@ function UserActions({
     }
   }
 
-  return (
-    <SectionCard title="Your position" subtitle={`Deposit into or redeem ${vault.symbol}`} icon={<Wallet size={15} />}>
-      <div className="actionTabs" role="tablist" aria-label="OTF position actions">
-        <button className={activeAction === "deposit" ? "active" : ""} type="button" onClick={() => setActiveAction("deposit")}>
-          <div className="positionTabIcon"><ArrowDownToLine size={13} /></div>
-          <span className="positionTabContent">
-            <strong>Deposit</strong>
-            <small>Add USDG and mint OTF shares</small>
-          </span>
-        </button>
-        <button className={activeAction === "redeem" ? "active" : ""} type="button" onClick={() => setActiveAction("redeem")}>
-          <div className="positionTabIcon"><ArrowRight size={13} /></div>
-          <span className="positionTabContent">
-            <strong>Redeem</strong>
-            <small>Exit holdings and receive USDG</small>
-          </span>
-        </button>
-      </div>
-
-      {activeAction === "deposit" ? (
-        <div className="positionModeTabs" role="tablist" aria-label="Deposit route">
-          <button className={depositMode === "underlying" ? "active" : ""} type="button" onClick={() => setDepositMode("underlying")}>
-            <div className="positionTabIcon"><Landmark size={13} /></div>
-            <span className="positionTabContent">
-              <strong>Use underlying pools</strong>
-              <small>Buy each constituent and mint shares from the basket</small>
-            </span>
-          </button>
-          <button className={depositMode === "market" ? "active" : ""} type="button" onClick={() => setDepositMode("market")}>
-            <div className="positionTabIcon"><Droplets size={13} /></div>
-            <span className="positionTabContent">
-              <strong>Buy in OTF market</strong>
-              <small>Trade already minted shares in the USDG pool</small>
-            </span>
-          </button>
-        </div>
-      ) : null}
-
-      {activeAction === "deposit" && depositMode === "underlying" ? (
-        <div className="positionFlow">
-          {!entryContractsConfigured ? (
-            <div className="inlineEmptyState">
-              <Landmark size={17} />
-              <div><strong>Underlying-pool route not deployed</strong><span>This route becomes available after the settlement router and an approved liquidity adapter are configured.</span></div>
-            </div>
-          ) : (
-            <>
-              <div className="routeDescription"><Landmark size={14} /><span>Create new OTF shares by buying the required underlying basket through approved pools.</span></div>
-              <label className="fieldLabel">OTF shares to receive</label>
-              <div className="inputWithSuffix">
-                <input value={usdgShareAmount} onChange={(event) => setUsdgShareAmount(event.target.value)} type="number" min="0" placeholder="0.00" disabled={!isLive || entryBusy} />
-                <span>{vault.symbol}</span>
-              </div>
-              <label className="fieldLabel">Maximum pool slippage</label>
-              <div className="inputWithSuffix">
-                <input value={entrySlippage} onChange={(event) => setEntrySlippage(event.target.value)} type="number" min="0.01" max="20" step="0.1" disabled={entryBusy} />
-                <span>%</span>
-              </div>
-              {!entrySlippageValid ? <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span> : null}
-
-              {usdgShareAmount ? (
-                <div className="entryQuoteSummary">
-                  <div><span>Uniswap quote</span><strong>{quotedSettlementTotal === undefined ? "Loading" : `${formatWalletTokenBalance(quotedSettlementTotal, settlementDecimals)} USDG`}</strong></div>
-                  <div><span>Maximum spend</span><strong>{maximumSettlementTotal === undefined ? "Loading" : `${formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals)} USDG`}</strong></div>
-                  <div><span>Oracle-priced basket</span><strong>{entryOracleValue === undefined ? "Unavailable" : formatUsd18(entryOracleValue)}</strong></div>
-                  <div><span>Pool vs oracle</span><strong className={entryPriceDifference !== undefined && entryPriceDifference > 0 ? "warningText" : ""}>{entryPriceDifference === undefined ? "Unavailable" : `${entryPriceDifference >= 0 ? "+" : ""}${entryPriceDifference.toFixed(2)}%`}</strong></div>
-                </div>
-              ) : null}
-
-              {previewEntryLoading || entryQuotesLoading ? (
-                <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading vault and Uniswap quotes</div>
-              ) : previewEntryError || entryQuotesFailed ? (
-                <div className="validationSummary danger"><AlertTriangle size={14} /><div><strong>USDG quote unavailable</strong><span>One or more constituent pools could not quote the required output.</span></div></div>
-              ) : null}
-
-              <div className="riskCallout warning entryPriceWarning">
-                <AlertTriangle size={15} />
-                <div>
-                  <strong>Pool price and OTF value can differ</strong>
-                  <span>The OTF is valued from Chainlink-priced holdings. Your USDG cost comes from current Uniswap pool liquidity, so you may pay more or less than the displayed oracle-priced basket value.</span>
-                </div>
-              </div>
-
-              {entryAdapterApproved === false ? (
-                <div className="validationSummary danger"><XCircle size={15} /><div><strong>Entry adapter is not approved</strong><span>The configured Uniswap adapter cannot be used by this entry router.</span></div></div>
-              ) : null}
-              {entryQuoteReady ? (
-                <div className="quoteLine">
-                  <span>Wallet balance</span>
-                  <strong>{settlementBalance === undefined ? "Loading" : `${formatWalletTokenBalance(settlementBalance, settlementDecimals)} USDG`}</strong>
-                </div>
-              ) : null}
-              {entryQuoteReady && !entryBalanceSufficient ? (
-                <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient USDG</strong><span>Your wallet balance is below the maximum spend required by this quote.</span></div></div>
-              ) : null}
-              {entryError ? (
-                <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>USDG entry failed</strong><span>{entryError}</span></div></div>
-              ) : null}
-              <TxStatus state={entryState} />
-              <div className="buttonRow">
-                <button className="secondaryAction" type="button" disabled={entryBusy || !entryQuoteReady || !entryBalanceSufficient || entryAllowanceSufficient} onClick={approveSettlementToken}>
-                  <ShieldCheck size={14} />
-                  {entryAllowanceSufficient ? "USDG approved" : "Approve USDG"}
-                </button>
-                <button className="primaryAction" type="button" disabled={entryBusy || !entryQuoteReady || !entryBalanceSufficient || !entryAllowanceSufficient} onClick={enterWithSettlement}>
-                  <ArrowDownToLine size={14} />
-                  Buy {vault.symbol}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      ) : activeAction === "deposit" ? (
-        <div className="positionFlow">
-          <DirectMarketTrade vault={vault} direction="buy" />
-        </div>
-      ) : (
-        <div className="positionFlow">
-          <div className="redeemModeTabs" role="tablist" aria-label="Redemption route">
-            <button className={redeemMode === "underlying" ? "active" : ""} type="button" onClick={() => setRedeemMode("underlying")}>
-              <div className="positionTabIcon"><Landmark size={13} /></div>
-              <span className="positionTabContent">
-                <strong>Redeem underlying basket</strong>
-                <small>Burn shares and sell underlying assets for USDG</small>
-              </span>
-            </button>
-            <button className={redeemMode === "market" ? "active" : ""} type="button" onClick={() => setRedeemMode("market")}>
-              <div className="positionTabIcon"><Droplets size={13} /></div>
-              <span className="positionTabContent">
-                <strong>Sell in OTF market</strong>
-                <small>Exit via the OTF / USDG market</small>
-              </span>
-            </button>
-          </div>
-          {redeemMode === "underlying" ? <>
-            <label className="fieldLabel">Shares to redeem</label>
-            <div className="inputWithSuffix">
-              <input value={redeemAmount} onChange={(event) => { setRedeemAmount(event.target.value); setRedeemState("idle"); setRedeemError(undefined); }} type="number" min="0" placeholder="0.00" disabled={!isLive || redeemBusy} />
-              <span>{vault.symbol}</span>
-            </div>
-            <div className="quoteLine"><span>Wallet balance</span><strong>{redeemShareBalance === undefined ? "Loading" : `${formatWalletTokenBalance(redeemShareBalance, 18)} ${vault.symbol}`}</strong></div>
-            {requestedRedeemShares && !redeemBalanceSufficient ? (
-              <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient OTF shares</strong><span>Your wallet balance is below the requested redemption amount.</span></div></div>
-            ) : null}
-          </> : null}
-
-          {redeemMode === "underlying" ? !entryContractsConfigured ? (
-            <div className="inlineEmptyState"><Landmark size={17} /><div><strong>Underlying-pool route not deployed</strong><span>This route requires the settlement router and an approved liquidity adapter.</span></div></div>
-          ) : (
-            <>
-              <div className="routeDescription"><Landmark size={14} /><span>Burn OTF shares for the underlying basket, then sell each constituent through approved pools.</span></div>
-              <label className="fieldLabel">Maximum pool slippage</label>
-              <div className="inputWithSuffix">
-                <input value={redeemSlippage} onChange={(event) => { setRedeemSlippage(event.target.value); setRedeemState("idle"); }} type="number" min="0.01" max="20" step="0.1" disabled={redeemBusy} />
-                <span>%</span>
-              </div>
-              {!redeemSlippageValid ? <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span> : null}
-              {redeemAmount ? (
-                <div className="entryQuoteSummary">
-                  <div><span>Uniswap quote</span><strong>{quotedRedeemSettlement === undefined ? "Loading" : `${formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals)} USDG`}</strong></div>
-                  <div><span>Minimum received</span><strong>{minimumRedeemSettlement === undefined ? "Loading" : `${formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals)} USDG`}</strong></div>
-                  <div><span>Oracle-priced basket</span><strong>{redeemOracleValue === undefined ? "Unavailable" : formatUsd18(redeemOracleValue)}</strong></div>
-                  <div><span>Pool vs oracle</span><strong className={redeemPriceDifference !== undefined && redeemPriceDifference < 0 ? "warningText" : ""}>{redeemPriceDifference === undefined ? "Unavailable" : `${redeemPriceDifference >= 0 ? "+" : ""}${redeemPriceDifference.toFixed(2)}%`}</strong></div>
-                </div>
-              ) : null}
-              {previewRedeemLoading || redeemQuotesLoading ? (
-                <div className="depositQuoteLoading"><Loader2 className="spin" size={14} /> Reading OTF and Uniswap quotes</div>
-              ) : previewRedeemError || redeemQuotesFailed ? (
-                <div className="validationSummary danger"><AlertTriangle size={14} /><div><strong>USDG exit quote unavailable</strong><span>One or more constituent pools could not quote the redemption.</span></div></div>
-              ) : null}
-              <div className="riskCallout warning entryPriceWarning"><AlertTriangle size={15} /><div><strong>Pool proceeds and OTF value can differ</strong><span>The redeemed basket is valued with Chainlink feeds, while the USDG you receive depends on current Uniswap liquidity and price impact.</span></div></div>
-              {entryAdapterApproved === false ? <div className="validationSummary danger"><XCircle size={15} /><div><strong>Exit adapter is not approved</strong><span>The configured Uniswap adapter cannot process this redemption.</span></div></div> : null}
-              {redeemError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Redemption failed</strong><span>{redeemError}</span></div></div> : null}
-              <TxStatus state={redeemState} />
-              <div className="buttonRow">
-                <button className="secondaryAction" type="button" disabled={redeemBusy || !redeemQuoteReady || !redeemBalanceSufficient || redeemAllowanceSufficient} onClick={approveSharesForSettlementExit}>
-                  <ShieldCheck size={14} />
-                  {redeemAllowanceSufficient ? "Shares approved" : "Approve OTF shares"}
-                </button>
-                <button className="dangerAction" type="button" disabled={redeemBusy || !redeemQuoteReady || !minimumRedeemSettlement || !redeemBalanceSufficient || !redeemAllowanceSufficient} onClick={redeemToSettlement}>
-                  <ArrowDownToLine size={14} />
-                  Redeem to USDG
-                </button>
-              </div>
-            </>
-          ) : (
-            <DirectMarketTrade vault={vault} direction="sell" />
-          )}
-        </div>
-      )}
-
-    </SectionCard>
-  );
-}
-
-function DirectMarketTrade({ vault, direction }: { vault: VaultView; direction: "buy" | "sell" }) {
-  const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState("1.0");
-  const [txState, setTxState] = useState<TxState>("idle");
-  const [txError, setTxError] = useState<string>();
-  const { address: connectedAddress } = useAccount();
-  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
-  const { writeContractAsync } = useWriteContract();
-  const router = configuredUniswapRouterAddress();
-  const settlementToken = configuredSettlementTokenAddress();
-  let shares: bigint | undefined;
-  try {
-    shares = Number(amount) > 0 ? parseUnits(amount, 18) : undefined;
-  } catch {
-    shares = undefined;
-  }
-  const slippageBps = Math.round(Number(slippage) * 100);
-  const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
-  const routeReady = Boolean(router && settlementToken && vault.address && shares && shares > 0n);
-  const path = direction === "buy"
-    ? [settlementToken ?? zeroAddress, vault.address ?? zeroAddress]
-    : [vault.address ?? zeroAddress, settlementToken ?? zeroAddress];
-  const { data: quote, error: quoteError, isLoading: quoteLoading, refetch: refetchQuote } = useReadContract({
-    address: router,
-    abi: uniswapV2QuoteAbi,
-    functionName: direction === "buy" ? "getAmountsIn" : "getAmountsOut",
-    args: shares ? [shares, path] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: routeReady },
-  });
-  const { data: settlementDecimalsResult } = useReadContract({
-    address: settlementToken,
-    abi: erc20BalanceAbi,
-    functionName: "decimals",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(settlementToken) },
-  });
-  const settlementDecimals = Number(settlementDecimalsResult ?? 18);
-  const quotedAmounts = quote as readonly bigint[] | undefined;
-  const quotedSettlement = direction === "buy" ? quotedAmounts?.[0] : quotedAmounts?.[quotedAmounts.length - 1];
-  const guardedSettlement = quotedSettlement === undefined || !slippageValid ? undefined : direction === "buy"
-    ? quotedSettlement * BigInt(10_000 + slippageBps) / 10_000n
-    : quotedSettlement * BigInt(10_000 - slippageBps) / 10_000n;
-  const tokenIn = direction === "buy" ? settlementToken : vault.address;
-  const requiredInput = direction === "buy" ? guardedSettlement : shares;
-  const authorizationContracts = ([
-    { address: tokenIn ?? zeroAddress, abi: erc20BalanceAbi, functionName: "balanceOf" as const, args: [connectedAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-    { address: tokenIn ?? zeroAddress, abi: erc20BalanceAbi, functionName: "allowance" as const, args: [connectedAddress ?? zeroAddress, router ?? zeroAddress], chainId: robinhoodChainTestnet.id },
-    { address: tokenIn ?? zeroAddress, abi: erc20BalanceAbi, functionName: "decimals" as const, chainId: robinhoodChainTestnet.id },
-  ] as const);
-  const { data: authorization, refetch: refetchAuthorization } = useReadContracts({
-    contracts: authorizationContracts,
-    query: { enabled: Boolean(tokenIn && connectedAddress && router) },
-  });
-  const balance = authorization?.[0]?.result as bigint | undefined;
-  const allowance = authorization?.[1]?.result as bigint | undefined;
-  const inputDecimals = Number(authorization?.[2]?.result ?? 18);
-  const enoughBalance = requiredInput !== undefined && balance !== undefined && balance >= requiredInput;
-  const enoughAllowance = requiredInput !== undefined && allowance !== undefined && allowance >= requiredInput;
-  const busy = txState === "pending" || txState === "submitted";
-  const marketReady = routeReady && !quoteError && guardedSettlement !== undefined;
-
-  async function approveInput() {
-    if (!tokenIn || !router || !requiredInput || !publicClient) return;
-    setTxError(undefined);
+  async function approveMarketInput() {
+    if (
+      !marketInputToken ||
+      !uniswapRouterAddress ||
+      !marketRequiredInput ||
+      !publicClient
+    ) return;
+    setMarketError(undefined);
     try {
-      setTxState("pending");
-      if ((allowance ?? 0n) > 0n) {
-        const resetHash = await writeContractAsync({ address: tokenIn, abi: erc20BalanceAbi, functionName: "approve", args: [router, 0n], chainId: robinhoodChainTestnet.id });
-        setTxState("submitted");
+      setMarketState("pending");
+      if ((marketInputAllowance ?? 0n) > 0n) {
+        const resetHash = await writeContractAsync({
+          address: marketInputToken,
+          abi: erc20BalanceAbi,
+          functionName: "approve",
+          args: [uniswapRouterAddress, 0n],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setMarketState("submitted");
         const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
-        if (resetReceipt.status !== "success") throw new Error("The approval reset reverted.");
+        if (resetReceipt.status !== "success") throw new Error("The market approval reset reverted.");
       }
-      setTxState("pending");
-      const hash = await writeContractAsync({ address: tokenIn, abi: erc20BalanceAbi, functionName: "approve", args: [router, requiredInput], chainId: robinhoodChainTestnet.id });
-      setTxState("submitted");
+      setMarketState("pending");
+      const hash = await writeContractAsync({
+        address: marketInputToken,
+        abi: erc20BalanceAbi,
+        functionName: "approve",
+        args: [uniswapRouterAddress, marketRequiredInput],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setMarketState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The token approval reverted.");
-      await refetchAuthorization();
-      setTxState("confirmed");
+      if (receipt.status !== "success") throw new Error("The market approval reverted.");
+      await refetchMarketAuthorization();
+      setMarketState("confirmed");
     } catch (error) {
-      setTxError(errorMessage(error));
-      setTxState("reverted");
+      setMarketError(errorMessage(error));
+      setMarketState("reverted");
     }
   }
 
-  async function trade() {
-    if (!router || !vault.address || !settlementToken || !connectedAddress || !publicClient || !shares || !guardedSettlement) return;
-    setTxError(undefined);
+  async function executeMarketTrade() {
+    if (
+      !uniswapRouterAddress ||
+      !vault.address ||
+      !settlementToken ||
+      !connectedAddress ||
+      !publicClient ||
+      !requestedUsdgAmount ||
+      !marketGuardedShares ||
+      !marketQuoteReady ||
+      !marketBalanceSufficient ||
+      !marketAllowanceSufficient
+    ) return;
+    setMarketError(undefined);
     try {
-      setTxState("pending");
+      setMarketState("pending");
       const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
-      const hash = direction === "buy"
-        ? await writeContractAsync({ address: router, abi: uniswapV2QuoteAbi, functionName: "swapTokensForExactTokens", args: [shares, guardedSettlement, [settlementToken, vault.address], connectedAddress, deadline], chainId: robinhoodChainTestnet.id })
-        : await writeContractAsync({ address: router, abi: uniswapV2QuoteAbi, functionName: "swapExactTokensForTokens", args: [shares, guardedSettlement, [vault.address, settlementToken], connectedAddress, deadline], chainId: robinhoodChainTestnet.id });
-      setTxState("submitted");
+      const hash = activeAction === "deposit"
+        ? await writeContractAsync({
+            address: uniswapRouterAddress,
+            abi: uniswapV2QuoteAbi,
+            functionName: "swapExactTokensForTokens",
+            args: [
+              requestedUsdgAmount,
+              marketGuardedShares,
+              [settlementToken, vault.address],
+              connectedAddress,
+              deadline,
+            ],
+            chainId: robinhoodChainTestnet.id,
+          })
+        : await writeContractAsync({
+            address: uniswapRouterAddress,
+            abi: uniswapV2QuoteAbi,
+            functionName: "swapTokensForExactTokens",
+            args: [
+              requestedUsdgAmount,
+              marketGuardedShares,
+              [vault.address, settlementToken],
+              connectedAddress,
+              deadline,
+            ],
+            chainId: robinhoodChainTestnet.id,
+          });
+      setMarketState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The market trade reverted.");
-      await Promise.all([refetchAuthorization(), refetchQuote()]);
-      setAmount("");
-      setTxState("confirmed");
+      if (receipt.status !== "success") throw new Error("The open-market trade reverted.");
+      await Promise.all([refetchMarketAuthorization(), refetchMarketQuote()]);
+      setUsdgAmount("");
+      setMarketState("confirmed");
     } catch (error) {
-      setTxError(errorMessage(error));
-      setTxState("reverted");
+      setMarketError(errorMessage(error));
+      setMarketState("reverted");
     }
+  }
+
+  function changeAction(nextAction: "deposit" | "redeem") {
+    setActiveAction(nextAction);
+    setSelectedRoute(undefined);
+    setEntryState("idle");
+    setRedeemState("idle");
+    setMarketState("idle");
+    setEntryError(undefined);
+    setRedeemError(undefined);
+    setMarketError(undefined);
   }
 
   return (
-    <div className="marketTradeFlow">
-      <div className="routeDescription"><Droplets size={14} /><span>{direction === "buy" ? `Buy already minted ${vault.symbol} shares from its direct USDG market.` : `Sell already minted ${vault.symbol} shares into its direct USDG market.`}</span></div>
-      <label className="fieldLabel">{direction === "buy" ? "OTF shares to buy" : "OTF shares to sell"}</label>
-      <div className="inputWithSuffix"><input value={amount} onChange={(event) => { setAmount(event.target.value); setTxState("idle"); setTxError(undefined); }} type="number" min="0" placeholder="0.00" disabled={!vault.enabled || busy} /><span>{vault.symbol}</span></div>
-      <label className="fieldLabel">Maximum pool slippage</label>
-      <div className="inputWithSuffix"><input value={slippage} onChange={(event) => setSlippage(event.target.value)} type="number" min="0.01" max="20" step="0.1" disabled={busy} /><span>%</span></div>
-      {!slippageValid ? <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span> : null}
-      {quoteLoading ? <div className="depositQuoteLoading"><Loader2 className="spin" size={14} />Reading the OTF share market</div> : null}
-      {amount && quoteError ? <div className="inlineEmptyState"><Droplets size={17} /><div><strong>No active OTF / USDG market found</strong><span>The manager must create and seed this share pool before open-market trades are available.</span></div></div> : null}
-      {marketReady ? <div className="entryQuoteSummary"><div><span>{direction === "buy" ? "Market quote" : "Expected proceeds"}</span><strong>{formatWalletTokenBalance(quotedSettlement, settlementDecimals)} USDG</strong></div><div><span>{direction === "buy" ? "Maximum spend" : "Minimum received"}</span><strong>{formatWalletTokenBalance(guardedSettlement, settlementDecimals)} USDG</strong></div></div> : null}
-      <div className="riskCallout warning entryPriceWarning"><AlertTriangle size={15} /><div><strong>Market price can differ from portfolio value</strong><span>This trade uses the OTF / USDG pool price. It may differ from the Chainlink-priced value of the assets held by the OTF.</span></div></div>
-      {requiredInput && !enoughBalance ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Insufficient balance</strong><span>Your wallet does not hold enough {direction === "buy" ? "USDG" : vault.symbol} for this trade.</span></div></div> : null}
-      {txError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Market trade failed</strong><span>{txError}</span></div></div> : null}
-      <TxStatus state={txState} />
-      <div className="buttonRow">
-        <button className="secondaryAction" type="button" disabled={busy || !marketReady || !enoughBalance || enoughAllowance} onClick={approveInput}><ShieldCheck size={14} />{enoughAllowance ? "Approved" : `Approve ${direction === "buy" ? "USDG" : vault.symbol}`}</button>
-        <button className={direction === "buy" ? "primaryAction" : "dangerAction"} type="button" disabled={busy || !marketReady || !enoughBalance || !enoughAllowance} onClick={trade}>{direction === "buy" ? <ArrowDownToLine size={14} /> : <ArrowRight size={14} />}{direction === "buy" ? `Buy ${vault.symbol}` : `Sell ${vault.symbol}`}</button>
+    <SectionCard
+      title="Your position"
+      subtitle={activeAction === "deposit" ? `Buy ${vault.symbol} with USDG` : `Redeem ${vault.symbol} for USDG`}
+      icon={<Wallet size={15} />}
+    >
+      <div className="positionTradeTicket">
+        <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
+          <button
+            className={activeAction === "deposit" ? "active" : ""}
+            type="button"
+            aria-pressed={activeAction === "deposit"}
+            onClick={() => changeAction("deposit")}
+          >
+            Deposit
+          </button>
+          <button
+            className={activeAction === "redeem" ? "active" : ""}
+            type="button"
+            aria-pressed={activeAction === "redeem"}
+            onClick={() => changeAction("redeem")}
+          >
+            Redeem
+          </button>
+        </div>
+
+        <div className="positionTicketInputs">
+          <label>
+            <span>USDG amount</span>
+            <div className="positionAmountInput">
+              <input
+                value={usdgAmount}
+                onChange={(event) => {
+                  setUsdgAmount(event.target.value);
+                  setEntryState("idle");
+                  setRedeemState("idle");
+                  setMarketState("idle");
+                  setEntryError(undefined);
+                  setRedeemError(undefined);
+                  setMarketError(undefined);
+                }}
+                type="number"
+                min="0"
+                inputMode="decimal"
+                placeholder="0.00"
+                disabled={!isLive || entryBusy || redeemBusy || marketBusy}
+              />
+              <strong>USDG</strong>
+            </div>
+          </label>
+          <label>
+            <span>Maximum slippage</span>
+            <div className="positionSlippageInput">
+              <input
+                value={maxSlippage}
+                onChange={(event) => {
+                  setMaxSlippage(event.target.value);
+                  setEntryState("idle");
+                  setRedeemState("idle");
+                  setMarketState("idle");
+                }}
+                type="number"
+                min="0.01"
+                max="20"
+                step="0.1"
+                inputMode="decimal"
+                disabled={entryBusy || redeemBusy || marketBusy}
+              />
+              <strong>%</strong>
+            </div>
+          </label>
+        </div>
+
+        {!slippageValid ? (
+          <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span>
+        ) : null}
+
+        {routeInputsReady ? (
+          <div className="positionRouteStage">
+            <div className="positionRouteHeading">
+              <strong>Choose how to execute</strong>
+              <span>Compare the OTF shares for the same USDG amount.</span>
+            </div>
+            <div className="positionRouteChoices" role="radiogroup" aria-label="Execution route">
+              <button
+                className={`positionRouteOption ${selectedRoute === "market" ? "selected" : ""}`}
+                type="button"
+                role="radio"
+                aria-checked={selectedRoute === "market"}
+                disabled={!marketLiquidityReady}
+                onClick={() => setSelectedRoute("market")}
+              >
+                <span className="positionRouteIcon"><Droplets size={18} /></span>
+                <span className="positionRouteName">Open market</span>
+                <strong className="positionRouteQuote">
+                  {marketPoolChecking
+                    ? <Loader2 className="spin" size={18} />
+                    : !marketLiquidityReady
+                      ? "Unavailable"
+                      : marketQuoteLoading
+                        ? <Loader2 className="spin" size={18} />
+                        : marketQuoteError
+                          ? "No quote"
+                          : marketQuotedShares
+                            ? formatWalletTokenBalance(marketQuotedShares, 18)
+                            : "—"}
+                </strong>
+                <small>
+                  {!marketLiquidityReady
+                    ? "No funded OTF / USDG pool"
+                    : activeAction === "deposit"
+                      ? `${vault.symbol} shares received`
+                      : `${vault.symbol} shares required`}
+                </small>
+              </button>
+
+              <button
+                className={`positionRouteOption ${selectedRoute === "underlying" ? "selected" : ""}`}
+                type="button"
+                role="radio"
+                aria-checked={selectedRoute === "underlying"}
+                disabled={!underlyingRouteAvailable}
+                onClick={() => setSelectedRoute("underlying")}
+              >
+                <span className="positionRouteIcon"><Landmark size={18} /></span>
+                <span className="positionRouteName">Underlying pools</span>
+                <strong className="positionRouteQuote">
+                  {!underlyingRouteAvailable
+                    ? "Unavailable"
+                    : underlyingQuoteLoading
+                      ? <Loader2 className="spin" size={18} />
+                      : underlyingQuoteFailed
+                        ? "No quote"
+                        : underlyingQuotedShares
+                          ? formatWalletTokenBalance(underlyingQuotedShares, 18)
+                          : "—"}
+                </strong>
+                <small>
+                  {!underlyingRouteAvailable
+                    ? "Settlement route not configured"
+                    : activeAction === "deposit"
+                      ? `${vault.symbol} shares minted`
+                      : `${vault.symbol} shares redeemed`}
+                </small>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="positionRoutePrompt">
+            <ArrowDownToLine size={17} />
+            <div>
+              <strong>Enter an amount to compare routes</strong>
+              <span>Both execution paths use the same USDG amount and slippage limit.</span>
+            </div>
+          </div>
+        )}
+
+        {selectedRoute === "market" && routeInputsReady ? (
+          <div className="positionExecutionPanel">
+            <div className="positionExecutionHeader">
+              <div>
+                <span className="positionRouteIcon"><Droplets size={16} /></span>
+                <div>
+                  <strong>Open market</strong>
+                  <span>{activeAction === "deposit" ? "Buy existing shares from the OTF / USDG pool." : "Sell shares into the OTF / USDG pool."}</span>
+                </div>
+              </div>
+              <span className="stateBadge success">Selected</span>
+            </div>
+            <div className="positionExecutionQuote">
+              <div>
+                <span>{activeAction === "deposit" ? "USDG spent" : "USDG received"}</span>
+                <strong>{requestedUsdgAmount ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong>
+              </div>
+              <div>
+                <span>{activeAction === "deposit" ? "Estimated shares" : "Estimated shares required"}</span>
+                <strong>{marketQuotedShares ? formatWalletTokenBalance(marketQuotedShares, 18) : "—"} {vault.symbol}</strong>
+              </div>
+              <div>
+                <span>{activeAction === "deposit" ? "Minimum shares" : "Maximum shares"}</span>
+                <strong>{marketGuardedShares ? formatWalletTokenBalance(marketGuardedShares, 18) : "—"} {vault.symbol}</strong>
+              </div>
+            </div>
+            <div className="routeExecutionNote">
+              <Info size={14} />
+              <span>The open-market price comes from the direct OTF / USDG pool and can differ from portfolio value.</span>
+            </div>
+            {marketRequiredInput && !marketBalanceSufficient ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div><strong>Insufficient balance</strong><span>Your wallet does not hold enough {activeAction === "deposit" ? "USDG" : vault.symbol} for this route.</span></div>
+              </div>
+            ) : null}
+            {marketError ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div><strong>Open-market trade failed</strong><span>{marketError}</span></div>
+              </div>
+            ) : null}
+            <TxStatus state={marketState} />
+            <div className="buttonRow">
+              <button
+                className="secondaryAction"
+                type="button"
+                disabled={marketBusy || !marketQuoteReady || !marketBalanceSufficient || marketAllowanceSufficient}
+                onClick={approveMarketInput}
+              >
+                <ShieldCheck size={14} />
+                {marketAllowanceSufficient ? "Approved" : `Approve ${activeAction === "deposit" ? "USDG" : vault.symbol}`}
+              </button>
+              <button
+                className={activeAction === "deposit" ? "primaryAction" : "dangerAction"}
+                type="button"
+                disabled={marketBusy || !marketQuoteReady || !marketBalanceSufficient || !marketAllowanceSufficient}
+                onClick={executeMarketTrade}
+              >
+                {marketBusy ? <Loader2 className="spin" size={14} /> : activeAction === "deposit" ? <ArrowDownToLine size={14} /> : <ArrowRight size={14} />}
+                {activeAction === "deposit" ? `Buy ${vault.symbol}` : `Redeem for USDG`}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {selectedRoute === "underlying" && routeInputsReady ? (
+          <div className="positionExecutionPanel">
+            <div className="positionExecutionHeader">
+              <div>
+                <span className="positionRouteIcon"><Landmark size={16} /></span>
+                <div>
+                  <strong>Underlying pools</strong>
+                  <span>
+                    {activeAction === "deposit"
+                      ? "Buy the portfolio assets and mint new OTF shares."
+                      : "Burn OTF shares and sell the portfolio assets for USDG."}
+                  </span>
+                </div>
+              </div>
+              <span className="stateBadge success">Selected</span>
+            </div>
+
+            {activeAction === "deposit" ? (
+              <>
+                <div className="positionExecutionQuote">
+                  <div><span>Estimated shares</span><strong>{requestedEntryShares ? formatWalletTokenBalance(requestedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
+                  <div><span>Maximum spend</span><strong>{maximumSettlementTotal !== undefined ? formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Oracle-priced basket</span><strong>{entryOracleValue === undefined ? "Unavailable" : formatUsd18(entryOracleValue)}</strong></div>
+                </div>
+                {!entryWithinBudget && maximumSettlementTotal !== undefined ? (
+                  <div className="validationSummary danger">
+                    <AlertTriangle size={15} />
+                    <div><strong>Pool quote exceeds your USDG amount</strong><span>This route cannot guarantee the requested budget at the current constituent-pool prices.</span></div>
+                  </div>
+                ) : null}
+                {entryQuoteReady && !entryBalanceSufficient ? (
+                  <div className="validationSummary danger">
+                    <AlertTriangle size={15} />
+                    <div><strong>Insufficient USDG</strong><span>Your wallet balance is below this route's maximum spend.</span></div>
+                  </div>
+                ) : null}
+                {entryError ? (
+                  <div className="validationSummary danger">
+                    <AlertTriangle size={15} />
+                    <div><strong>Underlying entry failed</strong><span>{entryError}</span></div>
+                  </div>
+                ) : null}
+                <TxStatus state={entryState} />
+                <div className="buttonRow">
+                  <button
+                    className="secondaryAction"
+                    type="button"
+                    disabled={entryBusy || !underlyingQuoteReady || !entryBalanceSufficient || entryAllowanceSufficient}
+                    onClick={approveSettlementToken}
+                  >
+                    <ShieldCheck size={14} />
+                    {entryAllowanceSufficient ? "USDG approved" : "Approve USDG"}
+                  </button>
+                  <button
+                    className="primaryAction"
+                    type="button"
+                    disabled={entryBusy || !underlyingQuoteReady || !entryBalanceSufficient || !entryAllowanceSufficient}
+                    onClick={enterWithSettlement}
+                  >
+                    {entryBusy ? <Loader2 className="spin" size={14} /> : <ArrowDownToLine size={14} />}
+                    Mint {vault.symbol}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="positionExecutionQuote">
+                  <div><span>Shares redeemed</span><strong>{requestedRedeemShares ? formatWalletTokenBalance(requestedRedeemShares, 18) : "—"} {vault.symbol}</strong></div>
+                  <div><span>Expected proceeds</span><strong>{quotedRedeemSettlement !== undefined ? formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Minimum received</span><strong>{minimumRedeemSettlement !== undefined ? formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
+                </div>
+                {requestedRedeemShares && !redeemBalanceSufficient ? (
+                  <div className="validationSummary danger">
+                    <AlertTriangle size={15} />
+                    <div><strong>Insufficient OTF shares</strong><span>Your wallet balance is below the amount required for this route.</span></div>
+                  </div>
+                ) : null}
+                {redeemError ? (
+                  <div className="validationSummary danger">
+                    <AlertTriangle size={15} />
+                    <div><strong>Underlying redemption failed</strong><span>{redeemError}</span></div>
+                  </div>
+                ) : null}
+                <TxStatus state={redeemState} />
+                <div className="buttonRow">
+                  <button
+                    className="secondaryAction"
+                    type="button"
+                    disabled={redeemBusy || !underlyingQuoteReady || !redeemBalanceSufficient || redeemAllowanceSufficient}
+                    onClick={approveSharesForSettlementExit}
+                  >
+                    <ShieldCheck size={14} />
+                    {redeemAllowanceSufficient ? "Shares approved" : `Approve ${vault.symbol}`}
+                  </button>
+                  <button
+                    className="dangerAction"
+                    type="button"
+                    disabled={redeemBusy || !underlyingQuoteReady || !minimumRedeemSettlement || !redeemBalanceSufficient || !redeemAllowanceSufficient}
+                    onClick={redeemToSettlement}
+                  >
+                    {redeemBusy ? <Loader2 className="spin" size={14} /> : <ArrowRight size={14} />}
+                    Redeem for USDG
+                  </button>
+                </div>
+              </>
+            )}
+
+            <div className="routeExecutionNote">
+              <Info size={14} />
+              <span>Underlying execution uses approved constituent pools. Final USDG depends on their live liquidity and price impact.</span>
+            </div>
+          </div>
+        ) : null}
       </div>
-      {balance !== undefined ? <div className="quoteLine"><span>Wallet balance</span><strong>{formatWalletTokenBalance(balance, inputDecimals)} {direction === "buy" ? "USDG" : vault.symbol}</strong></div> : null}
-    </div>
+    </SectionCard>
   );
 }
 
