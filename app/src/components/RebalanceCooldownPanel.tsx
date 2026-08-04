@@ -2408,9 +2408,6 @@ function UserActions({
       leg.maximumSettlement !== undefined,
     ),
   );
-  const quotedSettlementTotal = entryQuoteReady
-    ? entryLegs.reduce((sum, leg) => sum + (leg.quotedSettlement ?? 0n), 0n)
-    : undefined;
   const maximumSettlementTotal = entryQuoteReady
     ? entryLegs.reduce(
         (sum, leg) => sum + (leg.isSettlement ? leg.requiredAmount ?? 0n : leg.maximumSettlement ?? 0n),
@@ -2555,10 +2552,6 @@ function UserActions({
         return sum + (leg.requiredAmount * price.answer) / (10n ** BigInt(price.decimals));
       }, 0n)
     : undefined;
-  const entryPriceDifference = quotedSettlementTotal !== undefined && entryOracleValue && entryOracleValue > 0n
-    ? (Number(formatUnits(quotedSettlementTotal, settlementDecimals)) /
-        Number(formatUnits(entryOracleValue, 18)) - 1) * 100
-    : undefined;
   const entryBusy = entryState === "pending" || entryState === "submitted";
   const redeemShareBalance = redeemAuthorizationResults?.[0]?.result as bigint | undefined;
   const redeemShareAllowance = redeemAuthorizationResults?.[1]?.result as bigint | undefined;
@@ -2607,19 +2600,6 @@ function UserActions({
         (sum, leg) => sum + (leg.isSettlement ? leg.amountIn ?? 0n : leg.minimumSettlement ?? 0n),
         0n,
       )
-    : undefined;
-  const redeemOracleValue = redeemBasketReady && redeemLegs.every(
-    (leg) => oraclePrices[leg.address.toLowerCase()]?.answer !== undefined,
-  )
-    ? redeemLegs.reduce((sum, leg) => {
-        const price = oraclePrices[leg.address.toLowerCase()];
-        if (leg.amountIn === undefined || price?.answer === undefined || price.decimals === undefined) return sum;
-        return sum + (leg.amountIn * price.answer) / (10n ** BigInt(price.decimals));
-      }, 0n)
-    : undefined;
-  const redeemPriceDifference = quotedRedeemSettlement !== undefined && redeemOracleValue && redeemOracleValue > 0n
-    ? (Number(formatUnits(quotedRedeemSettlement, settlementDecimals)) /
-        Number(formatUnits(redeemOracleValue, 18)) - 1) * 100
     : undefined;
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
   const marketBusy = marketState === "pending" || marketState === "submitted";
@@ -3181,7 +3161,7 @@ function UserActions({
                 {entryQuoteReady && !entryBalanceSufficient ? (
                   <div className="validationSummary danger">
                     <AlertTriangle size={15} />
-                    <div><strong>Insufficient USDG</strong><span>Your wallet balance is below this route's maximum spend.</span></div>
+                    <div><strong>Insufficient USDG</strong><span>Your wallet balance is below this route&apos;s maximum spend.</span></div>
                   </div>
                 ) : null}
                 {entryError ? (
