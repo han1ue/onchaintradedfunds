@@ -12,7 +12,7 @@ const accounts = await import(pathToFileURL(appRequire.resolve("viem/accounts"))
 const { createPublicClient, createWalletClient, formatUnits, http } = viem;
 const { privateKeyToAccount } = accounts;
 const deployment = JSON.parse(
-  readFileSync(join(root, "deployments", "robinhood-testnet.json"), "utf8"),
+  readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"),
 );
 
 const rpcUrl = process.env.RH_TESTNET_RPC_URL || deployment.rpcUrl;

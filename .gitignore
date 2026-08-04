@@ -16,6 +16,7 @@ lovable-project-*.zip
 .lovable-reference/
 .env
 .env.local
+.env.deploy.local
 
 # impeccable-ignore-start
 .impeccable/config.local.json

@@ -20,6 +20,7 @@ const { privateKeyToAccount } = accounts;
 
 const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
 const defaultChainId = 46630;
+const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 
 function env(name, fallback) {
   const value = process.env[name];
@@ -37,16 +38,6 @@ function requiredEnv(...names) {
 function parseAddress(name, value) {
   if (!isAddress(value)) throw new Error(`${name} is not a valid address: ${value}`);
   return getAddress(value);
-}
-
-function parseAddressList(name) {
-  const raw = env(name, "");
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => parseAddress(name, item));
 }
 
 function artifact(source, contract) {
@@ -69,12 +60,13 @@ function deploymentPayload(result) {
   );
 }
 
-async function deployContract({ name, args = [] }) {
+async function deployContract({ name, args = [], gas }) {
   const compiled = contractArtifact(name);
   const hash = await wallet.deployContract({
     abi: compiled.abi,
     bytecode: compiled.bytecode.object,
     args,
+    ...(gas ? { gas } : {}),
     chain,
     account,
   });
@@ -98,58 +90,51 @@ async function writeContract({ address, abi, functionName, args = [] }) {
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
 
-function updateAppEnv(values) {
-  const appEnvPath = join(root, "app", ".env.local");
-  let content = existsSync(appEnvPath) ? readFileSync(appEnvPath, "utf8") : "";
-
-  for (const [name, value] of Object.entries(values)) {
-    const line = `${name}=${value}`;
-    const matcher = new RegExp(`^${name}=.*$`, "m");
-    if (matcher.test(content)) {
-      content = content.replace(matcher, line);
-    } else {
-      content = content.replace(/\s*$/, "");
-      content = `${content}${content ? "\n" : ""}${line}\n`;
-    }
-  }
-
-  writeFileSync(appEnvPath, content);
-  return appEnvPath;
-}
-
 const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
-const rpcUrl = env("RH_TESTNET_RPC_URL", env("RPC_URL", defaultRpcUrl));
-const chainId = Number(env("RH_TESTNET_CHAIN_ID", String(defaultChainId)));
-const protocolFeeShareBps = Number(env("PROTOCOL_FEE_SHARE_BPS", "1500"));
+const deploymentConfig = JSON.parse(readFileSync(deploymentPath, "utf8"));
+const rpcUrl = env("RH_TESTNET_RPC_URL", env("RPC_URL", deploymentConfig.rpcUrl ?? defaultRpcUrl));
+const chainId = Number(deploymentConfig.chainId ?? defaultChainId);
+const protocolFeeShareBps = Number(deploymentConfig.protocolFeeShareBps ?? 1500);
 const account = privateKeyToAccount(privateKey);
-const treasury = parseAddress("TREASURY_ADDRESS", env("TREASURY_ADDRESS", account.address));
-const approvedAssets = parseAddressList("APPROVED_ASSETS");
-const priceFeeds = parseAddressList("PRICE_FEEDS");
-const approvedAdapters = parseAddressList("APPROVED_ADAPTERS");
-const usdgValue = requiredEnv("USDG_ADDRESS");
-const uniswapRouterValue = env("UNISWAP_V2_ROUTER_ADDRESS", "");
-const uniswapV3FactoryValue = requiredEnv("UNISWAP_V3_FACTORY_ADDRESS");
-const uniswapV3PositionManagerValue = requiredEnv("UNISWAP_V3_POSITION_MANAGER_ADDRESS");
-const uniswapV3SwapRouterValue = requiredEnv("UNISWAP_V3_SWAP_ROUTER_ADDRESS");
-const uniswapV3QuoterValue = requiredEnv("UNISWAP_V3_QUOTER_ADDRESS");
-const usdgAddress = parseAddress("USDG_ADDRESS", usdgValue);
-const uniswapRouterAddress = uniswapRouterValue
-  ? parseAddress("UNISWAP_V2_ROUTER_ADDRESS", uniswapRouterValue)
+const treasury = parseAddress("treasury", deploymentConfig.treasury ?? account.address);
+const approvedAssets = (deploymentConfig.setupTransactions?.approvedAssets ?? []).map((record) =>
+  parseAddress("approved asset", record.asset),
+);
+const feedsByAsset = new Map(
+  (deploymentConfig.setupTransactions?.priceFeeds ?? []).map((record) => [
+    parseAddress("price-feed asset", record.asset).toLowerCase(),
+    parseAddress("price feed", record.feed),
+  ]),
+);
+const priceFeeds = approvedAssets.map((asset) => feedsByAsset.get(asset.toLowerCase()));
+const approvedAdapters = (deploymentConfig.setupTransactions?.approvedAdapters ?? []).map((record) =>
+  parseAddress("approved adapter", record.adapter),
+);
+const externalContracts = deploymentConfig.externalContracts ?? {};
+const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
+const uniswapRouterAddress = externalContracts.uniswapV2Router
+  ? parseAddress("externalContracts.uniswapV2Router", externalContracts.uniswapV2Router)
   : undefined;
-const uniswapV3FactoryAddress = parseAddress("UNISWAP_V3_FACTORY_ADDRESS", uniswapV3FactoryValue);
+const uniswapV3FactoryAddress = parseAddress(
+  "externalContracts.uniswapV3Factory",
+  externalContracts.uniswapV3Factory,
+);
 const uniswapV3PositionManagerAddress = parseAddress(
-  "UNISWAP_V3_POSITION_MANAGER_ADDRESS",
-  uniswapV3PositionManagerValue,
+  "externalContracts.uniswapV3PositionManager",
+  externalContracts.uniswapV3PositionManager,
 );
 const uniswapV3SwapRouterAddress = parseAddress(
-  "UNISWAP_V3_SWAP_ROUTER_ADDRESS",
-  uniswapV3SwapRouterValue,
+  "externalContracts.uniswapV3SwapRouter",
+  externalContracts.uniswapV3SwapRouter,
 );
-const uniswapV3QuoterAddress = parseAddress("UNISWAP_V3_QUOTER_ADDRESS", uniswapV3QuoterValue);
+const uniswapV3QuoterAddress = parseAddress(
+  "externalContracts.uniswapV3Quoter",
+  externalContracts.uniswapV3Quoter,
+);
 const allowEmptyProtocolConfig = env("ALLOW_EMPTY_PROTOCOL_CONFIG", "false").toLowerCase() === "true";
 
-if (approvedAssets.length !== priceFeeds.length) {
-  throw new Error("APPROVED_ASSETS and PRICE_FEEDS must have the same number of addresses.");
+if (priceFeeds.some((feed) => !feed)) {
+  throw new Error("Every approved asset in the deployment JSON must have a matching price feed.");
 }
 if (approvedAssets.length === 0 && !allowEmptyProtocolConfig) {
   throw new Error(
@@ -185,7 +170,9 @@ const rebalanceExecutor = await deployContract({
   args: [account.address],
 });
 const feeCollector = await deployContract({ name: "FeeCollector", args: [treasury] });
-const vaultImplementation = await deployContract({ name: "ManagedOTFVault" });
+// The public Robinhood Testnet RPC rejects eth_estimateGas for this near-limit initcode payload.
+// Supplying gas bypasses a public-RPC estimation failure for this near-limit initcode payload.
+const vaultImplementation = await deployContract({ name: "ManagedOTFVault", gas: 20_000_000n });
 const factory = await deployContract({
   name: "OTFFactory",
   args: [
@@ -344,31 +331,18 @@ const deployment = {
     ...(entryRouter ? { entryRouter } : {}),
     ...(v3MarketRegistry ? { v3MarketRegistry } : {}),
   },
+  externalContracts: {
+    usdg: usdgAddress,
+    uniswapV3Factory: uniswapV3FactoryAddress,
+    uniswapV3PositionManager: uniswapV3PositionManagerAddress,
+    uniswapV3SwapRouter: uniswapV3SwapRouterAddress,
+    uniswapV3Quoter: uniswapV3QuoterAddress,
+    ...(uniswapRouterAddress ? { uniswapV2Router: uniswapRouterAddress } : {}),
+  },
   setupTransactions,
 };
 
-const deploymentsDir = join(root, "deployments");
-mkdirSync(deploymentsDir, { recursive: true });
-const outputPath = join(deploymentsDir, "robinhood-testnet.json");
-writeFileSync(outputPath, `${deploymentPayload(deployment)}\n`);
-const appEnvPath = updateAppEnv({
-  NEXT_PUBLIC_FACTORY_ADDRESS: factory.address,
-  ...(usdgAddress ? { NEXT_PUBLIC_USDG_ADDRESS: usdgAddress } : {}),
-  ...(uniswapAdapter && entryRouter && uniswapRouterAddress
-    ? {
-        NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS: entryRouter.address,
-        NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS: uniswapAdapter.address,
-        NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS: uniswapRouterAddress,
-      }
-    : {}),
-  ...(v3MarketRegistry && uniswapV3SwapRouterAddress && uniswapV3QuoterAddress
-    ? {
-        NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS: v3MarketRegistry.address,
-        NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS: uniswapV3SwapRouterAddress,
-        NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS: uniswapV3QuoterAddress,
-      }
-    : {}),
-});
+mkdirSync(dirname(deploymentPath), { recursive: true });
+writeFileSync(deploymentPath, `${deploymentPayload(deployment)}\n`);
 
-console.log(`Deployment written to ${outputPath}`);
-console.log(`Frontend factory env written to ${appEnvPath}`);
+console.log(`Deployment and frontend address configuration written to ${deploymentPath}`);

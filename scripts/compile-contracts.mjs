@@ -14,8 +14,13 @@ function solidityFiles(dir) {
   });
 }
 
+const includeTests = process.env.SOLC_INCLUDE_TESTS !== "false";
+const sourceFiles = includeTests
+  ? [...solidityFiles(contractsSrc), ...solidityFiles(contractsTest)]
+  : solidityFiles(contractsSrc);
+
 const sources = Object.fromEntries(
-  [...solidityFiles(contractsSrc), ...solidityFiles(contractsTest)].map((file) => {
+  sourceFiles.map((file) => {
     const key = relative(root, file).split(sep).join("/");
     return [key, { content: readFileSync(file, "utf8") }];
   }),
@@ -25,6 +30,7 @@ const input = {
   language: "Solidity",
   sources,
   settings: {
+    evmVersion: "cancun",
     optimizer: { enabled: true, runs: 1 },
     viaIR: true,
     outputSelection: {

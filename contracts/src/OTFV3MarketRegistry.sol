@@ -150,12 +150,14 @@ contract OTFV3MarketRegistry {
         uint256 ratioX192 = MathEx.mulDiv(amount1, Q192, amount0);
         uint256 result = _sqrt(ratioX192);
         if (result == 0 || result > type(uint160).max) revert InvalidInitialPrice(nav);
+        // The bound above guarantees the narrowed Uniswap price cannot truncate.
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint160(result);
     }
 
     function _sqrt(uint256 value) private pure returns (uint256 result) {
         if (value == 0) return 0;
-        result = 1 << ((MathExLog2.log2(value) + 1) >> 1);
+        result = 2 ** ((MathExLog2.log2(value) + 1) / 2);
         unchecked {
             for (uint256 i = 0; i < 7; i++) {
                 result = (result + value / result) >> 1;

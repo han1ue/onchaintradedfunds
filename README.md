@@ -585,48 +585,33 @@ The practical takeaway for this MVP is not to copy another protocol's visuals. I
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
 NEXT_PUBLIC_RH_RPC_URL=
 NEXT_PUBLIC_RH_TESTNET_RPC_URL=
-NEXT_PUBLIC_FACTORY_ADDRESS=
-NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS=
-NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS=
-NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS=
-NEXT_PUBLIC_USDG_ADDRESS=
-NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS=
-NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS=
-NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS=
 ```
 
-These are public frontend values. Do not put private keys in any `NEXT_PUBLIC_*` variable.
-The frontend reads `allVaults()` from `NEXT_PUBLIC_FACTORY_ADDRESS`; individual OTF
-addresses are discovered from the factory and do not need separate environment variables.
+These optional values configure wallet connectivity and RPC endpoints. Contract and token addresses
+are not environment variables. The frontend and deployment utilities share the checked-in
+`app/src/config/robinhood-testnet.json` file. The frontend reads `allVaults()` from the factory
+recorded there; individual OTF addresses are discovered from the factory.
 
-Robinhood testnet deployment also requires private deployment configuration:
+Robinhood testnet deployment requires only the private signer as secret configuration:
 
 ```text
 DEPLOYER_PRIVATE_KEY=
-APPROVED_ASSETS=0xAsset1,0xAsset2
-PRICE_FEEDS=0xFeed1,0xFeed2
-APPROVED_ADAPTERS=
-USDG_ADDRESS=
-UNISWAP_V2_ROUTER_ADDRESS=
-UNISWAP_V3_FACTORY_ADDRESS=
-UNISWAP_V3_POSITION_MANAGER_ADDRESS=
-UNISWAP_V3_SWAP_ROUTER_ADDRESS=
-UNISWAP_V3_QUOTER_ADDRESS=
 ```
 
-`APPROVED_ASSETS` and `PRICE_FEEDS` are positional pairs and must have equal lengths. The
-deployment script rejects an empty protocol catalog unless
+Keep that value in the ignored `.env.deploy.local` file. Never add it to the address JSON. The
+deployment script reads its chain, treasury, approved assets, price feeds, and external protocol
+addresses from `app/src/config/robinhood-testnet.json`. It rejects an empty protocol catalog unless
 `ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
 
 `USDG_ADDRESS` and all four Uniswap V3 addresses are required because every new OTF receives an
 official OTF/USDG pool during its factory transaction. `UNISWAP_V2_ROUTER_ADDRESS` remains
 optional. When present, the deployment script deploys `UniswapV2Adapter` and `OTFEntryRouter`, approves the
 adapter for both trade and entry use, authorizes the executor and entry router as adapter callers,
-and writes all public addresses into `app/.env.local`. No testnet liquidity address is guessed or
+and writes all public addresses into the shared address JSON. No testnet liquidity address is guessed or
 hardcoded; verify both values against the intended deployment before running the script.
 
 The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
-OTF can be created, and writes the registry, swap-router, and quoter addresses into `app/.env.local`.
+OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
 OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fixed 0.05% fee tier,
 initializes a new pool from NAV per share, and records it as the immutable official pool. No
 liquidity is taken from the OTF. The manager adds liquidity separately and owns the resulting
@@ -649,7 +634,7 @@ timestamp, and the owner-only `setAnswer` function is retained solely as an opti
 reset.
 
 The configurator records every deployment and registry transaction in
-`deployments/robinhood-testnet.json`. It automatically replaces legacy version-1 manually updated
+`app/src/config/robinhood-testnet.json`. It automatically replaces legacy version-1 manually updated
 feeds and retains version-2 self-updating feeds on later runs. The synthetic path is intentionally
 predictable from public chain data; these feeds are UI and integration fixtures, not Chainlink,
 market data, or suitable adversarial-test price sources.

@@ -20,7 +20,7 @@ const { privateKeyToAccount } = accounts;
 
 const chainId = 46630;
 const rpcUrl = process.env.RH_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com";
-const deploymentPath = join(root, "deployments", "robinhood-testnet.json");
+const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const catalog = [

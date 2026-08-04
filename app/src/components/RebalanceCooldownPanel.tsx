@@ -65,6 +65,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
+import { robinhoodTestnetAddresses } from "@/lib/deployment";
 import {
   formatCooldown,
   formatRelativeAvailability,
@@ -458,13 +459,24 @@ const uniswapV3QuoterAbi = [
     name: "quoteExactInputSingle",
     stateMutability: "view",
     inputs: [
-      { name: "tokenIn", type: "address" },
-      { name: "tokenOut", type: "address" },
-      { name: "fee", type: "uint24" },
-      { name: "amountIn", type: "uint256" },
-      { name: "sqrtPriceLimitX96", type: "uint160" },
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "fee", type: "uint24" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
     ],
-    outputs: [{ name: "amountOut", type: "uint256" }],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
   },
 ] as const;
 
@@ -482,7 +494,6 @@ const uniswapV3SwapRouterAbi = [
           { name: "tokenOut", type: "address" },
           { name: "fee", type: "uint24" },
           { name: "recipient", type: "address" },
-          { name: "deadline", type: "uint256" },
           { name: "amountIn", type: "uint256" },
           { name: "amountOutMinimum", type: "uint256" },
           { name: "sqrtPriceLimitX96", type: "uint160" },
@@ -494,31 +505,24 @@ const uniswapV3SwapRouterAbi = [
 ] as const;
 
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
-const robinhoodTestnetUsdgAddress = "0x7E955252E15c84f5768B83c41a71F9eba181802F" as const;
-
 function configuredFactoryAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.factory;
 }
 
 function configuredEntryRouterAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_ENTRY_ROUTER_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.entryRouter;
 }
 
 function configuredEntryAdapterAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_UNISWAP_ADAPTER_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.uniswapV2Adapter;
 }
 
 function configuredUniswapRouterAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_UNISWAP_V2_ROUTER_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.uniswapV2Router;
 }
 
 function configuredSettlementTokenAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_USDG_ADDRESS;
-  return value && isAddress(value) ? value : robinhoodTestnetUsdgAddress;
+  return robinhoodTestnetAddresses.usdg;
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -2537,7 +2541,13 @@ function UserActions({
     abi: uniswapV3QuoterAbi,
     functionName: "quoteExactInputSingle",
     args: marketInputAmount && marketInputToken && marketOutputToken
-      ? [marketInputToken, marketOutputToken, 500, marketInputAmount, 0n]
+      ? [{
+          tokenIn: marketInputToken,
+          tokenOut: marketOutputToken,
+          amountIn: marketInputAmount,
+          fee: 500,
+          sqrtPriceLimitX96: 0n,
+        }]
       : undefined,
     chainId: robinhoodChainTestnet.id,
     query: {
@@ -2547,7 +2557,7 @@ function UserActions({
       ),
     },
   });
-  const marketQuotedOutput = marketQuoteResult as bigint | undefined;
+  const marketQuotedOutput = (marketQuoteResult as readonly [bigint, bigint, number, bigint] | undefined)?.[0];
   const marketMinimumOutput = marketQuotedOutput === undefined || !slippageValid
     ? undefined
     : marketQuotedOutput * BigInt(10_000 - slippageBps) / 10_000n;
@@ -2924,7 +2934,6 @@ function UserActions({
     setMarketError(undefined);
     try {
       setMarketState("pending");
-      const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
       const hash = await writeContractAsync({
         address: uniswapV3SwapRouterAddress,
         abi: uniswapV3SwapRouterAbi,
@@ -2934,7 +2943,6 @@ function UserActions({
           tokenOut: marketOutputToken,
           fee: 500,
           recipient: connectedAddress,
-          deadline,
           amountIn: marketInputAmount,
           amountOutMinimum: marketMinimumOutput,
           sqrtPriceLimitX96: 0n,
@@ -3364,18 +3372,15 @@ function UserActions({
 }
 
 function configuredV3MarketRegistryAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.v3MarketRegistry;
 }
 
 function configuredUniswapV3SwapRouterAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_UNISWAP_V3_SWAP_ROUTER_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.uniswapV3SwapRouter;
 }
 
 function configuredUniswapV3QuoterAddress(): `0x${string}` | undefined {
-  const value = process.env.NEXT_PUBLIC_UNISWAP_V3_QUOTER_ADDRESS;
-  return value && isAddress(value) ? value : undefined;
+  return robinhoodTestnetAddresses.uniswapV3Quoter;
 }
 
 function TxStatus({ state, persistent = false }: { state: TxState; persistent?: boolean }) {
@@ -5545,12 +5550,12 @@ function WalletView({
     isLoading: usdgBalanceLoading,
     isError: usdgBalanceError,
   } = useReadContract({
-    address: robinhoodTestnetUsdgAddress,
+    address: robinhoodTestnetAddresses.usdg,
     abi: erc20BalanceAbi,
     functionName: "balanceOf",
     args: canRead ? [connectedAddress as `0x${string}`] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: canRead },
+    query: { enabled: canRead && Boolean(robinhoodTestnetAddresses.usdg) },
   });
   const positionContracts = canRead
     ? vaults.flatMap((vault) => [
@@ -5659,6 +5664,7 @@ function WalletView({
                   title="Open USDG faucet"
                   aria-label="Open USDG faucet in a new tab"
                 >
+                  <Droplets size={14} />
                   Faucet
                   <ExternalLink size={10} />
                 </a>
@@ -5676,6 +5682,7 @@ function WalletView({
                   title="Open Robinhood testnet ETH faucet"
                   aria-label="Open Robinhood testnet ETH faucet in a new tab"
                 >
+                  <Droplets size={14} />
                   Faucet
                   <ExternalLink size={10} />
                 </a>
@@ -5794,7 +5801,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
         {!registry ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
-            <div><strong>Official pool registry is not configured</strong><span>Set NEXT_PUBLIC_V3_MARKET_REGISTRY_ADDRESS to load this OTF&apos;s market.</span></div>
+            <div><strong>Official pool registry is not configured</strong><span>Add the registry address to the Robinhood testnet address JSON to load this OTF&apos;s market.</span></div>
           </div>
         ) : null}
 
