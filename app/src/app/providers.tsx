@@ -11,36 +11,45 @@ import { wagmiConfig } from "@/lib/wagmi";
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
   const [appearance, setAppearance] = useState<"dark" | "light">("dark");
+  const [palette, setPalette] = useState<"default" | "robinhood">("default");
 
   useEffect(() => {
     function syncAppearance() {
       setAppearance(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+      setPalette(document.documentElement.dataset.palette === "robinhood" ? "robinhood" : "default");
     }
 
     syncAppearance();
     const observer = new MutationObserver(syncAppearance);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-palette"],
+    });
     return () => observer.disconnect();
   }, []);
 
   const walletTheme = useMemo(
-    () =>
-      appearance === "light"
+    () => {
+      const accentColor = palette === "robinhood"
+        ? "#ccff00"
+        : appearance === "light" ? "#13877e" : "#37b7aa";
+      return appearance === "light"
         ? lightTheme({
-            accentColor: "#13877e",
-            accentColorForeground: "#ffffff",
+            accentColor,
+            accentColorForeground: palette === "robinhood" ? "#090909" : "#ffffff",
             borderRadius: "small",
             fontStack: "system",
             overlayBlur: "small",
           })
         : darkTheme({
-            accentColor: "#37b7aa",
+            accentColor,
             accentColorForeground: "#071716",
             borderRadius: "small",
             fontStack: "system",
             overlayBlur: "small",
-          }),
-    [appearance],
+          });
+    },
+    [appearance, palette],
   );
 
   return (

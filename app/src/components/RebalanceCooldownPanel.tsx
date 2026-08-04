@@ -28,6 +28,7 @@ import {
   Landmark,
   Moon,
   Network,
+  Palette,
   Plus,
   Percent,
   Pencil,
@@ -1241,6 +1242,7 @@ function TopNav({
   const [networkOpen, setNetworkOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [palette, setPalette] = useState<"default" | "robinhood">("default");
   const chainId = useChainId();
   const testnetMode = chainId === robinhoodChainTestnet.id;
   const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
@@ -1250,8 +1252,12 @@ function TopNav({
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("otf-theme");
     const initialTheme = savedTheme === "light" ? "light" : "dark";
+    const savedPalette = window.localStorage.getItem("otf-palette");
+    const initialPalette = savedPalette === "robinhood" ? "robinhood" : "default";
     setTheme(initialTheme);
+    setPalette(initialPalette);
     document.documentElement.dataset.theme = initialTheme;
+    document.documentElement.dataset.palette = initialPalette;
   }, []);
 
   useEffect(() => {
@@ -1292,6 +1298,12 @@ function TopNav({
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
     window.localStorage.setItem("otf-theme", nextTheme);
+  }
+
+  function changePalette(nextPalette: "default" | "robinhood") {
+    setPalette(nextPalette);
+    document.documentElement.dataset.palette = nextPalette;
+    window.localStorage.setItem("otf-palette", nextPalette);
   }
 
   return (
@@ -1433,6 +1445,31 @@ function TopNav({
                       <span />
                     </span>
                   </button>
+                  <div className="settingsThemePicker">
+                    <div className="settingsThemeHeading">
+                      <span className="settingsOptionIcon"><Palette size={15} /></span>
+                      <span className="settingsOptionText">
+                        <strong>Theme</strong>
+                        <small>Choose the application color palette</small>
+                      </span>
+                    </div>
+                    <div className="settingsThemeChoices" role="radiogroup" aria-label="Application theme">
+                      {(["default", "robinhood"] as const).map((value) => (
+                        <button
+                          className={`settingsThemeChoice ${palette === value ? "selected" : ""}`}
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={palette === value}
+                          onClick={() => changePalette(value)}
+                        >
+                          <span className={`settingsThemeSwatch ${value}`} aria-hidden="true" />
+                          <span>{value === "default" ? "Default" : "Robinhood"}</span>
+                          {palette === value ? <Check size={13} aria-hidden="true" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -2160,7 +2197,7 @@ function UserActions({
 }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
   const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
-  const [usdgAmount, setUsdgAmount] = useState("");
+  const [tradeAmount, setTradeAmount] = useState("");
   const [maxSlippage, setMaxSlippage] = useState("1.0");
   const [entryState, setEntryState] = useState<TxState>("idle");
   const [entryError, setEntryError] = useState<string>();
@@ -2186,8 +2223,8 @@ function UserActions({
   const slippageValid = slippageBps >= 1 && slippageBps <= 2_000;
   let normalizedUsdgAmount: bigint | undefined;
   try {
-    normalizedUsdgAmount = Number(usdgAmount) > 0
-      ? parseUnits(usdgAmount, 18)
+    normalizedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
+      ? parseUnits(tradeAmount, 18)
       : undefined;
   } catch {
     normalizedUsdgAmount = undefined;
@@ -2199,7 +2236,14 @@ function UserActions({
   if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
     requestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
-  const requestedRedeemShares = activeAction === "redeem" ? navEstimatedShares : undefined;
+  let requestedRedeemShares: bigint | undefined;
+  try {
+    requestedRedeemShares = activeAction === "redeem" && Number(tradeAmount) > 0
+      ? parseUnits(tradeAmount, 18)
+      : undefined;
+  } catch {
+    requestedRedeemShares = undefined;
+  }
   const entrySlippageBps = slippageBps;
   const entrySlippageValid = slippageValid;
   const redeemSlippageBps = slippageBps;
@@ -2300,10 +2344,11 @@ function UserActions({
       ] as const);
   const {
     data: entryAuthorizationResults,
+    isLoading: entryAuthorizationLoading,
     refetch: refetchEntryAuthorization,
   } = useReadContracts({
     contracts: entryAuthorizationContracts,
-    query: { enabled: Boolean(settlementToken && connectedAddress && entryRouterAddress) },
+    query: { enabled: Boolean(settlementToken && connectedAddress) },
   });
   const canPreviewRedeem = Boolean(
     isLive && vault.address && requestedRedeemShares && requestedRedeemShares > 0n,
@@ -2364,6 +2409,7 @@ function UserActions({
   ] as const);
   const {
     data: redeemAuthorizationResults,
+    isLoading: redeemAuthorizationLoading,
     refetch: refetchRedeemAuthorization,
   } = useReadContracts({
     contracts: redeemAuthorizationContracts,
@@ -2419,8 +2465,8 @@ function UserActions({
   const settlementDecimals = Number(settlementDecimalsRead ?? entryAuthorizationResults?.[2]?.result ?? 18);
   let requestedUsdgAmount: bigint | undefined;
   try {
-    requestedUsdgAmount = Number(usdgAmount) > 0
-      ? parseUnits(usdgAmount, settlementDecimals)
+    requestedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
+      ? parseUnits(tradeAmount, settlementDecimals)
       : undefined;
   } catch {
     requestedUsdgAmount = undefined;
@@ -2472,6 +2518,7 @@ function UserActions({
   const marketPath = activeAction === "deposit"
     ? [settlementToken ?? zeroAddress, vault.address ?? zeroAddress]
     : [vault.address ?? zeroAddress, settlementToken ?? zeroAddress];
+  const marketInputAmount = activeAction === "deposit" ? requestedUsdgAmount : requestedRedeemShares;
   const {
     data: marketQuoteResult,
     error: marketQuoteError,
@@ -2480,26 +2527,22 @@ function UserActions({
   } = useReadContract({
     address: uniswapRouterAddress,
     abi: uniswapV2QuoteAbi,
-    functionName: activeAction === "deposit" ? "getAmountsOut" : "getAmountsIn",
-    args: requestedUsdgAmount ? [requestedUsdgAmount, marketPath] : undefined,
+    functionName: "getAmountsOut",
+    args: marketInputAmount ? [marketInputAmount, marketPath] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: {
       enabled: Boolean(
-        marketLiquidityReady && requestedUsdgAmount && requestedUsdgAmount > 0n && slippageValid,
+        marketLiquidityReady && marketInputAmount && marketInputAmount > 0n && slippageValid,
       ),
     },
   });
   const marketQuoteAmounts = marketQuoteResult as readonly bigint[] | undefined;
-  const marketQuotedShares = activeAction === "deposit"
-    ? marketQuoteAmounts?.[marketQuoteAmounts.length - 1]
-    : marketQuoteAmounts?.[0];
-  const marketGuardedShares = marketQuotedShares === undefined || !slippageValid
+  const marketQuotedOutput = marketQuoteAmounts?.[marketQuoteAmounts.length - 1];
+  const marketMinimumOutput = marketQuotedOutput === undefined || !slippageValid
     ? undefined
-    : activeAction === "deposit"
-      ? marketQuotedShares * BigInt(10_000 - slippageBps) / 10_000n
-      : (marketQuotedShares * BigInt(10_000 + slippageBps) + 9_999n) / 10_000n;
+    : marketQuotedOutput * BigInt(10_000 - slippageBps) / 10_000n;
   const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
-  const marketRequiredInput = activeAction === "deposit" ? requestedUsdgAmount : marketGuardedShares;
+  const marketRequiredInput = marketInputAmount;
   const marketAuthorizationContracts = ([
     {
       address: marketInputToken ?? zeroAddress,
@@ -2533,7 +2576,7 @@ function UserActions({
   const marketAllowanceSufficient = marketRequiredInput !== undefined && marketInputAllowance !== undefined &&
     marketInputAllowance >= marketRequiredInput;
   const marketQuoteReady = Boolean(
-    marketLiquidityReady && requestedUsdgAmount && marketQuotedShares && marketGuardedShares && !marketQuoteError,
+    marketLiquidityReady && marketInputAmount && marketQuotedOutput && marketMinimumOutput && !marketQuoteError,
   );
   const entryBalanceSufficient = maximumSettlementTotal !== undefined &&
     settlementBalance !== undefined && settlementBalance >= maximumSettlementTotal;
@@ -2603,7 +2646,20 @@ function UserActions({
     : undefined;
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
   const marketBusy = marketState === "pending" || marketState === "submitted";
-  const routeInputsReady = Boolean(requestedUsdgAmount && requestedUsdgAmount > 0n && slippageValid);
+  const inputTokenSymbol = activeAction === "deposit" ? "USDG" : vault.symbol;
+  const inputTokenDecimals = activeAction === "deposit" ? settlementDecimals : 18;
+  const walletInputBalance = activeAction === "deposit" ? settlementBalance : redeemShareBalance;
+  const walletInputBalanceLoading = activeAction === "deposit"
+    ? entryAuthorizationLoading
+    : redeemAuthorizationLoading;
+  const walletInputBalanceLabel = !connectedAddress
+    ? "Connect wallet"
+    : walletInputBalanceLoading
+      ? "Checking..."
+      : walletInputBalance === undefined
+        ? "Unavailable"
+        : `${formatWalletTokenBalance(walletInputBalance, inputTokenDecimals)} ${inputTokenSymbol}`;
+  const routeInputsReady = Boolean(marketInputAmount && marketInputAmount > 0n && slippageValid);
   const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false;
   const underlyingQuoteReady = activeAction === "deposit"
     ? entryQuoteReady && entryWithinBudget
@@ -2614,9 +2670,9 @@ function UserActions({
   const underlyingQuoteFailed = activeAction === "deposit"
     ? Boolean(previewEntryError || entryQuotesFailed)
     : Boolean(previewRedeemError || redeemQuotesFailed);
-  const underlyingQuotedShares = activeAction === "deposit"
+  const underlyingQuotedOutput = activeAction === "deposit"
     ? requestedEntryShares
-    : requestedRedeemShares;
+    : quotedRedeemSettlement;
 
   async function approveSettlementToken() {
     if (
@@ -2709,7 +2765,7 @@ function UserActions({
       await refetchEntryPreview();
       await refetchEntryQuotes();
       setEntryState("confirmed");
-      setUsdgAmount("");
+      setTradeAmount("");
     } catch (error) {
       setEntryError(errorMessage(error));
       setEntryState("reverted");
@@ -2789,7 +2845,7 @@ function UserActions({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The USDG redemption reverted.");
       await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
-      setUsdgAmount("");
+      setTradeAmount("");
       setRedeemState("confirmed");
     } catch (error) {
       setRedeemError(errorMessage(error));
@@ -2845,8 +2901,8 @@ function UserActions({
       !settlementToken ||
       !connectedAddress ||
       !publicClient ||
-      !requestedUsdgAmount ||
-      !marketGuardedShares ||
+      !marketInputAmount ||
+      !marketMinimumOutput ||
       !marketQuoteReady ||
       !marketBalanceSufficient ||
       !marketAllowanceSufficient
@@ -2855,38 +2911,24 @@ function UserActions({
     try {
       setMarketState("pending");
       const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
-      const hash = activeAction === "deposit"
-        ? await writeContractAsync({
-            address: uniswapRouterAddress,
-            abi: uniswapV2QuoteAbi,
-            functionName: "swapExactTokensForTokens",
-            args: [
-              requestedUsdgAmount,
-              marketGuardedShares,
-              [settlementToken, vault.address],
-              connectedAddress,
-              deadline,
-            ],
-            chainId: robinhoodChainTestnet.id,
-          })
-        : await writeContractAsync({
-            address: uniswapRouterAddress,
-            abi: uniswapV2QuoteAbi,
-            functionName: "swapTokensForExactTokens",
-            args: [
-              requestedUsdgAmount,
-              marketGuardedShares,
-              [vault.address, settlementToken],
-              connectedAddress,
-              deadline,
-            ],
-            chainId: robinhoodChainTestnet.id,
-          });
+      const hash = await writeContractAsync({
+        address: uniswapRouterAddress,
+        abi: uniswapV2QuoteAbi,
+        functionName: "swapExactTokensForTokens",
+        args: [
+          marketInputAmount,
+          marketMinimumOutput,
+          marketPath,
+          connectedAddress,
+          deadline,
+        ],
+        chainId: robinhoodChainTestnet.id,
+      });
       setMarketState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The open-market trade reverted.");
       await Promise.all([refetchMarketAuthorization(), refetchMarketQuote()]);
-      setUsdgAmount("");
+      setTradeAmount("");
       setMarketState("confirmed");
     } catch (error) {
       setMarketError(errorMessage(error));
@@ -2894,8 +2936,24 @@ function UserActions({
     }
   }
 
+  function updateTradeAmount(nextAmount: string) {
+    setTradeAmount(nextAmount);
+    setEntryState("idle");
+    setRedeemState("idle");
+    setMarketState("idle");
+    setEntryError(undefined);
+    setRedeemError(undefined);
+    setMarketError(undefined);
+  }
+
+  function useMaximumAmount() {
+    if (walletInputBalance === undefined || walletInputBalance <= 0n) return;
+    updateTradeAmount(formatUnits(walletInputBalance, inputTokenDecimals));
+  }
+
   function changeAction(nextAction: "deposit" | "redeem") {
     setActiveAction(nextAction);
+    setTradeAmount("");
     setSelectedRoute(undefined);
     setEntryState("idle");
     setRedeemState("idle");
@@ -2933,26 +2991,38 @@ function UserActions({
 
         <div className="positionTicketInputs">
           <label>
-            <span>USDG amount</span>
+            <span className="positionFieldHeading">
+              <span>{inputTokenSymbol} amount</span>
+              <span className="positionWalletBalance">Balance: {walletInputBalanceLabel}</span>
+            </span>
             <div className="positionAmountInput">
               <input
-                value={usdgAmount}
-                onChange={(event) => {
-                  setUsdgAmount(event.target.value);
-                  setEntryState("idle");
-                  setRedeemState("idle");
-                  setMarketState("idle");
-                  setEntryError(undefined);
-                  setRedeemError(undefined);
-                  setMarketError(undefined);
-                }}
+                value={tradeAmount}
+                onChange={(event) => updateTradeAmount(event.target.value)}
                 type="number"
                 min="0"
                 inputMode="decimal"
                 placeholder="0.00"
+                aria-label={`${inputTokenSymbol} amount`}
                 disabled={!isLive || entryBusy || redeemBusy || marketBusy}
               />
-              <strong>USDG</strong>
+              <button
+                className="positionMaxButton"
+                type="button"
+                disabled={
+                  !isLive ||
+                  entryBusy ||
+                  redeemBusy ||
+                  marketBusy ||
+                  walletInputBalance === undefined ||
+                  walletInputBalance <= 0n
+                }
+                onClick={useMaximumAmount}
+                aria-label={`Use maximum ${inputTokenSymbol} balance`}
+              >
+                Max
+              </button>
+              <strong>{inputTokenSymbol}</strong>
             </div>
           </label>
           <label>
@@ -2986,7 +3056,11 @@ function UserActions({
           <div className="positionRouteStage">
             <div className="positionRouteHeading">
               <strong>Choose how to execute</strong>
-              <span>Compare the OTF shares for the same USDG amount.</span>
+              <span>
+                {activeAction === "deposit"
+                  ? "Compare estimated OTF shares for the same USDG amount."
+                  : "Compare estimated USDG proceeds for the same OTF shares."}
+              </span>
             </div>
             <div className="positionRouteChoices" role="radiogroup" aria-label="Execution route">
               <button
@@ -3008,8 +3082,11 @@ function UserActions({
                         ? <Loader2 className="spin" size={18} />
                         : marketQuoteError
                           ? "No quote"
-                          : marketQuotedShares
-                            ? formatWalletTokenBalance(marketQuotedShares, 18)
+                          : marketQuotedOutput
+                            ? formatWalletTokenBalance(
+                                marketQuotedOutput,
+                                activeAction === "deposit" ? 18 : settlementDecimals,
+                              )
                             : "—"}
                 </strong>
                 <small>
@@ -3017,7 +3094,7 @@ function UserActions({
                     ? "No funded OTF / USDG pool"
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares received`
-                      : `${vault.symbol} shares required`}
+                      : "USDG received"}
                 </small>
               </button>
 
@@ -3038,8 +3115,11 @@ function UserActions({
                       ? <Loader2 className="spin" size={18} />
                       : underlyingQuoteFailed
                         ? "No quote"
-                        : underlyingQuotedShares
-                          ? formatWalletTokenBalance(underlyingQuotedShares, 18)
+                        : underlyingQuotedOutput
+                          ? formatWalletTokenBalance(
+                              underlyingQuotedOutput,
+                              activeAction === "deposit" ? 18 : settlementDecimals,
+                            )
                           : "—"}
                 </strong>
                 <small>
@@ -3047,7 +3127,7 @@ function UserActions({
                     ? "Settlement route not configured"
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares minted`
-                      : `${vault.symbol} shares redeemed`}
+                      : "USDG received"}
                 </small>
               </button>
             </div>
@@ -3057,7 +3137,9 @@ function UserActions({
             <ArrowDownToLine size={17} />
             <div>
               <strong>Enter an amount to compare routes</strong>
-              <span>Both execution paths use the same USDG amount and slippage limit.</span>
+              <span>
+                Both execution paths use the same {inputTokenSymbol} amount and slippage limit.
+              </span>
             </div>
           </div>
         )}
@@ -3076,16 +3158,34 @@ function UserActions({
             </div>
             <div className="positionExecutionQuote">
               <div>
-                <span>{activeAction === "deposit" ? "USDG spent" : "USDG received"}</span>
-                <strong>{requestedUsdgAmount ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong>
+                <span>{activeAction === "deposit" ? "USDG spent" : "Shares sold"}</span>
+                <strong>
+                  {marketInputAmount
+                    ? formatWalletTokenBalance(marketInputAmount, inputTokenDecimals)
+                    : "—"} {inputTokenSymbol}
+                </strong>
               </div>
               <div>
-                <span>{activeAction === "deposit" ? "Estimated shares" : "Estimated shares required"}</span>
-                <strong>{marketQuotedShares ? formatWalletTokenBalance(marketQuotedShares, 18) : "—"} {vault.symbol}</strong>
+                <span>{activeAction === "deposit" ? "Estimated shares" : "Estimated proceeds"}</span>
+                <strong>
+                  {marketQuotedOutput
+                    ? formatWalletTokenBalance(
+                        marketQuotedOutput,
+                        activeAction === "deposit" ? 18 : settlementDecimals,
+                      )
+                    : "—"} {activeAction === "deposit" ? vault.symbol : "USDG"}
+                </strong>
               </div>
               <div>
-                <span>{activeAction === "deposit" ? "Minimum shares" : "Maximum shares"}</span>
-                <strong>{marketGuardedShares ? formatWalletTokenBalance(marketGuardedShares, 18) : "—"} {vault.symbol}</strong>
+                <span>{activeAction === "deposit" ? "Minimum shares" : "Minimum received"}</span>
+                <strong>
+                  {marketMinimumOutput
+                    ? formatWalletTokenBalance(
+                        marketMinimumOutput,
+                        activeAction === "deposit" ? 18 : settlementDecimals,
+                      )
+                    : "—"} {activeAction === "deposit" ? vault.symbol : "USDG"}
+                </strong>
               </div>
             </div>
             <div className="routeExecutionNote">

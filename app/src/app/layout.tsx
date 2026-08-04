@@ -13,7 +13,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{document.documentElement.dataset.theme=localStorage.getItem('otf-theme')==='light'?'light':'dark'}catch(e){}",
+              "try{document.documentElement.dataset.theme=localStorage.getItem('otf-theme')==='light'?'light':'dark';document.documentElement.dataset.palette=localStorage.getItem('otf-palette')==='robinhood'?'robinhood':'default'}catch(e){}",
           }}
         />
       </head>
