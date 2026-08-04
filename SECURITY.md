@@ -31,7 +31,9 @@ Primary security goals:
 - Each partial trade fails atomically when any safety check fails.
 - Reverted target proposals do not reset cooldowns.
 - Anyone can prove an out-of-band portfolio and lock manager-fee withdrawals.
-- Missed challenge deadlines forfeit challenge-window manager fees, credit 10% to the caller, and leave the rest unminted.
+- Missed challenge deadlines forfeit challenge-window manager fees, credit 50% to the caller, and leave the rest unminted.
+- Revoking any retained constituent places the vault in a fail-closed inflow quarantine until
+  registry governance explicitly reapproves it, even after its target and balance reach zero.
 - Redemption does not depend on oracle health.
 - The frontend is never a security boundary.
 
@@ -242,14 +244,19 @@ Fee-on-transfer, sender-taxed, and unexpectedly rebasing assets revert atomicall
 
 ## Fee Risks
 
-Fees are minted as new shares. Long dormant periods are processed in bounded annual intervals so
-fee accrual cannot permanently brick a vault. Fee-share tests cover:
+Fees are minted as new shares using a composable fixed-point growth factor calibrated so the stated
+annual rate is the exact full-year holder dilution. Deposits, mints, withdrawals, redemptions, and
+fee-rate changes close the old interval before changing supply or rate. Fractional fee-share and
+protocol-split remainders are retained, while long dormant intervals are processed without silently
+discarding capped time. Fee-share tests cover:
 
 - Long elapsed intervals.
 - Near-zero supply.
 - Zero fee rate.
 - Manager/protocol split precision.
 - Multiple accrual calls in the same block.
+- Daily versus annual accrual cadence.
+- Non-retroactive rate changes whose old-rate fee rounds below one share-wei.
 - Challenge-window fee forfeiture.
 - Caller reward claims for missed challenge deadlines.
 - Timely challenge resolution and fee-withdrawal resumption.
@@ -257,8 +264,8 @@ fee accrual cannot permanently brick a vault. Fee-share tests cover:
 The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
 Protocol shares held by `FeeCollector` can only be claimed by its configured treasury.
 
-Missed challenge-window fees are not minted to the manager. The challenge caller can claim 10% as
-OTF shares; the remaining 90% is skipped rather than minted and burned.
+Missed challenge-window fees are not minted to the manager. The challenge caller can claim 50% as
+OTF shares; the remaining 50% is skipped rather than minted and burned.
 
 ## ERC-7621 Status
 

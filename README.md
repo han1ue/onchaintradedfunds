@@ -422,10 +422,13 @@ Each target has a wider challenge band and a narrower completion band. Anyone ma
 `flagOutOfBand()`, but fresh approved prices must prove a real challenge-band breach.
 
 A valid challenge locks target changes and manager-fee withdrawals while the configured grace
-period runs. Natural price movement and constrained trades can both restore the basket. If the
+period runs. The protocol enforces a minimum of five days and the frontend uses that minimum by
+default so scheduled market weekends and holiday closures do not consume the entire response
+window. All valid fees earned before the challenge start are crystallized first and cannot be
+forfeited later. Natural price movement and constrained trades can both restore the basket. If the
 manager stops the challenge before the deadline, accrued fees are withdrawn normally. If the
-deadline is missed, manager fees from the challenge window are forfeited: 10% becomes a claimable
-reward for the challenge caller and the remaining 90% is never minted. Deposits and proportional
+deadline is missed, manager fees from the challenge window are forfeited: 50% becomes a claimable
+reward for the challenge caller and the remaining 50% is never minted. Deposits and proportional
 withdrawals remain enabled.
 
 ## NAV And Weight Math
@@ -480,9 +483,19 @@ protocol does not add a separate annual fee.
 Fee accrual is lazy and share based. For elapsed time:
 
 ```text
-r = annual fee rate * elapsed / 365 days
-fee shares = supply * r / (1 - r)
+growth = (1 / (1 - annual fee rate)) ^ (elapsed / 365 days)
+fee shares = supply * (growth - 1)
 ```
+
+The growth rule is composable: processing one interval at once or dividing it across deposits,
+redemptions, and explicit accrual calls produces the same economic fee, subject only to fixed-point
+and indivisible share-wei rounding. Fractional share-wei and protocol-split remainders are retained
+for later checkpoints rather than discarded. A configured 10% rate therefore produces exactly 10%
+holder dilution after one full 365-day year with no intervening supply change.
+
+Every contribution, basket mint, withdrawal, and redemption checkpoints fees before changing share
+supply. A fee-rate update first closes the old-rate interval at the transaction timestamp, including
+when it has accrued less than one share-wei, and only future time uses the new rate.
 
 New fee shares are split between:
 
@@ -496,9 +509,9 @@ Manager shares follow the fee state:
 - `Suspended`: the challenge deadline has passed and challenge-window fees are forfeitable.
 
 Timely restoration lets the manager stop the challenge and withdraw accrued fees. Missing the
-deadline credits 10% of the lost challenge-window fees to the caller and skips minting the rest.
+deadline credits 50% of the lost challenge-window fees to the caller and skips minting the rest.
 Fee-rate changes are allowed only while strategy is unlocked and the portfolio is inside completion
-bands.
+bands, and never apply retroactively.
 
 ## Onchain Thesis
 

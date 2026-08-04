@@ -319,7 +319,7 @@ contract RebalanceCooldownTest is TestBase {
             minNonZeroAssetWeightBps: 100,
             maxAssetCount: 10,
             maxOracleStaleness: 1 hours,
-            challengeGracePeriod: 3 days
+            challengeGracePeriod: 5 days
         });
     }
 

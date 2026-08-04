@@ -247,6 +247,21 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertFalse(vault.strategicRebalanceActive());
         assertEq(tokenA.balanceOf(address(vault)), 0);
         assertEq(vault.currentWeight(address(tokenA)), 0);
+
+        // Revocation is a vault-wide governance quarantine, not merely an exposure check.
+        // Historical zero-target constituents remain tracked, so selling the revoked asset to
+        // zero does not reopen inflows; only an explicit registry reapproval does.
+        uint256[] memory quarantineAmounts = new uint256[](3);
+        quarantineAmounts[0] = 50 * ONE;
+        quarantineAmounts[1] = 50 * ONE;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
+        vault.previewContribute(quarantineAmounts);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
+        vault.previewMint(ONE);
+
+        assetRegistry.setAssetApproved(address(tokenA), true);
+        assertGt(vault.previewContribute(quarantineAmounts), 0);
+        assertEq(vault.previewMint(ONE).length, 3);
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

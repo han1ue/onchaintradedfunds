@@ -10,13 +10,13 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
-    uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
+    uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
     uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
     uint256 public constant MAX_THESIS_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
-    uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 1_000;
+    uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
     uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
     uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
@@ -241,6 +241,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => uint256) internal _executorIndexPlusOne;
     ThesisVersion[] internal _thesisVersions;
     RebalanceRecord[16] internal _recentRebalances;
+    uint256 internal _feeAccrualRemainderWad;
+    uint16 internal _protocolFeeSplitRemainderBps;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();

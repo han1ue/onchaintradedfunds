@@ -17,7 +17,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertTrue(vault.challengeActive());
         assertEq(vault.challengeCaller(), ALICE);
         assertEq(vault.challengeStartedAt(), START);
-        assertEq(vault.challengeDeadline(), START + 3 days);
+        assertEq(vault.challengeDeadline(), START + 5 days);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Escrowed));
 
         vm.prank(BOB);
@@ -55,6 +55,8 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vault.resolveOutOfBandChallenge();
 
         assertFalse(vault.challengeActive());
+        assertEq(vault.challengeRewardShares(address(this)), 0);
+        assertEq(vault.claimChallengeReward(), 0);
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), 0);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
@@ -88,31 +90,148 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.accrueFees(), 0);
         assertEq(vault.escrowedManagerFeeShares(), 0);
 
-        vm.warp(START + 3 days + 1);
+        vm.warp(START + 5 days + 1);
         _setPrices(120_00000000, 100_00000000);
-        vault.syncChallengeDeadline();
-        uint256 forfeited = vault.forfeitedManagerFeeShares();
         uint256 supplyBeforeReward = vault.totalSupply();
+        uint256 balanceBeforeReward = vault.balanceOf(address(this));
+        uint256 reward = vault.claimChallengeReward();
+        uint256 forfeited = vault.forfeitedManagerFeeShares();
 
         assertGt(forfeited, 0);
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Suspended));
-        assertEq(vault.challengeRewardShares(address(this)), forfeited / 10);
-
-        uint256 balanceBeforeReward = vault.balanceOf(address(this));
-        vault.claimChallengeReward();
+        assertEq(reward, forfeited / 2);
+        assertEq(vault.lastFeeAccrualTimestamp(), vault.challengeDeadline());
         assertEq(vault.challengeRewardShares(address(this)), 0);
-        assertEq(vault.balanceOf(address(this)), balanceBeforeReward + forfeited / 10);
-        assertEq(vault.totalSupply(), supplyBeforeReward + forfeited / 10);
+        assertEq(vault.balanceOf(address(this)), balanceBeforeReward + forfeited / 2);
+        assertEq(vault.totalSupply(), supplyBeforeReward + forfeited / 2);
+    }
+
+    function testOverdueChallengeForfeitureIsOneTimeAndDeadlineBounded() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vm.prank(ALICE);
+        vault.flagOutOfBand();
+        uint256 deadline = vault.challengeDeadline();
+
+        vm.warp(deadline);
+        vm.prank(ALICE);
+        assertEq(vault.claimChallengeReward(), 0);
+        assertEq(vault.forfeitedManagerFeeShares(), 0);
+
+        vm.warp(block.timestamp + 1);
+        uint256 firstBalanceBefore = vault.balanceOf(ALICE);
+        vm.prank(ALICE);
+        uint256 firstReward = vault.claimChallengeReward();
+
+        assertGt(firstReward, 0);
+        assertEq(vault.challengeRewardShares(ALICE), 0);
+        assertEq(vault.balanceOf(ALICE), firstBalanceBefore + firstReward);
+        uint256 forfeitedAfterFirstClaim = vault.forfeitedManagerFeeShares();
+        uint256 supplyAfterFirstClaim = vault.totalSupply();
+
+        assertEq(vault.lastFeeAccrualTimestamp(), deadline);
+        assertTrue(vault.challengeActive());
+        assertEq(vault.challengeCaller(), ALICE);
+
+        vm.warp(block.timestamp + 1 days);
+        uint256 secondBalanceBefore = vault.balanceOf(ALICE);
+        vm.prank(ALICE);
+        uint256 secondReward = vault.claimChallengeReward();
+
+        assertEq(secondReward, 0);
+        assertEq(vault.forfeitedManagerFeeShares(), forfeitedAfterFirstClaim);
+        assertEq(vault.challengeRewardShares(ALICE), 0);
+        assertEq(vault.balanceOf(ALICE), secondBalanceBefore);
+        assertEq(vault.totalSupply(), supplyAfterFirstClaim);
+        assertEq(vault.lastFeeAccrualTimestamp(), deadline);
+
+        // The direct manager-withdrawal path also converges on the same idempotent transition.
+        assertEq(vault.withdrawManagerFees(), 0);
+        assertEq(vault.forfeitedManagerFeeShares(), forfeitedAfterFirstClaim);
+        assertEq(vault.totalSupply(), supplyAfterFirstClaim);
+        assertEq(vault.lastFeeAccrualTimestamp(), deadline);
+    }
+
+    function testLateChallengePreservesFeesCrystallizedBeforeChallengeStart() public {
+        ManagedOTFVault vault = _createVault();
+        vm.warp(START + 1 days);
+        _setPrices(120_00000000, 100_00000000);
+
+        uint256 recipientBalanceBefore = vault.balanceOf(FEE_RECIPIENT);
+        uint256 preChallengeFees = vault.accrueFees();
+        uint256 recipientBalanceAtChallengeStart = vault.balanceOf(FEE_RECIPIENT);
+
+        assertTrue(vault.challengeActive());
+        assertGt(preChallengeFees, 0);
+        assertGt(recipientBalanceAtChallengeStart, recipientBalanceBefore);
+
+        vm.warp(block.timestamp + 5 days + 1);
+        assertGt(vault.claimChallengeReward(), 0);
+
+        assertGt(vault.forfeitedManagerFeeShares(), 0);
+        assertEq(vault.balanceOf(FEE_RECIPIENT), recipientBalanceAtChallengeStart);
+    }
+
+    function testDelayedChallengeRewardClaimCheckpointsPendingFeesBeforeMint() public {
+        ManagedOTFVault claimVault = _createVault();
+        ManagedOTFVault controlVault = _createVault();
+
+        _setPrices(120_00000000, 100_00000000);
+        claimVault.flagOutOfBand();
+        controlVault.flagOutOfBand();
+
+        vm.warp(claimVault.challengeDeadline() + 1);
+        assertEq(block.timestamp, controlVault.challengeDeadline() + 1);
+        claimVault.withdrawManagerFees();
+        controlVault.withdrawManagerFees();
+
+        uint256 reward = claimVault.challengeRewardShares(address(this));
+        assertGt(reward, 0);
+        assertEq(controlVault.challengeRewardShares(address(this)), reward);
+
+        _setPrices(100_00000000, 100_00000000);
+        claimVault.resolveOutOfBandChallenge();
+        controlVault.resolveOutOfBandChallenge();
+
+        assertFalse(claimVault.challengeActive());
+        assertFalse(controlVault.challengeActive());
+        assertEq(claimVault.challengeRewardShares(address(this)), reward);
+        assertEq(controlVault.challengeRewardShares(address(this)), reward);
+
+        vm.warp(block.timestamp + 10 days);
+        _setPrices(100_00000000, 100_00000000);
+
+        uint256 controlFees = controlVault.accrueFees();
+        uint256 claimedReward = claimVault.claimChallengeReward();
+        controlVault.claimChallengeReward();
+
+        assertGt(controlFees, 0);
+        assertEq(claimedReward, reward);
+        assertEq(claimVault.balanceOf(FEE_RECIPIENT), controlVault.balanceOf(FEE_RECIPIENT));
+        assertEq(claimVault.balanceOf(address(collector)), controlVault.balanceOf(address(collector)));
+        assertEq(claimVault.totalSupply(), controlVault.totalSupply());
+        assertEq(claimVault.lastFeeAccrualTimestamp(), controlVault.lastFeeAccrualTimestamp());
+    }
+
+    function testEmptyRewardClaimDoesNotForceFeeAccrual() public {
+        ManagedOTFVault vault = _createVault();
+        vm.warp(START + 1 days);
+
+        uint256 supplyBefore = vault.totalSupply();
+        assertEq(vault.claimChallengeReward(), 0);
+
+        assertEq(vault.totalSupply(), supplyBefore);
+        assertEq(vault.lastFeeAccrualTimestamp(), START);
     }
 
     function testRestorationAfterDeadlineResumesOnlyFutureFees() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
-        vm.warp(START + 3 days + 1);
+        vm.warp(START + 5 days + 1);
         _setPrices(120_00000000, 100_00000000);
-        vault.syncChallengeDeadline();
+        vault.claimChallengeReward();
         uint256 supplyAtForfeiture = vault.totalSupply();
 
         _setPrices(100_00000000, 100_00000000);
@@ -136,9 +255,8 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.prank(ALICE);
         vault.redeem(ONE, ALICE, ALICE, minimums);
 
-        vm.warp(START + 3 days + 1);
+        vm.warp(START + 5 days + 1);
         _setPrices(120_00000000, 100_00000000);
-        vault.syncChallengeDeadline();
         _mintForAlice(vault, 5 * ONE);
         vm.prank(ALICE);
         vault.redeem(ONE, ALICE, ALICE, minimums);
@@ -181,8 +299,10 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         vm.warp(START + 17 days);
         _setPrices(100_00000000, 100_00000000);
-        assertEq(vault.accrueFees(), 0);
+        uint256 recipientBalanceBeforeChallenge = vault.balanceOf(FEE_RECIPIENT);
+        assertGt(vault.accrueFees(), 0);
         assertTrue(vault.challengeActive());
+        assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceBeforeChallenge);
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), 100 * ONE, 100 * ONE);

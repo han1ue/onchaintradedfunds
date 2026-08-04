@@ -15,7 +15,6 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
-  Coins,
   Copy,
   Droplets,
   ExternalLink,
@@ -158,6 +157,7 @@ type VaultView = {
   pendingStrategyActivationTime?: number;
   nextStrategyChangeTime?: number;
   challengeActive: boolean;
+  challengeCaller?: string;
   challengeStartedAt?: number;
   challengeDeadline?: number;
   challengeTimeRemaining: number;
@@ -312,13 +312,6 @@ const factoryDependencyAbi = [
 ] as const;
 
 const protocolAssetReadAbi = [
-  {
-    type: "function",
-    name: "isApprovedAsset",
-    stateMutability: "view",
-    inputs: [{ name: "asset", type: "address" }],
-    outputs: [{ name: "approved", type: "bool" }],
-  },
   {
     type: "function",
     name: "priceFeedFor",
@@ -574,7 +567,7 @@ function normalizeAllocations(
     );
     return {
       symbol: catalogAsset?.symbol ?? `Asset ${index + 1}`,
-      name: catalogAsset?.name ?? "Approved token",
+      name: catalogAsset?.name ?? "Supported token",
       address,
       targetWeightBps: weight,
       actualWeightBps: Number(currentWeights?.[index] ?? weight),
@@ -815,6 +808,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "strategyProposalPending" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "pendingStrategyActivationTime" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "nextStrategyChangeTime" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeCaller" },
       ] as const)
     : undefined;
 
@@ -936,6 +930,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const nextStrategyChangeTime = resultAt<bigint>(results, 42)
     ? Number(resultAt<bigint>(results, 42))
     : undefined;
+  const challengeCaller = resultAt<string>(results, 43);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
   const connectedIsManager =
@@ -977,6 +972,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     pendingStrategyActivationTime,
     nextStrategyChangeTime,
     challengeActive,
+    challengeCaller,
     challengeStartedAt,
     challengeDeadline,
     challengeTimeRemaining,
@@ -1558,7 +1554,6 @@ function ChallengeCountdownBanner({ vault }: { vault: VaultView }) {
   const progress = vault.challengeGracePeriod > 0
     ? Math.max(0, Math.min(100, ((vault.challengeGracePeriod - remaining) / vault.challengeGracePeriod) * 100))
     : 0;
-  const elapsed = Math.max(0, vault.challengeGracePeriod - remaining);
   const expired = remaining === 0;
   return (
     <div className={`challengeCountdownBanner ${expired ? "danger" : "warning"}`} role="alert">
@@ -1569,7 +1564,7 @@ function ChallengeCountdownBanner({ vault }: { vault: VaultView }) {
       <div className="challengeCountdownTrack" aria-label={`${progress.toFixed(0)}% of challenge response period elapsed, ${formatCooldown(remaining)} remaining`}>
         <span style={{ width: `${progress}%` }} />
       </div>
-      <p>{expired ? "Manager fees from the missed challenge window are forfeitable; 10% becomes the caller reward and the rest is never minted." : "The manager cannot withdraw fees until the portfolio returns to its completion band."}</p>
+      <p>{expired ? "Manager fees from the missed challenge window are forfeitable; 50% becomes the caller reward and the rest is never minted." : "The manager cannot withdraw fees until the portfolio returns to its completion band."}</p>
     </div>
   );
 }
@@ -3522,13 +3517,22 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   const { writeContractAsync } = useWriteContract();
   const challengeBusy = challengeState === "pending" || challengeState === "submitted";
   const rewardBusy = rewardState === "pending" || rewardState === "submitted";
+  const connectedIsChallengeCaller = Boolean(
+    connectedAddress && vault.challengeCaller
+      && connectedAddress.toLowerCase() === vault.challengeCaller.toLowerCase(),
+  );
+  const overdueRewardCanBeSettled = Boolean(
+    vault.challengeActive && vault.challengeTimeRemaining === 0 && connectedIsChallengeCaller,
+  );
+  const hasStoredReward = Boolean(
+    vault.claimableChallengeRewardValue && vault.claimableChallengeRewardValue > 0n,
+  );
+  const canClaimReward = hasStoredReward || overdueRewardCanBeSettled;
   const challengeAction = !vault.challengeActive
     ? vault.withinChallengeBands ? undefined : "flagOutOfBand"
     : vault.withinCompletionBands
       ? "resolveOutOfBandChallenge"
-      : vault.challengeTimeRemaining === 0
-        ? "syncChallengeDeadline"
-        : undefined;
+      : undefined;
   const challengeButtonLabel = !connectedAddress
     ? "Connect wallet to challenge"
     : challengeBusy
@@ -3537,11 +3541,9 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
         ? "Challenge strategy"
         : challengeAction === "resolveOutOfBandChallenge"
           ? "Resolve challenge"
-          : challengeAction === "syncChallengeDeadline"
-            ? "Finalize missed deadline"
-            : vault.challengeActive
-              ? "Challenge active"
-              : "Within challenge band";
+          : vault.challengeActive
+            ? "Challenge active"
+            : "Within challenge band";
 
   async function submitChallengeAction() {
     if (!challengeAction || !vault.address || !connectedAddress || !publicClient) return;
@@ -3575,12 +3577,12 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
         {vault.challengeActive
           ? vault.challengeTimeRemaining > 0
             ? `Manager fee withdrawals are locked for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
-            : "The response deadline has passed. Anyone may finalize fee forfeiture, or resolve after the portfolio returns to its completion band."
+            : "The response deadline has passed. The original challenger may collect forfeited fee rewards, while restoration remains available once the portfolio returns to its completion band."
             : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
       </p>
         <div className="challengeRewardLine">
         <span>Caller reward</span>
-        <strong>{vault.claimableChallengeRewardShares}</strong>
+        <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
       </div>
       {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
       {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
@@ -3591,7 +3593,7 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
           <ShieldCheck size={14} />
           {challengeButtonLabel}
         </button>
-        <button className="secondaryAction" type="button" disabled={!connectedAddress || !vault.claimableChallengeRewardValue || vault.claimableChallengeRewardValue === 0n || rewardBusy} onClick={claimChallengeReward}>
+        <button className="secondaryAction" type="button" disabled={!connectedAddress || !canClaimReward || rewardBusy} onClick={claimChallengeReward}>
           <CircleDollarSign size={14} />
           {rewardBusy ? "Claiming reward" : "Claim reward"}
         </button>
@@ -3600,7 +3602,7 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   );
 
   async function claimChallengeReward() {
-    if (!vault.address || !connectedAddress || !publicClient || !vault.claimableChallengeRewardValue || vault.claimableChallengeRewardValue === 0n) return;
+    if (!vault.address || !connectedAddress || !publicClient || !canClaimReward) return;
     setRewardError(undefined);
     try {
       setRewardState("pending");
@@ -4008,7 +4010,7 @@ function CreateVaultView({
     maxNavLoss: "2",
     maxDeviation: "2",
     challengeDeviation: "5",
-    challengeGraceDays: "3",
+    challengeGraceDays: "5",
     maxSingleWeight: "50",
     minNonzeroWeight: "1",
     maxAssets: "10",
@@ -4056,13 +4058,6 @@ function CreateVaultView({
       refetchOnWindowFocus: true,
     },
   });
-  const { data: assetRegistryAddress, isError: assetRegistryReadFailed } = useReadContract({
-    address: factoryAddress,
-    abi: factoryDependencyAbi,
-    functionName: "assetRegistry",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isTestnet && factoryAddress) },
-  });
   const { data: oracleRegistryAddress, isError: oracleRegistryReadFailed } = useReadContract({
     address: factoryAddress,
     abi: factoryDependencyAbi,
@@ -4070,24 +4065,15 @@ function CreateVaultView({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(isTestnet && factoryAddress) },
   });
-  const canReadProtocolAssets = Boolean(assetRegistryAddress && oracleRegistryAddress);
+  const canReadProtocolAssets = Boolean(oracleRegistryAddress);
   const protocolAssetContracts = canReadProtocolAssets
-    ? portfolio.flatMap((asset) => [
-        {
-          address: assetRegistryAddress as `0x${string}`,
-          abi: protocolAssetReadAbi,
-          functionName: "isApprovedAsset" as const,
-          args: [asset.address as `0x${string}`],
-          chainId: robinhoodChainTestnet.id,
-        },
-        {
-          address: oracleRegistryAddress as `0x${string}`,
-          abi: protocolAssetReadAbi,
-          functionName: "priceFeedFor" as const,
-          args: [asset.address as `0x${string}`],
-          chainId: robinhoodChainTestnet.id,
-        },
-      ])
+    ? portfolio.map((asset) => ({
+        address: oracleRegistryAddress as `0x${string}`,
+        abi: protocolAssetReadAbi,
+        functionName: "priceFeedFor" as const,
+        args: [asset.address as `0x${string}`],
+        chainId: robinhoodChainTestnet.id,
+      }))
     : [];
   const {
     data: protocolAssetResults,
@@ -4102,7 +4088,6 @@ function CreateVaultView({
     canReadProtocolAssets &&
     !protocolAssetsLoading &&
     !protocolAssetReadFailed &&
-    !assetRegistryReadFailed &&
     !oracleRegistryReadFailed &&
     protocolAssetResults &&
     protocolAssetResults.length === protocolAssetContracts.length &&
@@ -4154,11 +4139,8 @@ function CreateVaultView({
       : (requiredAmount * 10_200n + 9_999n) / 10_000n;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
-    const protocolApproved = protocolAssetResultReady
-      ? resultAt<boolean>(protocolAssetResults as ReadResult | undefined, index * 2)
-      : undefined;
     const priceFeed = protocolAssetResultReady
-      ? resultAt<string>(protocolAssetResults as ReadResult | undefined, index * 2 + 1)
+      ? resultAt<string>(protocolAssetResults as ReadResult | undefined, index)
       : undefined;
     const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
     return {
@@ -4168,7 +4150,6 @@ function CreateVaultView({
       approvalAmount,
       balance,
       allowance,
-      protocolApproved,
       priceFeed,
       hasPriceFeed,
       balanceSufficient: requiredAmount !== undefined && balance !== undefined && balance >= requiredAmount,
@@ -4184,9 +4165,7 @@ function CreateVaultView({
     );
   const protocolAssetReadsReady =
     protocolAssetResultReady &&
-    seedAuthorizations.every(
-      (asset) => asset.protocolApproved === true && asset.hasPriceFeed,
-    );
+    seedAuthorizations.every((asset) => asset.hasPriceFeed);
   const seedBalancesSufficient =
     seedAuthorizationReadsReady && seedAuthorizations.every((asset) => asset.balanceSufficient);
   const seedAllowancesSufficient =
@@ -4219,6 +4198,9 @@ function CreateVaultView({
   const oracleStaleness = Number(draft.oracleStaleness);
   const oracleStalenessValid =
     Number.isInteger(oracleStaleness) && oracleStaleness >= 1 && oracleStaleness <= 3_600;
+  const challengeGraceDays = Number(draft.challengeGraceDays);
+  const challengeGraceValid =
+    Number.isInteger(challengeGraceDays) && challengeGraceDays >= 5 && challengeGraceDays <= 30;
   const remainingSafetyLimitsValid =
     Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
@@ -4228,11 +4210,10 @@ function CreateVaultView({
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxDeviation) > 0 &&
     Number(draft.challengeDeviation) > Number(draft.maxDeviation) &&
-    Number(draft.challengeGraceDays) > 0 &&
     Number(draft.maxSingleWeight) <= 100 &&
     Number(draft.minNonzeroWeight) > 0 &&
     Number(draft.maxAssets) >= portfolio.length;
-  const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid;
+  const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid && challengeGraceValid;
   const basicsIssues = [
     draft.name.trim().length > 2 ? null : "Enter an OTF name with at least 3 characters.",
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Add a ticker suffix after OTF-.",
@@ -4241,7 +4222,7 @@ function CreateVaultView({
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
-    portfolio.length > 0 ? null : "Add at least one approved asset.",
+    portfolio.length > 0 ? null : "Add at least one asset.",
     portfolio.every((asset) => asset.targetWeight > 0) ? null : "Every asset needs a positive target weight.",
     initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
     allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
@@ -4253,6 +4234,7 @@ function CreateVaultView({
     Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
     Number(draft.maxAssets) >= portfolio.length ? null : "Maximum assets cannot be lower than the initial portfolio size.",
     oracleStalenessValid ? null : "Oracle max staleness must be between 1 and 3,600 seconds.",
+    challengeGraceValid ? null : "Challenge grace period must be between 5 and 30 whole days.",
     remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
   const allIssues = [...basicsIssues, ...portfolioIssues, ...safetyIssues];
@@ -4281,7 +4263,7 @@ function CreateVaultView({
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
   if (!seedAllowancesSufficient) deploymentBlockers.push("Approve seed assets");
-  if (!protocolAssetReadsReady) deploymentBlockers.push("Complete protocol setup");
+  if (!protocolAssetReadsReady) deploymentBlockers.push("Oracle feeds must be configured for seed assets");
   if (approvalState === "pending" || approvalState === "submitted") deploymentBlockers.push("Wait for the approval transaction");
   if (deployState === "pending" || deployState === "submitted") deploymentBlockers.push("Wait for the creation transaction");
 
@@ -4756,7 +4738,7 @@ function CreateVaultView({
                   <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Portfolio must enter this narrower band to complete.</small></label>
                   <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Must be wider than the completion band.</small></label>
-                  <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={1} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div></label>
+                  <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={5} max={30} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div><small>Minimum: 5 days. This spans scheduled market weekends and holiday closures.</small></label>
                   <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div></label>
                   <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div></label>
                   <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Default: 30 minutes. Protocol maximum: 1 hour.</small></label>
@@ -4854,35 +4836,22 @@ function CreateVaultView({
                             }`}>
                               {seedAuthorizationsFailed
                                 ? "Balance read failed"
-                                : asset.balance === undefined
-                                  ? "Checking balance"
-                                  : asset.balanceSufficient ? "Balance ready" : "Insufficient balance"}
+                                  : asset.balance === undefined
+                                    ? "Checking balance"
+                                    : asset.balanceSufficient ? "Balance ready" : "Insufficient balance"}
                             </span>
                             <span className={`stateBadge ${
-                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
-                                ? "danger"
-                                : asset.protocolApproved === undefined
-                                  ? "muted"
-                                  : asset.protocolApproved ? "success" : "danger"
-                            }`}>
-                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
-                                ? "Protocol read failed"
-                                : asset.protocolApproved === undefined
-                                  ? "Checking protocol approval"
-                                  : asset.protocolApproved ? "Registry approved" : "Registry disapproved"}
-                            </span>
-                            <span className={`stateBadge ${
-                              assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
+                              oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "danger"
                                 : asset.priceFeed === undefined
                                   ? "muted"
                                   : asset.hasPriceFeed ? "success" : "danger"
                             }`}>
-                              {assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetReadFailed
+                              {oracleRegistryReadFailed || protocolAssetReadFailed
                                 ? "Feed read failed"
                                 : asset.priceFeed === undefined
                                   ? "Checking feed"
-                                  : asset.hasPriceFeed ? "Mock feed ready" : "Price feed missing"}
+                                  : asset.hasPriceFeed ? "Oracle feed ready" : "Price feed missing"}
                             </span>
                           </div>
                           {asset.allowanceSufficient ? (
@@ -4921,18 +4890,17 @@ function CreateVaultView({
                     </div>
                   ) : null}
                   {connectedAddress && seedAuthorizations.some(
-                    (asset) => protocolAssetResultReady && (
-                      asset.protocolApproved === false || (asset.priceFeed !== undefined && !asset.hasPriceFeed)),
+                    (asset) => protocolAssetResultReady && asset.priceFeed !== undefined && !asset.hasPriceFeed,
                   ) ? (
                     <div className="validationSummary danger" role="alert">
                       <AlertTriangle size={15} />
                       <div>
-                        <strong>Protocol asset setup is incomplete</strong>
-                        <span>The registry owner must approve every selected token and configure its testnet mock feed before this OTF can be deployed.</span>
+                        <strong>Oracle feed is incomplete</strong>
+                        <span>Selected assets must have configured oracle feeds before this OTF can be deployed.</span>
                       </div>
                     </div>
                   ) : null}
-                  {connectedAddress && (seedAuthorizationsFailed || assetRegistryReadFailed || oracleRegistryReadFailed || protocolAssetsReadFailed || protocolAssetReadFailed) ? (
+                  {connectedAddress && (seedAuthorizationsFailed || oracleRegistryReadFailed || protocolAssetsReadFailed || protocolAssetReadFailed) ? (
                     <div className="validationSummary danger" role="alert">
                       <RefreshCw size={15} />
                       <div><strong>Preflight checks could not be loaded</strong><span>Check the testnet connection, then reload these contract reads before approving or deploying.</span></div>
@@ -4953,15 +4921,6 @@ function CreateVaultView({
                   <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the portfolio change unlock after deployment.</span></div>
                 </div>
                 <TxStatus state={deployState} />
-                {!canSubmitDeployment ? (
-                  <div className="validationSummary danger" role="alert">
-                    <AlertTriangle size={15} />
-                    <div>
-                      <strong>Cannot create yet</strong>
-                      <ul>{deploymentBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
-                    </div>
-                  </div>
-                ) : null}
                 {deployError ? (
                   <div className="validationSummary danger" role="alert">
                     <XCircle size={15} />
@@ -5247,34 +5206,6 @@ function WalletView({
 }
 
 function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oraclePrices: CatalogOraclePrices }) {
-  const factoryAddress = configuredFactoryAddress();
-  const { data: assetRegistryAddress, isError: assetRegistryReadFailed } = useReadContract({
-    address: factoryAddress,
-    abi: factoryDependencyAbi,
-    functionName: "assetRegistry",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isTestnet && factoryAddress) },
-  });
-  const approvalContracts = assetRegistryAddress
-    ? testnetCreateAssets.map((asset) => ({
-        address: assetRegistryAddress as `0x${string}`,
-        abi: protocolAssetReadAbi,
-        functionName: "isApprovedAsset" as const,
-        args: [asset.address as `0x${string}`],
-        chainId: robinhoodChainTestnet.id,
-      }))
-    : [];
-  const { data: approvalResults, isLoading: approvalsLoading } = useReadContracts({
-    contracts: approvalContracts,
-    query: { enabled: approvalContracts.length > 0 },
-  });
-  const catalogApprovalFailed = Boolean(
-    approvalResults?.some((result) => result?.error !== undefined),
-  );
-  const catalogApprovalsReady = !approvalsLoading
-    && approvalResults
-    && approvalResults.length === testnetCreateAssets.length
-    && approvalResults.every((result) => result?.error === undefined && result?.status === "success");
   return (
     <div className="appView">
       <AppPageHeader
@@ -5287,21 +5218,14 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
         <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet assets are not supported yet</h2><p>Switch on Testnet mode in Settings to inspect the current RWA catalog.</p></section>
       ) : (
         <section className="sectionCard walletAssets">
-          <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Token contracts, registry approval, and live oracle prices.</p></div><span className="stateBadge success">{testnetCreateAssets.length} supported</span></div>
+          <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Token contracts and live oracle prices.</p></div><span className="stateBadge success">{testnetCreateAssets.length} supported</span></div>
           <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable">
-            <thead><tr><th>Asset</th><th>Token address</th><th>Approval</th><th>Oracle price</th><th /></tr></thead>
-            <tbody>{testnetCreateAssets.map((asset, index) => {
-              const approved = approvalResults?.[index]?.result as boolean | undefined;
-              const approvalFailed = assetRegistryReadFailed || !catalogApprovalsReady || approvalResults?.[index]?.error !== undefined;
+            <thead><tr><th>Asset</th><th>Token address</th><th>Oracle price</th><th /></tr></thead>
+            <tbody>{testnetCreateAssets.map((asset) => {
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><strong>{asset.symbol}</strong><small>{asset.name}</small></div></td>
                   <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
-                  <td data-label="Approval">
-                    <span className={`stateBadge ${approvalFailed ? "danger" : approved ? "success" : "muted"}`}>
-                      {approvalFailed ? "Read failed" : approvalsLoading || approved === undefined ? "Checking" : approved ? "Approved" : "Disapproved"}
-                    </span>
-                  </td>
                   <td data-label="Oracle price" className="monoValue">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
                   <td><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer" title={`Open ${asset.symbol} token contract`}><ExternalLink size={13} /></a></td>
                 </tr>

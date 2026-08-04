@@ -308,6 +308,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "challengeCaller",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "challengeStartedAt",
     stateMutability: "view",
     inputs: [],
@@ -403,13 +410,6 @@ export const managedOtfVaultAbi = [
   {
     type: "function",
     name: "resolveOutOfBandChallenge",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "syncChallengeDeadline",
     stateMutability: "nonpayable",
     inputs: [],
     outputs: [],

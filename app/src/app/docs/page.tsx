@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowDownToLine,
+  ArrowRight,
   ArrowUpFromLine,
   BookOpen,
   Boxes,
@@ -16,6 +17,7 @@ import {
   Landmark,
   Menu,
   ReceiptText,
+  RotateCcw,
   Scale,
   ShieldCheck,
   Users,
@@ -74,7 +76,7 @@ const sectionGroups: readonly DocsSectionGroup[] = [
 const contractRows = [
   ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
   ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
-  ["Portfolio calculator", "Stateless oracle valuation, weight, turnover, and challenge-band calculations."],
+  ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
@@ -425,6 +427,34 @@ completeStrategicRebalance()`}</code></pre>
               its active target. Anyone may call <code>flagOutOfBand()</code>, but fresh approved
               prices must prove a real challenge-band breach. Invalid challenges revert.
             </p>
+            <figure className="challengeLifecycle" aria-labelledby="challenge-lifecycle-caption">
+              <div className="challengeLifecycleTrack">
+                <div className="challengeLifecycleNode">
+                  <span>Normal</span>
+                  <strong>Fees accruing</strong>
+                  <small>Portfolio monitored against the wider challenge bands.</small>
+                </div>
+                <ArrowRight aria-hidden="true" />
+                <div className="challengeLifecycleNode active">
+                  <span>Challenged</span>
+                  <strong>Five-day response</strong>
+                  <small>Older valid fees are crystallized; corrective trades remain available.</small>
+                </div>
+                <ArrowRight aria-hidden="true" />
+                <div className="challengeLifecycleNode overdue">
+                  <span>Overdue</span>
+                  <strong>Fees suspended</strong>
+                  <small>Challenge-window fees are forfeited once; later fees stay suspended.</small>
+                </div>
+              </div>
+              <div className="challengeLifecycleReturns">
+                <span><RotateCcw size={14} aria-hidden="true" />Timely restoration returns held-back fees</span>
+                <span><RotateCcw size={14} aria-hidden="true" />Late restoration resumes only future fees</span>
+              </div>
+              <figcaption id="challenge-lifecycle-caption">
+                Both restoration paths require fresh prices and weights inside the narrower completion bands.
+              </figcaption>
+            </figure>
           </section>
 
           <section className="docsSection" id="fee-accountability">
@@ -435,19 +465,20 @@ completeStrategicRebalance()`}</code></pre>
                 <h2>Fee accountability</h2>
               </div>
             </div>
-            <pre><code>{`Accruing
-  -> valid challenge or strategic target
-Escrowed
-  -> timely restoration: release manager shares
-  -> missed deadline: burn escrow
-Suspended
-  -> later restoration: resume only future fees`}</code></pre>
             <p>
               Deposits and proportional withdrawals stay enabled throughout. Natural price
               recovery and constrained manager or executor trades can both restore the basket.
               Target redefinition, ownership transfer, or delayed fee crystallization cannot
               recover forfeited fees.
             </p>
+            <ul className="docsChecklist">
+              <li>Opening a challenge first crystallizes every valid fee earned before the challenge start, so older fees cannot disappear.</li>
+              <li>Before the deadline, timely restoration releases the full challenge-period fee interval to the manager and gives the challenger no reward.</li>
+              <li>After the deadline, the first accrual path processes a one-time forfeiture capped at the recorded challenge deadline.</li>
+              <li>Half of the forfeited challenge-window fees is credited to the original challenger as claimable reward shares.</li>
+              <li>Later claims and accrual paths cannot increase the forfeiture or reward for the same challenge.</li>
+              <li>No separate deadline-finalization transaction is required before the challenger claims.</li>
+            </ul>
           </section>
 
           <section className="docsSection" id="cooldown">
@@ -522,10 +553,11 @@ canRebalance =
               </div>
             </div>
             <p>
-              Fees accrue lazily as shares rather than by removing portfolio assets. Manager
-              shares are delivered normally, escrowed during unfinished strategic work or
-              challenges, and burned if a challenge deadline is missed. Suspended intervals never
-              accrue retroactively.
+              Fees accrue lazily as shares rather than by removing portfolio assets. The growth
+              formula is cadence-independent and calibrated to the displayed annual dilution.
+              Deposits, redemptions, and fee changes settle the preceding interval first, so a new
+              fee rate never applies retroactively. Missed challenge-window fees are skipped rather
+              than minted; suspended intervals never accrue later.
             </p>
           </section>
 

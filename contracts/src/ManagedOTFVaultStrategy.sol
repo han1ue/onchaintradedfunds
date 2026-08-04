@@ -93,6 +93,11 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         returns (uint256 rewardShares)
     {
         rewardShares = challengeRewardShares[msg.sender];
+        if (challengeActive || rewardShares != 0) {
+            // Checkpoint the pre-mint supply and atomically process any overdue challenge.
+            _accrueViaVault();
+            rewardShares = challengeRewardShares[msg.sender];
+        }
         challengeRewardShares[msg.sender] = 0;
         if (rewardShares != 0) _mint(msg.sender, rewardShares);
         emit ChallengeRewardClaimed(msg.sender, rewardShares);
@@ -374,11 +379,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function resolveOutOfBandChallenge() external onlyDelegateCall nonReentrant {
         _resolveOutOfBandChallenge();
-    }
-
-    function syncChallengeDeadline() external onlyDelegateCall nonReentrant {
-        if (!challengeActive) revert ChallengeNotActive();
-        _accrueViaVault();
     }
 
     function stopChallengeFees() external onlyDelegateCall onlyManager nonReentrant {

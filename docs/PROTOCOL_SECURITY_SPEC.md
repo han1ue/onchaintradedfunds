@@ -136,7 +136,6 @@ The following selectors are allowed to delegate:
 | `completeStrategicRebalance()` | Permissionless |
 | `flagOutOfBand()` | Permissionless |
 | `resolveOutOfBandChallenge()` | Permissionless |
-| `syncChallengeDeadline()` | Permissionless |
 
 No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent selector is allowed.
 
@@ -302,6 +301,16 @@ cancel any proposal authored under the previous authority.
 The manager or an authorized executor MAY submit multiple constrained partial trade batches toward
 the current target.
 
+### Asset-revocation quarantine
+
+Registry revocation is intentionally a vault-wide fail-closed quarantine. If any address retained
+in the vault's constituent history is no longer approved, all contribution and basket-mint paths,
+including their previews, MUST remain blocked until registry governance explicitly reapproves that
+address. Reducing the revoked asset to a zero target and exact zero balance MUST NOT lift the
+quarantine automatically. Proportional in-kind redemption and constrained sell-side wind-down MUST
+remain available; new target allocation and buy-side trades into the revoked asset MUST remain
+forbidden.
+
 ### Completion
 
 `StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
@@ -316,6 +325,20 @@ portfolio. Completion resumes manager-fee withdrawals and is the only point that
 Anyone MAY flag a challenge only when fresh oracle-valued weights prove that at least one
 constituent is outside its challenge band.
 
+Every vault MUST configure a challenge grace period between five and thirty days. The five-day
+minimum is intended to span scheduled equity-market weekends and holiday closures while preserving
+a bounded response deadline.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+    Normal --> Challenged: Fresh prices prove a challenge-band breach
+    Challenged --> Normal: Timely restoration inside completion bands
+    Challenged --> Overdue: Five-day minimum period expires
+    Overdue --> Suspended: State change forfeits challenge-window fees once
+    Suspended --> Normal: Late restoration inside completion bands
+```
+
 During a challenge:
 
 - Target changes are locked.
@@ -324,11 +347,29 @@ During a challenge:
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 
+Starting a challenge MUST first crystallize the entire valid fee interval through the challenge
+start timestamp. This applies whether `flagOutOfBand()` or a manager fee-withdrawal attempt detects
+the breach. Previously earned or minted fees MUST NOT be included in later challenge forfeiture.
+
+If the portfolio is restored inside every completion band on or before the deadline, the challenge
+caller MUST receive no reward. The manager receives the full unminted fee interval from challenge
+start through timely resolution, and the fee timestamp MUST prevent any interval from being minted
+twice.
+
 If the grace deadline is observed after expiry:
 
 - Manager fees from the challenge window are forfeited.
-- 10% of the forfeited amount becomes a claimable reward for the challenge caller.
-- The remaining 90% is never minted.
+- 50% of the forfeited amount becomes a claimable reward for the challenge caller.
+- The remaining 50% is never minted.
+
+Forfeiture and reward balances update only when a state-changing transaction first processes an
+overdue challenge; they do not increase automatically with wall-clock time. The forfeiture interval
+MUST end at the recorded deadline, and processing MUST be an idempotent one-time transition for the
+active challenge. `claimChallengeReward()` MAY process that transition before reading the caller's
+reward balance. It MUST checkpoint any normally accruing fee interval against the pre-reward share
+supply before minting the full reward balance and resetting it to zero. Later calls and other
+accrual paths MUST NOT increase either the forfeiture total or the caller reward for the same
+challenge. No separate deadline-synchronization entry point is required.
 
 Restoration to completion bands resumes only future manager-fee accrual.
 
@@ -351,6 +392,15 @@ the OTF from the manager's own assets or fee revenue.
 11. Fee-on-transfer, sender-taxed, and incompatible rebasing behavior MUST revert.
 12. Tracked-asset donations become backing for all shares and MUST NOT create privileged claims.
 13. Unsupported-token donations are excluded from accounting and cannot be rescued by the manager.
+14. Fee growth MUST compose across time partitions so discretionary checkpoint cadence cannot
+    materially change total fee dilution.
+15. The configured annual rate MUST equal holder dilution over one full 365-day fee year.
+16. Contributions, basket mints, withdrawals, redemptions, and reward mints MUST checkpoint normally
+    accruing fees against the pre-change supply.
+17. Fee-rate changes MUST close the old-rate interval at the transaction timestamp even if the
+    resulting fee is less than one share-wei; the new rate MUST apply only to future time.
+18. Fractional fee-share and protocol-split remainders MUST be retained across ordinary checkpoints.
+19. Fee calculations MUST NOT cap elapsed time and then advance past an unprocessed remainder.
 
 ## 9. Oracle requirements
 

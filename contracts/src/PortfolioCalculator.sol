@@ -4,12 +4,15 @@ pragma solidity ^0.8.24;
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { IOracleRegistry } from "./interfaces/IOracleRegistry.sol";
 import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
+import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 
 contract PortfolioCalculator {
     using MathEx for uint256;
 
     uint256 private constant BPS = 10_000;
+    uint256 private constant YEAR = 365 days;
+    uint256 private constant WAD = 1e18;
     uint256 private constant WEIGHT_PRECISION_SCALE = 1e12;
     uint256 private constant PRECISE_BPS = BPS * WEIGHT_PRECISION_SCALE;
 
@@ -21,6 +24,61 @@ contract PortfolioCalculator {
     error TokenDecimalsUnavailable(address token);
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
+    error InvalidFeeRate(uint16 feeBps);
+    error FeeExponentOverflow(uint256 exponentWad);
+
+    function feeSharesAfterElapsed(
+        uint256 supply,
+        uint256 remainderWad,
+        uint16 feeBps,
+        uint256 elapsed
+    ) external pure returns (uint256 feeShares, uint256 remainderAfterWad) {
+        return _feeSharesAfterElapsed(supply, remainderWad, feeBps, elapsed);
+    }
+
+    function _feeSharesAfterElapsed(
+        uint256 supply,
+        uint256 remainderWad,
+        uint16 feeBps,
+        uint256 elapsed
+    ) private pure returns (uint256 feeShares, uint256 remainderAfterWad) {
+        if (supply == 0 || feeBps == 0 || elapsed == 0) return (0, remainderWad);
+        if (feeBps >= BPS) revert InvalidFeeRate(feeBps);
+
+        // `feeBps` is the exact fraction of post-fee supply owned by fee recipients after one
+        // year. Exponentiation gives the composition rule G(a + b) = G(a) * G(b), so callers may
+        // checkpoint at arbitrary times without changing the economic rate.
+        uint256 annualGrowthWad = MathEx.mulDiv(BPS, WAD, BPS - feeBps);
+        if (elapsed == YEAR) {
+            uint256 denominator = BPS - feeBps;
+            uint256 annualSupplyAfter = MathEx.mulDiv(supply, BPS, denominator);
+            uint256 annualFractionalWad =
+                (mulmod(supply, BPS, denominator) * WAD + remainderWad * BPS) / denominator;
+            annualSupplyAfter += annualFractionalWad / WAD;
+            remainderAfterWad = annualFractionalWad % WAD;
+            return (annualSupplyAfter - supply, remainderAfterWad);
+        }
+        uint256 exponentWad = MathEx.mulDiv(elapsed, WAD, YEAR);
+        if (exponentWad > uint256(type(int256).max)) revert FeeExponentOverflow(exponentWad);
+        // The validated fee rate bounds annual growth below int256.max.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int256 annualGrowthSigned = int256(annualGrowthWad);
+        // The explicit bound above makes the exponent conversion lossless.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int256 exponentSigned = int256(exponentWad);
+        int256 growthSigned = FeeGrowthMath.powWad(annualGrowthSigned, exponentSigned);
+        // Positive-base exponentiation is positive in the supported domain.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint256 growthWad = uint256(growthSigned);
+
+        uint256 supplyAfter = MathEx.mulDiv(supply, growthWad, WAD);
+        uint256 fractionalWad = mulmod(supply, growthWad, WAD);
+        uint256 grownRemainderWad = MathEx.mulDiv(remainderWad, growthWad, WAD);
+        fractionalWad += grownRemainderWad;
+        supplyAfter += fractionalWad / WAD;
+        remainderAfterWad = fractionalWad % WAD;
+        feeShares = supplyAfter - supply;
+    }
 
     function totalBasketValue(address vault, address[] calldata assets)
         external

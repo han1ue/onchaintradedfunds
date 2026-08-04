@@ -129,7 +129,7 @@ abstract contract ProtocolTestBase is TestBase {
             minNonZeroAssetWeightBps: 100,
             maxAssetCount: 10,
             maxOracleStaleness: uint32(1 hours),
-            challengeGracePeriod: uint32(3 days)
+            challengeGracePeriod: uint32(5 days)
         });
     }
 

@@ -6238,6 +6238,90 @@ input.invalid {
   color: var(--teal);
 }
 
+.challengeLifecycle {
+  margin: 24px 0 8px;
+}
+
+.challengeLifecycleTrack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.challengeLifecycleTrack > svg {
+  width: 18px;
+  color: var(--text-muted);
+}
+
+.challengeLifecycleNode {
+  display: grid;
+  min-width: 0;
+  min-height: 132px;
+  align-content: start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  padding: 16px;
+}
+
+.challengeLifecycleNode.active {
+  border-color: rgb(55 183 170 / 38%);
+  background: rgb(55 183 170 / 7%);
+}
+
+.challengeLifecycleNode.overdue {
+  border-color: rgb(236 154 72 / 36%);
+  background: rgb(236 154 72 / 7%);
+}
+
+.challengeLifecycleNode span {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.challengeLifecycleNode strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.challengeLifecycleNode small {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.challengeLifecycleReturns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.challengeLifecycleReturns span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.challengeLifecycleReturns svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
+
+.challengeLifecycle figcaption {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
 .docsTableWrap {
   max-width: 100%;
   overflow-x: auto;
@@ -6600,6 +6684,24 @@ input.invalid {
   .docsRoleGrid,
   .docsRepoTree {
     grid-template-columns: 1fr;
+  }
+
+  .challengeLifecycleTrack {
+    grid-template-columns: 1fr;
+  }
+
+  .challengeLifecycleTrack > svg {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .challengeLifecycleNode {
+    min-height: 0;
+  }
+
+  .challengeLifecycleReturns {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .docsSection {

@@ -49,31 +49,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (msg.sender != factory_ || factory_ == address(0) || factory != factory_) {
             revert UnauthorizedFactory();
         }
-        if (
-            params.manager == address(0) || params.feeRecipient == address(0)
-                || assetRegistry_ == address(0) || oracleRegistry_ == address(0)
-                || rebalanceExecutor_ == address(0) || feeCollector_ == address(0)
-        ) {
-            revert ZeroAddress();
-        }
-        if (params.initialShareSupply <= MINIMUM_LIQUIDITY_SHARES) {
-            revert InitialShareSupplyTooSmall(
-                params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
-            );
-        }
-        if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) revert RebalanceCooldownTooShort();
+        // The bound factory is the only initializer and validates roles, dependencies, and all
+        // creation-time limits before deploying the clone.
         if (params.manager == address(this) || params.feeRecipient == address(this)) {
             revert InvalidRoleAddress(address(this));
         }
-        _validateWeightBands(params.maxWeightDeviationBps, params.challengeWeightDeviationBps);
-        if (
-            params.challengeGracePeriod < MIN_CHALLENGE_GRACE_PERIOD
-                || params.challengeGracePeriod > MAX_CHALLENGE_GRACE_PERIOD
-        ) {
-            revert InvalidChallengeGracePeriod(params.challengeGracePeriod);
-        }
-        _validateTextLength(params.initialThesis, MAX_THESIS_BYTES);
-
         _initialized = true;
         _initializeERC20(params.name, params.symbol, 18);
 
@@ -525,9 +505,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
             if (!_isWithinBands(maxWeightDeviationBps)) return 0;
             feeShares = _mintFees(block.timestamp - uint256(lastFeeAccrualTimestamp));
-            if (feeShares != 0 || totalSupply == 0 || creatorFeeBpsPerYear == 0) {
-                lastFeeAccrualTimestamp = uint64(block.timestamp);
-            }
+            lastFeeAccrualTimestamp = uint64(block.timestamp);
             challengeActive = false;
             challengeCaller = address(0);
             challengeStartedAt = 0;
@@ -540,9 +518,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (!_isWithinBands(maxWeightDeviationBps)) {
             address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
             if (breached.length != 0) {
+                // Crystallize the valid pre-challenge interval before starting the forfeiture clock.
+                feeShares = _accrueFees();
                 _startChallenge(msg.sender, breached);
             }
-            return 0;
+            return feeShares;
         }
 
         feeShares = _accrueFees();
@@ -613,10 +593,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function resolveOutOfBandChallenge() external {
-        _delegateStrategy();
-    }
-
-    function syncChallengeDeadline() external {
         _delegateStrategy();
     }
 
@@ -706,36 +682,37 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (elapsed == 0) return 0;
 
         feeShares = _mintFees(elapsed);
-        if (feeShares != 0 || totalSupply == 0 || creatorFeeBpsPerYear == 0) {
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-        }
+        // Fractional share-wei are retained in vault storage, so even a zero-share checkpoint can
+        // safely close the interval. This creates a hard, non-retroactive boundary for deposits,
+        // exits, and fee-rate changes.
+        lastFeeAccrualTimestamp = uint64(block.timestamp);
     }
 
     function _mintFees(uint256 elapsed) internal returns (uint256 feeShares) {
         uint256 supply = totalSupply;
-        uint256 feeBps = creatorFeeBpsPerYear;
+        uint16 feeBps = creatorFeeBpsPerYear;
         if (supply == 0 || feeBps == 0 || elapsed == 0) return 0;
-        feeShares = _feeSharesForElapsed(supply, feeBps, elapsed);
+        uint256 remainderAfterWad;
+        (feeShares, remainderAfterWad) = _portfolioCalculator.feeSharesAfterElapsed(
+            supply, _feeAccrualRemainderWad, feeBps, elapsed
+        );
+        _feeAccrualRemainderWad = remainderAfterWad;
         if (feeShares == 0) return 0;
 
         uint256 protocolShares = MathEx.mulDiv(feeShares, protocolFeeShareBps, BPS);
+        uint256 splitRemainder =
+            mulmod(feeShares, protocolFeeShareBps, BPS) + _protocolFeeSplitRemainderBps;
+        if (splitRemainder >= BPS) {
+            protocolShares += 1;
+            splitRemainder -= BPS;
+        }
+        // `splitRemainder` is reduced below BPS, which is below uint16.max.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _protocolFeeSplitRemainderBps = uint16(splitRemainder);
         uint256 managerShares = feeShares - protocolShares;
         if (protocolShares != 0) _mint(feeCollector, protocolShares);
         if (managerShares != 0) _mint(feeRecipient, managerShares);
         emit FeesAccrued(feeShares, managerShares, protocolShares);
-    }
-
-    function _feeSharesForElapsed(uint256 supply, uint256 feeBps, uint256 elapsed)
-        internal
-        pure
-        returns (uint256)
-    {
-        uint256 annualDenominator = BPS * YEAR;
-        uint256 maxElapsed = (annualDenominator - 1) / feeBps;
-        if (elapsed > maxElapsed) elapsed = maxElapsed;
-        uint256 feeNumerator = feeBps * elapsed;
-        uint256 feeDenominator = annualDenominator - feeNumerator;
-        return MathEx.mulDiv(supply, feeNumerator, feeDenominator);
     }
 
     function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
@@ -748,53 +725,48 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 end = block.timestamp;
         if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
 
-        uint256 feeShares =
-            _feeSharesForElapsed(totalSupply, creatorFeeBpsPerYear, end - previousTimestamp);
+        (uint256 feeShares,) = _portfolioCalculator.feeSharesAfterElapsed(
+            totalSupply,
+            _feeAccrualRemainderWad,
+            creatorFeeBpsPerYear,
+            end - previousTimestamp
+        );
         supply += feeShares;
     }
 
     function _forfeitChallengeFees() internal {
+        // All accrual paths converge here. Keep the transition idempotent so no caller can
+        // process the same challenge more than once, even if a future entry point omits a guard.
+        if (_feeState == FeeState.Suspended) return;
+
+        uint64 deadline = challengeDeadline;
         uint256 forfeitureStart = uint256(lastFeeAccrualTimestamp) > uint256(challengeStartedAt)
             ? uint256(lastFeeAccrualTimestamp)
             : uint256(challengeStartedAt);
-        // Challenge fee forfeiture intentionally uses chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        uint256 elapsed = block.timestamp > forfeitureStart ? block.timestamp - forfeitureStart : 0;
-        uint256 forfeitedShares = creatorFeeBpsPerYear == 0 || elapsed == 0
-            ? 0
-            : _feeSharesForElapsed(totalSupply, creatorFeeBpsPerYear, elapsed);
+        uint256 elapsed =
+            uint256(deadline) > forfeitureStart ? uint256(deadline) - forfeitureStart : 0;
+        uint256 forfeitedShares;
+        if (creatorFeeBpsPerYear != 0 && elapsed != 0) {
+            // Pre-challenge fractional fees remain in the ordinary accrual remainder. Challenge
+            // forfeiture starts from the crystallized integer supply and does not consume them.
+            (forfeitedShares,) = _portfolioCalculator.feeSharesAfterElapsed(
+                totalSupply, 0, creatorFeeBpsPerYear, elapsed
+            );
+        }
         uint256 rewardShares = MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
         address caller = challengeCaller;
         if (rewardShares != 0 && caller != address(0)) {
             challengeRewardShares[caller] += rewardShares;
         }
         forfeitedManagerFeeShares += forfeitedShares;
-        lastFeeAccrualTimestamp = uint64(block.timestamp);
-        emit ChallengeDeadlineMissed(challengeDeadline, uint64(block.timestamp));
+        lastFeeAccrualTimestamp = deadline;
+        _feeState = FeeState.Suspended;
+        emit ChallengeDeadlineMissed(deadline, uint64(block.timestamp));
         emit ManagerFeesForfeited(forfeitedShares);
         emit ChallengeRewardAccrued(caller, rewardShares, forfeitedShares);
     }
 
     // Validation and calculations
-
-    function _validateTextLength(string calldata text, uint256 maximum) internal pure {
-        uint256 length = bytes(text).length;
-        if (length > maximum) revert ThesisTooLong(length);
-    }
-
-    function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
-        internal
-        pure
-    {
-        if (
-            completionDeviationBps == 0
-                || completionDeviationBps > MAX_COMPLETION_DEVIATION_BPS
-                || challengeDeviationBps_ <= completionDeviationBps
-                || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
-        ) {
-            revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
-        }
-    }
 
     function _validateInitialPortfolio(address[] calldata assets_, uint16[] calldata weights_)
         internal

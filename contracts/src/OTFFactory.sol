@@ -24,10 +24,11 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
     uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;
-    uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 hours;
+    uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
     uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
     uint32 public constant MAX_ORACLE_STALENESS = 1 hours;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    uint256 public constant MAX_THESIS_BYTES = 2_048;
 
     error NotOwner();
     error ZeroAddress();
@@ -40,6 +41,7 @@ contract OTFFactory is IAdapterAllowlist {
     error LimitTooHigh();
     error InvalidLimit();
     error InvalidArrayLength();
+    error ThesisTooLong(uint256 length);
     error Reentrancy();
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
@@ -209,6 +211,9 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
+        if (bytes(params.initialThesis).length > MAX_THESIS_BYTES) {
+            revert ThesisTooLong(bytes(params.initialThesis).length);
+        }
         if (params.manager == address(0) || params.feeRecipient == address(0)) {
             revert ZeroAddress();
         }
@@ -233,7 +238,10 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.initialAssets.length > params.maxAssetCount) revert LimitTooHigh();
         if (params.maxTurnoverBps > GLOBAL_MAX_TURNOVER_BPS) revert LimitTooHigh();
         if (params.maxNavLossBps > GLOBAL_MAX_NAV_LOSS_BPS) revert LimitTooHigh();
-        if (params.maxWeightDeviationBps > GLOBAL_MAX_WEIGHT_DEVIATION_BPS) revert LimitTooHigh();
+        if (params.maxWeightDeviationBps == 0) revert InvalidLimit();
+        if (params.maxWeightDeviationBps > GLOBAL_MAX_WEIGHT_DEVIATION_BPS) {
+            revert LimitTooHigh();
+        }
         if (
             params.challengeWeightDeviationBps <= params.maxWeightDeviationBps
                 || params.challengeWeightDeviationBps > GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS

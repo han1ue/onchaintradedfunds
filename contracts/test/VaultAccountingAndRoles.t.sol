@@ -151,13 +151,11 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
     function testFeeAccrualMintsExactCreatorAndProtocolShares() public {
         ManagedOTFVault vault = _createVault();
-        uint256 elapsed = 30 days;
+        uint256 elapsed = 365 days;
         vm.warp(START + elapsed);
         _refreshPrices();
 
-        uint256 numerator = uint256(100) * elapsed;
-        uint256 annualDenominator = 10_000 * 365 days;
-        uint256 expectedFeeShares = (100 * ONE * numerator) / (annualDenominator - numerator);
+        uint256 expectedFeeShares = 100 * ONE * 100 / (10_000 - 100);
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
         uint256 expectedCreatorShares = expectedFeeShares - expectedProtocolShares;
 
@@ -192,7 +190,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
         vm.warp(START + 1);
         assertEq(fragmentedVault.accrueFees(), 0);
-        assertEq(fragmentedVault.lastFeeAccrualTimestamp(), START);
+        assertEq(fragmentedVault.lastFeeAccrualTimestamp(), START + 1);
 
         uint256 fragmentedFees;
         for (uint256 i = 2; i <= 400; i++) {
@@ -206,6 +204,58 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertGt(singleIntervalFees, 0);
         assertEq(fragmentedFees, singleIntervalFees);
         assertEq(fragmentedVault.totalSupply(), singleIntervalVault.totalSupply());
+    }
+
+    function testAnnualFeeIsCadenceIndependent() public {
+        VaultInitParams memory params = _defaultParams();
+        params.creatorFeeBpsPerYear = 1_000;
+        ManagedOTFVault dailyVault = ManagedOTFVault(factory.createVault(params));
+        ManagedOTFVault annualVault = ManagedOTFVault(factory.createVault(params));
+
+        for (uint256 day = 1; day <= 365; day++) {
+            vm.warp(START + day * 1 days);
+            _refreshPrices();
+            dailyVault.accrueFees();
+        }
+        uint256 annualFees = annualVault.accrueFees();
+        uint256 expectedAnnualFees = 100 * ONE * 1_000 / (10_000 - 1_000);
+
+        assertEq(annualFees, expectedAnnualFees);
+        // WAD exponentiation differs by less than 5e-16 share per initial share across 365 calls.
+        assertApproxEqAbs(dailyVault.totalSupply(), annualVault.totalSupply(), 50_000);
+        assertApproxEqAbs(
+            dailyVault.balanceOf(address(collector)),
+            annualVault.balanceOf(address(collector)),
+            10_000
+        );
+        assertApproxEqAbs(
+            dailyVault.balanceOf(FEE_RECIPIENT), annualVault.balanceOf(FEE_RECIPIENT), 50_000
+        );
+    }
+
+    function testFeeRateChangeCreatesNonRetroactiveBoundaryEvenWhenOldFeeRoundsToZero()
+        public
+    {
+        VaultInitParams memory params = _defaultParams();
+        params.initialShareSupply = 1_000_001;
+        params.creatorFeeBpsPerYear = 100;
+        ManagedOTFVault changingVault = ManagedOTFVault(factory.createVault(params));
+
+        vm.warp(START + 3_000);
+        _refreshPrices();
+        changingVault.setManagerFeeBps(1_000);
+        assertEq(changingVault.lastFeeAccrualTimestamp(), START + 3_000);
+
+        params.creatorFeeBpsPerYear = 1_000;
+        ManagedOTFVault controlVault = ManagedOTFVault(factory.createVault(params));
+        vm.warp(START + 3_000 + 365 days);
+        _refreshPrices();
+        changingVault.accrueFees();
+        controlVault.accrueFees();
+
+        // The changing vault retains less than one share-wei earned at the old rate. The new 10%
+        // rate applies only after the setter transaction and therefore cannot create a larger gap.
+        assertApproxEqAbs(changingVault.totalSupply(), controlVault.totalSupply(), 1);
     }
 
     function testLongDormancyAccruesWithoutBrickingVault() public {

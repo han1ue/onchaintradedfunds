@@ -103,12 +103,19 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
+        params.maxWeightDeviationBps = 0;
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+        factory.createVault(params);
+
+        params = _defaultParams();
         params.minNonZeroAssetWeightBps = 0;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
     }
 
     function testFactoryRejectsInvalidChallengeConfiguration() public {
+        assertEq(factory.MIN_CHALLENGE_GRACE_PERIOD(), 5 days);
+
         VaultInitParams memory params = _defaultParams();
         params.challengeWeightDeviationBps = params.maxWeightDeviationBps;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
@@ -120,7 +127,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
-        params.challengeGracePeriod = 0;
+        params.challengeGracePeriod = 5 days - 1;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
 
