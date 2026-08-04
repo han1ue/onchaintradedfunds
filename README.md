@@ -354,8 +354,8 @@ strategic target remains unfinished.
 After the notice period, `activatePendingStrategy()` revalidates assets, prices, turnover, fee and
 challenge state, makes the target active, and emits the standard
 `Rebalanced(newTokens, newWeights)` plus `TargetWeightsActivated`. Activation performs no trades.
-Anyone may activate the already-authorized proposal; only the manager may cancel it. Manager
-transfer automatically cancels a pending proposal.
+Only the manager may activate or cancel the proposal. Manager transfer automatically cancels a
+pending proposal.
 
 The manager or an authorized executor performs one or more partial batches through:
 

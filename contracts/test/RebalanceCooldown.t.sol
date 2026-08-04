@@ -18,6 +18,7 @@ import { TestBase } from "./TestBase.sol";
 contract RebalanceCooldownTest is TestBase {
     uint256 private constant START = 1_700_000_000;
     uint256 private constant ONE = 1e18;
+    address private constant NON_MANAGER = address(0xA11CE);
 
     MockStockToken private tokenA;
     MockStockToken private tokenB;
@@ -135,6 +136,11 @@ contract RebalanceCooldownTest is TestBase {
 
         vm.warp(START + 16 days);
         _refreshPrices();
+        vm.prank(NON_MANAGER);
+        vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
+        vault.activatePendingStrategy();
+        assertTrue(vault.strategyProposalPending());
+
         vault.activatePendingStrategy();
         assertFalse(vault.strategyProposalPending());
         assertTrue(vault.strategicRebalanceActive());

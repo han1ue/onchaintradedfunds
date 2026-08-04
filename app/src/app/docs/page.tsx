@@ -381,10 +381,10 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
             <p>
               Only the manager can call the standard <code>rebalance</code> function. It records a
               pending constituent and weight proposal but leaves the active basket unchanged for
-              48 hours, giving holders time to redeem. After that notice period, activation
-              revalidates every safety rule and makes the target active without executing trades.
-              The standard <code>Rebalanced</code> event is emitted on activation, not proposal,
-              and does not mean the portfolio has reached its target.
+              48 hours, giving holders time to redeem. After that notice period, only the manager
+              can activate it. Activation revalidates every safety rule and makes the target active
+              without executing trades. The standard <code>Rebalanced</code> event is emitted on
+              activation, not proposal, and does not mean the portfolio has reached its target.
             </p>
             <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)
 activatePendingStrategy()`}</code></pre>

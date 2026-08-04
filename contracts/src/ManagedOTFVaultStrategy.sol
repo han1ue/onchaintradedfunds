@@ -226,7 +226,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         );
     }
 
-    function activatePendingStrategy() external onlyDelegateCall nonReentrant {
+    function activatePendingStrategy() external onlyDelegateCall onlyManager nonReentrant {
         if (!strategyProposalPending) revert NoPendingStrategy();
         // The notice period is enforced by chain time so holders receive the full exit window.
         // forge-lint: disable-next-line(block-timestamp)

@@ -132,6 +132,8 @@ The following selectors are allowed to delegate:
 | `setExecutor(address,bool)` | Manager |
 | `setWeightBands(uint16,uint16)` | Manager |
 | `rebalance(address[],uint256[])` | Manager |
+| `activatePendingStrategy()` | Manager |
+| `cancelPendingStrategy()` | Manager |
 | `executeRebalanceTrades(TradeInstruction[])` | Manager or authorized executor |
 | `completeStrategicRebalance()` | Permissionless |
 | `flagOutOfBand()` | Permissionless |
@@ -290,11 +292,11 @@ target becomes active.
 
 The active constituents and target weights MUST remain unchanged for at least 48 hours after a
 proposal. Deposits and proportional redemptions MUST remain available during this notice period.
-After the deadline, `activatePendingStrategy()` MUST revalidate asset approval, oracle freshness,
-portfolio shape, turnover, challenge state, fee state, and completion bands before changing the
-active target. Activation emits the standard `Rebalanced` event and `TargetWeightsActivated`, but
-performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
-cancel any proposal authored under the previous authority.
+After the deadline, only the manager MAY call `activatePendingStrategy()`. Activation MUST
+revalidate asset approval, oracle freshness, portfolio shape, turnover, challenge state, fee state,
+and completion bands before changing the active target. It emits the standard `Rebalanced` event
+and `TargetWeightsActivated`, but performs no trades. Only the manager may cancel a pending
+proposal, and manager transfer MUST cancel any proposal authored under the previous authority.
 
 ### Trade execution
 
