@@ -760,11 +760,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     ),
   );
   const routeNeedsSelectedVault = view === "detail" || view === "created" || view === "manage";
-  const vaultAddress = view === "created"
+  const vaultAddress = routeNeedsSelectedVault
     ? selectedVaultAddress
-    : routeNeedsSelectedVault
-      ? selectedIsFactoryVault ? selectedVaultAddress : undefined
-    : selectedIsFactoryVault ? selectedVaultAddress : factoryVaultAddresses[0];
+    : selectedIsFactoryVault
+      ? selectedVaultAddress
+      : factoryVaultAddresses[0];
   const enabled = Boolean(vaultAddress) && isTestnet;
 
   const { data: blockNumber } = useBlockNumber({
@@ -1005,7 +1005,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     maxAssetCount,
     connectedIsManager: Boolean(connectedIsManager),
     enabled,
-    isLoading: isLoading || factoryLoading || directoryLoading,
+    isLoading: Boolean(vaultAddress) && isLoading,
     dataMode,
     blockNumber,
     lastReadAt,
