@@ -3862,7 +3862,7 @@ function VaultsDirectory({
                         <span>{symbolMonogram(row.symbol)}</span>
                         <div>
                           <strong>{row.name}</strong>
-                          <small>{row.symbol} · manager workspace</small>
+                          <small>{row.symbol} · {shortAddress(row.address)}</small>
                         </div>
                       </div>
                     </td>
