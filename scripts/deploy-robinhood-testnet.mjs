@@ -339,6 +339,14 @@ const deployment = {
     uniswapV3Quoter: uniswapV3QuoterAddress,
     ...(uniswapRouterAddress ? { uniswapV2Router: uniswapRouterAddress } : {}),
   },
+  v3Venue: {
+    provider: "synthra",
+    liquidityUrl: "https://app.synthra.org/#/pools",
+    settlementToken: usdgAddress,
+    constituentFee: 3000,
+    poolInitializationMaxOracleAgeSeconds: 3600,
+    constituentPools: [],
+  },
   setupTransactions,
 };
 

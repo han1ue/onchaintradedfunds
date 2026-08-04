@@ -125,7 +125,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertFalse(vault.isWithinTargetBands());
     }
 
-    function testFailedCorrectiveTradeLeavesChallengeStateAndBalancesUnchanged() public {
+    function testCorrectiveTradeFailureLeavesChallengeStateAndBalancesUnchanged() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();

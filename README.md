@@ -128,11 +128,12 @@ flowchart LR
 - Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
-`UniswapV2Adapter`
+`UniswapV3Adapter`
 
-- Implements exact-input rebalance swaps and exact-output settlement entry against a configurable Uniswap V2-compatible router.
-- Validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
-- May route a rebalance internally through USDG while the vault-visible input and output remain active RWA constituents.
+- Implements exact-input rebalance and redemption swaps plus exact-output settlement entry against a configurable Uniswap V3-compatible router.
+- Uses one immutable settlement token and fee tier, validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
+- Routes RWA-to-RWA rebalances through USDG as the only permitted intermediate token while the vault-visible input and output remain active constituents.
+- The earlier `UniswapV2Adapter` remains available for compatibility but is not used by the Robinhood testnet configuration.
 
 `AssetRegistry`
 
@@ -603,12 +604,23 @@ deployment script reads its chain, treasury, approved assets, price feeds, and e
 addresses from `app/src/config/robinhood-testnet.json`. It rejects an empty protocol catalog unless
 `ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
 
-`USDG_ADDRESS` and all four Uniswap V3 addresses are required because every new OTF receives an
-official OTF/USDG pool during its factory transaction. `UNISWAP_V2_ROUTER_ADDRESS` remains
-optional. When present, the deployment script deploys `UniswapV2Adapter` and `OTFEntryRouter`, approves the
-adapter for both trade and entry use, authorizes the executor and entry router as adapter callers,
-and writes all public addresses into the shared address JSON. No testnet liquidity address is guessed or
-hardcoded; verify both values against the intended deployment before running the script.
+`USDG_ADDRESS` and all four Uniswap V3-compatible addresses are required because every new OTF
+receives an official OTF/USDG pool during its factory transaction. Robinhood testnet currently
+points these fields at Synthra; Robinhood mainnet can use official Uniswap without changing vault
+interfaces. `UNISWAP_V2_ROUTER_ADDRESS` remains optional for legacy deployments.
+
+After the base protocol and mock oracle catalog are configured, deploy the V3 adapter and entry
+router and create the five RWA/USDG pools with:
+
+```bash
+corepack pnpm contracts:configure:robinhood-testnet-synthra
+```
+
+The command is idempotent. It verifies the configured contracts, approvals, assets, fee tier, and
+fresh oracle rounds; deploys or reuses the adapter and entry router; creates or adopts each 0.3%
+RWA/USDG pool; and records the verified addresses and transaction evidence in the shared JSON. It
+does not add liquidity. Entry, USDG redemption, and manager rebalance routes remain disabled until
+someone funds every required constituent pool through Synthra.
 
 The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
 OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
@@ -741,7 +753,7 @@ history, and immutable factory provenance.
 ## Known Limitations
 
 - No production Robinhood Chain addresses are verified or configured.
-- A Uniswap V2-compatible adapter and USDG entry router are implemented but remain undeployed until verified testnet addresses are supplied.
+- RWA/USDG pools are initialized separately from liquidity provisioning; constituent entry, USDG redemption, and rebalances remain unavailable while any required pool has zero active liquidity.
 - RFQ, proprietary AMM, and order-book adapters are not implemented.
 - USDG entry currently quotes direct USDG-to-constituent pools; more advanced route discovery is not implemented.
 - The generated ABI package is currently a hand-maintained MVP subset.

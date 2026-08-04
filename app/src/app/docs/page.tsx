@@ -80,7 +80,7 @@ const contractRows = [
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
-  ["Uniswap adapter", "Provides typed exact-input rebalance and exact-output entry swaps through configured liquidity."],
+  ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
   ["OracleRegistry", "Maps approved assets to fresh, Chainlink-compatible price feeds."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],

@@ -969,6 +969,7 @@ h2 {
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
+  text-transform: none;
   white-space: nowrap;
 }
 

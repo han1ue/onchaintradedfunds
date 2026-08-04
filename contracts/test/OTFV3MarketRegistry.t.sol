@@ -112,8 +112,9 @@ contract OTFV3MarketRegistryTest is ProtocolTestBase {
         vm.prank(address(factory));
         registry.createOfficialPool(address(vault));
 
+        MockOfficialMarketRegistry replacementRegistry = new MockOfficialMarketRegistry();
         vm.expectPartialRevert(OTFFactory.OfficialMarketRegistryLocked.selector);
-        factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
+        factory.setOfficialMarketRegistry(address(replacementRegistry));
     }
 
     function testOnlyFactoryCanCreateOfficialPool() public {

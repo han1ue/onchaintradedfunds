@@ -51,7 +51,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { encodeAbiParameters, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
+import { encodeAbiParameters, encodePacked, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
 import {
   useAccount,
   useBalance,
@@ -65,7 +65,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses } from "@/lib/deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetV3Venue } from "@/lib/deployment";
 import {
   formatCooldown,
   formatRelativeAvailability,
@@ -367,82 +367,6 @@ const aggregatorV3ReadAbi = [
   },
 ] as const;
 
-const uniswapV2QuoteAbi = [
-  {
-    type: "function",
-    name: "getAmountsIn",
-    stateMutability: "view",
-    inputs: [
-      { name: "amountOut", type: "uint256" },
-      { name: "path", type: "address[]" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-  },
-  {
-    type: "function",
-    name: "getAmountsOut",
-    stateMutability: "view",
-    inputs: [
-      { name: "amountIn", type: "uint256" },
-      { name: "path", type: "address[]" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-  },
-  {
-    type: "function",
-    name: "factory",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "factory", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "swapTokensForExactTokens",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "amountOut", type: "uint256" },
-      { name: "amountInMax", type: "uint256" },
-      { name: "path", type: "address[]" },
-      { name: "to", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-  },
-  {
-    type: "function",
-    name: "swapExactTokensForTokens",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "amountIn", type: "uint256" },
-      { name: "amountOutMin", type: "uint256" },
-      { name: "path", type: "address[]" },
-      { name: "to", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ],
-    outputs: [{ name: "amounts", type: "uint256[]" }],
-  },
-  {
-    type: "function",
-    name: "addLiquidity",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "tokenA", type: "address" },
-      { name: "tokenB", type: "address" },
-      { name: "amountADesired", type: "uint256" },
-      { name: "amountBDesired", type: "uint256" },
-      { name: "amountAMin", type: "uint256" },
-      { name: "amountBMin", type: "uint256" },
-      { name: "to", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ],
-    outputs: [
-      { name: "amountA", type: "uint256" },
-      { name: "amountB", type: "uint256" },
-      { name: "liquidity", type: "uint256" },
-    ],
-  },
-] as const;
-
 const uniswapV3PoolAbi = [
   {
     type: "function",
@@ -475,6 +399,45 @@ const uniswapV3QuoterAbi = [
       { name: "amountOut", type: "uint256" },
       { name: "sqrtPriceX96After", type: "uint160" },
       { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "quoteExactOutputSingle",
+    stateMutability: "view",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountOut", type: "uint256" },
+          { name: "fee", type: "uint24" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "amountIn", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "quoteExactInput",
+    stateMutability: "view",
+    inputs: [
+      { name: "path", type: "bytes" },
+      { name: "amountIn", type: "uint256" },
+    ],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96AfterList", type: "uint160[]" },
+      { name: "initializedTicksCrossedList", type: "uint32[]" },
       { name: "gasEstimate", type: "uint256" },
     ],
   },
@@ -514,15 +477,21 @@ function configuredEntryRouterAddress(): `0x${string}` | undefined {
 }
 
 function configuredEntryAdapterAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.uniswapV2Adapter;
-}
-
-function configuredUniswapRouterAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.uniswapV2Router;
+  return robinhoodTestnetAddresses.uniswapV3Adapter;
 }
 
 function configuredSettlementTokenAddress(): `0x${string}` | undefined {
   return robinhoodTestnetAddresses.usdg;
+}
+
+function configuredConstituentFee(): number {
+  return robinhoodTestnetV3Venue.constituentFee ?? 3000;
+}
+
+function configuredConstituentPool(asset: string): `0x${string}` | undefined {
+  return robinhoodTestnetV3Venue.constituentPools.find(
+    (record) => record.asset.toLowerCase() === asset.toLowerCase(),
+  )?.pool;
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -2243,13 +2212,13 @@ function UserActions({
   const isLive = vault.dataMode === "live";
   const entryRouterAddress = configuredEntryRouterAddress();
   const entryAdapterAddress = configuredEntryAdapterAddress();
-  const uniswapRouterAddress = configuredUniswapRouterAddress();
   const v3MarketRegistryAddress = configuredV3MarketRegistryAddress();
   const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress();
+  const constituentFee = configuredConstituentFee();
   const entryContractsConfigured = Boolean(
-    entryRouterAddress && entryAdapterAddress && uniswapRouterAddress,
+    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress,
   );
   const parsedSlippage = Number(maxSlippage);
   const slippageBps = Number.isFinite(parsedSlippage)
@@ -2293,6 +2262,48 @@ function UserActions({
   const settlementToken = typeof settlementTokenAddress === "string" && isAddress(settlementTokenAddress)
     ? settlementTokenAddress
     : configuredSettlementToken;
+  const constituentLiquidityContracts = vault.allocations.flatMap((asset) => {
+    const pool = configuredConstituentPool(asset.address);
+    return pool ? [{
+      address: pool,
+      abi: uniswapV3PoolAbi,
+      functionName: "liquidity" as const,
+      chainId: robinhoodChainTestnet.id,
+    }] : [];
+  });
+  const {
+    data: constituentLiquidityResults,
+    isLoading: constituentLiquidityLoading,
+  } = useReadContracts({
+    contracts: constituentLiquidityContracts,
+    query: { enabled: constituentLiquidityContracts.length > 0 },
+  });
+  let constituentLiquidityIndex = 0;
+  const constituentPoolStates = vault.allocations.map((asset) => {
+    const pool = configuredConstituentPool(asset.address);
+    const result = pool ? constituentLiquidityResults?.[constituentLiquidityIndex++] : undefined;
+    return {
+      asset: asset.address,
+      pool,
+      liquidity: result?.result as bigint | undefined,
+      readFailed: result?.status === "failure",
+    };
+  });
+  const constituentPoolsConfigured = Boolean(
+    settlementToken && vault.allocations.every((asset) =>
+      asset.address.toLowerCase() === settlementToken.toLowerCase()
+        || Boolean(configuredConstituentPool(asset.address)),
+    ),
+  );
+  const constituentPoolsReady = Boolean(
+    settlementToken && vault.allocations.every((asset) => {
+      if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return true;
+      const state = constituentPoolStates.find(
+        (item) => item.asset.toLowerCase() === asset.address.toLowerCase(),
+      );
+      return state?.pool && state.liquidity !== undefined && state.liquidity > 0n && !state.readFailed;
+    }),
+  );
   const { data: settlementDecimalsRead } = useReadContract({
     address: settlementToken,
     abi: erc20BalanceAbi,
@@ -2330,16 +2341,22 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteEntry },
   });
-  const entryQuoteContracts = canQuoteEntry && previewEntryAmounts && settlementToken && uniswapRouterAddress
+  const entryQuoteContracts = canQuoteEntry && constituentPoolsReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = previewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
         return [{
-          address: uniswapRouterAddress,
-          abi: uniswapV2QuoteAbi,
-          functionName: "getAmountsIn" as const,
-          args: [amountOut, [settlementToken, asset.address as `0x${string}`]],
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutputSingle" as const,
+          args: [{
+            tokenIn: settlementToken,
+            tokenOut: asset.address as `0x${string}`,
+            amountOut,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
           chainId: robinhoodChainTestnet.id,
         }];
       })
@@ -2401,16 +2418,22 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canPreviewRedeem },
   });
-  const redeemQuoteContracts = previewRedeemAmounts && settlementToken && uniswapRouterAddress && redeemSlippageValid
+  const redeemQuoteContracts = previewRedeemAmounts && settlementToken && constituentPoolsReady && uniswapV3QuoterAddress && redeemSlippageValid
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountIn = previewRedeemAmounts[index];
         if (amountIn === undefined || amountIn === 0n) return [];
         return [{
-          address: uniswapRouterAddress,
-          abi: uniswapV2QuoteAbi,
-          functionName: "getAmountsOut" as const,
-          args: [amountIn, [asset.address as `0x${string}`, settlementToken]],
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle" as const,
+          args: [{
+            tokenIn: asset.address as `0x${string}`,
+            tokenOut: settlementToken,
+            amountIn,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
           chainId: robinhoodChainTestnet.id,
         }];
       })
@@ -2463,8 +2486,8 @@ function UserActions({
     } else if (requiredAmount !== undefined && requiredAmount > 0n) {
       const result = entryQuoteResults?.[entryQuoteIndex];
       entryQuoteIndex += 1;
-      const amounts = result?.result as readonly bigint[] | undefined;
-      quotedSettlement = amounts?.[0];
+      const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+      quotedSettlement = quote?.[0];
       quoteFailed = result?.status === "failure";
     }
     const maximumSettlement = quotedSettlement !== undefined && !isSettlement
@@ -2637,8 +2660,8 @@ function UserActions({
     } else if (amountIn !== undefined && amountIn > 0n) {
       const result = redeemQuoteResults?.[redeemQuoteIndex];
       redeemQuoteIndex += 1;
-      const amounts = result?.result as readonly bigint[] | undefined;
-      quotedSettlement = amounts?.[amounts.length - 1];
+      const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+      quotedSettlement = quote?.[0];
       quoteFailed = result?.status === "failure";
     } else if (amountIn === 0n) {
       quotedSettlement = 0n;
@@ -2682,13 +2705,13 @@ function UserActions({
         ? "Unavailable"
         : `${formatWalletTokenBalance(walletInputBalance, inputTokenDecimals)} ${inputTokenSymbol}`;
   const routeInputsReady = Boolean(marketInputAmount && marketInputAmount > 0n && slippageValid);
-  const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false;
+  const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false && constituentPoolsReady;
   const underlyingQuoteReady = activeAction === "deposit"
     ? entryQuoteReady && entryWithinBudget
     : redeemQuoteReady;
   const underlyingQuoteLoading = activeAction === "deposit"
-    ? previewEntryLoading || entryQuotesLoading
-    : previewRedeemLoading || redeemQuotesLoading;
+    ? constituentLiquidityLoading || previewEntryLoading || entryQuotesLoading
+    : constituentLiquidityLoading || previewRedeemLoading || redeemQuotesLoading;
   const underlyingQuoteFailed = activeAction === "deposit"
     ? Boolean(previewEntryError || entryQuotesFailed)
     : Boolean(previewRedeemError || redeemQuotesFailed);
@@ -3148,8 +3171,12 @@ function UserActions({
                           : "—"}
                 </strong>
                 <small>
-                  {!underlyingRouteAvailable
+                  {!entryContractsConfigured || entryAdapterApproved === false
                     ? "Settlement route not configured"
+                    : !constituentPoolsConfigured
+                      ? "Constituent pools not configured"
+                      : !constituentPoolsReady
+                        ? "Awaiting constituent liquidity"
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares minted`
                       : "USDG received"}
@@ -3714,15 +3741,15 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   const [tokenOut, setTokenOut] = useState(vault.allocations[1]?.address ?? "");
   const [amountInText, setAmountInText] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");
-  const [routeThroughUsdg, setRouteThroughUsdg] = useState(false);
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const adapterAddress = configuredEntryAdapterAddress();
-  const uniswapRouterAddress = configuredUniswapRouterAddress();
+  const quoterAddress = configuredUniswapV3QuoterAddress();
   const settlementToken = configuredSettlementTokenAddress();
+  const constituentFee = configuredConstituentFee();
 
   useEffect(() => {
     if (!vault.allocations.some((asset) => asset.address === tokenIn)) setTokenIn(vault.allocations[0]?.address ?? "");
@@ -3753,35 +3780,69 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   }
   const slippageBps = Math.round(Number(slippageText) * 100);
   const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
-  const path = routeThroughUsdg && settlementToken
-    ? [tokenIn, settlementToken, tokenOut]
-    : [tokenIn, tokenOut];
+  const path = settlementToken ? [tokenIn, settlementToken, tokenOut] : [tokenIn, tokenOut];
   const routeValid = path.every((address) => isAddress(address)) && tokenIn !== tokenOut;
-  const quoteEnabled = Boolean(uniswapRouterAddress && amountIn && amountIn > 0n && routeValid);
+  const inputPool = configuredConstituentPool(tokenIn);
+  const outputPool = configuredConstituentPool(tokenOut);
+  const rebalanceLiquidityContracts = [inputPool, outputPool].flatMap((pool) => pool ? [{
+    address: pool,
+    abi: uniswapV3PoolAbi,
+    functionName: "liquidity" as const,
+    chainId: robinhoodChainTestnet.id,
+  }] : []);
   const {
-    data: quoteAmounts,
+    data: rebalanceLiquidityResults,
+    isLoading: rebalanceLiquidityLoading,
+  } = useReadContracts({
+    contracts: rebalanceLiquidityContracts,
+    query: { enabled: rebalanceLiquidityContracts.length === 2 },
+  });
+  const rebalancePoolsConfigured = Boolean(inputPool && outputPool);
+  const rebalanceLiquidityReady = Boolean(
+    rebalancePoolsConfigured && rebalanceLiquidityResults?.length === 2
+      && rebalanceLiquidityResults.every(
+        (result) => result.status === "success" && typeof result.result === "bigint" && result.result > 0n,
+      ),
+  );
+  const packedPath = routeValid && settlementToken
+    ? encodePacked(
+        ["address", "uint24", "address", "uint24", "address"],
+        [
+          tokenIn as `0x${string}`,
+          constituentFee,
+          settlementToken,
+          constituentFee,
+          tokenOut as `0x${string}`,
+        ],
+      )
+    : undefined;
+  const quoteEnabled = Boolean(
+    quoterAddress && packedPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
+  );
+  const {
+    data: quoteResult,
     error: quoteError,
     isLoading: quoteLoading,
     refetch: refetchQuote,
   } = useReadContract({
-    address: uniswapRouterAddress,
-    abi: uniswapV2QuoteAbi,
-    functionName: "getAmountsOut",
-    args: amountIn && routeValid ? [amountIn, path as `0x${string}`[]] : undefined,
+    address: quoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInput",
+    args: amountIn && packedPath ? [packedPath, amountIn] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: quoteEnabled },
   });
-  const quotedAmountOut = quoteAmounts?.[quoteAmounts.length - 1];
+  const quotedAmountOut = (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
   const minAmountOut = quotedAmountOut && slippageValid
     ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
     : undefined;
   const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
   const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
-  const contractsConfigured = Boolean(adapterAddress && uniswapRouterAddress);
+  const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
-    amountIn && minAmountOut && routeValid && slippageValid,
+    amountIn && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
   );
 
   function resetTradeState() {
@@ -3871,13 +3932,12 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
           </label>
         </div>
 
-        <label className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
-          <input type="checkbox" checked={routeThroughUsdg} disabled={!settlementToken} onChange={(event) => { setRouteThroughUsdg(event.target.checked); resetTradeState(); }} />
+        <div className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
           <span>
-            <strong>Route through USDG</strong>
+            <strong>Routes through USDG</strong>
             <small>USDG is an internal Uniswap hop and never becomes an OTF constituent or recipient.</small>
           </span>
-        </label>
+        </div>
 
         <div className="tradeExecutionQuote">
           <span>Uniswap quote</span>
@@ -3886,11 +3946,17 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
               ? `${formatWalletTokenBalance(quotedAmountOut, tokenOutDecimals)} ${outputAsset?.symbol ?? "tokens"}`
               : "Enter an amount"}
           </strong>
-          <small>{routeThroughUsdg ? `${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}` : `${inputAsset?.symbol ?? "Asset"} -> ${outputAsset?.symbol ?? "Asset"}`}</small>
+          <small>{`${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}`}</small>
         </div>
 
         {!contractsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
+        ) : null}
+        {contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Both selected assets need recorded USDG pools before this rebalance route can be quoted.</span></div></div>
+        ) : null}
+        {contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>Both USDG pools exist, but this route stays disabled until they have active liquidity.</span></div></div>
         ) : null}
         {tokenIn === tokenOut ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
@@ -5774,9 +5840,12 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
   });
   const liquidityAvailable = typeof liquidity === "bigint" && liquidity > 0n;
   const checking = poolLoading || (Boolean(pool) && liquidityLoading);
-  const addLiquidityUrl = vault.address && settlementToken
-    ? `https://app.uniswap.org/positions/create/v3?currencyA=${vault.address}&currencyB=${settlementToken}&fee=500`
-    : "https://app.uniswap.org/positions/create";
+  const testnetUsesSynthra = robinhoodTestnetV3Venue.provider === "synthra";
+  const addLiquidityUrl = testnetUsesSynthra && robinhoodTestnetV3Venue.liquidityUrl
+    ? robinhoodTestnetV3Venue.liquidityUrl
+    : vault.address && settlementToken
+      ? `https://app.uniswap.org/positions/create/v3?currencyA=${vault.address}&currencyB=${settlementToken}&fee=500`
+      : "https://app.uniswap.org/positions/create";
 
   return (
     <SectionCard
@@ -5828,7 +5897,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
               <div><strong>Permissionless liquidity</strong><span>Any wallet can supply OTF shares and USDG. Each resulting Uniswap position belongs to the supplying wallet and does not use assets held by the OTF portfolio.</span></div>
             </div>
             <a className="primaryAction" href={addLiquidityUrl} target="_blank" rel="noreferrer">
-              <Droplets size={14} />Add liquidity on Uniswap<ExternalLink size={12} />
+              <Droplets size={14} />Add liquidity on {testnetUsesSynthra ? "Synthra" : "Uniswap"}<ExternalLink size={12} />
             </a>
           </>
         ) : registry && !poolLoading ? (
