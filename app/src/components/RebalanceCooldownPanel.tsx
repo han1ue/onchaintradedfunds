@@ -6023,14 +6023,39 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
         <section className="sectionCard walletAssets">
           <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Token contracts and live oracle prices.</p></div><span className="stateBadge success">{testnetCreateAssets.length} supported</span></div>
           <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable">
-            <thead><tr><th>Asset</th><th>Token address</th><th>Oracle price</th><th /></tr></thead>
+            <thead><tr><th>Asset</th><th>Token address</th><th>Liquidity pool</th><th>Oracle price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
+              const pool = configuredConstituentPool(asset.address);
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><strong>{asset.symbol}</strong><small>{asset.name}</small></div></td>
-                  <td data-label="Token address" className="monoValue" title={asset.address}>{shortAssetAddress(asset.address)}</td>
+                  <td data-label="Token address" className="monoValue">
+                    <a
+                      className="tableAddressLink"
+                      href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Open ${asset.symbol} token contract ${asset.address}`}
+                    >
+                      {shortAssetAddress(asset.address)}
+                      <ExternalLink size={11} />
+                    </a>
+                  </td>
+                  <td data-label="Liquidity pool" className="monoValue">
+                    {pool ? (
+                      <a
+                        className="tableAddressLink"
+                        href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${pool}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Open ${asset.symbol} / USDG liquidity pool ${pool}`}
+                      >
+                        {shortAssetAddress(pool)}
+                        <ExternalLink size={11} />
+                      </a>
+                    ) : "Not configured"}
+                  </td>
                   <td data-label="Oracle price" className="monoValue">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
-                  <td><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer" title={`Open ${asset.symbol} token contract`}><ExternalLink size={13} /></a></td>
                 </tr>
               );
             })}</tbody>

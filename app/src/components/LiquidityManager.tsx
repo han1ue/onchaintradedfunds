@@ -274,11 +274,6 @@ function quotePairedAmount(
   }
 }
 
-function percentageOf(value: number, total: number): string {
-  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return "—";
-  return `${(value / total * 100).toFixed(1)}%`;
-}
-
 function shortAddress(value: string | undefined): string {
   return value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Not resolved";
 }
@@ -373,8 +368,6 @@ function LiquidityWorkspace() {
   const { data: token1Symbol } = useReadContract({ address: token1, abi: erc20Abi, functionName: "symbol", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1) } });
   const { data: token0Decimals } = useReadContract({ address: token0, abi: erc20Abi, functionName: "decimals", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0) } });
   const { data: token1Decimals } = useReadContract({ address: token1, abi: erc20Abi, functionName: "decimals", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1) } });
-  const { data: poolToken0Balance, refetch: refetchPoolToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && poolAddress), refetchInterval: 12_000 } });
-  const { data: poolToken1Balance, refetch: refetchPoolToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && poolAddress), refetchInterval: 12_000 } });
   const { data: token0Balance, refetch: refetchToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address), refetchInterval: 12_000 } });
   const { data: token1Balance, refetch: refetchToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && address), refetchInterval: 12_000 } });
   const { data: token0Allowance, refetch: refetchToken0Allowance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "allowance", args: [address ?? zeroAddress, positionManager ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address && positionManager) } });
@@ -410,18 +403,6 @@ function LiquidityWorkspace() {
   const poolPriceLabel = assetPriceQuote && Number.isFinite(assetPrice) && assetPrice > 0
     ? `1 ${assetSymbol ?? "asset"} = ${assetPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG`
     : "Unavailable";
-  const poolToken0Amount = poolToken0Balance !== undefined && token0Decimals !== undefined
-    ? Number(formatUnits(poolToken0Balance, token0Decimals))
-    : 0;
-  const poolToken1Amount = poolToken1Balance !== undefined && token1Decimals !== undefined
-    ? Number(formatUnits(poolToken1Balance, token1Decimals))
-    : 0;
-  const token0IsSettlement = token0 && settlementToken ? isAddressEqual(token0, settlementToken) : false;
-  const poolToken0Value = token0IsSettlement ? poolToken0Amount : poolToken0Amount * assetPrice;
-  const poolToken1Value = token0IsSettlement ? poolToken1Amount * assetPrice : poolToken1Amount;
-  const poolValue = poolToken0Value + poolToken1Value;
-  const poolToken0Percent = poolValue > 0 ? poolToken0Value / poolValue * 100 : 0;
-
   let positionId: bigint | undefined;
   try {
     if (positionIdText.trim()) positionId = BigInt(positionIdText);
@@ -528,8 +509,6 @@ function LiquidityWorkspace() {
   async function refreshMarket() {
     await Promise.all([
       refetchPoolLiquidity(),
-      refetchPoolToken0Balance(),
-      refetchPoolToken1Balance(),
       refetchToken0Balance(),
       refetchToken1Balance(),
       refetchToken0Allowance(),
@@ -739,20 +718,6 @@ function LiquidityWorkspace() {
               <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
               <div><span>Pool price</span><strong>{poolPriceLabel}</strong></div>
               <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity && poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
-            </div>
-
-            <div className="liquidityComposition">
-              <div className="liquidityCompositionHeading"><span>Pool composition</span><strong>{poolValue > 0 ? "By current value" : "Awaiting liquidity"}</strong></div>
-              {poolValue > 0 ? (
-                <div className="liquidityCompositionBar" aria-label={`${token0Symbol ?? "Token 0"} ${percentageOf(poolToken0Value, poolValue)}, ${token1Symbol ?? "Token 1"} ${percentageOf(poolToken1Value, poolValue)}`}>
-                  <span style={{ width: `${poolToken0Percent}%` }} />
-                  <span style={{ width: `${100 - poolToken0Percent}%` }} />
-                </div>
-              ) : null}
-              <div className="liquidityCompositionRows">
-                <div><span>{token0Symbol ?? "Token 0"}</span><strong>{formatAmount(poolToken0Balance, token0Decimals)} <small>{percentageOf(poolToken0Value, poolValue)}</small></strong></div>
-                <div><span>{token1Symbol ?? "Token 1"}</span><strong>{formatAmount(poolToken1Balance, token1Decimals)} <small>{percentageOf(poolToken1Value, poolValue)}</small></strong></div>
-              </div>
             </div>
 
             {poolAddress ? (
