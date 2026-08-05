@@ -107,9 +107,6 @@ const feedsByAsset = new Map(
   ]),
 );
 const priceFeeds = approvedAssets.map((asset) => feedsByAsset.get(asset.toLowerCase()));
-const approvedAdapters = (deploymentConfig.setupTransactions?.approvedAdapters ?? []).map((record) =>
-  parseAddress("approved adapter", record.adapter),
-);
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
 const uniswapV3FactoryAddress = parseAddress(
@@ -169,7 +166,7 @@ const rebalanceExecutor = await deployContract({
 const feeCollector = await deployContract({ name: "FeeCollector", args: [treasury] });
 // The public Robinhood Testnet RPC rejects eth_estimateGas for this near-limit initcode payload.
 // Supplying gas bypasses a public-RPC estimation failure for this near-limit initcode payload.
-const vaultImplementation = await deployContract({ name: "ManagedOTFVault", gas: 20_000_000n });
+const vaultImplementation = await deployContract({ name: "ManagedOTFVault", gas: 30_000_000n });
 const factory = await deployContract({
   name: "OTFFactory",
   args: [
@@ -237,18 +234,6 @@ for (let i = 0; i < priceFeeds.length; i += 1) {
       abi: oracleRegistryAbi,
       functionName: "setPriceFeed",
       args: [approvedAssets[i], priceFeeds[i]],
-    })),
-  });
-}
-
-for (const adapter of approvedAdapters) {
-  setupTransactions.approvedAdapters.push({
-    adapter,
-    ...(await writeContract({
-      address: factory.address,
-      abi: factoryAbi,
-      functionName: "setTradeAdapterApproved",
-      args: [adapter, true],
     })),
   });
 }

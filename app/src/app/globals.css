@@ -1007,6 +1007,18 @@ h2 {
   color: var(--text);
 }
 
+.metricCardFaucetAction .metricCardFaucetIcon {
+  order: 0;
+}
+
+.metricCardFaucetAction > span {
+  order: 1;
+}
+
+.metricCardFaucetAction .metricCardFaucetExternalIcon {
+  order: 2;
+}
+
 .metricCard.success strong,
 .metricCard.success .metricLabel svg {
   color: var(--green);

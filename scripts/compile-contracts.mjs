@@ -32,6 +32,7 @@ const input = {
   settings: {
     evmVersion: "cancun",
     optimizer: { enabled: true, runs: 1 },
+    metadata: { bytecodeHash: "none" },
     viaIR: true,
     outputSelection: {
       "*": {

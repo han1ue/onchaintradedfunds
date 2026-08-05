@@ -189,6 +189,7 @@ type VaultView = {
   enabled: boolean;
   isLoading: boolean;
   dataMode: DataMode;
+  readFailed: boolean;
   blockNumber?: bigint;
   lastReadAt?: number;
   nav?: string;
@@ -972,7 +973,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     : "Not available";
   const dataMode: DataMode = !isTestnet
     ? "unavailable"
-    : enabled && Boolean(results?.[0]?.result) && !error
+    : enabled && Boolean(results?.[0]?.result)
       ? "live"
       : "empty";
 
@@ -1030,6 +1031,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     enabled,
     isLoading: Boolean(vaultAddress) && isLoading,
     dataMode,
+    readFailed: Boolean(error),
     blockNumber,
     lastReadAt,
     nav: formatUsd18(totalAssetsValue),
@@ -1130,13 +1132,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <UserActions vault={vault} oraclePrices={catalogOraclePrices} />
-                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} onRefresh={refetchVaultData} />
+                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} />
+                <UserActions vault={vault} />
               </div>
 
               <aside className="sideColumn">
                 <ThesisModule vaultAddress={vault.address} />
                 <RebalanceCooldown vault={vault} />
+                <StrategyChallenge vault={vault} onRefresh={refetchVaultData} />
               </aside>
 
               <div className="dashboardSafety">
@@ -1733,7 +1736,7 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
   const isLive = vault.dataMode === "live";
   const isEmpty = vault.dataMode === "empty";
   const label = isLive
-    ? "Live contract data"
+    ? vault.readFailed ? "Last successful contract data" : "Live contract data"
     : isEmpty && vault.factoryReadFailed
       ? "OTF data unavailable"
       : isEmpty && vault.factoryAddress
@@ -1741,7 +1744,7 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
         : isEmpty
           ? "Protocol unavailable"
           : "Network unavailable";
-  const tone = isLive ? "success" : "muted";
+  const tone = isLive ? vault.readFailed ? "warning" : "success" : "muted";
 
   return (
     <div className={`provenanceBanner ${vault.dataMode}`} role="status">
@@ -1749,7 +1752,9 @@ function DataProvenance({ vault, factory = false }: { vault: VaultView; factory?
       <div>
         <strong>
           {isLive
-            ? "Values are being read from Robinhood Chain Testnet."
+            ? vault.readFailed
+              ? "The latest refresh failed, so the last successful contract values remain visible."
+              : "Values are being read from Robinhood Chain Testnet."
             : isEmpty
               ? vault.factoryReadFailed
                 ? "OTF data could not be loaded from Robinhood Chain Testnet."
@@ -1925,12 +1930,10 @@ function PortfolioAllocation({
   vault,
   allocations,
   oraclePrices,
-  onRefresh,
 }: {
   vault: VaultView;
   allocations: Allocation[];
   oraclePrices: CatalogOraclePrices;
-  onRefresh: () => Promise<unknown>;
 }) {
   const holdingContracts = vault.address && allocations.length
     ? allocations.flatMap((asset) => ([
@@ -2048,8 +2051,6 @@ function PortfolioAllocation({
           <span>The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</span>
         </div>
       </div>
-      <StrategyChallenge vault={vault} onRefresh={onRefresh} />
-
     </SectionCard>
   );
 }
@@ -2282,10 +2283,8 @@ function ThesisAmendmentCard({
 
 function UserActions({
   vault,
-  oraclePrices,
 }: {
   vault: VaultView;
-  oraclePrices: CatalogOraclePrices;
 }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
   const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
@@ -2809,17 +2808,6 @@ function UserActions({
     maximumSettlementTotal <= requestedUsdgAmount;
   const entryAllowanceSufficient = maximumSettlementTotal !== undefined &&
     settlementAllowance !== undefined && settlementAllowance >= maximumSettlementTotal;
-  const entryOracleValue = entryQuoteReady && entryLegs.every(
-    (leg) => oraclePrices[leg.address.toLowerCase()]?.answer !== undefined,
-  )
-    ? entryLegs.reduce((sum, leg) => {
-        const price = oraclePrices[leg.address.toLowerCase()];
-        if (leg.requiredAmount === undefined || price?.answer === undefined || price.decimals === undefined) {
-          return sum;
-        }
-        return sum + (leg.requiredAmount * price.answer) / (10n ** BigInt(price.decimals));
-      }, 0n)
-    : undefined;
   const entryBusy = entryState === "pending" || entryState === "submitted";
   const redeemShareBalance = redeemAuthorizationResults?.[0]?.result as bigint | undefined;
   const redeemShareAllowance = redeemAuthorizationResults?.[1]?.result as bigint | undefined;
@@ -3203,6 +3191,7 @@ function UserActions({
   }
 
   function changeAction(nextAction: "deposit" | "redeem") {
+    if (nextAction === activeAction) return;
     setActiveAction(nextAction);
     setTradeAmount("");
     setSelectedRoute(undefined);
@@ -3325,7 +3314,7 @@ function UserActions({
                 onClick={() => setSelectedRoute("market")}
               >
                 <span className="positionRouteIcon"><Droplets size={18} /></span>
-                <span className="positionRouteName">{vault.symbol} pool</span>
+                <span className="positionRouteName">Liquidity pool</span>
                 <strong className="positionRouteQuote">
                   {marketPoolChecking
                     ? <Loader2 className="spin" size={18} />
@@ -3426,7 +3415,7 @@ function UserActions({
               <div>
                 <span className="positionRouteIcon"><Droplets size={16} /></span>
                 <div>
-                  <strong>Open market</strong>
+                  <strong>Liquidity pool</strong>
                   <span>{activeAction === "deposit" ? "Buy existing shares from the OTF / USDG pool." : "Sell shares into the OTF / USDG pool."}</span>
                 </div>
               </div>
@@ -3524,9 +3513,9 @@ function UserActions({
             {activeAction === "deposit" ? (
               <>
                 <div className="positionExecutionQuote">
-                  <div><span>Estimated shares</span><strong>{requestedEntryShares ? formatWalletTokenBalance(requestedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
-                  <div><span>Maximum spend</span><strong>{maximumSettlementTotal !== undefined ? formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
-                  <div><span>Oracle-priced basket</span><strong>{entryOracleValue === undefined ? "Unavailable" : formatUsd18(entryOracleValue)}</strong></div>
+                  <div><span>USDG spent</span><strong>{maximumSettlementTotal !== undefined ? formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Estimated shares</span><strong>{navEstimatedShares ? formatWalletTokenBalance(navEstimatedShares, 18) : "—"} {vault.symbol}</strong></div>
+                  <div><span>Minimum shares</span><strong>{requestedEntryShares ? formatWalletTokenBalance(requestedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                 </div>
                 {!entryWithinBudget && maximumSettlementTotal !== undefined ? (
                   <div className="validationSummary danger">
@@ -4263,37 +4252,44 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   }
 
   return (
-    <div className="challengeActionBlock portfolioChallenge">
-      <div className="subHeader">
-        <span>Strategy challenge</span>
-        <small>{vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}</small>
-      </div>
-      <p>
-        {vault.challengeActive
-          ? vault.challengeTimeRemaining > 0
-            ? `Manager fee withdrawals are locked for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
-            : "The response deadline has passed. The original challenger may collect forfeited fee rewards, while restoration remains available once the portfolio returns to its completion band."
+    <SectionCard
+      title="Portfolio strategy change"
+      subtitle="Challenge a portfolio that moves outside its strategy band"
+      icon={<ShieldCheck size={15} />}
+      action={(
+        <span className={`stateBadge ${vault.challengeActive ? "danger" : vault.withinChallengeBands ? "success" : "warning"}`}>
+          {vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}
+        </span>
+      )}
+    >
+      <div className="challengeActionBlock portfolioChallenge">
+        <p>
+          {vault.challengeActive
+            ? vault.challengeTimeRemaining > 0
+              ? `Manager fee withdrawals are locked for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
+              : "The response deadline has passed. The original challenger may collect forfeited fee rewards, while restoration remains available once the portfolio returns to its completion band."
             : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
-      </p>
+        </p>
         <div className="challengeRewardLine">
-        <span>Caller reward</span>
-        <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
+          <span>Caller reward</span>
+          <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
+        </div>
+        {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
+        {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
+        <TxStatus state={challengeState} />
+        <TxStatus state={rewardState} />
+        <div className="buttonRow">
+          <button className="secondaryAction" type="button" disabled={!connectedAddress || !challengeAction || challengeBusy} onClick={submitChallengeAction}>
+            <ShieldCheck size={14} />
+            {challengeButtonLabel}
+          </button>
+          <button className="secondaryAction" type="button" disabled={!connectedAddress || !canClaimReward || rewardBusy} onClick={claimChallengeReward}>
+            <CircleDollarSign size={14} />
+            {rewardBusy ? "Claiming reward" : "Claim reward"}
+          </button>
+        </div>
       </div>
-      {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
-      {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
-      <TxStatus state={challengeState} />
-      <TxStatus state={rewardState} />
-      <div className="buttonRow">
-        <button className="secondaryAction" type="button" disabled={!connectedAddress || !challengeAction || challengeBusy} onClick={submitChallengeAction}>
-          <ShieldCheck size={14} />
-          {challengeButtonLabel}
-        </button>
-        <button className="secondaryAction" type="button" disabled={!connectedAddress || !canClaimReward || rewardBusy} onClick={claimChallengeReward}>
-          <CircleDollarSign size={14} />
-          {rewardBusy ? "Claiming reward" : "Claim reward"}
-        </button>
-      </div>
-    </div>
+    </SectionCard>
   );
 
   async function claimChallengeReward() {
@@ -5954,9 +5950,9 @@ function WalletView({
                   title="Open USDG faucet"
                   aria-label="Open USDG faucet in a new tab"
                 >
-                  <Droplets size={14} />
-                  Faucet
-                  <ExternalLink size={10} />
+                  <Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" />
+                  <span>Faucet</span>
+                  <ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" />
                 </a>
               )}
             />
@@ -5972,9 +5968,9 @@ function WalletView({
                   title="Open Robinhood testnet ETH faucet"
                   aria-label="Open Robinhood testnet ETH faucet in a new tab"
                 >
-                  <Droplets size={14} />
-                  Faucet
-                  <ExternalLink size={10} />
+                  <Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" />
+                  <span>Faucet</span>
+                  <ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" />
                 </a>
               )}
             />
