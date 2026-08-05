@@ -45,6 +45,14 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
     }
 
+    function testFactoryRejectsEmptyInitialStrategyRationale() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialStrategyRationale = "";
+
+        vm.expectRevert(OTFFactory.StrategyRationaleRequired.selector);
+        factory.createVault(params);
+    }
+
     function testFactoryRejectsMismatchedArrays() public {
         VaultInitParams memory params = _defaultParams();
         params.initialAmounts = new uint256[](1);
