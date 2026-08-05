@@ -31,7 +31,6 @@ import {
   LockKeyhole,
   KeyRound,
   Landmark,
-  Moon,
   Network,
   Palette,
   Plus,
@@ -86,6 +85,7 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
+type AppearancePreference = "default" | "light" | "dark";
 type PositionTradeReceipt = {
   action: "deposit" | "redeem";
   detail: string;
@@ -1252,7 +1252,7 @@ export function TopNav({
 }) {
   const [networkOpen, setNetworkOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<AppearancePreference>("default");
   const [palette, setPalette] = useState<"default" | "robinhood">("default");
   const chainId = useChainId();
   const testnetMode = chainId === robinhoodChainTestnet.id;
@@ -1262,14 +1262,30 @@ export function TopNav({
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("otf-theme");
-    const initialTheme = savedTheme === "light" ? "light" : "dark";
+    const initialTheme: AppearancePreference = savedTheme === "light" || savedTheme === "dark"
+      ? savedTheme
+      : "default";
     const savedPalette = window.localStorage.getItem("otf-palette");
     const initialPalette = savedPalette === "robinhood" ? "robinhood" : "default";
     setTheme(initialTheme);
     setPalette(initialPalette);
-    document.documentElement.dataset.theme = initialTheme;
     document.documentElement.dataset.palette = initialPalette;
   }, []);
+
+  useEffect(() => {
+    const browserPreference = window.matchMedia("(prefers-color-scheme: light)");
+
+    function applyTheme() {
+      document.documentElement.dataset.theme = theme === "default"
+        ? browserPreference.matches ? "light" : "dark"
+        : theme;
+    }
+
+    applyTheme();
+    if (theme !== "default") return;
+    browserPreference.addEventListener("change", applyTheme);
+    return () => browserPreference.removeEventListener("change", applyTheme);
+  }, [theme]);
 
   useEffect(() => {
     if (!networkOpen && !settingsOpen) return;
@@ -1305,9 +1321,8 @@ export function TopNav({
     switchChain({ chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id });
   }
 
-  function changeTheme(nextTheme: "dark" | "light") {
+  function changeTheme(nextTheme: AppearancePreference) {
     setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
     window.localStorage.setItem("otf-theme", nextTheme);
   }
 
@@ -1439,23 +1454,29 @@ export function TopNav({
                 </div>
                 <div className="settingsGroup">
                   <span className="settingsLabel">Appearance</span>
-                  <button
-                    className="settingsOption"
-                    type="button"
-                    aria-pressed={theme === "light"}
-                    onClick={() => changeTheme(theme === "light" ? "dark" : "light")}
-                  >
-                    <span className="settingsOptionIcon">
-                      {theme === "light" ? <Sun size={15} /> : <Moon size={15} />}
-                    </span>
+                  <div className="settingsThemeHeading">
+                    <span className="settingsOptionIcon"><Sun size={15} /></span>
                     <span className="settingsOptionText">
-                      <strong>Light mode</strong>
-                      <small>{theme === "light" ? "On" : "Off"}</small>
+                      <strong>Mode</strong>
+                      <small>Follow your browser or choose a mode</small>
                     </span>
-                    <span className={`themeSwitch ${theme === "light" ? "active" : ""}`} aria-hidden="true">
-                      <span />
-                    </span>
-                  </button>
+                  </div>
+                  <div className="settingsThemeChoices appearance" role="radiogroup" aria-label="Application appearance">
+                    {(["default", "light", "dark"] as const).map((value) => (
+                      <button
+                        className={`settingsThemeChoice ${theme === value ? "selected" : ""}`}
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={theme === value}
+                        onClick={() => changeTheme(value)}
+                      >
+                        <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />
+                        <span>{value[0].toUpperCase() + value.slice(1)}</span>
+                        {theme === value ? <Check size={12} aria-hidden="true" /> : null}
+                      </button>
+                    ))}
+                  </div>
                   <div className="settingsThemePicker">
                     <div className="settingsThemeHeading">
                       <span className="settingsOptionIcon"><Palette size={15} /></span>
@@ -1464,7 +1485,7 @@ export function TopNav({
                         <small>Choose the application color palette</small>
                       </span>
                     </div>
-                    <div className="settingsThemeChoices" role="radiogroup" aria-label="Application theme">
+                    <div className="settingsThemeChoices palette" role="radiogroup" aria-label="Application theme">
                       {(["default", "robinhood"] as const).map((value) => (
                         <button
                           className={`settingsThemeChoice ${palette === value ? "selected" : ""}`}
@@ -2872,6 +2893,13 @@ function UserActions({
       : walletInputBalance === undefined
         ? "Unavailable"
         : `${formatWalletTokenBalance(walletInputBalance, inputTokenDecimals)} ${inputTokenSymbol}`;
+  const ownedSharesLabel = !connectedAddress
+    ? "Connect wallet"
+    : redeemAuthorizationLoading
+      ? "Checking..."
+      : redeemShareBalance === undefined
+        ? "Unavailable"
+        : `${formatWalletTokenBalance(redeemShareBalance, 18)} ${vault.symbol}`;
   const routeInputsReady = Boolean(marketInputAmount && marketInputAmount > 0n && slippageValid);
   const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false && constituentPoolsReady;
   const underlyingQuoteReady = activeAction === "deposit"
@@ -3211,6 +3239,10 @@ function UserActions({
       icon={<Wallet size={15} />}
     >
       <div className="positionTradeTicket">
+        <div className="positionOwnershipSummary">
+          <span>Your shares</span>
+          <strong>{ownedSharesLabel}</strong>
+        </div>
         <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
           <button
             className={activeAction === "deposit" ? "active" : ""}
@@ -5259,7 +5291,8 @@ function CreateVaultView({
                 <div className="formGrid twoColumns">
                   <label>
                     <span>OTF name</span>
-                    <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Technology Leaders" />
+                    <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Technology Leaders OTF" />
+                    <small>The name cannot be changed after deployment.</small>
                   </label>
                   <label>
                     <span>OTF ticker</span>
@@ -5278,7 +5311,7 @@ function CreateVaultView({
                         aria-label="OTF ticker suffix"
                       />
                     </div>
-                    <small>The OTF- prefix is fixed.</small>
+                    <small>The OTF- prefix is fixed, and the ticker cannot be changed after deployment.</small>
                   </label>
                 </div>
                 <label>

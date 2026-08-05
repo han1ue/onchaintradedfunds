@@ -447,23 +447,32 @@ button.settingsOption:disabled {
 
 .settingsThemeChoices {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: fit-content;
   gap: 7px;
+}
+
+.settingsThemeChoices.appearance {
+  grid-template-columns: repeat(3, 76px);
+  margin-top: 9px;
+}
+
+.settingsThemeChoices.palette {
+  grid-template-columns: repeat(2, 92px);
 }
 
 .settingsThemeChoice {
   display: grid;
   min-width: 0;
-  min-height: 58px;
-  grid-template-columns: 18px minmax(0, 1fr) 13px;
+  min-height: 38px;
+  grid-template-columns: 14px minmax(0, 1fr) 12px;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--card-raised);
   color: var(--text-soft);
   cursor: pointer;
-  padding: 9px;
+  padding: 6px 7px;
   text-align: left;
   transition: border-color 150ms ease-out, background 150ms ease-out, color 150ms ease-out;
 }
@@ -487,7 +496,7 @@ button.settingsOption:disabled {
 
 .settingsThemeChoice > span:not(.settingsThemeSwatch) {
   overflow: hidden;
-  font-size: 0.63rem;
+  font-size: 0.6rem;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -498,8 +507,8 @@ button.settingsOption:disabled {
 }
 
 .settingsThemeSwatch {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 50%;
   box-shadow: 0 3px 8px rgb(0 0 0 / 22%);
@@ -511,6 +520,19 @@ button.settingsOption:disabled {
 
 .settingsThemeSwatch.robinhood {
   background: #ccff00;
+}
+
+.settingsThemeSwatch.appearance-default {
+  background: linear-gradient(135deg, #f6f8f9 0 50%, #18202a 50% 100%);
+}
+
+.settingsThemeSwatch.appearance-light {
+  border-color: var(--border-strong);
+  background: #f6f8f9;
+}
+
+.settingsThemeSwatch.appearance-dark {
+  background: #18202a;
 }
 
 .settingsOptionIcon {
@@ -990,7 +1012,7 @@ h2 {
   gap: 3px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: rgb(24 30 39 / 84%);
+  background: var(--card-raised);
   color: var(--text-muted);
   padding: 0 4px;
   font-size: 0.58rem;
@@ -1190,7 +1212,7 @@ h2 {
   gap: 12px;
   min-height: 56px;
   border-bottom: 1px solid var(--border);
-  background: rgb(24 30 39 / 48%);
+  background: var(--card-raised);
   padding: 11px 16px;
 }
 
@@ -1995,6 +2017,32 @@ textarea::placeholder {
   gap: 18px;
 }
 
+.positionOwnershipSummary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.positionOwnershipSummary span {
+  color: var(--text-muted);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.positionOwnershipSummary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .positionActionSelector {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2697,7 +2745,7 @@ textarea::placeholder {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
   border-bottom: 1px solid var(--border);
-  background: rgb(24 30 39 / 48%);
+  background: var(--card-raised);
   padding: 8px;
 }
 
@@ -4412,7 +4460,7 @@ textarea::placeholder {
 }
 
 .createSteps > button:hover {
-  background: rgb(36 44 55 / 28%);
+  background: var(--card-raised);
 }
 
 .createSteps > button.active {
@@ -6410,7 +6458,7 @@ input.invalid {
   place-items: center;
   align-content: center;
   gap: 10px;
-  background: #090e14;
+  background: var(--background);
 }
 
 .landingLoading span {
@@ -6441,7 +6489,7 @@ input.invalid {
 }
 
 .landingLoading strong {
-  color: #a8b4c0;
+  color: var(--text-soft);
   font-size: 0.78rem;
   font-weight: 600;
   animation: otfLoadingText 1.8s ease-in-out infinite;
