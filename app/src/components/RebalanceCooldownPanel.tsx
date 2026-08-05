@@ -4586,12 +4586,6 @@ function VaultsDirectory({
                     <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
                     <td>
                       <div className="managedTableActions">
-                        <button className="secondaryAction" type="button" onClick={(event) => {
-                          event.stopPropagation();
-                          onOpenVault(row.address);
-                        }}>
-                          Open OTF
-                        </button>
                         <button className="primaryAction" type="button" onClick={(event) => {
                           event.stopPropagation();
                           onManageVault(row.address);
@@ -4635,7 +4629,6 @@ function VaultsDirectory({
                 <th>Assets</th>
                 <th>Creator fee</th>
                 <th>Manager</th>
-                <th />
               </tr>
             </thead>
             <tbody>
@@ -4662,7 +4655,6 @@ function VaultsDirectory({
                   <td data-label="Assets">{row.assetCount}</td>
                   <td data-label="Creator fee">{bpsToPercent(row.creatorFeeBps)}</td>
                   <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
-                  <td><ChevronRight size={14} /></td>
                 </tr>
               ))}
             </tbody>

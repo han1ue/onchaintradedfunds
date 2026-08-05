@@ -4148,6 +4148,11 @@ textarea::placeholder {
   padding-right: 14px;
 }
 
+.directoryPanel .directoryTable th:last-child,
+.directoryPanel .directoryTable td:last-child {
+  width: auto;
+}
+
 .directoryTable tbody tr {
   cursor: pointer;
   outline: none;
@@ -4266,14 +4271,12 @@ textarea::placeholder {
 
   .directoryPanel .directoryTable td:first-child,
   .managedVaultsPanel .directoryTable td:first-child,
-  .directoryPanel .directoryTable td:last-child,
   .managedVaultsPanel .directoryTable td:last-child {
     grid-column: 1 / -1;
     width: auto;
     padding: 0;
   }
 
-  .directoryPanel .directoryTable td:last-child,
   .managedVaultsPanel .directoryTable td:last-child {
     justify-content: flex-end;
   }
@@ -6340,7 +6343,6 @@ input.invalid {
   .managedVaultsPanel .directoryTable td:first-child,
   .depositPositions .directoryTable td:first-child,
   .walletAssets .directoryTable td:first-child,
-  .directoryPanel .directoryTable td:last-child,
   .managedVaultsPanel .directoryTable td:last-child,
   .depositPositions .directoryTable td:last-child {
     grid-column: 1 / -1;
@@ -6348,7 +6350,6 @@ input.invalid {
     padding: 0;
   }
 
-  .directoryPanel .directoryTable td:last-child,
   .managedVaultsPanel .directoryTable td:last-child,
   .depositPositions .directoryTable td:last-child {
     justify-content: flex-end;
