@@ -22,12 +22,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <aside className="testnetWarningBanner" aria-label="Testnet risk warning">
           <div>
             <AlertTriangle aria-hidden="true" size={13} strokeWidth={2.2} />
-            <strong>Testnet.</strong>
+            <strong>Testnet</strong>
             <span className="testnetWarningDesktop">
-              Contracts may be redeployed without notice. OTF positions and deposited assets may be lost.
+              Contracts may be redeployed. Assets may be lost.
             </span>
             <span className="testnetWarningMobile">
-              Contracts may be redeployed without notice. OTF positions and deposited assets may be lost.
+              Contracts may be redeployed. Assets may be lost.
             </span>
           </div>
         </aside>
