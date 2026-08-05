@@ -29,6 +29,7 @@ import {
   LayoutGrid,
   Loader2,
   LockKeyhole,
+  Monitor,
   KeyRound,
   Landmark,
   Network,
@@ -1444,12 +1445,11 @@ export function TopNav({
               <div className="settingsMenu" role="dialog" aria-label="Application settings">
                 <div className="settingsMenuHeader">
                   <strong>Settings</strong>
-                  <span>Environment and appearance</span>
                 </div>
                 <div className="settingsGroup">
                   <span className="settingsLabel">Environment</span>
                   <button
-                    className="settingsOption"
+                    className="settingsEnvironmentToggle"
                     type="button"
                     aria-pressed={testnetMode}
                     disabled={networkSwitchPending}
@@ -1458,7 +1458,7 @@ export function TopNav({
                     <span className="settingsOptionIcon"><Zap size={15} /></span>
                     <span className="settingsOptionText">
                       <strong>Testnet mode</strong>
-                      <small>{testnetMode ? "On" : "Off"}</small>
+                      <small>Uses the testnet of the currently selected chain.</small>
                     </span>
                     <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true">
                       <span />
@@ -1484,7 +1484,11 @@ export function TopNav({
                         aria-checked={theme === value}
                         onClick={() => changeTheme(value)}
                       >
-                        <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />
+                        {value === "default" ? (
+                          <Monitor className="settingsSystemIcon" size={13} aria-hidden="true" />
+                        ) : (
+                          <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />
+                        )}
                         <span>{value[0].toUpperCase() + value.slice(1)}</span>
                         {theme === value ? <Check size={12} aria-hidden="true" /> : null}
                       </button>

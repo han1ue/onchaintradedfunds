@@ -404,6 +404,7 @@ main {
   border-radius: 7px;
   background: var(--card);
   box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+  text-align: left;
 }
 
 .networkMenu {
@@ -497,6 +498,37 @@ button.settingsOption:disabled {
   padding-inline: 4px;
 }
 
+.settingsEnvironmentToggle {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px;
+  text-align: left;
+}
+
+.settingsEnvironmentToggle:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.settingsEnvironmentToggle:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.settingsEnvironmentToggle .settingsOptionIcon {
+  width: 26px;
+  height: 26px;
+}
+
 .settingsThemeChoices {
   display: grid;
   width: calc(100% - 6px);
@@ -557,6 +589,10 @@ button.settingsOption:disabled {
 
 .settingsThemeChoice svg {
   color: var(--green);
+}
+
+.settingsThemeChoice .settingsSystemIcon {
+  color: var(--text-muted);
 }
 
 .settingsThemeSwatch {
