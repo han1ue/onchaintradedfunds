@@ -133,7 +133,6 @@ flowchart LR
 - Implements exact-input rebalance and redemption swaps plus exact-output settlement entry against a configurable Uniswap V3-compatible router.
 - Uses one immutable settlement token and fee tier, validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
 - Routes RWA-to-RWA rebalances through USDG as the only permitted intermediate token while the vault-visible input and output remain active constituents.
-- The earlier `UniswapV2Adapter` remains available for compatibility but is not used by the Robinhood testnet configuration.
 
 `AssetRegistry`
 
@@ -607,7 +606,7 @@ addresses from `app/src/config/robinhood-testnet.json`. It rejects an empty prot
 `USDG_ADDRESS` and all four Uniswap V3-compatible addresses are required because every new OTF
 receives an official OTF/USDG pool during its factory transaction. Robinhood testnet currently
 points these fields at Synthra; Robinhood mainnet can use official Uniswap without changing vault
-interfaces. `UNISWAP_V2_ROUTER_ADDRESS` remains optional for legacy deployments.
+interfaces.
 
 After the base protocol and mock oracle catalog are configured, deploy the V3 adapter and entry
 router and create the five RWA/USDG pools with:

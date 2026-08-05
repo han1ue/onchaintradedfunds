@@ -112,9 +112,6 @@ const approvedAdapters = (deploymentConfig.setupTransactions?.approvedAdapters ?
 );
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
-const uniswapRouterAddress = externalContracts.uniswapV2Router
-  ? parseAddress("externalContracts.uniswapV2Router", externalContracts.uniswapV2Router)
-  : undefined;
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
   externalContracts.uniswapV3Factory,
@@ -185,19 +182,6 @@ const factory = await deployContract({
   ],
 });
 
-let uniswapAdapter;
-let entryRouter;
-if (usdgAddress && uniswapRouterAddress) {
-  uniswapAdapter = await deployContract({
-    name: "UniswapV2Adapter",
-    args: [account.address, uniswapRouterAddress],
-  });
-  entryRouter = await deployContract({
-    name: "OTFEntryRouter",
-    args: [account.address, factory.address, usdgAddress],
-  });
-}
-
 const v3MarketRegistry = await deployContract({
   name: "OTFV3MarketRegistry",
   args: [
@@ -212,8 +196,6 @@ const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const assetRegistryAbi = contractArtifact("AssetRegistry").abi;
 const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
-const uniswapAdapterAbi = uniswapAdapter ? contractArtifact("UniswapV2Adapter").abi : undefined;
-const entryRouterAbi = entryRouter ? contractArtifact("OTFEntryRouter").abi : undefined;
 
 const setupTransactions = {
   setExecutorFactory: await writeContract({
@@ -271,47 +253,6 @@ for (const adapter of approvedAdapters) {
   });
 }
 
-if (uniswapAdapter && entryRouter && uniswapAdapterAbi && entryRouterAbi) {
-  setupTransactions.settlementEntry.push(
-    {
-      action: "approve-trade-adapter",
-      ...(await writeContract({
-        address: factory.address,
-        abi: factoryAbi,
-        functionName: "setTradeAdapterApproved",
-        args: [uniswapAdapter.address, true],
-      })),
-    },
-    {
-      action: "approve-entry-adapter",
-      ...(await writeContract({
-        address: entryRouter.address,
-        abi: entryRouterAbi,
-        functionName: "setEntryAdapterApproved",
-        args: [uniswapAdapter.address, true],
-      })),
-    },
-    {
-      action: "authorize-rebalance-executor",
-      ...(await writeContract({
-        address: uniswapAdapter.address,
-        abi: uniswapAdapterAbi,
-        functionName: "setCallerApproved",
-        args: [rebalanceExecutor.address, true],
-      })),
-    },
-    {
-      action: "authorize-entry-router",
-      ...(await writeContract({
-        address: uniswapAdapter.address,
-        abi: uniswapAdapterAbi,
-        functionName: "setCallerApproved",
-        args: [entryRouter.address, true],
-      })),
-    },
-  );
-}
-
 const deployment = {
   network: "robinhood-testnet",
   chainId,
@@ -327,8 +268,6 @@ const deployment = {
     feeCollector,
     vaultImplementation,
     factory,
-    ...(uniswapAdapter ? { uniswapAdapter } : {}),
-    ...(entryRouter ? { entryRouter } : {}),
     ...(v3MarketRegistry ? { v3MarketRegistry } : {}),
   },
   externalContracts: {
@@ -337,7 +276,6 @@ const deployment = {
     uniswapV3PositionManager: uniswapV3PositionManagerAddress,
     uniswapV3SwapRouter: uniswapV3SwapRouterAddress,
     uniswapV3Quoter: uniswapV3QuoterAddress,
-    ...(uniswapRouterAddress ? { uniswapV2Router: uniswapRouterAddress } : {}),
   },
   v3Venue: {
     provider: "synthra",

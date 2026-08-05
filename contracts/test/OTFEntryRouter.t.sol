@@ -55,6 +55,32 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenB.allowance(address(entryRouter), address(vault)), 0);
     }
 
+    function testEntryCanMixApprovedAdaptersAcrossConstituentLegs() public {
+        ManagedOTFVault vault = _createVault();
+        MockEntryAdapter secondAdapter = new MockEntryAdapter();
+        entryRouter.setEntryAdapterApproved(address(secondAdapter), true);
+        secondAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
+        tokenB.mint(address(secondAdapter), 10_000 * ONE);
+
+        uint256 shares = 10 * ONE;
+        uint256[] memory required = vault.previewMint(shares);
+        EntrySwap[] memory swaps = _swaps(required[0], required[1]);
+        swaps[1].adapter = address(secondAdapter);
+        uint256 maximum = required[0] + required[1];
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), maximum);
+        uint256 spent = entryRouter.enterWithSettlement(
+            address(vault), shares, ALICE, maximum, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertEq(spent, maximum);
+        assertEq(vault.balanceOf(ALICE), shares);
+        assertEq(tokenC.allowance(address(entryRouter), address(entryAdapter)), 0);
+        assertEq(tokenC.allowance(address(entryRouter), address(secondAdapter)), 0);
+    }
+
     function testUnapprovedAdapterRevertsBeforePullingSettlement() public {
         ManagedOTFVault vault = _createVault();
         EntrySwap[] memory swaps = _swaps(60 * ONE, 60 * ONE);
