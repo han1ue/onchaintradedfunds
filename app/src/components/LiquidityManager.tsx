@@ -370,6 +370,8 @@ function LiquidityWorkspace() {
   const { data: token1Decimals } = useReadContract({ address: token1, abi: erc20Abi, functionName: "decimals", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1) } });
   const { data: token0Balance, refetch: refetchToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address), refetchInterval: 12_000 } });
   const { data: token1Balance, refetch: refetchToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && address), refetchInterval: 12_000 } });
+  const { data: poolToken0Balance, refetch: refetchPoolToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && poolAddress), refetchInterval: 12_000 } });
+  const { data: poolToken1Balance, refetch: refetchPoolToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && poolAddress), refetchInterval: 12_000 } });
   const { data: token0Allowance, refetch: refetchToken0Allowance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "allowance", args: [address ?? zeroAddress, positionManager ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address && positionManager) } });
   const { data: token1Allowance, refetch: refetchToken1Allowance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "allowance", args: [address ?? zeroAddress, positionManager ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && address && positionManager) } });
 
@@ -511,6 +513,8 @@ function LiquidityWorkspace() {
       refetchPoolLiquidity(),
       refetchToken0Balance(),
       refetchToken1Balance(),
+      refetchPoolToken0Balance(),
+      refetchPoolToken1Balance(),
       refetchToken0Allowance(),
       refetchToken1Allowance(),
       refetchPositionOwner(),
@@ -717,6 +721,8 @@ function LiquidityWorkspace() {
               <div><span>Pool</span><strong>{officialPoolLoading ? "Resolving…" : shortAddress(poolAddress)}</strong></div>
               <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
               <div><span>Pool price</span><strong>{poolPriceLabel}</strong></div>
+              <div><span>{token0Symbol ?? "Token 0"} in pool</span><strong>{formatAmount(poolToken0Balance, token0Decimals)}</strong></div>
+              <div><span>{token1Symbol ?? "Token 1"} in pool</span><strong>{formatAmount(poolToken1Balance, token1Decimals)}</strong></div>
               <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity && poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
             </div>
 

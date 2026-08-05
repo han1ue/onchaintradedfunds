@@ -57,6 +57,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "pruneRetiredAssets",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [{ name: "removed", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "targetWeightsBps",
     stateMutability: "view",
     inputs: [],

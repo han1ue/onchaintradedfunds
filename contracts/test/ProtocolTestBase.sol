@@ -4,8 +4,10 @@ pragma solidity ^0.8.24;
 import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
+import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
@@ -63,7 +65,9 @@ abstract contract ProtocolTestBase is TestBase {
         oracleRegistry.setPriceFeed(address(tokenB), address(feedB));
         oracleRegistry.setPriceFeed(address(tokenC), address(feedC));
 
-        ManagedOTFVault implementation = new ManagedOTFVault();
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
+        ManagedOTFVault implementation = new ManagedOTFVault(calculator, address(strategy));
         factory = new OTFFactory(
             address(implementation),
             address(collector),
@@ -122,7 +126,7 @@ abstract contract ProtocolTestBase is TestBase {
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
             creatorFeeBpsPerYear: 100,
-            rebalanceCooldown: uint32(7 days),
+            rebalanceCooldown: uint32(14 days),
             maxTurnoverBps: 5_000,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,

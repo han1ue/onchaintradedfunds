@@ -4,9 +4,11 @@ pragma solidity ^0.8.24;
 import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
+import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
@@ -54,7 +56,9 @@ contract RebalanceCooldownTest is TestBase {
         adapter.setRate(address(tokenA), address(tokenB), 1, 1);
         adapter.setRate(address(tokenB), address(tokenA), 1, 1);
 
-        ManagedOTFVault implementation = new ManagedOTFVault();
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
+        ManagedOTFVault implementation = new ManagedOTFVault(calculator, address(strategy));
         FeeCollector collector = new FeeCollector(address(0xCAFE));
         factory = new OTFFactory(
             address(implementation),
@@ -72,10 +76,10 @@ contract RebalanceCooldownTest is TestBase {
         tokenB.approve(address(factory), type(uint256).max);
     }
 
-    function testFirstRebalanceBeforeSevenDaysReverts() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+    function testFirstRebalanceBeforeFourteenDaysReverts() public {
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
-        vm.warp(START + 7 days - 1);
+        vm.warp(START + 14 days - 1);
         _refreshPrices();
         vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
         _propose6040(vault);
@@ -83,29 +87,30 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
     }
 
-    function testStrategyChangeRemainsLockedAtSevenDays() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+    function testStrategyChangeUsesOnlyCompletionBasedClock() public {
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 7 days);
         _refreshPrices();
-        assertEq(vault.nextRebalanceTime(), START + 7 days);
+        assertEq(vault.nextRebalanceTime(), START + 14 days);
+        assertEq(vault.nextStrategyChangeTime(), vault.nextRebalanceTime());
         assertFalse(vault.canProposeTargetWeights());
-        vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
         _propose6040(vault);
     }
 
     function testFirstStrategyChangeActivatesAfterFourteenDaysPlusNotice() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 14 days);
         _rebalanceTo6040(vault, 100 * ONE);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 16 days));
-        assertEq(vault.nextRebalanceTime(), START + 23 days);
+        assertEq(vault.nextRebalanceTime(), START + 30 days);
     }
 
     function testTargetProposalDoesNotResetCooldownUntilCompletion() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 14 days);
         _refreshPrices();
@@ -114,11 +119,11 @@ contract RebalanceCooldownTest is TestBase {
         assertTrue(vault.strategyProposalPending());
         assertFalse(vault.strategicRebalanceActive());
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
-        assertEq(vault.nextRebalanceTime(), START + 7 days);
+        assertEq(vault.nextRebalanceTime(), START + 14 days);
     }
 
     function testPendingStrategyCannotActivateBeforeFortyEightHoursAndUsersCanExit() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
         vm.warp(START + 14 days);
         _refreshPrices();
         _propose6040(vault);
@@ -147,22 +152,24 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.targetWeightBps(address(tokenA)), 6_000);
     }
 
-    function testSecondRebalanceBeforeAnotherSevenDaysReverts() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+    function testSecondRebalanceBeforeFourteenDaysFromCompletionReverts() public {
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 14 days);
         _rebalanceTo6040(vault, 100 * ONE);
 
         vm.warp(START + 30 days - 1);
         _refreshPrices();
-        vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
+        assertTrue(vault.isWithinTargetBands());
+        assertFalse(vault.canProposeTargetWeights());
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
         _propose5050(vault);
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 16 days));
     }
 
-    function testSecondStrategyChangeExactlyFourteenDaysAfterActivationSucceeds() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+    function testSecondStrategyChangeExactlyFourteenDaysAfterCompletionSucceeds() public {
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 14 days);
         _rebalanceTo6040(vault, 100 * ONE);
@@ -176,7 +183,7 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testRevertedTargetProposalDoesNotResetCooldown() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 14 days);
         _refreshPrices();
@@ -196,7 +203,7 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testThesisAmendmentDoesNotResetCooldown() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 1 days);
         vault.appendThesisAmendment("Updated thesis, same portfolio.");
@@ -210,9 +217,9 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testWeightBandChangeDoesNotResetPortfolioCooldown() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
-        vm.warp(START + 7 days);
+        vm.warp(START + 14 days);
         _refreshPrices();
         vault.setWeightBands(50, 300);
 
@@ -223,9 +230,9 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testWeightBandChangeCannotExceedCompletionDeviationCap() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
-        vm.warp(START + 7 days);
+        vm.warp(START + 14 days);
         _refreshPrices();
         uint16 invalidCompletionDeviation = vault.MAX_COMPLETION_DEVIATION_BPS() + 1;
         vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidWeightBands.selector);
@@ -233,7 +240,7 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testFeeAccrualDoesNotResetCooldown() public {
-        ManagedOTFVault vault = _createVault(7 days, 100);
+        ManagedOTFVault vault = _createVault(14 days, 100);
         uint256 supplyBefore = vault.totalSupply();
 
         vm.warp(START + 1 days);
@@ -249,40 +256,27 @@ contract RebalanceCooldownTest is TestBase {
     }
 
     function testManagerCannotShortenCooldown() public {
-        ManagedOTFVault vault = _createVault(7 days, 0);
+        ManagedOTFVault vault = _createVault(14 days, 0);
 
         (bool ok,) = address(vault)
             .call(abi.encodeWithSignature("setRebalanceCooldown(uint32)", uint32(1 days)));
 
         assertFalse(ok);
-        assertEq(vault.rebalanceCooldown(), uint32(7 days));
-        assertEq(vault.nextRebalanceTime(), START + 7 days);
+        assertEq(vault.rebalanceCooldown(), uint32(14 days));
+        assertEq(vault.nextRebalanceTime(), START + 14 days);
     }
 
-    function testVaultMayUseLongerCooldown() public {
-        ManagedOTFVault vault = _createVault(10 days, 0);
+    function testFactoryRejectsLongerCooldown() public {
+        VaultInitParams memory params = _params(uint32(14 days + 1), 0);
 
-        assertEq(vault.rebalanceCooldown(), uint32(10 days));
-        assertEq(vault.nextRebalanceTime(), START + 10 days);
-
-        vm.warp(START + 7 days);
-        _refreshPrices();
-        vm.expectPartialRevert(ManagedOTFVaultStorage.RebalanceCooldownActive.selector);
-        _propose6040(vault);
-
-        vm.warp(START + 10 days);
-        _refreshPrices();
-        vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyChangeCooldownActive.selector);
-        _propose6040(vault);
-
-        vm.warp(START + 14 days);
-        _rebalanceTo6040(vault, 100 * ONE);
+        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
+        factory.createVault(params);
     }
 
-    function testFactoryRejectsCooldownShorterThanSevenDays() public {
-        VaultInitParams memory params = _params(uint32(7 days - 1), 0);
+    function testFactoryRejectsCooldownShorterThanFourteenDays() public {
+        VaultInitParams memory params = _params(uint32(14 days - 1), 0);
 
-        vm.expectRevert(OTFFactory.RebalanceCooldownTooShort.selector);
+        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
         factory.createVault(params);
     }
 

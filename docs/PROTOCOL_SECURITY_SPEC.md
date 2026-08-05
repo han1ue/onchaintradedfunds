@@ -49,9 +49,11 @@ The strategy module contains:
 - Executor authorization changes.
 - Weight-band changes.
 - Thesis amendments.
+- Manager fee withdrawal orchestration.
 - Strategic target proposals.
 - Constrained partial trade execution.
 - Rebalance completion.
+- Exact-zero retired-asset pruning.
 - Challenge creation, resolution, and deadline synchronization.
 
 The module executes using `delegatecall`, so it operates on the calling vault's storage and
@@ -282,7 +284,8 @@ A proposal requires:
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
 - Valid portfolio shape and approved assets.
-- Removed constituents to have zero reserve.
+- Any constituent omitted from the proposal remains tracked at a zero target until its reserve is
+  liquidated exactly to zero after activation.
 - Proposed turnover within the configured limit.
 
 It emits `TargetWeightsProposed`. The standard `Rebalanced` event MUST NOT be emitted until the
@@ -303,24 +306,28 @@ proposal, and manager transfer MUST cancel any proposal authored under the previ
 The manager or an authorized executor MAY submit multiple constrained partial trade batches toward
 the current target.
 
-### Asset-revocation quarantine
+### Asset-revocation retirement
 
-Registry revocation is intentionally a vault-wide fail-closed quarantine. If any address retained
-in the vault's constituent history is no longer approved, all contribution and basket-mint paths,
-including their previews, MUST remain blocked until registry governance explicitly reapproves that
-address. Reducing the revoked asset to a zero target and exact zero balance MUST NOT lift the
-quarantine automatically. Proportional in-kind redemption and constrained sell-side wind-down MUST
-remain available; new target allocation and buy-side trades into the revoked asset MUST remain
-forbidden.
+A registry revocation is a global, immediate signal and MUST NOT enter the manager's 48-hour
+proposal delay. Every affected vault MUST treat the revoked asset's effective target as exactly
+zero, renormalize the remaining approved positive targets proportionally to exactly 10,000 basis
+points, and block all contribution and basket-mint paths, including previews. If no approved
+positive-target constituent remains, every effective target is zero and the vault remains in a
+deposit-blocked retirement state. Proportional
+in-kind redemption and constrained sell-side wind-down MUST remain available; buy-side trades into
+the revoked asset MUST remain forbidden. Any nonzero raw balance remains challengeable regardless
+of percentage-band rounding. Once the exact balance reaches zero, the asset MUST be pruned and
+primary deposits MAY resume if every remaining constituent is approved and has a positive target.
 
 ### Completion
 
 `StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
-inside every completion band. A successful strategic trade batch that reaches every completion
-band MUST complete atomically after all final trade safety checks. Permissionless explicit
-completion remains available when no trade is required or natural price movement restores the
-portfolio. Completion resumes manager-fee withdrawals and is the only point that updates
-`lastRebalanceTimestamp`; proposals, failed trades, and partial trades MUST NOT update it.
+inside every completion band and every zero-target constituent has an exact zero raw balance. A
+successful strategic trade batch that reaches those conditions MUST prune retired constituents and
+complete atomically after all final trade safety checks. Permissionless explicit completion remains
+available when no trade is required or natural price movement restores the portfolio. Completion
+resumes manager-fee withdrawals and is the only point that updates `lastRebalanceTimestamp`;
+proposals, failed trades, and partial trades MUST NOT update it.
 
 ## 7. Challenge and fee accountability
 

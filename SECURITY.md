@@ -98,7 +98,9 @@ Rebalancing depends on:
 
 Target proposal, delayed activation, trade execution, and completion are separate. A proposal is
 inert for 48 hours, during which holders can redeem against the unchanged active basket. Activation
-revalidates the proposal and is limited to one strategy change per 14 days. Every partial trade
+revalidates the proposal. A new proposal is allowed only after the prior rebalance has been complete
+inside its target bands for 14 days, with no active challenge and while the portfolio is currently
+inside its completion bands. Every partial trade
 transaction is atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss
 exceeds the cap, or the batch does not move all exposures toward target, that transaction reverts
 while the activated strategic target remains active.
@@ -126,14 +128,15 @@ available during active and overdue challenges.
 
 ## Cooldown Risks
 
-The MVP uses a fixed minimum cooldown of seven days, with optional longer per-vault cooldowns.
+The MVP uses one fixed 14-day cooldown measured from successful rebalance completion.
 
 Security intent:
 
 - The first rebalance cannot happen immediately after vault creation.
 - Strategic target proposals cannot happen back to back.
 - Failed rebalances do not alter the cooldown.
-- Partial trades, completion, challenges, and non-portfolio updates do not alter the cooldown.
+- Successful completion restarts the cooldown; partial trades, challenges, and non-portfolio updates do not.
+- Active challenges and portfolios outside completion bands cannot propose a new strategy.
 
 The cooldown is not a market-risk guarantee. It only limits rebalance frequency.
 

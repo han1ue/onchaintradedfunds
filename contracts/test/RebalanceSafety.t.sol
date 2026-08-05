@@ -158,8 +158,12 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
-        assets[1] = address(tokenA);
+        assets[1] = address(tokenB);
         uint256[] memory weights = new uint256[](2);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        vault.rebalance(assets, weights);
+
+        assets[1] = address(tokenA);
         weights[0] = 5_000;
         weights[1] = 5_000;
         vm.expectPartialRevert(IERC7621.DuplicateConstituent.selector);
@@ -176,7 +180,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.rebalance(assets, weights);
     }
 
-    function testRemovedConstituentReserveStaysAccountedAtZeroTarget() public {
+    function testManagerRemovedConstituentPausesDepositsAndIsPrunedAtZero() public {
         VaultInitParams memory params = _defaultParams();
         params.maxSingleAssetWeightBps = 10_000;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
@@ -195,17 +199,23 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertTrue(vault.isConstituent(address(tokenB)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.assetCount(), 2);
+        vm.expectPartialRevert(
+            ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector
+        );
+        vault.previewMint(ONE);
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), 500 * ONE, 500 * ONE);
         vault.executeRebalanceTrades(trades);
 
         assertFalse(vault.strategicRebalanceActive());
+        assertFalse(vault.isConstituent(address(tokenB)));
+        assertEq(vault.assetCount(), 1);
         assertEq(vault.currentWeight(address(tokenA)), 10_000);
-        assertEq(vault.currentWeight(address(tokenB)), 0);
+        assertEq(vault.previewMint(ONE).length, 1);
     }
 
-    function testRevokedConstituentBlocksInflowsButCanBeWoundDown() public {
+    function testRevokedConstituentImmediatelyChallengesAndPrunesWithoutNotice() public {
         ManagedOTFVault vault = _createVault();
         assetRegistry.setAssetApproved(address(tokenA), false);
 
@@ -224,44 +234,134 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.contribute(amounts, ALICE, 1);
         vm.stopPrank();
 
-        address[] memory assets = new address[](2);
-        assets[0] = address(tokenB);
-        assets[1] = address(tokenC);
-        uint256[] memory weights = new uint256[](2);
-        weights[0] = 5_000;
-        weights[1] = 5_000;
-        vm.warp(START + 14 days);
-        _refreshPrices();
-        vault.rebalance(assets, weights);
-        vm.warp(vault.pendingStrategyActivationTime());
-        _refreshPrices();
-        vault.activatePendingStrategy();
+        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        assertEq(effectiveTargets[0], 0);
+        assertEq(effectiveTargets[1], 10_000);
 
-        assertTrue(vault.isConstituent(address(tokenA)));
-        assertEq(vault.targetWeightBps(address(tokenA)), 0);
+        vm.prank(ATTACKER);
+        vault.flagOutOfBand();
+        assertTrue(vault.challengeActive());
 
         TradeInstruction[] memory trades =
-            _singleTrade(address(tokenA), address(tokenC), 500 * ONE, 500 * ONE);
+            _singleTrade(address(tokenA), address(tokenB), 500 * ONE, 500 * ONE);
         vault.executeRebalanceTrades(trades);
 
-        assertFalse(vault.strategicRebalanceActive());
+        assertFalse(vault.challengeActive());
+        assertFalse(vault.isConstituent(address(tokenA)));
         assertEq(tokenA.balanceOf(address(vault)), 0);
-        assertEq(vault.currentWeight(address(tokenA)), 0);
+        assertEq(vault.assetCount(), 1);
+        assertEq(vault.getWeight(address(tokenB)), 10_000);
+        assertEq(vault.previewMint(ONE).length, 1);
+    }
 
-        // Revocation is a vault-wide governance quarantine, not merely an exposure check.
-        // Historical zero-target constituents remain tracked, so selling the revoked asset to
-        // zero does not reopen inflows; only an explicit registry reapproval does.
-        uint256[] memory quarantineAmounts = new uint256[](3);
-        quarantineAmounts[0] = 50 * ONE;
-        quarantineAmounts[1] = 50 * ONE;
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.previewContribute(quarantineAmounts);
+    function testRevokedWeightIsRedistributedProportionallyAndPersistsAfterPruning() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](3);
+        params.initialAssets[0] = address(tokenA);
+        params.initialAssets[1] = address(tokenB);
+        params.initialAssets[2] = address(tokenC);
+        params.initialTargetWeightsBps = new uint16[](3);
+        params.initialTargetWeightsBps[0] = 6_000;
+        params.initialTargetWeightsBps[1] = 3_000;
+        params.initialTargetWeightsBps[2] = 1_000;
+        params.initialAmounts = new uint256[](3);
+        params.initialAmounts[0] = 600 * ONE;
+        params.initialAmounts[1] = 300 * ONE;
+        params.initialAmounts[2] = 100 * ONE;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assetRegistry.setAssetApproved(address(tokenC), false);
+
+        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        assertEq(effectiveTargets[0], 6_667);
+        assertEq(effectiveTargets[1], 3_333);
+        assertEq(effectiveTargets[2], 0);
+        assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
+
+        TradeInstruction[] memory trades = new TradeInstruction[](2);
+        trades[0] = TradeInstruction({
+            adapter: address(adapter),
+            tokenIn: address(tokenC),
+            tokenOut: address(tokenA),
+            amountIn: 67 * ONE,
+            minAmountOut: 67 * ONE,
+            adapterData: ""
+        });
+        trades[1] = TradeInstruction({
+            adapter: address(adapter),
+            tokenIn: address(tokenC),
+            tokenOut: address(tokenB),
+            amountIn: 33 * ONE,
+            minAmountOut: 33 * ONE,
+            adapterData: ""
+        });
+        vault.executeRebalanceTrades(trades);
+
+        assertFalse(vault.isConstituent(address(tokenC)));
+        assertEq(vault.targetWeightBps(address(tokenA)), 6_667);
+        assertEq(vault.targetWeightBps(address(tokenB)), 3_333);
+        uint16[] memory storedTargets = vault.targetWeightsBps();
+        assertEq(uint256(storedTargets[0]) + storedTargets[1], 10_000);
+    }
+
+    function testRevocationRoundingAssignsEveryBasisPoint() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](3);
+        params.initialAssets[0] = address(tokenA);
+        params.initialAssets[1] = address(tokenB);
+        params.initialAssets[2] = address(tokenC);
+        params.initialTargetWeightsBps = new uint16[](3);
+        params.initialTargetWeightsBps[0] = 5_001;
+        params.initialTargetWeightsBps[1] = 2_999;
+        params.initialTargetWeightsBps[2] = 2_000;
+        params.initialAmounts = new uint256[](3);
+        params.initialAmounts[0] = 5_001 * ONE;
+        params.initialAmounts[1] = 2_999 * ONE;
+        params.initialAmounts[2] = 2_000 * ONE;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        assertEq(effectiveTargets[0], 0);
+        assertEq(effectiveTargets[1], 6_000);
+        assertEq(effectiveTargets[2], 4_000);
+        assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
+    }
+
+    function testAllRevokedAssetsEnterZeroTargetShutdown() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+        assetRegistry.setAssetApproved(address(tokenB), false);
+
+        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        assertEq(effectiveTargets[0], 0);
+        assertEq(effectiveTargets[1], 0);
         vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
         vault.previewMint(ONE);
+    }
 
-        assetRegistry.setAssetApproved(address(tokenA), true);
-        assertGt(vault.previewContribute(quarantineAmounts), 0);
-        assertEq(vault.previewMint(ONE).length, 3);
+    function testRevokedConstituentDustRemainsChallengeableUntilExactZero() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        TradeInstruction[] memory partialTrade =
+            _singleTrade(address(tokenA), address(tokenB), 500 * ONE - 1, 500 * ONE - 1);
+        vault.executeRebalanceTrades(partialTrade);
+
+        assertEq(tokenA.balanceOf(address(vault)), 1);
+        assertTrue(vault.isConstituent(address(tokenA)));
+        vm.prank(ATTACKER);
+        vault.flagOutOfBand();
+        assertTrue(vault.challengeActive());
+
+        TradeInstruction[] memory finalDust =
+            _singleTrade(address(tokenA), address(tokenB), 1, 1);
+        vault.executeRebalanceTrades(finalDust);
+
+        assertFalse(vault.challengeActive());
+        assertFalse(vault.isConstituent(address(tokenA)));
+        assertEq(vault.assetCount(), 1);
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

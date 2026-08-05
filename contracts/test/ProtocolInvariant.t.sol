@@ -345,7 +345,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(vault.manager(), address(handler));
         assertEq(vault.thesisVersionCount(), handler.successfulAmendments() + 1);
         assertLe(vault.lastFeeAccrualTimestamp(), block.timestamp);
-        assertEq(vault.rebalanceCooldown(), 7 days);
+        assertEq(vault.rebalanceCooldown(), 14 days);
     }
 
     function invariantFactoryProvenanceNeverChanges() public view {

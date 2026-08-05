@@ -2,13 +2,18 @@
 pragma solidity ^0.8.24;
 
 import { ERC20Base } from "./ERC20Base.sol";
+import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { MathEx } from "./libraries/MathEx.sol";
 import { RebalanceRecord, ThesisVersion } from "./VaultTypes.sol";
 
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
-    uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
-    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
+    uint256 public constant REBALANCE_COOLDOWN = 14 days;
+    uint256 public constant MIN_REBALANCE_COOLDOWN = REBALANCE_COOLDOWN;
+    // Retained as an ABI-compatible alias. Strategy changes use the single completion-based clock.
+    uint256 public constant STRATEGY_CHANGE_COOLDOWN = REBALANCE_COOLDOWN;
     uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
     uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
     uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
@@ -60,6 +65,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error AmountTooHigh(address asset, uint256 required, uint256 maximum);
     error AmountTooLow(address asset, uint256 actual, uint256 minimum);
     error NonProportionalContribution(address asset, uint256 supplied, uint256 required);
+    error DepositsPausedForAssetRemoval(address asset);
     error OracleFeedMissing(address asset);
     error InvalidOraclePrice(address asset, int256 answer);
     error InvalidOracleTimestamp(address asset, uint256 updatedAt);
@@ -185,6 +191,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         address indexed caller, address indexed receiver, uint256 lpAmount, uint256[] amounts
     );
     event Rebalanced(address[] newTokens, uint256[] newWeights);
+    event ConstituentRemoved(address indexed asset);
 
     bool internal _initialized;
     uint256 internal _entered;
@@ -266,5 +273,114 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         _entered = 1;
         _;
         _entered = 0;
+    }
+
+    function _isRetiringAsset(address asset) internal view returns (bool) {
+        return targetWeightBps[asset] == 0
+            || !IAssetRegistry(assetRegistry).isApprovedAsset(asset);
+    }
+
+    function _effectiveTargetWeights() internal view returns (uint256[] memory weights) {
+        uint256 length = _assets.length;
+        weights = new uint256[](length);
+        uint256 storedWeightTotal;
+        uint256 activeWeightTotal;
+
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            uint256 storedWeight = targetWeightBps[asset];
+            storedWeightTotal += storedWeight;
+            if (!_isRetiringAsset(asset)) {
+                weights[i] = storedWeight;
+                activeWeightTotal += storedWeight;
+            }
+        }
+
+        if (storedWeightTotal != BPS) revert InvalidWeightSum(storedWeightTotal);
+        if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
+
+        uint256 assignedWeight;
+        for (uint256 i = 0; i < length; i++) {
+            if (weights[i] == 0) continue;
+            weights[i] = MathEx.mulDiv(weights[i], BPS, activeWeightTotal);
+            assignedWeight += weights[i];
+        }
+
+        uint256 remainder = BPS - assignedWeight;
+        for (uint256 i = 0; i < length && remainder != 0; i++) {
+            if (weights[i] != 0) {
+                weights[i]++;
+                remainder--;
+            }
+        }
+        if (remainder != 0) revert InvalidWeightSum(BPS - remainder);
+    }
+
+    function _retiringBalancesAreZero() internal view returns (bool) {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function _trackedAssetBalances() internal view returns (uint256[] memory balances) {
+        balances = new uint256[](_assets.length);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            balances[i] = IERC20(_assets[i]).balanceOf(address(this));
+        }
+    }
+
+    function _retiringBalancesImproved(uint256[] memory balancesBefore)
+        internal
+        view
+        returns (bool improved)
+    {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (!_isRetiringAsset(_assets[i])) continue;
+            uint256 balanceAfter = IERC20(_assets[i]).balanceOf(address(this));
+            if (balanceAfter > balancesBefore[i]) return false;
+            if (balanceAfter < balancesBefore[i]) improved = true;
+        }
+    }
+
+    function _retiringBreaches() internal view returns (address[] memory breached) {
+        uint256 count;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) count++;
+        }
+        breached = new address[](count);
+        uint256 cursor;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) {
+                breached[cursor++] = asset;
+            }
+        }
+    }
+
+    function _pruneZeroBalanceRetiringAssets() internal returns (uint256 removed) {
+        uint256[] memory effectiveWeights = _effectiveTargetWeights();
+        uint256 writeIndex;
+        uint256 length = _assets.length;
+
+        for (uint256 readIndex = 0; readIndex < length; readIndex++) {
+            address asset = _assets[readIndex];
+            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) == 0) {
+                delete targetWeightBps[asset];
+                removed++;
+                emit ConstituentRemoved(asset);
+                continue;
+            }
+
+            targetWeightBps[asset] = uint16(effectiveWeights[readIndex]);
+            if (writeIndex != readIndex) _assets[writeIndex] = asset;
+            writeIndex++;
+        }
+
+        while (_assets.length > writeIndex) _assets.pop();
     }
 }

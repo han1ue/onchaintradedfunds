@@ -466,10 +466,14 @@ completeStrategicRebalance()`}</code></pre>
               </div>
             </div>
             <p>
-              Deposits and proportional withdrawals stay enabled throughout. Natural price
-              recovery and constrained manager or executor trades can both restore the basket.
-              Target redefinition, ownership transfer, or delayed fee crystallization cannot
-              recover forfeited fees.
+              Deposits and proportional withdrawals stay enabled during ordinary weight
+              challenges. If a globally revoked or zero-target asset is being retired, primary
+              deposits pause until its exact balance reaches zero and it is removed. Its former
+              weight is redistributed proportionally across the remaining targets, with integer
+              rounding assigned deterministically so eligible targets still total exactly 100%.
+              Withdrawals remain available. Natural price recovery and constrained manager or executor trades
+              can restore the basket. Target redefinition, ownership transfer, or delayed fee
+              crystallization cannot recover forfeited fees.
             </p>
             <ul className="docsChecklist">
               <li>Opening a challenge first crystallizes every valid fee earned before the challenge start, so older fees cannot disappear.</li>
@@ -485,27 +489,31 @@ completeStrategicRebalance()`}</code></pre>
             <div className="docsSectionHeading">
               <Clock3 size={18} />
               <div>
-                <span>Two independent controls</span>
-                <h2>Portfolio and strategy timing</h2>
+                <span>One cooldown, one notice window</span>
+                <h2>Strategy timing</h2>
               </div>
             </div>
             <p>
-              Successful portfolio changes remain separated by the vault&apos;s immutable cooldown of
-              at least seven days. Target composition changes are stricter: proposals are limited
-              to one every 14 days and remain pending for a 48-hour holder exit window.
+              A manager can propose new target weights only after 14 days have passed since the
+              previous rebalance completed inside its target bands. The portfolio must still be
+              inside those bands, with no active challenge or strategy change. A valid proposal
+              then remains pending for a separate 48-hour holder exit window. Returning in-band
+              early never shortens the cooldown: both the full 14 days and the in-band check must
+              pass when the proposal is submitted.
             </p>
-            <pre><code>{`MIN_REBALANCE_COOLDOWN = 7 days
-STRATEGY_CHANGE_COOLDOWN = 14 days
+            <pre><code>{`REBALANCE_COOLDOWN = 14 days
 STRATEGY_ACTIVATION_DELAY = 48 hours
 
 nextRebalanceTime =
-  lastRebalanceTimestamp + rebalanceCooldown
+  lastRebalanceTimestamp + 14 days
 
 canRebalance =
   block.timestamp >= nextRebalanceTime`}</code></pre>
             <ul className="docsChecklist">
               <li>The first target proposal waits 14 days from vault creation.</li>
-              <li>Later proposals wait 14 days from the previous strategy activation.</li>
+              <li>Later proposals wait 14 days from successful rebalance completion.</li>
+              <li>Being in-band before that deadline does not make an early proposal valid.</li>
+              <li>Active challenges and out-of-band portfolios block proposals.</li>
               <li>Current targets remain active throughout the 48-hour notice period.</li>
               <li>Failed proposals, failed trades, and partial trades do not update the timestamp.</li>
               <li>Challenges, fees, thesis amendments, and role transfers do not reset it.</li>

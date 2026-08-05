@@ -38,7 +38,7 @@ Investors use the web application with an EVM wallet to:
 
 Creators and managers use the application to:
 
-- Create an OTF with a name, fixed `OTF-` ticker prefix, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, cooldown, and permanent safety limits.
+- Create an OTF with a name, fixed `OTF-` ticker prefix, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, and permanent safety limits.
 - Open the immutable official OTF/USDG pool and add wallet-funded liquidity without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Append permanent public thesis amendments without resetting the rebalance cooldown.
@@ -60,7 +60,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.
 - Portfolio changes are bounded by immutable limits covering turnover, NAV loss, target-weight deviation, asset count, individual weight, and minimum nonzero weight.
-- Every OTF has a creation-time rebalance cooldown of at least seven days. A longer cooldown may be selected at creation, but it cannot be shortened after deployment.
+- Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, thesis amendments, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
 - Thesis history and rebalance rationale are permanent public records.
 - Creator fees accrue as shares and split between the configured recipient and protocol collector according to contract rules.

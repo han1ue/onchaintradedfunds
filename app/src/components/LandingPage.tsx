@@ -143,8 +143,8 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               Failed rebalances leave the prior portfolio and its cooldown untouched.
             </p>
             <div className="landingBigStat">
-              <strong>7 days</strong>
-              <span>Minimum cooldown between successful portfolio changes</span>
+              <strong>14 days</strong>
+              <span>Fixed cooldown after a completed portfolio change</span>
             </div>
             <div className="landingFactList">
               <span><CheckCircle size={13} /> Fresh onchain prices required</span>

@@ -5,7 +5,6 @@ import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
-import { ManagedOTFVaultStrategy } from "./ManagedOTFVaultStrategy.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
@@ -23,10 +22,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     address private immutable _strategyModule;
     bytes32 private immutable _strategyModuleCodehash;
 
-    constructor() {
+    constructor(PortfolioCalculator portfolioCalculator_, address strategyModule_) {
+        if (address(portfolioCalculator_).code.length == 0) {
+            revert AssetNotContract(address(portfolioCalculator_));
+        }
+        if (strategyModule_.code.length == 0) revert AssetNotContract(strategyModule_);
         _initialized = true;
-        _portfolioCalculator = new PortfolioCalculator();
-        _strategyModule = address(new ManagedOTFVaultStrategy(_portfolioCalculator));
+        _portfolioCalculator = portfolioCalculator_;
+        _strategyModule = strategyModule_;
         _strategyModuleCodehash = _strategyModule.codehash;
     }
 
@@ -149,7 +152,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function getWeight(address token) external view returns (uint256 weight) {
         if (!_containsCurrentAsset(token)) revert NotConstituent(token);
-        return targetWeightBps[token];
+        return _isRetiringAsset(token) ? 0 : targetWeightBps[token];
     }
 
     function isConstituent(address token) public view returns (bool) {
@@ -174,10 +177,18 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _assets[index];
     }
 
+    function pruneRetiredAssets() external returns (uint256 removed) {
+        removed;
+        _delegateStrategy();
+    }
+
     function targetWeightsBps() external view returns (uint16[] memory weights) {
+        uint256[] memory effectiveWeights = _portfolioCalculator.effectiveTargetWeights(
+            address(this), _assets, assetRegistry
+        );
         weights = new uint16[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = targetWeightBps[_assets[i]];
+            weights[i] = uint16(effectiveWeights[i]);
         }
     }
 
@@ -239,6 +250,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (!_containsCurrentAsset(token)) {
             revert NotConstituent(token);
         }
+        if (_isRetiringAsset(token)) return (0, 0, 0, 0);
         uint256 target = targetWeightBps[token];
         (challengeLower, challengeUpper) = _band(target, challengeWeightDeviationBps);
         (completionLower, completionUpper) = _band(target, maxWeightDeviationBps);
@@ -253,13 +265,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function canProposeTargetWeights() public view returns (bool) {
-        // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
+        // Validator timestamp drift is immaterial to the fixed multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
-        bool rebalanceCooldownActive = block.timestamp < nextRebalanceTime();
-        // Validator timestamp drift is immaterial to the fixed 14-day strategy delay.
-        // forge-lint: disable-next-line(block-timestamp)
-        bool strategyCooldownActive = block.timestamp < nextStrategyChangeTime();
-        bool cooldownActive = rebalanceCooldownActive || strategyCooldownActive;
+        bool cooldownActive = block.timestamp < nextRebalanceTime();
         if (
             challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
         ) {
@@ -276,7 +284,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function nextStrategyChangeTime() public view returns (uint256) {
-        return uint256(lastStrategyChangeTimestamp) + STRATEGY_CHANGE_COOLDOWN;
+        // Compatibility view: there is now one strategy-change clock, started on completion.
+        return nextRebalanceTime();
     }
 
     function feeState() public view returns (FeeState) {
@@ -475,57 +484,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         emit Withdrawn(msg.sender, receiver, shares, amountsOut);
     }
 
-    function accrueFees()
-        public
-        onlyInitialized
-        onlyManager
-        nonReentrant
-        returns (uint256 feeShares)
-    {
-        feeShares = _withdrawManagerFees();
+    function accrueFees() public returns (uint256 feeShares) {
+        feeShares;
+        _delegateStrategy();
     }
 
-    function withdrawManagerFees()
-        external
-        onlyInitialized
-        onlyManager
-        nonReentrant
-        returns (uint256 feeShares)
-    {
-        feeShares = _withdrawManagerFees();
-    }
-
-    function _withdrawManagerFees() internal returns (uint256 feeShares) {
-        if (challengeActive) {
-            // Challenge deadlines intentionally use chain time.
-            // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp > challengeDeadline) {
-                _forfeitChallengeFees();
-                return 0;
-            }
-            if (!_isWithinBands(maxWeightDeviationBps)) return 0;
-            feeShares = _mintFees(block.timestamp - uint256(lastFeeAccrualTimestamp));
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-            challengeActive = false;
-            challengeCaller = address(0);
-            challengeStartedAt = 0;
-            challengeDeadline = 0;
-            emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), true);
-            emit ManagerFeeAccrualResumed(uint64(block.timestamp));
-            return feeShares;
-        }
-
-        if (!_isWithinBands(maxWeightDeviationBps)) {
-            address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
-            if (breached.length != 0) {
-                // Crystallize the valid pre-challenge interval before starting the forfeiture clock.
-                feeShares = _accrueFees();
-                _startChallenge(msg.sender, breached);
-            }
-            return feeShares;
-        }
-
-        feeShares = _accrueFees();
+    function withdrawManagerFees() external returns (uint256 feeShares) {
+        feeShares;
+        _delegateStrategy();
     }
 
     function claimChallengeReward() external returns (uint256) {
@@ -603,6 +569,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function moduleAccrueFees() external returns (uint256) {
         if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
         return _accrueFees();
+    }
+
+    function moduleMintFees(uint256 elapsed) external returns (uint256) {
+        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
+        return _mintFees(elapsed);
     }
 
     function strategyModule() external view returns (address) {
@@ -825,6 +796,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
             if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
+            if (targetWeightBps[asset] == 0) revert DepositsPausedForAssetRemoval(asset);
         }
     }
 
@@ -835,6 +807,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _isWithinBands(uint16 deviationBps) internal view returns (bool) {
+        if (!_retiringBalancesAreZero()) return false;
         return _portfolioCalculator.isWithinBands(
             address(this),
             _assets,
@@ -846,6 +819,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _breachedAssets(uint16 deviationBps) internal view returns (address[] memory) {
+        address[] memory retiring = _retiringBreaches();
+        if (retiring.length != 0) return retiring;
         return _portfolioCalculator.breachedAssets(
             address(this),
             _assets,

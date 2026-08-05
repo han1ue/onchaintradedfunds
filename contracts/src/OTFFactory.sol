@@ -20,7 +20,8 @@ interface IOfficialMarketRegistry {
 contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
-    uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
+    uint256 public constant REBALANCE_COOLDOWN = 14 days;
+    uint256 public constant MIN_REBALANCE_COOLDOWN = REBALANCE_COOLDOWN;
     uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 5_000;
     uint16 public constant GLOBAL_MAX_TURNOVER_BPS = 10_000;
@@ -39,6 +40,7 @@ contract OTFFactory is IAdapterAllowlist {
     error InvalidImplementation();
     error InvalidDependency(address dependency);
     error RebalanceCooldownTooShort();
+    error InvalidRebalanceCooldown(uint32 supplied);
     error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
     error CreatorFeeTooHigh(uint16 feeBps, uint16 maximum);
     error ProtocolFeeShareTooHigh(uint16 shareBps, uint16 maximum);
@@ -245,7 +247,9 @@ contract OTFFactory is IAdapterAllowlist {
                 params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
             );
         }
-        if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) revert RebalanceCooldownTooShort();
+        if (params.rebalanceCooldown != REBALANCE_COOLDOWN) {
+            revert InvalidRebalanceCooldown(params.rebalanceCooldown);
+        }
         if (params.initialAssets.length != params.initialTargetWeightsBps.length) {
             revert InvalidArrayLength();
         }

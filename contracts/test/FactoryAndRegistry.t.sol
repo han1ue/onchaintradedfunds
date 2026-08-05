@@ -37,11 +37,11 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(factory.creatorNonce(address(this)), 2);
     }
 
-    function testFactoryRejectsShortCooldown() public {
+    function testFactoryRejectsNonProtocolCooldown() public {
         VaultInitParams memory params = _defaultParams();
-        params.rebalanceCooldown = uint32(7 days - 1);
+        params.rebalanceCooldown = uint32(14 days - 1);
 
-        vm.expectRevert(OTFFactory.RebalanceCooldownTooShort.selector);
+        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
         factory.createVault(params);
     }
 

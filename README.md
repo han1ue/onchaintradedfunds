@@ -89,7 +89,7 @@ flowchart LR
 - Stores vault list and creator mapping.
 - Reads the protocol treasury from the single authoritative `FeeCollector`.
 - Stores globally approved trade adapters.
-- Rejects any vault cooldown below seven days.
+- Enforces the fixed 14-day strategy cooldown.
 - Does not custody vault assets.
 
 `ManagedOTFVault`
@@ -105,7 +105,8 @@ flowchart LR
 `ManagedOTFVaultStrategy`
 
 - Separates strategy and constrained trade logic from custody and share accounting.
-- Is created with each vault implementation and cannot be replaced after deployment.
+- Is deployed alongside the shared calculator, bound immutably into each vault implementation, and
+  cannot be replaced after deployment.
 - Executes with the vault storage through `delegatecall`, preserving manager and executor identity.
 - Cannot expose a generic call path or select arbitrary trade recipients.
 
@@ -138,6 +139,8 @@ flowchart LR
 
 - Onchain allowlist for approved assets in local development.
 - Production integration point for an official Robinhood Chain stock-token registry.
+- A revoked constituent immediately receives a 0% effective target; remaining approved targets
+  are renormalized proportionally to exactly 10,000 bps whenever at least one remains.
 
 `OracleRegistry`
 
@@ -195,29 +198,30 @@ The rolling 30-day rebalance counter has been removed. There is no `maxRebalance
 Each vault stores:
 
 ```solidity
-uint256 public constant MIN_REBALANCE_COOLDOWN = 7 days;
-uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
+uint256 public constant REBALANCE_COOLDOWN = 14 days;
 uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
 uint64 public lastRebalanceTimestamp;
 uint64 public lastStrategyChangeTimestamp;
 uint32 public rebalanceCooldown;
 ```
 
-The factory and vault both reject cooldowns shorter than seven days:
+The factory accepts only the fixed 14-day cooldown:
 
 ```solidity
-if (params.rebalanceCooldown < MIN_REBALANCE_COOLDOWN) {
-    revert RebalanceCooldownTooShort();
+if (params.rebalanceCooldown != REBALANCE_COOLDOWN) {
+    revert InvalidRebalanceCooldown(params.rebalanceCooldown);
 }
 ```
 
-Both timestamps are initialized at creation. A target proposal must satisfy the configured
-portfolio cooldown and the fixed strategy cooldown:
+The completion timestamp is initialized at creation. A target proposal must satisfy the single
+completion-based cooldown:
 
 ```text
-lastRebalanceTimestamp + rebalanceCooldown
-lastStrategyChangeTimestamp + 14 days
+lastRebalanceTimestamp + 14 days
 ```
+
+The proposal is also blocked while a challenge or strategy change is active, while another proposal
+is pending, or whenever the portfolio is outside its completion bands.
 
 The manager's valid proposal is stored as pending and leaves the current target untouched. It can
 only be activated after the holder notice window:
@@ -226,9 +230,10 @@ only be activated after the holder notice window:
 pendingStrategyActivationTime = block.timestamp + 48 hours;
 ```
 
-`lastStrategyChangeTimestamp` updates on activation. `lastRebalanceTimestamp` updates only when a
+`lastStrategyChangeTimestamp` remains available for historical ABI compatibility and updates on
+activation, but it is not a second cooldown clock. `lastRebalanceTimestamp` updates only when a
 strategic rebalance successfully completes inside every final completion band. Pending proposals,
-cancelled proposals, failed trades, and partial trades do not update either completion timestamp.
+cancelled proposals, failed trades, and partial trades do not update the completion timestamp.
 
 The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
 
@@ -241,7 +246,7 @@ The following operations do not count as portfolio rebalances and do not update 
 - Partial maintenance trades.
 - Challenge creation, synchronization, and resolution.
 
-The manager cannot shorten the cooldown after deployment. The MVP intentionally provides no setter for `rebalanceCooldown`.
+The cooldown is fixed at 14 days and has no manager setter.
 
 ## Vault Lifecycle
 
@@ -711,16 +716,16 @@ through 128 sequences of 64 generated actions.
 
 Deterministic coverage includes:
 
-- First rebalance before seven days reverts.
-- First rebalance exactly seven days after creation succeeds.
-- Second rebalance before another seven days reverts.
-- Second rebalance exactly seven days later succeeds.
+- First target proposal before 14 days reverts.
+- First target proposal exactly 14 days after creation succeeds.
+- A later proposal before 14 days from rebalance completion reverts.
+- A later proposal exactly 14 days from rebalance completion succeeds.
 - A failed rebalance does not reset the cooldown.
 - A thesis amendment does not reset the cooldown.
 - Fee accrual does not reset the cooldown.
 - The manager cannot shorten the cooldown.
-- A vault may be created with a cooldown longer than seven days.
-- The factory rejects a cooldown shorter than seven days.
+- The factory rejects every cooldown other than 14 days.
+- Active challenges and out-of-band portfolios block proposals.
 - Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
   atomic creation rollback.
 - Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,

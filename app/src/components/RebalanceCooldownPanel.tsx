@@ -50,7 +50,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { encodeAbiParameters, encodePacked, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
+import { encodeAbiParameters, encodePacked, formatUnits, isAddress, maxUint256, parseEventLogs, parseUnits, zeroAddress } from "viem";
 import {
   useAccount,
   useBalance,
@@ -280,6 +280,29 @@ const vaultDepositAbi = [
     name: "previewRedeem",
     stateMutability: "view",
     inputs: [{ name: "shares", type: "uint256" }],
+    outputs: [{ name: "amountsOut", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "mintWithBasket",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "maxAmountsIn", type: "uint256[]" },
+    ],
+    outputs: [{ name: "amountsIn", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "redeem",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "shareOwner", type: "address" },
+      { name: "minAmountsOut", type: "uint256[]" },
+    ],
     outputs: [{ name: "amountsOut", type: "uint256[]" }],
   },
 ] as const;
@@ -525,10 +548,14 @@ function symbolMonogram(symbol: string): string {
   return (value || "OTF").slice(0, 4).toUpperCase();
 }
 
-function formatWalletTokenBalance(value: bigint | undefined, decimals: number): string {
+function formatWalletTokenBalance(
+  value: bigint | undefined,
+  decimals: number,
+  maximumFractionDigits = 6,
+): string {
   if (value === undefined) return "—";
   const amount = Number(formatUnits(value, decimals));
-  return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  return amount.toLocaleString(undefined, { maximumFractionDigits });
 }
 
 function formatOraclePrice(value: number | undefined): string {
@@ -920,7 +947,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const maxWeightDeviationBps = resultAt<number>(results, 11) ?? 0;
   const maxAssetCount = resultAt<number>(results, 12) ?? 0;
   const currentThesis = resultAt<string>(results, 13) ?? "";
-  const cooldownSeconds = Number(resultAt<number>(results, 14) ?? 7 * 86_400);
+  const cooldownSeconds = Number(resultAt<number>(results, 14) ?? 14 * 86_400);
   const lastPortfolioChange = resultAt<bigint>(results, 15)
     ? Number(resultAt<bigint>(results, 15))
     : undefined;
@@ -1464,7 +1491,7 @@ export function TopNav({
                   <div className="settingsThemeChoices appearance" role="radiogroup" aria-label="Application appearance">
                     {(["default", "light", "dark"] as const).map((value) => (
                       <button
-                        className={`settingsThemeChoice ${value === "default" ? "mode-default" : ""} ${theme === value ? "selected" : ""}`}
+                        className={`settingsThemeChoice ${theme === value ? "selected" : ""}`}
                         key={value}
                         type="button"
                         role="radio"
@@ -1879,19 +1906,20 @@ function SectionCard({
 function RebalanceCooldown({ vault }: { vault: VaultView }) {
   const isLive = vault.dataMode === "live";
   const portfolioCooldownRemaining = useLiveCountdown(vault.nextPortfolioChange);
-  const portfolioCooldownAvailable = isLive && portfolioCooldownRemaining === 0;
+  const portfolioCooldownComplete = isLive && portfolioCooldownRemaining === 0;
+  const proposalAvailable = isLive && vault.canRebalance;
   return (
     <SectionCard
-      title="Portfolio Change Unlock"
-      subtitle={`${formatCooldown(vault.cooldownSeconds)} interval before the next possible portfolio change`}
+      title="Strategy cooldown"
+      subtitle={`${formatCooldown(vault.cooldownSeconds)} after the previous rebalance completes`}
       icon={<Clock3 size={15} />}
-      action={<span className={`stateBadge ${isLive ? (portfolioCooldownAvailable ? "success" : "warning") : "muted"}`}>{isLive ? (portfolioCooldownAvailable ? "Available now" : "Cooling down") : "Live data required"}</span>}
+      action={<span className={`stateBadge ${isLive ? (proposalAvailable ? "success" : "warning") : "muted"}`}>{isLive ? (proposalAvailable ? "Proposal available" : portfolioCooldownComplete ? "Portfolio state blocked" : "Cooling down") : "Live data required"}</span>}
     >
       <div className="cooldownStats">
         <TimelineItem label="Cooldown length" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
         <TimelineItem label="Last portfolio change" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
-        <TimelineItem label="Next possible change" value={isLive ? (portfolioCooldownAvailable ? "Now" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
-        <TimelineItem label="State" value={isLive ? (portfolioCooldownAvailable ? "Available" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
+        <TimelineItem label="Cooldown ends" value={isLive ? (portfolioCooldownComplete ? "Complete" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
+        <TimelineItem label="Proposal state" value={isLive ? (proposalAvailable ? "Available" : portfolioCooldownComplete ? "Blocked" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
       </div>
 
       {isLive ? <div className="progressBlock">
@@ -1913,9 +1941,11 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
         <span className="mutedInline">
           <Info size={14} />
           {isLive
-            ? portfolioCooldownAvailable
-              ? "Portfolio change unlock reached. Strategy proposals also follow the fixed 14-day schedule and 48-hour notice period."
-              : "Maintenance trades, challenges, thesis amendments, and fee accrual do not reset this timer."
+            ? proposalAvailable
+              ? "The cooldown is complete and the portfolio is in bounds with no active challenge. A proposal still receives a 48-hour notice window."
+              : portfolioCooldownComplete
+                ? "The cooldown is complete, but a challenge, pending strategy, active rebalance, or out-of-band portfolio still blocks proposals."
+                : "Being in-band does not shorten the timer. A proposal requires both the full cooldown and an in-band portfolio at submission."
             : "Connect a deployed OTF to read the portfolio-change schedule."}
         </span>
       </div>
@@ -2308,6 +2338,7 @@ function UserActions({
   vault: VaultView;
 }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
+  const [settlementMode, setSettlementMode] = useState<"usdg" | "rwas">("usdg");
   const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
   const [tradeAmount, setTradeAmount] = useState("");
   const [maxSlippage, setMaxSlippage] = useState("1.0");
@@ -2318,6 +2349,8 @@ function UserActions({
   const [marketState, setMarketState] = useState<TxState>("idle");
   const [marketError, setMarketError] = useState<string>();
   const [tradeReceipt, setTradeReceipt] = useState<PositionTradeReceipt>();
+  const [basketApprovalPendingAsset, setBasketApprovalPendingAsset] = useState<`0x${string}`>();
+  const [basketApprovalError, setBasketApprovalError] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -2329,6 +2362,9 @@ function UserActions({
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress();
   const constituentFee = configuredConstituentFee();
+  const depositsPausedForAssetRemoval = vault.allocations.some(
+    (asset) => asset.targetWeightBps === 0,
+  );
   const entryContractsConfigured = Boolean(
     entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress,
   );
@@ -2337,9 +2373,10 @@ function UserActions({
     ? Math.round(parsedSlippage * 100)
     : 0;
   const slippageValid = slippageBps >= 1 && slippageBps <= 2_000;
+  const isUsdgMode = settlementMode === "usdg";
   let normalizedUsdgAmount: bigint | undefined;
   try {
-    normalizedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
+    normalizedUsdgAmount = isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
       ? parseUnits(tradeAmount, 18)
       : undefined;
   } catch {
@@ -2359,6 +2396,14 @@ function UserActions({
       : undefined;
   } catch {
     requestedRedeemShares = undefined;
+  }
+  let requestedDirectMintShares: bigint | undefined;
+  try {
+    requestedDirectMintShares = !isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
+      ? parseUnits(tradeAmount, 18)
+      : undefined;
+  } catch {
+    requestedDirectMintShares = undefined;
   }
   const entrySlippageBps = slippageBps;
   const entrySlippageValid = slippageValid;
@@ -2426,7 +2471,7 @@ function UserActions({
   const settlementDecimals = Number(settlementDecimalsRead ?? 18);
   let requestedUsdgAmount: bigint | undefined;
   try {
-    requestedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
+    requestedUsdgAmount = isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
       ? parseUnits(tradeAmount, settlementDecimals)
       : undefined;
   } catch {
@@ -2442,6 +2487,7 @@ function UserActions({
   });
   const canQuoteEntry = Boolean(
     isLive &&
+    !depositsPausedForAssetRemoval &&
     vault.address &&
     navRequestedEntryShares &&
     navRequestedEntryShares > 0n &&
@@ -2710,6 +2756,112 @@ function UserActions({
     contracts: redeemAuthorizationContracts,
     query: { enabled: Boolean(vault.address && connectedAddress) },
   });
+  const redeemShareBalance = redeemAuthorizationResults?.[0]?.result as bigint | undefined;
+  const redeemShareAllowance = redeemAuthorizationResults?.[1]?.result as bigint | undefined;
+  const basketAuthorizationContracts = vault.address
+    ? vault.allocations.flatMap((asset) => ([
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "balanceOf" as const,
+          args: [connectedAddress ?? zeroAddress],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "allowance" as const,
+          args: [connectedAddress ?? zeroAddress, vault.address as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "decimals" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const))
+    : [];
+  const {
+    data: basketAuthorizationResults,
+    isLoading: basketAuthorizationLoading,
+    refetch: refetchBasketAuthorization,
+  } = useReadContracts({
+    contracts: basketAuthorizationContracts,
+    query: {
+      enabled: basketAuthorizationContracts.length > 0,
+      refetchInterval: 12_000,
+    },
+  });
+  const {
+    data: directMintPreviewAmounts,
+    error: directMintPreviewError,
+    isLoading: directMintPreviewLoading,
+    refetch: refetchDirectMintPreview,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewMint",
+    args: requestedDirectMintShares ? [requestedDirectMintShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(
+        !isUsdgMode && activeAction === "deposit" && requestedDirectMintShares && isLive,
+      ),
+    },
+  });
+  const {
+    data: ownedUnderlyingAmounts,
+    isLoading: ownedUnderlyingLoading,
+    refetch: refetchOwnedUnderlying,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewRedeem",
+    args: redeemShareBalance && redeemShareBalance > 0n ? [redeemShareBalance] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isLive && vault.address && redeemShareBalance && redeemShareBalance > 0n) },
+  });
+  const {
+    data: perShareUnderlyingAmounts,
+    isLoading: perShareUnderlyingLoading,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewRedeem",
+    args: [10n ** 18n],
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isLive && vault.address) },
+  });
+  const directBasketLegs = vault.allocations.map((asset, index) => {
+    const balanceResult = basketAuthorizationResults?.[index * 3];
+    const allowanceResult = basketAuthorizationResults?.[index * 3 + 1];
+    const decimalsResult = basketAuthorizationResults?.[index * 3 + 2];
+    const requiredAmount = directMintPreviewAmounts?.[index];
+    const maximumAmount = requiredAmount !== undefined
+      ? (requiredAmount * BigInt(10_000 + slippageBps) + 9_999n) / 10_000n
+      : undefined;
+    return {
+      ...asset,
+      balance: balanceResult?.result as bigint | undefined,
+      allowance: allowanceResult?.result as bigint | undefined,
+      decimals: Number(decimalsResult?.result ?? 18),
+      readFailed: balanceResult?.status === "failure" ||
+        allowanceResult?.status === "failure" || decimalsResult?.status === "failure",
+      requiredAmount,
+      maximumAmount,
+    };
+  });
+  const directBasketReady = Boolean(
+    requestedDirectMintShares && directMintPreviewAmounts?.length === vault.allocations.length &&
+    directBasketLegs.every((leg) => leg.requiredAmount !== undefined && leg.maximumAmount !== undefined),
+  );
+  const directBasketBalanceSufficient = directBasketReady && directBasketLegs.every(
+    (leg) => leg.balance !== undefined && leg.requiredAmount !== undefined && leg.balance >= leg.requiredAmount,
+  );
+  const directBasketAllowanceSufficient = directBasketReady && directBasketLegs.every(
+    (leg) => leg.allowance !== undefined && leg.maximumAmount !== undefined && leg.allowance >= leg.maximumAmount,
+  );
   const entryLegs = deriveEntryLegs(finalPreviewEntryAmounts, finalEntryQuoteResults);
   const entryQuotesFailed = entryLegs.some((leg) => leg.quoteFailed);
   const entryQuoteReady = Boolean(
@@ -2751,7 +2903,9 @@ function UserActions({
   const marketPoolChecking = Boolean(v3MarketRegistryAddress && vault.address) && (
     officialPoolLoading || (Boolean(marketPool) && marketLiquidityLoading)
   );
-  const marketInputAmount = activeAction === "deposit" ? requestedUsdgAmount : requestedRedeemShares;
+  const marketInputAmount = isUsdgMode
+    ? activeAction === "deposit" ? requestedUsdgAmount : requestedRedeemShares
+    : undefined;
   const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
   const marketOutputToken = activeAction === "deposit" ? vault.address : settlementToken;
   const {
@@ -2830,8 +2984,6 @@ function UserActions({
   const entryAllowanceSufficient = maximumSettlementTotal !== undefined &&
     settlementAllowance !== undefined && settlementAllowance >= maximumSettlementTotal;
   const entryBusy = entryState === "pending" || entryState === "submitted";
-  const redeemShareBalance = redeemAuthorizationResults?.[0]?.result as bigint | undefined;
-  const redeemShareAllowance = redeemAuthorizationResults?.[1]?.result as bigint | undefined;
   const redeemBalanceSufficient = requestedRedeemShares !== undefined && redeemShareBalance !== undefined &&
     redeemShareBalance >= requestedRedeemShares;
   const redeemAllowanceSufficient = requestedRedeemShares !== undefined && redeemShareAllowance !== undefined &&
@@ -2880,28 +3032,51 @@ function UserActions({
     : undefined;
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
   const marketBusy = marketState === "pending" || marketState === "submitted";
-  const inputTokenSymbol = activeAction === "deposit" ? "USDG" : vault.symbol;
-  const inputTokenDecimals = activeAction === "deposit" ? settlementDecimals : 18;
-  const walletInputBalance = activeAction === "deposit" ? settlementBalance : redeemShareBalance;
+  const inputTokenSymbol = activeAction === "deposit" && isUsdgMode ? "USDG" : vault.symbol;
+  const inputTokenDecimals = activeAction === "deposit" && isUsdgMode ? settlementDecimals : 18;
+  const walletInputBalance = activeAction === "deposit"
+    ? isUsdgMode ? settlementBalance : undefined
+    : redeemShareBalance;
   const walletInputBalanceLoading = activeAction === "deposit"
-    ? entryAuthorizationLoading
+    ? isUsdgMode ? entryAuthorizationLoading : basketAuthorizationLoading
     : redeemAuthorizationLoading;
   const walletInputBalanceLabel = !connectedAddress
     ? "Connect wallet"
     : walletInputBalanceLoading
       ? "Checking..."
       : walletInputBalance === undefined
-        ? "Unavailable"
-        : `${formatWalletTokenBalance(walletInputBalance, inputTokenDecimals)} ${inputTokenSymbol}`;
+        ? !isUsdgMode && activeAction === "deposit" ? "See basket balances below" : "Unavailable"
+        : `${formatWalletTokenBalance(
+            walletInputBalance,
+            inputTokenDecimals,
+            activeAction === "redeem" ? 12 : 6,
+          )} ${inputTokenSymbol}`;
   const ownedSharesLabel = !connectedAddress
     ? "Connect wallet"
     : redeemAuthorizationLoading
       ? "Checking..."
       : redeemShareBalance === undefined
         ? "Unavailable"
-        : `${formatWalletTokenBalance(redeemShareBalance, 18)} ${vault.symbol}`;
-  const routeInputsReady = Boolean(marketInputAmount && marketInputAmount > 0n && slippageValid);
-  const underlyingRouteAvailable = entryContractsConfigured && entryAdapterApproved !== false && constituentPoolsReady;
+        : `${formatWalletTokenBalance(redeemShareBalance, 18, 12)} ${vault.symbol}`;
+  const redeemAmountExceedsBalance = activeAction === "redeem" &&
+    requestedRedeemShares !== undefined &&
+    redeemShareBalance !== undefined &&
+    requestedRedeemShares > redeemShareBalance;
+
+  useEffect(() => {
+    if (redeemAmountExceedsBalance) setSelectedRoute(undefined);
+  }, [redeemAmountExceedsBalance]);
+
+  const routeInputsReady = Boolean(isUsdgMode && marketInputAmount && marketInputAmount > 0n && slippageValid);
+  const directInputsReady = Boolean(
+    !isUsdgMode && slippageValid && (
+      activeAction === "deposit" ? requestedDirectMintShares : requestedRedeemShares
+    ),
+  );
+  const underlyingRouteAvailable = entryContractsConfigured &&
+    entryAdapterApproved !== false &&
+    constituentPoolsReady &&
+    (activeAction === "redeem" || !depositsPausedForAssetRemoval);
   const underlyingQuoteReady = activeAction === "deposit"
     ? entryQuoteReady && entryWithinBudget
     : redeemQuoteReady;
@@ -3016,6 +3191,152 @@ function UserActions({
     } catch (error) {
       setEntryError(errorMessage(error));
       setEntryState("reverted");
+    }
+  }
+
+  async function approveBasketAssets() {
+    if (!vault.address || !connectedAddress || !publicClient || !directBasketReady) return;
+    setEntryError(undefined);
+    setTradeReceipt(undefined);
+    try {
+      for (const leg of directBasketLegs) {
+        if (leg.maximumAmount === undefined || leg.allowance === undefined) return;
+        if (leg.allowance >= leg.maximumAmount) continue;
+        if (leg.allowance > 0n) {
+          setEntryState("pending");
+          const resetHash = await writeContractAsync({
+            address: leg.address as `0x${string}`,
+            abi: erc20BalanceAbi,
+            functionName: "approve",
+            args: [vault.address, 0n],
+            chainId: robinhoodChainTestnet.id,
+          });
+          setEntryState("submitted");
+          const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
+          if (resetReceipt.status !== "success") throw new Error(`${leg.symbol} approval reset reverted.`);
+        }
+        setEntryState("pending");
+        const approvalHash = await writeContractAsync({
+          address: leg.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "approve",
+          args: [vault.address, leg.maximumAmount],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setEntryState("submitted");
+        const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+        if (approvalReceipt.status !== "success") throw new Error(`${leg.symbol} approval reverted.`);
+      }
+      await refetchBasketAuthorization();
+      setEntryState("confirmed");
+    } catch (error) {
+      setEntryError(errorMessage(error));
+      setEntryState("reverted");
+    }
+  }
+
+  async function setBasketAssetApproval(assetIndex: number, shouldApprove: boolean) {
+    const leg = directBasketLegs[assetIndex];
+    if (!vault.address || !connectedAddress || !publicClient || !leg || basketApprovalPendingAsset) return;
+    setBasketApprovalError(undefined);
+    setBasketApprovalPendingAsset(leg.address as `0x${string}`);
+    try {
+      const hash = await writeContractAsync({
+        address: leg.address as `0x${string}`,
+        abi: erc20BalanceAbi,
+        functionName: "approve",
+        args: [vault.address, shouldApprove ? maxUint256 : 0n],
+        chainId: robinhoodChainTestnet.id,
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error(`${shouldApprove ? "Approval" : "Approval removal"} for ${leg.symbol} reverted.`);
+      }
+      await refetchBasketAuthorization();
+    } catch (error) {
+      setBasketApprovalError(errorMessage(error));
+    } finally {
+      setBasketApprovalPendingAsset(undefined);
+    }
+  }
+
+  async function mintWithBasket() {
+    if (
+      !vault.address || !connectedAddress || !publicClient || !requestedDirectMintShares ||
+      !directBasketReady || !directBasketBalanceSufficient || !directBasketAllowanceSufficient
+    ) return;
+    const maximumAmounts = directBasketLegs.map((leg) => leg.maximumAmount as bigint);
+    setEntryError(undefined);
+    setTradeReceipt(undefined);
+    try {
+      setEntryState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: vaultDepositAbi,
+        functionName: "mintWithBasket",
+        args: [requestedDirectMintShares, connectedAddress, maximumAmounts],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setEntryState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The direct RWA deposit reverted.");
+      await Promise.all([
+        refetchBasketAuthorization(),
+        refetchDirectMintPreview(),
+        refetchRedeemAuthorization(),
+        refetchOwnedUnderlying(),
+      ]);
+      setTradeReceipt({
+        action: "deposit",
+        detail: `${formatWalletTokenBalance(requestedDirectMintShares, 18)} ${vault.symbol} minted from your RWA basket.`,
+        transactionHash: hash,
+      });
+      setTradeAmount("");
+      setEntryState("confirmed");
+    } catch (error) {
+      setEntryError(errorMessage(error));
+      setEntryState("reverted");
+    }
+  }
+
+  async function redeemToBasket() {
+    if (
+      !vault.address || !connectedAddress || !publicClient || !requestedRedeemShares ||
+      !redeemBasketReady || !redeemBalanceSufficient || !previewRedeemAmounts
+    ) return;
+    const minimumAmounts = previewRedeemAmounts.map(
+      (amount) => amount * BigInt(10_000 - slippageBps) / 10_000n,
+    );
+    setRedeemError(undefined);
+    setTradeReceipt(undefined);
+    try {
+      setRedeemState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: vaultDepositAbi,
+        functionName: "redeem",
+        args: [requestedRedeemShares, connectedAddress, connectedAddress, minimumAmounts],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setRedeemState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The direct RWA redemption reverted.");
+      await Promise.all([
+        refetchRedeemAuthorization(),
+        refetchRedeemPreview(),
+        refetchBasketAuthorization(),
+        refetchOwnedUnderlying(),
+      ]);
+      setTradeReceipt({
+        action: "redeem",
+        detail: `${formatWalletTokenBalance(requestedRedeemShares, 18)} ${vault.symbol} redeemed directly for the underlying RWAs.`,
+        transactionHash: hash,
+      });
+      setTradeAmount("");
+      setRedeemState("confirmed");
+    } catch (error) {
+      setRedeemError(errorMessage(error));
+      setRedeemState("reverted");
     }
   }
 
@@ -3232,10 +3553,26 @@ function UserActions({
     setMarketError(undefined);
   }
 
+  function changeSettlementMode(nextMode: "usdg" | "rwas") {
+    if (nextMode === settlementMode) return;
+    setSettlementMode(nextMode);
+    setTradeAmount("");
+    setSelectedRoute(undefined);
+    setTradeReceipt(undefined);
+    setEntryState("idle");
+    setRedeemState("idle");
+    setMarketState("idle");
+    setEntryError(undefined);
+    setRedeemError(undefined);
+    setMarketError(undefined);
+  }
+
   return (
     <SectionCard
       title="Your position"
-      subtitle={activeAction === "deposit" ? `Buy ${vault.symbol} with USDG` : `Redeem ${vault.symbol} for USDG`}
+      subtitle={isUsdgMode
+        ? activeAction === "deposit" ? `Buy ${vault.symbol} with USDG` : `Redeem ${vault.symbol} for USDG`
+        : activeAction === "deposit" ? `Mint ${vault.symbol} with the underlying basket` : `Receive the underlying basket directly`}
       icon={<Wallet size={15} />}
     >
       <div className="positionTradeTicket">
@@ -3243,6 +3580,60 @@ function UserActions({
           <span>Your shares</span>
           <strong>{ownedSharesLabel}</strong>
         </div>
+        <div className="positionUnderlyingTableWrap">
+          <table className="positionUnderlyingTable">
+            <thead>
+              <tr>
+                <th>Underlying</th>
+                <th>Per OTF share</th>
+                <th>Your amount</th>
+                <th>Vault access</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vault.allocations.map((asset, index) => {
+                const decimals = directBasketLegs[index]?.decimals ?? 18;
+                const perShareAmount = perShareUnderlyingAmounts?.[index];
+                const ownedAmount = ownedUnderlyingAmounts?.[index];
+                const allowance = directBasketLegs[index]?.allowance;
+                const isApproved = allowance !== undefined && allowance > 0n;
+                const approvalPending = basketApprovalPendingAsset?.toLowerCase() === asset.address.toLowerCase();
+                return (
+                  <tr key={asset.address}>
+                    <td><strong>{asset.symbol}</strong></td>
+                    <td>{perShareUnderlyingLoading ? "Loading" : formatWalletTokenBalance(perShareAmount, decimals, 8)}</td>
+                    <td>
+                      {!connectedAddress
+                        ? "Connect wallet"
+                        : redeemShareBalance === 0n
+                          ? "0"
+                          : ownedUnderlyingLoading
+                            ? "Loading"
+                            : formatWalletTokenBalance(ownedAmount, decimals, 8)}
+                    </td>
+                    <td>
+                      <button
+                        className={`positionUnderlyingApproval ${isApproved ? "approved" : ""}`}
+                        type="button"
+                        disabled={!connectedAddress || allowance === undefined || Boolean(basketApprovalPendingAsset)}
+                        onClick={() => setBasketAssetApproval(index, !isApproved)}
+                        aria-label={isApproved
+                          ? `Remove ${asset.symbol} approval for vault deposits`
+                          : `Approve ${asset.symbol} for vault deposits`}
+                      >
+                        {approvalPending ? <Loader2 className="spin" size={11} /> : isApproved ? <XCircle size={11} /> : <ShieldCheck size={11} />}
+                        {approvalPending ? "Confirming" : isApproved ? "Remove" : "Approve"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {basketApprovalError ? (
+          <span className="positionUnderlyingApprovalError" role="alert">{basketApprovalError}</span>
+        ) : null}
         <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
           <button
             className={activeAction === "deposit" ? "active" : ""}
@@ -3261,11 +3652,34 @@ function UserActions({
             Redeem
           </button>
         </div>
+        <div className="positionSettlementControl">
+          <span>Settle in</span>
+          <div className="positionSettlementSelector" role="radiogroup" aria-label="Deposit and redemption asset mode">
+            <button
+              className={isUsdgMode ? "active" : ""}
+              type="button"
+              role="radio"
+              aria-checked={isUsdgMode}
+              onClick={() => changeSettlementMode("usdg")}
+            >
+              USDG
+            </button>
+            <button
+              className={!isUsdgMode ? "active" : ""}
+              type="button"
+              role="radio"
+              aria-checked={!isUsdgMode}
+              onClick={() => changeSettlementMode("rwas")}
+            >
+              RWAs
+            </button>
+          </div>
+        </div>
 
         <div className="positionTicketInputs">
           <label>
             <span className="positionFieldHeading">
-              <span>{inputTokenSymbol} amount</span>
+              <span>{!isUsdgMode && activeAction === "deposit" ? "Shares to mint" : `${inputTokenSymbol} amount`}</span>
               <span className="positionWalletBalance">Balance: {walletInputBalanceLabel}</span>
             </span>
             <div className="positionAmountInput">
@@ -3279,22 +3693,24 @@ function UserActions({
                 aria-label={`${inputTokenSymbol} amount`}
                 disabled={!isLive || entryBusy || redeemBusy || marketBusy}
               />
-              <button
-                className="positionMaxButton"
-                type="button"
-                disabled={
-                  !isLive ||
-                  entryBusy ||
-                  redeemBusy ||
-                  marketBusy ||
-                  walletInputBalance === undefined ||
-                  walletInputBalance <= 0n
-                }
-                onClick={useMaximumAmount}
-                aria-label={`Use maximum ${inputTokenSymbol} balance`}
-              >
-                Max
-              </button>
+              {isUsdgMode || activeAction === "redeem" ? (
+                <button
+                  className="positionMaxButton"
+                  type="button"
+                  disabled={
+                    !isLive ||
+                    entryBusy ||
+                    redeemBusy ||
+                    marketBusy ||
+                    walletInputBalance === undefined ||
+                    walletInputBalance <= 0n
+                  }
+                  onClick={useMaximumAmount}
+                  aria-label={`Use maximum ${inputTokenSymbol} balance`}
+                >
+                  Max
+                </button>
+              ) : null}
               <strong>{inputTokenSymbol}</strong>
             </div>
           </label>
@@ -3326,6 +3742,16 @@ function UserActions({
           <span className="fieldError">Enter a slippage limit between 0.01% and 20%.</span>
         ) : null}
 
+        {redeemAmountExceedsBalance ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Insufficient OTF shares</strong>
+              <span>Enter no more than {formatWalletTokenBalance(redeemShareBalance, 18, 12)} {vault.symbol}, or choose Max.</span>
+            </div>
+          </div>
+        ) : null}
+
         {routeInputsReady ? (
           <div className="positionRouteStage">
             <div className="positionRouteHeading">
@@ -3342,7 +3768,7 @@ function UserActions({
                 type="button"
                 role="radio"
                 aria-checked={selectedRoute === "market"}
-                disabled={!marketRouteAvailable}
+                disabled={!marketRouteAvailable || redeemAmountExceedsBalance}
                 onClick={() => setSelectedRoute("market")}
               >
                 <span className="positionRouteIcon"><Droplets size={18} /></span>
@@ -3377,7 +3803,7 @@ function UserActions({
                 type="button"
                 role="radio"
                 aria-checked={selectedRoute === "underlying"}
-                disabled={!underlyingRouteAvailable}
+                disabled={!underlyingRouteAvailable || redeemAmountExceedsBalance}
                 onClick={() => setSelectedRoute("underlying")}
               >
                 <span className="positionRouteIcon"><Landmark size={18} /></span>
@@ -3399,6 +3825,8 @@ function UserActions({
                 <small>
                   {!entryContractsConfigured || entryAdapterApproved === false
                     ? "Settlement route not configured"
+                    : activeAction === "deposit" && depositsPausedForAssetRemoval
+                      ? "Paused while an asset is removed"
                     : !constituentPoolsConfigured
                       ? "Constituent pools not configured"
                       : !constituentPoolsReady
@@ -3410,7 +3838,7 @@ function UserActions({
               </button>
             </div>
           </div>
-        ) : tradeReceipt ? (
+        ) : !isUsdgMode && directInputsReady ? null : tradeReceipt ? (
           <div className="positionTradeSuccess" role="status" aria-live="polite">
             <span className="positionTradeSuccessMark" aria-hidden="true">
               <Check size={20} strokeWidth={2.6} />
@@ -3433,13 +3861,136 @@ function UserActions({
           <div className="positionRoutePrompt">
             <ArrowDownToLine size={17} />
             <div>
-              <strong>Enter an amount to compare routes</strong>
+              <strong>{isUsdgMode ? "Enter an amount to compare routes" : "Enter shares to preview the RWA basket"}</strong>
               <span>
-                Both execution paths use the same {inputTokenSymbol} amount and slippage limit.
+                {isUsdgMode
+                  ? `Both execution paths use the same ${inputTokenSymbol} amount and slippage limit.`
+                  : activeAction === "deposit"
+                    ? `You will supply each underlying asset required to mint ${vault.symbol}.`
+                    : "You will receive each underlying asset directly in your wallet."}
               </span>
             </div>
           </div>
         )}
+
+        {!isUsdgMode && directInputsReady ? (
+          <div className="positionExecutionPanel">
+            <div className="positionExecutionHeader">
+              <div>
+                <span className="positionRouteIcon"><Landmark size={16} /></span>
+                <div>
+                  <strong>Direct RWA basket</strong>
+                  <span>
+                    {activeAction === "deposit"
+                      ? `Supply the proportional basket and mint ${vault.symbol}.`
+                      : `Burn ${vault.symbol} and receive every constituent directly.`}
+                  </span>
+                </div>
+              </div>
+              <span className="stateBadge success">RWAs</span>
+            </div>
+
+            <div className="positionBasketPreview">
+              <div className="positionBasketHeader">
+                <span>Asset</span>
+                <span>{activeAction === "deposit" ? "Required" : "Expected"}</span>
+                <span>{activeAction === "deposit" ? "Wallet" : "Minimum"}</span>
+              </div>
+              {vault.allocations.map((asset, index) => {
+                const leg = directBasketLegs[index];
+                const decimals = leg?.decimals ?? 18;
+                const previewAmount = activeAction === "deposit"
+                  ? leg?.requiredAmount
+                  : previewRedeemAmounts?.[index];
+                const redeemPreviewAmount = previewRedeemAmounts?.[index];
+                const minimumAmount = redeemPreviewAmount !== undefined
+                  ? (redeemPreviewAmount * BigInt(10_000 - slippageBps)) / 10_000n
+                  : undefined;
+                const walletSufficient = activeAction !== "deposit" || (
+                  leg?.balance !== undefined && leg.requiredAmount !== undefined && leg.balance >= leg.requiredAmount
+                );
+                return (
+                  <div className="positionBasketRow" key={asset.address}>
+                    <strong>{asset.symbol}</strong>
+                    <span>{formatWalletTokenBalance(previewAmount, decimals, 8)}</span>
+                    <span className={walletSufficient ? "" : "dangerText"}>
+                      {activeAction === "deposit"
+                        ? formatWalletTokenBalance(leg?.balance, decimals, 8)
+                        : formatWalletTokenBalance(minimumAmount, decimals, 8)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {activeAction === "deposit" && directMintPreviewError ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div><strong>Basket preview unavailable</strong><span>{errorMessage(directMintPreviewError)}</span></div>
+              </div>
+            ) : null}
+            {activeAction === "deposit" && directBasketReady && !directBasketBalanceSufficient ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div><strong>Insufficient RWA balance</strong><span>Your wallet needs every asset shown in the required column.</span></div>
+              </div>
+            ) : null}
+            {activeAction === "redeem" && requestedRedeemShares && !redeemBalanceSufficient ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div><strong>Insufficient OTF shares</strong><span>Your wallet does not hold the requested share amount.</span></div>
+              </div>
+            ) : null}
+            {(activeAction === "deposit" ? entryError : redeemError) ? (
+              <div className="validationSummary danger">
+                <AlertTriangle size={15} />
+                <div>
+                  <strong>{activeAction === "deposit" ? "Direct deposit failed" : "Direct redemption failed"}</strong>
+                  <span>{activeAction === "deposit" ? entryError : redeemError}</span>
+                </div>
+              </div>
+            ) : null}
+            <TxStatus state={activeAction === "deposit" ? entryState : redeemState} />
+            <div className="buttonRow">
+              {activeAction === "deposit" ? (
+                <>
+                  <button
+                    className="secondaryAction"
+                    type="button"
+                    disabled={!connectedAddress || entryBusy || directMintPreviewLoading || !directBasketReady || !directBasketBalanceSufficient || directBasketAllowanceSufficient}
+                    onClick={approveBasketAssets}
+                  >
+                    <ShieldCheck size={14} />
+                    {directBasketAllowanceSufficient ? "RWAs approved" : "Approve RWAs"}
+                  </button>
+                  <button
+                    className="primaryAction"
+                    type="button"
+                    disabled={!connectedAddress || entryBusy || !directBasketReady || !directBasketBalanceSufficient || !directBasketAllowanceSufficient}
+                    onClick={mintWithBasket}
+                  >
+                    {entryBusy ? <Loader2 className="spin" size={14} /> : <ArrowDownToLine size={14} />}
+                    Mint {vault.symbol}
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="dangerAction"
+                  type="button"
+                  disabled={!connectedAddress || redeemBusy || previewRedeemLoading || !redeemBasketReady || !redeemBalanceSufficient}
+                  onClick={redeemToBasket}
+                >
+                  {redeemBusy ? <Loader2 className="spin" size={14} /> : <ArrowRight size={14} />}
+                  Redeem for RWAs
+                </button>
+              )}
+            </div>
+            <div className="routeExecutionNote">
+              <Info size={14} />
+              <span>No swaps are used. Amounts come directly from or go directly into the OTF vault.</span>
+            </div>
+          </div>
+        ) : null}
 
         {selectedRoute === "market" && routeInputsReady ? (
           <div className="positionExecutionPanel">
@@ -3701,7 +4252,14 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
-  const weightsValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
+  const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
+  const targetBoundsValid = targetWeightBps.every(
+    (weight) =>
+      Number.isInteger(weight) &&
+      weight >= vault.minNonZeroAssetWeightBps &&
+      weight <= vault.maxSingleAssetWeightBps,
+  );
+  const weightsValid = weightSumValid && targetBoundsValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
   const turnoverLimit = vault.maxTurnoverBps / 100;
@@ -3940,8 +4498,11 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       </div>
 
       <div className="builderWarnings">
-        {!weightsValid ? (
+        {!weightSumValid ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to exactly 100%</strong><span>Weights are submitted to the contract in whole basis points.</span></div></div>
+        ) : null}
+        {!targetBoundsValid ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Every included asset needs a valid nonzero target</strong><span>Keep each target between {(vault.minNonZeroAssetWeightBps / 100).toFixed(2)}% and {(vault.maxSingleAssetWeightBps / 100).toFixed(2)}%. Remove an asset from the proposal instead of setting it to 0%.</span></div></div>
         ) : null}
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
@@ -4357,8 +4918,7 @@ function SafetyLimits({ vault }: { vault: VaultView; onRefresh: () => Promise<un
     ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
     ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
     ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
-    ["Portfolio change unlock", formatCooldown(vault.cooldownSeconds), "Cannot be shortened"],
-    ["Strategy-change cooldown", "14 days", "Fixed protocol minimum"],
+    ["Strategy change cooldown", formatCooldown(vault.cooldownSeconds), "Starts after completion"],
     ["Strategy activation delay", "48 hours", "Holder exit window"],
   ] as const;
 
@@ -4716,7 +5276,6 @@ function CreateVaultView({
     creatorFee: "0.50",
     initialShares: "100",
     initialPortfolioValue: "5",
-    cooldownDays: "7",
     maxTurnover: "30",
     maxNavLoss: "2",
     maxDeviation: "2",
@@ -4934,7 +5493,6 @@ function CreateVaultView({
   const challengeGraceValid =
     Number.isInteger(challengeGraceDays) && challengeGraceDays >= 5 && challengeGraceDays <= 30;
   const remainingSafetyLimitsValid =
-    Number(draft.cooldownDays) >= 7 &&
     Number(draft.creatorFee) >= 0 &&
     Number(draft.creatorFee) <= 10 &&
     Number(draft.initialShares) > 0 &&
@@ -4961,7 +5519,6 @@ function CreateVaultView({
     totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
-    Number(draft.cooldownDays) >= 7 ? null : "The portfolio change unlock must be at least 7 days.",
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
     Number(draft.maxAssets) >= portfolio.length ? null : "Maximum assets cannot be lower than the initial portfolio size.",
@@ -5085,7 +5642,7 @@ function CreateVaultView({
       }),
       initialShareSupply: parseUnits(draft.initialShares, 18),
       creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
-      rebalanceCooldown: daysToSeconds(draft.cooldownDays),
+      rebalanceCooldown: daysToSeconds("14"),
       maxTurnoverBps: percentToBps(draft.maxTurnover),
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
@@ -5478,8 +6035,7 @@ function CreateVaultView({
               <div className="formSection">
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div></label>
-                  <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Minted to the manager after minimum liquidity is locked.</small></label>
-                  <label><span>Portfolio change unlock</span><div className="inputWithSuffix"><input type="number" min={7} value={draft.cooldownDays} onChange={(event) => updateDraft("cooldownDays", event.target.value)} /><span>days</span></div><small>Seven-day protocol minimum between possible portfolio changes.</small></label>
+                  <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
                   <label><span>Maximum assets</span><input type="number" min={portfolio.length} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /></label>
                   <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div></label>
                   <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div></label>
@@ -5494,7 +6050,7 @@ function CreateVaultView({
                   <ShieldCheck size={14} />
                   <div>
                     <strong>Trade execution remains constrained</strong>
-                    <span>Each partial trade uses current constituents, approved adapters, oracle limits, exact temporary approvals, and must move the basket closer to target.</span>
+                    <span>Strategy changes unlock 14 days after the previous rebalance completes. Each partial trade uses current constituents, approved adapters, oracle limits, exact temporary approvals, and must move the basket closer to target.</span>
                   </div>
                 </div>
                 {safetyIssues.length ? (
@@ -5520,7 +6076,7 @@ function CreateVaultView({
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
-                  <div><span>Change unlock</span><strong>{draft.cooldownDays} days</strong></div>
+                  <div><span>Strategy cooldown</span><strong>14 days after completion</strong></div>
                   <div><span>Maximum turnover</span><strong>{draft.maxTurnover}%</strong></div>
                   <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
                   <div><span>Completion band</span><strong>+/- {draft.maxDeviation}%</strong></div>
@@ -5800,7 +6356,7 @@ function CreatedVaultView({
           <div><span>Assets</span><strong>{detailsReady ? vault.allocations.length : "Loading"}</strong></div>
           <div><span>Initial supply</span><strong>{detailsReady ? vault.totalSupply : "Loading"}</strong></div>
           <div><span>Manager</span><strong>{detailsReady ? shortAddress(vault.manager) : "Loading"}</strong></div>
-          <div><span>Change unlock</span><strong>{detailsReady ? formatCooldown(vault.cooldownSeconds) : "Loading"}</strong></div>
+          <div><span>Strategy cooldown</span><strong>{detailsReady ? `${formatCooldown(vault.cooldownSeconds)} after completion` : "Loading"}</strong></div>
         </div>
 
         {transactionHash ? (
@@ -6382,7 +6938,7 @@ function ManageVaultsView({
         <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Immediate transfer" />
         <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Immediate update" />
         <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub={["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"} />
-        <MetricCard label="Portfolio Change Unlock" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Permanently immutable" />
+        <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Starts after completion" />
       </div>
 
       <div className="managerOperationTabs" role="tablist" aria-label="Manager operations">

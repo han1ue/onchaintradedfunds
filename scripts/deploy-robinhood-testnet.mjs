@@ -164,9 +164,15 @@ const rebalanceExecutor = await deployContract({
   args: [account.address],
 });
 const feeCollector = await deployContract({ name: "FeeCollector", args: [treasury] });
-// The public Robinhood Testnet RPC rejects eth_estimateGas for this near-limit initcode payload.
-// Supplying gas bypasses a public-RPC estimation failure for this near-limit initcode payload.
-const vaultImplementation = await deployContract({ name: "ManagedOTFVault", gas: 30_000_000n });
+const portfolioCalculator = await deployContract({ name: "PortfolioCalculator" });
+const vaultStrategy = await deployContract({
+  name: "ManagedOTFVaultStrategy",
+  args: [portfolioCalculator.address],
+});
+const vaultImplementation = await deployContract({
+  name: "ManagedOTFVault",
+  args: [portfolioCalculator.address, vaultStrategy.address],
+});
 const factory = await deployContract({
   name: "OTFFactory",
   args: [
@@ -251,6 +257,8 @@ const deployment = {
     oracleRegistry,
     rebalanceExecutor,
     feeCollector,
+    portfolioCalculator,
+    vaultStrategy,
     vaultImplementation,
     factory,
     ...(v3MarketRegistry ? { v3MarketRegistry } : {}),

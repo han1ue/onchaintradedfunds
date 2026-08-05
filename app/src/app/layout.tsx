@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AlertTriangle } from "lucide-react";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,7 +18,22 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <aside className="testnetWarningBanner" aria-label="Testnet risk warning">
+          <div>
+            <AlertTriangle aria-hidden="true" size={13} strokeWidth={2.2} />
+            <strong>Testnet only</strong>
+            <span className="testnetWarningDesktop">
+              Experimental protocol. Contract addresses may be reset without notice; OTF positions
+              and deposited test assets may become inaccessible or be lost.
+            </span>
+            <span className="testnetWarningMobile">
+              Protocol resets may make OTF positions and deposited test assets inaccessible or lost.
+            </span>
+          </div>
+        </aside>
+        {children}
+      </body>
     </html>
   );
 }

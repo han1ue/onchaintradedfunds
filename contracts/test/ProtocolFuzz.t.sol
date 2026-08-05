@@ -10,33 +10,74 @@ import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract ProtocolFuzzTest is ProtocolTestBase {
-    function testFuzzFactoryAcceptsAnyCooldownAtOrAboveMinimum(uint32 rawExtra) public {
-        uint32 extra = uint32(bound(rawExtra, 0, 365 days));
+    function testFuzzRevokedWeightNormalizationPreservesExactAccounting(
+        uint16 rawWeightA,
+        uint16 rawWeightB
+    ) public {
+        uint16 weightA = uint16(bound(rawWeightA, 1, 9_998));
+        uint16 weightB = uint16(bound(rawWeightB, 1, 9_999 - weightA));
+        uint16 weightC = uint16(10_000 - weightA - weightB);
         VaultInitParams memory params = _defaultParams();
-        params.rebalanceCooldown = uint32(7 days) + extra;
+        params.initialAssets = new address[](3);
+        params.initialAssets[0] = address(tokenA);
+        params.initialAssets[1] = address(tokenB);
+        params.initialAssets[2] = address(tokenC);
+        params.initialTargetWeightsBps = new uint16[](3);
+        params.initialTargetWeightsBps[0] = weightA;
+        params.initialTargetWeightsBps[1] = weightB;
+        params.initialTargetWeightsBps[2] = weightC;
+        params.initialAmounts = new uint256[](3);
+        params.initialAmounts[0] = uint256(weightA) * ONE;
+        params.initialAmounts[1] = uint256(weightB) * ONE;
+        params.initialAmounts[2] = uint256(weightC) * ONE;
+        params.maxSingleAssetWeightBps = 10_000;
+        params.minNonZeroAssetWeightBps = 1;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assetRegistry.setAssetApproved(address(tokenA), false);
+        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        uint256 activeTotal = uint256(weightB) + weightC;
+        uint256 expectedB = uint256(weightB) * 10_000 / activeTotal;
+        uint256 expectedC = uint256(weightC) * 10_000 / activeTotal;
+        if (expectedB + expectedC != 10_000) expectedB++;
+
+        assertEq(effectiveTargets[0], 0);
+        assertEq(effectiveTargets[1], expectedB);
+        assertEq(effectiveTargets[2], expectedC);
+        assertEq(uint256(effectiveTargets[1]) + effectiveTargets[2], 10_000);
+    }
+
+    function testFactoryAcceptsFixedProtocolCooldown() public {
+        VaultInitParams memory params = _defaultParams();
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.rebalanceCooldown(), params.rebalanceCooldown);
-        assertEq(vault.nextRebalanceTime(), START + params.rebalanceCooldown);
+        assertEq(vault.rebalanceCooldown(), 14 days);
+        assertEq(vault.nextRebalanceTime(), START + 14 days);
+        assertEq(vault.nextStrategyChangeTime(), vault.nextRebalanceTime());
     }
 
-    function testFuzzFactoryRejectsEveryCooldownBelowMinimum(uint32 rawCooldown) public {
-        uint32 cooldown = uint32(bound(rawCooldown, 0, 7 days - 1));
+    function testFuzzFactoryRejectsEveryCooldownBelowProtocolValue(uint32 rawCooldown) public {
+        uint32 cooldown = uint32(bound(rawCooldown, 0, 14 days - 1));
         VaultInitParams memory params = _defaultParams();
         params.rebalanceCooldown = cooldown;
 
-        vm.expectRevert(OTFFactory.RebalanceCooldownTooShort.selector);
+        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
         factory.createVault(params);
     }
 
-    function testFuzzRebalanceSucceedsAtConfiguredBoundary(uint32 rawExtra, uint16 rawTargetWeight)
-        public
-    {
-        uint32 cooldown = uint32(7 days + bound(rawExtra, 0, 30 days));
+    function testFuzzFactoryRejectsEveryCooldownAboveProtocolValue(uint32 rawExtra) public {
+        uint32 extra = uint32(bound(rawExtra, 1, type(uint32).max - uint32(14 days)));
+        VaultInitParams memory params = _defaultParams();
+        params.rebalanceCooldown = uint32(14 days) + extra;
+
+        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
+        factory.createVault(params);
+    }
+
+    function testFuzzRebalanceSucceedsAtFixedBoundary(uint16 rawTargetWeight) public {
         uint16 targetA = uint16(bound(rawTargetWeight, 2_000, 8_000));
         VaultInitParams memory params = _defaultParams();
-        params.rebalanceCooldown = cooldown;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         address[] memory assets = new address[](2);
@@ -57,8 +98,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
             trades = new TradeInstruction[](0);
         }
 
-        uint256 proposalTime = START + cooldown;
-        if (proposalTime < START + 14 days) proposalTime = START + 14 days;
+        uint256 proposalTime = START + 14 days;
         vm.warp(proposalTime);
         feedA.setRoundData(2, 100_00000000, proposalTime, proposalTime, 2);
         feedB.setRoundData(2, 100_00000000, proposalTime, proposalTime, 2);
@@ -179,7 +219,9 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         uint256 growthWad = elapsed == 365 days
             ? annualGrowthWad
             : uint256(FeeGrowthMath.powWad(int256(annualGrowthWad), int256(exponentWad)));
-        uint256 expectedFeeShares = MathEx.mulDiv(100 * ONE, growthWad, ONE) - 100 * ONE;
+        uint256 expectedFeeShares = elapsed == 365 days
+            ? MathEx.mulDiv(100 * ONE, 10_000, 10_000 - uint256(feeBps)) - 100 * ONE
+            : MathEx.mulDiv(100 * ONE, growthWad, ONE) - 100 * ONE;
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
 
         uint256 actualFeeShares = vault.accrueFees();

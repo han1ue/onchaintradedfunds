@@ -2,10 +2,15 @@
 pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
+import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IOracleRegistry } from "./interfaces/IOracleRegistry.sol";
 import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { MathEx } from "./libraries/MathEx.sol";
+
+interface ITargetWeightVault {
+    function targetWeightBps(address asset) external view returns (uint16);
+}
 
 contract PortfolioCalculator {
     using MathEx for uint256;
@@ -24,8 +29,49 @@ contract PortfolioCalculator {
     error TokenDecimalsUnavailable(address token);
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
+    error InvalidTargetWeightSum(uint256 sum);
     error InvalidFeeRate(uint16 feeBps);
     error FeeExponentOverflow(uint256 exponentWad);
+
+    function effectiveTargetWeights(address vault, address[] calldata assets, address assetRegistry)
+        external
+        view
+        returns (uint256[] memory weights)
+    {
+        uint256 storedWeightTotal;
+        uint256 activeWeightTotal;
+        weights = new uint256[](assets.length);
+
+        for (uint256 i = 0; i < assets.length; i++) {
+            uint256 storedWeight = ITargetWeightVault(vault).targetWeightBps(assets[i]);
+            storedWeightTotal += storedWeight;
+            if (
+                storedWeight != 0
+                    && IAssetRegistry(assetRegistry).isApprovedAsset(assets[i])
+            ) {
+                weights[i] = storedWeight;
+                activeWeightTotal += storedWeight;
+            }
+        }
+        if (storedWeightTotal != BPS) revert InvalidTargetWeightSum(storedWeightTotal);
+        if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
+
+        uint256 assignedWeight;
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (weights[i] == 0) continue;
+            weights[i] = MathEx.mulDiv(weights[i], BPS, activeWeightTotal);
+            assignedWeight += weights[i];
+        }
+
+        uint256 remainder = BPS - assignedWeight;
+        for (uint256 i = 0; i < assets.length && remainder != 0; i++) {
+            if (weights[i] != 0) {
+                weights[i]++;
+                remainder--;
+            }
+        }
+        if (remainder != 0) revert InvalidTargetWeightSum(BPS - remainder);
+    }
 
     function feeSharesAfterElapsed(
         uint256 supply,
@@ -210,8 +256,8 @@ contract PortfolioCalculator {
         address oracleRegistry,
         uint32 maxStaleness
     ) private view returns (uint256) {
-        (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry, maxStaleness);
         if (rawBalance == 0) return 0;
+        (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry, maxStaleness);
         uint8 tokenDecimals = _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
