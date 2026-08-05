@@ -3597,6 +3597,7 @@ function UserActions({
                 const ownedAmount = ownedUnderlyingAmounts?.[index];
                 const allowance = directBasketLegs[index]?.allowance;
                 const isApproved = allowance !== undefined && allowance > 0n;
+                const showApprovalAction = !isUsdgMode || isApproved;
                 const approvalPending = basketApprovalPendingAsset?.toLowerCase() === asset.address.toLowerCase();
                 return (
                   <tr key={asset.address}>
@@ -3612,18 +3613,20 @@ function UserActions({
                             : formatWalletTokenBalance(ownedAmount, decimals, 8)}
                     </td>
                     <td>
-                      <button
-                        className={`positionUnderlyingApproval ${isApproved ? "approved" : ""}`}
-                        type="button"
-                        disabled={!connectedAddress || allowance === undefined || Boolean(basketApprovalPendingAsset)}
-                        onClick={() => setBasketAssetApproval(index, !isApproved)}
-                        aria-label={isApproved
-                          ? `Remove ${asset.symbol} approval for vault deposits`
-                          : `Approve ${asset.symbol} for vault deposits`}
-                      >
-                        {approvalPending ? <Loader2 className="spin" size={11} /> : isApproved ? <XCircle size={11} /> : <ShieldCheck size={11} />}
-                        {approvalPending ? "Confirming" : isApproved ? "Remove" : "Approve"}
-                      </button>
+                      {showApprovalAction ? (
+                        <button
+                          className={`positionUnderlyingApproval ${isApproved ? "approved" : ""}`}
+                          type="button"
+                          disabled={!connectedAddress || allowance === undefined || Boolean(basketApprovalPendingAsset)}
+                          onClick={() => setBasketAssetApproval(index, !isApproved)}
+                          aria-label={isApproved
+                            ? `Remove ${asset.symbol} approval for vault deposits`
+                            : `Approve ${asset.symbol} for vault deposits`}
+                        >
+                          {approvalPending ? <Loader2 className="spin" size={11} /> : isApproved ? <XCircle size={11} /> : <ShieldCheck size={11} />}
+                          {approvalPending ? "Confirming" : isApproved ? "Remove" : "Approve"}
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
