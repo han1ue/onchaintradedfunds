@@ -888,6 +888,34 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.metricCardValueLink {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.metricCardValueLink strong {
+  min-width: 0;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricCardValueLink svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.metricCardValueLink:hover,
+.metricCardValueLink:hover svg {
+  color: var(--accent-text);
+}
+
 .metricCard > span {
   display: block;
   margin-top: 6px;
@@ -2352,6 +2380,531 @@ textarea::placeholder {
   .positionExecutionQuote > div + div {
     border-top: 1px solid var(--border);
     border-left: 0;
+  }
+}
+
+/* Full-range Synthra liquidity manager */
+.liquidityPage {
+  max-width: 1120px;
+}
+
+.liquidityBreadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 18px;
+  color: var(--text-muted);
+  font-size: 0.69rem;
+}
+
+.liquidityBreadcrumb a,
+.liquidityExplorerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.liquidityBreadcrumb a:hover,
+.liquidityExplorerLink:hover {
+  color: var(--accent-text);
+}
+
+.liquidityBreadcrumb > span {
+  color: var(--border-strong);
+}
+
+.liquidityBreadcrumb strong {
+  color: var(--text-soft);
+  font-weight: 500;
+}
+
+.liquidityIntro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 24px;
+}
+
+.liquidityIntro h1 {
+  max-width: 720px;
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.65rem, 3vw, 2.45rem);
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+
+.liquidityIntro p {
+  max-width: 680px;
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.liquidityBadges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.liquidityBadges span {
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--card);
+  color: var(--text-soft);
+  padding: 6px 9px;
+  font-size: 0.63rem;
+  font-weight: 600;
+}
+
+.liquidityBadges span:first-child {
+  border-color: rgb(var(--accent-rgb) / 34%);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--accent-text);
+}
+
+.liquidityLayout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.liquidityMarketPanel,
+.liquidityActionPanel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.liquidityMarketPanel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.liquidityPanelHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.liquidityPanelHeading > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+
+.liquidityPanelHeading strong,
+.liquidityPanelHeading span {
+  display: block;
+}
+
+.liquidityPanelHeading strong {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.liquidityPanelHeading span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  line-height: 1.4;
+}
+
+.liquidityField {
+  display: block;
+  min-width: 0;
+}
+
+.liquidityField > span,
+.liquiditySlippage > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.liquidityField > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+  line-height: 1.45;
+}
+
+.liquidityPoolRecord {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 0;
+}
+
+.liquidityPoolRecord > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.liquidityPoolRecord span {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.liquidityPoolRecord strong {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.liquidityExplorerLink {
+  width: fit-content;
+  font-size: 0.67rem;
+}
+
+.liquidityActionPanel {
+  overflow: hidden;
+}
+
+.liquidityOperationTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(24 30 39 / 48%);
+  padding: 8px;
+}
+
+.liquidityOperationTabs button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.liquidityOperationTabs button:hover {
+  color: var(--text);
+}
+
+.liquidityOperationTabs button.active {
+  border-color: rgb(var(--accent-rgb) / 32%);
+  background: rgb(var(--accent-rgb) / 10%);
+  color: var(--accent-text);
+}
+
+.liquidityActionBody {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.fullRangeNotice,
+.liquidityTxStatus {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border-radius: 6px;
+  padding: 11px 12px;
+}
+
+.fullRangeNotice {
+  border: 1px solid rgb(var(--accent-rgb) / 26%);
+  background: rgb(var(--accent-rgb) / 6%);
+}
+
+.fullRangeNotice > svg,
+.liquidityTxStatus > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.fullRangeNotice > svg {
+  color: var(--accent-text);
+}
+
+.fullRangeNotice strong,
+.fullRangeNotice span,
+.liquidityTxStatus strong,
+.liquidityTxStatus span {
+  display: block;
+}
+
+.fullRangeNotice strong,
+.liquidityTxStatus strong {
+  color: var(--text);
+  font-size: 0.7rem;
+}
+
+.fullRangeNotice span,
+.liquidityTxStatus span {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.liquidityTokenInputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.liquidityTokenInput {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  padding: 12px;
+}
+
+.liquidityTokenInput:focus-within {
+  border-color: rgb(var(--accent-rgb) / 60%);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 8%);
+}
+
+.liquidityTokenInput > span {
+  grid-column: 1 / -1;
+}
+
+.liquidityTokenInput strong,
+.liquidityTokenInput small {
+  display: block;
+}
+
+.liquidityTokenInput strong {
+  font-size: 0.77rem;
+}
+
+.liquidityTokenInput small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.liquidityTokenInput input {
+  height: auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.liquidityTokenInput button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.liquidityHelper {
+  margin: -4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.55;
+}
+
+.positionReadout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--border);
+}
+
+.positionReadout > div {
+  min-width: 0;
+  background: var(--background);
+  padding: 11px;
+}
+
+.positionReadout span,
+.positionReadout strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.positionReadout span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+
+.positionReadout strong {
+  margin-top: 6px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.liquidityPercentages {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.liquidityPercentages button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.69rem;
+  font-weight: 600;
+}
+
+.liquidityPercentages button:hover,
+.liquidityPercentages button.active {
+  border-color: rgb(var(--accent-rgb) / 40%);
+  color: var(--accent-text);
+}
+
+.liquidityPercentages button.active {
+  background: rgb(var(--accent-rgb) / 9%);
+}
+
+.liquiditySlippage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.liquiditySlippage > span {
+  margin: 0;
+}
+
+.liquiditySlippage > div {
+  display: flex;
+  width: 92px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+}
+
+.liquiditySlippage input {
+  height: 32px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+}
+
+.liquiditySlippage > div > span {
+  color: var(--text-muted);
+  padding-right: 9px;
+  font-size: 0.7rem;
+}
+
+.liquidityTxStatus {
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text-muted);
+}
+
+.liquidityTxStatus.working {
+  border-color: rgb(86 172 211 / 30%);
+  color: var(--blue);
+}
+
+.liquidityTxStatus.success {
+  border-color: rgb(46 208 154 / 30%);
+  color: var(--green);
+}
+
+.liquidityTxStatus.danger {
+  border-color: rgb(235 101 112 / 30%);
+  color: var(--danger);
+}
+
+.liquiditySubmitRow {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.liquiditySubmitRow .primaryAction,
+.liquiditySubmitRow .secondaryAction {
+  min-height: 38px;
+}
+
+@media (max-width: 820px) {
+  .liquidityIntro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .liquidityBadges {
+    justify-content: flex-start;
+  }
+
+  .liquidityLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .liquidityPage {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .liquidityTokenInputs,
+  .positionReadout {
+    grid-template-columns: 1fr;
+  }
+
+  .liquidityActionBody,
+  .liquidityMarketPanel {
+    padding: 14px;
+  }
+
+  .liquidityOperationTabs button {
+    font-size: 0.68rem;
+  }
+
+  .liquiditySubmitRow .primaryAction,
+  .liquiditySubmitRow .secondaryAction {
+    width: 100%;
   }
 }
 

@@ -194,7 +194,7 @@ type VaultView = {
   factoryReadFailed: boolean;
 };
 
-const navTabs = ["OTFs", "RWAs"];
+const navTabs = ["OTFs", "RWAs", "Liquidity"];
 
 const testnetCreateAssets = [
   {
@@ -1084,6 +1084,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
   function changeView(tab: string) {
     if (tab === "RWAs") openView("rwas");
+    else if (tab === "Liquidity") window.location.assign("/liquidity");
     else openView("vaults");
   }
 
@@ -1225,7 +1226,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   );
 }
 
-function TopNav({
+export function TopNav({
   activeTab,
   depositsActive,
   onHome,
@@ -1479,7 +1480,7 @@ function TopNav({
   );
 }
 
-function WalletConnectionAction() {
+export function WalletConnectionAction() {
   const { disconnect } = useDisconnect();
 
   return (
@@ -1579,6 +1580,24 @@ function VaultHeader({
 }
 
 function VaultMetrics({ vault }: { vault: VaultView }) {
+  const registry = configuredV3MarketRegistryAddress();
+  const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
+    address: registry,
+    abi: otfV3MarketRegistryAbi,
+    functionName: "officialPool",
+    args: vault.address ? [vault.address] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(registry && vault.address) },
+  });
+  const officialPool = officialPoolResult && officialPoolResult !== zeroAddress
+    ? officialPoolResult as `0x${string}`
+    : undefined;
+  const poolUsesSynthra = robinhoodTestnetV3Venue.provider === "synthra";
+  const poolVenueUrl = officialPool
+    ? poolUsesSynthra && vault.address
+      ? `/liquidity?vault=${vault.address}`
+      : `https://app.uniswap.org/explore/pools/ethereum/${officialPool}`
+    : undefined;
   const portfolioState = vault.challengeActive
     ? "Challenge active"
     : vault.strategicRebalanceActive
@@ -1590,8 +1609,18 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
     <div className="metricGrid">
       <MetricCard label="NAV" value={vault.nav ?? "Oracle read failed"} tone={vault.nav ? "success" : "neutral"} />
       <MetricCard label="NAV / Share" value={vault.navPerShare ?? "Oracle read failed"} />
-      <MetricCard label="Total Supply" value={vault.totalSupply} />
-      <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
+      <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
+      <MetricCard
+        label="Liquidity Pool"
+        value={officialPoolLoading ? "Resolving..." : shortAddress(officialPool)}
+        href={poolVenueUrl}
+        external={!poolUsesSynthra}
+        linkLabel={officialPool
+          ? poolUsesSynthra
+            ? `Add or remove liquidity in pool ${officialPool}`
+            : `Open pool ${officialPool} on Uniswap`
+          : undefined}
+      />
       <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
       <MetricCard label="Authorized Executors" value={String(vault.authorizedExecutors.length)} />
     </div>
@@ -1752,6 +1781,9 @@ function MetricCard({
   action,
   tone = "neutral",
   sub,
+  href,
+  linkLabel,
+  external = false,
 }: {
   label: string;
   value: string;
@@ -1759,6 +1791,9 @@ function MetricCard({
   action?: ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger";
   sub?: string;
+  href?: string;
+  linkLabel?: string;
+  external?: boolean;
 }) {
   return (
     <div className={`metricCard ${tone}${action ? " hasMetricAction" : ""}`}>
@@ -1766,7 +1801,12 @@ function MetricCard({
         <span>{label}</span>
         {action ?? icon ?? null}
       </div>
-      <strong>{value}</strong>
+      {href ? (
+        <a className="metricCardValueLink" href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} aria-label={linkLabel}>
+          <strong>{value}</strong>
+          {external ? <ExternalLink size={12} /> : <ArrowRight size={12} />}
+        </a>
+      ) : <strong>{value}</strong>}
       {sub ? <span>{sub}</span> : null}
     </div>
   );
@@ -5841,8 +5881,8 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
   const liquidityAvailable = typeof liquidity === "bigint" && liquidity > 0n;
   const checking = poolLoading || (Boolean(pool) && liquidityLoading);
   const testnetUsesSynthra = robinhoodTestnetV3Venue.provider === "synthra";
-  const addLiquidityUrl = testnetUsesSynthra && robinhoodTestnetV3Venue.liquidityUrl
-    ? robinhoodTestnetV3Venue.liquidityUrl
+  const addLiquidityUrl = testnetUsesSynthra
+    ? vault.address ? `/liquidity?vault=${vault.address}` : "/liquidity"
     : vault.address && settlementToken
       ? `https://app.uniswap.org/positions/create/v3?currencyA=${vault.address}&currencyB=${settlementToken}&fee=500`
       : "https://app.uniswap.org/positions/create";
@@ -5896,8 +5936,8 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
               <Info size={15} />
               <div><strong>Permissionless liquidity</strong><span>Any wallet can supply OTF shares and USDG. Each resulting Uniswap position belongs to the supplying wallet and does not use assets held by the OTF portfolio.</span></div>
             </div>
-            <a className="primaryAction" href={addLiquidityUrl} target="_blank" rel="noreferrer">
-              <Droplets size={14} />Add liquidity on {testnetUsesSynthra ? "Synthra" : "Uniswap"}<ExternalLink size={12} />
+            <a className="primaryAction" href={addLiquidityUrl} target={testnetUsesSynthra ? undefined : "_blank"} rel={testnetUsesSynthra ? undefined : "noreferrer"}>
+              <Droplets size={14} />{testnetUsesSynthra ? "Manage liquidity" : "Add liquidity on Uniswap"}{testnetUsesSynthra ? null : <ExternalLink size={12} />}
             </a>
           </>
         ) : registry && !poolLoading ? (
