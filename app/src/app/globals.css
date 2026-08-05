@@ -2128,50 +2128,6 @@ textarea::placeholder {
   font-weight: 700;
 }
 
-.positionUnderlyingApproval {
-  display: inline-flex;
-  min-height: 24px;
-  border: 1px solid rgb(var(--accent-rgb) / 32%);
-  border-radius: 5px;
-  background: rgb(var(--accent-rgb) / 9%);
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  color: var(--accent-text);
-  cursor: pointer;
-  padding: 0 7px;
-  font-size: 0.54rem;
-  font-weight: 750;
-}
-
-.positionUnderlyingApproval.approved {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.positionUnderlyingApproval:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.positionUnderlyingApproval:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.positionUnderlyingApproval:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.positionUnderlyingApprovalError {
-  margin-top: -11px;
-  color: var(--danger);
-  font-size: 0.61rem;
-  line-height: 1.4;
-}
-
 .positionOwnershipSummary span {
   color: var(--text-muted);
   font-size: 0.63rem;
@@ -4457,28 +4413,33 @@ textarea::placeholder {
 
 @media (max-width: 1120px) {
   .directoryPanel .directoryTableWrap,
-  .managedVaultsPanel .directoryTableWrap {
+  .managedVaultsPanel .directoryTableWrap,
+  .walletAssets .directoryTableWrap {
     overflow: visible;
   }
 
   .directoryPanel .directoryTable,
-  .managedVaultsPanel .directoryTable {
+  .managedVaultsPanel .directoryTable,
+  .walletAssets .directoryTable {
     display: block;
     min-width: 0;
   }
 
   .directoryPanel .directoryTable thead,
-  .managedVaultsPanel .directoryTable thead {
+  .managedVaultsPanel .directoryTable thead,
+  .walletAssets .directoryTable thead {
     display: none;
   }
 
   .directoryPanel .directoryTable tbody,
-  .managedVaultsPanel .directoryTable tbody {
+  .managedVaultsPanel .directoryTable tbody,
+  .walletAssets .directoryTable tbody {
     display: grid;
   }
 
   .directoryPanel .directoryTable tr,
-  .managedVaultsPanel .directoryTable tr {
+  .managedVaultsPanel .directoryTable tr,
+  .walletAssets .directoryTable tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px 14px;
@@ -4487,12 +4448,14 @@ textarea::placeholder {
   }
 
   .directoryPanel .directoryTable tr:last-child,
-  .managedVaultsPanel .directoryTable tr:last-child {
+  .managedVaultsPanel .directoryTable tr:last-child,
+  .walletAssets .directoryTable tr:last-child {
     border-bottom: 0;
   }
 
   .directoryPanel .directoryTable td,
-  .managedVaultsPanel .directoryTable td {
+  .managedVaultsPanel .directoryTable td,
+  .walletAssets .directoryTable td {
     display: flex;
     min-width: 0;
     align-items: center;
@@ -4506,7 +4469,8 @@ textarea::placeholder {
   }
 
   .directoryPanel .directoryTable td[data-label]::before,
-  .managedVaultsPanel .directoryTable td[data-label]::before {
+  .managedVaultsPanel .directoryTable td[data-label]::before,
+  .walletAssets .directoryTable td[data-label]::before {
     flex: 0 0 auto;
     color: var(--text-muted);
     content: attr(data-label);
@@ -4516,7 +4480,9 @@ textarea::placeholder {
 
   .directoryPanel .directoryTable td:first-child,
   .managedVaultsPanel .directoryTable td:first-child,
-  .managedVaultsPanel .directoryTable td:last-child {
+  .managedVaultsPanel .directoryTable td:last-child,
+  .walletAssets .directoryTable td:first-child,
+  .walletAssets .directoryTable td:last-child {
     grid-column: 1 / -1;
     width: auto;
     padding: 0;
@@ -4524,6 +4490,18 @@ textarea::placeholder {
 
   .managedVaultsPanel .directoryTable td:last-child {
     justify-content: flex-end;
+  }
+
+  .walletAssets .directoryTable tbody {
+    gap: 10px;
+  }
+
+  .walletAssets .directoryTable tr,
+  .walletAssets .directoryTable tr:last-child {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--background);
+    cursor: default;
   }
 
   .managedTableActions {
@@ -4751,6 +4729,29 @@ textarea::placeholder {
 .depositsEmpty h2 {
   font-size: 0.94rem;
   font-weight: 600;
+}
+
+.depositsEmpty .depositsConnectLink {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.depositsEmpty .depositsConnectLink:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.depositsEmpty .depositsConnectLink:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 .depositsEmpty p {
@@ -6661,6 +6662,14 @@ input.invalid {
 }
 
 @media (max-width: 440px) {
+  .walletAssets .directoryTable tr {
+    grid-template-columns: 1fr;
+  }
+
+  .walletAssets .directoryTable td {
+    grid-column: 1 / -1;
+  }
+
   .brandText {
     display: flex;
   }

@@ -50,7 +50,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { encodeAbiParameters, encodePacked, formatUnits, isAddress, maxUint256, parseEventLogs, parseUnits, zeroAddress } from "viem";
+import { encodeAbiParameters, encodePacked, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
 import {
   useAccount,
   useBalance,
@@ -2349,8 +2349,6 @@ function UserActions({
   const [marketState, setMarketState] = useState<TxState>("idle");
   const [marketError, setMarketError] = useState<string>();
   const [tradeReceipt, setTradeReceipt] = useState<PositionTradeReceipt>();
-  const [basketApprovalPendingAsset, setBasketApprovalPendingAsset] = useState<`0x${string}`>();
-  const [basketApprovalError, setBasketApprovalError] = useState<string>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -3235,31 +3233,6 @@ function UserActions({
     }
   }
 
-  async function setBasketAssetApproval(assetIndex: number, shouldApprove: boolean) {
-    const leg = directBasketLegs[assetIndex];
-    if (!vault.address || !connectedAddress || !publicClient || !leg || basketApprovalPendingAsset) return;
-    setBasketApprovalError(undefined);
-    setBasketApprovalPendingAsset(leg.address as `0x${string}`);
-    try {
-      const hash = await writeContractAsync({
-        address: leg.address as `0x${string}`,
-        abi: erc20BalanceAbi,
-        functionName: "approve",
-        args: [vault.address, shouldApprove ? maxUint256 : 0n],
-        chainId: robinhoodChainTestnet.id,
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") {
-        throw new Error(`${shouldApprove ? "Approval" : "Approval removal"} for ${leg.symbol} reverted.`);
-      }
-      await refetchBasketAuthorization();
-    } catch (error) {
-      setBasketApprovalError(errorMessage(error));
-    } finally {
-      setBasketApprovalPendingAsset(undefined);
-    }
-  }
-
   async function mintWithBasket() {
     if (
       !vault.address || !connectedAddress || !publicClient || !requestedDirectMintShares ||
@@ -3587,7 +3560,6 @@ function UserActions({
                 <th>Underlying</th>
                 <th>Per OTF share</th>
                 <th>Your amount</th>
-                <th>Vault access</th>
               </tr>
             </thead>
             <tbody>
@@ -3595,10 +3567,6 @@ function UserActions({
                 const decimals = directBasketLegs[index]?.decimals ?? 18;
                 const perShareAmount = perShareUnderlyingAmounts?.[index];
                 const ownedAmount = ownedUnderlyingAmounts?.[index];
-                const allowance = directBasketLegs[index]?.allowance;
-                const isApproved = allowance !== undefined && allowance > 0n;
-                const showApprovalAction = !isUsdgMode || isApproved;
-                const approvalPending = basketApprovalPendingAsset?.toLowerCase() === asset.address.toLowerCase();
                 return (
                   <tr key={asset.address}>
                     <td><strong>{asset.symbol}</strong></td>
@@ -3612,31 +3580,12 @@ function UserActions({
                             ? "Loading"
                             : formatWalletTokenBalance(ownedAmount, decimals, 8)}
                     </td>
-                    <td>
-                      {showApprovalAction ? (
-                        <button
-                          className={`positionUnderlyingApproval ${isApproved ? "approved" : ""}`}
-                          type="button"
-                          disabled={!connectedAddress || allowance === undefined || Boolean(basketApprovalPendingAsset)}
-                          onClick={() => setBasketAssetApproval(index, !isApproved)}
-                          aria-label={isApproved
-                            ? `Remove ${asset.symbol} approval for vault deposits`
-                            : `Approve ${asset.symbol} for vault deposits`}
-                        >
-                          {approvalPending ? <Loader2 className="spin" size={11} /> : isApproved ? <XCircle size={11} /> : <ShieldCheck size={11} />}
-                          {approvalPending ? "Confirming" : isApproved ? "Remove" : "Approve"}
-                        </button>
-                      ) : null}
-                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        {basketApprovalError ? (
-          <span className="positionUnderlyingApprovalError" role="alert">{basketApprovalError}</span>
-        ) : null}
         <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
           <button
             className={activeAction === "deposit" ? "active" : ""}
@@ -6579,7 +6528,21 @@ function WalletView({
       ) : (
         <section className="sectionCard depositsEmpty">
           <span><Wallet size={22} /></span>
-          <h2>Connect your wallet to view positions</h2>
+          <h2>
+            <ConnectButton.Custom>
+              {({ mounted, openConnectModal }) => (
+                <button
+                  className="depositsConnectLink"
+                  type="button"
+                  disabled={!mounted}
+                  onClick={openConnectModal}
+                >
+                  Connect your wallet
+                </button>
+              )}
+            </ConnectButton.Custom>{" "}
+            to view positions
+          </h2>
           <p>OTF share positions will appear here after connecting.</p>
           <button className="secondaryAction" type="button" onClick={onBrowseVaults}><LayoutGrid size={14} />Browse OTFs</button>
         </section>
