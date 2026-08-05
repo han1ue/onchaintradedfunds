@@ -198,26 +198,16 @@ The rolling 30-day rebalance counter has been removed. There is no `maxRebalance
 Each vault stores:
 
 ```solidity
-uint256 public constant REBALANCE_COOLDOWN = 14 days;
+uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
 uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
-uint64 public lastRebalanceTimestamp;
-uint64 public lastStrategyChangeTimestamp;
-uint32 public rebalanceCooldown;
-```
-
-The factory accepts only the fixed 14-day cooldown:
-
-```solidity
-if (params.rebalanceCooldown != REBALANCE_COOLDOWN) {
-    revert InvalidRebalanceCooldown(params.rebalanceCooldown);
-}
+uint64 public lastCompletedStrategyTimestamp;
 ```
 
 The completion timestamp is initialized at creation. A target proposal must satisfy the single
 completion-based cooldown:
 
 ```text
-lastRebalanceTimestamp + 14 days
+lastCompletedStrategyTimestamp + STRATEGY_CHANGE_COOLDOWN
 ```
 
 The proposal is also blocked while a challenge or strategy change is active, while another proposal
@@ -230,12 +220,11 @@ only be activated after the holder notice window:
 pendingStrategyActivationTime = block.timestamp + 48 hours;
 ```
 
-`lastStrategyChangeTimestamp` remains available for historical ABI compatibility and updates on
-activation, but it is not a second cooldown clock. `lastRebalanceTimestamp` updates only when a
-strategic rebalance successfully completes inside every final completion band. Pending proposals,
-cancelled proposals, failed trades, and partial trades do not update the completion timestamp.
+`lastCompletedStrategyTimestamp` updates only when a strategic rebalance successfully completes
+inside every final completion band. Pending proposals, cancelled proposals, failed trades, and
+partial trades do not update the completion timestamp.
 
-The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
+The following operations do not update `lastCompletedStrategyTimestamp`:
 
 - Staging a rationale for a future ERC-7621 proposal.
 - Fee accrual.
@@ -402,7 +391,7 @@ and strictly reduce total distance from the active target.
 
 When a successful strategic trade batch brings every constituent inside the narrower completion
 bands, the vault completes the strategic rebalance atomically, emits
-`StrategicRebalanceCompleted`, updates `lastRebalanceTimestamp`, and resumes fee withdrawals.
+`StrategicRebalanceCompleted`, updates `lastCompletedStrategyTimestamp`, and resumes fee withdrawals.
 Anyone may still call `completeStrategicRebalance()` when no trade is needed or
 natural price movement reaches the bands.
 
@@ -547,13 +536,12 @@ struct StrategyVersion {
     uint64 activatedAt;
     uint64 completedAt;
     address author;
-    bytes32 oldPortfolioHash;
-    bytes32 newPortfolioHash;
     string rationale;
 }
 ```
 
 Each rationale is capped at 2,048 bytes and is stored with the version's complete target snapshot.
+The snapshot is canonical; redundant portfolio hashes are not stored.
 
 ## Frontend
 

@@ -20,8 +20,7 @@ interface IOfficialMarketRegistry {
 contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
-    uint256 public constant REBALANCE_COOLDOWN = 14 days;
-    uint256 public constant MIN_REBALANCE_COOLDOWN = REBALANCE_COOLDOWN;
+    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 5_000;
     uint16 public constant GLOBAL_MAX_TURNOVER_BPS = 10_000;
@@ -33,21 +32,20 @@ contract OTFFactory is IAdapterAllowlist {
     uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
     uint32 public constant MAX_ORACLE_STALENESS = 1 hours;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
-    uint256 public constant MAX_THESIS_BYTES = 2_048;
+    uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
     error NotOwner();
     error ZeroAddress();
     error InvalidImplementation();
     error InvalidDependency(address dependency);
-    error RebalanceCooldownTooShort();
-    error InvalidRebalanceCooldown(uint32 supplied);
     error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
     error CreatorFeeTooHigh(uint16 feeBps, uint16 maximum);
     error ProtocolFeeShareTooHigh(uint16 shareBps, uint16 maximum);
     error LimitTooHigh();
     error InvalidLimit();
     error InvalidArrayLength();
-    error ThesisTooLong(uint256 length);
+    error StrategyRationaleRequired();
+    error StrategyRationaleTooLong(uint256 length);
     error Reentrancy();
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
@@ -60,8 +58,7 @@ contract OTFFactory is IAdapterAllowlist {
         address indexed vault,
         uint256 indexed nonce,
         string name,
-        string symbol,
-        uint32 rebalanceCooldown
+        string symbol
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event OfficialMarketRegistryConfigured(address indexed registry);
@@ -190,9 +187,7 @@ contract OTFFactory is IAdapterAllowlist {
 
         IOfficialMarketRegistry(marketRegistry).createOfficialPool(vault);
 
-        emit VaultCreated(
-            msg.sender, vault, nonce, params.name, params.symbol, params.rebalanceCooldown
-        );
+        emit VaultCreated(msg.sender, vault, nonce, params.name, params.symbol);
     }
 
     function predictVaultAddress(address creator, uint256 nonce, VaultInitParams calldata params)
@@ -236,8 +231,10 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
-        if (bytes(params.initialThesis).length > MAX_THESIS_BYTES) {
-            revert ThesisTooLong(bytes(params.initialThesis).length);
+        uint256 rationaleLength = bytes(params.initialStrategyRationale).length;
+        if (rationaleLength == 0) revert StrategyRationaleRequired();
+        if (rationaleLength > MAX_STRATEGY_RATIONALE_BYTES) {
+            revert StrategyRationaleTooLong(rationaleLength);
         }
         if (params.manager == address(0) || params.feeRecipient == address(0)) {
             revert ZeroAddress();
@@ -246,9 +243,6 @@ contract OTFFactory is IAdapterAllowlist {
             revert InitialShareSupplyTooSmall(
                 params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
             );
-        }
-        if (params.rebalanceCooldown != REBALANCE_COOLDOWN) {
-            revert InvalidRebalanceCooldown(params.rebalanceCooldown);
         }
         if (params.initialAssets.length != params.initialTargetWeightsBps.length) {
             revert InvalidArrayLength();

@@ -497,7 +497,7 @@ completeStrategicRebalance()`}</code></pre>
               </div>
             </div>
             <p>
-              Deployment records the initial thesis and targets as completed strategy version zero,
+              Deployment records the initial rationale and targets as completed strategy version zero,
               starting the first 14-day cooldown immediately. A manager can later propose new
               target weights only after 14 days have passed since the previous rebalance completed
               inside its target bands. The portfolio must still be
@@ -506,14 +506,14 @@ completeStrategicRebalance()`}</code></pre>
               early never shortens the cooldown: both the full 14 days and the in-band check must
               pass when the proposal is submitted.
             </p>
-            <pre><code>{`REBALANCE_COOLDOWN = 14 days
+            <pre><code>{`STRATEGY_CHANGE_COOLDOWN = 14 days
 STRATEGY_ACTIVATION_DELAY = 48 hours
 
-nextRebalanceTime =
-  lastRebalanceTimestamp + 14 days
+nextStrategyChangeTime =
+  lastCompletedStrategyTimestamp + STRATEGY_CHANGE_COOLDOWN
 
-canRebalance =
-  block.timestamp >= nextRebalanceTime`}</code></pre>
+canProposeStrategy =
+  block.timestamp >= nextStrategyChangeTime`}</code></pre>
             <ul className="docsChecklist">
               <li>The first target proposal waits 14 days from vault creation.</li>
               <li>Later proposals wait 14 days from successful rebalance completion.</li>
@@ -632,7 +632,7 @@ function getWeightBands(address token) external view returns (uint256, uint256, 
 function isWithinTargetBands() external view returns (bool);
 function challengeTimeRemaining() external view returns (uint256);
 function feeState() external view returns (FeeState);
-function canProposeTargetWeights() external view returns (bool);`}</code></pre>
+function canProposeStrategy() external view returns (bool);`}</code></pre>
             <p>
               The contract emits the exact draft ERC-7621 <code>Contributed</code>,
               <code>Withdrawn</code>, and <code>Rebalanced</code> events alongside richer OTF

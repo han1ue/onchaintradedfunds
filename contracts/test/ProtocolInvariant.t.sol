@@ -124,7 +124,6 @@ contract ProtocolInvariantHandler is TestBase {
             targetA = vault.targetWeightBps(address(tokenA));
         } else {
             uint256 nextAllowed = vault.nextStrategyChangeTime();
-            if (vault.nextRebalanceTime() > nextAllowed) nextAllowed = vault.nextRebalanceTime();
             if (block.timestamp < nextAllowed) vm.warp(nextAllowed);
             _refreshOracles();
             targetA = successfulRebalances % 2 == 0 ? 6_000 : 5_000;
@@ -333,10 +332,10 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
     }
 
     function invariantCooldownAndHistoryRemainConsistent() public view {
-        assertLe(vault.lastRebalanceTimestamp(), block.timestamp);
+        assertLe(vault.lastCompletedStrategyTimestamp(), block.timestamp);
         assertEq(
-            vault.nextRebalanceTime(),
-            uint256(vault.lastRebalanceTimestamp()) + vault.rebalanceCooldown()
+            vault.nextStrategyChangeTime(),
+            uint256(vault.lastCompletedStrategyTimestamp()) + vault.STRATEGY_CHANGE_COOLDOWN()
         );
         assertEq(vault.rebalanceCount(), handler.successfulRebalances());
         uint256 expectedRecent = vault.rebalanceCount() < 16 ? vault.rebalanceCount() : 16;
@@ -352,7 +351,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
             IManagedOTFStrategyHistory(address(vault)).strategyVersionCount(), expectedVersions
         );
         assertLe(vault.lastFeeAccrualTimestamp(), block.timestamp);
-        assertEq(vault.rebalanceCooldown(), 14 days);
+        assertEq(vault.STRATEGY_CHANGE_COOLDOWN(), 14 days);
     }
 
     function invariantFactoryProvenanceNeverChanges() public view {

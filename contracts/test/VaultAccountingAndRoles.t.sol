@@ -27,15 +27,15 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.assetAt(1), address(tokenB));
         assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
         assertEq(vault.targetWeightBps(address(tokenB)), 5_000);
-        assertEq(vault.lastRebalanceTimestamp(), START);
+        assertEq(vault.lastCompletedStrategyTimestamp(), START);
         assertEq(vault.lastFeeAccrualTimestamp(), START);
         assertEq(history.strategyVersionCount(), 1);
-        assertEq(vault.currentThesis(), "A test portfolio with explicit safety limits.");
         StrategyVersion memory initialStrategy = history.getStrategyVersion(0);
         assertEq(initialStrategy.proposedAt, START);
         assertEq(initialStrategy.activatedAt, START);
         assertEq(initialStrategy.completedAt, START);
         assertEq(initialStrategy.author, address(this));
+        assertEq(initialStrategy.rationale, "A test portfolio with explicit safety limits.");
         (address[] memory strategyAssets, uint16[] memory strategyWeights) =
             history.getStrategyTargets(0);
         assertEq(strategyAssets[0], address(tokenA));
@@ -295,13 +295,16 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vault.setNextStrategyRationale("Authorized rationale");
         assertEq(history.nextStrategyRationale(), "Authorized rationale");
         assertEq(history.strategyVersionCount(), 1);
-        assertEq(vault.currentThesis(), "A test portfolio with explicit safety limits.");
+        assertEq(
+            history.getStrategyVersion(0).rationale,
+            "A test portfolio with explicit safety limits."
+        );
     }
 
     function testStrategyRationaleLengthLimitIsEnforced() public {
         ManagedOTFVault vault = _createVault();
         string memory oversized = _stringOfLength(2_049);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.ThesisTooLong.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.StrategyRationaleTooLong.selector);
         vault.setNextStrategyRationale(oversized);
     }
 

@@ -215,10 +215,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (challengeActive || strategicRebalanceActive || strategyProposalPending) {
             revert StrategyStateLocked();
         }
-        uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        uint256 nextAllowed = uint256(lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
         // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
+        if (block.timestamp < nextAllowed) revert StrategyChangeCooldownActive(nextAllowed);
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
         _validateWeightBands(completionDeviationBps, challengeDeviationBps_);
         _accrueViaVault();
@@ -256,10 +256,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     ) private {
         if (strategyProposalPending) revert PendingStrategyExists();
         if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
-        uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
+        uint256 nextAllowed = uint256(lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
         // Validator timestamp drift is immaterial to the configured multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < nextAllowed) revert RebalanceCooldownActive(nextAllowed);
+        if (block.timestamp < nextAllowed) revert StrategyChangeCooldownActive(nextAllowed);
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
         _validatePortfolio(newTokens, newWeights);
@@ -321,24 +321,19 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256 strategyVersion = _strategyVersions.length;
         uint64 proposedAt = pendingStrategyProposedAt;
         string memory rationale = _pendingStrategyRationale;
-        _strategicOldPortfolioHash = _portfolioHashCurrent();
         _strategicNavBefore = navBefore;
         // Factory bounds cap turnover at BPS, well below uint16.max.
         // forge-lint: disable-next-line(unsafe-typecast)
         _strategicTurnoverBps = uint16(turnover);
         strategicRebalanceStartedAt = activatedAt;
         strategicRebalanceActive = true;
-        lastStrategyChangeTimestamp = activatedAt;
         _replacePortfolio(newTokens, newWeights);
-        bytes32 newPortfolioHash = _portfolioHashCurrent();
         _strategyVersions.push(
             StrategyVersion({
                 proposedAt: proposedAt,
                 activatedAt: activatedAt,
                 completedAt: 0,
                 author: msg.sender,
-                oldPortfolioHash: _strategicOldPortfolioHash,
-                newPortfolioHash: newPortfolioHash,
                 rationale: rationale
             })
         );
@@ -357,8 +352,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             msg.sender,
             proposedAt,
             activatedAt,
-            _strategicOldPortfolioHash,
-            newPortfolioHash,
             rationale
         );
     }
@@ -542,8 +535,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _recentRebalances[rebalanceId % RECENT_REBALANCE_CAP] = RebalanceRecord({
             timestamp: completedAt,
             manager: manager,
-            oldPortfolioHash: _strategicOldPortfolioHash,
-            newPortfolioHash: _portfolioHashCurrent(),
             navBefore: _strategicNavBefore,
             navAfter: navAfter,
             turnoverBps: _strategicTurnoverBps,
@@ -554,8 +545,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         rebalanceCount = rebalanceId + 1;
         strategicRebalanceActive = false;
         strategicRebalanceStartedAt = 0;
-        lastRebalanceTimestamp = completedAt;
-        lastCompletedStrategicRebalance = completedAt;
+        lastCompletedStrategyTimestamp = completedAt;
         emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
         emit StrategyVersionCompleted(strategyVersion, completedAt);
     }
@@ -620,7 +610,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     function _validateRationale(string memory rationale) private pure {
         uint256 length = bytes(rationale).length;
         if (length == 0) revert StrategyRationaleRequired();
-        if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
+        if (length > MAX_STRATEGY_RATIONALE_BYTES) revert StrategyRationaleTooLong(length);
     }
 
     function _targetsChanged(address[] memory newTokens, uint256[] memory newWeights)
@@ -814,10 +804,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function _targetWeights() private view returns (uint256[] memory weights) {
         return _effectiveTargetWeights();
-    }
-
-    function _portfolioHashCurrent() private view returns (bytes32) {
-        return keccak256(abi.encode(_assets, _targetWeights()));
     }
 
     function _weightOf(address[] memory assets_, uint256[] memory weights_, address asset)

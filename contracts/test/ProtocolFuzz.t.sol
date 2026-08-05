@@ -5,7 +5,6 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { FeeGrowthMath } from "../src/libraries/FeeGrowthMath.sol";
 import { MathEx } from "../src/libraries/MathEx.sol";
-import { OTFFactory } from "../src/OTFFactory.sol";
 import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -52,27 +51,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.rebalanceCooldown(), 14 days);
-        assertEq(vault.nextRebalanceTime(), START + 14 days);
-        assertEq(vault.nextStrategyChangeTime(), vault.nextRebalanceTime());
-    }
-
-    function testFuzzFactoryRejectsEveryCooldownBelowProtocolValue(uint32 rawCooldown) public {
-        uint32 cooldown = uint32(bound(rawCooldown, 0, 14 days - 1));
-        VaultInitParams memory params = _defaultParams();
-        params.rebalanceCooldown = cooldown;
-
-        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
-        factory.createVault(params);
-    }
-
-    function testFuzzFactoryRejectsEveryCooldownAboveProtocolValue(uint32 rawExtra) public {
-        uint32 extra = uint32(bound(rawExtra, 1, type(uint32).max - uint32(14 days)));
-        VaultInitParams memory params = _defaultParams();
-        params.rebalanceCooldown = uint32(14 days) + extra;
-
-        vm.expectPartialRevert(OTFFactory.InvalidRebalanceCooldown.selector);
-        factory.createVault(params);
+        assertEq(vault.STRATEGY_CHANGE_COOLDOWN(), 14 days);
+        assertEq(vault.nextStrategyChangeTime(), START + 14 days);
     }
 
     function testFuzzRebalanceSucceedsAtFixedBoundary(uint16 rawTargetWeight) public {
@@ -107,7 +87,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         if (trades.length != 0) vault.executeRebalanceTrades(trades);
         if (vault.strategicRebalanceActive()) vault.completeStrategicRebalance();
 
-        assertEq(vault.lastRebalanceTimestamp(), proposalTime + 48 hours);
+        assertEq(vault.lastCompletedStrategyTimestamp(), proposalTime + 48 hours);
         assertEq(vault.rebalanceCount(), 1);
         uint16[] memory actual = vault.currentWeightsBps();
         assertApproxEqAbs(actual[0], targetA, 1);

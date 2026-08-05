@@ -179,7 +179,7 @@ Each OTF has exactly one manager. The manager MAY:
 - Add and remove authorized executors.
 - Receive execution permission automatically, remove or restore their own permission, and execute
   constrained trades while authorized.
-- Amend the thesis.
+- Propose target changes with an inseparable strategy rationale.
 - Start manager and fee-recipient transfers.
 
 The manager MUST NOT:
@@ -203,7 +203,7 @@ executors, subject to the protocol cap.
 An executor MAY only call `executeRebalanceTrades` and permissionless functions available to any
 address. It MUST NOT:
 
-- Change constituents, weights, bands, fees, thesis, manager, or fee recipient.
+- Change constituents, weights, bands, fees, strategy rationale, manager, or fee recipient.
 - Add or remove executors.
 - choose a settlement recipient.
 - withdraw OTF assets.
@@ -335,7 +335,7 @@ successful strategic trade batch that reaches those conditions MUST prune retire
 complete atomically after all final trade safety checks. Permissionless explicit completion remains
 available when no trade is required or natural price movement restores the portfolio. Completion
 marks the activated strategy version complete, resumes manager-fee withdrawals, and is the only
-point that updates `lastRebalanceTimestamp`;
+point that updates `lastCompletedStrategyTimestamp`;
 proposals, failed trades, and partial trades MUST NOT update it.
 
 ## 7. Challenge and fee accountability

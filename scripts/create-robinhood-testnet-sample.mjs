@@ -88,8 +88,6 @@ const historyAbi = [
         { name: "activatedAt", type: "uint64" },
         { name: "completedAt", type: "uint64" },
         { name: "author", type: "address" },
-        { name: "oldPortfolioHash", type: "bytes32" },
-        { name: "newPortfolioHash", type: "bytes32" },
         { name: "rationale", type: "string" },
       ],
     }],
@@ -116,7 +114,7 @@ const rationale = "Autonomous Future OTF maintains equal-weight exposure to AMD 
 const params = {
   name: "Autonomous Future OTF",
   symbol: "OTF-AUTO",
-  initialThesis: rationale,
+  initialStrategyRationale: rationale,
   manager: account.address,
   feeRecipient: account.address,
   initialAssets: sampleAssets,
@@ -124,7 +122,6 @@ const params = {
   initialAmounts: [seedAmount, seedAmount],
   initialShareSupply: 100_000_000_000_000_000_000n,
   creatorFeeBpsPerYear: 50,
-  rebalanceCooldown: 14 * 24 * 60 * 60,
   maxTurnoverBps: 3_000,
   maxNavLossBps: 200,
   maxWeightDeviationBps: 200,
@@ -198,28 +195,25 @@ if (existingVaultCount === 1n) {
   console.log(`Using existing sample OTF: ${vault}`);
 }
 
-const [cooldown, nextRebalanceTime, nextStrategyChangeTime, lastCompleted, versionCount, version, targets] =
+const [cooldown, nextStrategyChangeTime, lastCompleted, versionCount, version, targets] =
   await Promise.all([
-    publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "rebalanceCooldown" }),
-    publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "nextRebalanceTime" }),
+    publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "STRATEGY_CHANGE_COOLDOWN" }),
     publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "nextStrategyChangeTime" }),
-    publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "lastCompletedStrategicRebalance" }),
+    publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "lastCompletedStrategyTimestamp" }),
     publicClient.readContract({ address: vault, abi: historyAbi, functionName: "strategyVersionCount" }),
     publicClient.readContract({ address: vault, abi: historyAbi, functionName: "getStrategyVersion", args: [0n] }),
     publicClient.readContract({ address: vault, abi: historyAbi, functionName: "getStrategyTargets", args: [0n] }),
   ]);
 
 const cooldownSeconds = BigInt(cooldown);
-const nextRebalance = BigInt(nextRebalanceTime);
 const nextStrategyChange = BigInt(nextStrategyChangeTime);
 const completedBaseline = BigInt(version.completedAt);
 if (cooldownSeconds !== 14n * 24n * 60n * 60n) throw new Error("Sample cooldown is not 14 days.");
-if (nextRebalance !== nextStrategyChange) throw new Error("Cooldown aliases disagree.");
 if (BigInt(versionCount) !== 1n) throw new Error("Initial strategy version was not created.");
 if (BigInt(version.proposedAt) !== BigInt(version.activatedAt) || BigInt(version.activatedAt) !== completedBaseline) {
   throw new Error("Initial strategy timestamps do not match deployment completion.");
 }
-if (BigInt(lastCompleted) !== completedBaseline || nextRebalance !== completedBaseline + cooldownSeconds) {
+if (BigInt(lastCompleted) !== completedBaseline || nextStrategyChange !== completedBaseline + cooldownSeconds) {
   throw new Error("Initial strategy did not establish the completion-based cooldown baseline.");
 }
 if (targets[0].length !== 2 || Number(targets[1][0]) !== 5_000 || Number(targets[1][1]) !== 5_000) {

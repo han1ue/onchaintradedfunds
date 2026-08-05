@@ -125,8 +125,6 @@ type StrategyVersionResult = {
   activatedAt: bigint;
   completedAt: bigint;
   author: `0x${string}`;
-  oldPortfolioHash: `0x${string}`;
-  newPortfolioHash: `0x${string}`;
   rationale: string;
 };
 
@@ -159,11 +157,9 @@ type VaultView = {
   creatorFeeBps: number;
   protocolFeeShareBps: number;
   totalSupply: string;
-  currentThesis: string;
   cooldownSeconds: number;
-  lastPortfolioChange?: number;
-  nextPortfolioChange?: number;
-  canRebalance: boolean;
+  lastStrategyCompletion?: number;
+  nextStrategyChange?: number;
   cooldownProgress: number;
   allocations: Allocation[];
   maxTurnoverBps: number;
@@ -176,7 +172,6 @@ type VaultView = {
   strategicRebalanceActive: boolean;
   strategyProposalPending: boolean;
   pendingStrategyActivationTime?: number;
-  nextStrategyChangeTime?: number;
   challengeActive: boolean;
   challengeCaller?: string;
   challengeStartedAt?: number;
@@ -187,8 +182,7 @@ type VaultView = {
   forfeitedManagerFeeShares: string;
   claimableChallengeRewardShares: string;
   claimableChallengeRewardValue?: bigint;
-  lastCompletedStrategicRebalance?: number;
-  canProposeTargetWeights: boolean;
+  canProposeStrategy: boolean;
   authorizedExecutors: readonly string[];
   maxSingleAssetWeightBps: number;
   minNonZeroAssetWeightBps: number;
@@ -377,7 +371,6 @@ const vaultCreatedEventAbi = [
       { indexed: true, name: "nonce", type: "uint256" },
       { indexed: false, name: "name", type: "string" },
       { indexed: false, name: "symbol", type: "string" },
-      { indexed: false, name: "rebalanceCooldown", type: "uint32" },
     ],
   },
 ] as const;
@@ -844,11 +837,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxNavLossBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxWeightDeviationBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxAssetCount" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "currentThesis" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "rebalanceCooldown" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "lastRebalanceTimestamp" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "nextRebalanceTime" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canRebalance" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "STRATEGY_CHANGE_COOLDOWN" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxSingleAssetWeightBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "minNonZeroAssetWeightBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxOracleStaleness" },
@@ -867,8 +856,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "escrowedManagerFeeShares" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "forfeitedManagerFeeShares" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeRewardShares", args: [(connectedAddress ?? zeroAddress) as `0x${string}`] },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "lastCompletedStrategicRebalance" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canProposeTargetWeights" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "lastCompletedStrategyTimestamp" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "canProposeStrategy" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "authorizedExecutors" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "isWithinChallengeBands" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "strategyProposalPending" },
@@ -955,54 +944,45 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const maxNavLossBps = resultAt<number>(results, 10) ?? 0;
   const maxWeightDeviationBps = resultAt<number>(results, 11) ?? 0;
   const maxAssetCount = resultAt<number>(results, 12) ?? 0;
-  const currentThesis = resultAt<string>(results, 13) ?? "";
-  const cooldownSeconds = Number(resultAt<number>(results, 14) ?? 14 * 86_400);
-  const lastPortfolioChange = resultAt<bigint>(results, 15)
-    ? Number(resultAt<bigint>(results, 15))
+  const cooldownSeconds = Number(resultAt<bigint>(results, 13) ?? BigInt(14 * 86_400));
+  const maxSingleAssetWeightBps = resultAt<number>(results, 14) ?? 0;
+  const minNonZeroAssetWeightBps = resultAt<number>(results, 15) ?? 0;
+  const maxOracleStaleness = resultAt<number>(results, 16) ?? 0;
+  const totalAssetsValue = resultAt<bigint>(results, 17);
+  const navPerShareValue = resultAt<bigint>(results, 18);
+  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 19);
+  const challengeWeightDeviationBps = resultAt<number>(results, 20) ?? 0;
+  const challengeGracePeriod = resultAt<number>(results, 21) ?? 0;
+  const withinCompletionBands = Boolean(resultAt<boolean>(results, 22));
+  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 23));
+  const challengeActive = Boolean(resultAt<boolean>(results, 24));
+  const challengeStartedAt = resultAt<bigint>(results, 25)
+    ? Number(resultAt<bigint>(results, 25))
     : undefined;
-  const nextRebalanceTime = resultAt<bigint>(results, 16)
-    ? Number(resultAt<bigint>(results, 16))
+  const challengeDeadline = resultAt<bigint>(results, 26)
+    ? Number(resultAt<bigint>(results, 26))
     : undefined;
-  const canRebalance = Boolean(resultAt<boolean>(results, 17));
-  const maxSingleAssetWeightBps = resultAt<number>(results, 18) ?? 0;
-  const minNonZeroAssetWeightBps = resultAt<number>(results, 19) ?? 0;
-  const maxOracleStaleness = resultAt<number>(results, 20) ?? 0;
-  const totalAssetsValue = resultAt<bigint>(results, 21);
-  const navPerShareValue = resultAt<bigint>(results, 22);
-  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 23);
-  const challengeWeightDeviationBps = resultAt<number>(results, 24) ?? 0;
-  const challengeGracePeriod = resultAt<number>(results, 25) ?? 0;
-  const withinCompletionBands = Boolean(resultAt<boolean>(results, 26));
-  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 27));
-  const challengeActive = Boolean(resultAt<boolean>(results, 28));
-  const challengeStartedAt = resultAt<bigint>(results, 29)
-    ? Number(resultAt<bigint>(results, 29))
+  const challengeTimeRemaining = Number(resultAt<bigint>(results, 27) ?? 0n);
+  const feeState = Number(resultAt<number>(results, 28) ?? 0);
+  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 29);
+  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 30);
+  const claimableChallengeRewardValue = resultAt<bigint>(results, 31);
+  const lastStrategyCompletion = resultAt<bigint>(results, 32)
+    ? Number(resultAt<bigint>(results, 32))
     : undefined;
-  const challengeDeadline = resultAt<bigint>(results, 30)
-    ? Number(resultAt<bigint>(results, 30))
+  const canProposeStrategy = Boolean(resultAt<boolean>(results, 33));
+  const authorizedExecutors = resultAt<readonly string[]>(results, 34) ?? [];
+  const withinChallengeBands = Boolean(resultAt<boolean>(results, 35));
+  const strategyProposalPending = Boolean(resultAt<boolean>(results, 36));
+  const pendingStrategyActivationTime = resultAt<bigint>(results, 37)
+    ? Number(resultAt<bigint>(results, 37))
     : undefined;
-  const challengeTimeRemaining = Number(resultAt<bigint>(results, 31) ?? 0n);
-  const feeState = Number(resultAt<number>(results, 32) ?? 0);
-  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 33);
-  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 34);
-  const claimableChallengeRewardValue = resultAt<bigint>(results, 35);
-  const lastCompletedStrategicRebalance = resultAt<bigint>(results, 36)
-    ? Number(resultAt<bigint>(results, 36))
+  const nextStrategyChange = resultAt<bigint>(results, 38)
+    ? Number(resultAt<bigint>(results, 38))
     : undefined;
-  const canProposeTargetWeights = Boolean(resultAt<boolean>(results, 37));
-  const authorizedExecutors = resultAt<readonly string[]>(results, 38) ?? [];
-  const withinChallengeBands = Boolean(resultAt<boolean>(results, 39));
-  const strategyProposalPending = Boolean(resultAt<boolean>(results, 40));
-  const pendingStrategyActivationTime = resultAt<bigint>(results, 41)
-    ? Number(resultAt<bigint>(results, 41))
-    : undefined;
-  const nextStrategyChangeTime = resultAt<bigint>(results, 42)
-    ? Number(resultAt<bigint>(results, 42))
-    : undefined;
-  const nextPortfolioChange = nextStrategyChangeTime ?? nextRebalanceTime;
-  const challengeCaller = resultAt<string>(results, 43);
+  const challengeCaller = resultAt<string>(results, 39);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
-  const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
+  const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
     connectedAddress && manager && connectedAddress.toLowerCase() === manager.toLowerCase();
   const supplyDisplay = totalSupply !== undefined
@@ -1023,11 +1003,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     creatorFeeBps,
     protocolFeeShareBps,
     totalSupply: supplyDisplay,
-    currentThesis,
     cooldownSeconds,
-    lastPortfolioChange,
-    nextPortfolioChange,
-    canRebalance,
+    lastStrategyCompletion,
+    nextStrategyChange,
     cooldownProgress,
     allocations,
     maxTurnoverBps,
@@ -1040,7 +1018,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     strategicRebalanceActive,
     strategyProposalPending,
     pendingStrategyActivationTime,
-    nextStrategyChangeTime,
     challengeActive,
     challengeCaller,
     challengeStartedAt,
@@ -1057,8 +1034,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       ? `${Number(formatUnits(claimableChallengeRewardValue, 18)).toLocaleString()} ${vaultSymbol}`
       : `0 ${vaultSymbol}`,
     claimableChallengeRewardValue,
-    lastCompletedStrategicRebalance,
-    canProposeTargetWeights,
+    canProposeStrategy,
     authorizedExecutors,
     maxSingleAssetWeightBps,
     minNonZeroAssetWeightBps,
@@ -1915,9 +1891,9 @@ function SectionCard({
 
 function RebalanceCooldown({ vault }: { vault: VaultView }) {
   const isLive = vault.dataMode === "live";
-  const portfolioCooldownRemaining = useLiveCountdown(vault.nextPortfolioChange);
+  const portfolioCooldownRemaining = useLiveCountdown(vault.nextStrategyChange);
   const portfolioCooldownComplete = isLive && portfolioCooldownRemaining === 0;
-  const proposalAvailable = isLive && vault.canRebalance;
+  const proposalAvailable = isLive && vault.canProposeStrategy;
   return (
     <SectionCard
       title="Strategy cooldown"
@@ -1927,23 +1903,23 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
     >
       <div className="cooldownStats">
         <TimelineItem label="Cooldown length" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
-        <TimelineItem label="Strategy baseline" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
-        <TimelineItem label="Cooldown ends" value={isLive ? (portfolioCooldownComplete ? "Complete" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
+        <TimelineItem label="Strategy baseline" value={isLive ? formatTimestamp(vault.lastStrategyCompletion) : "Not available"} icon={<Clock3 size={13} />} />
+        <TimelineItem label="Cooldown ends" value={isLive ? (portfolioCooldownComplete ? "Complete" : formatTimestamp(vault.nextStrategyChange)) : "Not available"} icon={<Activity size={13} />} />
         <TimelineItem label="Proposal state" value={isLive ? (proposalAvailable ? "Available" : portfolioCooldownComplete ? "Blocked" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
       </div>
 
       {isLive ? <div className="progressBlock">
         <div className="progressMeta">
           <span>Unlock progress</span>
-          <strong>{formatRelativeAvailability(vault.nextPortfolioChange)}</strong>
+          <strong>{formatRelativeAvailability(vault.nextStrategyChange)}</strong>
         </div>
         <div className="progressTrack">
           <span style={{ width: `${vault.cooldownProgress}%` }} />
           <i style={{ left: `calc(${vault.cooldownProgress}% - 5px)` }} />
         </div>
         <div className="progressDates">
-          <span>{formatTimestamp(vault.lastPortfolioChange)}</span>
-          <span>{formatTimestamp(vault.nextPortfolioChange)}</span>
+          <span>{formatTimestamp(vault.lastStrategyCompletion)}</span>
+          <span>{formatTimestamp(vault.nextStrategyChange)}</span>
         </div>
       </div> : null}
 
@@ -4517,7 +4493,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {turnoverBreach ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
         ) : null}
-        {!vault.canProposeTargetWeights ? (
+        {!vault.canProposeStrategy ? (
           <div className="riskCallout warning"><Clock3 size={15} /><div><strong>Target proposal unavailable</strong><span>The change unlock, completion bands, active challenge, and unfinished strategic state are checked onchain.</span></div></div>
         ) : null}
         {txError ? (
@@ -4537,7 +4513,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -5277,7 +5253,7 @@ function CreateVaultView({
   const [draft, setDraft] = useState({
     name: "",
     symbol: "OTF-",
-    thesis: "",
+    rationale: "",
     manager: connectedAddress ?? "",
     feeRecipient: connectedAddress ?? "",
     creatorFee: "0.50",
@@ -5480,7 +5456,7 @@ function CreateVaultView({
   const basicsValid =
     draft.name.trim().length > 2 &&
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
-    draft.thesis.trim().length > 20 &&
+    draft.rationale.trim().length > 20 &&
     isAddress(draft.manager) &&
     isAddress(draft.feeRecipient);
   const portfolioValid =
@@ -5514,7 +5490,7 @@ function CreateVaultView({
   const basicsIssues = [
     draft.name.trim().length > 2 ? null : "Enter an OTF name with at least 3 characters.",
     /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Add a ticker suffix after OTF-.",
-    draft.thesis.trim().length > 20 ? null : "Write an initial thesis with at least 21 characters.",
+    draft.rationale.trim().length > 20 ? null : "Write an initial strategy rationale with at least 21 characters.",
     isAddress(draft.manager) ? null : "Provide a valid manager address.",
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
@@ -5636,7 +5612,7 @@ function CreateVaultView({
     return {
       name: draft.name.trim(),
       symbol: draft.symbol.trim(),
-      initialThesis: draft.thesis.trim(),
+      initialStrategyRationale: draft.rationale.trim(),
       manager: draft.manager,
       feeRecipient: draft.feeRecipient,
       initialAssets,
@@ -5649,7 +5625,6 @@ function CreateVaultView({
       }),
       initialShareSupply: parseUnits(draft.initialShares, 18),
       creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
-      rebalanceCooldown: daysToSeconds("14"),
       maxTurnoverBps: percentToBps(draft.maxTurnover),
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
@@ -5871,8 +5846,8 @@ function CreateVaultView({
                   </label>
                 </div>
                 <label>
-                  <span>Initial investment thesis</span>
-                  <textarea value={draft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
+                  <span>Initial strategy rationale</span>
+                  <textarea value={draft.rationale} onChange={(event) => updateDraft("rationale", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
                   <small>This becomes strategy version 0 and is permanently paired with the initial targets.</small>
                 </label>
                 <div className="formGrid twoColumns">
@@ -5898,7 +5873,7 @@ function CreateVaultView({
                     />
                     <small>
                       {customManager
-                        ? "Custom manager may propose rebalances and amend the thesis."
+                        ? "Custom manager may propose strategy changes with a locked rationale."
                         : connectedAddress
                           ? "Locked to the wallet creating this OTF."
                           : "Connect a wallet to use the creator address."}

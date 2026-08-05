@@ -73,7 +73,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         feeCollector = feeCollector_;
         creatorFeeBpsPerYear = params.creatorFeeBpsPerYear;
         protocolFeeShareBps = protocolFeeShareBps_;
-        rebalanceCooldown = params.rebalanceCooldown;
         maxTurnoverBps = params.maxTurnoverBps;
         maxNavLossBps = params.maxNavLossBps;
         maxWeightDeviationBps = params.maxWeightDeviationBps;
@@ -90,10 +89,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _validateInitialBalances(params.initialAssets, params.initialAmounts);
 
         uint64 timestamp = uint64(block.timestamp);
-        lastRebalanceTimestamp = timestamp;
         lastFeeAccrualTimestamp = timestamp;
-        lastCompletedStrategicRebalance = timestamp;
-        lastStrategyChangeTimestamp = timestamp;
+        lastCompletedStrategyTimestamp = timestamp;
 
         _strategyVersions.push(
             StrategyVersion({
@@ -101,9 +98,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 activatedAt: timestamp,
                 completedAt: timestamp,
                 author: params.manager,
-                oldPortfolioHash: bytes32(0),
-                newPortfolioHash: _portfolioHashCurrent(),
-                rationale: params.initialThesis
+                rationale: params.initialStrategyRationale
             })
         );
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
@@ -117,9 +112,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256[] memory initialWeights = _weightsAsUint256();
         emit OwnershipTransferred(address(0), params.manager);
         emit Rebalanced(params.initialAssets, initialWeights);
-        emit VaultInitialized(
-            factory_, params.manager, params.feeRecipient, params.rebalanceCooldown
-        );
+        emit VaultInitialized(factory_, params.manager, params.feeRecipient);
     }
 
     // ERC-165 / ERC-173
@@ -171,7 +164,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _portfolioCalculator.totalBasketValue(address(this), _assets);
     }
 
-    // Existing compatibility and protocol views
+    // Protocol views
 
     function assets() external view returns (address[] memory) {
         return _assets;
@@ -198,18 +191,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < _assets.length; i++) {
             weights[i] = uint16(effectiveWeights[i]);
         }
-    }
-
-    function currentThesis() external view returns (string memory) {
-        return _strategyVersions[_strategyVersions.length - 1].rationale;
-    }
-
-    function nextRebalanceTime() public view returns (uint256) {
-        return uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
-    }
-
-    function canRebalance() external view returns (bool) {
-        return canProposeTargetWeights();
     }
 
     function totalAssetsValue() public view returns (uint256 nav) {
@@ -264,10 +245,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _isWithinBands(challengeWeightDeviationBps);
     }
 
-    function canProposeTargetWeights() public view returns (bool) {
+    function canProposeStrategy() public view returns (bool) {
         // Validator timestamp drift is immaterial to the fixed multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
-        bool cooldownActive = block.timestamp < nextRebalanceTime();
+        bool cooldownActive = block.timestamp < nextStrategyChangeTime();
         if (
             challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
         ) {
@@ -284,8 +265,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function nextStrategyChangeTime() public view returns (uint256) {
-        // Compatibility view: there is now one strategy-change clock, started on completion.
-        return nextRebalanceTime();
+        return uint256(lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
     }
 
     function feeState() public view returns (FeeState) {
@@ -931,10 +911,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < _assets.length; i++) {
             weights[i] = targetWeightBps[_assets[i]];
         }
-    }
-
-    function _portfolioHashCurrent() internal view returns (bytes32) {
-        return keccak256(abi.encode(_assets, _weightsAsUint256()));
     }
 
     function _containsCurrentAsset(address asset) internal view returns (bool) {

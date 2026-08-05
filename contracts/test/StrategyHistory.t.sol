@@ -18,8 +18,7 @@ contract StrategyHistoryTest is ProtocolTestBase {
         assertEq(version.activatedAt, START);
         assertEq(version.completedAt, START);
         assertEq(version.rationale, "A test portfolio with explicit safety limits.");
-        assertEq(vault.lastCompletedStrategicRebalance(), START);
-        assertEq(vault.nextRebalanceTime(), START + 14 days);
+        assertEq(vault.lastCompletedStrategyTimestamp(), START);
         assertEq(vault.nextStrategyChangeTime(), START + 14 days);
     }
 
@@ -112,7 +111,7 @@ contract StrategyHistoryTest is ProtocolTestBase {
         StrategyVersion memory completed = history.getStrategyVersion(1);
         assertEq(completed.completedAt, START + 16 days);
         assertEq(vault.recentRebalanceRecord(0).strategyVersion, 1);
-        assertEq(vault.currentThesis(), "Increase token A to sixty percent.");
+        assertEq(active.rationale, "Increase token A to sixty percent.");
     }
 
     function testChallengeCanStartImmediatelyAfterActivation() public {

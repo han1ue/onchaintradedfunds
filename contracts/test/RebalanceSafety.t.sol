@@ -59,8 +59,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(executor)), 0);
         assertFalse(vault.strategicRebalanceActive());
         assertEq(vault.rebalanceCount(), 1);
-        assertEq(vault.lastRebalanceTimestamp(), START + 16 days);
-        assertEq(vault.lastCompletedStrategicRebalance(), START + 16 days);
+        assertEq(vault.lastCompletedStrategyTimestamp(), START + 16 days);
 
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);
         assertEq(record.manager, address(this));
@@ -126,7 +125,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.TurnoverTooHigh.selector);
         vault.proposeStrategy(assets, _uint256Weights(weights), "Target update under test.");
-        assertEq(vault.lastRebalanceTimestamp(), START);
+        assertEq(vault.lastCompletedStrategyTimestamp(), START);
     }
 
     function testUnapprovedAdapterAndUnsupportedTokensAreRejected() public {

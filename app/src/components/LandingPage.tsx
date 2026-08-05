@@ -122,7 +122,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
             <RefreshCw size={22} />
             <h2>The mix can<br />evolve.</h2>
             <p>
-              A manager can propose new target weights as the thesis evolves. The portfolio only
+              A manager can propose new target weights with a locked rationale. The portfolio only
               advances when every trade executes and every final safety check passes.
             </p>
             <div className="landingFactList">

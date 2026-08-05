@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 struct VaultInitParams {
     string name;
     string symbol;
-    string initialThesis;
+    string initialStrategyRationale;
     address manager;
     address feeRecipient;
     address[] initialAssets;
@@ -12,7 +12,6 @@ struct VaultInitParams {
     uint256[] initialAmounts;
     uint256 initialShareSupply;
     uint16 creatorFeeBpsPerYear;
-    uint32 rebalanceCooldown;
     uint16 maxTurnoverBps;
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
@@ -38,16 +37,12 @@ struct StrategyVersion {
     uint64 activatedAt;
     uint64 completedAt;
     address author;
-    bytes32 oldPortfolioHash;
-    bytes32 newPortfolioHash;
     string rationale;
 }
 
 struct RebalanceRecord {
     uint64 timestamp;
     address manager;
-    bytes32 oldPortfolioHash;
-    bytes32 newPortfolioHash;
     uint256 navBefore;
     uint256 navAfter;
     uint16 turnoverBps;

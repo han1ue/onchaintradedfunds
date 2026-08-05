@@ -251,7 +251,7 @@ contract VaultHardeningTest is ProtocolTestBase {
 
         assertEq(taxedToken.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
-        assertEq(vault.lastRebalanceTimestamp(), START);
+        assertEq(vault.lastCompletedStrategyTimestamp(), START);
     }
 
     function testSelfDirectedSharesAndRolesAreRejected() public {

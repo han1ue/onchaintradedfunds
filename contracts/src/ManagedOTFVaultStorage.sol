@@ -10,14 +10,11 @@ import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
-    uint256 public constant REBALANCE_COOLDOWN = 14 days;
-    uint256 public constant MIN_REBALANCE_COOLDOWN = REBALANCE_COOLDOWN;
-    // Retained as an ABI-compatible alias. Strategy changes use the single completion-based clock.
-    uint256 public constant STRATEGY_CHANGE_COOLDOWN = REBALANCE_COOLDOWN;
+    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
     uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
     uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
-    uint256 public constant MAX_THESIS_BYTES = 2_048;
+    uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
@@ -33,8 +30,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error AlreadyInitialized();
     error NotInitialized();
     error UnauthorizedFactory();
-    error RebalanceCooldownTooShort();
-    error RebalanceCooldownActive(uint256 nextAllowedTime);
     error StrategyChangeCooldownActive(uint256 nextAllowedTime);
     error StrategyActivationPending(uint256 activationTime);
     error NoPendingStrategy();
@@ -59,7 +54,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
     error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
     error InvalidChallengeGracePeriod(uint32 supplied);
-    error ThesisTooLong(uint256 length);
+    error StrategyRationaleTooLong(uint256 length);
     error StrategyRationaleRequired();
     error StrategyTargetsUnchanged();
     error Reentrancy();
@@ -124,8 +119,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     event VaultInitialized(
         address indexed factory,
         address indexed manager,
-        address indexed feeRecipient,
-        uint32 rebalanceCooldown
+        address indexed feeRecipient
     );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
@@ -137,8 +131,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         address indexed manager,
         uint64 proposedAt,
         uint64 activatedAt,
-        bytes32 oldPortfolioHash,
-        bytes32 newPortfolioHash,
         string rationale
     );
     event StrategyVersionCompleted(uint256 indexed strategyVersion, uint64 completedAt);
@@ -222,13 +214,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint16 public minNonZeroAssetWeightBps;
     uint8 public maxAssetCount;
     uint32 public maxOracleStaleness;
-    uint32 public rebalanceCooldown;
     uint32 public challengeGracePeriod;
-    uint64 public lastRebalanceTimestamp;
     uint64 public lastFeeAccrualTimestamp;
-    uint64 public lastCompletedStrategicRebalance;
+    uint64 public lastCompletedStrategyTimestamp;
     uint64 public strategicRebalanceStartedAt;
-    uint64 public lastStrategyChangeTimestamp;
     uint64 public pendingStrategyProposedAt;
     uint64 public pendingStrategyActivationTime;
 
@@ -246,7 +235,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => uint256) public challengeRewardShares;
 
     FeeState internal _feeState;
-    bytes32 internal _strategicOldPortfolioHash;
     uint256 internal _strategicNavBefore;
     uint16 internal _strategicTurnoverBps;
     address[] internal _assets;
