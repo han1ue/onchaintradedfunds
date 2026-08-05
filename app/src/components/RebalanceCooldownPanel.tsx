@@ -3160,7 +3160,7 @@ function UserActions({
                 onClick={() => setSelectedRoute("market")}
               >
                 <span className="positionRouteIcon"><Droplets size={18} /></span>
-                <span className="positionRouteName">Manager-owned V3 market</span>
+                <span className="positionRouteName">{vault.symbol} pool</span>
                 <strong className="positionRouteQuote">
                   {marketPoolChecking
                     ? <Loader2 className="spin" size={18} />
@@ -3195,7 +3195,7 @@ function UserActions({
                 onClick={() => setSelectedRoute("underlying")}
               >
                 <span className="positionRouteIcon"><Landmark size={18} /></span>
-                <span className="positionRouteName">Underlying pools</span>
+                <span className="positionRouteName">Underlying RWA pools</span>
                 <strong className="positionRouteQuote">
                   {!underlyingRouteAvailable
                     ? "Unavailable"
@@ -3326,7 +3326,7 @@ function UserActions({
               <div>
                 <span className="positionRouteIcon"><Landmark size={16} /></span>
                 <div>
-                  <strong>Underlying pools</strong>
+                  <strong>Underlying RWA pools</strong>
                   <span>
                     {activeAction === "deposit"
                       ? "Buy the portfolio assets and mint new OTF shares."
@@ -3429,7 +3429,7 @@ function UserActions({
 
             <div className="routeExecutionNote">
               <Info size={14} />
-              <span>Underlying execution uses approved constituent pools. Final USDG depends on their live liquidity and price impact.</span>
+              <span>Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact.</span>
             </div>
           </div>
         ) : null}
@@ -5889,8 +5889,8 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
 
   return (
     <SectionCard
-      title="Official OTF share pool"
-      subtitle="Permanent Uniswap V3 market for this OTF"
+      title={`${vault.symbol} liquidity pool`}
+      subtitle={`${testnetUsesSynthra ? "Synthra" : "Uniswap"} V3 market for ${vault.symbol}`}
       icon={<Droplets size={15} />}
       action={
         <span className={`stateBadge ${liquidityAvailable ? "success" : "muted"}`}>
@@ -5910,7 +5910,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
         {!registry ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
-            <div><strong>Official pool registry is not configured</strong><span>Add the registry address to the Robinhood testnet address JSON to load this OTF&apos;s market.</span></div>
+            <div><strong>Liquidity pool registry is not configured</strong><span>Add the registry address to the Robinhood testnet address JSON to load this OTF&apos;s market.</span></div>
           </div>
         ) : null}
 
@@ -5929,7 +5929,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
             {!liquidityLoading && !liquidityError && !liquidityAvailable ? (
               <div className="validationSummary warning">
                 <AlertTriangle size={15} />
-                <div><strong>Secondary-market trading is not active yet</strong><span>The official pool exists, but direct OTF / USDG trading stays disabled until someone adds liquidity.</span></div>
+                <div><strong>Secondary-market trading is not active yet</strong><span>The liquidity pool exists, but direct OTF / USDG trading stays disabled until someone adds liquidity.</span></div>
               </div>
             ) : null}
             <div className="riskCallout info">
@@ -5943,7 +5943,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
         ) : registry && !poolLoading ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
-            <div><strong>Official pool was not found</strong><span>This OTF may predate automatic pool creation. Verify the deployment before accepting deposits.</span></div>
+            <div><strong>Liquidity pool was not found</strong><span>This OTF may predate automatic pool creation. Verify the deployment before accepting deposits.</span></div>
           </div>
         ) : null}
       </div>

@@ -249,6 +249,36 @@ function formatAmount(value: bigint | undefined, decimals: number | undefined): 
   return numeric.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
+const Q192 = 1n << 192n;
+
+function quotePairedAmount(
+  value: string,
+  fromDecimals: number | undefined,
+  toDecimals: number | undefined,
+  sqrtPriceX96: bigint | undefined,
+  token0ToToken1: boolean,
+): string {
+  if (fromDecimals === undefined || toDecimals === undefined || !sqrtPriceX96 || !value.trim()) return "";
+  try {
+    const amountIn = parseUnits(value, fromDecimals);
+    const priceX192 = sqrtPriceX96 * sqrtPriceX96;
+    const amountOut = token0ToToken1
+      ? amountIn * priceX192 / Q192
+      : amountIn * Q192 / priceX192;
+    const formatted = formatUnits(amountOut, toDecimals);
+    const [whole, fraction = ""] = formatted.split(".");
+    const trimmedFraction = fraction.slice(0, Math.min(toDecimals, 8)).replace(/0+$/, "");
+    return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
+  } catch {
+    return "";
+  }
+}
+
+function percentageOf(value: number, total: number): string {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return "—";
+  return `${(value / total * 100).toFixed(1)}%`;
+}
+
 function shortAddress(value: string | undefined): string {
   return value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Not resolved";
 }
@@ -337,12 +367,14 @@ function LiquidityWorkspace() {
   const { data: actualToken1 } = useReadContract({ address: poolAddress, abi: poolAbi, functionName: "token1", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(poolAddress) } });
   const { data: actualFee } = useReadContract({ address: poolAddress, abi: poolAbi, functionName: "fee", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(poolAddress) } });
   const { data: poolLiquidity, refetch: refetchPoolLiquidity } = useReadContract({ address: poolAddress, abi: poolAbi, functionName: "liquidity", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(poolAddress), refetchInterval: 12_000 } });
-  const { data: slot0 } = useReadContract({ address: poolAddress, abi: poolAbi, functionName: "slot0", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(poolAddress) } });
+  const { data: slot0 } = useReadContract({ address: poolAddress, abi: poolAbi, functionName: "slot0", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(poolAddress), refetchInterval: 12_000 } });
 
   const { data: token0Symbol } = useReadContract({ address: token0, abi: erc20Abi, functionName: "symbol", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0) } });
   const { data: token1Symbol } = useReadContract({ address: token1, abi: erc20Abi, functionName: "symbol", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1) } });
   const { data: token0Decimals } = useReadContract({ address: token0, abi: erc20Abi, functionName: "decimals", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0) } });
   const { data: token1Decimals } = useReadContract({ address: token1, abi: erc20Abi, functionName: "decimals", chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1) } });
+  const { data: poolToken0Balance, refetch: refetchPoolToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && poolAddress), refetchInterval: 12_000 } });
+  const { data: poolToken1Balance, refetch: refetchPoolToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [poolAddress ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && poolAddress), refetchInterval: 12_000 } });
   const { data: token0Balance, refetch: refetchToken0Balance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address), refetchInterval: 12_000 } });
   const { data: token1Balance, refetch: refetchToken1Balance } = useReadContract({ address: token1, abi: erc20Abi, functionName: "balanceOf", args: [address ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token1 && address), refetchInterval: 12_000 } });
   const { data: token0Allowance, refetch: refetchToken0Allowance } = useReadContract({ address: token0, abi: erc20Abi, functionName: "allowance", args: [address ?? zeroAddress, positionManager ?? zeroAddress], chainId: robinhoodChainTestnet.id, query: { enabled: Boolean(token0 && address && positionManager) } });
@@ -362,6 +394,33 @@ function LiquidityWorkspace() {
   const marketLabel = isOtfMarket
     ? `${token0Symbol === "USDG" ? token1Symbol ?? "OTF" : token0Symbol ?? "OTF"}/USDG`
     : `${assetNames[selectedConstituent?.asset.toLowerCase() ?? ""] ?? "RWA"}/USDG`;
+  const sqrtPriceX96 = slot0?.[0];
+  const assetIsToken0 = Boolean(assetAddress && token0 && isAddressEqual(assetAddress, token0));
+  const assetSymbol = assetIsToken0 ? token0Symbol : token1Symbol;
+  const assetDecimals = assetIsToken0 ? token0Decimals : token1Decimals;
+  const settlementDecimals = assetIsToken0 ? token1Decimals : token0Decimals;
+  const assetPriceQuote = quotePairedAmount(
+    "1",
+    assetDecimals,
+    settlementDecimals,
+    sqrtPriceX96,
+    assetIsToken0,
+  );
+  const assetPrice = Number(assetPriceQuote);
+  const poolPriceLabel = assetPriceQuote && Number.isFinite(assetPrice) && assetPrice > 0
+    ? `1 ${assetSymbol ?? "asset"} = ${assetPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG`
+    : "Unavailable";
+  const poolToken0Amount = poolToken0Balance !== undefined && token0Decimals !== undefined
+    ? Number(formatUnits(poolToken0Balance, token0Decimals))
+    : 0;
+  const poolToken1Amount = poolToken1Balance !== undefined && token1Decimals !== undefined
+    ? Number(formatUnits(poolToken1Balance, token1Decimals))
+    : 0;
+  const token0IsSettlement = token0 && settlementToken ? isAddressEqual(token0, settlementToken) : false;
+  const poolToken0Value = token0IsSettlement ? poolToken0Amount : poolToken0Amount * assetPrice;
+  const poolToken1Value = token0IsSettlement ? poolToken1Amount * assetPrice : poolToken1Amount;
+  const poolValue = poolToken0Value + poolToken1Value;
+  const poolToken0Percent = poolValue > 0 ? poolToken0Value / poolValue * 100 : 0;
 
   let positionId: bigint | undefined;
   try {
@@ -430,6 +489,16 @@ function LiquidityWorkspace() {
     setLastHash(undefined);
   }
 
+  function changeAmount0(value: string) {
+    setAmount0Text(value);
+    setAmount1Text(quotePairedAmount(value, token0Decimals, token1Decimals, sqrtPriceX96, true));
+  }
+
+  function changeAmount1(value: string) {
+    setAmount1Text(value);
+    setAmount0Text(quotePairedAmount(value, token1Decimals, token0Decimals, sqrtPriceX96, false));
+  }
+
   async function waitFor(hash: Hash) {
     if (!publicClient) throw new Error("Robinhood testnet client is unavailable.");
     setLastHash(hash);
@@ -459,6 +528,8 @@ function LiquidityWorkspace() {
   async function refreshMarket() {
     await Promise.all([
       refetchPoolLiquidity(),
+      refetchPoolToken0Balance(),
+      refetchPoolToken1Balance(),
       refetchToken0Balance(),
       refetchToken1Balance(),
       refetchToken0Allowance(),
@@ -627,7 +698,7 @@ function LiquidityWorkspace() {
 
         <section className="liquidityIntro">
           <div>
-            <h1>Testnet liquidity</h1>
+            <h1>Testnet pools liquidity</h1>
             <p>Add or remove wallet-owned, full-range Synthra V3 positions on Robinhood Chain Testnet. Testnet assets have no real-world value.</p>
           </div>
           <div className="liquidityBadges" aria-label="Liquidity constraints">
@@ -651,14 +722,14 @@ function LiquidityWorkspace() {
                     {assetNames[market.asset.toLowerCase()] ?? "RWA"}/USDG · 0.30%
                   </option>
                 ))}
-                <option value="otf">Official OTF/USDG · 0.05%</option>
+                <option value="otf">OTF/USDG · 0.05%</option>
               </select>
             </label>
             {isOtfMarket ? (
               <label className="liquidityField">
                 <span>OTF address</span>
                 <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" spellCheck={false} />
-                <small>The official pool is resolved from the protocol’s immutable market registry.</small>
+                <small>The pool is resolved from the protocol’s immutable market registry.</small>
               </label>
             ) : null}
 
@@ -666,7 +737,22 @@ function LiquidityWorkspace() {
               <div><span>Selected market</span><strong>{marketLabel}</strong></div>
               <div><span>Pool</span><strong>{officialPoolLoading ? "Resolving…" : shortAddress(poolAddress)}</strong></div>
               <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
+              <div><span>Pool price</span><strong>{poolPriceLabel}</strong></div>
               <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity && poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
+            </div>
+
+            <div className="liquidityComposition">
+              <div className="liquidityCompositionHeading"><span>Pool composition</span><strong>{poolValue > 0 ? "By current value" : "Awaiting liquidity"}</strong></div>
+              {poolValue > 0 ? (
+                <div className="liquidityCompositionBar" aria-label={`${token0Symbol ?? "Token 0"} ${percentageOf(poolToken0Value, poolValue)}, ${token1Symbol ?? "Token 1"} ${percentageOf(poolToken1Value, poolValue)}`}>
+                  <span style={{ width: `${poolToken0Percent}%` }} />
+                  <span style={{ width: `${100 - poolToken0Percent}%` }} />
+                </div>
+              ) : null}
+              <div className="liquidityCompositionRows">
+                <div><span>{token0Symbol ?? "Token 0"}</span><strong>{formatAmount(poolToken0Balance, token0Decimals)} <small>{percentageOf(poolToken0Value, poolValue)}</small></strong></div>
+                <div><span>{token1Symbol ?? "Token 1"}</span><strong>{formatAmount(poolToken1Balance, token1Decimals)} <small>{percentageOf(poolToken1Value, poolValue)}</small></strong></div>
+              </div>
             </div>
 
             {poolAddress ? (
@@ -678,7 +764,7 @@ function LiquidityWorkspace() {
               <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool verification failed</strong><span>The recorded pool does not match Synthra’s canonical factory result or is not initialized.</span></div></div>
             ) : null}
             {isOtfMarket && validOtfAddress && !officialPoolLoading && !poolAddress ? (
-              <div className="validationSummary"><AlertTriangle size={15} /><div><strong>No official pool found</strong><span>This address is not a deployed OTF from the current factory, or its market was not created.</span></div></div>
+              <div className="validationSummary"><AlertTriangle size={15} /><div><strong>No liquidity pool found</strong><span>This address is not a deployed OTF from the current factory, or its market was not created.</span></div></div>
             ) : null}
           </aside>
 
@@ -696,16 +782,16 @@ function LiquidityWorkspace() {
                   <div className="liquidityTokenInputs">
                     <label className="liquidityTokenInput">
                       <span><strong>{token0Symbol ?? "Token 0"}</strong><small>Balance {formatAmount(token0Balance, token0Decimals)}</small></span>
-                      <input inputMode="decimal" value={amount0Text} onChange={(event) => setAmount0Text(event.target.value)} placeholder="0.0" />
-                      <button type="button" onClick={() => setAmount0Text(token0Balance !== undefined && token0Decimals !== undefined ? formatUnits(token0Balance, token0Decimals) : "")}>Max</button>
+                      <input inputMode="decimal" value={amount0Text} onChange={(event) => changeAmount0(event.target.value)} placeholder="0.0" />
+                      <button type="button" onClick={() => changeAmount0(token0Balance !== undefined && token0Decimals !== undefined ? formatUnits(token0Balance, token0Decimals) : "")}>Max</button>
                     </label>
                     <label className="liquidityTokenInput">
                       <span><strong>{token1Symbol ?? "Token 1"}</strong><small>Balance {formatAmount(token1Balance, token1Decimals)}</small></span>
-                      <input inputMode="decimal" value={amount1Text} onChange={(event) => setAmount1Text(event.target.value)} placeholder="0.0" />
-                      <button type="button" onClick={() => setAmount1Text(token1Balance !== undefined && token1Decimals !== undefined ? formatUnits(token1Balance, token1Decimals) : "")}>Max</button>
+                      <input inputMode="decimal" value={amount1Text} onChange={(event) => changeAmount1(event.target.value)} placeholder="0.0" />
+                      <button type="button" onClick={() => changeAmount1(token1Balance !== undefined && token1Decimals !== undefined ? formatUnits(token1Balance, token1Decimals) : "")}>Max</button>
                     </label>
                   </div>
-                  <p className="liquidityHelper">Synthra uses the pool’s current price to determine the deposited ratio. Any unused token amount remains in your wallet. The position manager receives approvals capped at the entered amounts.</p>
+                  <p className="liquidityHelper">The matching amount is calculated from the live pool price. Final amounts are confirmed by transaction simulation; any unused dust remains in your wallet.</p>
                 </>
               ) : (
                 <>
