@@ -4554,6 +4554,11 @@ textarea::placeholder {
     padding: 0;
   }
 
+  .walletAssets .rwaCatalogTable td:first-child {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
   .managedVaultsPanel .directoryTable td:last-child {
     justify-content: flex-end;
   }
@@ -4568,6 +4573,10 @@ textarea::placeholder {
     border-radius: 7px;
     background: var(--background);
     cursor: default;
+  }
+
+  .walletAssets .rwaCatalogTable tr {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .managedTableActions {
@@ -6667,6 +6676,10 @@ input.invalid {
     align-items: flex-start;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .walletAssets .rwaCatalogTable tr {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
