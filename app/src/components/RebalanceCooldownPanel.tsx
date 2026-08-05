@@ -86,6 +86,11 @@ type ContractValue =
 
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
+type PositionTradeReceipt = {
+  action: "deposit" | "redeem";
+  detail: string;
+  transactionHash: `0x${string}`;
+};
 export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits" | "rwas";
 type DataMode = "live" | "empty" | "unavailable";
 
@@ -838,7 +843,10 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
   const { data, error, isLoading, refetch: refetchVaultData } = useReadContracts({
     contracts: readContracts,
-    query: { enabled: Boolean(readContracts) && isTestnet },
+    query: {
+      enabled: Boolean(readContracts) && isTestnet,
+      placeholderData: (previousData) => previousData,
+    },
   });
 
   const directoryContracts = factoryAddress && factoryVaultAddresses.length
@@ -959,9 +967,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
   const connectedIsManager =
     connectedAddress && manager && connectedAddress.toLowerCase() === manager.toLowerCase();
-  const supplyDisplay = totalSupply
-    ? `${Number(formatUnits(totalSupply, 18)).toLocaleString()} ${vaultSymbol}`
-    : "";
+  const supplyDisplay = totalSupply !== undefined
+    ? `${formatWalletTokenBalance(totalSupply, 18)} ${vaultSymbol}`
+    : "Not available";
   const dataMode: DataMode = !isTestnet
     ? "unavailable"
     : enabled && Boolean(results?.[0]?.result) && !error
@@ -1622,7 +1630,7 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
           : undefined}
       />
       <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
-      <MetricCard label="Authorized Executors" value={String(vault.authorizedExecutors.length)} />
+      <MetricCard label="Total Shares" value={vault.totalSupply} />
     </div>
   );
 }
@@ -1924,10 +1932,39 @@ function PortfolioAllocation({
   oraclePrices: CatalogOraclePrices;
   onRefresh: () => Promise<unknown>;
 }) {
+  const holdingContracts = vault.address && allocations.length
+    ? allocations.flatMap((asset) => ([
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "balanceOf" as const,
+          args: [vault.address as `0x${string}`],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: asset.address as `0x${string}`,
+          abi: erc20BalanceAbi,
+          functionName: "decimals" as const,
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const))
+    : undefined;
+  const {
+    data: holdingResults,
+    isLoading: holdingsLoading,
+  } = useReadContracts({
+    contracts: holdingContracts,
+    query: {
+      enabled: Boolean(holdingContracts),
+      refetchInterval: 12_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+
   return (
     <SectionCard
       title="Portfolio allocation"
-      subtitle="Target vs actual contract weights"
+      subtitle="Token holdings and target vs actual weights"
       icon={<ChartPie size={15} />}
       action={<span className="stateBadge muted">{allocations.length} assets</span>}
     >
@@ -1957,6 +1994,7 @@ function PortfolioAllocation({
           <thead>
             <tr>
               <th>Asset</th>
+              <th>Amount held</th>
               <th>Price</th>
               <th>Target</th>
               <th>Actual</th>
@@ -1964,9 +2002,21 @@ function PortfolioAllocation({
             </tr>
           </thead>
           <tbody>
-            {allocations.map((asset) => {
+            {allocations.map((asset, index) => {
               const diff = asset.actualWeightBps - asset.targetWeightBps;
               const driftTone = diff > 0 ? "warning" : diff < 0 ? "success" : "neutral";
+              const balanceResult = holdingResults?.[index * 2];
+              const decimalsResult = holdingResults?.[index * 2 + 1];
+              const balance = balanceResult?.result as bigint | undefined;
+              const decimals = decimalsResult?.result;
+              const holdingReadFailed = balanceResult?.status === "failure" || decimalsResult?.status === "failure";
+              const amountHeld = holdingReadFailed
+                ? "Unavailable"
+                : balance !== undefined && typeof decimals === "number"
+                  ? formatWalletTokenBalance(balance, decimals)
+                  : holdingsLoading
+                    ? "Loading"
+                    : "—";
               return (
                 <tr key={asset.address}>
                   <td>
@@ -1977,6 +2027,7 @@ function PortfolioAllocation({
                       </div>
                     </div>
                   </td>
+                  <td className="assetAmount">{amountHeld}</td>
                   <td>{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
                   <td>{bpsToAllocationPercent(asset.targetWeightBps)}</td>
                   <td className="actualWeight">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
@@ -2246,6 +2297,7 @@ function UserActions({
   const [redeemError, setRedeemError] = useState<string>();
   const [marketState, setMarketState] = useState<TxState>("idle");
   const [marketError, setMarketError] = useState<string>();
+  const [tradeReceipt, setTradeReceipt] = useState<PositionTradeReceipt>();
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -2276,9 +2328,9 @@ function UserActions({
   const navEstimatedShares = normalizedUsdgAmount && vault.navPerShareValue
     ? normalizedUsdgAmount * 10n ** 18n / vault.navPerShareValue
     : undefined;
-  let requestedEntryShares: bigint | undefined;
+  let navRequestedEntryShares: bigint | undefined;
   if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
-    requestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
+    navRequestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
   let requestedRedeemShares: bigint | undefined;
   try {
@@ -2351,6 +2403,15 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(settlementToken) },
   });
+  const settlementDecimals = Number(settlementDecimalsRead ?? 18);
+  let requestedUsdgAmount: bigint | undefined;
+  try {
+    requestedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
+      ? parseUnits(tradeAmount, settlementDecimals)
+      : undefined;
+  } catch {
+    requestedUsdgAmount = undefined;
+  }
   const { data: entryAdapterApproved } = useReadContract({
     address: entryRouterAddress,
     abi: otfEntryRouterAbi,
@@ -2362,8 +2423,8 @@ function UserActions({
   const canQuoteEntry = Boolean(
     isLive &&
     vault.address &&
-    requestedEntryShares &&
-    requestedEntryShares > 0n &&
+    navRequestedEntryShares &&
+    navRequestedEntryShares > 0n &&
     settlementToken &&
     entryAdapterApproved &&
     entrySlippageValid,
@@ -2377,7 +2438,7 @@ function UserActions({
     address: vault.address,
     abi: vaultDepositAbi,
     functionName: "previewMint",
-    args: requestedEntryShares ? [requestedEntryShares] : undefined,
+    args: navRequestedEntryShares ? [navRequestedEntryShares] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteEntry },
   });
@@ -2409,6 +2470,122 @@ function UserActions({
     contracts: entryQuoteContracts,
     query: { enabled: entryQuoteContracts.length > 0 },
   });
+  function deriveEntryLegs(
+    previewAmounts: readonly bigint[] | undefined,
+    quoteResults: typeof entryQuoteResults,
+  ) {
+    let quoteIndex = 0;
+    return vault.allocations.map((asset, index) => {
+      const requiredAmount = previewAmounts?.[index];
+      const isSettlement = Boolean(
+        settlementToken && asset.address.toLowerCase() === settlementToken.toLowerCase(),
+      );
+      let quotedSettlement: bigint | undefined;
+      let quoteFailed = false;
+      if (isSettlement) {
+        quotedSettlement = requiredAmount;
+      } else if (requiredAmount !== undefined && requiredAmount > 0n) {
+        const result = quoteResults?.[quoteIndex];
+        quoteIndex += 1;
+        const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+        quotedSettlement = quote?.[0];
+        quoteFailed = result?.status === "failure";
+      }
+      const maximumSettlement = quotedSettlement !== undefined && !isSettlement
+        ? (quotedSettlement * BigInt(10_000 + entrySlippageBps) + 9_999n) / 10_000n
+        : isSettlement ? 0n : undefined;
+      return {
+        ...asset,
+        requiredAmount,
+        isSettlement,
+        quotedSettlement,
+        maximumSettlement,
+        quoteFailed,
+      };
+    });
+  }
+
+  const initialEntryLegs = deriveEntryLegs(previewEntryAmounts, entryQuoteResults);
+  const initialEntryQuoteReady = Boolean(
+    navRequestedEntryShares &&
+    previewEntryAmounts?.length === vault.allocations.length &&
+    initialEntryLegs.every((leg) =>
+      leg.requiredAmount !== undefined &&
+      leg.quotedSettlement !== undefined &&
+      leg.maximumSettlement !== undefined,
+    ),
+  );
+  const initialMaximumSettlementTotal = initialEntryQuoteReady
+    ? initialEntryLegs.reduce(
+        (sum, leg) => sum + (leg.isSettlement ? leg.requiredAmount ?? 0n : leg.maximumSettlement ?? 0n),
+        0n,
+      )
+    : undefined;
+  const adjustedEntryShares =
+    navRequestedEntryShares &&
+    requestedUsdgAmount !== undefined &&
+    initialMaximumSettlementTotal !== undefined &&
+    initialMaximumSettlementTotal > requestedUsdgAmount
+      ? navRequestedEntryShares * requestedUsdgAmount / initialMaximumSettlementTotal
+      : undefined;
+  const canQuoteAdjustedEntry = Boolean(
+    canQuoteEntry && adjustedEntryShares && adjustedEntryShares > 0n,
+  );
+  const {
+    data: adjustedPreviewEntryAmounts,
+    error: adjustedPreviewEntryError,
+    isLoading: adjustedPreviewEntryLoading,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewMint",
+    args: adjustedEntryShares ? [adjustedEntryShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canQuoteAdjustedEntry },
+  });
+  const adjustedEntryQuoteContracts = canQuoteAdjustedEntry && constituentPoolsReady && adjustedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
+    ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = adjustedPreviewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutputSingle" as const,
+          args: [{
+            tokenIn: settlementToken,
+            tokenOut: asset.address as `0x${string}`,
+            amountOut,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: adjustedEntryQuoteResults,
+    isLoading: adjustedEntryQuotesLoading,
+  } = useReadContracts({
+    contracts: adjustedEntryQuoteContracts,
+    query: { enabled: adjustedEntryQuoteContracts.length > 0 },
+  });
+  const requestedEntryShares = adjustedEntryShares ?? navRequestedEntryShares;
+  const finalPreviewEntryAmounts = adjustedEntryShares
+    ? adjustedPreviewEntryAmounts
+    : previewEntryAmounts;
+  const finalEntryQuoteResults = adjustedEntryShares
+    ? adjustedEntryQuoteResults
+    : entryQuoteResults;
+  const finalPreviewEntryLoading = adjustedEntryShares
+    ? adjustedPreviewEntryLoading
+    : previewEntryLoading;
+  const finalEntryQuotesLoading = adjustedEntryShares
+    ? adjustedEntryQuotesLoading
+    : entryQuotesLoading;
+  const finalPreviewEntryError = adjustedEntryShares
+    ? adjustedPreviewEntryError
+    : previewEntryError;
   const entryAuthorizationContracts = ([
         {
           address: settlementToken ?? zeroAddress,
@@ -2513,39 +2690,11 @@ function UserActions({
     contracts: redeemAuthorizationContracts,
     query: { enabled: Boolean(vault.address && connectedAddress) },
   });
-  let entryQuoteIndex = 0;
-  const entryLegs = vault.allocations.map((asset, index) => {
-    const requiredAmount = previewEntryAmounts?.[index];
-    const isSettlement = Boolean(
-      settlementToken && asset.address.toLowerCase() === settlementToken.toLowerCase(),
-    );
-    let quotedSettlement: bigint | undefined;
-    let quoteFailed = false;
-    if (isSettlement) {
-      quotedSettlement = requiredAmount;
-    } else if (requiredAmount !== undefined && requiredAmount > 0n) {
-      const result = entryQuoteResults?.[entryQuoteIndex];
-      entryQuoteIndex += 1;
-      const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
-      quotedSettlement = quote?.[0];
-      quoteFailed = result?.status === "failure";
-    }
-    const maximumSettlement = quotedSettlement !== undefined && !isSettlement
-      ? (quotedSettlement * BigInt(10_000 + entrySlippageBps) + 9_999n) / 10_000n
-      : isSettlement ? 0n : undefined;
-    return {
-      ...asset,
-      requiredAmount,
-      isSettlement,
-      quotedSettlement,
-      maximumSettlement,
-      quoteFailed,
-    };
-  });
+  const entryLegs = deriveEntryLegs(finalPreviewEntryAmounts, finalEntryQuoteResults);
   const entryQuotesFailed = entryLegs.some((leg) => leg.quoteFailed);
   const entryQuoteReady = Boolean(
     requestedEntryShares &&
-    previewEntryAmounts?.length === vault.allocations.length &&
+    finalPreviewEntryAmounts?.length === vault.allocations.length &&
     entryLegs.every((leg) =>
       leg.requiredAmount !== undefined &&
       leg.quotedSettlement !== undefined &&
@@ -2560,15 +2709,6 @@ function UserActions({
     : undefined;
   const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
   const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
-  const settlementDecimals = Number(settlementDecimalsRead ?? entryAuthorizationResults?.[2]?.result ?? 18);
-  let requestedUsdgAmount: bigint | undefined;
-  try {
-    requestedUsdgAmount = activeAction === "deposit" && Number(tradeAmount) > 0
-      ? parseUnits(tradeAmount, settlementDecimals)
-      : undefined;
-  } catch {
-    requestedUsdgAmount = undefined;
-  }
   const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
     address: v3MarketRegistryAddress,
     abi: otfV3MarketRegistryAbi,
@@ -2750,10 +2890,10 @@ function UserActions({
     ? entryQuoteReady && entryWithinBudget
     : redeemQuoteReady;
   const underlyingQuoteLoading = activeAction === "deposit"
-    ? constituentLiquidityLoading || previewEntryLoading || entryQuotesLoading
+    ? constituentLiquidityLoading || finalPreviewEntryLoading || finalEntryQuotesLoading
     : constituentLiquidityLoading || previewRedeemLoading || redeemQuotesLoading;
   const underlyingQuoteFailed = activeAction === "deposit"
-    ? Boolean(previewEntryError || entryQuotesFailed)
+    ? Boolean(finalPreviewEntryError || entryQuotesFailed)
     : Boolean(previewRedeemError || redeemQuotesFailed);
   const underlyingQuotedOutput = activeAction === "deposit"
     ? requestedEntryShares
@@ -2768,6 +2908,7 @@ function UserActions({
       settlementAllowance === undefined
     ) return;
     setEntryError(undefined);
+    setTradeReceipt(undefined);
     try {
       setEntryState("pending");
       if (settlementAllowance > 0n) {
@@ -2850,6 +2991,11 @@ function UserActions({
       await refetchEntryPreview();
       await refetchEntryQuotes();
       setEntryState("confirmed");
+      setTradeReceipt({
+        action: "deposit",
+        detail: `${formatWalletTokenBalance(requestedEntryShares, 18)} ${vault.symbol} minted through the underlying RWA pools.`,
+        transactionHash: hash,
+      });
       setTradeAmount("");
     } catch (error) {
       setEntryError(errorMessage(error));
@@ -2860,6 +3006,7 @@ function UserActions({
   async function approveSharesForSettlementExit() {
     if (!vault.address || !entryRouterAddress || !publicClient || !requestedRedeemShares || redeemShareAllowance === undefined) return;
     setRedeemError(undefined);
+    setTradeReceipt(undefined);
     try {
       setRedeemState("pending");
       if (redeemShareAllowance > 0n) {
@@ -2930,6 +3077,11 @@ function UserActions({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The USDG redemption reverted.");
       await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
+      setTradeReceipt({
+        action: "redeem",
+        detail: `${formatWalletTokenBalance(requestedRedeemShares, 18)} ${vault.symbol} redeemed through the underlying RWA pools.`,
+        transactionHash: hash,
+      });
       setTradeAmount("");
       setRedeemState("confirmed");
     } catch (error) {
@@ -2946,6 +3098,7 @@ function UserActions({
       !publicClient
     ) return;
     setMarketError(undefined);
+    setTradeReceipt(undefined);
     try {
       setMarketState("pending");
       if ((marketInputAllowance ?? 0n) > 0n) {
@@ -2994,7 +3147,11 @@ function UserActions({
       !marketBalanceSufficient ||
       !marketAllowanceSufficient
     ) return;
+    const executionAction = activeAction;
+    const executionAmount = formatWalletTokenBalance(marketInputAmount, inputTokenDecimals);
+    const executionSymbol = inputTokenSymbol;
     setMarketError(undefined);
+    setTradeReceipt(undefined);
     try {
       setMarketState("pending");
       const hash = await writeContractAsync({
@@ -3016,6 +3173,11 @@ function UserActions({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The open-market trade reverted.");
       await Promise.all([refetchMarketAuthorization(), refetchMarketQuote()]);
+      setTradeReceipt({
+        action: executionAction,
+        detail: `${executionAmount} ${executionSymbol} executed through the ${vault.symbol} pool.`,
+        transactionHash: hash,
+      });
       setTradeAmount("");
       setMarketState("confirmed");
     } catch (error) {
@@ -3026,6 +3188,7 @@ function UserActions({
 
   function updateTradeAmount(nextAmount: string) {
     setTradeAmount(nextAmount);
+    setTradeReceipt(undefined);
     setEntryState("idle");
     setRedeemState("idle");
     setMarketState("idle");
@@ -3043,6 +3206,7 @@ function UserActions({
     setActiveAction(nextAction);
     setTradeAmount("");
     setSelectedRoute(undefined);
+    setTradeReceipt(undefined);
     setEntryState("idle");
     setRedeemState("idle");
     setMarketState("idle");
@@ -3120,6 +3284,7 @@ function UserActions({
                 value={maxSlippage}
                 onChange={(event) => {
                   setMaxSlippage(event.target.value);
+                  setTradeReceipt(undefined);
                   setEntryState("idle");
                   setRedeemState("idle");
                   setMarketState("idle");
@@ -3223,6 +3388,25 @@ function UserActions({
                 </small>
               </button>
             </div>
+          </div>
+        ) : tradeReceipt ? (
+          <div className="positionTradeSuccess" role="status" aria-live="polite">
+            <span className="positionTradeSuccessMark" aria-hidden="true">
+              <Check size={20} strokeWidth={2.6} />
+            </span>
+            <div className="positionTradeSuccessCopy">
+              <strong>{tradeReceipt.action === "deposit" ? "Deposit confirmed" : "Redemption confirmed"}</strong>
+              <span>{tradeReceipt.detail}</span>
+            </div>
+            <a
+              className="positionTradeSuccessLink"
+              href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${tradeReceipt.transactionHash}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View transaction
+              <ExternalLink size={13} />
+            </a>
           </div>
         ) : (
           <div className="positionRoutePrompt">
