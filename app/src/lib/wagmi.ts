@@ -24,7 +24,7 @@ const connectors = connectorsForWallets(
 );
 
 export const wagmiConfig = createConfig({
-  chains: [robinhoodChain, robinhoodChainTestnet],
+  chains: [robinhoodChainTestnet, robinhoodChain],
   connectors,
   transports: {
     [robinhoodChainTestnet.id]: http(
