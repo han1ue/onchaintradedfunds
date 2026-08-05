@@ -4205,6 +4205,89 @@ textarea::placeholder {
   font-size: 0.66rem;
 }
 
+@media (max-width: 1120px) {
+  .directoryPanel .directoryTableWrap,
+  .managedVaultsPanel .directoryTableWrap {
+    overflow: visible;
+  }
+
+  .directoryPanel .directoryTable,
+  .managedVaultsPanel .directoryTable {
+    display: block;
+    min-width: 0;
+  }
+
+  .directoryPanel .directoryTable thead,
+  .managedVaultsPanel .directoryTable thead {
+    display: none;
+  }
+
+  .directoryPanel .directoryTable tbody,
+  .managedVaultsPanel .directoryTable tbody {
+    display: grid;
+  }
+
+  .directoryPanel .directoryTable tr,
+  .managedVaultsPanel .directoryTable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    padding: 13px 14px;
+  }
+
+  .directoryPanel .directoryTable tr:last-child,
+  .managedVaultsPanel .directoryTable tr:last-child {
+    border-bottom: 0;
+  }
+
+  .directoryPanel .directoryTable td,
+  .managedVaultsPanel .directoryTable td {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: auto;
+    border: 0;
+    padding: 0;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .directoryPanel .directoryTable td[data-label]::before,
+  .managedVaultsPanel .directoryTable td[data-label]::before {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    content: attr(data-label);
+    font-size: 0.65rem;
+    font-weight: 600;
+  }
+
+  .directoryPanel .directoryTable td:first-child,
+  .managedVaultsPanel .directoryTable td:first-child,
+  .directoryPanel .directoryTable td:last-child,
+  .managedVaultsPanel .directoryTable td:last-child {
+    grid-column: 1 / -1;
+    width: auto;
+    padding: 0;
+  }
+
+  .directoryPanel .directoryTable td:last-child,
+  .managedVaultsPanel .directoryTable td:last-child {
+    justify-content: flex-end;
+  }
+
+  .managedTableActions {
+    width: 100%;
+  }
+
+  .managedTableActions button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
 .tableAddressLink {
   display: inline-flex;
   align-items: center;
