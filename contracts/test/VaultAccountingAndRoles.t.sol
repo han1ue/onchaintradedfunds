@@ -5,12 +5,14 @@ import { ERC20Base } from "../src/ERC20Base.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
-import { ThesisVersion, VaultInitParams } from "../src/VaultTypes.sol";
+import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
+import { StrategyVersion, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testInitializationStoresPortfolioAndMintsInitialShares() public {
         ManagedOTFVault vault = _createVault();
+        IManagedOTFStrategyHistory history = IManagedOTFStrategyHistory(address(vault));
 
         assertEq(vault.name(), "Test OTF");
         assertEq(vault.symbol(), "OTF-TEST");
@@ -27,8 +29,19 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.targetWeightBps(address(tokenB)), 5_000);
         assertEq(vault.lastRebalanceTimestamp(), START);
         assertEq(vault.lastFeeAccrualTimestamp(), START);
-        assertEq(vault.thesisVersionCount(), 1);
+        assertEq(history.strategyVersionCount(), 1);
         assertEq(vault.currentThesis(), "A test portfolio with explicit safety limits.");
+        StrategyVersion memory initialStrategy = history.getStrategyVersion(0);
+        assertEq(initialStrategy.proposedAt, START);
+        assertEq(initialStrategy.activatedAt, START);
+        assertEq(initialStrategy.completedAt, START);
+        assertEq(initialStrategy.author, address(this));
+        (address[] memory strategyAssets, uint16[] memory strategyWeights) =
+            history.getStrategyTargets(0);
+        assertEq(strategyAssets[0], address(tokenA));
+        assertEq(strategyAssets[1], address(tokenB));
+        assertEq(strategyWeights[0], 5_000);
+        assertEq(strategyWeights[1], 5_000);
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
     }
@@ -271,26 +284,25 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertGt(vault.totalSupply(), 100 * ONE);
     }
 
-    function testOnlyManagerCanAmendThesis() public {
+    function testOnlyManagerCanStageNextStrategyRationale() public {
         ManagedOTFVault vault = _createVault();
+        IManagedOTFStrategyHistory history = IManagedOTFStrategyHistory(address(vault));
         vm.prank(ATTACKER);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.appendThesisAmendment("Unauthorized amendment");
+        vault.setNextStrategyRationale("Unauthorized rationale");
 
         vm.warp(START + 1 days);
-        vault.appendThesisAmendment("Authorized amendment");
-        assertEq(vault.thesisVersionCount(), 2);
-        assertEq(vault.currentThesis(), "Authorized amendment");
-        ThesisVersion memory version = vault.getThesisVersion(1);
-        assertEq(version.author, address(this));
-        assertEq(version.timestamp, START + 1 days);
+        vault.setNextStrategyRationale("Authorized rationale");
+        assertEq(history.nextStrategyRationale(), "Authorized rationale");
+        assertEq(history.strategyVersionCount(), 1);
+        assertEq(vault.currentThesis(), "A test portfolio with explicit safety limits.");
     }
 
-    function testThesisLengthLimitIsEnforced() public {
+    function testStrategyRationaleLengthLimitIsEnforced() public {
         ManagedOTFVault vault = _createVault();
         string memory oversized = _stringOfLength(2_049);
         vm.expectPartialRevert(ManagedOTFVaultStorage.ThesisTooLong.selector);
-        vault.appendThesisAmendment(oversized);
+        vault.setNextStrategyRationale(oversized);
     }
 
     function testManagerTransferIsImmediateAndAccruesFees() public {
@@ -302,9 +314,9 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.manager(), ALICE);
 
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.appendThesisAmendment("Old manager cannot amend.");
+        vault.setNextStrategyRationale("Old manager cannot stage.");
         vm.prank(ALICE);
-        vault.appendThesisAmendment("New manager amendment.");
+        vault.setNextStrategyRationale("New manager rationale.");
     }
 
     function testFeeRecipientTransferIsImmediate() public {

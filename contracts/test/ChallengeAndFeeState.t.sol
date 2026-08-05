@@ -385,11 +385,11 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _setPrices(120_00000000, 100_00000000);
 
         vm.expectRevert(ManagedOTFVaultStorage.TargetBandsNotReached.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Challenge-state target update.");
 
         vault.flagOutOfBand();
         vm.expectRevert(ManagedOTFVaultStorage.StrategyStateLocked.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Challenge-state target update.");
     }
 
     function testUnfinishedStrategicTargetCannotBeRedefinedAndFeeWithdrawStartsChallenge() public {
@@ -398,16 +398,16 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         uint256[] memory weights = _uint256Weights(narrowWeights);
         vm.warp(START + 14 days);
         _setPrices(100_00000000, 100_00000000);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Challenge-state target update.");
 
         vm.expectRevert(ManagedOTFVaultStorage.PendingStrategyExists.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Challenge-state target update.");
 
         vm.warp(START + 16 days);
         _setPrices(100_00000000, 100_00000000);
         vault.activatePendingStrategy();
         vm.expectRevert(ManagedOTFVaultStorage.StrategyStateLocked.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Challenge-state target update.");
 
         vm.warp(START + 17 days);
         _setPrices(100_00000000, 100_00000000);

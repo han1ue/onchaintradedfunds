@@ -3,13 +3,14 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IManagedOTFStrategyHistory } from "./interfaces/IManagedOTFStrategyHistory.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
     RebalanceRecord,
-    ThesisVersion,
+    StrategyVersion,
     TradeInstruction,
     VaultInitParams
 } from "./VaultTypes.sol";
@@ -94,14 +95,21 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         lastCompletedStrategicRebalance = timestamp;
         lastStrategyChangeTimestamp = timestamp;
 
-        _thesisVersions.push(
-            ThesisVersion({
-                timestamp: timestamp,
+        _strategyVersions.push(
+            StrategyVersion({
+                proposedAt: timestamp,
+                activatedAt: timestamp,
+                completedAt: timestamp,
                 author: params.manager,
-                portfolioHash: _portfolioHashCurrent(),
-                text: params.initialThesis
+                oldPortfolioHash: bytes32(0),
+                newPortfolioHash: _portfolioHashCurrent(),
+                rationale: params.initialThesis
             })
         );
+        for (uint256 i = 0; i < params.initialAssets.length; i++) {
+            _strategyAssets[0].push(params.initialAssets[i]);
+            _strategyTargetWeightsBps[0].push(params.initialTargetWeightsBps[i]);
+        }
 
         _mint(address(this), MINIMUM_LIQUIDITY_SHARES);
         _mint(params.manager, params.initialShareSupply - MINIMUM_LIQUIDITY_SHARES);
@@ -192,16 +200,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function thesisVersionCount() external view returns (uint256) {
-        return _thesisVersions.length;
-    }
-
-    function getThesisVersion(uint256 index) external view returns (ThesisVersion memory) {
-        return _thesisVersions[index];
-    }
-
     function currentThesis() external view returns (string memory) {
-        return _thesisVersions[_thesisVersions.length - 1].text;
+        return _strategyVersions[_strategyVersions.length - 1].rationale;
     }
 
     function nextRebalanceTime() public view returns (uint256) {
@@ -500,8 +500,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     // Strategy authority
 
-    function appendThesisAmendment(string calldata text) external {
-        text;
+    function setNextStrategyRationale(string calldata rationale) external {
+        rationale;
         _delegateStrategy();
     }
 
@@ -532,6 +532,33 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function rebalance(address[] calldata newTokens, uint256[] calldata newWeights) external {
         newTokens;
         newWeights;
+        _delegateStrategy();
+    }
+
+    function proposeStrategy(
+        address[] calldata newTokens,
+        uint256[] calldata newWeights,
+        string calldata rationale
+    ) external {
+        newTokens;
+        newWeights;
+        rationale;
+        _delegateStrategy();
+    }
+
+    // The selector allowlist prevents the strategy module from becoming an unrestricted fallback surface.
+    // solhint-disable-next-line no-complex-fallback
+    fallback() external {
+        bytes4 selector = msg.sig;
+        if (
+            selector != IManagedOTFStrategyHistory.strategyVersionCount.selector
+                && selector != IManagedOTFStrategyHistory.getStrategyVersion.selector
+                && selector != IManagedOTFStrategyHistory.getStrategyTargets.selector
+                && selector != IManagedOTFStrategyHistory.pendingStrategyRationale.selector
+                && selector != IManagedOTFStrategyHistory.nextStrategyRationale.selector
+        ) {
+            revert StrategyModuleCallFailed();
+        }
         _delegateStrategy();
     }
 

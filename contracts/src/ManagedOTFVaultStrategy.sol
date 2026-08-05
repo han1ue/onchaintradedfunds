@@ -8,7 +8,7 @@ import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-import { RebalanceRecord, ThesisVersion, TradeInstruction } from "./VaultTypes.sol";
+import { RebalanceRecord, StrategyVersion, TradeInstruction } from "./VaultTypes.sol";
 
 interface IManagedOTFVaultModuleCallbacks {
     function moduleAccrueFees() external returns (uint256);
@@ -45,6 +45,37 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         revert DirectStrategyCall();
     }
 
+    function strategyVersionCount() external view onlyDelegateCall returns (uint256) {
+        return _strategyVersions.length;
+    }
+
+    function getStrategyVersion(uint256 index)
+        external
+        view
+        onlyDelegateCall
+        returns (StrategyVersion memory)
+    {
+        return _strategyVersions[index];
+    }
+
+    function getStrategyTargets(uint256 index)
+        external
+        view
+        onlyDelegateCall
+        returns (address[] memory tokens, uint16[] memory weights)
+    {
+        tokens = _strategyAssets[index];
+        weights = _strategyTargetWeightsBps[index];
+    }
+
+    function pendingStrategyRationale() external view onlyDelegateCall returns (string memory) {
+        return _pendingStrategyRationale;
+    }
+
+    function nextStrategyRationale() external view onlyDelegateCall returns (string memory) {
+        return _nextStrategyRationale;
+    }
+
     function transferOwnership(address newOwner)
         external
         onlyDelegateCall
@@ -57,13 +88,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
         address oldManager = manager;
         if (strategyProposalPending) {
-            delete _pendingAssets;
-            delete _pendingTargetWeightsBps;
-            strategyProposalPending = false;
-            pendingStrategyProposedAt = 0;
-            pendingStrategyActivationTime = 0;
+            _clearPendingStrategy();
             emit TargetWeightsProposalCancelled(rebalanceCount, oldManager);
         }
+        delete _nextStrategyRationale;
         _clearExecutors();
         manager = newOwner;
         authorizedExecutor[newOwner] = true;
@@ -124,18 +152,16 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         feeShares = _withdrawManagerFees();
     }
 
-    function appendThesisAmendment(string calldata text) external onlyDelegateCall onlyManager {
-        uint256 length = bytes(text).length;
-        if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
-        uint256 version = _thesisVersions.length;
-        uint64 timestamp = uint64(block.timestamp);
-        bytes32 portfolioHash = _portfolioHashCurrent();
-        _thesisVersions.push(
-            ThesisVersion({
-                timestamp: timestamp, author: msg.sender, portfolioHash: portfolioHash, text: text
-            })
-        );
-        emit ThesisAmended(version, timestamp, msg.sender, portfolioHash, text);
+    function setNextStrategyRationale(string calldata rationale)
+        external
+        onlyDelegateCall
+        onlyManager
+    {
+        if (challengeActive || strategicRebalanceActive || strategyProposalPending) {
+            revert StrategyStateLocked();
+        }
+        _validateRationale(rationale);
+        _nextStrategyRationale = rationale;
     }
 
     function setManagerFeeBps(uint16 newFeeBps) external onlyDelegateCall onlyManager nonReentrant {
@@ -208,6 +234,26 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         onlyManager
         nonReentrant
     {
+        string memory rationale = _nextStrategyRationale;
+        if (bytes(rationale).length == 0) revert StrategyRationaleRequired();
+        delete _nextStrategyRationale;
+        _proposeStrategy(newTokens, newWeights, rationale);
+    }
+
+    function proposeStrategy(
+        address[] calldata newTokens,
+        uint256[] calldata newWeights,
+        string calldata rationale
+    ) external onlyDelegateCall onlyManager nonReentrant {
+        delete _nextStrategyRationale;
+        _proposeStrategy(newTokens, newWeights, rationale);
+    }
+
+    function _proposeStrategy(
+        address[] memory newTokens,
+        uint256[] memory newWeights,
+        string memory rationale
+    ) private {
         if (strategyProposalPending) revert PendingStrategyExists();
         if (challengeActive || strategicRebalanceActive) revert StrategyStateLocked();
         uint256 nextAllowed = uint256(lastRebalanceTimestamp) + uint256(rebalanceCooldown);
@@ -217,6 +263,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
         _validatePortfolio(newTokens, newWeights);
+        _validateRationale(rationale);
+        if (!_targetsChanged(newTokens, newWeights)) revert StrategyTargetsUnchanged();
 
         (uint256[] memory currentWeights,) = _currentPreciseWeightsAndNav();
         uint256 turnover =
@@ -233,6 +281,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             _pendingAssets.push(newTokens[i]);
             _pendingTargetWeightsBps.push(uint16(newWeights[i]));
         }
+        _pendingStrategyRationale = rationale;
 
         emit TargetWeightsProposed(
             rebalanceCount,
@@ -243,6 +292,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             challengeWeightDeviationBps,
             proposedAt
         );
+        emit StrategyRationaleLocked(_strategyVersions.length, msg.sender, rationale);
     }
 
     function activatePendingStrategy() external onlyDelegateCall onlyManager nonReentrant {
@@ -268,6 +318,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
 
         uint64 activatedAt = uint64(block.timestamp);
+        uint256 strategyVersion = _strategyVersions.length;
+        uint64 proposedAt = pendingStrategyProposedAt;
+        string memory rationale = _pendingStrategyRationale;
         _strategicOldPortfolioHash = _portfolioHashCurrent();
         _strategicNavBefore = navBefore;
         // Factory bounds cap turnover at BPS, well below uint16.max.
@@ -277,11 +330,36 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         strategicRebalanceActive = true;
         lastStrategyChangeTimestamp = activatedAt;
         _replacePortfolio(newTokens, newWeights);
+        bytes32 newPortfolioHash = _portfolioHashCurrent();
+        _strategyVersions.push(
+            StrategyVersion({
+                proposedAt: proposedAt,
+                activatedAt: activatedAt,
+                completedAt: 0,
+                author: msg.sender,
+                oldPortfolioHash: _strategicOldPortfolioHash,
+                newPortfolioHash: newPortfolioHash,
+                rationale: rationale
+            })
+        );
+        for (uint256 i = 0; i < newTokens.length; i++) {
+            _strategyAssets[strategyVersion].push(newTokens[i]);
+            _strategyTargetWeightsBps[strategyVersion].push(uint16(newWeights[i]));
+        }
         _clearPendingStrategy();
 
         emit Rebalanced(newTokens, newWeights);
         emit TargetWeightsActivated(
             rebalanceCount, msg.sender, newTokens, newWeights, activatedAt
+        );
+        emit StrategyVersionActivated(
+            strategyVersion,
+            msg.sender,
+            proposedAt,
+            activatedAt,
+            _strategicOldPortfolioHash,
+            newPortfolioHash,
+            rationale
         );
     }
 
@@ -459,6 +537,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _pruneZeroBalanceRetiringAssets();
         (uint256[] memory actualWeights, uint256 navAfter) = _currentWeightsAndNav();
         uint256 rebalanceId = rebalanceCount;
+        uint256 strategyVersion = _strategyVersions.length - 1;
+        _strategyVersions[strategyVersion].completedAt = completedAt;
         _recentRebalances[rebalanceId % RECENT_REBALANCE_CAP] = RebalanceRecord({
             timestamp: completedAt,
             manager: manager,
@@ -467,7 +547,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             navBefore: _strategicNavBefore,
             navAfter: navAfter,
             turnoverBps: _strategicTurnoverBps,
-            thesisVersion: uint32(_thesisVersions.length - 1)
+            // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            strategyVersion: uint32(strategyVersion)
         });
         rebalanceCount = rebalanceId + 1;
         strategicRebalanceActive = false;
@@ -475,6 +557,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         lastRebalanceTimestamp = completedAt;
         lastCompletedStrategicRebalance = completedAt;
         emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
+        emit StrategyVersionCompleted(strategyVersion, completedAt);
     }
 
     function _resumeFeeClock() private {
@@ -532,6 +615,25 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         ) {
             revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
         }
+    }
+
+    function _validateRationale(string memory rationale) private pure {
+        uint256 length = bytes(rationale).length;
+        if (length == 0) revert StrategyRationaleRequired();
+        if (length > MAX_THESIS_BYTES) revert ThesisTooLong(length);
+    }
+
+    function _targetsChanged(address[] memory newTokens, uint256[] memory newWeights)
+        private
+        view
+        returns (bool)
+    {
+        if (newTokens.length != _assets.length) return true;
+        for (uint256 i = 0; i < newTokens.length; i++) {
+            if (!_containsCurrentAsset(newTokens[i])) return true;
+            if (targetWeightBps[newTokens[i]] != newWeights[i]) return true;
+        }
+        return false;
     }
 
     function _validatePortfolio(address[] memory assets_, uint256[] memory weights_)
@@ -695,6 +797,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     function _clearPendingStrategy() private {
         delete _pendingAssets;
         delete _pendingTargetWeightsBps;
+        delete _pendingStrategyRationale;
         strategyProposalPending = false;
         pendingStrategyProposedAt = 0;
         pendingStrategyActivationTime = 0;

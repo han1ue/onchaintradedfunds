@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
@@ -27,7 +28,7 @@ contract ProtocolInvariantHandler is TestBase {
     uint256 public successfulRedeems;
     uint256 public successfulTransfers;
     uint256 public successfulAccruals;
-    uint256 public successfulAmendments;
+    uint256 public successfulRationaleStages;
     uint256 public successfulRebalances;
     uint256 public invalidRebalancesThatSucceeded;
 
@@ -106,12 +107,12 @@ contract ProtocolInvariantHandler is TestBase {
         } catch { }
     }
 
-    function amendThesis(uint256 seed) external {
+    function stageStrategyRationale(uint256 seed) external {
         string memory text = seed % 2 == 0
             ? "The mandate remains unchanged after invariant action A."
             : "The mandate remains unchanged after invariant action B.";
-        try vault.appendThesisAmendment(text) {
-            successfulAmendments++;
+        try vault.setNextStrategyRationale(text) {
+            successfulRationaleStages++;
         } catch { }
     }
 
@@ -132,7 +133,9 @@ contract ProtocolInvariantHandler is TestBase {
             _rebalanceInputs(targetA, false);
 
         if (!vault.strategicRebalanceActive() && !vault.strategyProposalPending()) {
-            try vault.rebalance(assets, _uint256Weights(weights)) { }
+            try vault.proposeStrategy(
+                assets, _uint256Weights(weights), "Invariant-managed strategy target update."
+            ) { }
             catch {
                 return;
             }
@@ -274,7 +277,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         selectors[1] = handler.redeemBasket.selector;
         selectors[2] = handler.transferShares.selector;
         selectors[3] = handler.advanceAndAccrue.selector;
-        selectors[4] = handler.amendThesis.selector;
+        selectors[4] = handler.stageStrategyRationale.selector;
         selectors[5] = handler.rebalancePortfolio.selector;
         selectors[6] = handler.attemptInvalidRebalance.selector;
         selectors[7] = handler.redeemInitialHolder.selector;
@@ -343,7 +346,11 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
 
     function invariantAdministrativeHistoryIsAppendOnly() public view {
         assertEq(vault.manager(), address(handler));
-        assertEq(vault.thesisVersionCount(), handler.successfulAmendments() + 1);
+        uint256 expectedVersions = vault.rebalanceCount() + 1;
+        if (vault.strategicRebalanceActive()) expectedVersions++;
+        assertEq(
+            IManagedOTFStrategyHistory(address(vault)).strategyVersionCount(), expectedVersions
+        );
         assertLe(vault.lastFeeAccrualTimestamp(), block.timestamp);
         assertEq(vault.rebalanceCooldown(), 14 days);
     }

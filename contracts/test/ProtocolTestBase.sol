@@ -198,7 +198,9 @@ abstract contract ProtocolTestBase is TestBase {
         uint256 nextStrategyTime = vault.nextStrategyChangeTime();
         if (block.timestamp < nextStrategyTime) vm.warp(nextStrategyTime);
         _refreshPrices();
-        vault.rebalance(assets, _uint256Weights(weights));
+        vault.proposeStrategy(
+            assets, _uint256Weights(weights), "Update the portfolio to the 60/40 strategy."
+        );
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
         vault.activatePendingStrategy();

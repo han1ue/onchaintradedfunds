@@ -6,6 +6,7 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
@@ -194,7 +195,7 @@ contract RebalanceCooldownTest is TestBase {
         invalidWeights[0] = 9_000;
         invalidWeights[1] = 1_000;
         vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooHigh.selector);
-        vault.rebalance(assets, invalidWeights);
+        vault.proposeStrategy(assets, invalidWeights, "Invalid overweight proposal.");
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
 
@@ -202,14 +203,14 @@ contract RebalanceCooldownTest is TestBase {
         assertEq(vault.lastRebalanceTimestamp(), uint64(START + 16 days));
     }
 
-    function testThesisAmendmentDoesNotResetCooldown() public {
+    function testStagedRationaleDoesNotCreateHistoryOrResetCooldown() public {
         ManagedOTFVault vault = _createVault(14 days, 0);
 
         vm.warp(START + 1 days);
-        vault.appendThesisAmendment("Updated thesis, same portfolio.");
+        vault.setNextStrategyRationale("Rationale for a future target change.");
 
         assertEq(vault.lastRebalanceTimestamp(), uint64(START));
-        assertEq(vault.thesisVersionCount(), 2);
+        assertEq(IManagedOTFStrategyHistory(address(vault)).strategyVersionCount(), 1);
 
         vm.warp(START + 14 days);
         _rebalanceTo6040(vault, 100 * ONE);
@@ -352,7 +353,7 @@ contract RebalanceCooldownTest is TestBase {
         weights[0] = 6_000;
         weights[1] = 4_000;
 
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Move to a 60/40 target.");
     }
 
     function _rebalanceTo5050(ManagedOTFVault vault, uint256 tokenAAmountIn) internal {
@@ -382,7 +383,7 @@ contract RebalanceCooldownTest is TestBase {
         weights[0] = 5_000;
         weights[1] = 5_000;
 
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Move to a 60/40 target.");
     }
 
     function _refreshPrices() internal {

@@ -265,7 +265,7 @@ export default function DocsPage() {
             <ol className="docsSteps">
               <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, approved assets, weight bounds, and cooldown are checked.</p></div></li>
               <li><span>02</span><div><strong>Fund</strong><p>The exact initial constituent balances move into the new vault.</p></div></li>
-              <li><span>03</span><div><strong>Initialize</strong><p>Rules, thesis version zero, and the creation-time cooldown baseline are stored.</p></div></li>
+              <li><span>03</span><div><strong>Initialize</strong><p>Rules, completed strategy version zero, its target snapshot, and the creation-time cooldown baseline are stored.</p></div></li>
               <li><span>04</span><div><strong>Issue</strong><p>Initial vault shares are minted to the manager.</p></div></li>
             </ol>
           </section>
@@ -346,8 +346,8 @@ export default function DocsPage() {
               A portfolio stores its tracked asset addresses and target weights. Actual weights are
               derived from current balances and fresh oracle prices. Portfolio reads expose the
               targets, actual weights, token balances, prices, and feed freshness independently.
-              A thesis is versioned onchain metadata; amending it does not alter constituents or
-              count as a portfolio change.
+              Strategy history permanently pairs each activated target snapshot with the
+              manager&apos;s locked rationale and later records when the portfolio reaches its bands.
             </p>
           </section>
 
@@ -379,14 +379,17 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
               </div>
             </div>
             <p>
-              Only the manager can call the standard <code>rebalance</code> function. It records a
-              pending constituent and weight proposal but leaves the active basket unchanged for
-              48 hours, giving holders time to redeem. After that notice period, only the manager
-              can activate it. Activation revalidates every safety rule and makes the target active
-              without executing trades. The standard <code>Rebalanced</code> event is emitted on
-              activation, not proposal, and does not mean the portfolio has reached its target.
+              Every target proposal requires a non-empty rationale and a real constituent or
+              weight change. The application submits both atomically through <code>proposeStrategy</code>.
+              Draft ERC-7621 callers may stage a rationale and then call the standard
+              <code>rebalance</code> selector. The locked proposal leaves the active basket unchanged
+              for 48 hours, giving holders time to redeem. Activation revalidates every safety rule,
+              makes the targets active, and creates the permanent strategy-history entry without
+              implying that trades have completed.
             </p>
-            <pre><code>{`rebalance(address[] newTokens, uint256[] newWeights)
+            <pre><code>{`proposeStrategy(address[] newTokens, uint256[] newWeights, string rationale)
+setNextStrategyRationale(string rationale)
+rebalance(address[] newTokens, uint256[] newWeights)
 activatePendingStrategy()`}</code></pre>
           </section>
 
@@ -494,8 +497,10 @@ completeStrategicRebalance()`}</code></pre>
               </div>
             </div>
             <p>
-              A manager can propose new target weights only after 14 days have passed since the
-              previous rebalance completed inside its target bands. The portfolio must still be
+              Deployment records the initial thesis and targets as completed strategy version zero,
+              starting the first 14-day cooldown immediately. A manager can later propose new
+              target weights only after 14 days have passed since the previous rebalance completed
+              inside its target bands. The portfolio must still be
               inside those bands, with no active challenge or strategy change. A valid proposal
               then remains pending for a separate 48-hour holder exit window. Returning in-band
               early never shortens the cooldown: both the full 14 days and the in-band check must
@@ -516,7 +521,7 @@ canRebalance =
               <li>Active challenges and out-of-band portfolios block proposals.</li>
               <li>Current targets remain active throughout the 48-hour notice period.</li>
               <li>Failed proposals, failed trades, and partial trades do not update the timestamp.</li>
-              <li>Challenges, fees, thesis amendments, and role transfers do not reset it.</li>
+              <li>Challenges, staged rationales, fees, and role transfers do not reset it.</li>
             </ul>
           </section>
 

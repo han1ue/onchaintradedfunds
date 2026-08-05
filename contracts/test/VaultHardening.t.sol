@@ -241,7 +241,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         vm.warp(vault.nextStrategyChangeTime());
         _refreshPrices();
         _refreshPrice(taxedFeed);
-        vault.rebalance(assets, _uint256Weights(weights));
+        vault.proposeStrategy(assets, _uint256Weights(weights), "Hardened target update.");
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
         _refreshPrice(taxedFeed);

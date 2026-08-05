@@ -23,7 +23,7 @@ This repository currently implements the first MVP slice:
 - Proportional mint and redeem logic.
 - Optional atomic USDG-only entry through a separately allowlisted router and adapter.
 - Lazy share-based management fee accrual.
-- Onchain thesis history.
+- Onchain strategy history binding rationales to target snapshots.
 - Oracle-valued NAV and weight checks.
 - Approved-adapter rebalance execution.
 - Comprehensive Foundry unit, fuzz, and stateful invariant tests.
@@ -98,7 +98,7 @@ flowchart LR
 - Custodian of tracked underlying assets.
 - Proportional mint and redemption engine.
 - Manager-controlled rebalance engine with immutable safety bounds.
-- Onchain metadata and thesis history source.
+- Onchain strategy-rationale and target-history source.
 - No arbitrary manager call surface.
 - Delegates strategy-only calls to a fixed `ManagedOTFVaultStrategy` module.
 
@@ -237,7 +237,7 @@ cancelled proposals, failed trades, and partial trades do not update the complet
 
 The following operations do not count as portfolio rebalances and do not update `lastRebalanceTimestamp`:
 
-- Thesis amendments.
+- Staging a rationale for a future ERC-7621 proposal.
 - Fee accrual.
 - Immediate manager transfer.
 - Immediate fee-recipient update.
@@ -270,7 +270,7 @@ The vault initializer:
 - Validates min, max, and count constraints.
 - Validates exact initial balances arrived.
 - Sets creation-time cooldown baseline.
-- Stores thesis version zero.
+- Stores completed strategy version zero with its initial target snapshot.
 - Mints initial shares to the manager.
 
 ### Minting
@@ -341,7 +341,18 @@ share burn and every swap atomically.
 
 ## Strategic Rebalancing
 
-Only the manager changes constituents and targets through the draft ERC-7621 function:
+The manager normally changes constituents and targets atomically with a rationale:
+
+```solidity
+function proposeStrategy(
+    address[] calldata newTokens,
+    uint256[] calldata newWeights,
+    string calldata rationale
+) external;
+```
+
+Draft ERC-7621 compatibility remains available by staging the rationale before its standard
+two-argument function:
 
 ```solidity
 function rebalance(
@@ -350,7 +361,8 @@ function rebalance(
 ) external;
 ```
 
-This call validates and records a pending strategic target and emits `TargetWeightsProposed`. The
+Every path requires a non-empty rationale, rejects identical or reorder-only targets, records a
+pending strategic target, and emits `TargetWeightsProposed`. The
 active target and ERC-7621 constituent views remain unchanged for 48 hours so holders can redeem
 against the current basket. A new target cannot be proposed while the old portfolio is outside
 completion bands, during a challenge, while another proposal is pending, or while an earlier
@@ -518,24 +530,30 @@ deadline credits 50% of the lost challenge-window fees to the caller and skips m
 Fee-rate changes are allowed only while strategy is unlocked and the portfolio is inside completion
 bands, and never apply retroactively.
 
-## Onchain Thesis
+## Onchain Strategy History
 
-The initial thesis is stored in contract storage as thesis version zero.
+The initial thesis and target snapshot are stored as completed strategy version zero at deployment.
+That completion timestamp starts the first fixed 14-day cooldown.
 
-Managers can append amendments. They cannot edit or delete historical versions. A thesis amendment is descriptive only and does not weaken enforced safety parameters.
+Every later strategy requires a target change and locked rationale. Cancelled proposals never enter
+canonical history. Activation creates the permanent version, and successful rebalance completion
+updates that same record. Managers cannot append, edit, or delete rationales independently.
 
-Each thesis version stores:
+Each strategy version stores:
 
 ```solidity
-struct ThesisVersion {
-    uint64 timestamp;
+struct StrategyVersion {
+    uint64 proposedAt;
+    uint64 activatedAt;
+    uint64 completedAt;
     address author;
-    bytes32 portfolioHash;
-    string text;
+    bytes32 oldPortfolioHash;
+    bytes32 newPortfolioHash;
+    string rationale;
 }
 ```
 
-Each thesis text is capped at 2,048 bytes.
+Each rationale is capped at 2,048 bytes and is stored with the version's complete target snapshot.
 
 ## Frontend
 
@@ -562,7 +580,7 @@ The current dashboard shows:
 - Manager fee.
 - Protocol share of fee shares.
 - Target asset allocation.
-- Thesis text.
+- Strategy history with target changes, rationale, and lifecycle state.
 - Manager and fee recipient.
 - Immutable safety limits.
 - Manager action readiness.
@@ -608,6 +626,14 @@ deployment script reads its chain, treasury, approved assets, price feeds, and e
 addresses from `app/src/config/robinhood-testnet.json`. It rejects an empty protocol catalog unless
 `ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
 
+Deploying always recompiles source-only artifacts before broadcasting, targets the Shanghai EVM
+supported by Robinhood Chain Testnet, and updates the shared address configuration only after the
+entire suite and registry setup succeed:
+
+```bash
+corepack pnpm contracts:deploy:robinhood-testnet
+```
+
 `USDG_ADDRESS` and all four Uniswap V3-compatible addresses are required because every new OTF
 receives an official OTF/USDG pool during its factory transaction. Robinhood testnet currently
 points these fields at Synthra; Robinhood mainnet can use official Uniswap without changing vault
@@ -632,6 +658,17 @@ OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fix
 initializes a new pool from NAV per share, and records it as the immutable official pool. No
 liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
 Uniswap position it creates; the pool association cannot be removed or replaced.
+
+After venue configuration, create or re-verify the canonical AMD/TSLA sample and its deployment-time
+strategy history with:
+
+```bash
+corepack pnpm contracts:create-sample:robinhood-testnet
+```
+
+The command is idempotent for a factory containing exactly that one sample. It verifies the completed
+initial strategy snapshot, matching cooldown getters, and the 14-day deployment-based deadline before
+recording the sample address and transaction in the shared JSON.
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
@@ -721,7 +758,7 @@ Deterministic coverage includes:
 - A later proposal before 14 days from rebalance completion reverts.
 - A later proposal exactly 14 days from rebalance completion succeeds.
 - A failed rebalance does not reset the cooldown.
-- A thesis amendment does not reset the cooldown.
+- Staging a future strategy rationale does not reset the cooldown or create history.
 - Fee accrual does not reset the cooldown.
 - The manager cannot shorten the cooldown.
 - The factory rejects every cooldown other than 14 days.
@@ -729,7 +766,7 @@ Deterministic coverage includes:
 - Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
   atomic creation rollback.
 - Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,
-  role transfers, and thesis history.
+  role transfers, and strategy history.
 - Oracle price validity, timestamps, round completeness, staleness, and missing feeds.
 - Asset, weight, count, turnover, NAV-loss, target-deviation, adapter, trade, approval-clearing,
   and atomic rollback protections.
@@ -748,8 +785,8 @@ Deterministic coverage includes:
 Fuzz properties cover arbitrary valid and invalid cooldowns, target weights, basket share
 amounts, fee rates and elapsed time, oracle prices, share transfers, and manager addresses.
 
-The stateful handler mixes basket mints, redemptions, share transfers, fee accrual, thesis
-amendments, valid rebalances, and intentionally invalid rebalances. Invariants continuously
+The stateful handler mixes basket mints, redemptions, share transfers, fee accrual, staged
+rationales, valid rebalances, and intentionally invalid rebalances. Invariants continuously
 assert share-supply accounting, valid mandate weights, positive backing and NAV, cleared
 executor approvals and balances, cooldown/history consistency, append-only administrative
 history, and immutable factory provenance.

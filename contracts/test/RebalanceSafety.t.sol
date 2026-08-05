@@ -19,7 +19,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.prank(ATTACKER);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.rebalance(assets, _uint256Weights(weights));
+        vault.proposeStrategy(assets, _uint256Weights(weights), "Authorized target update.");
     }
 
     function testTargetProposalDoesNotExecuteOrCompleteTrades() public {
@@ -125,7 +125,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrices();
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.TurnoverTooHigh.selector);
-        vault.rebalance(assets, _uint256Weights(weights));
+        vault.proposeStrategy(assets, _uint256Weights(weights), "Target update under test.");
         assertEq(vault.lastRebalanceTimestamp(), START);
     }
 
@@ -154,30 +154,30 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         address[] memory emptyAssets = new address[](0);
         uint256[] memory emptyWeights = new uint256[](0);
         vm.expectRevert(ManagedOTFVaultStorage.EmptyPortfolio.selector);
-        vault.rebalance(emptyAssets, emptyWeights);
+        vault.proposeStrategy(emptyAssets, emptyWeights, "Invalid empty target update.");
 
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
         uint256[] memory weights = new uint256[](2);
         vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
 
         assets[1] = address(tokenA);
         weights[0] = 5_000;
         weights[1] = 5_000;
         vm.expectPartialRevert(IERC7621.DuplicateConstituent.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
 
         assets[1] = address(tokenB);
         weights[0] = 5_001;
         vm.expectPartialRevert(IERC7621.InvalidWeights.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
 
         weights[0] = 9_900;
         weights[1] = 100;
         vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooHigh.selector);
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
     }
 
     function testManagerRemovedConstituentPausesDepositsAndIsPrunedAtZero() public {
@@ -191,7 +191,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vm.warp(START + 14 days);
         _refreshPrices();
 
-        vault.rebalance(assets, weights);
+        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
         vault.activatePendingStrategy();
@@ -410,7 +410,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.rebalance(assets, _uint256Weights(weights));
+        vault.proposeStrategy(assets, _uint256Weights(weights), "Executor authorization test.");
 
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
@@ -426,7 +426,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
-        vault.appendThesisAmendment("executor cannot amend strategy");
+        vault.setNextStrategyRationale("executor cannot stage strategy rationale");
 
         vm.prank(ALICE);
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);

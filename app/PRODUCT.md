@@ -10,7 +10,7 @@ web
 
 The primary users are investors evaluating, acquiring, monitoring, and redeeming positions in transparent onchain portfolios backed by tokenized stock assets. They need to understand what each OTF owns, how it has performed, what rules constrain it, who manages it, whether its oracle data is healthy, and when its portfolio may next change.
 
-The secondary users are creators and managers who launch and operate OTFs. They need to define a thesis and initial allocation, configure permanent safety bounds, monitor their products, append thesis amendments, accrue fees, and submit portfolio rebalances that satisfy the protocol's rules.
+The secondary users are creators and managers who launch and operate OTFs. They need to define an initial thesis and allocation, configure permanent safety bounds, monitor their products, accrue fees, and propose target changes with a rationale that satisfies the protocol's rules.
 
 ## Product Purpose
 
@@ -31,7 +31,7 @@ This makes each managed portfolio independently inspectable and mechanically bou
 Investors use the web application with an EVM wallet to:
 
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
-- Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, thesis history, safety limits, cooldown state, and return history.
+- Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, strategy history, safety limits, cooldown state, and return history.
 - Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
 - Acquire or sell OTF shares with USDG either through a direct OTF/USDG market or through atomic constituent-pool routing.
 - Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
@@ -41,9 +41,9 @@ Creators and managers use the application to:
 - Create an OTF with a name, fixed `OTF-` ticker prefix, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, and permanent safety limits.
 - Open the immutable official OTF/USDG pool and add wallet-funded liquidity without using portfolio assets.
 - Find OTFs managed by the connected wallet.
-- Append permanent public thesis amendments without resetting the rebalance cooldown.
+- Propose target changes with a required rationale that becomes permanent when the strategy activates.
 - Accrue creator fees without counting the action as a portfolio change.
-- Build, simulate, and submit an atomic rebalance with a public rationale.
+- Build, simulate, and submit a strategy proposal with a public rationale, then execute its constrained rebalance.
 
 The current supported environment is Robinhood Chain Testnet. Robinhood Chain Mainnet is visible as a network choice but has no supported assets, OTF deployments, or product availability yet.
 
@@ -56,13 +56,13 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
 - The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
 - Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
-- Only the configured manager may append thesis amendments or submit rebalances.
+- Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.
 - Portfolio changes are bounded by immutable limits covering turnover, NAV loss, target-weight deviation, asset count, individual weight, and minimum nonzero weight.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
-- Failed rebalances, thesis amendments, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
-- Thesis history and rebalance rationale are permanent public records.
+- Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
+- Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.
 - Creator fees accrue as shares and split between the configured recipient and protocol collector according to contract rules.
 - The frontend uses predetermined supported testnet assets and their known token addresses even though the contracts can support registry-approved assets more generally.
 - Mainnet product support is explicitly unavailable until real assets, adapters, oracle feeds, contracts, and deployment evidence exist.

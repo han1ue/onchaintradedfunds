@@ -5,7 +5,7 @@ import { ERC20Base } from "./ERC20Base.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { MathEx } from "./libraries/MathEx.sol";
-import { RebalanceRecord, ThesisVersion } from "./VaultTypes.sol";
+import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
 
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
@@ -60,6 +60,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
     error InvalidChallengeGracePeriod(uint32 supplied);
     error ThesisTooLong(uint256 length);
+    error StrategyRationaleRequired();
+    error StrategyTargetsUnchanged();
     error Reentrancy();
     error ZeroShares();
     error AmountTooHigh(address asset, uint256 required, uint256 maximum);
@@ -127,13 +129,19 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
-    event ThesisAmended(
-        uint256 indexed version,
-        uint64 timestamp,
-        address indexed author,
-        bytes32 indexed portfolioHash,
-        string text
+    event StrategyRationaleLocked(
+        uint256 indexed strategyVersion, address indexed manager, string rationale
     );
+    event StrategyVersionActivated(
+        uint256 indexed strategyVersion,
+        address indexed manager,
+        uint64 proposedAt,
+        uint64 activatedAt,
+        bytes32 oldPortfolioHash,
+        bytes32 newPortfolioHash,
+        string rationale
+    );
+    event StrategyVersionCompleted(uint256 indexed strategyVersion, uint64 completedAt);
     event ManagerTransferred(address indexed oldManager, address indexed newManager);
     event FeeRecipientTransferred(address indexed oldRecipient, address indexed newRecipient);
     event ExecutorAuthorizationChanged(address indexed executor, bool authorized);
@@ -244,9 +252,13 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     address[] internal _assets;
     address[] internal _pendingAssets;
     uint16[] internal _pendingTargetWeightsBps;
+    string internal _pendingStrategyRationale;
+    string internal _nextStrategyRationale;
     address[] internal _authorizedExecutors;
     mapping(address => uint256) internal _executorIndexPlusOne;
-    ThesisVersion[] internal _thesisVersions;
+    StrategyVersion[] internal _strategyVersions;
+    mapping(uint256 => address[]) internal _strategyAssets;
+    mapping(uint256 => uint16[]) internal _strategyTargetWeightsBps;
     RebalanceRecord[16] internal _recentRebalances;
     uint256 internal _feeAccrualRemainderWad;
     uint16 internal _protocolFeeSplitRemainderBps;

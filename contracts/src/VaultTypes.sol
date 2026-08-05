@@ -33,11 +33,14 @@ struct TradeInstruction {
     bytes adapterData;
 }
 
-struct ThesisVersion {
-    uint64 timestamp;
+struct StrategyVersion {
+    uint64 proposedAt;
+    uint64 activatedAt;
+    uint64 completedAt;
     address author;
-    bytes32 portfolioHash;
-    string text;
+    bytes32 oldPortfolioHash;
+    bytes32 newPortfolioHash;
+    string rationale;
 }
 
 struct RebalanceRecord {
@@ -48,5 +51,5 @@ struct RebalanceRecord {
     uint256 navBefore;
     uint256 navAfter;
     uint16 turnoverBps;
-    uint32 thesisVersion;
+    uint32 strategyVersion;
 }

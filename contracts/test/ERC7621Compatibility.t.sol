@@ -133,6 +133,7 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         uint256[] memory weights = _uint256Weights(narrowWeights);
         vm.warp(START + 14 days);
         _refreshPrices();
+        vault.setNextStrategyRationale("ERC-7621 compatible target update.");
         vault.rebalance(assets, weights);
 
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);

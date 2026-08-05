@@ -37,9 +37,10 @@ The vault is the custody and share-accounting boundary. It:
 - Handles proportional contribution and withdrawal.
 - Accrues protocol and manager fee shares.
 - Exposes ERC-7621-compatible views, actions, and events.
-- Routes only an explicit set of strategy selectors to the fixed strategy module.
+- Routes only an explicit set of state-changing and read-only strategy selectors to the fixed strategy module.
 
-The vault MUST NOT expose a fallback that delegates arbitrary selectors.
+The vault fallback MAY delegate the explicitly allowlisted strategy-history views and MUST reject
+every other unknown selector.
 
 ### `ManagedOTFVaultStrategy`
 
@@ -48,7 +49,7 @@ The strategy module contains:
 - Manager fee-rate changes.
 - Executor authorization changes.
 - Weight-band changes.
-- Thesis amendments.
+- Strategy-rationale staging and version history.
 - Manager fee withdrawal orchestration.
 - Strategic target proposals.
 - Constrained partial trade execution.
@@ -129,7 +130,8 @@ The following selectors are allowed to delegate:
 
 | Selector | Required authority |
 | --- | --- |
-| `appendThesisAmendment(string)` | Manager |
+| `setNextStrategyRationale(string)` | Manager |
+| `proposeStrategy(address[],uint256[],string)` | Manager |
 | `setManagerFeeBps(uint16)` | Manager |
 | `setExecutor(address,bool)` | Manager |
 | `setWeightBands(uint16,uint16)` | Manager |
@@ -140,6 +142,7 @@ The following selectors are allowed to delegate:
 | `completeStrategicRebalance()` | Permissionless |
 | `flagOutOfBand()` | Permissionless |
 | `resolveOutOfBandChallenge()` | Permissionless |
+| Strategy-history getters | Read-only |
 
 No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent selector is allowed.
 
@@ -273,12 +276,16 @@ revert the share burn, basket transfers, swaps, and approvals atomically.
 
 ### Target proposal
 
-`rebalance(newTokens, newWeights)` records a pending target only. It MUST NOT change the active
-target, imply that trades ran, or imply that reserves match the proposed target.
+`proposeStrategy(newTokens, newWeights, rationale)` records a pending target and rationale in one
+call. Draft ERC-7621 callers MAY instead stage the rationale with `setNextStrategyRationale` and
+consume it through `rebalance(newTokens, newWeights)`. Neither path changes the active target,
+implies that trades ran, or implies that reserves match the proposed target.
 
 A proposal requires:
 
 - Manager authority.
+- A non-empty rationale no longer than 2,048 bytes.
+- A semantic constituent or weight change; identical and reorder-only targets MUST revert.
 - The configured portfolio cooldown and fixed 14-day strategy cooldown to have elapsed.
 - No active challenge.
 - No unfinished strategic rebalance.
@@ -288,8 +295,8 @@ A proposal requires:
   liquidated exactly to zero after activation.
 - Proposed turnover within the configured limit.
 
-It emits `TargetWeightsProposed`. The standard `Rebalanced` event MUST NOT be emitted until the
-target becomes active.
+It locks the rationale, emits `TargetWeightsProposed`, and leaves canonical strategy history
+unchanged. The standard `Rebalanced` event MUST NOT be emitted until the target becomes active.
 
 ### Delayed activation
 
@@ -298,8 +305,9 @@ proposal. Deposits and proportional redemptions MUST remain available during thi
 After the deadline, only the manager MAY call `activatePendingStrategy()`. Activation MUST
 revalidate asset approval, oracle freshness, portfolio shape, turnover, challenge state, fee state,
 and completion bands before changing the active target. It emits the standard `Rebalanced` event
-and `TargetWeightsActivated`, but performs no trades. Only the manager may cancel a pending
-proposal, and manager transfer MUST cancel any proposal authored under the previous authority.
+and `TargetWeightsActivated`, appends the canonical strategy version and target snapshot, but
+performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
+cancel any proposal authored under the previous authority without appending history.
 
 ### Trade execution
 
@@ -326,7 +334,8 @@ inside every completion band and every zero-target constituent has an exact zero
 successful strategic trade batch that reaches those conditions MUST prune retired constituents and
 complete atomically after all final trade safety checks. Permissionless explicit completion remains
 available when no trade is required or natural price movement restores the portfolio. Completion
-resumes manager-fee withdrawals and is the only point that updates `lastRebalanceTimestamp`;
+marks the activated strategy version complete, resumes manager-fee withdrawals, and is the only
+point that updates `lastRebalanceTimestamp`;
 proposals, failed trades, and partial trades MUST NOT update it.
 
 ## 7. Challenge and fee accountability

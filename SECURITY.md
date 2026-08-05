@@ -62,8 +62,9 @@ The factory owner cannot:
 
 A vault manager can:
 
-- Append thesis amendments.
-- Propose constituents, target weights, and weight bands while strategy is unlocked.
+- Stage a rationale for the next draft ERC-7621 proposal.
+- Propose constituents and target weights with a required rationale while strategy is unlocked.
+- Change weight bands while strategy is unlocked.
 - Execute constrained partial rebalance trades.
 - Add and remove authorized trade executors.
 - Change the manager fee within the protocol cap while the portfolio is compliant.
@@ -78,7 +79,7 @@ A vault manager cannot:
 - Change protocol fee share.
 - Redefine an unfinished target or change strategy during a challenge.
 - Cancel a challenge or recover forfeited fees.
-- Edit or delete historical thesis entries.
+- Append, edit, or delete historical strategy rationales independently of target activation.
 - Rescue unsupported tokens from the vault.
 
 The manager is automatically recorded as an authorized executor and can remove or restore that
@@ -128,7 +129,8 @@ available during active and overdue challenges.
 
 ## Cooldown Risks
 
-The MVP uses one fixed 14-day cooldown measured from successful rebalance completion.
+The MVP uses one fixed 14-day cooldown measured from deployment for strategy version zero and from
+successful rebalance completion thereafter.
 
 Security intent:
 

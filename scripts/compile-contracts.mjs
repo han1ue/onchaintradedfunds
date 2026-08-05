@@ -30,7 +30,9 @@ const input = {
   language: "Solidity",
   sources,
   settings: {
-    evmVersion: "cancun",
+    // Robinhood Chain Testnet supports Shanghai opcodes but currently rejects
+    // Cancun-only bytecode such as MCOPY during contract creation.
+    evmVersion: "shanghai",
     optimizer: { enabled: true, runs: 1 },
     metadata: { bytecodeHash: "none" },
     viaIR: true,

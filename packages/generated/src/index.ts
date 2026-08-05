@@ -106,14 +106,14 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "thesisVersionCount",
+    name: "strategyVersionCount",
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
   {
     type: "function",
-    name: "getThesisVersion",
+    name: "getStrategyVersion",
     stateMutability: "view",
     inputs: [{ name: "index", type: "uint256" }],
     outputs: [
@@ -121,19 +121,46 @@ export const managedOtfVaultAbi = [
         name: "",
         type: "tuple",
         components: [
-          { name: "timestamp", type: "uint64" },
+          { name: "proposedAt", type: "uint64" },
+          { name: "activatedAt", type: "uint64" },
+          { name: "completedAt", type: "uint64" },
           { name: "author", type: "address" },
-          { name: "portfolioHash", type: "bytes32" },
-          { name: "text", type: "string" },
+          { name: "oldPortfolioHash", type: "bytes32" },
+          { name: "newPortfolioHash", type: "bytes32" },
+          { name: "rationale", type: "string" },
         ],
       },
     ],
   },
   {
     type: "function",
-    name: "appendThesisAmendment",
+    name: "getStrategyTargets",
+    stateMutability: "view",
+    inputs: [{ name: "index", type: "uint256" }],
+    outputs: [
+      { name: "tokens", type: "address[]" },
+      { name: "weights", type: "uint16[]" },
+    ],
+  },
+  {
+    type: "function",
+    name: "pendingStrategyRationale",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "nextStrategyRationale",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "setNextStrategyRationale",
     stateMutability: "nonpayable",
-    inputs: [{ name: "text", type: "string" }],
+    inputs: [{ name: "rationale", type: "string" }],
     outputs: [],
   },
   {
@@ -143,6 +170,17 @@ export const managedOtfVaultAbi = [
     inputs: [
       { name: "newTokens", type: "address[]" },
       { name: "newWeights", type: "uint256[]" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "proposeStrategy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "newTokens", type: "address[]" },
+      { name: "newWeights", type: "uint256[]" },
+      { name: "rationale", type: "string" },
     ],
     outputs: [],
   },
@@ -455,6 +493,20 @@ export const managedOtfVaultAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "newFeeRecipient", type: "address" }],
     outputs: [],
+  },
+  {
+    type: "event",
+    name: "TargetWeightsProposed",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "rebalanceId", type: "uint256" },
+      { indexed: true, name: "manager", type: "address" },
+      { indexed: false, name: "newTokens", type: "address[]" },
+      { indexed: false, name: "newWeights", type: "uint256[]" },
+      { indexed: false, name: "completionDeviationBps", type: "uint16" },
+      { indexed: false, name: "challengeDeviationBps", type: "uint16" },
+      { indexed: false, name: "proposedAt", type: "uint64" },
+    ],
   },
 ] as const;
 

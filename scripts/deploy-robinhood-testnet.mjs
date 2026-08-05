@@ -2,8 +2,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const compile = spawnSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], {
+  cwd: root,
+  stdio: "inherit",
+  env: { ...process.env, SOLC_INCLUDE_TESTS: "false" },
+});
+if (compile.status !== 0) {
+  throw new Error("Fresh contract compilation failed; deployment was not started.");
+}
 const appRequire = createRequire(new URL("../app/package.json", import.meta.url));
 const viem = await import(pathToFileURL(appRequire.resolve("viem")).href);
 const accounts = await import(pathToFileURL(appRequire.resolve("viem/accounts")).href);
@@ -62,9 +71,12 @@ function deploymentPayload(result) {
 
 async function deployContract({ name, args = [], gas }) {
   const compiled = contractArtifact(name);
+  const bytecode = compiled.bytecode.object.startsWith("0x")
+    ? compiled.bytecode.object
+    : `0x${compiled.bytecode.object}`;
   const hash = await wallet.deployContract({
     abi: compiled.abi,
-    bytecode: compiled.bytecode.object,
+    bytecode,
     args,
     ...(gas ? { gas } : {}),
     chain,

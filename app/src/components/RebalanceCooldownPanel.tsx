@@ -120,11 +120,20 @@ type CatalogOraclePrice = {
 
 type CatalogOraclePrices = Record<string, CatalogOraclePrice>;
 
-type ThesisVersionResult = {
-  timestamp: bigint;
+type StrategyVersionResult = {
+  proposedAt: bigint;
+  activatedAt: bigint;
+  completedAt: bigint;
   author: `0x${string}`;
-  portfolioHash: `0x${string}`;
-  text: string;
+  oldPortfolioHash: `0x${string}`;
+  newPortfolioHash: `0x${string}`;
+  rationale: string;
+};
+
+type StrategyHistoryEntry = StrategyVersionResult & {
+  index: number;
+  tokens: readonly string[];
+  weights: readonly (number | bigint)[];
 };
 
 type VaultSummary = {
@@ -951,7 +960,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const lastPortfolioChange = resultAt<bigint>(results, 15)
     ? Number(resultAt<bigint>(results, 15))
     : undefined;
-  const nextPortfolioChange = resultAt<bigint>(results, 16)
+  const nextRebalanceTime = resultAt<bigint>(results, 16)
     ? Number(resultAt<bigint>(results, 16))
     : undefined;
   const canRebalance = Boolean(resultAt<boolean>(results, 17));
@@ -990,6 +999,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const nextStrategyChangeTime = resultAt<bigint>(results, 42)
     ? Number(resultAt<bigint>(results, 42))
     : undefined;
+  const nextPortfolioChange = nextStrategyChangeTime ?? nextRebalanceTime;
   const challengeCaller = resultAt<string>(results, 43);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastPortfolioChange, nextPortfolioChange);
@@ -1164,7 +1174,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               </div>
 
               <aside className="sideColumn">
-                <ThesisModule vaultAddress={vault.address} />
+                <StrategyHistoryModule vault={vault} />
                 <RebalanceCooldown vault={vault} />
                 <StrategyChallenge vault={vault} onRefresh={refetchVaultData} />
               </aside>
@@ -1911,13 +1921,13 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
   return (
     <SectionCard
       title="Strategy cooldown"
-      subtitle={`${formatCooldown(vault.cooldownSeconds)} after the previous rebalance completes`}
+      subtitle={`${formatCooldown(vault.cooldownSeconds)} after deployment or successful rebalance completion`}
       icon={<Clock3 size={15} />}
       action={<span className={`stateBadge ${isLive ? (proposalAvailable ? "success" : "warning") : "muted"}`}>{isLive ? (proposalAvailable ? "Proposal available" : portfolioCooldownComplete ? "Portfolio state blocked" : "Cooling down") : "Live data required"}</span>}
     >
       <div className="cooldownStats">
         <TimelineItem label="Cooldown length" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
-        <TimelineItem label="Last portfolio change" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
+        <TimelineItem label="Strategy baseline" value={isLive ? formatTimestamp(vault.lastPortfolioChange) : "Not available"} icon={<Clock3 size={13} />} />
         <TimelineItem label="Cooldown ends" value={isLive ? (portfolioCooldownComplete ? "Complete" : formatTimestamp(vault.nextPortfolioChange)) : "Not available"} icon={<Activity size={13} />} />
         <TimelineItem label="Proposal state" value={isLive ? (proposalAvailable ? "Available" : portfolioCooldownComplete ? "Blocked" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
       </div>
@@ -1945,7 +1955,7 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
               ? "The cooldown is complete and the portfolio is in bounds with no active challenge. A proposal still receives a 48-hour notice window."
               : portfolioCooldownComplete
                 ? "The cooldown is complete, but a challenge, pending strategy, active rebalance, or out-of-band portfolio still blocks proposals."
-                : "Being in-band does not shorten the timer. A proposal requires both the full cooldown and an in-band portfolio at submission."
+                : "The initial strategy starts this timer at deployment; later successful rebalances restart it. Being in-band never shortens it."
             : "Connect a deployed OTF to read the portfolio-change schedule."}
         </span>
       </div>
@@ -2106,79 +2116,217 @@ function PortfolioAllocation({
   );
 }
 
-function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
+function StrategyHistoryModule({ vault }: { vault: VaultView }) {
+  const [pendingTargets, setPendingTargets] = useState<{ tokens: readonly string[]; weights: readonly bigint[] }>();
+  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const {
-    data: thesisVersionCount,
-    isLoading: thesisCountLoading,
-    isError: thesisCountFailed,
+    data: strategyVersionCount,
+    isLoading: strategyCountLoading,
+    isError: strategyCountFailed,
   } = useReadContract({
-    address: vaultAddress,
+    address: vault.address,
     abi: managedOtfVaultAbi,
-    functionName: "thesisVersionCount",
+    functionName: "strategyVersionCount",
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(vaultAddress), refetchInterval: 12_000 },
+    query: { enabled: Boolean(vault.address), refetchInterval: 12_000 },
   });
-  const versionCount = Number(thesisVersionCount ?? 0n);
-  const thesisVersionContracts = vaultAddress
-    ? Array.from({ length: versionCount }, (_, index) => ({
-        address: vaultAddress,
-        abi: managedOtfVaultAbi,
-        functionName: "getThesisVersion" as const,
-        args: [BigInt(index)],
-        chainId: robinhoodChainTestnet.id,
-      }))
+  const { data: pendingRationale, isLoading: pendingRationaleLoading } = useReadContract({
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "pendingStrategyRationale",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.address && vault.strategyProposalPending), refetchInterval: 12_000 },
+  });
+  useEffect(() => {
+    if (!vault.strategyProposalPending || !vault.address || !publicClient) {
+      setPendingTargets(undefined);
+      return;
+    }
+    let active = true;
+    publicClient.getContractEvents({
+      address: vault.address,
+      abi: managedOtfVaultAbi,
+      eventName: "TargetWeightsProposed",
+      fromBlock: 0n,
+      toBlock: "latest",
+    }).then((logs) => {
+      const latest = logs.at(-1);
+      if (!active || !latest) return;
+      setPendingTargets({
+        tokens: latest.args.newTokens ?? [],
+        weights: latest.args.newWeights ?? [],
+      });
+    }).catch(() => {
+      if (active) setPendingTargets(undefined);
+    });
+    return () => { active = false; };
+  }, [publicClient, vault.address, vault.strategyProposalPending]);
+  const versionCount = Number(strategyVersionCount ?? 0n);
+  const strategyVersionContracts = vault.address
+    ? Array.from({ length: versionCount }, (_, index) => ([
+        {
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "getStrategyVersion" as const,
+          args: [BigInt(index)],
+          chainId: robinhoodChainTestnet.id,
+        },
+        {
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "getStrategyTargets" as const,
+          args: [BigInt(index)],
+          chainId: robinhoodChainTestnet.id,
+        },
+      ] as const)).flat()
     : [];
   const {
-    data: thesisVersionResults,
-    isLoading: thesisVersionsLoading,
-    isError: thesisVersionsFailed,
+    data: strategyVersionResults,
+    isLoading: strategyVersionsLoading,
+    isError: strategyVersionsFailed,
   } = useReadContracts({
-    contracts: thesisVersionContracts,
+    contracts: strategyVersionContracts,
     query: {
-      enabled: thesisVersionContracts.length > 0,
+      enabled: strategyVersionContracts.length > 0,
       refetchInterval: 12_000,
     },
   });
-  const versions = (thesisVersionResults ?? []).flatMap((entry, index) => {
-    if (entry.status !== "success") return [];
-    const version = entry.result as ThesisVersionResult;
-    return [{ ...version, index }];
-  }).reverse();
-  const historyLoading = thesisCountLoading || (versionCount > 0 && thesisVersionsLoading);
-  const historyFailed = thesisCountFailed || thesisVersionsFailed;
+  const chronologicalVersions = Array.from({ length: versionCount }, (_, index) => {
+    const versionResult = strategyVersionResults?.[index * 2];
+    const targetsResult = strategyVersionResults?.[index * 2 + 1];
+    if (versionResult?.status !== "success" || targetsResult?.status !== "success") return undefined;
+    const version = versionResult.result as StrategyVersionResult;
+    const [tokens, weights] = targetsResult.result as readonly [
+      readonly string[],
+      readonly (number | bigint)[],
+    ];
+    return { ...version, index, tokens, weights } satisfies StrategyHistoryEntry;
+  }).filter((entry): entry is StrategyHistoryEntry => Boolean(entry));
+  const historyLoading = strategyCountLoading || (versionCount > 0 && strategyVersionsLoading);
+  const historyFailed = strategyCountFailed || strategyVersionsFailed;
+  const activationRemaining = useLiveCountdown(vault.pendingStrategyActivationTime);
+
+  function targetChanges(version: StrategyHistoryEntry) {
+    const previous = chronologicalVersions[version.index - 1];
+    const previousTargets = new Map(
+      (previous?.tokens ?? []).map((token, index) => [token.toLowerCase(), Number(previous?.weights[index] ?? 0)]),
+    );
+    const nextTargets = new Map(
+      version.tokens.map((token, index) => [token.toLowerCase(), Number(version.weights[index] ?? 0)]),
+    );
+    const tokenAddresses = version.index === 0
+      ? version.tokens.map((token) => token.toLowerCase())
+      : Array.from(new Set([...previousTargets.keys(), ...nextTargets.keys()]));
+    const rows = tokenAddresses.flatMap((address) => {
+      const previousWeight = previousTargets.get(address) ?? 0;
+      const nextWeight = nextTargets.get(address) ?? 0;
+      if (version.index > 0 && previousWeight === nextWeight) return [];
+      const catalog = testnetCreateAssets.find((asset) => asset.address.toLowerCase() === address);
+      return [{ address, symbol: catalog?.symbol ?? shortAddress(address), previousWeight, nextWeight }];
+    });
+    const unchangedCount = version.index === 0
+      ? 0
+      : tokenAddresses.length - rows.length;
+    return { rows, unchangedCount };
+  }
+  const pendingChanges = pendingTargets && chronologicalVersions.length
+    ? (() => {
+        const previous = chronologicalVersions[chronologicalVersions.length - 1];
+        const previousTargets = new Map(
+          previous.tokens.map((token, index) => [token.toLowerCase(), Number(previous.weights[index] ?? 0)]),
+        );
+        const nextTargets = new Map(
+          pendingTargets.tokens.map((token, index) => [token.toLowerCase(), Number(pendingTargets.weights[index] ?? 0n)]),
+        );
+        return Array.from(new Set([...previousTargets.keys(), ...nextTargets.keys()])).flatMap((address) => {
+          const previousWeight = previousTargets.get(address) ?? 0;
+          const nextWeight = nextTargets.get(address) ?? 0;
+          if (previousWeight === nextWeight) return [];
+          const catalog = testnetCreateAssets.find((asset) => asset.address.toLowerCase() === address);
+          return [{ address, symbol: catalog?.symbol ?? shortAddress(address), previousWeight, nextWeight }];
+        });
+      })()
+    : [];
 
   return (
     <SectionCard
-      title="Investment thesis"
-      subtitle="Permanent onchain history of the manager's strategy statements"
+      title="Strategy history"
+      subtitle="Permanent rationales paired with the target changes they authorized"
       icon={<BookOpen size={15} />}
       action={<span className="stateBadge muted">{versionCount} entr{versionCount === 1 ? "y" : "ies"}</span>}
     >
+      {vault.strategyProposalPending ? (
+        <article className="pendingStrategyHistoryEntry">
+          <div className="strategyVersionHeader">
+            <div><strong>Pending strategy</strong><span className="stateBadge warning">Pending activation</span></div>
+            <time>{activationRemaining > 0 ? `Activates in ${formatCooldown(activationRemaining)}` : "Ready to activate"}</time>
+          </div>
+          <p>{pendingRationaleLoading ? "Loading the locked strategy rationale..." : pendingRationale || "Locked rationale unavailable."}</p>
+          {pendingChanges.length ? <div className="strategyTargetChanges">
+            {pendingChanges.map((row) => <div key={row.address}>
+              <strong>{row.symbol}</strong>
+              <span>
+                {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
+                <ArrowRight size={11} />
+                {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
+              </span>
+            </div>)}
+          </div> : null}
+          <span>Current targets remain active until the 48-hour notice window closes.</span>
+        </article>
+      ) : null}
       {historyLoading ? (
         <div className="inlineEmptyState">
           <Loader2 className="spin" size={17} />
-          <div><strong>Loading thesis history</strong><span>Reading every thesis entry from the OTF contract.</span></div>
+          <div><strong>Loading strategy history</strong><span>Reading every rationale and target snapshot from the OTF contract.</span></div>
         </div>
       ) : historyFailed ? (
         <div className="inlineEmptyState">
           <RefreshCw size={17} />
-          <div><strong>Thesis history unavailable</strong><span>The contract did not return every stored entry.</span></div>
+          <div><strong>Strategy history unavailable</strong><span>The contract did not return every stored strategy entry.</span></div>
         </div>
-      ) : versions.length ? (
-        <div className="thesisHistory">
-          {versions.map((version) => {
+      ) : chronologicalVersions.length ? (
+        <div className="strategyHistory">
+          {[...chronologicalVersions].reverse().map((version) => {
             const isCurrent = version.index === versionCount - 1;
             const isInitial = version.index === 0;
+            const isRebalancing = isCurrent && Number(version.completedAt) === 0;
+            const status = isRebalancing
+              ? vault.challengeActive ? "Rebalancing · Challenge active" : "Rebalancing"
+              : isCurrent ? "Current strategy" : "Completed";
+            const changes = targetChanges(version);
             return (
-              <article className={`thesisVersion ${isCurrent ? "current" : ""}`} key={version.index}>
-                <div className="thesisVersionHeader">
+              <article className={`strategyVersion ${isCurrent ? "current" : ""}`} key={version.index}>
+                <div className="strategyVersionHeader">
                   <div>
-                    <strong>{isInitial ? "Initial thesis" : `Amendment ${version.index}`}</strong>
-                    {isCurrent ? <span className="stateBadge success">Current</span> : null}
+                    <strong>{isInitial ? "Initial strategy" : `Strategy ${version.index}`}</strong>
+                    <span className={`stateBadge ${isRebalancing ? vault.challengeActive ? "danger" : "warning" : isCurrent ? "success" : "muted"}`}>{status}</span>
                   </div>
-                  <time>{formatTimestamp(Number(version.timestamp))}</time>
+                  <time>{formatTimestamp(Number(version.activatedAt))}</time>
                 </div>
-                <p>{version.text}</p>
+                <p>{version.rationale}</p>
+                <div className="strategyTargetChanges">
+                  {changes.rows.map((row) => (
+                    <div key={row.address}>
+                      <strong>{row.symbol}</strong>
+                      {isInitial ? (
+                        <span>{bpsToPercent(row.nextWeight)}</span>
+                      ) : (
+                        <span>
+                          {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
+                          <ArrowRight size={11} />
+                          {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {changes.unchangedCount > 0 ? <small>{changes.unchangedCount} unchanged asset{changes.unchangedCount === 1 ? "" : "s"}</small> : null}
+                </div>
+                <div className="strategyVersionMeta">
+                  <span>Manager <code>{shortAddress(version.author)}</code></span>
+                  <span>Proposed {formatTimestamp(Number(version.proposedAt))}</span>
+                  <span>{Number(version.completedAt) > 0 ? `Completed ${formatTimestamp(Number(version.completedAt))}` : "Completion pending"}</span>
+                </div>
               </article>
             );
           })}
@@ -2186,148 +2334,9 @@ function ThesisModule({ vaultAddress }: { vaultAddress?: `0x${string}` }) {
       ) : (
         <div className="inlineEmptyState">
           <BookOpen size={17} />
-          <div><strong>No thesis entries found</strong><span>This OTF did not return an initialized thesis record.</span></div>
+          <div><strong>No strategy entries found</strong><span>This OTF did not return its initialized strategy record.</span></div>
         </div>
       )}
-    </SectionCard>
-  );
-}
-
-function ThesisAmendmentCard({
-  currentThesis,
-  canManage,
-  vaultAddress,
-  onRefresh,
-}: {
-  currentThesis: string;
-  canManage: boolean;
-  vaultAddress?: `0x${string}`;
-  onRefresh: () => Promise<unknown>;
-}) {
-  const [draft, setDraft] = useState("");
-  const [submitState, setSubmitState] = useState<TxState>("idle");
-  const [submitError, setSubmitError] = useState<string>();
-  const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
-  const { writeContractAsync } = useWriteContract();
-  const { data: thesisVersionCount } = useReadContract({
-    address: vaultAddress,
-    abi: managedOtfVaultAbi,
-    functionName: "thesisVersionCount",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(vaultAddress), refetchInterval: 12_000 },
-  });
-  const versionCount = Number(thesisVersionCount ?? 0n);
-  const { data: initialThesisVersion, isLoading: initialThesisLoading } = useReadContract({
-    address: vaultAddress,
-    abi: managedOtfVaultAbi,
-    functionName: "getThesisVersion",
-    args: [0n],
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(vaultAddress && versionCount > 0), refetchInterval: 12_000 },
-  });
-  const { data: latestThesisVersion, isLoading: latestThesisLoading } = useReadContract({
-    address: vaultAddress,
-    abi: managedOtfVaultAbi,
-    functionName: "getThesisVersion",
-    args: [BigInt(Math.max(0, versionCount - 1))],
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(vaultAddress && versionCount > 1), refetchInterval: 12_000 },
-  });
-  const initialThesis = (initialThesisVersion as ThesisVersionResult | undefined)?.text ?? currentThesis;
-  const latestAmendment = latestThesisVersion as ThesisVersionResult | undefined;
-  const amendment = draft.trim();
-  const amendmentBytes = new TextEncoder().encode(amendment).length;
-  const amendmentValid = amendmentBytes > 0 && amendmentBytes <= 2_048;
-  const submitting = submitState === "pending" || submitState === "submitted";
-
-  async function submitAmendment() {
-    if (!canManage || !vaultAddress || !publicClient || !amendmentValid) return;
-    setSubmitError(undefined);
-    try {
-      setSubmitState("pending");
-      const hash = await writeContractAsync({
-        address: vaultAddress,
-        abi: managedOtfVaultAbi,
-        functionName: "appendThesisAmendment",
-        args: [amendment],
-        chainId: robinhoodChainTestnet.id,
-      });
-      setSubmitState("submitted");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The thesis amendment reverted.");
-      await onRefresh();
-      setDraft("");
-      setSubmitState("confirmed");
-    } catch (error) {
-      setSubmitError(errorMessage(error));
-      setSubmitState("reverted");
-    }
-  }
-
-  return (
-    <SectionCard
-      title="Thesis history and amendment"
-      subtitle="Review the strategy record and append a permanent update"
-      icon={<BookOpen size={15} />}
-      action={<span className="stateBadge muted">Manager</span>}
-    >
-      <div className="operationFlow">
-        <div className="managedThesisHistory">
-          <article>
-            <span>Initial thesis</span>
-            <p>{initialThesisLoading ? "Loading initial thesis..." : initialThesis}</p>
-          </article>
-          <article>
-            <span>Latest amendment</span>
-            {versionCount > 1 ? (
-              <>
-                <p>{latestThesisLoading ? "Loading latest amendment..." : latestAmendment?.text ?? "Amendment unavailable"}</p>
-                {latestAmendment ? <time>{formatTimestamp(Number(latestAmendment.timestamp))}</time> : null}
-              </>
-            ) : (
-              <p className="mutedCopy">No amendments have been added.</p>
-            )}
-          </article>
-        </div>
-        <label className="fieldLabel" htmlFor="thesis-amendment">New amendment</label>
-        <textarea
-          id="thesis-amendment"
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            if (submitState === "confirmed" || submitState === "reverted") setSubmitState("idle");
-            if (submitError) setSubmitError(undefined);
-          }}
-          placeholder="Describe the updated investment thesis or rationale..."
-          rows={4}
-          aria-invalid={amendmentBytes > 2_048}
-          disabled={!canManage || submitting}
-        />
-        <p>{amendmentBytes.toLocaleString()} / 2,048 bytes. Amendments are permanent, public, and do not reset the portfolio change unlock.</p>
-        {amendmentBytes > 2_048 ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div><strong>Amendment is too long</strong><span>Shorten it to 2,048 UTF-8 bytes or fewer.</span></div>
-          </div>
-        ) : null}
-        {submitError ? (
-          <div className="validationSummary danger" role="alert">
-            <XCircle size={15} />
-            <div><strong>Amendment failed</strong><span>{submitError}</span></div>
-          </div>
-        ) : null}
-        <TxStatus state={submitState} />
-        <button
-          className="primaryAction"
-          type="button"
-          disabled={!canManage || !vaultAddress || !amendmentValid || submitting}
-          title={!canManage ? "Connect the manager wallet to submit amendments" : !amendmentValid ? "Enter an amendment within the contract limit" : undefined}
-          onClick={submitAmendment}
-        >
-          {submitting ? <Loader2 className="spin" size={14} /> : <BookOpen size={14} />}
-          {submitState === "pending" ? "Confirm in wallet" : submitState === "submitted" ? "Confirming amendment" : "Submit amendment"}
-        </button>
-      </div>
     </SectionCard>
   );
 }
@@ -4185,11 +4194,19 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     [vault.allocations],
   );
   const [targets, setTargets] = useState<TargetAsset[]>(initialTargets);
+  const [rationale, setRationale] = useState("");
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const activationRemaining = useLiveCountdown(vault.pendingStrategyActivationTime);
+  const { data: pendingRationale } = useReadContract({
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "pendingStrategyRationale",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.address && vault.strategyProposalPending), refetchInterval: 12_000 },
+  });
 
   useEffect(() => setTargets(initialTargets), [initialTargets]);
 
@@ -4214,6 +4231,15 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const weightsValid = weightSumValid && targetBoundsValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
+  const targetsChanged = targets.length !== vault.allocations.length || targets.some((target) => {
+    const current = vault.allocations.find(
+      (allocation) => allocation.address.toLowerCase() === target.address.toLowerCase(),
+    );
+    return !current || Math.round(Number(target.targetWeight) * 100) !== current.targetWeightBps;
+  });
+  const normalizedRationale = rationale.trim();
+  const rationaleBytes = new TextEncoder().encode(normalizedRationale).length;
+  const rationaleValid = rationaleBytes > 0 && rationaleBytes <= 2_048;
   const turnoverLimit = vault.maxTurnoverBps / 100;
   const turnoverBreach = turnover > turnoverLimit;
   const reductions = targetChanges.filter((asset) => asset.delta < -0.01);
@@ -4247,26 +4273,27 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   }
 
   async function submitTargets() {
-    if (!vault.address || !vault.connectedIsManager || !publicClient || !weightsValid || !addressesValid || !targetsUnique) return;
+    if (!vault.address || !vault.connectedIsManager || !publicClient || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid) return;
     setTxError(undefined);
     try {
       setTxState("simulating");
       const args = [
         targets.map((target) => target.address as `0x${string}`),
         targetWeightBps.map(BigInt),
+        normalizedRationale,
       ] as const;
       await publicClient.simulateContract({
         account: vault.manager as `0x${string}`,
         address: vault.address,
         abi: managedOtfVaultAbi,
-        functionName: "rebalance",
+        functionName: "proposeStrategy",
         args,
       });
       setTxState("pending");
       const hash = await writeContractAsync({
         address: vault.address,
         abi: managedOtfVaultAbi,
-        functionName: "rebalance",
+        functionName: "proposeStrategy",
         args,
         chainId: robinhoodChainTestnet.id,
       });
@@ -4274,6 +4301,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The target update reverted.");
       await onRefresh();
+      setRationale("");
       setTxState("confirmed");
     } catch (error) {
       setTxError(errorMessage(error));
@@ -4317,6 +4345,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             <small>{activationRemaining > 0 ? `Activates in ${formatCooldown(activationRemaining)}` : "Ready to activate"}</small>
           </div>
           <p>Current targets remain active during the 48-hour notice period, and holders may redeem before activation.</p>
+          <blockquote>{pendingRationale || "Reading the locked strategy rationale..."}</blockquote>
         </div>
       ) : null}
       <div className="builderBlock">
@@ -4373,6 +4402,26 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <Plus size={13} />
           Add asset
         </button>
+      </div>
+
+      <div className="builderBlock strategyRationaleComposer">
+        <div className="subHeader">
+          <span>Strategy rationale</span>
+          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 bytes</small>
+        </div>
+        <textarea
+          value={rationale}
+          onChange={(event) => {
+            setRationale(event.target.value);
+            setTxState("idle");
+            setTxError(undefined);
+          }}
+          rows={4}
+          placeholder="Explain why these target changes advance the investment strategy."
+          disabled={vault.strategyProposalPending}
+          aria-invalid={rationaleBytes > 2_048}
+        />
+        <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be amended separately.</p>
       </div>
 
       <div className="previewBlock">
@@ -4459,6 +4508,12 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
         ) : null}
+        {!targetsChanged ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Change at least one target</strong><span>Reordering the same assets or submitting identical weights does not create a new strategy.</span></div></div>
+        ) : null}
+        {!rationaleValid ? (
+          <div className={`riskCallout ${rationaleBytes > 2_048 ? "danger" : "warning"}`}><BookOpen size={15} /><div><strong>{rationaleBytes > 2_048 ? "Strategy rationale is too long" : "Strategy rationale required"}</strong><span>{rationaleBytes > 2_048 ? "Shorten it to 2,048 UTF-8 bytes or fewer." : "Explain the target change before submitting the proposal."}</span></div></div>
+        ) : null}
         {turnoverBreach ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
         ) : null}
@@ -4482,7 +4537,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeTargetWeights || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -5818,7 +5873,7 @@ function CreateVaultView({
                 <label>
                   <span>Initial investment thesis</span>
                   <textarea value={draft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
-                  <small>This begins the OTF&apos;s permanent, append-only thesis history.</small>
+                  <small>This becomes strategy version 0 and is permanently paired with the initial targets.</small>
                 </label>
                 <div className="formGrid twoColumns">
                   <div className="addressRoleField">
@@ -6028,7 +6083,7 @@ function CreateVaultView({
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
-                  <div><span>Strategy cooldown</span><strong>14 days after completion</strong></div>
+                  <div><span>Strategy cooldown</span><strong>14 days after deployment or completion</strong></div>
                   <div><span>Maximum turnover</span><strong>{draft.maxTurnover}%</strong></div>
                   <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
                   <div><span>Completion band</span><strong>+/- {draft.maxDeviation}%</strong></div>
@@ -6308,7 +6363,7 @@ function CreatedVaultView({
           <div><span>Assets</span><strong>{detailsReady ? vault.allocations.length : "Loading"}</strong></div>
           <div><span>Initial supply</span><strong>{detailsReady ? vault.totalSupply : "Loading"}</strong></div>
           <div><span>Manager</span><strong>{detailsReady ? shortAddress(vault.manager) : "Loading"}</strong></div>
-          <div><span>Strategy cooldown</span><strong>{detailsReady ? `${formatCooldown(vault.cooldownSeconds)} after completion` : "Loading"}</strong></div>
+          <div><span>Strategy cooldown</span><strong>{detailsReady ? `${formatCooldown(vault.cooldownSeconds)} after deployment or completion` : "Loading"}</strong></div>
         </div>
 
         {transactionHash ? (
@@ -6515,12 +6570,11 @@ function WalletView({
               <span className="stateBadge muted">{positions.length} position{positions.length === 1 ? "" : "s"}</span>
             </div>
             {positions.length ? <div className="directoryTableWrap"><table className="directoryTable depositsTable">
-              <thead><tr><th>OTF</th><th>Shares</th><th>NAV / share</th><th /></tr></thead>
+              <thead><tr><th>OTF</th><th>Shares</th><th>NAV / share</th></tr></thead>
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
                 <td><div className="directoryVault"><span>{symbolMonogram(position.symbol)}</span><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
                 <td data-label="NAV / share">{position.navPerShare ?? "Unavailable"}</td>
-                <td><ChevronRight size={14} /></td>
               </tr>)}</tbody>
             </table></div> : <div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div>}
           </section>
@@ -6726,7 +6780,7 @@ function ManageVaultsView({
   const [feeTransferError, setFeeTransferError] = useState<string>();
   const [executorState, setExecutorState] = useState<TxState>("idle");
   const [executorError, setExecutorError] = useState<string>();
-  const [activeOperation, setActiveOperation] = useState<"targets" | "rebalance" | "liquidity" | "roles" | "fees" | "thesis">("targets");
+  const [activeOperation, setActiveOperation] = useState<"targets" | "rebalance" | "liquidity" | "roles" | "fees">("targets");
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
@@ -6904,7 +6958,7 @@ function ManageVaultsView({
         <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Immediate transfer" />
         <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Immediate update" />
         <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub={["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"} />
-        <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Starts after completion" />
+        <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Starts at deployment; resets on completion" />
       </div>
 
       <div className="managerOperationTabs" role="tablist" aria-label="Manager operations">
@@ -6914,7 +6968,6 @@ function ManageVaultsView({
           ["liquidity", "Liquidity"],
           ["roles", "Roles"],
           ["fees", "Fees"],
-          ["thesis", "Thesis"],
         ] as const).map(([value, label]) => (
           <button
             className={activeOperation === value ? "active" : ""}
@@ -7054,22 +7107,13 @@ function ManageVaultsView({
         </SectionCard>
         ) : null}
 
-        {activeOperation === "thesis" ? (
-          <ThesisAmendmentCard
-            currentThesis={vault.currentThesis}
-            canManage={vault.connectedIsManager && vault.enabled}
-            vaultAddress={vault.address}
-            onRefresh={onRefresh}
-          />
-        ) : null}
-
         {activeOperation === "roles" ? (
         <SectionCard title="Manager permissions" subtitle="Capabilities constrained by the OTF contract" icon={<ShieldCheck size={15} />} action={<span className="stateBadge muted">Onchain</span>}>
           <div className="permissionList">
             <div><CheckCircle size={14} /><span><strong>May propose strategic targets</strong><small>Targets lock until the basket reaches its completion bands.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May authorize constrained executors</strong><small>{vault.authorizedExecutors.length} currently authorized; all are cleared on manager transfer.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, turnover, and exposure limits.</small></span></div>
-            <div><CheckCircle size={14} /><span><strong>May append thesis amendments</strong><small>History remains permanent and public.</small></span></div>
+            <div><CheckCircle size={14} /><span><strong>May propose targets with a rationale</strong><small>The rationale becomes permanent only when those targets activate.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot withdraw portfolio assets</strong><small>No arbitrary manager-call or asset-transfer path exists.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot shorten the change unlock</strong><small>The configured delay is permanently immutable.</small></span></div>
           </div>

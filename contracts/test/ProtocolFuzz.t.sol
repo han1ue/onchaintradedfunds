@@ -77,6 +77,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
 
     function testFuzzRebalanceSucceedsAtFixedBoundary(uint16 rawTargetWeight) public {
         uint16 targetA = uint16(bound(rawTargetWeight, 2_000, 8_000));
+        if (targetA == 5_000) targetA = 5_001;
         VaultInitParams memory params = _defaultParams();
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
