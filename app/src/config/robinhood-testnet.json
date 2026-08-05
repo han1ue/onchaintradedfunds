@@ -2,76 +2,76 @@
   "network": "robinhood-testnet",
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
-  "deployedAt": "2026-08-05T22:23:33.523Z",
+  "deployedAt": "2026-08-05T23:15:33.757Z",
   "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "treasury": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "protocolFeeShareBps": 1500,
   "contracts": {
     "assetRegistry": {
-      "address": "0xb6aF503F80BFd9eD4760c61eC53Dad3eF27E98d2",
-      "transactionHash": "0x055c6d73ca7ae95054e89265bb4edb8f2221e782b4bbd8ac43f338d327265228",
-      "blockNumber": "97431346",
-      "gasUsed": "310143"
+      "address": "0x10Cf474286Ab60A8A7438D07D5710856088ddE4b",
+      "transactionHash": "0x2b0c5ef60a9c8847d191a89eb48348e6277fff599d2dacfeb37ff1457c61729a",
+      "blockNumber": "97446478",
+      "gasUsed": "278289"
     },
     "oracleRegistry": {
-      "address": "0x14599488321313f6a46a53aeD67e94719051c966",
-      "transactionHash": "0xafb63f59e30b2b0f9cbadfdb1133676daae4af2b43268790fbef50fa04402b53",
-      "blockNumber": "97431358",
-      "gasUsed": "301507"
+      "address": "0xDa08bC73FAE2E23F825af28a7693102D457ceCC1",
+      "transactionHash": "0x7c78a6bc9e58d709fd50ea760ca0240d6141478bcc4c397b160a310c74f23e2d",
+      "blockNumber": "97446483",
+      "gasUsed": "270143"
     },
     "rebalanceExecutor": {
-      "address": "0xEE8e02804cd2e72dF2afDAfFEe539fC98E629151",
-      "transactionHash": "0x2f5ce305810ac7469dc5d09035a0911536f6afb37d1750657883900978e4cccf",
-      "blockNumber": "97431380",
-      "gasUsed": "842414"
+      "address": "0xfB009BAde552D89BFB10Eb57b11c0385a41E2F35",
+      "transactionHash": "0x8d7a182d138fb94e6d9738447208241921f67df421ff8260433d8cb519772f4f",
+      "blockNumber": "97446491",
+      "gasUsed": "767738"
     },
     "feeCollector": {
-      "address": "0xA1B96b2Db0bc3Dd2a3539F62602E7e213b709D79",
-      "transactionHash": "0xf151a4250698b9d4b58e17996b97ea24b49dc3c61f8b57aee80bf8fa6857dfa6",
-      "blockNumber": "97431389",
-      "gasUsed": "403941"
+      "address": "0xB2cff50ba817183DC147a340023bDf7e50fA1bbF",
+      "transactionHash": "0x76b6a3ae8e2fb9513dd6514b09d223e71fffeac6deec781625bcb0a1d2c8f567",
+      "blockNumber": "97446502",
+      "gasUsed": "363336"
     },
     "portfolioCalculator": {
-      "address": "0xf880bc5836dB2e8B78257AC24E5E7F8438595963",
-      "transactionHash": "0x7d0e9923326b6206f9cd22504403f8e018147f2b3219f3c3ca9777bff8ab4316",
-      "blockNumber": "97431403",
-      "gasUsed": "1856204"
+      "address": "0x3E46c3c45a58AF8a053CCa69D87817EFf23eb99C",
+      "transactionHash": "0x77d5a608a9a4d00853841e6f91718a37bbaac3a5094bc64cdb75fefb866e28c2",
+      "blockNumber": "97446511",
+      "gasUsed": "1689186"
     },
     "vaultStrategy": {
-      "address": "0xBc188ac3AA052E5B507589888d21Dc83c7D26C31",
-      "transactionHash": "0xc49cf0edc5b4ce71c541fbf39e8315fd7c9433aa0a0603dc2d89c1bd1d272dce",
-      "blockNumber": "97431412",
-      "gasUsed": "6265716"
+      "address": "0x837B5FA19765ffe7E164A9c3cb69EC0c123De55E",
+      "transactionHash": "0x80203ed5da35f28a1e3f2444cd7a51ee98a5b41f588ad63664e9fa176a33da66",
+      "blockNumber": "97446519",
+      "gasUsed": "5647516"
     },
     "vaultImplementation": {
-      "address": "0xEE9C6950539d33F30bE05bE1E07D5f1169a2EbB8",
-      "transactionHash": "0xd4ddb682855b46edef135a7a253a3ab6ac0b7d073b0e2df56e42e424a35352c8",
-      "blockNumber": "97431432",
-      "gasUsed": "6301120"
+      "address": "0xaD48D5D2a4BBdB20aBFE709ecb46279148306b4B",
+      "transactionHash": "0xc2cdea5c1b7cabbb1a231ab02f9e0246c6df181043e869644084a7f71012dca8",
+      "blockNumber": "97446523",
+      "gasUsed": "5633137"
     },
     "factory": {
-      "address": "0xE35F709f7643F52d6d92be2c3889f228Ad3F6803",
-      "transactionHash": "0x77774401b57a3abde28c2c681fd3269c7ced3e5b75519fece237c76bcabb1ff3",
-      "blockNumber": "97431443",
-      "gasUsed": "2095617"
+      "address": "0x8b550D4E8d41aD7A8202A0Fc1A66f8D861B3aAF7",
+      "transactionHash": "0x62a888bcf7936b17e4bf40a3bd36df66b01672fc55961d0896b89b15f4821063",
+      "blockNumber": "97446536",
+      "gasUsed": "1890669"
     },
     "v3MarketRegistry": {
-      "address": "0xD4F3520eF089B3BCd7A6CcA52d8bFfDF14Ea1FC2",
-      "transactionHash": "0x8d22233b1cdb426ec86a5e0e5cbe74a081c4c67f8813080655d2cf985d65e857",
-      "blockNumber": "97431452",
-      "gasUsed": "779413"
+      "address": "0x71D8B4A6f6613575DC8f8143565120A6cb9b84f5",
+      "transactionHash": "0xb00d895dc6a9d3632658f9061703c27e0dccbd4698af2491f7e095984066359a",
+      "blockNumber": "97446546",
+      "gasUsed": "703542"
     },
     "uniswapV3Adapter": {
-      "address": "0x044A074d46e85D05213C1B362d5A81f2147645C0",
-      "transactionHash": "0x605d250107610c9abc94f2542600670145a515dfcc6546270899e331d4d77654",
-      "blockNumber": "97431718",
-      "gasUsed": "1441147"
+      "address": "0xA0C1cb4DF9B9eA8fb2eCfFa2c9c225B92a8259a1",
+      "transactionHash": "0x45e0e4efc6e10da715f2a56cdb0ee3b738f2e07910a7e8e671ba5263150f9c7c",
+      "blockNumber": "97446992",
+      "gasUsed": "1318900"
     },
     "entryRouter": {
-      "address": "0xc859D05F080D2615064DEE1f7a485ef024549cf8",
-      "transactionHash": "0x2f234eff9977980d26e3050a073c7e44c3bb5aec4b125a9a567fc1fbd693ba89",
-      "blockNumber": "97431729",
-      "gasUsed": "1932989"
+      "address": "0xF01D748fD0c4160c12a02c606C85d0E573cd2186",
+      "transactionHash": "0xeccd7d5a81d05c3b248ba90203a8289a1c5a2f1d64975b117bc2ed6d7802a295",
+      "blockNumber": "97447010",
+      "gasUsed": "1769003"
     }
   },
   "externalContracts": {
@@ -96,11 +96,11 @@
         "initializedSqrtPriceX96": "79180668357225202841323746057608988",
         "activeLiquidity": "999400539460",
         "oracleFeed": "0x95036c26d99306170Ff8C8543E308d58cD5fCDF4",
-        "oracleAnswer": "100460000",
+        "oracleAnswer": "99840000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1785968631",
+        "oracleUpdatedAt": "1785971775",
         "alreadyConfigured": true,
-        "observedAtBlock": "97431679"
+        "observedAtBlock": "97446950"
       },
       {
         "symbol": "AMZN",
@@ -110,11 +110,11 @@
         "initializedSqrtPriceX96": "79053668401605370209944",
         "activeLiquidity": "0",
         "oracleFeed": "0x7309435B19A8cCF21dC12a0D874a0ed978bC98c1",
-        "oracleAnswer": "100360000",
+        "oracleAnswer": "99740000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1785968633",
+        "oracleUpdatedAt": "1785971777",
         "alreadyConfigured": true,
-        "observedAtBlock": "97431687"
+        "observedAtBlock": "97446958"
       },
       {
         "symbol": "PLTR",
@@ -124,11 +124,11 @@
         "initializedSqrtPriceX96": "79370645087677552619726",
         "activeLiquidity": "0",
         "oracleFeed": "0xaC09109ff45fEb68D53c21fB317aD1B437b5D533",
-        "oracleAnswer": "99670000",
+        "oracleAnswer": "100260000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1785968634",
+        "oracleUpdatedAt": "1785971778",
         "alreadyConfigured": true,
-        "observedAtBlock": "97431691"
+        "observedAtBlock": "97446962"
       },
       {
         "symbol": "NFLX",
@@ -140,9 +140,9 @@
         "oracleFeed": "0x6510b779AFF0A2118b47D134c256c93846DCdCa3",
         "oracleAnswer": "100130000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1785968635",
+        "oracleUpdatedAt": "1785971779",
         "alreadyConfigured": true,
-        "observedAtBlock": "97431698"
+        "observedAtBlock": "97446971"
       },
       {
         "symbol": "AMD",
@@ -152,139 +152,128 @@
         "initializedSqrtPriceX96": "83161998900413864639026",
         "activeLiquidity": "999101213180",
         "oracleFeed": "0x5AD99aD9a3dBC767d8A9Bd8220843b0fbB22ef38",
-        "oracleAnswer": "100070000",
+        "oracleAnswer": "99670000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1785968636",
+        "oracleUpdatedAt": "1785971780",
         "alreadyConfigured": true,
-        "observedAtBlock": "97431705"
+        "observedAtBlock": "97446979"
       }
     ],
-    "configuredAt": "2026-08-05T22:24:17.744Z"
+    "configuredAt": "2026-08-05T23:16:40.467Z"
   },
   "setupTransactions": {
     "setExecutorFactory": {
-      "transactionHash": "0x63f6bd162d6c76d72397508f3bd00ffde2e1c322147d38e94ff860b524aa930d",
-      "blockNumber": "97431462",
-      "gasUsed": "57401"
+      "transactionHash": "0x856f28b9b2e92c8a9e59e654d116ad9a081f3df6b0be4fa3ffb3b149b02fc417",
+      "blockNumber": "97446559",
+      "gasUsed": "52090"
     },
     "approvedAssets": [
       {
         "asset": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
-        "transactionHash": "0x8e3d0413b7de5dc3c27a9dc72cef8514755ac7b350f65f422c4f0fc9cb63887e",
-        "blockNumber": "97431485",
-        "gasUsed": "62358"
+        "transactionHash": "0x028c1bd7e8480456e3e61635d1db663a012ae2f4ea4db0836d7dcc7f2bbd558b",
+        "blockNumber": "97446576",
+        "gasUsed": "55781"
       },
       {
         "asset": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
-        "transactionHash": "0x0e4742fe08a936e1f8dac9dfd836d07f7f7f3513428a76878d0577cbfa3fb684",
-        "blockNumber": "97431498",
-        "gasUsed": "62358"
+        "transactionHash": "0x5d045a9963d716d282c62ecffed0d0d96528b47f430dac00064b56febb8cae2d",
+        "blockNumber": "97446590",
+        "gasUsed": "55781"
       },
       {
         "asset": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
-        "transactionHash": "0x23ee65d14ea6fba93fd7816b4a08935e27d9b730d8ea3330b9a533aa1186fb6f",
-        "blockNumber": "97431512",
-        "gasUsed": "62358"
+        "transactionHash": "0xf8a04cf8cd5447e5135ac4ed37c7cf1c35324abd7ea46be8913a55a5b98fd862",
+        "blockNumber": "97446603",
+        "gasUsed": "55781"
       },
       {
         "asset": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
-        "transactionHash": "0xfd3a3771cab4d092c12e5cc843d91e696294754881093f75d3b45fd352b79d8e",
-        "blockNumber": "97431519",
-        "gasUsed": "62358"
+        "transactionHash": "0x94a1c5a1a095cff1ec868ee22f2588dc118a9e0292f8a59c6646bfa3e348a7e6",
+        "blockNumber": "97446614",
+        "gasUsed": "55781"
       },
       {
         "asset": "0x71178BAc73cBeb415514eB542a8995b82669778d",
-        "transactionHash": "0x176db63ee1e906901499f79017aa9e2fabc5a391e15bea4c82213d324acf6f50",
-        "blockNumber": "97431531",
-        "gasUsed": "62358"
+        "transactionHash": "0x9c7b29ca81d422d5406f41bba510122741c6666a2f2fc52f2d31cb5ae101d592",
+        "blockNumber": "97446630",
+        "gasUsed": "55781"
       }
     ],
     "priceFeeds": [
       {
         "asset": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
         "feed": "0x95036c26d99306170Ff8C8543E308d58cD5fCDF4",
-        "transactionHash": "0x4bd82695baabd3c5bc050912831fbb4916d597be8d7fabd28d40432f2ff382ea",
-        "blockNumber": "97431545",
-        "gasUsed": "65326"
+        "transactionHash": "0xdd48a9c906631068e4ad562d57984cadc464b5229af9f1ea12e0ce6088e5061e",
+        "blockNumber": "97446641",
+        "gasUsed": "58718"
       },
       {
         "asset": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
         "feed": "0x7309435B19A8cCF21dC12a0D874a0ed978bC98c1",
-        "transactionHash": "0x899abf93a4c269eb931fd52f0018f90a6eeb456db79ac44344598669893e01c7",
-        "blockNumber": "97431553",
-        "gasUsed": "65326"
+        "transactionHash": "0x277251372bc137a05af8dd9fb2166a47138508b442d345d4e6e374323981d142",
+        "blockNumber": "97446653",
+        "gasUsed": "58749"
       },
       {
         "asset": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
         "feed": "0xaC09109ff45fEb68D53c21fB317aD1B437b5D533",
-        "transactionHash": "0x78ab5735b0d9f6bd53db4a95907c063f2899bc5dcfefb163a352f19ba925094f",
-        "blockNumber": "97431561",
-        "gasUsed": "65326"
+        "transactionHash": "0xe11e85c3d7595e34983329c4369819595cbbdda0ca3ec4791f2a347dec4426bf",
+        "blockNumber": "97446671",
+        "gasUsed": "58749"
       },
       {
         "asset": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
         "feed": "0x6510b779AFF0A2118b47D134c256c93846DCdCa3",
-        "transactionHash": "0x355b8139a354f42130d53a42e493b6076d645172773867867cf510768dfdfe8f",
-        "blockNumber": "97431582",
-        "gasUsed": "65326"
+        "transactionHash": "0xbed496715260b4c4301a117a13c4fd3395ff02f0809a3cb45318bb1499f77cee",
+        "blockNumber": "97446683",
+        "gasUsed": "58749"
       },
       {
         "asset": "0x71178BAc73cBeb415514eB542a8995b82669778d",
         "feed": "0x5AD99aD9a3dBC767d8A9Bd8220843b0fbB22ef38",
-        "transactionHash": "0x1c2de6e4b227ba3a9070a6194d5059f73eb0903dadf796585cca5d4ebafd97de",
-        "blockNumber": "97431595",
-        "gasUsed": "65326"
+        "transactionHash": "0x9a4062eceb25c60234f53b5e9f88a24600d14f65670290779f613bafe47f0635",
+        "blockNumber": "97446697",
+        "gasUsed": "58749"
       }
     ],
     "approvedAdapters": [
       {
-        "adapter": "0x044A074d46e85D05213C1B362d5A81f2147645C0",
-        "transactionHash": "0x0869c4cc0faf580509f41483414129ad5f68ab27cdd3934f408c92966d8136e1",
-        "blockNumber": "97431742",
-        "gasUsed": "63169"
+        "adapter": "0xA0C1cb4DF9B9eA8fb2eCfFa2c9c225B92a8259a1",
+        "transactionHash": "0xfbf27e05c63843b6f2ef9e3040095349c4e157b00f5c80f37496eae3532b40ad",
+        "blockNumber": "97447027",
+        "gasUsed": "56548"
       }
     ],
     "settlementEntry": [
       {
         "action": "approve-trade-adapter",
-        "transactionHash": "0x0869c4cc0faf580509f41483414129ad5f68ab27cdd3934f408c92966d8136e1",
-        "blockNumber": "97431742",
-        "gasUsed": "63169"
+        "transactionHash": "0xfbf27e05c63843b6f2ef9e3040095349c4e157b00f5c80f37496eae3532b40ad",
+        "blockNumber": "97447027",
+        "gasUsed": "56548"
       },
       {
         "action": "approve-entry-adapter",
-        "transactionHash": "0x638b752fca9a0d93f77825f40411d519903a6464d63f7c8b61efa2014a7f0d26",
-        "blockNumber": "97431752",
-        "gasUsed": "62324"
+        "transactionHash": "0x91bb7aae0ea4c387b0e9f0b992ce5b44b484f2d2306f902ac62a23343149b5b5",
+        "blockNumber": "97447037",
+        "gasUsed": "55716"
       },
       {
         "action": "authorize-rebalance-executor",
-        "transactionHash": "0x3c196fb758db98c7a4bab93aeb757a29f394db1f9823e42fd6203b4effcfd58c",
-        "blockNumber": "97431767",
-        "gasUsed": "59743"
+        "transactionHash": "0xd0808a887b2febf005b4b523d29838ed7b73ee4367f0fa71a691f99becccdb9b",
+        "blockNumber": "97447048",
+        "gasUsed": "53221"
       },
       {
         "action": "authorize-entry-router",
-        "transactionHash": "0xfc764569f6b10b850580d129e5147714abd37f06e129ee5e1c9ec480dd10321c",
-        "blockNumber": "97431780",
-        "gasUsed": "59743"
+        "transactionHash": "0x23d4d3478b5b310e984f6bf603e641e117c6cb122311a8e55ceb0322eb70d6b3",
+        "blockNumber": "97447067",
+        "gasUsed": "53233"
       }
     ],
     "setOfficialMarketRegistry": {
-      "transactionHash": "0xa2f7acbd640ea8e500c750065f984a67e478e75115c17e452eff1cebcf3e3853",
-      "blockNumber": "97431472",
-      "gasUsed": "61816"
+      "transactionHash": "0xcf90d00a88c4845ef85048a7fecd8c123ef23553c5fe71c87a269b3c82f4de83",
+      "blockNumber": "97446568",
+      "gasUsed": "56505"
     }
-  },
-  "sampleVault": {
-    "address": "0x05aAd1ba32583f64Baf14E241649d89A6875E687",
-    "name": "Autonomous Future OTF",
-    "symbol": "OTF-AUTO",
-    "transactionHash": "0xa378a668cd0bb8e9beae573eeaa00b76659c6fe600a2de86bed876a1786856a4",
-    "blockNumber": "97432912",
-    "createdAt": "2026-08-05T22:27:55.000Z",
-    "cooldownSeconds": "1209600",
-    "nextStrategyChangeTime": "1787178475",
-    "initialStrategyVersion": 0
   }
 }

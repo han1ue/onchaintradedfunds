@@ -7,7 +7,6 @@
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
     "contracts:configure:robinhood-testnet-mocks": "node scripts/configure-robinhood-testnet-mocks.mjs",
     "contracts:configure:robinhood-testnet-synthra": "node scripts/configure-robinhood-testnet-synthra.mjs",
-    "contracts:create-sample:robinhood-testnet": "node scripts/create-robinhood-testnet-sample.mjs",
     "contracts:walk:robinhood-testnet-mocks": "node scripts/walk-robinhood-testnet-mock-prices.mjs",
     "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",

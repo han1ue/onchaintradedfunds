@@ -647,17 +647,6 @@ initializes a new pool from NAV per share, and records it as the immutable offic
 liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
 Uniswap position it creates; the pool association cannot be removed or replaced.
 
-After venue configuration, create or re-verify the canonical AMD/TSLA sample and its deployment-time
-strategy history with:
-
-```bash
-corepack pnpm contracts:create-sample:robinhood-testnet
-```
-
-The command is idempotent for a factory containing exactly that one sample. It verifies the completed
-initial strategy snapshot, matching cooldown getters, and the 14-day deployment-based deadline before
-recording the sample address and transaction in the shared JSON.
-
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
 artifacts, then configure the five UI catalog assets with self-updating synthetic USD feeds:

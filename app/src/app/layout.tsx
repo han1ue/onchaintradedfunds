@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { AlertTriangle } from "lucide-react";
 import "./globals.css";
+import { AppTopBanner } from "@/components/AppTopBanner";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
@@ -19,18 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         />
       </head>
       <body>
-        <aside className="testnetWarningBanner" aria-label="Testnet risk warning">
-          <div>
-            <AlertTriangle aria-hidden="true" size={13} strokeWidth={2.2} />
-            <strong>Testnet</strong>
-            <span className="testnetWarningDesktop">
-              Contracts may be redeployed. Assets may be lost.
-            </span>
-            <span className="testnetWarningMobile">
-              Contracts may be redeployed. Assets may be lost.
-            </span>
-          </div>
-        </aside>
+        <AppTopBanner />
         {children}
       </body>
     </html>
