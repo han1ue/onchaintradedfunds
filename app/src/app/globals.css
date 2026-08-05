@@ -447,17 +447,22 @@ button.settingsOption:disabled {
 
 .settingsThemeChoices {
   display: grid;
-  width: fit-content;
+  width: calc(100% - 46px);
   gap: 7px;
+  margin-left: 46px;
 }
 
 .settingsThemeChoices.appearance {
-  grid-template-columns: repeat(3, 76px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 9px;
 }
 
 .settingsThemeChoices.palette {
-  grid-template-columns: repeat(2, 92px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settingsThemeChoice.mode-default {
+  grid-column: 1 / -1;
 }
 
 .settingsThemeChoice {

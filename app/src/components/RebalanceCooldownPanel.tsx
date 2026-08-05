@@ -1464,7 +1464,7 @@ export function TopNav({
                   <div className="settingsThemeChoices appearance" role="radiogroup" aria-label="Application appearance">
                     {(["default", "light", "dark"] as const).map((value) => (
                       <button
-                        className={`settingsThemeChoice ${theme === value ? "selected" : ""}`}
+                        className={`settingsThemeChoice ${value === "default" ? "mode-default" : ""} ${theme === value ? "selected" : ""}`}
                         key={value}
                         type="button"
                         role="radio"
