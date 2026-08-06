@@ -4367,6 +4367,15 @@ textarea::placeholder {
   color: var(--green);
 }
 
+.portfolioBandStatus {
+  margin-bottom: 14px;
+}
+
+.rebalanceTradeForm > .portfolioBandStatus,
+.operationFlow > .portfolioBandStatus {
+  margin-bottom: 0;
+}
+
 .builderActions {
   display: grid;
   grid-template-columns: 1fr 1fr;

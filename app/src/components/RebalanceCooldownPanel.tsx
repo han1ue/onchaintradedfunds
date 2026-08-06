@@ -660,6 +660,12 @@ function bpsToAllocationPercent(value: number): string {
   return `${(value / 100).toFixed(1)}%`;
 }
 
+function bpsToCompactPercent(value: number): string {
+  const percent = value / 100;
+  const fractionDigits = percent < 0.1 ? 2 : percent < 1 ? 1 : Number.isInteger(percent) ? 0 : 1;
+  return `${percent.toFixed(fractionDigits)}%`;
+}
+
 function signedBpsToAllocationPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${bpsToAllocationPercent(value)}`;
 }
@@ -4385,6 +4391,62 @@ function TxStatus({ state, persistent = false }: { state: TxState; persistent?: 
   );
 }
 
+function PortfolioBandStatus({ vault, context }: { vault: VaultView; context: "targets" | "rebalance" | "fees" }) {
+  const completionBand = bpsToPercent(vault.maxWeightDeviationBps);
+  const withinBands = vault.withinCompletionBands;
+  const beyondChallengeBands = !vault.withinChallengeBands;
+  const status = context === "rebalance"
+    ? withinBands
+      ? {
+          title: "Portfolio is healthy — rebalance optional",
+          detail: "Every constituent is within its target band. Trades remain available when they improve alignment and satisfy every contract limit.",
+          tone: "success",
+        }
+      : {
+          title: "Portfolio is outside target bands",
+          detail: `At least one constituent is more than ${completionBand} from its target. Rebalance toward the active weights before the current strategy can complete.`,
+          tone: "warning",
+        }
+    : context === "targets"
+      ? withinBands
+        ? {
+            title: "Portfolio is within target bands",
+            detail: "The in-band requirement for a new target proposal is satisfied. The strategy cooldown and any pending strategy or challenge still apply.",
+            tone: "success",
+          }
+        : {
+            title: "Portfolio is outside target bands",
+            detail: `New target proposals are blocked until every constituent returns within ${completionBand} of its active target. Use the Rebalance tab to correct the live portfolio.`,
+            tone: "warning",
+          }
+      : withinBands
+        ? {
+            title: vault.challengeActive ? "Portfolio restored — fees can be withdrawn" : "Portfolio is eligible for fee withdrawal",
+            detail: vault.challengeActive
+              ? "Withdrawing now resolves the active challenge and releases eligible manager fees."
+              : "Every constituent is within its completion band, so the fee-withdrawal requirement is satisfied.",
+            tone: "success",
+          }
+        : beyondChallengeBands
+          ? {
+              title: vault.challengeActive ? "Fee withdrawal blocked by the active challenge" : "Fee withdrawal would start a challenge",
+              detail: `The portfolio is beyond its wider ${bpsToPercent(vault.challengeWeightDeviationBps)} challenge bands. Rebalance within ${completionBand} before withdrawing manager fees.`,
+              tone: "danger",
+            }
+          : {
+              title: "Fee withdrawal is blocked",
+              detail: `The portfolio is outside its ${completionBand} completion bands, although it remains inside the wider challenge bands. Rebalance within the completion bands before withdrawing.`,
+              tone: "warning",
+            };
+
+  return (
+    <div className={`riskCallout portfolioBandStatus ${status.tone}`} role="status">
+      {status.tone === "success" ? <CheckCircle size={15} /> : <AlertTriangle size={15} />}
+      <div><strong>{status.title}</strong><span>{status.detail}</span></div>
+    </div>
+  );
+}
+
 function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
   const activeTargetsKey = vault.allocations
     .map((asset) => `${asset.address.toLowerCase()}:${asset.symbol}:${asset.targetWeightBps}`)
@@ -4477,7 +4539,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           : proposalCooldownRemaining > 0
             ? { title: "Strategy cooldown is active", detail: `New target proposals unlock in ${formatCooldown(proposalCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.` }
             : !vault.withinCompletionBands
-              ? { title: "Portfolio is outside its completion bands", detail: "Rebalance the live basket back inside every completion band before proposing new targets." }
+              ? undefined
               : { title: "Target proposal is not currently available", detail: "Refresh the onchain data to check the latest strategy state." };
 
   function updateTarget(index: number, patch: Partial<StrategyTargetAsset>) {
@@ -4565,6 +4627,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       icon={<Scale size={15} />}
       action={<span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Draft mode"}</span>}
     >
+      <PortfolioBandStatus vault={vault} context="targets" />
       {vault.strategyProposalPending ? (
         <div className="pendingStrategyNotice">
           <div className="subHeader">
@@ -4780,6 +4843,10 @@ function RebalanceTradesPanel({
     }
     return trades;
   }, [buyOptions, sellOptions]);
+  const recommendedTradeNavBps = recommendedTrades.reduce(
+    (total, trade) => total + trade.transferBps,
+    0,
+  );
   const [tokenIn, setTokenIn] = useState(recommendedTrades[0]?.sell.address ?? "");
   const [tokenOut, setTokenOut] = useState(recommendedTrades[0]?.buy.address ?? "");
   const [tradeSize, setTradeSize] = useState<10 | 25 | 50 | 100>(100);
@@ -5058,6 +5125,9 @@ function RebalanceTradesPanel({
       && predictedOutputDeviationScaled > outputCurrentDeviationScaled,
   );
   const maximumOutputWeightScaled = BigInt(vault.maxSingleAssetWeightBps) * 100n;
+  const predictedOutputWeightPrecise = predictedOutputWeightScaled !== undefined
+    ? Number(predictedOutputWeightScaled) / 10_000
+    : undefined;
   const exposureLimitExceeded = Boolean(
     predictedOutputWeightScaled !== undefined
       && outputCurrentWeightScaled !== undefined
@@ -5147,6 +5217,7 @@ function RebalanceTradesPanel({
       action={<span className={`stateBadge ${hasAllowedTrade ? vault.strategicRebalanceActive ? "warning" : "success" : "muted"}`}>{hasAllowedTrade ? vault.strategicRebalanceActive ? "Target active" : "Trade available" : "No trade needed"}</span>}
     >
       <div className="rebalanceTradeForm">
+        <PortfolioBandStatus vault={vault} context="rebalance" />
         {!hasAllowedTrade ? (
           <div className="inlineEmptyState rebalanceEmptyState">
             <CheckCircle size={16} />
@@ -5155,8 +5226,8 @@ function RebalanceTradesPanel({
         ) : null}
         <div className="recommendedTradePlan">
           <div className="subHeader">
-            <span>Recommended trades</span>
-            <small>{recommendedTrades.length} {recommendedTrades.length === 1 ? "trade" : "trades"} to minimize portfolio drift</small>
+            <span>Recommended sequence</span>
+            <small>{recommendedTrades.length} {recommendedTrades.length === 1 ? "trade" : "trades"} · {bpsToCompactPercent(recommendedTradeNavBps)} NAV planned · largest drift first</small>
           </div>
           <div className="recommendedTradeList" role="radiogroup" aria-label="Recommended rebalance trades">
             {recommendedTrades.map((trade) => {
@@ -5184,7 +5255,7 @@ function RebalanceTradesPanel({
                     <AssetLogo logoUrl={trade.buy.logoUrl} symbol={trade.buy.symbol} compact />
                     <span><small>Buy</small><strong>{trade.buy.symbol}</strong></span>
                   </span>
-                  <span className="recommendedTradeWeight">{(trade.transferBps / 100).toFixed(1)}% NAV</span>
+                  <span className="recommendedTradeWeight">{bpsToCompactPercent(trade.transferBps)} NAV</span>
                 </button>
               );
             })}
@@ -5308,7 +5379,7 @@ function RebalanceTradesPanel({
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would move too far past its target</strong><span>Crossing the target is allowed, but its predicted distance from target cannot exceed its current distance.</span></div></div>
         ) : null}
         {exposureLimitExceeded ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would exceed its exposure limit</strong><span>The quote predicts {predictedOutputWeight?.toFixed(2)}%, above this OTF&apos;s {bpsToPercent(vault.maxSingleAssetWeightBps)} maximum individual weight. Choose a smaller percentage.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would exceed its exposure limit</strong><span>The quote predicts {predictedOutputWeightPrecise?.toFixed(4)}%, slightly above this OTF&apos;s {bpsToPercent(vault.maxSingleAssetWeightBps)} maximum. Exactly {bpsToPercent(vault.maxSingleAssetWeightBps)} is allowed; choose a smaller trade percentage.</span></div></div>
         ) : null}
         {oracleValueLossTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
@@ -7820,6 +7891,7 @@ function ManageVaultsView({
         {activeOperation === "fees" ? (
         <SectionCard title="Manager fees" subtitle="Preview accrued OTF shares and withdraw them to the fee recipient" icon={<CircleDollarSign size={15} />} action={<span className={`stateBadge ${vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "success"}`}>{["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"}</span>}>
           <div className="operationFlow">
+            <PortfolioBandStatus vault={vault} context="fees" />
             <div className="accrualSummary">
               <div><span>Pending manager fees</span><strong>{pendingManagerFeeDisplay}</strong></div>
               <div><span>Manager fee</span><strong>{bpsToPercent(vault.creatorFeeBps)} / yr</strong></div>
@@ -7827,13 +7899,12 @@ function ManageVaultsView({
               <div><span>Historically forfeited</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
             </div>
             <p>Pending fees are calculated by simulating a withdrawal at the latest block. They are minted as OTF shares when the withdrawal confirms, with the protocol cut sent to the collector and the remainder sent to the fee recipient.</p>
-            <div className="riskCallout info"><Info size={15} /><div><strong>Targets gate fee withdrawals</strong><span>If the manager tries to withdraw while the portfolio is outside challenge bands, the strategy challenge starts instead.</span></div></div>
             {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Fee withdrawal failed</strong><span>{feeAccrualError}</span></div></div> : null}
             <TxStatus state={feeAccrualState} />
             <button
               className="secondaryAction"
               type="button"
-              disabled={!connectedAddress || !vault.connectedIsManager || !pendingManagerFeeShares || feeAccrualState === "pending" || feeAccrualState === "submitted"}
+              disabled={!connectedAddress || !vault.connectedIsManager || !vault.withinCompletionBands || !pendingManagerFeeShares || feeAccrualState === "pending" || feeAccrualState === "submitted"}
               onClick={withdrawVaultFees}
             >
               <CircleDollarSign size={14} />
