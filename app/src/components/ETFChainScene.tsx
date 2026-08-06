@@ -33,7 +33,7 @@ export function ETFChainScene() {
       alpha: false,
       antialias: true,
       powerPreference: "high-performance",
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
     };
     const webglContext =
       canvas.getContext("webgl2", contextAttributes) ||
@@ -51,7 +51,7 @@ export function ETFChainScene() {
         antialias: true,
         alpha: false,
         powerPreference: "high-performance",
-        preserveDrawingBuffer: true,
+        preserveDrawingBuffer: false,
       });
     } catch {
       setWebglFailed(true);
@@ -286,6 +286,7 @@ export function ETFChainScene() {
     let targetScroll = 0;
     let easedScroll = 0;
     let animationFrame = 0;
+    let previousFrameTime = 0;
     let running = true;
     let viewportWidth = window.innerWidth;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -319,7 +320,12 @@ export function ETFChainScene() {
     function render(time: number) {
       if (!running) return;
 
-      easedScroll += (targetScroll - easedScroll) * (reduceMotion ? 1 : 0.1);
+      const frameSeconds = previousFrameTime
+        ? Math.min(Math.max((time - previousFrameTime) / 1_000, 0), 0.1)
+        : 1 / 60;
+      previousFrameTime = time;
+      const scrollEase = reduceMotion ? 1 : 1 - Math.exp(-6.32 * frameSeconds);
+      easedScroll += (targetScroll - easedScroll) * scrollEase;
 
       const stateProgress =
         smoothRange(easedScroll, 0.08, 0.9) * (STATE_WEIGHTS.length - 1);
@@ -354,6 +360,9 @@ export function ETFChainScene() {
       const staticLabelVisibility = 1 - transferVisibility;
       const currentVisibility = 1 - smoothRange(stateFraction, 0.08, 0.62);
       const nextVisibility = smoothRange(stateFraction, 0.38, 0.92);
+      // The incoming snapshot settles only after the airborne bars have cleared it.
+      // Rendering both meshes in the same space caused depth-buffer flicker.
+      const settledSnapshotVisibility = smoothRange(stateFraction, 0.88, 0.98);
       plateMaterials.forEach((material, index) => {
         const visibility =
           index === stateIndex
@@ -364,17 +373,21 @@ export function ETFChainScene() {
         material.opacity = visibility * 0.68;
         plateEdgeMaterials[index].opacity = visibility * 0.8;
         blockLabelMaterials[index].opacity = visibility * (1 - transferAmount * 0.82);
+        const snapshotVisibility =
+          index === stateIndex + 1
+            ? nextVisibility * settledSnapshotVisibility
+            : visibility;
         snapshotMaterials[index].forEach((snapshotMaterial) => {
           snapshotMaterial.opacity =
-            visibility * (0.92 - transferAmount * 0.78);
+            snapshotVisibility * (0.92 - transferAmount * 0.78);
         });
         snapshotEdgeMaterials[index].forEach((edgeMaterial) => {
           edgeMaterial.opacity =
-            visibility * (0.3 - transferAmount * 0.25);
+            snapshotVisibility * (0.3 - transferAmount * 0.25);
         });
         snapshotLabelMaterials[index].forEach((labelMaterial) => {
           labelMaterial.opacity =
-            visibility * staticLabelVisibility * 0.98;
+            snapshotVisibility * staticLabelVisibility * 0.98;
         });
       });
 
@@ -436,6 +449,7 @@ export function ETFChainScene() {
       }
       if (!running) {
         running = true;
+        previousFrameTime = 0;
         animationFrame = window.requestAnimationFrame(render);
       }
     }

@@ -50,7 +50,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
       <main className="landingMain">
         <section className="landingHero">
           <div className="landingHeroCopy">
-            <p className="landingKicker">A familiar fund structure, expressed as onchain state</p>
+            <p className="landingKicker">A familiar investment instrument, expressed as onchain state</p>
             <h1>Onchain Traded Funds</h1>
             <p className="landingThesis">The ETF idea,<br />rebuilt onchain.</p>
             <p className="landingIntro">
