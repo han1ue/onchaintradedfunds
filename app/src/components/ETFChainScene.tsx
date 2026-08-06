@@ -156,11 +156,8 @@ export function ETFChainScene() {
     const plateMaterials: THREE.MeshPhysicalMaterial[] = [];
     const plateEdgeMaterials: THREE.LineBasicMaterial[] = [];
     const blockLabelMaterials: THREE.SpriteMaterial[] = [];
-    const snapshotMaterials: THREE.MeshStandardMaterial[][] = [];
-    const snapshotEdgeMaterials: THREE.LineBasicMaterial[][] = [];
-    const snapshotLabelMaterials: THREE.SpriteMaterial[][] = [];
 
-    STATE_WEIGHTS.forEach((weights, stateIndex) => {
+    STATE_WEIGHTS.forEach((_, stateIndex) => {
       const plateGroup = new THREE.Group();
       plateGroup.position.x = stateIndex * plateSpacing;
 
@@ -195,44 +192,6 @@ export function ETFChainScene() {
       blockLabel.position.set(1.15, 0.38, 1.15);
       blockLabelMaterials.push(blockLabel.material);
       plateGroup.add(blockLabel);
-
-      const stateMaterials: THREE.MeshStandardMaterial[] = [];
-      const stateEdgeMaterials: THREE.LineBasicMaterial[] = [];
-      const stateLabelMaterials: THREE.SpriteMaterial[] = [];
-      weights.forEach((weight, assetIndex) => {
-        const width = allocationWidth(weight);
-        const material = stockMaterials[assetIndex].clone();
-        material.opacity = 0.9;
-        stateMaterials.push(material);
-
-        const stock = new THREE.Mesh(stockGeometry, material);
-        stock.scale.x = width;
-        stock.position.set(-1.75 + width / 2, rowY[assetIndex], 0);
-        const stockEdgeMaterial = new THREE.LineBasicMaterial({
-          color: 0xe5eef2,
-          transparent: true,
-          opacity: 0.28,
-        });
-        stateEdgeMaterials.push(stockEdgeMaterial);
-        const stockEdges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(stockGeometry),
-          stockEdgeMaterial,
-        );
-        stock.add(stockEdges);
-        plateGroup.add(stock);
-
-        const label = createLabel(
-          `${TICKERS[assetIndex]}  ${weight}%`,
-          assetIndex === 2 ? "#f3cb72" : "#dce7ed",
-          1.64,
-        );
-        label.position.set(-0.94, rowY[assetIndex], 0.5);
-        stateLabelMaterials.push(label.material);
-        plateGroup.add(label);
-      });
-      snapshotMaterials.push(stateMaterials);
-      snapshotEdgeMaterials.push(stateEdgeMaterials);
-      snapshotLabelMaterials.push(stateLabelMaterials);
       chainRoot.add(plateGroup);
     });
 
@@ -328,7 +287,7 @@ export function ETFChainScene() {
       easedScroll += (targetScroll - easedScroll) * scrollEase;
 
       const stateProgress =
-        smoothRange(easedScroll, 0.08, 0.9) * (STATE_WEIGHTS.length - 1);
+        smoothRange(easedScroll, 0.02, 0.9) * (STATE_WEIGHTS.length - 1);
       const stateIndex = Math.min(
         Math.floor(stateProgress),
         STATE_WEIGHTS.length - 2,
@@ -354,15 +313,8 @@ export function ETFChainScene() {
       activeOutline.position.y = chainRoot.position.y - 0.13;
 
       const transferAmount = Math.sin(stateFraction * Math.PI);
-      const transferVisibility =
-        smoothRange(stateFraction, 0.12, 0.32) *
-        (1 - smoothRange(stateFraction, 0.68, 0.88));
-      const staticLabelVisibility = 1 - transferVisibility;
       const currentVisibility = 1 - smoothRange(stateFraction, 0.08, 0.62);
       const nextVisibility = smoothRange(stateFraction, 0.38, 0.92);
-      // The incoming snapshot settles only after the airborne bars have cleared it.
-      // Rendering both meshes in the same space caused depth-buffer flicker.
-      const settledSnapshotVisibility = smoothRange(stateFraction, 0.88, 0.98);
       plateMaterials.forEach((material, index) => {
         const visibility =
           index === stateIndex
@@ -373,25 +325,9 @@ export function ETFChainScene() {
         material.opacity = visibility * 0.68;
         plateEdgeMaterials[index].opacity = visibility * 0.8;
         blockLabelMaterials[index].opacity = visibility * (1 - transferAmount * 0.82);
-        const snapshotVisibility =
-          index === stateIndex + 1
-            ? nextVisibility * settledSnapshotVisibility
-            : visibility;
-        snapshotMaterials[index].forEach((snapshotMaterial) => {
-          snapshotMaterial.opacity =
-            snapshotVisibility * (0.92 - transferAmount * 0.78);
-        });
-        snapshotEdgeMaterials[index].forEach((edgeMaterial) => {
-          edgeMaterial.opacity =
-            snapshotVisibility * (0.3 - transferAmount * 0.25);
-        });
-        snapshotLabelMaterials[index].forEach((labelMaterial) => {
-          labelMaterial.opacity =
-            snapshotVisibility * staticLabelVisibility * 0.98;
-        });
       });
 
-      const moveProgress = smoothRange(stateFraction, 0.1, 0.9);
+      const moveProgress = smoothRange(stateFraction, 0.04, 0.9);
       transferGroups.forEach(
         ({ group, material, edgeMaterial, labelMaterial, assetIndex }) => {
           const currentWeight = STATE_WEIGHTS[stateIndex][assetIndex];
@@ -416,9 +352,9 @@ export function ETFChainScene() {
           );
           group.scale.x = width;
           group.rotation.z = Math.sin(stagger * Math.PI) * -0.06;
-          material.opacity = transferVisibility * 0.96;
-          edgeMaterial.opacity = transferVisibility * 0.52;
-          labelMaterial.opacity = transferVisibility;
+          material.opacity = 0.96;
+          edgeMaterial.opacity = 0.52;
+          labelMaterial.opacity = 1;
           labelMaterial.rotation = 0;
           group.children[1].scale.x = 1.24 / Math.max(width, 0.1);
         },
