@@ -15,7 +15,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         IManagedOTFStrategyHistory history = IManagedOTFStrategyHistory(address(vault));
 
         assertEq(vault.name(), "Test OTF");
-        assertEq(vault.symbol(), "OTF-TEST");
+        assertEq(vault.symbol(), "TEST");
         assertEq(vault.decimals(), 18);
         assertEq(vault.manager(), address(this));
         assertEq(vault.feeRecipient(), FEE_RECIPIENT);

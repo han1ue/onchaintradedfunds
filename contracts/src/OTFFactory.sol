@@ -18,6 +18,17 @@ interface IOfficialMarketRegistry {
 }
 
 contract OTFFactory is IAdapterAllowlist {
+    string private constant OTF_TOKEN_METADATA_URI =
+        "data:application/json;base64,eyJpbnRlcm9wIjp7ImVyYzEwNDYiOnRydWV9LCJkZXNjcmlwdGlvbiI6IkFuIE9uY2h"
+        "haW4gVHJhZGVkIEZ1bmQgRVJDLTIwIHNoYXJlIHRva2VuLiIsImltYWdlIjoiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCx"
+        "QSE4yWnlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpSUhacFpYZENiM2c5SWpBZ01DQXl"
+        "OVFlnTWpVMklqNDhjbVZqZENCNFBTSTNJaUI1UFNJM0lpQjNhV1IwYUQwaU1qUXlJaUJvWldsbmFIUTlJakkwTWlJZ2NuZzl"
+        "JalEwSWlCbWFXeHNQU0lqTVRNeU5qSTFJaUJ6ZEhKdmEyVTlJaU16TjJJM1lXRWlJSE4wY205clpTMXZjR0ZqYVhSNVBTSXV"
+        "OamdpSUhOMGNtOXJaUzEzYVdSMGFEMGlOU0l2UGp4d1lYUm9JR1pwYkd3OUlpTTNZbVE0WTJVaUlHWnBiR3d0Y25Wc1pUMGl"
+        "aWFpsYm05a1pDSWdaRDBpVFRNNUlEZ3lhRFl3ZGpreVNETTVWamd5V20weE55QXhOM1kxT0dneU5sWTVPVWcxTmxvaUx6NDh"
+        "jR0YwYUNCbWFXeHNQU0lqTjJKa09HTmxJaUJrUFNKTk1UQTJJRGd5YURVM2RqRTNhQzB5TUhZM05XZ3RNVGRXT1Rsb0xUSXd"
+        "Wamd5V20wMk5DQXdhRFE1ZGpFM2FDMHpNbll5TVdneU9IWXhOMmd0TWpoMk16ZG9MVEUzVmpneVdpSXZQand2YzNablBnPT0"
+        "ifQ==";
     using SafeTransferLib for address;
 
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
@@ -43,6 +54,7 @@ contract OTFFactory is IAdapterAllowlist {
     error LimitTooHigh();
     error InvalidLimit();
     error InvalidArrayLength();
+    error InvalidOTFName();
     error StrategyRationaleRequired();
     error StrategyRationaleTooLong(uint256 length);
     error Reentrancy();
@@ -214,6 +226,10 @@ contract OTFFactory is IAdapterAllowlist {
         emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);
     }
 
+    function otfTokenURI() external pure returns (string memory) {
+        return OTF_TOKEN_METADATA_URI;
+    }
+
     /// @notice Configures the official market registry before the first OTF is created.
     /// @dev It becomes permanently locked as soon as a vault exists.
     function setOfficialMarketRegistry(address registry) external onlyOwner {
@@ -239,6 +255,16 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
+        bytes calldata name = bytes(params.name);
+        uint256 nameLength = name.length;
+        if (
+            nameLength < 4 || name[nameLength - 4] != bytes1(" ")
+                || name[nameLength - 3] != bytes1("O") || name[nameLength - 2] != bytes1("T")
+                || name[nameLength - 1] != bytes1("F")
+        ) {
+            revert InvalidOTFName();
+        }
+
         uint256 rationaleLength = bytes(params.initialStrategyRationale).length;
         if (rationaleLength == 0) revert StrategyRationaleRequired();
         if (rationaleLength > MAX_STRATEGY_RATIONALE_BYTES) {

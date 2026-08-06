@@ -77,7 +77,7 @@ const contractRows = [
   ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
   ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
   ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
-  ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares, accrues fees, and enforces portfolio rules."],
+  ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],

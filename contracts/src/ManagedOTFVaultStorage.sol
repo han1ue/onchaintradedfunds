@@ -9,6 +9,7 @@ import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
 
 interface IProtocolPortfolioLimits {
     function minTargetWeightBps() external view returns (uint16);
+    function otfTokenURI() external pure returns (string memory);
 }
 
 abstract contract ManagedOTFVaultStorage is ERC20Base {
@@ -273,6 +274,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     function _protocolMinTargetWeightBps() internal view returns (uint16) {
         return IProtocolPortfolioLimits(factory).minTargetWeightBps();
+    }
+
+    function _protocolOtfTokenURI() internal view returns (string memory) {
+        return IProtocolPortfolioLimits(factory).otfTokenURI();
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {

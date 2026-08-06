@@ -38,7 +38,7 @@ Investors use the web application with an EVM wallet to:
 
 Creators and managers use the application to:
 
-- Create an OTF with a name, fixed `OTF-` ticker prefix, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, and permanent safety limits.
+- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, approved assets, target weights, creator fee, and permanent safety limits.
 - Open the immutable official OTF/USDG pool and add wallet-funded liquidity without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Propose target changes with a required rationale that becomes permanent when the strategy activates.
@@ -49,7 +49,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 
 ## Capabilities and Constraints
 
-- Each OTF is an ERC-20 share token and custodian of its own underlying basket.
+- Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
 - OTF creation is permissionless within factory-level validation and registry constraints.
 - The investor frontend exposes USDG entry and exit through either the official direct share market or atomic constituent-pool routing; direct basket controls remain contract-level primitives.
 - Every OTF factory transaction creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.

@@ -76,6 +76,7 @@ import {
   progressThroughCooldown,
 } from "@/lib/time";
 import { LandingPage } from "./LandingPage";
+import { OtfTokenIcon } from "./OtfTokenIcon";
 
 type ContractValue =
   | string
@@ -111,7 +112,7 @@ type Allocation = {
 type TargetAsset = {
   ticker: string;
   address: string;
-  targetWeight: number;
+  targetWeight: string | number;
   initialAmount: string;
 };
 
@@ -202,7 +203,7 @@ type VaultView = {
   claimableChallengeRewardValue?: bigint;
   canProposeStrategy: boolean;
   authorizedExecutors: readonly string[];
-  minTargetWeightBps: number;
+  minTargetWeightBps?: number;
   maxOracleStaleness: number;
   connectedIsManager: boolean;
   enabled: boolean;
@@ -1013,7 +1014,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const maxNavLossBps = resultAt<number>(results, 10) ?? 0;
   const maxWeightDeviationBps = resultAt<number>(results, 11) ?? 0;
   const cooldownSeconds = Number(resultAt<bigint>(results, 12) ?? BigInt(14 * 86_400));
-  const minTargetWeightBps = resultAt<number>(results, 13) ?? 0;
+  const minTargetWeightBps = resultAt<number>(results, 13);
   const maxOracleStaleness = resultAt<number>(results, 14) ?? 0;
   const totalAssetsValue = resultAt<bigint>(results, 15);
   const navPerShareValue = resultAt<bigint>(results, 16);
@@ -1220,7 +1221,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               </aside>
 
               <div className="dashboardSafety">
-                <SafetyLimits vault={vault} onRefresh={refetchVaultData} />
+                <SafetyLimits vault={vault} />
               </div>
             </div>
           </>
@@ -1668,7 +1669,7 @@ function VaultHeader({
       <section className="vaultHeader">
         <div className="vaultTitleRow">
           <div className="vaultIdentity">
-            <div className="vaultMonogram">{symbolMonogram(vault.symbol)}</div>
+            <OtfTokenIcon className="vaultMonogram" size={46} />
             <div>
               <div className="titleLine">
                 <h1>{vault.name}</h1>
@@ -4517,11 +4518,16 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
   const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
+  const protocolMinimumTargetWeightBps = vault.minTargetWeightBps;
   const belowMinimumTargets = targetWeightBps.flatMap((weight, index) =>
-    !Number.isFinite(weight) || weight < vault.minTargetWeightBps ? [targets[index].ticker] : [],
+    !Number.isFinite(weight) || protocolMinimumTargetWeightBps === undefined || weight < protocolMinimumTargetWeightBps
+      ? [targets[index].ticker]
+      : [],
   );
-  const targetMinimumValid = vault.minTargetWeightBps > 0 && belowMinimumTargets.length === 0;
-  const targetMinimumGuidance = `Increase each listed target to at least ${(vault.minTargetWeightBps / 100).toFixed(2)}%, or remove that asset from the proposal.`;
+  const targetMinimumValid = protocolMinimumTargetWeightBps !== undefined && belowMinimumTargets.length === 0;
+  const targetMinimumGuidance = protocolMinimumTargetWeightBps === undefined
+    ? "Wait for the protocol minimum target weight to load."
+    : `Increase each listed target to at least ${(protocolMinimumTargetWeightBps / 100).toFixed(2)}%, or remove that asset from the proposal.`;
   const weightsValid = weightSumValid && targetMinimumValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
@@ -4755,10 +4761,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                     value={target.targetWeight}
                     onChange={(event) => updateTargetWeight(index, event.target.value)}
                     type="number"
-                    min={vault.minTargetWeightBps / 100}
+                    min={protocolMinimumTargetWeightBps === undefined ? undefined : protocolMinimumTargetWeightBps / 100}
                     max={100}
                     step={0.01}
-                    placeholder={String(vault.minTargetWeightBps / 100)}
+                    placeholder={protocolMinimumTargetWeightBps === undefined ? "Loading" : String(protocolMinimumTargetWeightBps / 100)}
                     disabled={targetEditorLocked}
                     aria-label={`${target.ticker || "Asset"} draft target weight`}
                   />
@@ -5599,24 +5605,24 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   }
 }
 
-function SafetyLimits({ vault }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+function SafetyLimits({ vault }: { vault: VaultView }) {
   const limits = [
     ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
     ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
     ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
-    ["Minimum target weight", bpsToPercent(vault.minTargetWeightBps), "Protocol-wide allocation floor"],
+    ["Minimum target weight", vault.minTargetWeightBps === undefined ? "Loading" : bpsToPercent(vault.minTargetWeightBps), "Admin-controlled protocol floor"],
     ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
-    ["Strategy change cooldown", formatCooldown(vault.cooldownSeconds), "Starts after completion"],
+    ["Protocol strategy cooldown", formatCooldown(vault.cooldownSeconds), "Fixed protocol rule; not configurable per OTF"],
     ["Strategy activation delay", "48 hours", "Holder exit window"],
   ] as const;
 
   return (
     <SectionCard
       title="Safety limits"
-      subtitle="Immutable at deployment"
+      subtitle="Protocol-enforced configuration"
       icon={<ShieldCheck size={15} />}
-      action={<span className="stateBadge muted"><LockKeyhole size={11} /> Immutable</span>}
+      action={<span className="stateBadge muted"><LockKeyhole size={11} /> Enforced onchain</span>}
     >
       <div className="limitList">
         {limits.map(([label, value, description]) => (
@@ -5822,7 +5828,7 @@ function VaultsDirectory({
                   >
                     <td>
                       <div className="directoryVault">
-                        <span>{symbolMonogram(row.symbol)}</span>
+                        <OtfTokenIcon className="directoryVaultIcon" size={34} />
                         <div>
                           <strong>{row.name}</strong>
                           <small>{row.symbol} · {shortAddress(row.address)}</small>
@@ -5893,7 +5899,7 @@ function VaultsDirectory({
                 >
                   <td>
                     <div className="directoryVault">
-                      <span>{symbolMonogram(row.symbol)}</span>
+                      <OtfTokenIcon className="directoryVaultIcon" size={34} />
                       <div>
                         <strong>{row.name}</strong>
                         <small>{row.symbol} · {shortAddress(row.address)}</small>
@@ -5942,7 +5948,9 @@ function CreateVaultView({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(isTestnet && factoryAddress) },
   });
-  const protocolMinimumTargetWeightBps = Number(protocolMinimumTargetWeightResult ?? 0);
+  const protocolMinimumTargetWeightBps = protocolMinimumTargetWeightResult === undefined
+    ? undefined
+    : Number(protocolMinimumTargetWeightResult);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
@@ -5966,7 +5974,7 @@ function CreateVaultView({
   const [currentTimestamp, setCurrentTimestamp] = useState(() => BigInt(Math.floor(Date.now() / 1_000)));
   const [draft, setDraft] = useState({
     name: "",
-    symbol: "OTF-",
+    symbol: "",
     rationale: "",
     manager: connectedAddress ?? "",
     feeRecipient: connectedAddress ?? "",
@@ -6166,13 +6174,13 @@ function CreateVaultView({
     !approvalInProgress;
   const basicsValid =
     draft.name.trim().length > 2 &&
-    /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
+    /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
     draft.rationale.trim().length > 20 &&
     isAddress(draft.manager) &&
     isAddress(draft.feeRecipient);
   const portfolioValid =
     portfolio.length >= 2 &&
-    protocolMinimumTargetWeightBps > 0 &&
+    protocolMinimumTargetWeightBps !== undefined &&
     portfolio.every(
       (asset) =>
         asset.ticker.trim() &&
@@ -6198,16 +6206,16 @@ function CreateVaultView({
     Number(draft.challengeDeviation) > Number(draft.maxDeviation);
   const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid && challengeGraceValid;
   const basicsIssues = [
-    draft.name.trim().length > 2 ? null : "Enter an OTF name with at least 3 characters.",
-    /^OTF-[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Add a ticker suffix after OTF-.",
+    draft.name.trim().length > 2 ? null : "Enter a fund name with at least 3 characters.",
+    /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Enter a ticker using letters, numbers, or hyphens.",
     draft.rationale.trim().length > 20 ? null : "Write an initial strategy rationale with at least 21 characters.",
     isAddress(draft.manager) ? null : "Provide a valid manager address.",
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
     portfolio.length >= 2 ? null : "Add at least two assets to create an OTF in the app.",
-    protocolMinimumTargetWeightBps > 0 ? null : "Wait for the protocol target minimum to load.",
-    portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
+    protocolMinimumTargetWeightBps !== undefined ? null : "Wait for the protocol target minimum to load.",
+    protocolMinimumTargetWeightBps === undefined || portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
       ? null
       : `Every asset needs a target weight of at least ${bpsToPercent(protocolMinimumTargetWeightBps)}.`,
     initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
@@ -6300,17 +6308,55 @@ function CreateVaultView({
     setPortfolio((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
   }
 
+  function distributePortfolioWeight(totalBps: number, assets: TargetAsset[]) {
+    if (assets.length === 0) return [];
+    const weights = assets.map((asset) => Math.max(0, percentToBps(asset.targetWeight)));
+    const normalizedWeights = weights.some((weight) => weight > 0)
+      ? weights
+      : weights.map(() => 1);
+    const weightTotal = normalizedWeights.reduce((sum, weight) => sum + weight, 0);
+    const portions = normalizedWeights.map((weight, index) => {
+      const numerator = totalBps * weight;
+      return { index, bps: Math.floor(numerator / weightTotal), remainder: numerator % weightTotal };
+    });
+    let unassigned = totalBps - portions.reduce((sum, portion) => sum + portion.bps, 0);
+    portions
+      .slice()
+      .sort((left, right) => right.remainder - left.remainder || left.index - right.index)
+      .forEach((portion) => {
+        if (unassigned <= 0) return;
+        portions[portion.index].bps += 1;
+        unassigned -= 1;
+      });
+    return portions.map((portion) => (portion.bps / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1"));
+  }
+
+  function removePortfolioAsset(index: number) {
+    setPortfolio((current) => {
+      if (current.length <= 2) return current;
+      const remaining = current.filter((_, itemIndex) => itemIndex !== index);
+      const redistributed = distributePortfolioWeight(10_000, remaining);
+      return remaining.map((asset, itemIndex) => ({
+        ...asset,
+        targetWeight: redistributed[itemIndex],
+      }));
+    });
+  }
+
   function addPortfolioAsset() {
-    if (!nextAvailableAsset) return;
-    setPortfolio((current) => [
-      ...current,
-      {
-        ticker: nextAvailableAsset.symbol,
-        address: nextAvailableAsset.address,
-        targetWeight: 0,
-        initialAmount: "",
-      },
-    ]);
+    if (!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined) return;
+    setPortfolio((current) => {
+      const existingWeights = distributePortfolioWeight(10_000 - protocolMinimumTargetWeightBps, current);
+      return [
+        ...current.map((asset, index) => ({ ...asset, targetWeight: existingWeights[index] })),
+        {
+          ticker: nextAvailableAsset.symbol,
+          address: nextAvailableAsset.address,
+          targetWeight: (protocolMinimumTargetWeightBps / 100).toString(),
+          initialAmount: "",
+        },
+      ];
+    });
   }
 
   function vaultInitParams() {
@@ -6323,7 +6369,7 @@ function CreateVaultView({
     });
 
     return {
-      name: draft.name.trim(),
+      name: `${draft.name.trim()} OTF`,
       symbol: draft.symbol.trim(),
       initialStrategyRationale: draft.rationale.trim(),
       manager: draft.manager,
@@ -6532,27 +6578,31 @@ function CreateVaultView({
                 <div className="formGrid twoColumns">
                   <label>
                     <span>OTF name</span>
-                    <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Technology Leaders OTF" />
-                    <small>The name cannot be changed after deployment.</small>
+                    <div className="tickerInput fixedSuffixInput">
+                      <input
+                        value={draft.name}
+                        onChange={(event) => updateDraft("name", event.target.value.replace(/\s+OTF\s*$/i, ""))}
+                        placeholder="Technology Leaders"
+                        aria-label="OTF name without the required OTF suffix"
+                      />
+                      <span>OTF</span>
+                    </div>
+                    <small>Every name ends in OTF and cannot be changed after deployment.</small>
                   </label>
                   <label>
                     <span>OTF ticker</span>
-                    <div className="tickerInput">
-                      <span>OTF-</span>
-                      <input
-                        value={draft.symbol.slice(4)}
-                        onChange={(event) => {
-                          const suffix = event.target.value
-                            .toUpperCase()
-                            .replace(/[^A-Z0-9-]/g, "")
-                            .slice(0, 16);
-                          updateDraft("symbol", `OTF-${suffix}`);
-                        }}
-                        placeholder="TECH"
-                        aria-label="OTF ticker suffix"
-                      />
-                    </div>
-                    <small>The OTF- prefix is fixed, and the ticker cannot be changed after deployment.</small>
+                    <input
+                      value={draft.symbol}
+                      onChange={(event) => {
+                        const ticker = event.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9-]/g, "")
+                          .slice(0, 16);
+                        updateDraft("symbol", ticker);
+                      }}
+                      placeholder="TECH"
+                    />
+                    <small>Use letters, numbers, or hyphens. The ticker cannot be changed after deployment.</small>
                   </label>
                 </div>
                 <label>
@@ -6694,7 +6744,14 @@ function CreateVaultView({
                       <label className="assetWeightField">
                         <span>Target weight</span>
                         <div className="inputWithSuffix">
-                          <input type="number" min={protocolMinimumTargetWeightBps / 100} max={100} value={asset.targetWeight} onChange={(event) => updatePortfolio(index, { targetWeight: Number(event.target.value) })} />
+                          <input
+                            type="number"
+                            min={protocolMinimumTargetWeightBps === undefined ? undefined : protocolMinimumTargetWeightBps / 100}
+                            max={100}
+                            step={0.01}
+                            value={asset.targetWeight}
+                            onChange={(event) => updatePortfolio(index, { targetWeight: event.target.value })}
+                          />
                           <span>%</span>
                         </div>
                       </label>
@@ -6712,7 +6769,7 @@ function CreateVaultView({
                         type="button"
                         title={portfolio.length <= 2 ? "Creation requires at least two assets" : `Remove ${asset.ticker}`}
                         disabled={portfolio.length <= 2}
-                        onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        onClick={() => removePortfolioAsset(index)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -6723,15 +6780,18 @@ function CreateVaultView({
                   className="secondaryAction"
                   type="button"
                   onClick={addPortfolioAsset}
-                  disabled={!nextAvailableAsset}
+                  disabled={!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined}
                 >
                   <Plus size={14} />
                   Add asset
                 </button>
-                {!portfolioValid ? (
+                {portfolioIssues.length ? (
                   <div className="riskCallout warning">
                     <AlertTriangle size={15} />
-                    <div><strong>Portfolio needs attention</strong><span>Use at least two assets, keep every target at or above the current protocol minimum of {bpsToPercent(protocolMinimumTargetWeightBps)}, total exactly 100%, set a positive initial value, and wait for oracle prices.</span></div>
+                    <div>
+                      <strong>Portfolio needs attention</strong>
+                      <ul>{portfolioIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -6772,7 +6832,7 @@ function CreateVaultView({
               <div className="formSection reviewSection">
                 <div className="reviewHero">
                   <span className="vaultMonogram">NEW</span>
-                  <div><h2>{draft.name}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
+                  <div><h2>{draft.name.trim()} OTF</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
                 </div>
                 <div className="reviewGrid">
                   <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.creatorFee}%</strong></div>
@@ -6790,7 +6850,7 @@ function CreateVaultView({
                 <div>
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
-                    {portfolio.map((asset, index) => <span key={asset.address}><AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact /><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
+                    {portfolio.map((asset, index) => <span key={asset.address}><AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact /><strong>{asset.ticker}</strong>{Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
                   </div>
                 </div>
                 <div className="seedApprovalSection">
@@ -7268,7 +7328,7 @@ function WalletView({
             {positions.length ? <div className="directoryTableWrap"><table className="directoryTable depositsTable">
               <thead><tr><th>OTF</th><th>Shares</th><th>NAV / share</th></tr></thead>
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
-                <td><div className="directoryVault"><span>{symbolMonogram(position.symbol)}</span><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
+                <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
                 <td data-label="NAV / share">{position.navPerShare ?? "Unavailable"}</td>
               </tr>)}</tbody>
@@ -7811,7 +7871,7 @@ function ManageVaultsView({
 
       <section className="manageVaultHeader">
         <div className="vaultIdentity">
-          <span className="vaultMonogram">{symbolMonogram(vault.symbol)}</span>
+          <OtfTokenIcon className="vaultMonogram" size={46} />
           <div>
             <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span></div>
             <div className="addressLine"><AddressPill label="OTF" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>

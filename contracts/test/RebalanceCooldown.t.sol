@@ -288,8 +288,8 @@ contract RebalanceCooldownTest is TestBase {
         amounts[1] = 500 * ONE;
 
         params = VaultInitParams({
-            name: "Onchain Technology Leaders",
-            symbol: "OTF-TECH",
+            name: "Onchain Technology Leaders OTF",
+            symbol: "TECH",
             initialStrategyRationale: "A transparent basket of approved mock stock tokens.",
             manager: address(this),
             feeRecipient: address(0xFEE),

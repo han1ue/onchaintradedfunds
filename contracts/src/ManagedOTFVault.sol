@@ -119,6 +119,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             || interfaceId == ERC7621_INTERFACE_ID;
     }
 
+    /// @notice Returns ERC-1046 metadata for this OTF ERC-20 share token.
+    function tokenURI() external view returns (string memory) {
+        return _protocolOtfTokenURI();
+    }
+
     function owner() external view returns (address) {
         return manager;
     }

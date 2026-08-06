@@ -34,6 +34,7 @@ The vault is the custody and share-accounting boundary. It:
 - Holds constituent tokens.
 - Stores all mutable OTF state.
 - Issues the ERC-20 OTF share.
+- Exposes ERC-1046 token metadata whose image is an embedded SVG returned through the factory.
 - Handles proportional contribution and withdrawal.
 - Accrues protocol and manager fee shares.
 - Exposes ERC-7621-compatible views, actions, and events.

@@ -24,6 +24,7 @@ const {
   getAddress,
   http,
   isAddress,
+  nonceManager,
 } = viem;
 const { privateKeyToAccount } = accounts;
 
@@ -107,7 +108,7 @@ const deploymentConfig = JSON.parse(readFileSync(deploymentPath, "utf8"));
 const rpcUrl = env("RH_TESTNET_RPC_URL", env("RPC_URL", deploymentConfig.rpcUrl ?? defaultRpcUrl));
 const chainId = Number(deploymentConfig.chainId ?? defaultChainId);
 const protocolFeeShareBps = Number(deploymentConfig.protocolFeeShareBps ?? 1500);
-const account = privateKeyToAccount(privateKey);
+const account = privateKeyToAccount(privateKey, { nonceManager });
 const treasury = parseAddress("treasury", deploymentConfig.treasury ?? account.address);
 const approvedAssets = (deploymentConfig.setupTransactions?.approvedAssets ?? []).map((record) =>
   parseAddress("approved asset", record.asset),

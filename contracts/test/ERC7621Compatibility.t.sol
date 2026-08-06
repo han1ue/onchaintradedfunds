@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { IERC20TokenMetadata } from "../src/interfaces/IERC20.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -24,6 +25,14 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         assertTrue(vault.supportsInterface(type(IERC7621).interfaceId));
         assertFalse(vault.supportsInterface(0xffffffff));
         assertEq(vault.owner(), address(this));
+    }
+
+    function testSupportsERC1046TokenMetadata() public {
+        ManagedOTFVault vault = _createVault();
+        string memory metadataURI = IERC20TokenMetadata(address(vault)).tokenURI();
+
+        assertEq(metadataURI, factory.otfTokenURI());
+        assertGt(bytes(metadataURI).length, 0);
     }
 
     function testConstituentViewsFollowStandardSemantics() public {

@@ -54,6 +54,22 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
     }
 
+    function testFactoryRequiresOTFNameSuffix() public {
+        VaultInitParams memory params = _defaultParams();
+        params.name = "Test Fund";
+
+        vm.expectRevert(OTFFactory.InvalidOTFName.selector);
+        factory.createVault(params);
+
+        params.name = "Test otf";
+        vm.expectRevert(OTFFactory.InvalidOTFName.selector);
+        factory.createVault(params);
+
+        params.name = "TestOTF";
+        vm.expectRevert(OTFFactory.InvalidOTFName.selector);
+        factory.createVault(params);
+    }
+
     function testFactoryRejectsMismatchedArrays() public {
         VaultInitParams memory params = _defaultParams();
         params.initialAmounts = new uint256[](1);

@@ -95,6 +95,7 @@ flowchart LR
 `ManagedOTFVault`
 
 - ERC-20 vault-share token.
+- ERC-1046 `tokenURI()` metadata with an embedded dark-theme OTF SVG image.
 - Custodian of tracked underlying assets.
 - Proportional mint and redemption engine.
 - Manager-controlled rebalance engine with immutable safety bounds.

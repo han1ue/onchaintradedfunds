@@ -15,6 +15,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "tokenURI",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
     name: "manager",
     stateMutability: "view",
     inputs: [],
@@ -558,6 +565,13 @@ export const otfV3MarketRegistryAbi = [
 ] as const;
 
 export const otfFactoryAbi = [
+  {
+    type: "function",
+    name: "otfTokenURI",
+    stateMutability: "pure",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
   {
     type: "function",
     name: "minTargetWeightBps",

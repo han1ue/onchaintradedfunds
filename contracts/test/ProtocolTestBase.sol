@@ -117,7 +117,7 @@ abstract contract ProtocolTestBase is TestBase {
 
         params = VaultInitParams({
             name: "Test OTF",
-            symbol: "OTF-TEST",
+            symbol: "TEST",
             initialStrategyRationale: "A test portfolio with explicit safety limits.",
             manager: address(this),
             feeRecipient: FEE_RECIPIENT,

@@ -19,3 +19,7 @@ interface IERC20Metadata is IERC20 {
     function decimals() external view returns (uint8);
 }
 
+/// @notice ERC-1046 metadata extension for fungible tokens.
+interface IERC20TokenMetadata is IERC20Metadata {
+    function tokenURI() external view returns (string memory);
+}

@@ -124,7 +124,7 @@ if (Number(deployment.chainId) !== chainId) {
 }
 
 const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
-const account = privateKeyToAccount(privateKey);
+const account = privateKeyToAccount(privateKey, { nonceManager: viem.nonceManager });
 const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim() || deployment.rpcUrl;
 const contracts = deployment.contracts ?? {};
 const externalContracts = deployment.externalContracts ?? {};
