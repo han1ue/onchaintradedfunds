@@ -4560,6 +4560,17 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const turnoverBreach = turnover > turnoverLimit;
   const targetEditorLocked = vault.strategyProposalPending
     || (vault.connectedIsManager && !vault.canProposeStrategy);
+  const targetEditorLockMessage = vault.challengeActive
+    ? "New target proposals resume after the active challenge is resolved."
+    : vault.strategyProposalPending
+      ? "Activate or cancel the pending proposal before editing another one."
+      : vault.strategicRebalanceActive
+        ? "New target proposals resume after the active strategic rebalance is completed."
+        : proposalCooldownRemaining > 0
+          ? `New target proposals resume when the cooldown ends in ${formatCooldown(proposalCooldownRemaining)}.`
+          : !vault.withinCompletionBands
+            ? "New target proposals resume after every constituent returns within its completion band."
+            : "New target proposals are temporarily unavailable. Refresh the onchain data to check again.";
 
   function formatDraftWeight(weightBps: number) {
     return (weightBps / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
@@ -4723,6 +4734,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <blockquote>{pendingRationale || "Reading the locked strategy rationale..."}</blockquote>
         </div>
       ) : null}
+      <div className={`targetEditorSurface ${targetEditorLocked ? "locked" : ""}`} aria-disabled={targetEditorLocked}>
       <div className="builderBlock">
         <div className="subHeader">
           <span>Target weights</span>
@@ -4803,7 +4815,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         />
         <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be edited.</p>
       </div>
-
       <div className="previewBlock">
         <div className="subHeader">
           <span>Live portfolio vs targets</span>
@@ -4866,6 +4877,16 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       </div>
 
       <TxStatus state={txState} persistent />
+      {targetEditorLocked ? (
+        <div className="targetEditorLockOverlay" role="note">
+          <div className="targetEditorLockMessage">
+            <LockKeyhole size={18} />
+            <strong>Target editor locked</strong>
+            <span>{targetEditorLockMessage}</span>
+          </div>
+        </div>
+      ) : null}
+      </div>
       <div className="builderActions">
         {vault.strategyProposalPending ? <>
           <button className="secondaryAction" type="button" disabled={!vault.connectedIsManager || txState === "pending" || txState === "submitted"} onClick={() => submitPendingAction("cancelPendingStrategy")}>

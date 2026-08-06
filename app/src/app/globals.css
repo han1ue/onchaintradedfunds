@@ -4091,6 +4091,51 @@ textarea::placeholder {
   line-height: 1.5;
 }
 
+.targetEditorSurface {
+  position: relative;
+}
+
+.targetEditorSurface.locked > :not(.targetEditorLockOverlay) {
+  filter: blur(1.5px);
+  opacity: 0.48;
+  user-select: none;
+}
+
+.targetEditorLockOverlay {
+  position: absolute;
+  z-index: 2;
+  inset: -2px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(11 16 24 / 58%);
+  backdrop-filter: blur(3px);
+}
+
+.targetEditorLockMessage {
+  display: grid;
+  max-width: 440px;
+  justify-items: center;
+  gap: 7px;
+  padding: 20px;
+  color: var(--text);
+  text-align: center;
+}
+
+.targetEditorLockMessage svg {
+  color: var(--warning);
+}
+
+.targetEditorLockMessage strong {
+  font-size: 0.82rem;
+}
+
+.targetEditorLockMessage span {
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .pendingStrategyAssets {
   display: flex;
   flex-wrap: wrap;
