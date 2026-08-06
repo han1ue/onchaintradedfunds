@@ -47,8 +47,8 @@ for (const asset of catalog.assets ?? []) {
     continue;
   }
 
-  if (asset.logoUrl !== match.logoUrl) updated += 1;
-  asset.logoUrl = match.logoUrl;
+  if (asset.robinhoodLogoUrl !== match.logoUrl) updated += 1;
+  asset.robinhoodLogoUrl = match.logoUrl;
 }
 
 if (unmatched.length) {
@@ -56,4 +56,4 @@ if (unmatched.length) {
 }
 
 await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
-console.log(`Matched ${catalog.assets.length} supported assets; updated ${updated} logo URL(s).`);
+console.log(`Matched ${catalog.assets.length} supported assets; updated ${updated} Robinhood logo URL(s).`);

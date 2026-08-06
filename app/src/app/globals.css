@@ -1675,6 +1675,7 @@ button:disabled {
   display: grid;
   width: 32px;
   height: 32px;
+  box-sizing: border-box;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 7px;
@@ -1683,7 +1684,10 @@ button:disabled {
 }
 
 .assetLogo {
-  padding: 3px;
+  border: 1px solid rgb(0 0 0 / 10%);
+  background: #fff;
+  object-position: center;
+  padding: 5px;
 }
 
 .assetLogoFallback {
@@ -1700,6 +1704,10 @@ button:disabled {
   height: 22px;
   border-radius: 5px;
   font-size: 0.5rem;
+}
+
+.assetLogo.compact {
+  padding: 3px;
 }
 
 .assetNameWithLogo,
@@ -5239,7 +5247,66 @@ input.invalid {
 .createAssetRow select,
 .createAssetRow > label > input,
 .createAssetRow .inputWithSuffix {
-  height: 38px;
+  height: 34px;
+}
+
+.createAssetPicker {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 14px;
+  height: 34px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-raised);
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.createAssetPicker:focus-within {
+  border-color: rgb(var(--accent-rgb) / 62%);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
+}
+
+.createAssetPickerIdentity {
+  min-width: 0;
+  line-height: 1.05;
+}
+
+.createAssetPickerIdentity strong,
+.createAssetPickerIdentity small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.createAssetPickerIdentity strong {
+  color: var(--text);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.createAssetPickerIdentity small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.54rem;
+}
+
+.createAssetPicker > svg {
+  color: var(--text-muted);
+}
+
+.createAssetPicker > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
 }
 
 .initialPortfolioValueField {
@@ -5281,7 +5348,7 @@ input.invalid {
 .assetOraclePriceField strong,
 .assetSeedField strong {
   display: flex;
-  min-height: 38px;
+  min-height: 34px;
   overflow: hidden;
   align-items: center;
   border-bottom: 1px solid var(--border);
@@ -5311,7 +5378,7 @@ input.invalid {
 .createAssetRow > button {
   display: grid;
   width: 32px;
-  height: 38px;
+  height: 34px;
   margin-top: 18px;
   place-items: center;
   border: 0;
@@ -6282,6 +6349,44 @@ input.invalid {
   }
 }
 
+@media (max-width: 960px) {
+  .createAssetRow {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.48fr) 32px;
+    min-width: 0;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .createAssetList {
+    overflow: visible;
+  }
+
+  .createAssetRow > .assetSelectField {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+
+  .createAssetRow > .assetWeightField {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .createAssetRow > .assetOraclePriceField {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .createAssetRow > .assetSeedField {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+
+  .createAssetRow > button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
 @media (max-width: 760px) {
   .topNavInner,
   .dashboardMain {
@@ -6573,42 +6678,6 @@ input.invalid {
   .seedApprovalComplete {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .createAssetRow {
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.48fr) 32px;
-    min-width: 0;
-    gap: 9px;
-    padding: 10px;
-  }
-
-  .createAssetList {
-    overflow: visible;
-  }
-
-  .createAssetRow > .assetSelectField {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-
-  .createAssetRow > .assetWeightField {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .createAssetRow > .assetOraclePriceField {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .createAssetRow > .assetSeedField {
-    grid-column: 1 / 3;
-    grid-row: 3;
-  }
-
-  .createAssetRow > button {
-    grid-column: 3;
-    grid-row: 3;
   }
 
   .accrualSummary {

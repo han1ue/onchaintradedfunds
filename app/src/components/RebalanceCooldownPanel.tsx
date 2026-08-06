@@ -17,6 +17,7 @@ import {
   ChartPie,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -575,6 +576,8 @@ function AssetLogo({ logoUrl, symbol, compact = false }: {
       className={`assetLogo${compact ? " compact" : ""}`}
       src={logoUrl}
       alt=""
+      width={compact ? 22 : 32}
+      height={compact ? 22 : 32}
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
@@ -5977,9 +5980,15 @@ function CreateVaultView({
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
                       <label className="assetSelectField">
                         <span>Asset</span>
-                        <div className="assetSelectWithLogo">
+                        <div className="createAssetPicker">
                           <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
+                          <span className="createAssetPickerIdentity">
+                            <strong>{asset.ticker}</strong>
+                            <small>{catalogAssetForAddress(asset.address)?.name ?? "Supported asset"}</small>
+                          </span>
+                          <ChevronDown aria-hidden="true" size={14} />
                           <select
+                            aria-label={`Asset ${index + 1}`}
                             value={asset.address}
                             onChange={(event) => {
                               const selected = testnetCreateAssets.find((candidate) => candidate.address === event.target.value);

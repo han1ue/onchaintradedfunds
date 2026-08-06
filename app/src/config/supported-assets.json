@@ -13,7 +13,9 @@
           "contractAddress": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E"
         }
       ],
-      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x322f0929c4625ed5bad873c95208d54e1c003b2d.png"
+      "logoUrl": "/assets/stockLogos/tesla.svg",
+      "logoSourceUrl": "https://upload.wikimedia.org/wikipedia/commons/b/bd/Tesla_Motors.svg",
+      "robinhoodLogoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x322f0929c4625ed5bad873c95208d54e1c003b2d.png"
     },
     {
       "symbol": "AMZN",
@@ -28,7 +30,9 @@
           "contractAddress": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02"
         }
       ],
-      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x12f190a9f9d7d37a250758b26824b97ce941bf54.png"
+      "logoUrl": "/assets/stockLogos/amazon.svg",
+      "logoSourceUrl": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg",
+      "robinhoodLogoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x12f190a9f9d7d37a250758b26824b97ce941bf54.png"
     },
     {
       "symbol": "PLTR",
@@ -43,7 +47,9 @@
           "contractAddress": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0"
         }
       ],
-      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x894e1ec2d74ffe5aef8dc8a9e84686accb964f2a.png"
+      "logoUrl": "/assets/stockLogos/palantir.svg",
+      "logoSourceUrl": "https://www.svgrepo.com/show/342103/palantir.svg",
+      "robinhoodLogoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x894e1ec2d74ffe5aef8dc8a9e84686accb964f2a.png"
     },
     {
       "symbol": "NFLX",
@@ -58,7 +64,9 @@
           "contractAddress": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93"
         }
       ],
-      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0xe0444ef8bf4ed74f74fd73686e2ddf4c1c5591e8.png"
+      "logoUrl": "/assets/stockLogos/netflix.svg",
+      "logoSourceUrl": "https://upload.wikimedia.org/wikipedia/commons/1/18/Netflix_2016_N_logo.svg",
+      "robinhoodLogoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0xe0444ef8bf4ed74f74fd73686e2ddf4c1c5591e8.png"
     },
     {
       "symbol": "AMD",
@@ -73,7 +81,9 @@
           "contractAddress": "0x71178BAc73cBeb415514eB542a8995b82669778d"
         }
       ],
-      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x86923f96303d656e4aa86d9d42d1e57ad2023fdc.png"
+      "logoUrl": "/assets/stockLogos/amd.svg",
+      "logoSourceUrl": "https://upload.wikimedia.org/wikipedia/commons/7/7c/AMD_Logo.svg",
+      "robinhoodLogoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x86923f96303d656e4aa86d9d42d1e57ad2023fdc.png"
     }
   ]
 }
