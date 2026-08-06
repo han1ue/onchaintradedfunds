@@ -1163,20 +1163,18 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               onBack={() => openView("vaults")}
               onManage={() => openView("manage")}
             />
-            <ChallengeCountdownBanner vault={vault} />
             <DataProvenance vault={vault} />
             <VaultMetrics vault={vault} />
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} />
+                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} onRefresh={refetchVaultData} />
                 <UserActions vault={vault} />
               </div>
 
               <aside className="sideColumn">
                 <StrategyHistoryModule vault={vault} />
                 <RebalanceCooldown vault={vault} />
-                <StrategyChallenge vault={vault} onRefresh={refetchVaultData} />
               </aside>
 
               <div className="dashboardSafety">
@@ -1921,23 +1919,43 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
   const portfolioCooldownRemaining = useLiveCountdown(vault.nextStrategyChange);
   const portfolioCooldownComplete = isLive && portfolioCooldownRemaining === 0;
   const proposalAvailable = isLive && vault.canProposeStrategy;
+  const lifecycleStage = !isLive
+    ? "Live data required"
+    : vault.challengeActive
+      ? "Challenge active"
+      : vault.strategyProposalPending
+        ? "Activation pending"
+        : vault.strategicRebalanceActive
+          ? "Rebalancing"
+          : proposalAvailable
+            ? "Ready for proposal"
+            : portfolioCooldownComplete
+              ? "Portfolio state blocked"
+              : "Cooling down";
+  const lifecycleTone = !isLive
+    ? "muted"
+    : vault.challengeActive
+      ? "danger"
+      : proposalAvailable
+        ? "success"
+        : "warning";
   return (
     <SectionCard
-      title="Strategy cooldown"
-      subtitle={`${formatCooldown(vault.cooldownSeconds)} after deployment or successful rebalance completion`}
+      title="Strategy lifecycle"
+      subtitle="Current stage and next strategy-change window"
       icon={<Clock3 size={15} />}
-      action={<span className={`stateBadge ${isLive ? (proposalAvailable ? "success" : "warning") : "muted"}`}>{isLive ? (proposalAvailable ? "Proposal available" : portfolioCooldownComplete ? "Portfolio state blocked" : "Cooling down") : "Live data required"}</span>}
+      action={<span className={`stateBadge ${lifecycleTone}`}>{lifecycleStage}</span>}
     >
       <div className="cooldownStats">
+        <TimelineItem label="Current stage" value={lifecycleStage} icon={<Activity size={13} />} />
         <TimelineItem label="Cooldown length" value={vault.isLoading ? "Loading" : formatCooldown(vault.cooldownSeconds)} icon={<LockKeyhole size={13} />} />
         <TimelineItem label="Strategy baseline" value={isLive ? formatTimestamp(vault.lastStrategyCompletion) : "Not available"} icon={<Clock3 size={13} />} />
         <TimelineItem label="Cooldown ends" value={isLive ? (portfolioCooldownComplete ? "Complete" : formatTimestamp(vault.nextStrategyChange)) : "Not available"} icon={<Activity size={13} />} />
-        <TimelineItem label="Proposal state" value={isLive ? (proposalAvailable ? "Available" : portfolioCooldownComplete ? "Blocked" : "Cooling down") : "Not available"} icon={<Activity size={13} />} />
       </div>
 
       {isLive ? <div className="progressBlock">
         <div className="progressMeta">
-          <span>Unlock progress</span>
+          <span>Cooldown progress</span>
           <strong>{formatRelativeAvailability(vault.nextStrategyChange)}</strong>
         </div>
         <div className="progressTrack">
@@ -1994,10 +2012,12 @@ function PortfolioAllocation({
   vault,
   allocations,
   oraclePrices,
+  onRefresh,
 }: {
   vault: VaultView;
   allocations: Allocation[];
   oraclePrices: CatalogOraclePrices;
+  onRefresh: () => Promise<unknown>;
 }) {
   const holdingContracts = vault.address && allocations.length
     ? allocations.flatMap((asset) => ([
@@ -2049,7 +2069,6 @@ function PortfolioAllocation({
       <div className="allocationLegend">
         {allocations.map((asset) => (
           <span className="legendItem" key={asset.address}>
-            <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact />
             <span className={`legendSwatch ${asset.tone}`} />
             <span>{asset.symbol}</span>
             <strong>{bpsToAllocationPercent(asset.actualWeightBps)}</strong>
@@ -2110,13 +2129,7 @@ function PortfolioAllocation({
         </table>
       </div>
 
-      <div className="executionPolicy portfolioMandate">
-        <ShieldCheck size={14} />
-        <div>
-          <strong>Bounded portfolio authority</strong>
-          <span>The manager may rotate assets only inside these bounds and cannot transfer OTF assets out.</span>
-        </div>
-      </div>
+      <StrategyChallenge vault={vault} onRefresh={onRefresh} />
     </SectionCard>
   );
 }
@@ -2269,12 +2282,17 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
           <p>{pendingRationaleLoading ? "Loading the locked strategy rationale..." : pendingRationale || "Locked rationale unavailable."}</p>
           {pendingChanges.length ? <div className="strategyTargetChanges">
             {pendingChanges.map((row) => <div key={row.address}>
-              <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
-              <span>
-                {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
-                <ArrowRight size={11} />
-                {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
-              </span>
+              <div className="strategyTargetChangeHeader">
+                <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
+                <span>
+                  {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
+                  <ArrowRight size={11} />
+                  {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
+                </span>
+              </div>
+              <div className="strategyTargetTrack" role="img" aria-label={`${row.symbol} pending target ${bpsToPercent(row.nextWeight)}`}>
+                <span style={{ width: `${Math.max(0, Math.min(100, row.nextWeight / 100))}%` }} />
+              </div>
             </div>)}
           </div> : null}
           <span>Current targets remain active until the 48-hour notice window closes.</span>
@@ -2313,16 +2331,21 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
                 <div className="strategyTargetChanges">
                   {changes.rows.map((row) => (
                     <div key={row.address}>
-                      <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
-                      {isInitial ? (
-                        <span>{bpsToPercent(row.nextWeight)}</span>
-                      ) : (
-                        <span>
-                          {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
-                          <ArrowRight size={11} />
-                          {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
-                        </span>
-                      )}
+                      <div className="strategyTargetChangeHeader">
+                        <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
+                        {isInitial ? (
+                          <span>{bpsToPercent(row.nextWeight)}</span>
+                        ) : (
+                          <span>
+                            {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
+                            <ArrowRight size={11} />
+                            {row.nextWeight === 0 ? <em>Removed</em> : bpsToPercent(row.nextWeight)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="strategyTargetTrack" role="img" aria-label={`${row.symbol} target ${bpsToPercent(row.nextWeight)}`}>
+                        <span style={{ width: `${Math.max(0, Math.min(100, row.nextWeight / 100))}%` }} />
+                      </div>
                     </div>
                   ))}
                   {changes.unchangedCount > 0 ? <small>{changes.unchangedCount} unchanged asset{changes.unchangedCount === 1 ? "" : "s"}</small> : null}
@@ -3600,44 +3623,46 @@ function UserActions({
             </tbody>
           </table>
         </div>
-        <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
-          <button
-            className={activeAction === "deposit" ? "active" : ""}
-            type="button"
-            aria-pressed={activeAction === "deposit"}
-            onClick={() => changeAction("deposit")}
-          >
-            Deposit
-          </button>
-          <button
-            className={activeAction === "redeem" ? "active" : ""}
-            type="button"
-            aria-pressed={activeAction === "redeem"}
-            onClick={() => changeAction("redeem")}
-          >
-            Redeem
-          </button>
-        </div>
-        <div className="positionSettlementControl">
-          <span>Settle in</span>
-          <div className="positionSettlementSelector" role="radiogroup" aria-label="Deposit and redemption asset mode">
+        <div className="positionTicketControls">
+          <div className="positionSettlementControl">
+            <span>Settle in</span>
+            <div className="positionSettlementSelector" role="radiogroup" aria-label="Deposit and redemption asset mode">
+              <button
+                className={isUsdgMode ? "active" : ""}
+                type="button"
+                role="radio"
+                aria-checked={isUsdgMode}
+                onClick={() => changeSettlementMode("usdg")}
+              >
+                USDG
+              </button>
+              <button
+                className={!isUsdgMode ? "active" : ""}
+                type="button"
+                role="radio"
+                aria-checked={!isUsdgMode}
+                onClick={() => changeSettlementMode("rwas")}
+              >
+                RWAs
+              </button>
+            </div>
+          </div>
+          <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
             <button
-              className={isUsdgMode ? "active" : ""}
+              className={activeAction === "deposit" ? "active" : ""}
               type="button"
-              role="radio"
-              aria-checked={isUsdgMode}
-              onClick={() => changeSettlementMode("usdg")}
+              aria-pressed={activeAction === "deposit"}
+              onClick={() => changeAction("deposit")}
             >
-              USDG
+              Deposit
             </button>
             <button
-              className={!isUsdgMode ? "active" : ""}
+              className={activeAction === "redeem" ? "active" : ""}
               type="button"
-              role="radio"
-              aria-checked={!isUsdgMode}
-              onClick={() => changeSettlementMode("rwas")}
+              aria-pressed={activeAction === "redeem"}
+              onClick={() => changeAction("redeem")}
             >
-              RWAs
+              Redeem
             </button>
           </div>
         </div>
@@ -4802,6 +4827,7 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
 function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
   const [challengeState, setChallengeState] = useState<TxState>("idle");
   const [challengeError, setChallengeError] = useState<string>();
+  const [challengeInfoOpen, setChallengeInfoOpen] = useState(false);
   const [rewardState, setRewardState] = useState<TxState>("idle");
   const [rewardError, setRewardError] = useState<string>();
   const { address: connectedAddress } = useAccount();
@@ -4825,17 +4851,15 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
     : vault.withinCompletionBands
       ? "resolveOutOfBandChallenge"
       : undefined;
-  const challengeButtonLabel = !connectedAddress
-    ? "Connect wallet to challenge"
-    : challengeBusy
-      ? challengeState === "pending" ? "Confirm in wallet" : "Confirming transaction"
-      : challengeAction === "flagOutOfBand"
-        ? "Challenge strategy"
-        : challengeAction === "resolveOutOfBandChallenge"
-          ? "Resolve challenge"
-          : vault.challengeActive
-            ? "Challenge active"
-            : "Within challenge band";
+
+  function startOrExplainChallenge() {
+    if (!connectedAddress || challengeAction !== "flagOutOfBand") {
+      setChallengeInfoOpen(true);
+      return;
+    }
+    setChallengeInfoOpen(false);
+    void submitChallengeAction();
+  }
 
   async function submitChallengeAction() {
     if (!challengeAction || !vault.address || !connectedAddress || !publicClient) return;
@@ -4860,44 +4884,53 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   }
 
   return (
-    <SectionCard
-      title="Portfolio strategy change"
-      subtitle="Challenge a portfolio that moves outside its strategy band"
-      icon={<ShieldCheck size={15} />}
-      action={(
-        <span className={`stateBadge ${vault.challengeActive ? "danger" : vault.withinChallengeBands ? "success" : "warning"}`}>
-          {vault.challengeActive ? "Active" : vault.withinChallengeBands ? "In bounds" : "Eligible"}
-        </span>
-      )}
-    >
-      <div className="challengeActionBlock portfolioChallenge">
-        <p>
-          {vault.challengeActive
-            ? vault.challengeTimeRemaining > 0
-              ? `Manager fee withdrawals are locked for another ${formatCooldown(vault.challengeTimeRemaining)} while the portfolio returns to its completion band.`
-              : "The response deadline has passed. The original challenger may collect forfeited fee rewards, while restoration remains available once the portfolio returns to its completion band."
-            : "Anyone may start the response countdown when fresh oracle prices place the portfolio outside its challenge band."}
-        </p>
-        <div className="challengeRewardLine">
-          <span>Caller reward</span>
-          <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
-        </div>
-        {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
-        {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
-        <TxStatus state={challengeState} />
-        <TxStatus state={rewardState} />
-        <div className="buttonRow">
-          <button className="secondaryAction" type="button" disabled={!connectedAddress || !challengeAction || challengeBusy} onClick={submitChallengeAction}>
+    <div className={`challengeActionBlock portfolioChallenge ${vault.challengeActive ? "active" : ""}`}>
+      {vault.challengeActive ? (
+        <>
+          <ChallengeCountdownBanner vault={vault} />
+          <div className="challengeRewardLine">
+            <span>Caller reward</span>
+            <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
+          </div>
+          {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
+          {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
+          <TxStatus state={challengeState} />
+          <TxStatus state={rewardState} />
+          <div className="buttonRow">
+            {challengeAction === "resolveOutOfBandChallenge" ? (
+              <button className="secondaryAction" type="button" disabled={!connectedAddress || challengeBusy} onClick={submitChallengeAction}>
+                <ShieldCheck size={14} />
+                {challengeBusy ? challengeState === "pending" ? "Confirm in wallet" : "Confirming transaction" : "Resolve challenge"}
+              </button>
+            ) : null}
+            <button className="secondaryAction" type="button" disabled={!connectedAddress || !canClaimReward || rewardBusy} onClick={claimChallengeReward}>
+              <CircleDollarSign size={14} />
+              {rewardBusy ? "Claiming reward" : "Claim reward"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <button className="secondaryAction" type="button" disabled={challengeBusy} onClick={startOrExplainChallenge}>
             <ShieldCheck size={14} />
-            {challengeButtonLabel}
+            {challengeBusy ? challengeState === "pending" ? "Confirm in wallet" : "Confirming transaction" : "Start a challenge"}
           </button>
-          <button className="secondaryAction" type="button" disabled={!connectedAddress || !canClaimReward || rewardBusy} onClick={claimChallengeReward}>
-            <CircleDollarSign size={14} />
-            {rewardBusy ? "Claiming reward" : "Claim reward"}
-          </button>
-        </div>
-      </div>
-    </SectionCard>
+          {challengeInfoOpen ? (
+            <div className="validationSummary" role="status">
+              <Info size={15} />
+              <div>
+                <strong>{connectedAddress ? "Challenge unavailable" : "Connect a wallet first"}</strong>
+                <span>{connectedAddress
+                  ? `A challenge can start only when at least one asset is more than ${bpsToPercent(vault.challengeWeightDeviationBps)} away from its target. Every asset is currently within that range.`
+                  : "Connect a wallet to start a challenge when the portfolio moves outside its challenge band."}</span>
+              </div>
+            </div>
+          ) : null}
+          {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
+          <TxStatus state={challengeState} />
+        </>
+      )}
+    </div>
   );
 
   async function claimChallengeReward() {
@@ -6057,17 +6090,17 @@ function CreateVaultView({
             {step === 2 ? (
               <div className="formSection">
                 <div className="formGrid threeColumns">
-                  <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div></label>
-                  <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
-                  <label><span>Maximum assets</span><input type="number" min={portfolio.length} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /></label>
-                  <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div></label>
-                  <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div></label>
-                  <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Portfolio must enter this narrower band to complete.</small></label>
-                  <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Must be wider than the completion band.</small></label>
-                  <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={5} max={30} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div><small>Minimum: 5 days. This spans scheduled market weekends and holiday closures.</small></label>
-                  <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div></label>
-                  <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div></label>
-                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Default: 30 minutes. Protocol maximum: 1 hour.</small></label>
+                  <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
+                  <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
+                  <label><span>Maximum assets</span><input type="number" min={portfolio.length} max={20} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /><small>Caps the number of portfolio constituents. Protocol range: {portfolio.length}–20 for this initial basket.</small></label>
+                  <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" min={0} max={100} value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div><small>Caps the oracle-valued volume traded in each partial rebalance. Protocol maximum: 100% of NAV.</small></label>
+                  <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps the value an OTF may lose during each partial rebalance. Protocol maximum: 10%.</small></label>
+                  <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
+                  <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
+                  <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={5} max={30} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div><small>Time allowed to restore the portfolio after a challenge. Protocol range: 5–30 whole days.</small></label>
+                  <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" min={0} max={100} value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div><small>Caps any asset’s target allocation. Protocol maximum: 100%; it cannot be below the minimum nonzero weight.</small></label>
+                  <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" min={0.01} max={100} value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div><small>Prevents dust-sized target allocations. Protocol range: above 0% to 100%; it cannot exceed the maximum single weight.</small></label>
+                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Rejects rebalance valuations older than this. Protocol range: 1–3,600 seconds; default: 30 minutes.</small></label>
                 </div>
                 <div className="executionPolicy createGuarantees">
                   <ShieldCheck size={14} />

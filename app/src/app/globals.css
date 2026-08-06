@@ -1927,21 +1927,42 @@ button:disabled {
 
 .strategyTargetChanges > div {
   display: grid;
-  grid-template-columns: minmax(60px, 0.4fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  min-height: 27px;
-  padding: 4px 8px;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 8px;
   background: var(--surface);
   border-radius: 5px;
   font-size: 0.66rem;
 }
 
-.strategyTargetChanges > div > span {
+.strategyTargetChangeHeader,
+.strategyTargetChangeHeader > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+
+.strategyTargetChangeHeader {
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.strategyTargetChangeHeader > span {
   color: var(--text-soft);
+}
+
+.strategyTargetTrack {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgb(135 148 167 / 16%);
+}
+
+.strategyTargetTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgb(var(--accent-rgb));
 }
 
 .strategyTargetChanges em {
@@ -2131,9 +2152,12 @@ textarea::placeholder {
   font-size: 0.72rem;
 }
 
-.portfolioMandate,
 .portfolioChallenge {
   margin-top: 14px;
+}
+
+.portfolioChallenge > .challengeCountdownBanner {
+  margin: 0;
 }
 
 .challengeCountdownBanner {
@@ -2283,8 +2307,14 @@ textarea::placeholder {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--background);
-  margin-inline: auto;
   padding: 3px;
+}
+
+.positionTicketControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .positionActionSelector button {
@@ -2306,9 +2336,8 @@ textarea::placeholder {
 .positionSettlementControl {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 7px;
-  margin-top: -10px;
 }
 
 .positionSettlementControl > span {
@@ -2823,9 +2852,17 @@ textarea::placeholder {
 }
 
 @media (max-width: 620px) {
+  .positionTicketControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .positionActionSelector {
+    width: 100%;
+  }
+
   .positionSettlementControl {
-    justify-content: center;
-    margin-top: -8px;
+    justify-content: flex-start;
   }
 
   .positionUnderlyingTable,
@@ -6645,10 +6682,6 @@ input.invalid {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
-  }
-
-  .strategyTargetChanges > div {
-    grid-template-columns: 56px minmax(0, 1fr);
   }
 
   .seedApprovalRow {

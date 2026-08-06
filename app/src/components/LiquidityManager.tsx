@@ -108,6 +108,14 @@ const marketRegistryAbi = [{
   outputs: [{ type: "address", name: "pool" }],
 }] as const;
 
+const otfFactoryAbi = [{
+  type: "function",
+  name: "isVault",
+  stateMutability: "view",
+  inputs: [{ type: "address", name: "vault" }],
+  outputs: [{ type: "bool" }],
+}] as const;
+
 const positionManagerAbi = [
   {
     type: "function",
@@ -300,6 +308,7 @@ function LiquidityWorkspace() {
   const positionManager = robinhoodTestnetAddresses.uniswapV3PositionManager;
   const v3Factory = robinhoodTestnetAddresses.uniswapV3Factory;
   const settlementToken = robinhoodTestnetAddresses.usdg;
+  const otfFactory = robinhoodTestnetAddresses.factory;
   const marketRegistry = robinhoodTestnetAddresses.v3MarketRegistry;
   const configuredMarkets = robinhoodTestnetV3Venue.constituentPools;
   const initialVault = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("vault") ?? "";
@@ -321,16 +330,36 @@ function LiquidityWorkspace() {
   );
   const isOtfMarket = marketChoice === "otf";
 
-  const { data: officialPool, isLoading: officialPoolLoading } = useReadContract({
+  const {
+    data: isFactoryOtf,
+    isLoading: isFactoryOtfLoading,
+    isError: isFactoryOtfError,
+  } = useReadContract({
+    address: otfFactory,
+    abi: otfFactoryAbi,
+    functionName: "isVault",
+    args: validOtfAddress ? [validOtfAddress] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isOtfMarket && validOtfAddress && otfFactory) },
+  });
+  const {
+    data: officialPool,
+    isLoading: officialPoolLoading,
+    isError: officialPoolError,
+  } = useReadContract({
     address: marketRegistry,
     abi: marketRegistryAbi,
     functionName: "officialPool",
     args: validOtfAddress ? [validOtfAddress] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isOtfMarket && validOtfAddress && marketRegistry) },
+    query: { enabled: Boolean(isOtfMarket && validOtfAddress && isFactoryOtf && marketRegistry) },
   });
+  const otfLookupLoading = isFactoryOtfLoading || (isFactoryOtf === true && officialPoolLoading);
+  const otfLookupError = isFactoryOtfError || officialPoolError;
 
-  const assetAddress = isOtfMarket ? validOtfAddress : selectedConstituent?.asset;
+  const assetAddress = isOtfMarket
+    ? isFactoryOtf === true ? validOtfAddress : undefined
+    : selectedConstituent?.asset;
   const fee = isOtfMarket ? OTF_FEE : selectedConstituent?.fee;
   const poolAddress = isOtfMarket
     ? officialPool && !isAddressEqual(officialPool, zeroAddress) ? officialPool : undefined
@@ -718,7 +747,7 @@ function LiquidityWorkspace() {
 
             <div className="liquidityPoolRecord">
               <div><span>Selected market</span><strong>{marketLabel}</strong></div>
-              <div><span>Pool</span><strong>{officialPoolLoading ? "Resolving…" : shortAddress(poolAddress)}</strong></div>
+              <div><span>Pool</span><strong>{otfLookupLoading ? "Resolving…" : shortAddress(poolAddress)}</strong></div>
               <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
               <div><span>Pool price</span><strong>{poolPriceLabel}</strong></div>
               <div><span>{token0Symbol ?? "Token 0"} in pool</span><strong>{formatAmount(poolToken0Balance, token0Decimals)}</strong></div>
@@ -734,8 +763,14 @@ function LiquidityWorkspace() {
             {!poolVerified && poolAddress ? (
               <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool verification failed</strong><span>The recorded pool does not match Synthra’s canonical factory result or is not initialized.</span></div></div>
             ) : null}
-            {isOtfMarket && validOtfAddress && !officialPoolLoading && !poolAddress ? (
-              <div className="validationSummary"><AlertTriangle size={15} /><div><strong>No liquidity pool found</strong><span>This address is not a deployed OTF from the current factory, or its market was not created.</span></div></div>
+            {isOtfMarket && validOtfAddress && !otfLookupLoading && otfLookupError ? (
+              <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Unable to verify OTF</strong><span>The factory or market registry could not be read. Check your connection and try again.</span></div></div>
+            ) : null}
+            {isOtfMarket && validOtfAddress && !otfLookupLoading && !otfLookupError && isFactoryOtf === false ? (
+              <div className="validationSummary"><AlertTriangle size={15} /><div><strong>OTF not found</strong><span>This address is not an OTF deployed by the current factory.</span></div></div>
+            ) : null}
+            {isOtfMarket && validOtfAddress && !otfLookupLoading && !otfLookupError && isFactoryOtf === true && !poolAddress ? (
+              <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Official market unavailable</strong><span>This OTF has no registered official market. This is an unexpected protocol state.</span></div></div>
             ) : null}
           </aside>
 
