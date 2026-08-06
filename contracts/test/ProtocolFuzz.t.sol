@@ -13,8 +13,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         uint16 rawWeightA,
         uint16 rawWeightB
     ) public {
-        uint16 weightA = uint16(bound(rawWeightA, 1, 9_998));
-        uint16 weightB = uint16(bound(rawWeightB, 1, 9_999 - weightA));
+        uint16 weightA = uint16(bound(rawWeightA, 100, 9_800));
+        uint16 weightB = uint16(bound(rawWeightB, 100, 9_900 - weightA));
         uint16 weightC = uint16(10_000 - weightA - weightB);
         VaultInitParams memory params = _defaultParams();
         params.initialAssets = new address[](3);
@@ -29,8 +29,6 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         params.initialAmounts[0] = uint256(weightA) * ONE;
         params.initialAmounts[1] = uint256(weightB) * ONE;
         params.initialAmounts[2] = uint256(weightC) * ONE;
-        params.maxSingleAssetWeightBps = 10_000;
-        params.minNonZeroAssetWeightBps = 1;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         assetRegistry.setAssetApproved(address(tokenA), false);

@@ -42,6 +42,7 @@ Primary security goals:
 The factory owner can:
 
 - Approve or remove trade adapters for vault rebalances.
+- Change the protocol-wide minimum target weight for future portfolio proposals; the default is 1%.
 - Start and complete ownership transfer.
 
 The fee collector treasury can:
@@ -103,8 +104,12 @@ revalidates the proposal. A new proposal is allowed only after the prior rebalan
 inside its target bands for 14 days, with no active challenge and while the portfolio is currently
 inside its completion bands. Every partial trade
 transaction is atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss
-exceeds the cap, or the batch does not move all exposures toward target, that transaction reverts
+exceeds the cap, or the batch does not move every holding toward target, that transaction reverts
 while the activated strategic target remains active.
+
+Changing the protocol-wide minimum target weight is not retroactive: it does not invalidate an
+active portfolio or create a challenge. Existing and new vaults apply the live minimum when they
+validate a new target proposal.
 
 The vault grants exact temporary approvals to the executor and clears them after each trade. This reduces approval exposure but does not remove adapter-integration risk.
 

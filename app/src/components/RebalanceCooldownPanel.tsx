@@ -202,10 +202,8 @@ type VaultView = {
   claimableChallengeRewardValue?: bigint;
   canProposeStrategy: boolean;
   authorizedExecutors: readonly string[];
-  maxSingleAssetWeightBps: number;
-  minNonZeroAssetWeightBps: number;
+  minTargetWeightBps: number;
   maxOracleStaleness: number;
-  maxAssetCount: number;
   connectedIsManager: boolean;
   enabled: boolean;
   isLoading: boolean;
@@ -737,9 +735,6 @@ function errorMessage(error: unknown): string {
   if (serialized.includes("0xc705736")) {
     return "The pool quote loses more oracle value than this OTF allows. Choose a smaller trade size and try again.";
   }
-  if (serialized.includes("0xdae37913") || serialized.includes("ExposureLimitExceeded")) {
-    return "This trade would push the purchased asset above the OTF's maximum individual weight. Choose a smaller trade size and try again.";
-  }
   if (error && typeof error === "object" && "shortMessage" in error) {
     return String((error as { shortMessage?: unknown }).shortMessage);
   }
@@ -912,10 +907,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxTurnoverBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxNavLossBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxWeightDeviationBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxAssetCount" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "STRATEGY_CHANGE_COOLDOWN" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxSingleAssetWeightBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "minNonZeroAssetWeightBps" },
+        { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "minTargetWeightBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxOracleStaleness" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalAssetsValue" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navPerShare" },
@@ -1019,44 +1012,42 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const maxTurnoverBps = resultAt<number>(results, 9) ?? 0;
   const maxNavLossBps = resultAt<number>(results, 10) ?? 0;
   const maxWeightDeviationBps = resultAt<number>(results, 11) ?? 0;
-  const maxAssetCount = resultAt<number>(results, 12) ?? 0;
-  const cooldownSeconds = Number(resultAt<bigint>(results, 13) ?? BigInt(14 * 86_400));
-  const maxSingleAssetWeightBps = resultAt<number>(results, 14) ?? 0;
-  const minNonZeroAssetWeightBps = resultAt<number>(results, 15) ?? 0;
-  const maxOracleStaleness = resultAt<number>(results, 16) ?? 0;
-  const totalAssetsValue = resultAt<bigint>(results, 17);
-  const navPerShareValue = resultAt<bigint>(results, 18);
-  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 19);
-  const challengeWeightDeviationBps = resultAt<number>(results, 20) ?? 0;
-  const challengeGracePeriod = resultAt<number>(results, 21) ?? 0;
-  const withinCompletionBands = Boolean(resultAt<boolean>(results, 22));
-  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 23));
-  const challengeActive = Boolean(resultAt<boolean>(results, 24));
-  const challengeStartedAt = resultAt<bigint>(results, 25)
-    ? Number(resultAt<bigint>(results, 25))
+  const cooldownSeconds = Number(resultAt<bigint>(results, 12) ?? BigInt(14 * 86_400));
+  const minTargetWeightBps = resultAt<number>(results, 13) ?? 0;
+  const maxOracleStaleness = resultAt<number>(results, 14) ?? 0;
+  const totalAssetsValue = resultAt<bigint>(results, 15);
+  const navPerShareValue = resultAt<bigint>(results, 16);
+  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 17);
+  const challengeWeightDeviationBps = resultAt<number>(results, 18) ?? 0;
+  const challengeGracePeriod = resultAt<number>(results, 19) ?? 0;
+  const withinCompletionBands = Boolean(resultAt<boolean>(results, 20));
+  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 21));
+  const challengeActive = Boolean(resultAt<boolean>(results, 22));
+  const challengeStartedAt = resultAt<bigint>(results, 23)
+    ? Number(resultAt<bigint>(results, 23))
     : undefined;
-  const challengeDeadline = resultAt<bigint>(results, 26)
-    ? Number(resultAt<bigint>(results, 26))
+  const challengeDeadline = resultAt<bigint>(results, 24)
+    ? Number(resultAt<bigint>(results, 24))
     : undefined;
-  const challengeTimeRemaining = Number(resultAt<bigint>(results, 27) ?? 0n);
-  const feeState = Number(resultAt<number>(results, 28) ?? 0);
-  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 29);
-  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 30);
-  const claimableChallengeRewardValue = resultAt<bigint>(results, 31);
-  const lastStrategyCompletion = resultAt<bigint>(results, 32)
-    ? Number(resultAt<bigint>(results, 32))
+  const challengeTimeRemaining = Number(resultAt<bigint>(results, 25) ?? 0n);
+  const feeState = Number(resultAt<number>(results, 26) ?? 0);
+  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 27);
+  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 28);
+  const claimableChallengeRewardValue = resultAt<bigint>(results, 29);
+  const lastStrategyCompletion = resultAt<bigint>(results, 30)
+    ? Number(resultAt<bigint>(results, 30))
     : undefined;
-  const canProposeStrategy = Boolean(resultAt<boolean>(results, 33));
-  const authorizedExecutors = resultAt<readonly string[]>(results, 34) ?? [];
-  const withinChallengeBands = Boolean(resultAt<boolean>(results, 35));
-  const strategyProposalPending = Boolean(resultAt<boolean>(results, 36));
-  const pendingStrategyActivationTime = resultAt<bigint>(results, 37)
-    ? Number(resultAt<bigint>(results, 37))
+  const canProposeStrategy = Boolean(resultAt<boolean>(results, 31));
+  const authorizedExecutors = resultAt<readonly string[]>(results, 32) ?? [];
+  const withinChallengeBands = Boolean(resultAt<boolean>(results, 33));
+  const strategyProposalPending = Boolean(resultAt<boolean>(results, 34));
+  const pendingStrategyActivationTime = resultAt<bigint>(results, 35)
+    ? Number(resultAt<bigint>(results, 35))
     : undefined;
-  const nextStrategyChange = resultAt<bigint>(results, 38)
-    ? Number(resultAt<bigint>(results, 38))
+  const nextStrategyChange = resultAt<bigint>(results, 36)
+    ? Number(resultAt<bigint>(results, 36))
     : undefined;
-  const challengeCaller = resultAt<string>(results, 39);
+  const challengeCaller = resultAt<string>(results, 37);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
@@ -1112,10 +1103,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     claimableChallengeRewardValue,
     canProposeStrategy,
     authorizedExecutors,
-    maxSingleAssetWeightBps,
-    minNonZeroAssetWeightBps,
+    minTargetWeightBps,
     maxOracleStaleness,
-    maxAssetCount,
     connectedIsManager: Boolean(connectedIsManager),
     enabled,
     isLoading: Boolean(vaultAddress) && isLoading,
@@ -3751,7 +3740,7 @@ function UserActions({
               <tr>
                 <th>Underlying</th>
                 <th>Per OTF share</th>
-                <th>Your amount</th>
+                <th>Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -3763,7 +3752,7 @@ function UserActions({
                   <tr key={asset.address}>
                     <td data-label="Underlying"><span className="assetNameWithLogo"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact /><strong>{asset.symbol}</strong></span></td>
                     <td data-label="Per OTF share">{perShareUnderlyingLoading ? "Loading" : formatWalletTokenBalance(perShareAmount, decimals, 8)}</td>
-                    <td data-label="Your amount">
+                    <td data-label="Amount">
                       {!connectedAddress
                         ? "Connect wallet"
                         : redeemShareBalance === 0n
@@ -4429,7 +4418,7 @@ function PortfolioBandStatus({
     ? withinBands
       ? {
           title: "Portfolio is healthy — rebalance optional",
-          detail: "Every constituent is within its target band. Trades remain available when they improve alignment but they are not obligatory.",
+          detail: "Every constituent is within its target band.",
           tone: "success",
         }
       : {
@@ -4528,23 +4517,12 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
   const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
-  const targetBoundsKnown = vault.minNonZeroAssetWeightBps > 0
-    && vault.maxSingleAssetWeightBps >= vault.minNonZeroAssetWeightBps;
   const belowMinimumTargets = targetWeightBps.flatMap((weight, index) =>
-    !Number.isFinite(weight) || weight < vault.minNonZeroAssetWeightBps ? [targets[index].ticker] : [],
+    !Number.isFinite(weight) || weight < vault.minTargetWeightBps ? [targets[index].ticker] : [],
   );
-  const aboveMaximumTargets = targetWeightBps.flatMap((weight, index) =>
-    Number.isFinite(weight) && weight > vault.maxSingleAssetWeightBps ? [targets[index].ticker] : [],
-  );
-  const targetBoundsValid = targetBoundsKnown
-    && belowMinimumTargets.length === 0
-    && aboveMaximumTargets.length === 0;
-  const targetBoundsGuidance = belowMinimumTargets.length && aboveMaximumTargets.length
-    ? `Keep every included asset between ${(vault.minNonZeroAssetWeightBps / 100).toFixed(2)}% and ${(vault.maxSingleAssetWeightBps / 100).toFixed(2)}%. Remove assets below the minimum, and reduce assets above the maximum before redistributing the remaining weight.`
-    : belowMinimumTargets.length
-      ? `Increase each listed target to at least ${(vault.minNonZeroAssetWeightBps / 100).toFixed(2)}%, or remove that asset from the proposal.`
-      : `Reduce each listed target to ${(vault.maxSingleAssetWeightBps / 100).toFixed(2)}% or less, then add or increase other assets so the total remains 100%. This OTF's single-asset cap cannot be changed.`;
-  const weightsValid = weightSumValid && targetBoundsValid;
+  const targetMinimumValid = vault.minTargetWeightBps > 0 && belowMinimumTargets.length === 0;
+  const targetMinimumGuidance = `Increase each listed target to at least ${(vault.minTargetWeightBps / 100).toFixed(2)}%, or remove that asset from the proposal.`;
+  const weightsValid = weightSumValid && targetMinimumValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
   const targetsChanged = targets.length !== vault.allocations.length || targets.some((target) => {
@@ -4624,6 +4602,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
 
   function removeTarget(index: number) {
     setTargets((current) => {
+      if (current.length <= 1) return current;
       const remaining = current.filter((_, itemIndex) => itemIndex !== index);
       const redistributed = distributeWeight(
         10_000,
@@ -4762,8 +4741,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 </div>
                 <button
                   type="button"
-                  title={`Remove ${target.ticker || "asset"}`}
-                  disabled={targetEditorLocked}
+                  title={targets.length <= 1 ? "An OTF must retain at least one asset" : `Remove ${target.ticker || "asset"}`}
+                  disabled={targetEditorLocked || targets.length <= 1}
                   onClick={() => removeTarget(index)}
                 >
                   <Trash2 size={13} />
@@ -4776,10 +4755,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                     value={target.targetWeight}
                     onChange={(event) => updateTargetWeight(index, event.target.value)}
                     type="number"
-                    min={0}
+                    min={vault.minTargetWeightBps / 100}
                     max={100}
                     step={0.01}
-                    placeholder="0"
+                    placeholder={String(vault.minTargetWeightBps / 100)}
                     disabled={targetEditorLocked}
                     aria-label={`${target.ticker || "Asset"} draft target weight`}
                   />
@@ -4790,7 +4769,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targetEditorLocked || targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
+        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targetEditorLocked || targets.length >= testnetCreateAssets.length}>
           <Plus size={13} />
           Add asset
         </button>
@@ -4848,14 +4827,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!weightSumValid ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to exactly 100%</strong><span>Weights are submitted to the contract in whole basis points.</span></div></div>
         ) : null}
-        {targetBoundsKnown && !targetBoundsValid ? (
+        {!targetMinimumValid ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div>
-            <strong>{belowMinimumTargets.length && aboveMaximumTargets.length
-              ? "Some targets are outside the allowed range"
-              : belowMinimumTargets.length
-                ? `${belowMinimumTargets.join(", ")} ${belowMinimumTargets.length === 1 ? "is" : "are"} below the minimum target`
-                : `${aboveMaximumTargets.join(", ")} ${aboveMaximumTargets.length === 1 ? "exceeds" : "exceed"} the maximum target`}</strong>
-            <span>{targetBoundsGuidance}</span>
+            <strong>{belowMinimumTargets.join(", ")} {belowMinimumTargets.length === 1 ? "is" : "are"} below the minimum target</strong>
+            <span>{targetMinimumGuidance}</span>
           </div></div>
         ) : null}
         {!targetsUnique ? (
@@ -5230,18 +5205,6 @@ function RebalanceTradesPanel({
       && outputCurrentDeviationScaled !== undefined
       && predictedOutputDeviationScaled > outputCurrentDeviationScaled,
   );
-  const maximumOutputWeightScaled = BigInt(vault.maxSingleAssetWeightBps) * 100n;
-  const predictedOutputWeightPrecise = predictedOutputWeightScaled !== undefined
-    ? Number(predictedOutputWeightScaled) / 10_000
-    : undefined;
-  const exposureLimitExceeded = Boolean(
-    predictedOutputWeightScaled !== undefined
-      && outputCurrentWeightScaled !== undefined
-      && outputTargetWeightScaled !== undefined
-      && predictedOutputWeightScaled > maximumOutputWeightScaled
-      && predictedOutputWeightScaled > outputCurrentWeightScaled
-      && outputTargetWeightScaled <= maximumOutputWeightScaled,
-  );
   const predictedWeightsReady = predictedInputWeight !== undefined && predictedOutputWeight !== undefined;
   const tradeWeightPreview = [
     inputAsset ? { asset: inputAsset, predicted: predictedInputWeight } : undefined,
@@ -5262,7 +5225,7 @@ function RebalanceTradesPanel({
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
     rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
-    !exposureLimitExceeded && !oracleValueLossTooHigh,
+    !oracleValueLossTooHigh,
   );
 
   function resetTradeState() {
@@ -5484,9 +5447,6 @@ function RebalanceTradesPanel({
         {buyWouldMoveFartherFromTarget ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would move too far past its target</strong><span>Crossing the target is allowed, but its predicted distance from target cannot exceed its current distance.</span></div></div>
         ) : null}
-        {exposureLimitExceeded ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would exceed its exposure limit</strong><span>The quote predicts {predictedOutputWeightPrecise?.toFixed(4)}%, slightly above this OTF&apos;s {bpsToPercent(vault.maxSingleAssetWeightBps)} maximum. Exactly {bpsToPercent(vault.maxSingleAssetWeightBps)} is allowed; choose a smaller trade percentage.</span></div></div>
-        ) : null}
         {oracleValueLossTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
         ) : null}
@@ -5496,7 +5456,7 @@ function RebalanceTradesPanel({
         {txError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>
         ) : null}
-        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, turnover, and exposure limits, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
+        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, and turnover limits, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
         <TxStatus state={txState} />
         <button className="primaryAction" type="button" disabled={!canSubmit || busy} onClick={executeTrade}>
           {busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
@@ -5645,9 +5605,7 @@ function SafetyLimits({ vault }: { vault: VaultView; onRefresh: () => Promise<un
     ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
     ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
-    ["Maximum assets", String(vault.maxAssetCount), "Concurrent positions"],
-    ["Maximum individual weight", bpsToPercent(vault.maxSingleAssetWeightBps), "Single-position cap"],
-    ["Minimum nonzero weight", bpsToPercent(vault.minNonZeroAssetWeightBps), "Dust threshold"],
+    ["Minimum target weight", bpsToPercent(vault.minTargetWeightBps), "Protocol-wide allocation floor"],
     ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
     ["Strategy change cooldown", formatCooldown(vault.cooldownSeconds), "Starts after completion"],
     ["Strategy activation delay", "48 hours", "Holder exit window"],
@@ -5977,6 +5935,14 @@ function CreateVaultView({
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
 }) {
   const factoryAddress = configuredFactoryAddress();
+  const { data: protocolMinimumTargetWeightResult } = useReadContract({
+    address: factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "minTargetWeightBps",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isTestnet && factoryAddress) },
+  });
+  const protocolMinimumTargetWeightBps = Number(protocolMinimumTargetWeightResult ?? 0);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
@@ -6012,9 +5978,6 @@ function CreateVaultView({
     maxDeviation: "2",
     challengeDeviation: "5",
     challengeGraceDays: "5",
-    maxSingleWeight: "50",
-    minNonzeroWeight: "1",
-    maxAssets: "10",
     oracleStaleness: "1800",
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
@@ -6208,12 +6171,13 @@ function CreateVaultView({
     isAddress(draft.manager) &&
     isAddress(draft.feeRecipient);
   const portfolioValid =
-    portfolio.length > 0 &&
+    portfolio.length >= 2 &&
+    protocolMinimumTargetWeightBps > 0 &&
     portfolio.every(
       (asset) =>
         asset.ticker.trim() &&
         isAddress(asset.address) &&
-        asset.targetWeight > 0,
+        percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps,
     ) &&
     totalWeightValid &&
     initialPortfolioValue !== undefined &&
@@ -6231,10 +6195,7 @@ function CreateVaultView({
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxNavLoss) <= 2 &&
     Number(draft.maxDeviation) > 0 &&
-    Number(draft.challengeDeviation) > Number(draft.maxDeviation) &&
-    Number(draft.maxSingleWeight) <= 100 &&
-    Number(draft.minNonzeroWeight) > 0 &&
-    Number(draft.maxAssets) >= portfolio.length;
+    Number(draft.challengeDeviation) > Number(draft.maxDeviation);
   const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid && challengeGraceValid;
   const basicsIssues = [
     draft.name.trim().length > 2 ? null : "Enter an OTF name with at least 3 characters.",
@@ -6244,8 +6205,11 @@ function CreateVaultView({
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
-    portfolio.length > 0 ? null : "Add at least one asset.",
-    portfolio.every((asset) => asset.targetWeight > 0) ? null : "Every asset needs a positive target weight.",
+    portfolio.length >= 2 ? null : "Add at least two assets to create an OTF in the app.",
+    protocolMinimumTargetWeightBps > 0 ? null : "Wait for the protocol target minimum to load.",
+    portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
+      ? null
+      : `Every asset needs a target weight of at least ${bpsToPercent(protocolMinimumTargetWeightBps)}.`,
     initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
     allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
     totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
@@ -6254,7 +6218,6 @@ function CreateVaultView({
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.maxNavLoss) <= 2 ? null : "Maximum NAV loss cannot exceed the 2% protocol ceiling.",
     Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
-    Number(draft.maxAssets) >= portfolio.length ? null : "Maximum assets cannot be lower than the initial portfolio size.",
     oracleStalenessValid ? null : "Oracle max staleness must be between 1 and 3,600 seconds.",
     challengeGraceValid ? null : "Challenge grace period must be between 5 and 30 whole days.",
     remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
@@ -6379,9 +6342,6 @@ function CreateVaultView({
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
       challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
-      maxSingleAssetWeightBps: percentToBps(draft.maxSingleWeight),
-      minNonZeroAssetWeightBps: percentToBps(draft.minNonzeroWeight),
-      maxAssetCount: Number(draft.maxAssets),
       maxOracleStaleness: Number(draft.oracleStaleness),
       challengeGracePeriod: daysToSeconds(draft.challengeGraceDays),
     };
@@ -6734,7 +6694,7 @@ function CreateVaultView({
                       <label className="assetWeightField">
                         <span>Target weight</span>
                         <div className="inputWithSuffix">
-                          <input type="number" min={0} max={100} value={asset.targetWeight} onChange={(event) => updatePortfolio(index, { targetWeight: Number(event.target.value) })} />
+                          <input type="number" min={protocolMinimumTargetWeightBps / 100} max={100} value={asset.targetWeight} onChange={(event) => updatePortfolio(index, { targetWeight: Number(event.target.value) })} />
                           <span>%</span>
                         </div>
                       </label>
@@ -6748,7 +6708,12 @@ function CreateVaultView({
                         <strong>{derivedSeedAmounts[index]?.displayAmount || "Loading"}</strong>
                         <small>{asset.ticker} required</small>
                       </div>
-                      <button type="button" title={`Remove ${asset.ticker}`} onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                      <button
+                        type="button"
+                        title={portfolio.length <= 2 ? "Creation requires at least two assets" : `Remove ${asset.ticker}`}
+                        disabled={portfolio.length <= 2}
+                        onClick={() => setPortfolio((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -6758,7 +6723,7 @@ function CreateVaultView({
                   className="secondaryAction"
                   type="button"
                   onClick={addPortfolioAsset}
-                  disabled={!nextAvailableAsset || portfolio.length >= Number(draft.maxAssets)}
+                  disabled={!nextAvailableAsset}
                 >
                   <Plus size={14} />
                   Add asset
@@ -6766,7 +6731,7 @@ function CreateVaultView({
                 {!portfolioValid ? (
                   <div className="riskCallout warning">
                     <AlertTriangle size={15} />
-                    <div><strong>Portfolio needs attention</strong><span>Set a positive initial value, use positive weights totaling exactly 100%, and wait for oracle prices.</span></div>
+                    <div><strong>Portfolio needs attention</strong><span>Use at least two assets, keep every target at or above the current protocol minimum of {bpsToPercent(protocolMinimumTargetWeightBps)}, total exactly 100%, set a positive initial value, and wait for oracle prices.</span></div>
                   </div>
                 ) : null}
               </div>
@@ -6777,14 +6742,11 @@ function CreateVaultView({
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
-                  <label><span>Maximum assets</span><input type="number" min={portfolio.length} max={20} value={draft.maxAssets} onChange={(event) => updateDraft("maxAssets", event.target.value)} /><small>Caps the number of portfolio constituents. Protocol range: {portfolio.length}–20 for this initial basket.</small></label>
                   <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" min={0} max={100} value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div><small>Caps the oracle-valued volume traded in each partial rebalance. Protocol maximum: 100% of NAV.</small></label>
                   <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued loss in each atomic rebalance trade. Protocol maximum: 2%.</small></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
                   <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
                   <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={5} max={30} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div><small>Time allowed to restore the portfolio after a challenge. Protocol range: 5–30 whole days.</small></label>
-                  <label><span>Maximum single weight</span><div className="inputWithSuffix"><input type="number" min={0} max={100} value={draft.maxSingleWeight} onChange={(event) => updateDraft("maxSingleWeight", event.target.value)} /><span>%</span></div><small>Caps any asset’s target allocation. Protocol maximum: 100%; it cannot be below the minimum nonzero weight.</small></label>
-                  <label><span>Minimum nonzero weight</span><div className="inputWithSuffix"><input type="number" min={0.01} max={100} value={draft.minNonzeroWeight} onChange={(event) => updateDraft("minNonzeroWeight", event.target.value)} /><span>%</span></div><small>Prevents dust-sized target allocations. Protocol range: above 0% to 100%; it cannot exceed the maximum single weight.</small></label>
                   <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Rejects rebalance valuations older than this. Protocol range: 1–3,600 seconds; default: 30 minutes.</small></label>
                 </div>
                 <div className="executionPolicy createGuarantees">
@@ -8025,7 +7987,7 @@ function ManageVaultsView({
           <div className="permissionList">
             <div><CheckCircle size={14} /><span><strong>May propose strategic targets</strong><small>Targets lock until the basket reaches its completion bands.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May authorize constrained executors</strong><small>{vault.authorizedExecutors.length} currently authorized; all are cleared on manager transfer.</small></span></div>
-            <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, turnover, and exposure limits.</small></span></div>
+            <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, turnover, and NAV-loss limits.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May propose targets with a rationale</strong><small>The rationale becomes permanent only when those targets activate.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot withdraw portfolio assets</strong><small>No arbitrary manager-call or asset-transfer path exists.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot shorten the change unlock</strong><small>The configured delay is permanently immutable.</small></span></div>

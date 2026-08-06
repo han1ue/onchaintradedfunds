@@ -130,9 +130,6 @@ abstract contract ProtocolTestBase is TestBase {
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
             challengeWeightDeviationBps: 250,
-            maxSingleAssetWeightBps: 8_000,
-            minNonZeroAssetWeightBps: 100,
-            maxAssetCount: 10,
             maxOracleStaleness: uint32(1 hours),
             challengeGracePeriod: uint32(5 days)
         });

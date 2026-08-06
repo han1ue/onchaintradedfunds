@@ -155,6 +155,7 @@ The protocol owner MAY:
 - Approve or remove supported assets.
 - Configure price-feed mappings.
 - Approve or remove trade adapters.
+- Set the protocol-wide minimum target weight within its hard bounds.
 - Transfer registry or factory ownership using their defined controls.
 
 The protocol owner MUST NOT:
@@ -188,7 +189,7 @@ The manager MUST NOT:
 - Transfer constituent assets to an arbitrary recipient.
 - approve arbitrary spenders.
 - use unsupported assets or adapters.
-- bypass oracle, slippage, turnover, NAV-loss, exposure, or target-improvement checks.
+- bypass oracle, slippage, turnover, NAV-loss, or target-improvement checks.
 - shorten the immutable target-change cooldown.
 
 The manager remains accountable for challenge, forfeiture, and caller-reward outcomes regardless
@@ -238,10 +239,9 @@ For every successful constrained trade batch:
 9. Total post-trade NAV loss does not exceed `maxNavLossBps`.
 10. Total portfolio distance from target strictly decreases.
 11. No individual constituent moves farther from its target.
-12. A constituent above the single-asset cap cannot increase further.
-13. Output returns to the OTF.
-14. Temporary input approval is exact and is cleared after execution.
-15. The executor and adapter retain no unintended portfolio balance.
+12. Output returns to the OTF.
+13. Temporary input approval is exact and is cleared after execution.
+14. The executor and adapter retain no unintended portfolio balance.
 
 If any final check fails, the complete transaction MUST revert, including token transfers and
 approvals.
@@ -291,6 +291,7 @@ A proposal requires:
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
 - Valid portfolio shape and approved assets.
+- At least one constituent, with every included target at or above the factory's live protocol-wide minimum target weight. The factory owner MAY update that minimum within 1–10,000 basis points; the initial value is 100 basis points (1%). Changes apply only when an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger a challenge retroactively.
 - Any constituent omitted from the proposal remains tracked at a zero target until its reserve is
   liquidated exactly to zero after activation.
 - Proposed turnover within the configured limit.

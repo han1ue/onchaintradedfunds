@@ -439,15 +439,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             if (afterDeviation > beforeDeviation) {
                 revert AssetMovedAwayFromTarget(_assets[i], beforeDeviation, afterDeviation);
             }
-            uint256 maxWeight = uint256(maxSingleAssetWeightBps) * WEIGHT_PRECISION_SCALE;
-            if (
-                weightsAfter[i] > maxWeight && weightsAfter[i] > weightsBefore[i]
-                    && target <= maxWeight
-            ) {
-                revert ExposureLimitExceeded(
-                    _assets[i], weightsBefore[i], weightsAfter[i], maxSingleAssetWeightBps
-                );
-            }
         }
 
         if (
@@ -634,9 +625,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             revert LengthMismatch(assets_.length, weights_.length);
         }
         if (assets_.length == 0) revert EmptyPortfolio();
-        if (assets_.length > maxAssetCount) {
-            revert TooManyAssets(assets_.length, maxAssetCount);
-        }
+        uint256 minimumTargetWeightBps = _protocolMinTargetWeightBps();
         uint256 sum;
         for (uint256 i = 0; i < assets_.length; i++) {
             address asset = assets_[i];
@@ -648,11 +637,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                     revert UnapprovedAsset(asset);
                 }
             }
-            if (weight > maxSingleAssetWeightBps) {
-                revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
-            }
-            if (weight < minNonZeroAssetWeightBps) {
-                revert AssetWeightTooLow(asset, weight, minNonZeroAssetWeightBps);
+            if (weight < minimumTargetWeightBps) {
+                revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
             }
             _calculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
             for (uint256 j = i + 1; j < assets_.length; j++) {

@@ -59,7 +59,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.
-- Portfolio changes are bounded by immutable limits covering turnover, NAV loss, target-weight deviation, asset count, individual weight, and minimum nonzero weight.
+- Portfolio changes are bounded by immutable limits covering turnover, NAV loss, and target-weight deviation. Every included asset must meet the factory owner's live protocol-wide minimum target weight, initialized at 1%, with no separate asset-count or maximum-target limit.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
 - Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.

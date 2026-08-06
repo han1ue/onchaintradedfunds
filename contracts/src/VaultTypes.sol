@@ -16,9 +16,6 @@ struct VaultInitParams {
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
     uint16 challengeWeightDeviationBps;
-    uint16 maxSingleAssetWeightBps;
-    uint16 minNonZeroAssetWeightBps;
-    uint8 maxAssetCount;
     uint32 maxOracleStaleness;
     uint32 challengeGracePeriod;
 }

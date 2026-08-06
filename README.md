@@ -402,9 +402,7 @@ Retained rebalance protections:
 - Maximum portfolio turnover.
 - Maximum NAV loss.
 - Narrow completion bands and wider challenge bands.
-- Maximum number of assets.
-- Maximum individual-asset weight.
-- Minimum nonzero asset weight.
+- Protocol-wide minimum target weight, initialized at 1% and adjustable by the factory owner.
 - Fresh onchain prices.
 - Atomicity of each partial trade transaction.
 - No arbitrary manager calls.

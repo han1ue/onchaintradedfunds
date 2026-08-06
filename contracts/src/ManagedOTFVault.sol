@@ -77,9 +77,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         maxNavLossBps = params.maxNavLossBps;
         maxWeightDeviationBps = params.maxWeightDeviationBps;
         challengeWeightDeviationBps = params.challengeWeightDeviationBps;
-        maxSingleAssetWeightBps = params.maxSingleAssetWeightBps;
-        minNonZeroAssetWeightBps = params.minNonZeroAssetWeightBps;
-        maxAssetCount = params.maxAssetCount;
         maxOracleStaleness = params.maxOracleStaleness;
         challengeGracePeriod = params.challengeGracePeriod;
         _feeState = FeeState.Accruing;
@@ -754,16 +751,21 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (assets_.length != weights_.length) {
             revert LengthMismatch(assets_.length, weights_.length);
         }
-        if (assets_.length > maxAssetCount) revert TooManyAssets(assets_.length, maxAssetCount);
+        uint256 minimumTargetWeightBps = _protocolMinTargetWeightBps();
         uint256 sum;
         for (uint256 i = 0; i < assets_.length; i++) {
-            _validateAssetAndWeight(assets_, i, weights_[i]);
+            _validateAssetAndWeight(assets_, i, weights_[i], minimumTargetWeightBps);
             sum += weights_[i];
         }
         if (sum != BPS) revert InvalidWeights(sum);
     }
 
-    function _validateAssetAndWeight(address[] calldata assets_, uint256 index, uint256 weight)
+    function _validateAssetAndWeight(
+        address[] calldata assets_,
+        uint256 index,
+        uint256 weight,
+        uint256 minimumTargetWeightBps
+    )
         internal
         view
     {
@@ -771,11 +773,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (asset == address(0)) revert ZeroAddress();
         if (asset.code.length == 0) revert AssetNotContract(asset);
         if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
-        if (weight > maxSingleAssetWeightBps) {
-            revert AssetWeightTooHigh(asset, weight, maxSingleAssetWeightBps);
-        }
-        if (weight < minNonZeroAssetWeightBps) {
-            revert AssetWeightTooLow(asset, weight, minNonZeroAssetWeightBps);
+        if (weight < minimumTargetWeightBps) {
+            revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
         }
         _portfolioCalculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
         for (uint256 j = index + 1; j < assets_.length; j++) {

@@ -27,7 +27,6 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
-    uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;
     uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
     uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
     uint32 public constant MAX_ORACLE_STALENESS = 1 hours;
@@ -61,6 +60,7 @@ contract OTFFactory is IAdapterAllowlist {
         string symbol
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
+    event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
     event OfficialMarketRegistryConfigured(address indexed registry);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     address public owner;
@@ -71,6 +71,7 @@ contract OTFFactory is IAdapterAllowlist {
     address public oracleRegistry;
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
+    uint16 public minTargetWeightBps = 100;
     address public officialMarketRegistry;
 
     address[] private _vaults;
@@ -206,6 +207,13 @@ contract OTFFactory is IAdapterAllowlist {
         emit TradeAdapterApprovalChanged(adapter, approved);
     }
 
+    function setMinTargetWeightBps(uint16 newMinimumBps) external onlyOwner {
+        if (newMinimumBps == 0 || newMinimumBps > 10_000) revert InvalidLimit();
+        uint16 previousMinimumBps = minTargetWeightBps;
+        minTargetWeightBps = newMinimumBps;
+        emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);
+    }
+
     /// @notice Configures the official market registry before the first OTF is created.
     /// @dev It becomes permanently locked as soon as a vault exists.
     function setOfficialMarketRegistry(address registry) external onlyOwner {
@@ -253,10 +261,8 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.creatorFeeBpsPerYear > MAX_CREATOR_FEE_BPS_PER_YEAR) {
             revert CreatorFeeTooHigh(params.creatorFeeBpsPerYear, MAX_CREATOR_FEE_BPS_PER_YEAR);
         }
-        if (params.maxAssetCount == 0 || params.maxOracleStaleness == 0) revert InvalidLimit();
+        if (params.maxOracleStaleness == 0) revert InvalidLimit();
         if (params.maxOracleStaleness > MAX_ORACLE_STALENESS) revert LimitTooHigh();
-        if (params.maxAssetCount > GLOBAL_MAX_ASSET_COUNT) revert LimitTooHigh();
-        if (params.initialAssets.length > params.maxAssetCount) revert LimitTooHigh();
         if (params.maxTurnoverBps > GLOBAL_MAX_TURNOVER_BPS) revert LimitTooHigh();
         if (params.maxNavLossBps > GLOBAL_MAX_NAV_LOSS_BPS) revert LimitTooHigh();
         if (params.maxWeightDeviationBps == 0) revert InvalidLimit();
@@ -273,13 +279,6 @@ contract OTFFactory is IAdapterAllowlist {
             params.challengeGracePeriod < MIN_CHALLENGE_GRACE_PERIOD
                 || params.challengeGracePeriod > MAX_CHALLENGE_GRACE_PERIOD
         ) {
-            revert InvalidLimit();
-        }
-        if (params.maxSingleAssetWeightBps > 10_000) revert LimitTooHigh();
-        if (params.minNonZeroAssetWeightBps == 0 || params.minNonZeroAssetWeightBps > 10_000) {
-            revert InvalidLimit();
-        }
-        if (params.maxSingleAssetWeightBps < params.minNonZeroAssetWeightBps) {
             revert InvalidLimit();
         }
     }

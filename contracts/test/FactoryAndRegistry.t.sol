@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
@@ -66,11 +67,6 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(factory.MAX_ORACLE_STALENESS(), 1 hours);
 
         VaultInitParams memory params = _defaultParams();
-        params.maxAssetCount = 21;
-        vm.expectRevert(OTFFactory.LimitTooHigh.selector);
-        factory.createVault(params);
-
-        params = _defaultParams();
         params.maxNavLossBps = 201;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
         factory.createVault(params);
@@ -84,20 +80,10 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         params.maxOracleStaleness = factory.MAX_ORACLE_STALENESS() + 1;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
         factory.createVault(params);
-
-        params = _defaultParams();
-        params.maxSingleAssetWeightBps = 10_001;
-        vm.expectRevert(OTFFactory.LimitTooHigh.selector);
-        factory.createVault(params);
     }
 
     function testFactoryRejectsInvalidZeroLimits() public {
         VaultInitParams memory params = _defaultParams();
-        params.maxAssetCount = 0;
-        vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.createVault(params);
-
-        params = _defaultParams();
         params.maxOracleStaleness = 0;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
@@ -106,11 +92,60 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         params.maxWeightDeviationBps = 0;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
+    }
 
-        params = _defaultParams();
-        params.minNonZeroAssetWeightBps = 0;
-        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+    function testVaultUsesProtocolWideMinimumTargetWeight() public {
+        assertEq(factory.minTargetWeightBps(), 100);
+
+        VaultInitParams memory params = _defaultParams();
+        params.initialTargetWeightsBps[0] = 9_950;
+        params.initialTargetWeightsBps[1] = 50;
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
         factory.createVault(params);
+
+        ManagedOTFVault vault = _createVault();
+
+        vm.prank(ALICE);
+        vm.expectRevert(OTFFactory.NotOwner.selector);
+        factory.setMinTargetWeightBps(200);
+
+        factory.setMinTargetWeightBps(6_000);
+        assertFalse(vault.challengeActive());
+        assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
+        assertEq(vault.targetWeightBps(address(tokenB)), 5_000);
+
+        factory.setMinTargetWeightBps(200);
+        assertEq(factory.minTargetWeightBps(), 200);
+
+        vm.warp(START + 14 days);
+        _refreshPrices();
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 9_801;
+        weights[1] = 199;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        vault.proposeStrategy(assets, weights, "Target below the updated protocol minimum.");
+
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+        factory.setMinTargetWeightBps(0);
+    }
+
+    function testFactoryAllowsSingleAssetPortfolio() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](1);
+        params.initialAssets[0] = address(tokenA);
+        params.initialTargetWeightsBps = new uint16[](1);
+        params.initialTargetWeightsBps[0] = 10_000;
+        params.initialAmounts = new uint256[](1);
+        params.initialAmounts[0] = 1_000 * ONE;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.assetCount(), 1);
+        assertEq(vault.targetWeightBps(address(tokenA)), 10_000);
     }
 
     function testFactoryRejectsInvalidChallengeConfiguration() public {

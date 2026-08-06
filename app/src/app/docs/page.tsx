@@ -91,8 +91,7 @@ const safetyRows = [
   ["Portfolio turnover", "The oracle-valued amount in each partial batch cannot exceed the vault limit."],
   ["NAV loss", "Post-trade NAV cannot fall beyond the configured maximum loss."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
-  ["Asset count", "Portfolios cannot exceed the configured number of constituents."],
-  ["Individual weights", "Maximum and minimum nonzero weights prevent invalid concentration and dust positions."],
+  ["Target weights", "Every included asset must meet the live protocol-wide minimum, initialized at 1% and adjustable by the factory owner; there is no maximum target weight."],
   ["Oracle freshness", "Every valuation used for a rebalance must be recent enough for the vault's staleness bound."],
   ["Execution", "Every partial batch is atomic, uses approved adapters, clears exact approvals, and must reduce target distance."],
 ] as const;
@@ -408,8 +407,8 @@ completeStrategicRebalance()`}</code></pre>
               The manager is added to the executor allowlist automatically and may remove or
               restore their own execution permission. Any authorized executor may submit multiple partial trade batches.
               Every batch uses current constituents and approved adapters, returns output directly
-              to the vault, satisfies oracle-valued slippage, turnover, NAV-loss, and exposure
-              limits, and must move every constituent closer to target. Temporary approvals are
+              to the vault, satisfies oracle-valued slippage, turnover, and NAV-loss limits, and
+              must move every constituent closer to target. Temporary approvals are
               exact and cleared after execution. A final successful trade batch automatically
               completes the strategic rebalance when all weights enter their completion bands.
               Explicit permissionless completion remains available when no trade is needed or

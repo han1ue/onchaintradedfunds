@@ -191,10 +191,10 @@ contract RebalanceCooldownTest is TestBase {
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
         uint256[] memory invalidWeights = new uint256[](2);
-        invalidWeights[0] = 9_000;
-        invalidWeights[1] = 1_000;
-        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooHigh.selector);
-        vault.proposeStrategy(assets, invalidWeights, "Invalid overweight proposal.");
+        invalidWeights[0] = 9_950;
+        invalidWeights[1] = 50;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        vault.proposeStrategy(assets, invalidWeights, "Invalid dust-weight proposal.");
 
         assertEq(vault.lastCompletedStrategyTimestamp(), uint64(START));
 
@@ -302,9 +302,6 @@ contract RebalanceCooldownTest is TestBase {
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
             challengeWeightDeviationBps: 250,
-            maxSingleAssetWeightBps: 8_000,
-            minNonZeroAssetWeightBps: 100,
-            maxAssetCount: 10,
             maxOracleStaleness: 1 hours,
             challengeGracePeriod: 5 days
         });

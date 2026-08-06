@@ -173,16 +173,14 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vm.expectPartialRevert(IERC7621.InvalidWeights.selector);
         vault.proposeStrategy(assets, weights, "Invalid target update under test.");
 
-        weights[0] = 9_900;
-        weights[1] = 100;
-        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooHigh.selector);
-        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
+        weights[0] = 9_950;
+        weights[1] = 50;
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        vault.proposeStrategy(assets, weights, "Target below the protocol minimum.");
     }
 
     function testManagerRemovedConstituentPausesDepositsAndIsPrunedAtZero() public {
-        VaultInitParams memory params = _defaultParams();
-        params.maxSingleAssetWeightBps = 10_000;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        ManagedOTFVault vault = _createVault();
         address[] memory assets = new address[](1);
         assets[0] = address(tokenA);
         uint256[] memory weights = new uint256[](1);
@@ -190,7 +188,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vm.warp(START + 14 days);
         _refreshPrices();
 
-        vault.proposeStrategy(assets, weights, "Invalid target update under test.");
+        vault.proposeStrategy(assets, weights, "Concentrate the portfolio in Stock A.");
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
         vault.activatePendingStrategy();

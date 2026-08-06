@@ -297,12 +297,11 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         uint256 sum;
 
         assertGt(assets.length, 0);
-        assertLe(assets.length, vault.maxAssetCount());
         assertEq(assets.length, weights.length);
         for (uint256 i; i < assets.length; ++i) {
             assertTrue(assetRegistry.isApprovedAsset(assets[i]));
-            assertGe(weights[i], vault.minNonZeroAssetWeightBps());
-            assertLe(weights[i], vault.maxSingleAssetWeightBps());
+            // Raising the protocol floor is intentionally non-retroactive for active targets.
+            assertGt(weights[i], 0);
             sum += weights[i];
             for (uint256 j = i + 1; j < assets.length; ++j) {
                 assertTrue(assets[i] != assets[j]);

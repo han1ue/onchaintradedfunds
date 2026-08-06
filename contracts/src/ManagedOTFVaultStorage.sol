@@ -7,6 +7,10 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
 
+interface IProtocolPortfolioLimits {
+    function minTargetWeightBps() external view returns (uint16);
+}
+
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
@@ -38,7 +42,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error NotTradeAuthority();
     error InvalidArrayLength();
     error EmptyPortfolio();
-    error TooManyAssets(uint256 count, uint256 maximum);
     error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
     error InitialAmountZero(address asset);
     error InitialBalanceMismatch(address asset, uint256 expected, uint256 actual);
@@ -50,7 +53,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error AssetNotContract(address asset);
     error UnapprovedAsset(address asset);
     error InvalidWeightSum(uint256 sum);
-    error AssetWeightTooHigh(address asset, uint256 weightBps, uint256 maximum);
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
     error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
     error InvalidChallengeGracePeriod(uint32 supplied);
@@ -78,9 +80,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     );
     error TradeDoesNotImproveTarget(uint256 distanceBefore, uint256 distanceAfter);
     error AssetMovedAwayFromTarget(address asset, uint256 deviationBefore, uint256 deviationAfter);
-    error ExposureLimitExceeded(
-        address asset, uint256 weightBefore, uint256 weightAfter, uint16 maximum
-    );
     error RemovedAssetBalanceRemaining(address asset, uint256 balance);
     error TooManyTrades(uint256 count, uint256 maximum);
     error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
@@ -210,9 +209,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint16 public maxNavLossBps;
     uint16 public maxWeightDeviationBps;
     uint16 public challengeWeightDeviationBps;
-    uint16 public maxSingleAssetWeightBps;
-    uint16 public minNonZeroAssetWeightBps;
-    uint8 public maxAssetCount;
     uint32 public maxOracleStaleness;
     uint32 public challengeGracePeriod;
     uint64 public lastFeeAccrualTimestamp;
@@ -273,6 +269,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         _entered = 1;
         _;
         _entered = 0;
+    }
+
+    function _protocolMinTargetWeightBps() internal view returns (uint16) {
+        return IProtocolPortfolioLimits(factory).minTargetWeightBps();
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {

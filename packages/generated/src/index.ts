@@ -92,13 +92,6 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "maxAssetCount",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint8" }],
-  },
-  {
-    type: "function",
     name: "STRATEGY_CHANGE_COOLDOWN",
     stateMutability: "view",
     inputs: [],
@@ -263,30 +256,6 @@ export const managedOtfVaultAbi = [
         ],
       },
     ],
-  },
-  {
-    type: "function",
-    name: "maxSingleAssetWeightBps",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint16" }],
-  },
-  {
-    type: "error",
-    name: "ExposureLimitExceeded",
-    inputs: [
-      { name: "asset", type: "address" },
-      { name: "weightBefore", type: "uint256" },
-      { name: "weightAfter", type: "uint256" },
-      { name: "maximumWeightBps", type: "uint16" },
-    ],
-  },
-  {
-    type: "function",
-    name: "minNonZeroAssetWeightBps",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint16" }],
   },
   {
     type: "function",
@@ -591,6 +560,20 @@ export const otfV3MarketRegistryAbi = [
 export const otfFactoryAbi = [
   {
     type: "function",
+    name: "minTargetWeightBps",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "function",
+    name: "setMinTargetWeightBps",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newMinimumBps", type: "uint16" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "officialMarketRegistry",
     stateMutability: "view",
     inputs: [],
@@ -647,9 +630,6 @@ export const otfFactoryAbi = [
           { name: "maxNavLossBps", type: "uint16" },
           { name: "maxWeightDeviationBps", type: "uint16" },
           { name: "challengeWeightDeviationBps", type: "uint16" },
-          { name: "maxSingleAssetWeightBps", type: "uint16" },
-          { name: "minNonZeroAssetWeightBps", type: "uint16" },
-          { name: "maxAssetCount", type: "uint8" },
           { name: "maxOracleStaleness", type: "uint32" },
           { name: "challengeGracePeriod", type: "uint32" },
         ],
