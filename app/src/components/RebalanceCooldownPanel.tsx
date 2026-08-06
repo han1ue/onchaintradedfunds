@@ -2468,7 +2468,10 @@ function UserActions({
     isLoading: constituentLiquidityLoading,
   } = useReadContracts({
     contracts: constituentLiquidityContracts,
-    query: { enabled: constituentLiquidityContracts.length > 0 },
+    query: {
+      enabled: constituentLiquidityContracts.length > 0,
+      refetchOnWindowFocus: true,
+    },
   });
   let constituentLiquidityIndex = 0;
   const constituentPoolStates = vault.allocations.map((asset) => {
@@ -2496,6 +2499,16 @@ function UserActions({
       return state?.pool && state.liquidity !== undefined && state.liquidity > 0n && !state.readFailed;
     }),
   );
+  const constituentLiquidityReadFailed = constituentPoolStates.some(
+    (state) => state.pool && state.readFailed,
+  );
+  const emptyConstituentPoolSymbols = constituentPoolStates.flatMap((state) => {
+    if (!state.pool || state.liquidity !== 0n) return [];
+    const allocation = vault.allocations.find(
+      (asset) => asset.address.toLowerCase() === state.asset.toLowerCase(),
+    );
+    return [allocation?.symbol ?? shortAddress(state.asset)];
+  });
   const { data: settlementDecimalsRead } = useReadContract({
     address: settlementToken,
     abi: erc20BalanceAbi,
@@ -3112,6 +3125,9 @@ function UserActions({
     entryAdapterApproved !== false &&
     constituentPoolsReady &&
     (activeAction === "redeem" || !depositsPausedForAssetRemoval);
+  const underlyingRouteChecking = Boolean(
+    entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
+  );
   const underlyingQuoteReady = activeAction === "deposit"
     ? entryQuoteReady && entryWithinBudget
     : redeemQuoteReady;
@@ -3800,7 +3816,9 @@ function UserActions({
                 <span className="positionRouteIcon"><Landmark size={18} /></span>
                 <span className="positionRouteName">Underlying RWA pools</span>
                 <strong className="positionRouteQuote">
-                  {!underlyingRouteAvailable
+                  {underlyingRouteChecking
+                    ? <Loader2 className="spin" size={18} />
+                    : !underlyingRouteAvailable
                     ? "Unavailable"
                     : underlyingQuoteLoading
                       ? <Loader2 className="spin" size={18} />
@@ -3820,8 +3838,14 @@ function UserActions({
                       ? "Paused while an asset is removed"
                     : !constituentPoolsConfigured
                       ? "Constituent pools not configured"
+                      : constituentLiquidityLoading
+                        ? "Checking constituent liquidity"
+                      : constituentLiquidityReadFailed
+                        ? "Could not verify constituent liquidity"
+                      : emptyConstituentPoolSymbols.length
+                        ? `${emptyConstituentPoolSymbols.join(", ")} pool${emptyConstituentPoolSymbols.length === 1 ? " has" : "s have"} no active liquidity`
                       : !constituentPoolsReady
-                        ? "Awaiting constituent liquidity"
+                        ? "Constituent liquidity unavailable"
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares minted`
                       : "USDG received"}
