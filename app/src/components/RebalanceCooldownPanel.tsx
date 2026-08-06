@@ -4261,6 +4261,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const activationRemaining = useLiveCountdown(vault.pendingStrategyActivationTime);
+  const proposalCooldownRemaining = useLiveCountdown(vault.nextStrategyChange);
   const { data: pendingRationale } = useReadContract({
     address: vault.address,
     abi: managedOtfVaultAbi,
@@ -4293,12 +4294,17 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
   const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
-  const targetBoundsValid = targetWeightBps.every(
-    (weight) =>
-      Number.isInteger(weight) &&
-      weight >= vault.minNonZeroAssetWeightBps &&
-      weight <= vault.maxSingleAssetWeightBps,
+  const targetBoundsKnown = vault.minNonZeroAssetWeightBps > 0
+    && vault.maxSingleAssetWeightBps >= vault.minNonZeroAssetWeightBps;
+  const belowMinimumTargets = targetWeightBps.flatMap((weight, index) =>
+    !Number.isFinite(weight) || weight < vault.minNonZeroAssetWeightBps ? [targets[index].ticker] : [],
   );
+  const aboveMaximumTargets = targetWeightBps.flatMap((weight, index) =>
+    Number.isFinite(weight) && weight > vault.maxSingleAssetWeightBps ? [targets[index].ticker] : [],
+  );
+  const targetBoundsValid = targetBoundsKnown
+    && belowMinimumTargets.length === 0
+    && aboveMaximumTargets.length === 0;
   const weightsValid = weightSumValid && targetBoundsValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
@@ -4313,16 +4319,19 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const rationaleValid = rationaleBytes > 0 && rationaleBytes <= 2_048;
   const turnoverLimit = vault.maxTurnoverBps / 100;
   const turnoverBreach = turnover > turnoverLimit;
-  const reductions = targetChanges.filter((asset) => asset.delta < -0.01);
-  const increases = targetChanges.filter((asset) => asset.delta > 0.01);
-  const tradeInstructions = reductions.flatMap((sell) =>
-    increases.map((buy) => ({
-      from: sell.ticker || "Asset",
-      to: buy.ticker || "Asset",
-      notional: `${Math.min(Math.abs(sell.delta), buy.delta).toFixed(1)}% NAV`,
-      adapter: "Approved adapter",
-    })),
-  ).slice(0, 3);
+  const proposalBlocker = vault.canProposeStrategy || vault.dataMode !== "live"
+    ? undefined
+    : vault.challengeActive
+      ? { title: "Resolve the active challenge first", detail: "New target proposals remain locked until the portfolio returns to its completion bands and the challenge is resolved." }
+      : vault.strategyProposalPending
+        ? { title: "A target proposal is already pending", detail: "Activate or cancel the pending proposal before creating another one." }
+        : vault.strategicRebalanceActive
+          ? { title: "Complete the active rebalance first", detail: "New targets remain locked until the live basket reaches its completion bands and the current rebalance completes." }
+          : proposalCooldownRemaining > 0
+            ? { title: "Strategy cooldown is active", detail: `New target proposals unlock in ${formatCooldown(proposalCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.` }
+            : !vault.withinCompletionBands
+              ? { title: "Portfolio is outside its completion bands", detail: "Rebalance the live basket back inside every completion band before proposing new targets." }
+              : { title: "Target proposal is not currently available", detail: "Refresh the onchain data to check the latest strategy state." };
 
   function updateTarget(index: number, patch: Partial<StrategyTargetAsset>) {
     setTargets((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
@@ -4504,11 +4513,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <span>Live portfolio vs targets</span>
           <small>Estimated turnover {turnover.toFixed(1)}%</small>
         </div>
-        <div className="weightPreviewLegend" aria-hidden="true">
-          <span className="live">Live holding</span>
-          <span className="active">Active target</span>
-          <span className="draft">Draft target</span>
-        </div>
         <div className="weightPreviewList">
           {targetChanges.map((target, index) => (
             <div className="weightPreviewRow" key={`${target.ticker}-preview-${index}`}>
@@ -4526,38 +4530,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="builderBlock">
-        <div className="subHeader">
-          <span className="inlineLabel"><ListChecks size={13} /> Trade instructions</span>
-          <small>Approved adapters only</small>
-        </div>
-        <div className="tradeTableWrap">
-          <table className="tradeTable">
-            <thead>
-              <tr>
-                <th>Sell</th>
-                <th>Buy</th>
-                <th>Notional</th>
-                <th>Adapter</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tradeInstructions.length ? tradeInstructions.map((trade, index) => (
-                <tr key={`${trade.from}-${trade.to}-${index}`}>
-                  <td>{trade.from}</td>
-                  <td>{trade.to}</td>
-                  <td>{trade.notional}</td>
-                  <td><span className="stateBadge success">{trade.adapter}</span></td>
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan={4} className="emptyTableCell">No trades required for the current target set.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="weightPreviewLegend" aria-hidden="true">
+          <span className="live">Live holding</span>
+          <span className="active">Active target</span>
+          <span className="draft">Draft target</span>
         </div>
       </div>
 
@@ -4566,11 +4542,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <span>Estimated turnover</span>
           <strong>{turnover.toFixed(1)}%</strong>
           <small>Limit {turnoverLimit.toFixed(1)}%</small>
-        </div>
-        <div>
-          <span>NAV impact</span>
-          <strong>Not calculated</strong>
-          <small>Requires contract simulation</small>
         </div>
         <div className={maxDeviation === 0 ? "success" : "warning"}>
           <span>Largest completion gap</span>
@@ -4583,8 +4554,15 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!weightSumValid ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to exactly 100%</strong><span>Weights are submitted to the contract in whole basis points.</span></div></div>
         ) : null}
-        {!targetBoundsValid ? (
-          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Every included asset needs a valid nonzero target</strong><span>Keep each target between {(vault.minNonZeroAssetWeightBps / 100).toFixed(2)}% and {(vault.maxSingleAssetWeightBps / 100).toFixed(2)}%. Remove an asset from the proposal instead of setting it to 0%.</span></div></div>
+        {targetBoundsKnown && !targetBoundsValid ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div>
+            <strong>{belowMinimumTargets.length && aboveMaximumTargets.length
+              ? "Some targets are outside the allowed range"
+              : belowMinimumTargets.length
+                ? `${belowMinimumTargets.join(", ")} ${belowMinimumTargets.length === 1 ? "is" : "are"} below the minimum target`
+                : `${aboveMaximumTargets.join(", ")} ${aboveMaximumTargets.length === 1 ? "exceeds" : "exceed"} the maximum target`}</strong>
+            <span>Each included asset must be between {(vault.minNonZeroAssetWeightBps / 100).toFixed(2)}% and {(vault.maxSingleAssetWeightBps / 100).toFixed(2)}%. Remove an asset instead of assigning it less than the minimum.</span>
+          </div></div>
         ) : null}
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
@@ -4598,8 +4576,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {turnoverBreach ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
         ) : null}
-        {!vault.canProposeStrategy ? (
-          <div className="riskCallout warning"><Clock3 size={15} /><div><strong>Target proposal unavailable</strong><span>The change unlock, completion bands, active challenge, and unfinished strategic state are checked onchain.</span></div></div>
+        {proposalBlocker ? (
+          <div className="riskCallout warning"><Clock3 size={15} /><div><strong>{proposalBlocker.title}</strong><span>{proposalBlocker.detail}</span></div></div>
         ) : null}
         {txError ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target update failed</strong><span>{txError}</span></div></div>
@@ -4667,6 +4645,23 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
     query: { enabled: isAddress(tokenIn) },
   });
   const tokenInDecimals = Number(tokenInDecimalsResult ?? 18);
+  const {
+    data: tokenInVaultBalance,
+    isLoading: tokenInVaultBalanceLoading,
+    isError: tokenInVaultBalanceError,
+    refetch: refetchTokenInVaultBalance,
+  } = useReadContract({
+    address: isAddress(tokenIn) ? tokenIn : undefined,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: vault.address ? [vault.address] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(isAddress(tokenIn) && vault.address),
+      refetchInterval: 12_000,
+      refetchOnWindowFocus: true,
+    },
+  });
   const { data: tokenOutDecimalsResult } = useReadContract({
     address: isAddress(tokenOut) ? tokenOut : undefined,
     abi: erc20BalanceAbi,
@@ -4741,11 +4736,48 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
     : undefined;
   const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
   const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
+  const mirroredLowerWeightBps = inputAsset
+    ? Math.max(0, (2 * inputAsset.targetWeightBps) - inputAsset.actualWeightBps)
+    : 0;
+  const sellSideMaxAmount = tokenInVaultBalance !== undefined && inputAsset?.actualWeightBps
+    ? tokenInVaultBalance
+      * BigInt(inputAsset.actualWeightBps - mirroredLowerWeightBps)
+      / BigInt(inputAsset.actualWeightBps)
+    : undefined;
+  const turnoverMaxAmount = tokenInVaultBalance !== undefined && inputAsset?.actualWeightBps
+    ? tokenInVaultBalance
+      * BigInt(vault.maxTurnoverBps)
+      / BigInt(inputAsset.actualWeightBps)
+    : undefined;
+  const maxSellAmount = tokenInVaultBalance !== undefined
+    && sellSideMaxAmount !== undefined
+    && turnoverMaxAmount !== undefined
+    ? [tokenInVaultBalance, sellSideMaxAmount, turnoverMaxAmount].reduce(
+        (smallest, value) => value < smallest ? value : smallest,
+      )
+    : undefined;
+  const maxSellAmountText = maxSellAmount !== undefined
+    ? formatUnits(maxSellAmount, tokenInDecimals)
+    : undefined;
+  const amountExceedsSellLimit = Boolean(
+    amountIn && maxSellAmount !== undefined && amountIn > maxSellAmount,
+  );
+  const amountWithinSellLimit = Boolean(
+    amountIn && maxSellAmount !== undefined && amountIn <= maxSellAmount,
+  );
+  const tokenInVaultBalanceLabel = tokenInVaultBalanceLoading
+    ? "Loading"
+    : tokenInVaultBalanceError || tokenInVaultBalance === undefined
+      ? "Unavailable"
+      : `${formatWalletTokenBalance(tokenInVaultBalance, tokenInDecimals, 12)} ${inputAsset?.symbol ?? "tokens"}`;
+  const sellLimitLabel = maxSellAmount === undefined
+    ? "Unavailable"
+    : `${formatWalletTokenBalance(maxSellAmount, tokenInDecimals, 12)} ${inputAsset?.symbol ?? "tokens"}`;
   const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
-    hasAllowedTrade && amountIn && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
+    hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
   );
 
   function resetTradeState() {
@@ -4784,7 +4816,7 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
       setTxState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The rebalance trade reverted.");
-      await onRefresh();
+      await Promise.all([onRefresh(), refetchTokenInVaultBalance()]);
       await refetchQuote();
       setTxState("confirmed");
       setAmountInText("");
@@ -4826,9 +4858,34 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
 
         <div className="tradeInputGrid">
           <label>
-            <span>Amount to sell</span>
-            <div className="inputWithSuffix">
-              <input type="number" min="0" value={amountInText} disabled={!hasAllowedTrade} onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }} placeholder="0.00" />
+            <span className="positionFieldHeading">
+              <span>Amount to sell</span>
+              <span className="positionWalletBalance">OTF balance: {tokenInVaultBalanceLabel} · Limit: {sellLimitLabel}</span>
+            </span>
+            <div className="inputWithSuffix tradeAmountInput">
+              <input
+                type="number"
+                min="0"
+                max={maxSellAmountText}
+                inputMode="decimal"
+                value={amountInText}
+                disabled={!hasAllowedTrade}
+                onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }}
+                placeholder="0.00"
+              />
+              <button
+                className="positionMaxButton"
+                type="button"
+                disabled={!hasAllowedTrade || maxSellAmount === undefined || maxSellAmount <= 0n}
+                onClick={() => {
+                  if (maxSellAmountText === undefined) return;
+                  setAmountInText(maxSellAmountText);
+                  resetTradeState();
+                }}
+                aria-label={`Use maximum allowed ${inputAsset?.symbol ?? "asset"} sell amount`}
+              >
+                Max
+              </button>
               <span>{inputAsset?.symbol ?? "Asset"}</span>
             </div>
           </label>
@@ -4869,6 +4926,9 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
         ) : null}
         {hasAllowedTrade && tokenIn === tokenOut ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
+        ) : null}
+        {amountExceedsSellLimit ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Amount exceeds the sell limit</strong><span>Enter no more than {sellLimitLabel}. The UI caps the amount by the OTF balance, turnover limit, and the sell asset&apos;s mirrored target deviation.</span></div></div>
         ) : null}
         {quoteError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>

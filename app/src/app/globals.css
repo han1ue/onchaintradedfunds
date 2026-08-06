@@ -2505,7 +2505,8 @@ textarea::placeholder {
   font-size: 0.68rem;
 }
 
-.positionAmountInput .positionMaxButton {
+.positionAmountInput .positionMaxButton,
+.tradeAmountInput .positionMaxButton {
   flex: 0 0 auto;
   min-height: 28px;
   border: 1px solid rgb(var(--accent-rgb) / 32%);
@@ -2520,17 +2521,20 @@ textarea::placeholder {
   transition: background 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
 }
 
-.positionAmountInput .positionMaxButton:hover:not(:disabled) {
+.positionAmountInput .positionMaxButton:hover:not(:disabled),
+.tradeAmountInput .positionMaxButton:hover:not(:disabled) {
   border-color: rgb(var(--accent-rgb) / 58%);
   background: rgb(var(--accent-rgb) / 18%);
 }
 
-.positionAmountInput .positionMaxButton:focus-visible {
+.positionAmountInput .positionMaxButton:focus-visible,
+.tradeAmountInput .positionMaxButton:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-.positionAmountInput .positionMaxButton:disabled {
+.positionAmountInput .positionMaxButton:disabled,
+.tradeAmountInput .positionMaxButton:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -4047,8 +4051,9 @@ textarea::placeholder {
 
 .weightPreviewLegend {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 14px;
+  margin-top: 1px;
   color: var(--text-muted);
   font-size: 0.58rem;
 }
@@ -4157,7 +4162,7 @@ textarea::placeholder {
 
 .riskMetricGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -6916,7 +6921,6 @@ input.invalid {
   }
 
   .weightPreviewLegend {
-    justify-content: flex-start;
     flex-wrap: wrap;
   }
 
