@@ -5028,9 +5028,6 @@ function RebalanceTradesPanel({
   const amountWithinSellLimit = Boolean(
     amountIn && maxSellAmount !== undefined && amountIn <= maxSellAmount,
   );
-  const recommendedTradeAmountLabel = recommendedTradeAmount === undefined
-    ? "Unavailable"
-    : `${formatWalletTokenBalance(recommendedTradeAmount, tokenInDecimals, 12)} ${inputAsset?.symbol ?? "tokens"}`;
   const predictedNavValue = vault.navValue !== undefined
     && inputTradeValue !== undefined
     && quotedOutputValue !== undefined
@@ -5081,7 +5078,7 @@ function RebalanceTradesPanel({
       : undefined;
     setAmountInText(presetAmount !== undefined ? formatUnits(presetAmount, tokenInDecimals) : "");
     resetTradeState();
-  }, [recommendedTradeAmount, tokenInDecimals, tradeSize]);
+  }, [recommendedTradeAmount, resetTradeState, tokenInDecimals, tradeSize]);
 
   const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
@@ -5311,7 +5308,7 @@ function RebalanceTradesPanel({
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would move too far past its target</strong><span>Crossing the target is allowed, but its predicted distance from target cannot exceed its current distance.</span></div></div>
         ) : null}
         {exposureLimitExceeded ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would exceed its exposure limit</strong><span>The quote predicts {predictedOutputWeight?.toFixed(2)}%, above this OTF's {bpsToPercent(vault.maxSingleAssetWeightBps)} maximum individual weight. Choose a smaller percentage.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would exceed its exposure limit</strong><span>The quote predicts {predictedOutputWeight?.toFixed(2)}%, above this OTF&apos;s {bpsToPercent(vault.maxSingleAssetWeightBps)} maximum individual weight. Choose a smaller percentage.</span></div></div>
         ) : null}
         {oracleValueLossTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
@@ -7463,7 +7460,7 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
               );
             })}
           </div>
-          <p className="rebalanceHistoryFootnote">Weights show the strategy targets before and after each rebalance. NAV values are the contract's oracle-valued snapshots at strategy activation and completion; deposits, redemptions, or market moves during that interval can also affect the change.</p>
+          <p className="rebalanceHistoryFootnote">Weights show the strategy targets before and after each rebalance. NAV values are the contract&apos;s oracle-valued snapshots at strategy activation and completion; deposits, redemptions, or market moves during that interval can also affect the change.</p>
         </div>
       ) : (
         <div className="inlineEmptyState"><Activity size={17} /><div><strong>No completed rebalances yet</strong><span>The first completed strategy change will appear here with its target shift, turnover, and recorded NAV impact.</span></div></div>
