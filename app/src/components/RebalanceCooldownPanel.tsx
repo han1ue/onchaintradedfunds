@@ -62,6 +62,7 @@ import {
   usePublicClient,
   useReadContract,
   useReadContracts,
+  useSimulateContract,
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
@@ -112,6 +113,10 @@ type TargetAsset = {
   address: string;
   targetWeight: number;
   initialAmount: string;
+};
+
+type StrategyTargetAsset = Omit<TargetAsset, "targetWeight"> & {
+  targetWeight: string;
 };
 
 type CatalogOraclePrice = {
@@ -4238,16 +4243,18 @@ function TxStatus({ state, persistent = false }: { state: TxState; persistent?: 
 }
 
 function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
-  const initialTargets = useMemo(
-    () => vault.allocations.map((asset) => ({
+  const activeTargetsKey = vault.allocations
+    .map((asset) => `${asset.address.toLowerCase()}:${asset.symbol}:${asset.targetWeightBps}`)
+    .join("|");
+  const [targets, setTargets] = useState<StrategyTargetAsset[]>(() =>
+    vault.allocations.map((asset) => ({
       ticker: asset.symbol,
       address: asset.address,
-      targetWeight: asset.targetWeightBps / 100,
+      targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
     })),
-    [vault.allocations],
   );
-  const [targets, setTargets] = useState<TargetAsset[]>(initialTargets);
+  const initializedTargetsKey = useRef(activeTargetsKey);
   const [rationale, setRationale] = useState("");
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
@@ -4262,7 +4269,16 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     query: { enabled: Boolean(vault.address && vault.strategyProposalPending), refetchInterval: 12_000 },
   });
 
-  useEffect(() => setTargets(initialTargets), [initialTargets]);
+  useEffect(() => {
+    if (initializedTargetsKey.current === activeTargetsKey) return;
+    initializedTargetsKey.current = activeTargetsKey;
+    setTargets(vault.allocations.map((asset) => ({
+      ticker: asset.symbol,
+      address: asset.address,
+      targetWeight: String(asset.targetWeightBps / 100),
+      initialAmount: "",
+    })));
+  }, [activeTargetsKey, vault.allocations]);
 
   const totalWeight = targets.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
   const targetChanges = targets.map((asset) => {
@@ -4270,7 +4286,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       (allocation) => allocation.address.toLowerCase() === asset.address.toLowerCase(),
     );
     const current = (currentAllocation?.actualWeightBps ?? 0) / 100;
-    return { ...asset, current, delta: Number(asset.targetWeight || 0) - current };
+    const activeTarget = (currentAllocation?.targetWeightBps ?? 0) / 100;
+    return { ...asset, current, activeTarget, delta: Number(asset.targetWeight || 0) - current };
   });
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
@@ -4307,7 +4324,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     })),
   ).slice(0, 3);
 
-  function updateTarget(index: number, patch: Partial<TargetAsset>) {
+  function updateTarget(index: number, patch: Partial<StrategyTargetAsset>) {
     setTargets((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
     setTxState("idle");
     setTxError(undefined);
@@ -4320,7 +4337,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     setTargets((current) => [...current, {
       ticker: nextAsset.symbol,
       address: nextAsset.address,
-      targetWeight: 0,
+      targetWeight: "",
       initialAmount: "",
     }]);
     setTxState("idle");
@@ -4441,17 +4458,18 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <div className="inputWithSuffix">
                   <input
                     value={target.targetWeight}
-                    onChange={(event) => updateTarget(index, { targetWeight: Number(event.target.value) })}
+                    onChange={(event) => updateTarget(index, { targetWeight: event.target.value })}
                     type="number"
                     min={0}
                     max={100}
                     placeholder="0"
                     disabled={vault.strategyProposalPending}
+                    aria-label={`${target.ticker || "Asset"} draft target weight`}
                   />
                   <span>%</span>
                 </div>
               </label>
-              <small>Current {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
+              <small>Active target {targetChanges[index]?.activeTarget.toFixed(1) ?? "0.0"}% · Live holding {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
             </div>
           ))}
         </div>
@@ -4464,7 +4482,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       <div className="builderBlock strategyRationaleComposer">
         <div className="subHeader">
           <span>Strategy rationale</span>
-          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 bytes</small>
+          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 UTF-8 bytes</small>
         </div>
         <textarea
           value={rationale}
@@ -4478,26 +4496,32 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           disabled={vault.strategyProposalPending}
           aria-invalid={rationaleBytes > 2_048}
         />
-        <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be amended separately.</p>
+        <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be edited.</p>
       </div>
 
       <div className="previewBlock">
         <div className="subHeader">
-          <span>Current vs target</span>
+          <span>Live portfolio vs targets</span>
           <small>Estimated turnover {turnover.toFixed(1)}%</small>
+        </div>
+        <div className="weightPreviewLegend" aria-hidden="true">
+          <span className="live">Live holding</span>
+          <span className="active">Active target</span>
+          <span className="draft">Draft target</span>
         </div>
         <div className="weightPreviewList">
           {targetChanges.map((target, index) => (
             <div className="weightPreviewRow" key={`${target.ticker}-preview-${index}`}>
               <span className="assetNameWithLogo"><AssetLogo logoUrl={catalogAssetForAddress(target.address)?.logoUrl} symbol={target.ticker || "Asset"} compact /><strong>{target.ticker || "Asset"}</strong></span>
-              <div className="weightTrack" aria-label={`${target.ticker} current ${target.current.toFixed(1)}%, target ${target.targetWeight.toFixed(1)}%`}>
+              <div className="weightTrack" aria-label={`${target.ticker} live holding ${target.current.toFixed(1)}%, active target ${target.activeTarget.toFixed(1)}%, draft target ${Number(target.targetWeight || 0).toFixed(1)}%`}>
                 <span style={{ width: `${Math.min(target.current, 100)}%` }} />
-                <i style={{ left: `${Math.min(Number(target.targetWeight || 0), 100)}%` }} />
+                <i className="active" style={{ left: `${Math.min(target.activeTarget, 100)}%` }} />
+                <i className="draft" style={{ left: `${Math.min(Number(target.targetWeight || 0), 100)}%` }} />
               </div>
-              <div>
-                <span>{target.current.toFixed(1)}%</span>
-                <ArrowRight size={12} />
-                <strong>{Number(target.targetWeight || 0).toFixed(1)}%</strong>
+              <div className="weightPreviewValues">
+                <span><small>Live</small>{target.current.toFixed(1)}%</span>
+                <span><small>Active</small>{target.activeTarget.toFixed(1)}%</span>
+                <strong><small>Draft</small>{Number(target.targetWeight || 0).toFixed(1)}%</strong>
               </div>
             </div>
           ))}
@@ -4607,8 +4631,16 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
 }
 
 function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
-  const [tokenIn, setTokenIn] = useState(vault.allocations[0]?.address ?? "");
-  const [tokenOut, setTokenOut] = useState(vault.allocations[1]?.address ?? "");
+  const sellOptions = useMemo(
+    () => vault.allocations.filter((asset) => asset.actualWeightBps > asset.targetWeightBps),
+    [vault.allocations],
+  );
+  const buyOptions = useMemo(
+    () => vault.allocations.filter((asset) => asset.actualWeightBps < asset.targetWeightBps),
+    [vault.allocations],
+  );
+  const [tokenIn, setTokenIn] = useState(sellOptions[0]?.address ?? "");
+  const [tokenOut, setTokenOut] = useState(buyOptions[0]?.address ?? "");
   const [amountInText, setAmountInText] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");
   const [txState, setTxState] = useState<TxState>("idle");
@@ -4620,11 +4652,12 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   const quoterAddress = configuredUniswapV3QuoterAddress();
   const settlementToken = configuredSettlementTokenAddress();
   const constituentFee = configuredConstituentFee();
+  const hasAllowedTrade = sellOptions.length > 0 && buyOptions.length > 0;
 
   useEffect(() => {
-    if (!vault.allocations.some((asset) => asset.address === tokenIn)) setTokenIn(vault.allocations[0]?.address ?? "");
-    if (!vault.allocations.some((asset) => asset.address === tokenOut)) setTokenOut(vault.allocations[1]?.address ?? "");
-  }, [tokenIn, tokenOut, vault.allocations]);
+    if (!sellOptions.some((asset) => asset.address === tokenIn)) setTokenIn(sellOptions[0]?.address ?? "");
+    if (!buyOptions.some((asset) => asset.address === tokenOut)) setTokenOut(buyOptions[0]?.address ?? "");
+  }, [buyOptions, sellOptions, tokenIn, tokenOut]);
 
   const { data: tokenInDecimalsResult } = useReadContract({
     address: isAddress(tokenIn) ? tokenIn : undefined,
@@ -4712,7 +4745,7 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
-    amountIn && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
+    hasAllowedTrade && amountIn && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
   );
 
   function resetTradeState() {
@@ -4763,24 +4796,30 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
 
   return (
     <SectionCard
-      title="Execute rebalance trade"
-      subtitle="Move the live basket toward its active target with a constrained partial swap"
+      title="Execute an allowed rebalance trade"
+      subtitle="Sell an overweight constituent to buy an underweight constituent"
       icon={<RefreshCw size={15} />}
-      action={<span className={`stateBadge ${vault.strategicRebalanceActive ? "warning" : "muted"}`}>{vault.strategicRebalanceActive ? "Target active" : "Maintenance trade"}</span>}
+      action={<span className={`stateBadge ${hasAllowedTrade ? vault.strategicRebalanceActive ? "warning" : "success" : "muted"}`}>{hasAllowedTrade ? vault.strategicRebalanceActive ? "Target active" : "Trade available" : "No trade needed"}</span>}
     >
       <div className="rebalanceTradeForm">
+        {!hasAllowedTrade ? (
+          <div className="inlineEmptyState rebalanceEmptyState">
+            <CheckCircle size={16} />
+            <div><strong>No constrained trade is available</strong><span>The live basket has no overweight-to-underweight pair. Rebalance choices appear here only when a trade can move the portfolio closer to its active targets.</span></div>
+          </div>
+        ) : null}
         <div className="tradeAssetPair">
           <label>
-            <span>Sell</span>
-            <select value={tokenIn} onChange={(event) => { setTokenIn(event.target.value); resetTradeState(); }}>
-              {vault.allocations.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol}</option>)}
+            <span>Sell · above target</span>
+            <select value={tokenIn} disabled={!hasAllowedTrade} onChange={(event) => { setTokenIn(event.target.value); resetTradeState(); }}>
+              {sellOptions.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol} · {(asset.actualWeightBps / 100).toFixed(1)}% live / {(asset.targetWeightBps / 100).toFixed(1)}% target</option>)}
             </select>
           </label>
           <ArrowRight size={15} />
           <label>
-            <span>Buy</span>
-            <select value={tokenOut} onChange={(event) => { setTokenOut(event.target.value); resetTradeState(); }}>
-              {vault.allocations.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol}</option>)}
+            <span>Buy · below target</span>
+            <select value={tokenOut} disabled={!hasAllowedTrade} onChange={(event) => { setTokenOut(event.target.value); resetTradeState(); }}>
+              {buyOptions.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol} · {(asset.actualWeightBps / 100).toFixed(1)}% live / {(asset.targetWeightBps / 100).toFixed(1)}% target</option>)}
             </select>
           </label>
         </div>
@@ -4789,14 +4828,14 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
           <label>
             <span>Amount to sell</span>
             <div className="inputWithSuffix">
-              <input type="number" min="0" value={amountInText} onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }} placeholder="0.00" />
+              <input type="number" min="0" value={amountInText} disabled={!hasAllowedTrade} onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }} placeholder="0.00" />
               <span>{inputAsset?.symbol ?? "Asset"}</span>
             </div>
           </label>
           <label>
             <span>Maximum pool slippage</span>
             <div className="inputWithSuffix">
-              <input type="number" min="0.01" max="20" step="0.1" value={slippageText} onChange={(event) => { setSlippageText(event.target.value); resetTradeState(); }} />
+              <input type="number" min="0.01" max="20" step="0.1" value={slippageText} disabled={!hasAllowedTrade} onChange={(event) => { setSlippageText(event.target.value); resetTradeState(); }} />
               <span>%</span>
             </div>
           </label>
@@ -4822,13 +4861,13 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
         {!contractsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
-        {contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
+        {hasAllowedTrade && contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Both selected assets need recorded USDG pools before this rebalance route can be quoted.</span></div></div>
         ) : null}
-        {contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
+        {hasAllowedTrade && contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>Both USDG pools exist, but this route stays disabled until they have active liquidity.</span></div></div>
         ) : null}
-        {tokenIn === tokenOut ? (
+        {hasAllowedTrade && tokenIn === tokenOut ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
         ) : null}
         {quoteError ? (
@@ -6857,6 +6896,26 @@ function ManageVaultsView({
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
+  const {
+    data: feeWithdrawalPreview,
+    isLoading: feeWithdrawalPreviewLoading,
+    refetch: refetchFeeWithdrawalPreview,
+  } = useSimulateContract({
+    account: vault.manager as `0x${string}` | undefined,
+    address: vault.address,
+    abi: vaultFeeAbi,
+    functionName: "withdrawManagerFees",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.enabled && vault.address && vault.manager) },
+  });
+  const pendingManagerFeeShares = feeWithdrawalPreview?.result !== undefined
+    ? feeWithdrawalPreview.result * BigInt(10_000 - vault.protocolFeeShareBps) / 10_000n
+    : undefined;
+  const pendingManagerFeeDisplay = feeWithdrawalPreviewLoading
+    ? "Calculating"
+    : pendingManagerFeeShares !== undefined
+      ? `${formatWalletTokenBalance(pendingManagerFeeShares, 18)} ${vault.symbol}`
+      : "Preview unavailable";
   const managerValid = isAddress(managerTarget)
     && !/^0x0{40}$/i.test(managerTarget)
     && managerTarget.toLowerCase() !== vault.manager?.toLowerCase()
@@ -6899,6 +6958,7 @@ function ManageVaultsView({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The fee withdrawal reverted.");
       await onRefresh();
+      await refetchFeeWithdrawalPreview();
       setFeeAccrualState("confirmed");
     } catch (error) {
       setFeeAccrualError(errorMessage(error));
@@ -7028,10 +7088,10 @@ function ManageVaultsView({
       <DataProvenance vault={vault} />
 
       <div className="manageMetrics">
-        <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} sub="Immediate transfer" />
-        <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} sub="Immediate update" />
-        <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} sub={["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"} />
-        <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} sub="Starts at deployment; resets on completion" />
+        <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} />
+        <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} />
+        <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} />
+        <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} />
       </div>
 
       <div className="managerOperationTabs" role="tablist" aria-label="Manager operations">
@@ -7156,21 +7216,22 @@ function ManageVaultsView({
         ) : null}
 
         {activeOperation === "fees" ? (
-        <SectionCard title="Manager fees" subtitle="Withdraw fees when the portfolio is inside its target bands" icon={<CircleDollarSign size={15} />} action={<span className={`stateBadge ${vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "success"}`}>{["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"}</span>}>
+        <SectionCard title="Manager fees" subtitle="Preview accrued OTF shares and withdraw them to the fee recipient" icon={<CircleDollarSign size={15} />} action={<span className={`stateBadge ${vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "success"}`}>{["Withdrawable", "Challenge active", "Challenge overdue"][vault.feeState] ?? "Unavailable"}</span>}>
           <div className="operationFlow">
             <div className="accrualSummary">
+              <div><span>Pending manager fees</span><strong>{pendingManagerFeeDisplay}</strong></div>
               <div><span>Manager fee</span><strong>{bpsToPercent(vault.creatorFeeBps)} / yr</strong></div>
-              <div><span>Protocol share</span><strong>{bpsToPercent(vault.protocolFeeShareBps)}</strong></div>
-              <div><span>Forfeited fees</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
-              <div><span>Your caller reward</span><strong>{vault.claimableChallengeRewardShares}</strong></div>
+              <div><span>Protocol cut</span><strong>{bpsToPercent(vault.protocolFeeShareBps)} of accrued fees</strong></div>
+              <div><span>Historically forfeited</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
             </div>
+            <p>Pending fees are calculated by simulating a withdrawal at the latest block. They are minted as OTF shares when the withdrawal confirms, with the protocol cut sent to the collector and the remainder sent to the fee recipient.</p>
             <div className="riskCallout info"><Info size={15} /><div><strong>Targets gate fee withdrawals</strong><span>If the manager tries to withdraw while the portfolio is outside challenge bands, the strategy challenge starts instead.</span></div></div>
             {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Fee withdrawal failed</strong><span>{feeAccrualError}</span></div></div> : null}
             <TxStatus state={feeAccrualState} />
             <button
               className="secondaryAction"
               type="button"
-              disabled={!connectedAddress || !vault.connectedIsManager || feeAccrualState === "pending" || feeAccrualState === "submitted"}
+              disabled={!connectedAddress || !vault.connectedIsManager || !pendingManagerFeeShares || feeAccrualState === "pending" || feeAccrualState === "submitted"}
               onClick={withdrawVaultFees}
             >
               <CircleDollarSign size={14} />
@@ -7191,12 +7252,6 @@ function ManageVaultsView({
             <div><XCircle size={14} /><span><strong>Cannot shorten the change unlock</strong><small>The configured delay is permanently immutable.</small></span></div>
           </div>
         </SectionCard>
-        ) : null}
-        {activeOperation === "roles" ? (
-          <div className="riskCallout info manageNotice">
-            <Info size={15} />
-            <div><strong>Role transfers leave the change unlock unchanged</strong><span>The next eligible portfolio change stays the same because changing an address does not change the portfolio.</span></div>
-          </div>
         ) : null}
       </div> : null}
     </div>

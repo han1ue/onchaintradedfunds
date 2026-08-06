@@ -4003,7 +4003,7 @@ textarea::placeholder {
 
 .weightPreviewRow {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 118px;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(196px, auto);
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -4017,18 +4017,62 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
-.weightPreviewRow > div:last-child {
-  display: flex;
+.weightPreviewValues {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
+  gap: 10px;
   color: var(--text-muted);
   font-size: 0.67rem;
+  text-align: right;
 }
 
-.weightPreviewRow > div:last-child strong {
+.weightPreviewValues > * {
+  display: grid;
+  gap: 2px;
+  font-weight: 500;
+}
+
+.weightPreviewValues small {
+  color: var(--text-muted);
+  font-size: 0.52rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.weightPreviewValues strong {
   color: var(--text);
   font-weight: 600;
+}
+
+.weightPreviewLegend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+}
+
+.weightPreviewLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.weightPreviewLegend span::before {
+  width: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgb(135 148 167 / 56%);
+  content: "";
+}
+
+.weightPreviewLegend .active::before {
+  background: var(--violet);
+}
+
+.weightPreviewLegend .draft::before {
+  background: var(--teal);
 }
 
 .weightTrack {
@@ -4050,7 +4094,16 @@ textarea::placeholder {
   top: 0;
   bottom: 0;
   width: 2px;
+  transform: translateX(-1px);
+}
+
+.weightTrack > i.active {
+  background: var(--violet);
+}
+
+.weightTrack > i.draft {
   background: var(--teal);
+  box-shadow: 0 0 0 1px var(--background);
 }
 
 .inlineLabel {
@@ -6123,6 +6176,10 @@ input.invalid {
   white-space: nowrap;
 }
 
+.rebalanceEmptyState {
+  margin: 0;
+}
+
 .permissionList {
   display: grid;
 }
@@ -6849,8 +6906,18 @@ input.invalid {
   }
 
   .weightPreviewRow {
-    grid-template-columns: 62px minmax(80px, 1fr) 103px;
+    grid-template-columns: 62px minmax(80px, 1fr);
     gap: 8px;
+  }
+
+  .weightPreviewValues {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .weightPreviewLegend {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .assetTableWrap,
