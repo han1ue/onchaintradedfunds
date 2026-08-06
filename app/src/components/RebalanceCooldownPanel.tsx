@@ -4391,15 +4391,45 @@ function TxStatus({ state, persistent = false }: { state: TxState; persistent?: 
   );
 }
 
-function PortfolioBandStatus({ vault, context }: { vault: VaultView; context: "targets" | "rebalance" | "fees" }) {
+function PortfolioBandStatus({
+  vault,
+  context,
+  proposalCooldownRemaining = 0,
+}: {
+  vault: VaultView;
+  context: "targets" | "rebalance" | "fees";
+  proposalCooldownRemaining?: number;
+}) {
   const completionBand = bpsToPercent(vault.maxWeightDeviationBps);
   const withinBands = vault.withinCompletionBands;
   const beyondChallengeBands = !vault.withinChallengeBands;
+  const targetProposalBlockers = context === "targets"
+    ? [
+        vault.challengeActive
+          ? "Resolve the active challenge before proposing new targets."
+          : undefined,
+        vault.strategyProposalPending
+          ? "Activate or cancel the pending target proposal first."
+          : undefined,
+        vault.strategicRebalanceActive
+          ? "Complete the active strategic rebalance first."
+          : undefined,
+        proposalCooldownRemaining > 0
+          ? `The strategy cooldown ends in ${formatCooldown(proposalCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.`
+          : undefined,
+        !withinBands
+          ? `Return every constituent to within ${completionBand} of its active target.`
+          : undefined,
+      ].filter((reason): reason is string => Boolean(reason))
+    : [];
+  if (context === "targets" && vault.dataMode === "live" && !vault.canProposeStrategy && targetProposalBlockers.length === 0) {
+    targetProposalBlockers.push("Target proposals are not currently available. Refresh the onchain data to check the latest strategy state.");
+  }
   const status = context === "rebalance"
     ? withinBands
       ? {
           title: "Portfolio is healthy — rebalance optional",
-          detail: "Every constituent is within its target band. Trades remain available when they improve alignment and satisfy every contract limit.",
+          detail: "Every constituent is within its target band. Trades remain available when they improve alignment but they are not obligatory.",
           tone: "success",
         }
       : {
@@ -4408,16 +4438,16 @@ function PortfolioBandStatus({ vault, context }: { vault: VaultView; context: "t
           tone: "warning",
         }
     : context === "targets"
-      ? withinBands
+      ? targetProposalBlockers.length === 0
         ? {
-            title: "Portfolio is within target bands",
-            detail: "The in-band requirement for a new target proposal is satisfied. The strategy cooldown and any pending strategy or challenge still apply.",
+            title: "Portfolio is ready for a target proposal",
+            detail: "The portfolio is within its completion bands, the cooldown has ended, and no challenge or strategy change is active.",
             tone: "success",
           }
         : {
-            title: "Portfolio is outside target bands",
-            detail: `New target proposals are blocked until every constituent returns within ${completionBand} of its active target. Use the Rebalance tab to correct the live portfolio.`,
-            tone: "warning",
+            title: "Target proposals are currently blocked",
+            detail: targetProposalBlockers.join(" "),
+            tone: vault.challengeActive ? "danger" : "warning",
           }
       : withinBands
         ? {
@@ -4528,19 +4558,74 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const rationaleValid = rationaleBytes > 0 && rationaleBytes <= 2_048;
   const turnoverLimit = vault.maxTurnoverBps / 100;
   const turnoverBreach = turnover > turnoverLimit;
-  const proposalBlocker = vault.canProposeStrategy || vault.dataMode !== "live"
-    ? undefined
-    : vault.challengeActive
-      ? { title: "Resolve the active challenge first", detail: "New target proposals remain locked until the portfolio returns to its completion bands and the challenge is resolved." }
-      : vault.strategyProposalPending
-        ? { title: "A target proposal is already pending", detail: "Activate or cancel the pending proposal before creating another one." }
-        : vault.strategicRebalanceActive
-          ? { title: "Complete the active rebalance first", detail: "New targets remain locked until the live basket reaches its completion bands and the current rebalance completes." }
-          : proposalCooldownRemaining > 0
-            ? { title: "Strategy cooldown is active", detail: `New target proposals unlock in ${formatCooldown(proposalCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.` }
-            : !vault.withinCompletionBands
-              ? undefined
-              : { title: "Target proposal is not currently available", detail: "Refresh the onchain data to check the latest strategy state." };
+  const targetEditorLocked = vault.strategyProposalPending
+    || (vault.connectedIsManager && !vault.canProposeStrategy);
+
+  function formatDraftWeight(weightBps: number) {
+    return (weightBps / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
+  function distributeWeight(totalBps: number, weights: number[]) {
+    if (weights.length === 0) return [];
+    const normalizedWeights = weights.some((weight) => weight > 0)
+      ? weights.map((weight) => Math.max(0, weight))
+      : weights.map(() => 1);
+    const weightTotal = normalizedWeights.reduce((sum, weight) => sum + weight, 0);
+    const portions = normalizedWeights.map((weight, index) => {
+      const numerator = totalBps * weight;
+      return { index, bps: Math.floor(numerator / weightTotal), remainder: numerator % weightTotal };
+    });
+    let unassigned = totalBps - portions.reduce((sum, portion) => sum + portion.bps, 0);
+    portions
+      .slice()
+      .sort((left, right) => right.remainder - left.remainder || left.index - right.index)
+      .forEach((portion) => {
+        if (unassigned <= 0) return;
+        portions[portion.index].bps += 1;
+        unassigned -= 1;
+      });
+    return portions.map((portion) => portion.bps);
+  }
+
+  function updateTargetWeight(index: number, rawWeight: string) {
+    setTargets((current) => {
+      if (rawWeight.trim() === "" || !Number.isFinite(Number(rawWeight))) {
+        return current.map((asset, itemIndex) => itemIndex === index ? { ...asset, targetWeight: rawWeight } : asset);
+      }
+      const editedBps = Math.max(0, Math.min(10_000, Math.round(Number(rawWeight) * 100)));
+      const otherIndexes = current.map((_, itemIndex) => itemIndex).filter((itemIndex) => itemIndex !== index);
+      if (otherIndexes.length === 0) {
+        return current.map((asset, itemIndex) => itemIndex === index ? { ...asset, targetWeight: "100" } : asset);
+      }
+      const redistributed = distributeWeight(
+        10_000 - editedBps,
+        otherIndexes.map((itemIndex) => Math.max(0, Math.round(Number(current[itemIndex].targetWeight || 0) * 100))),
+      );
+      return current.map((asset, itemIndex) => {
+        if (itemIndex === index) return { ...asset, targetWeight: formatDraftWeight(editedBps) };
+        const redistributedIndex = otherIndexes.indexOf(itemIndex);
+        return { ...asset, targetWeight: formatDraftWeight(redistributed[redistributedIndex]) };
+      });
+    });
+    setTxState("idle");
+    setTxError(undefined);
+  }
+
+  function removeTarget(index: number) {
+    setTargets((current) => {
+      const remaining = current.filter((_, itemIndex) => itemIndex !== index);
+      const redistributed = distributeWeight(
+        10_000,
+        remaining.map((asset) => Math.max(0, Math.round(Number(asset.targetWeight || 0) * 100))),
+      );
+      return remaining.map((asset, itemIndex) => ({
+        ...asset,
+        targetWeight: formatDraftWeight(redistributed[itemIndex]),
+      }));
+    });
+    setTxState("idle");
+    setTxError(undefined);
+  }
 
   function updateTarget(index: number, patch: Partial<StrategyTargetAsset>) {
     setTargets((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
@@ -4627,7 +4712,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       icon={<Scale size={15} />}
       action={<span className={`stateBadge ${vault.connectedIsManager ? "success" : "muted"}`}>{vault.connectedIsManager ? "Manager connected" : "Draft mode"}</span>}
     >
-      <PortfolioBandStatus vault={vault} context="targets" />
+      <PortfolioBandStatus vault={vault} context="targets" proposalCooldownRemaining={proposalCooldownRemaining} />
       {vault.strategyProposalPending ? (
         <div className="pendingStrategyNotice">
           <div className="subHeader">
@@ -4652,7 +4737,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   <select
                     className="targetTicker"
                     value={target.address}
-                    disabled={vault.strategyProposalPending}
+                    disabled={targetEditorLocked}
                     onChange={(event) => {
                       const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
                       if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
@@ -4666,8 +4751,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <button
                   type="button"
                   title={`Remove ${target.ticker || "asset"}`}
-                  disabled={vault.strategyProposalPending}
-                  onClick={() => setTargets((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  disabled={targetEditorLocked}
+                  onClick={() => removeTarget(index)}
                 >
                   <Trash2 size={13} />
                 </button>
@@ -4677,12 +4762,13 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <div className="inputWithSuffix">
                   <input
                     value={target.targetWeight}
-                    onChange={(event) => updateTarget(index, { targetWeight: event.target.value })}
+                    onChange={(event) => updateTargetWeight(index, event.target.value)}
                     type="number"
                     min={0}
                     max={100}
+                    step={0.01}
                     placeholder="0"
-                    disabled={vault.strategyProposalPending}
+                    disabled={targetEditorLocked}
                     aria-label={`${target.ticker || "Asset"} draft target weight`}
                   />
                   <span>%</span>
@@ -4692,7 +4778,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={vault.strategyProposalPending || targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
+        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targetEditorLocked || targets.length >= vault.maxAssetCount || targets.length >= testnetCreateAssets.length}>
           <Plus size={13} />
           Add asset
         </button>
@@ -4701,7 +4787,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       <div className="builderBlock strategyRationaleComposer">
         <div className="subHeader">
           <span>Strategy rationale</span>
-          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 UTF-8 bytes</small>
+          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 bytes</small>
         </div>
         <textarea
           value={rationale}
@@ -4712,7 +4798,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           }}
           rows={4}
           placeholder="Explain why these target changes advance the investment strategy."
-          disabled={vault.strategyProposalPending}
+          disabled={targetEditorLocked}
           aria-invalid={rationaleBytes > 2_048}
         />
         <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be edited.</p>
@@ -4747,6 +4833,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       </div>
 
       <div className="builderWarnings">
+        {!targetEditorLocked ? <>
         {!weightSumValid ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Target weights must sum to exactly 100%</strong><span>Weights are submitted to the contract in whole basis points.</span></div></div>
         ) : null}
@@ -4772,9 +4859,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {turnoverBreach ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target changes are too large</strong><span>Reduce the proposed weight changes before submitting.</span></div></div>
         ) : null}
-        {proposalBlocker ? (
-          <div className="riskCallout warning"><Clock3 size={15} /><div><strong>{proposalBlocker.title}</strong><span>{proposalBlocker.detail}</span></div></div>
-        ) : null}
+        </> : null}
         {txError ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target update failed</strong><span>{txError}</span></div></div>
         ) : null}

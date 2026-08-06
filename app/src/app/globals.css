@@ -4383,6 +4383,11 @@ textarea::placeholder {
   margin-top: 12px;
 }
 
+.builderActions > button:only-child {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
 .builderFootnote,
 .safetyFootnote {
   margin: 11px 0 0;
