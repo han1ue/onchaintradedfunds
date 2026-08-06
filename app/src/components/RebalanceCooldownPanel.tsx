@@ -2106,7 +2106,7 @@ function PortfolioAllocation({
                     : "—";
               return (
                 <tr key={asset.address}>
-                  <td>
+                  <td data-label="Asset">
                     <div className="assetIdentity">
                       <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} />
                       <div>
@@ -2115,11 +2115,11 @@ function PortfolioAllocation({
                       </div>
                     </div>
                   </td>
-                  <td className="assetAmount">{amountHeld}</td>
-                  <td>{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
-                  <td>{bpsToAllocationPercent(asset.targetWeightBps)}</td>
-                  <td className="actualWeight">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
-                  <td>
+                  <td className="assetAmount mobileSecondaryAssetDatum" data-label="Amount held">{amountHeld}</td>
+                  <td className="mobileSecondaryAssetDatum" data-label="Price">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
+                  <td data-label="Target">{bpsToAllocationPercent(asset.targetWeightBps)}</td>
+                  <td className="actualWeight" data-label="Actual">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
+                  <td data-label="Drift">
                     <span className={`driftValue ${driftTone}`}>{signedBpsToAllocationPercent(diff)}</span>
                   </td>
                 </tr>
@@ -3606,9 +3606,9 @@ function UserActions({
                 const ownedAmount = ownedUnderlyingAmounts?.[index];
                 return (
                   <tr key={asset.address}>
-                    <td><span className="assetNameWithLogo"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact /><strong>{asset.symbol}</strong></span></td>
-                    <td>{perShareUnderlyingLoading ? "Loading" : formatWalletTokenBalance(perShareAmount, decimals, 8)}</td>
-                    <td>
+                    <td data-label="Underlying"><span className="assetNameWithLogo"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact /><strong>{asset.symbol}</strong></span></td>
+                    <td data-label="Per OTF share">{perShareUnderlyingLoading ? "Loading" : formatWalletTokenBalance(perShareAmount, decimals, 8)}</td>
+                    <td data-label="Your amount">
                       {!connectedAddress
                         ? "Connect wallet"
                         : redeemShareBalance === 0n
@@ -3624,6 +3624,24 @@ function UserActions({
           </table>
         </div>
         <div className="positionTicketControls">
+          <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
+            <button
+              className={activeAction === "deposit" ? "active" : ""}
+              type="button"
+              aria-pressed={activeAction === "deposit"}
+              onClick={() => changeAction("deposit")}
+            >
+              Deposit
+            </button>
+            <button
+              className={activeAction === "redeem" ? "active" : ""}
+              type="button"
+              aria-pressed={activeAction === "redeem"}
+              onClick={() => changeAction("redeem")}
+            >
+              Redeem
+            </button>
+          </div>
           <div className="positionSettlementControl">
             <span>Settle in</span>
             <div className="positionSettlementSelector" role="radiogroup" aria-label="Deposit and redemption asset mode">
@@ -3646,24 +3664,6 @@ function UserActions({
                 RWAs
               </button>
             </div>
-          </div>
-          <div className="positionActionSelector" role="tablist" aria-label="OTF position action">
-            <button
-              className={activeAction === "deposit" ? "active" : ""}
-              type="button"
-              aria-pressed={activeAction === "deposit"}
-              onClick={() => changeAction("deposit")}
-            >
-              Deposit
-            </button>
-            <button
-              className={activeAction === "redeem" ? "active" : ""}
-              type="button"
-              aria-pressed={activeAction === "redeem"}
-              onClick={() => changeAction("redeem")}
-            >
-              Redeem
-            </button>
           </div>
         </div>
 

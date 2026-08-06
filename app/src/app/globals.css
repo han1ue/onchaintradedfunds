@@ -2865,7 +2865,6 @@ textarea::placeholder {
     justify-content: flex-start;
   }
 
-  .positionUnderlyingTable,
   .positionBasketPreview > div {
     min-width: 430px;
   }
@@ -6854,16 +6853,92 @@ input.invalid {
     gap: 8px;
   }
 
-  .assetTable {
-    min-width: 640px;
+  .assetTableWrap,
+  .positionUnderlyingTableWrap {
+    overflow: visible;
   }
 
-  .assetTable th:first-child,
-  .assetTable td:first-child {
-    position: sticky;
-    z-index: 2;
-    left: 0;
-    background: var(--card);
+  .assetTableWrap {
+    margin: 14px 0 0;
+  }
+
+  .positionUnderlyingTableWrap {
+    border: 0;
+    background: transparent;
+  }
+
+  .assetTable,
+  .assetTable tbody,
+  .positionUnderlyingTable,
+  .positionUnderlyingTable tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .assetTable thead,
+  .positionUnderlyingTable thead {
+    display: none;
+  }
+
+  .assetTable tbody,
+  .positionUnderlyingTable tbody {
+    display: grid;
+    gap: 8px;
+  }
+
+  .assetTable tr,
+  .positionUnderlyingTable tr {
+    display: grid;
+    gap: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--background);
+    padding: 10px;
+  }
+
+  .assetTable tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .positionUnderlyingTable tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assetTable td,
+  .positionUnderlyingTable td {
+    display: grid;
+    gap: 3px;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .assetTable td::before,
+  .positionUnderlyingTable td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 0.54rem;
+    font-weight: 700;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+  }
+
+  .assetTable td:first-child,
+  .positionUnderlyingTable td:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 8px;
+  }
+
+  .assetTable td:first-child::before,
+  .positionUnderlyingTable td:first-child::before {
+    display: none;
+  }
+
+  .assetTable .mobileSecondaryAssetDatum {
+    display: none;
   }
 
   .builderActions {
