@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
+import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         />
       </head>
       <body>
+        <InputBehaviorGuard />
         <AppTopBanner />
         {children}
       </body>

@@ -3124,12 +3124,13 @@ function UserActions({
   const walletInputBalanceLoading = activeAction === "deposit"
     ? isUsdgMode ? entryAuthorizationLoading : basketAuthorizationLoading
     : redeemAuthorizationLoading;
+  const showWalletInputBalance = isUsdgMode || activeAction === "redeem";
   const walletInputBalanceLabel = !connectedAddress
     ? "Connect wallet"
     : walletInputBalanceLoading
       ? "Checking..."
       : walletInputBalance === undefined
-        ? !isUsdgMode && activeAction === "deposit" ? "See basket balances below" : "Unavailable"
+        ? "Unavailable"
         : `${formatWalletTokenBalance(
             walletInputBalance,
             inputTokenDecimals,
@@ -3723,7 +3724,7 @@ function UserActions({
           <label>
             <span className="positionFieldHeading">
               <span>{!isUsdgMode && activeAction === "deposit" ? "Shares to mint" : `${inputTokenSymbol} amount`}</span>
-              <span className="positionWalletBalance">Balance: {walletInputBalanceLabel}</span>
+              {showWalletInputBalance ? <span className="positionWalletBalance">Balance: {walletInputBalanceLabel}</span> : null}
             </span>
             <div className="positionAmountInput">
               <input
@@ -3769,10 +3770,7 @@ function UserActions({
                   setRedeemState("idle");
                   setMarketState("idle");
                 }}
-                type="number"
-                min="0.01"
-                max="20"
-                step="0.1"
+                type="text"
                 inputMode="decimal"
                 disabled={entryBusy || redeemBusy || marketBusy}
               />
