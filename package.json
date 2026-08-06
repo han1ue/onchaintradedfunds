@@ -8,6 +8,7 @@
     "contracts:configure:robinhood-testnet-mocks": "node scripts/configure-robinhood-testnet-mocks.mjs",
     "contracts:configure:robinhood-testnet-synthra": "node scripts/configure-robinhood-testnet-synthra.mjs",
     "contracts:walk:robinhood-testnet-mocks": "node scripts/walk-robinhood-testnet-mock-prices.mjs",
+    "assets:update-robinhood-logos": "node scripts/update-robinhood-asset-logos.mjs",
     "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",
     "lint": "corepack pnpm -r lint",

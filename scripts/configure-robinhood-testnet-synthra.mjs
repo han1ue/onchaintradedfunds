@@ -36,14 +36,16 @@ const poolFee = 3000;
 const oracleMaxAgeSeconds = 3_600n;
 const q192 = 1n << 192n;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
+const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets.json");
 const synthraLiquidityUrl = "https://app.synthra.org/#/pools";
-const catalog = [
-  { symbol: "TSLA", asset: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E" },
-  { symbol: "AMZN", asset: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02" },
-  { symbol: "PLTR", asset: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0" },
-  { symbol: "NFLX", asset: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93" },
-  { symbol: "AMD", asset: "0x71178BAc73cBeb415514eB542a8995b82669778d" },
-];
+const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
+const catalog = supportedAssets.assets.flatMap((asset) => {
+  const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
+  return deployment ? [{ symbol: asset.symbol, asset: deployment.contractAddress }] : [];
+});
+if (catalog.length !== supportedAssets.assets.length) {
+  throw new Error(`Every supported asset must define a deployment for chain ${chainId}.`);
+}
 
 function requiredEnv(...names) {
   for (const name of names) {

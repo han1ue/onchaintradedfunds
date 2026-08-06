@@ -66,6 +66,7 @@ import {
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import { robinhoodTestnetAddresses, robinhoodTestnetV3Venue } from "@/lib/deployment";
+import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
   formatCooldown,
   formatRelativeAvailability,
@@ -102,6 +103,7 @@ type Allocation = {
   targetWeightBps: number;
   actualWeightBps: number;
   tone: string;
+  logoUrl?: string;
 };
 
 type TargetAsset = {
@@ -206,33 +208,15 @@ type VaultView = {
 
 const navTabs = ["OTFs", "RWAs", "Liquidity"];
 
-const testnetCreateAssets = [
-  {
-    symbol: "TSLA",
-    name: "Tesla",
-    address: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
-  },
-  {
-    symbol: "AMZN",
-    name: "Amazon",
-    address: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
-  },
-  {
-    symbol: "PLTR",
-    name: "Palantir Technologies",
-    address: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
-  },
-  {
-    symbol: "NFLX",
-    name: "Netflix",
-    address: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
-  },
-  {
-    symbol: "AMD",
-    name: "AMD",
-    address: "0x71178BAc73cBeb415514eB542a8995b82669778d",
-  },
-] as const;
+const testnetCreateAssets = supportedAssetCatalog.assets.flatMap((asset) => {
+  const deployment = asset.deployments.find(({ chainId }) => chainId === robinhoodChainTestnet.id);
+  return deployment ? [{
+    symbol: asset.symbol,
+    name: asset.name,
+    address: deployment.contractAddress,
+    logoUrl: asset.logoUrl,
+  }] : [];
+});
 
 const erc20BalanceAbi = [
   {
@@ -561,6 +545,43 @@ function formatWalletTokenBalance(
   return amount.toLocaleString(undefined, { maximumFractionDigits });
 }
 
+function catalogAssetForAddress(address: string) {
+  return testnetCreateAssets.find(
+    (asset) => asset.address.toLowerCase() === address.toLowerCase(),
+  );
+}
+
+function AssetLogo({ logoUrl, symbol, compact = false }: {
+  logoUrl?: string;
+  symbol: string;
+  compact?: boolean;
+}) {
+  const [failed, setFailed] = useState(!logoUrl);
+
+  useEffect(() => setFailed(!logoUrl), [logoUrl]);
+
+  if (failed || !logoUrl) {
+    return (
+      <span className={`assetLogoFallback${compact ? " compact" : ""}`} aria-hidden="true">
+        {symbolMonogram(symbol).slice(0, 2)}
+      </span>
+    );
+  }
+
+  return (
+    // The source is build-time metadata and must remain a direct CDN request so a bad URL can fall back locally.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className={`assetLogo${compact ? " compact" : ""}`}
+      src={logoUrl}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function formatOraclePrice(value: number | undefined): string {
   if (value === undefined) return "Loading";
   return value.toLocaleString(undefined, {
@@ -613,9 +634,7 @@ function normalizeAllocations(
 
   return assets.map((address, index) => {
     const weight = Number(weights[index] ?? 0);
-    const catalogAsset = testnetCreateAssets.find(
-      (asset) => asset.address.toLowerCase() === address.toLowerCase(),
-    );
+    const catalogAsset = catalogAssetForAddress(address);
     return {
       symbol: catalogAsset?.symbol ?? `Asset ${index + 1}`,
       name: catalogAsset?.name ?? "Supported token",
@@ -623,6 +642,7 @@ function normalizeAllocations(
       targetWeightBps: weight,
       actualWeightBps: Number(currentWeights?.[index] ?? weight),
       tone: allocationTones[index % allocationTones.length],
+      logoUrl: catalogAsset?.logoUrl,
     };
   });
 }
@@ -2026,6 +2046,7 @@ function PortfolioAllocation({
       <div className="allocationLegend">
         {allocations.map((asset) => (
           <span className="legendItem" key={asset.address}>
+            <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact />
             <span className={`legendSwatch ${asset.tone}`} />
             <span>{asset.symbol}</span>
             <strong>{bpsToAllocationPercent(asset.actualWeightBps)}</strong>
@@ -2065,6 +2086,7 @@ function PortfolioAllocation({
                 <tr key={asset.address}>
                   <td>
                     <div className="assetIdentity">
+                      <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} />
                       <div>
                         <strong>{asset.symbol}</strong>
                         <span>{shortAssetAddress(asset.address)}</span>
@@ -2202,7 +2224,7 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
       const nextWeight = nextTargets.get(address) ?? 0;
       if (version.index > 0 && previousWeight === nextWeight) return [];
       const catalog = testnetCreateAssets.find((asset) => asset.address.toLowerCase() === address);
-      return [{ address, symbol: catalog?.symbol ?? shortAddress(address), previousWeight, nextWeight }];
+      return [{ address, symbol: catalog?.symbol ?? shortAddress(address), logoUrl: catalog?.logoUrl, previousWeight, nextWeight }];
     });
     const unchangedCount = version.index === 0
       ? 0
@@ -2223,7 +2245,7 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
           const nextWeight = nextTargets.get(address) ?? 0;
           if (previousWeight === nextWeight) return [];
           const catalog = testnetCreateAssets.find((asset) => asset.address.toLowerCase() === address);
-          return [{ address, symbol: catalog?.symbol ?? shortAddress(address), previousWeight, nextWeight }];
+          return [{ address, symbol: catalog?.symbol ?? shortAddress(address), logoUrl: catalog?.logoUrl, previousWeight, nextWeight }];
         });
       })()
     : [];
@@ -2244,7 +2266,7 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
           <p>{pendingRationaleLoading ? "Loading the locked strategy rationale..." : pendingRationale || "Locked rationale unavailable."}</p>
           {pendingChanges.length ? <div className="strategyTargetChanges">
             {pendingChanges.map((row) => <div key={row.address}>
-              <strong>{row.symbol}</strong>
+              <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
               <span>
                 {row.previousWeight === 0 ? <em>Added</em> : bpsToPercent(row.previousWeight)}
                 <ArrowRight size={11} />
@@ -2288,7 +2310,7 @@ function StrategyHistoryModule({ vault }: { vault: VaultView }) {
                 <div className="strategyTargetChanges">
                   {changes.rows.map((row) => (
                     <div key={row.address}>
-                      <strong>{row.symbol}</strong>
+                      <span className="assetNameWithLogo"><AssetLogo logoUrl={row.logoUrl} symbol={row.symbol} compact /><strong>{row.symbol}</strong></span>
                       {isInitial ? (
                         <span>{bpsToPercent(row.nextWeight)}</span>
                       ) : (
@@ -3558,7 +3580,7 @@ function UserActions({
                 const ownedAmount = ownedUnderlyingAmounts?.[index];
                 return (
                   <tr key={asset.address}>
-                    <td><strong>{asset.symbol}</strong></td>
+                    <td><span className="assetNameWithLogo"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact /><strong>{asset.symbol}</strong></span></td>
                     <td>{perShareUnderlyingLoading ? "Loading" : formatWalletTokenBalance(perShareAmount, decimals, 8)}</td>
                     <td>
                       {!connectedAddress
@@ -3852,7 +3874,7 @@ function UserActions({
                 );
                 return (
                   <div className="positionBasketRow" key={asset.address}>
-                    <strong>{asset.symbol}</strong>
+                    <span className="assetNameWithLogo"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact /><strong>{asset.symbol}</strong></span>
                     <span>{formatWalletTokenBalance(previewAmount, decimals, 8)}</span>
                     <span className={walletSufficient ? "" : "dangerText"}>
                       {activeAction === "deposit"
@@ -4337,19 +4359,22 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           {targets.map((target, index) => (
             <div className="targetCard" key={`${target.ticker}-${index}`}>
               <div className="targetCardHeader">
-                <select
-                  className="targetTicker"
-                  value={target.address}
-                  disabled={vault.strategyProposalPending}
-                  onChange={(event) => {
-                    const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
-                    if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
-                  }}
-                >
-                  {testnetCreateAssets.map((asset) => (
-                    <option key={asset.address} value={asset.address}>{asset.symbol}</option>
-                  ))}
-                </select>
+                <div className="assetSelectWithLogo">
+                  <AssetLogo logoUrl={catalogAssetForAddress(target.address)?.logoUrl} symbol={target.ticker} compact />
+                  <select
+                    className="targetTicker"
+                    value={target.address}
+                    disabled={vault.strategyProposalPending}
+                    onChange={(event) => {
+                      const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
+                      if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
+                    }}
+                  >
+                    {testnetCreateAssets.map((asset) => (
+                      <option key={asset.address} value={asset.address}>{asset.symbol}</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="button"
                   title={`Remove ${target.ticker || "asset"}`}
@@ -4412,7 +4437,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         <div className="weightPreviewList">
           {targetChanges.map((target, index) => (
             <div className="weightPreviewRow" key={`${target.ticker}-preview-${index}`}>
-              <strong>{target.ticker || "Asset"}</strong>
+              <span className="assetNameWithLogo"><AssetLogo logoUrl={catalogAssetForAddress(target.address)?.logoUrl} symbol={target.ticker || "Asset"} compact /><strong>{target.ticker || "Asset"}</strong></span>
               <div className="weightTrack" aria-label={`${target.ticker} current ${target.current.toFixed(1)}%, target ${target.targetWeight.toFixed(1)}%`}>
                 <span style={{ width: `${Math.min(target.current, 100)}%` }} />
                 <i style={{ left: `${Math.min(Number(target.targetWeight || 0), 100)}%` }} />
@@ -5952,28 +5977,31 @@ function CreateVaultView({
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
                       <label className="assetSelectField">
                         <span>Asset</span>
-                        <select
-                          value={asset.address}
-                          onChange={(event) => {
-                            const selected = testnetCreateAssets.find((candidate) => candidate.address === event.target.value);
-                            if (selected) {
-                              updatePortfolio(index, { ticker: selected.symbol, address: selected.address });
-                            }
-                          }}
-                        >
-                          {testnetCreateAssets.map((candidate) => (
-                            <option
-                              key={candidate.address}
-                              value={candidate.address}
-                              disabled={portfolio.some(
-                                (portfolioAsset, assetIndex) =>
-                                  assetIndex !== index && portfolioAsset.address === candidate.address,
-                              )}
-                            >
-                              {candidate.symbol} · {candidate.name}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="assetSelectWithLogo">
+                          <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
+                          <select
+                            value={asset.address}
+                            onChange={(event) => {
+                              const selected = testnetCreateAssets.find((candidate) => candidate.address === event.target.value);
+                              if (selected) {
+                                updatePortfolio(index, { ticker: selected.symbol, address: selected.address });
+                              }
+                            }}
+                          >
+                            {testnetCreateAssets.map((candidate) => (
+                              <option
+                                key={candidate.address}
+                                value={candidate.address}
+                                disabled={portfolio.some(
+                                  (portfolioAsset, assetIndex) =>
+                                    assetIndex !== index && portfolioAsset.address === candidate.address,
+                                )}
+                              >
+                                {candidate.symbol} · {candidate.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                         <small className="assetAddressLabel" title={asset.address}>Token: {shortAssetAddress(asset.address)}</small>
                       </label>
                       <label className="assetWeightField">
@@ -6073,7 +6101,7 @@ function CreateVaultView({
                 <div>
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
-                    {portfolio.map((asset, index) => <span key={asset.address}><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
+                    {portfolio.map((asset, index) => <span key={asset.address}><AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact /><strong>{asset.ticker}</strong>{asset.targetWeight.toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
                   </div>
                 </div>
                 <div className="seedApprovalSection">
@@ -6110,7 +6138,7 @@ function CreateVaultView({
                       return (
                         <div className="seedApprovalRow" key={asset.address}>
                           <div className="seedApprovalIdentity">
-                            <span className="assetSymbolMark">{asset.ticker.slice(0, 4)}</span>
+                            <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} />
                             <div>
                               <strong>{asset.ticker}</strong>
                               <small>{asset.initialAmount || "0"} required / {formatWalletTokenBalance(asset.balance, 18)} available</small>
@@ -6604,7 +6632,7 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
               const pool = configuredConstituentPool(asset.address);
               return (
                 <tr key={asset.address}>
-                  <td><div className="rwaAssetIdentity"><strong>{asset.symbol}</strong><small>{asset.name}</small></div></td>
+                  <td><div className="rwaAssetIdentity"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
                   <td data-label="Token address" className="monoValue">
                     <a
                       className="tableAddressLink"

@@ -1665,7 +1665,58 @@ button:disabled {
 }
 
 .assetIdentity {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.assetLogo,
+.assetLogoFallback {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--surface);
+  object-fit: contain;
+}
+
+.assetLogo {
+  padding: 3px;
+}
+
+.assetLogoFallback {
+  border: 1px solid rgb(var(--accent-rgb) / 28%);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--accent-text);
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.assetLogo.compact,
+.assetLogoFallback.compact {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 0.5rem;
+}
+
+.assetNameWithLogo,
+.assetSelectWithLogo {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.assetSelectWithLogo {
+  width: 100%;
+}
+
+.assetSelectWithLogo select {
+  min-width: 0;
+  flex: 1;
 }
 
 .assetIdentity strong,
@@ -2325,6 +2376,10 @@ textarea::placeholder {
 .positionBasketHeader span:not(:first-child),
 .positionBasketRow span {
   text-align: right;
+}
+
+.positionBasketRow > .assetNameWithLogo {
+  text-align: left;
 }
 
 .positionBasketRow {
@@ -3855,6 +3910,10 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.targetCardHeader .assetSelectWithLogo {
+  flex: 1;
+}
+
 .targetCardHeader button {
   display: grid;
   width: 24px;
@@ -3906,7 +3965,7 @@ textarea::placeholder {
   min-width: 0;
 }
 
-.weightPreviewRow > strong {
+.weightPreviewRow > .assetNameWithLogo {
   overflow: hidden;
   font-size: 0.71rem;
   font-weight: 600;
@@ -4803,6 +4862,12 @@ textarea::placeholder {
   font-size: 0.6rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rwaAssetIdentity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .rwaAssetIdentity strong,

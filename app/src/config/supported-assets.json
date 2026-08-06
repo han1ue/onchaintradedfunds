@@ -1,0 +1,79 @@
+{
+  "assets": [
+    {
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "deployments": [
+        {
+          "chainId": 4663,
+          "contractAddress": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d"
+        },
+        {
+          "chainId": 46630,
+          "contractAddress": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E"
+        }
+      ],
+      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x322f0929c4625ed5bad873c95208d54e1c003b2d.png"
+    },
+    {
+      "symbol": "AMZN",
+      "name": "Amazon",
+      "deployments": [
+        {
+          "chainId": 4663,
+          "contractAddress": "0x12f190a9F9d7D37a250758b26824B97CE941bF54"
+        },
+        {
+          "chainId": 46630,
+          "contractAddress": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02"
+        }
+      ],
+      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x12f190a9f9d7d37a250758b26824b97ce941bf54.png"
+    },
+    {
+      "symbol": "PLTR",
+      "name": "Palantir Technologies",
+      "deployments": [
+        {
+          "chainId": 4663,
+          "contractAddress": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A"
+        },
+        {
+          "chainId": 46630,
+          "contractAddress": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0"
+        }
+      ],
+      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x894e1ec2d74ffe5aef8dc8a9e84686accb964f2a.png"
+    },
+    {
+      "symbol": "NFLX",
+      "name": "Netflix",
+      "deployments": [
+        {
+          "chainId": 4663,
+          "contractAddress": "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8"
+        },
+        {
+          "chainId": 46630,
+          "contractAddress": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93"
+        }
+      ],
+      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0xe0444ef8bf4ed74f74fd73686e2ddf4c1c5591e8.png"
+    },
+    {
+      "symbol": "AMD",
+      "name": "AMD",
+      "deployments": [
+        {
+          "chainId": 4663,
+          "contractAddress": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC"
+        },
+        {
+          "chainId": 46630,
+          "contractAddress": "0x71178BAc73cBeb415514eB542a8995b82669778d"
+        }
+      ],
+      "logoUrl": "https://cdn.robinhood.com/ncw_assets/logos/0x86923f96303d656e4aa86d9d42d1e57ad2023fdc.png"
+    }
+  ]
+}
