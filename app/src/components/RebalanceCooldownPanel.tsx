@@ -204,6 +204,7 @@ type VaultView = {
   readFailed: boolean;
   blockNumber?: bigint;
   lastReadAt?: number;
+  navValue?: bigint;
   nav?: string;
   navPerShare?: string;
   navPerShareValue?: bigint;
@@ -551,6 +552,31 @@ function formatWalletTokenBalance(
   return amount.toLocaleString(undefined, { maximumFractionDigits });
 }
 
+function oracleTokenValue(
+  amount: bigint | undefined,
+  tokenDecimals: number,
+  price: CatalogOraclePrice | undefined,
+): bigint | undefined {
+  if (amount === undefined || price?.answer === undefined || price.answer <= 0n || price.decimals === undefined) return undefined;
+  return amount * price.answer * 10n ** 18n
+    / (10n ** BigInt(tokenDecimals) * 10n ** BigInt(price.decimals));
+}
+
+function tokenAmountForOracleValue(
+  value: bigint | undefined,
+  tokenDecimals: number,
+  price: CatalogOraclePrice | undefined,
+): bigint | undefined {
+  if (value === undefined || price?.answer === undefined || price.answer <= 0n || price.decimals === undefined) return undefined;
+  return value * 10n ** BigInt(tokenDecimals) * 10n ** BigInt(price.decimals)
+    / (price.answer * 10n ** 18n);
+}
+
+function weightPercentFromValue(value: bigint | undefined, nav: bigint | undefined): number | undefined {
+  if (value === undefined || nav === undefined || nav <= 0n) return undefined;
+  return Number(value * 1_000n / nav) / 10;
+}
+
 function catalogAssetForAddress(address: string) {
   return testnetCreateAssets.find(
     (asset) => asset.address.toLowerCase() === address.toLowerCase(),
@@ -692,6 +718,9 @@ function errorMessage(error: unknown): string {
   }
   if (serialized.includes("0xdab4498d")) {
     return "A selected oracle price is older than the configured maximum age. The testnet deployment may still be using a legacy mock feed.";
+  }
+  if (serialized.includes("0xc705736")) {
+    return "The pool quote loses more oracle value than this OTF allows. Choose a smaller trade size and try again.";
   }
   if (error && typeof error === "object" && "shortMessage" in error) {
     return String((error as { shortMessage?: unknown }).shortMessage);
@@ -1076,6 +1105,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     readFailed: Boolean(error),
     blockNumber,
     lastReadAt,
+    navValue: totalAssetsValue,
     nav: formatUsd18(totalAssetsValue),
     navPerShare: formatUsd18(navPerShareValue),
     navPerShareValue,
@@ -1232,6 +1262,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         {view === "manage" && isTestnet && vault.dataMode === "live" ? (
           <ManageVaultsView
             vault={vault}
+            oraclePrices={catalogOraclePrices}
             onBack={() => openView("vaults")}
             onOpenVault={() => openView("detail")}
             onRefresh={refetchVaultData}
@@ -2096,7 +2127,7 @@ function PortfolioAllocation({
           <tbody>
             {allocations.map((asset, index) => {
               const diff = asset.actualWeightBps - asset.targetWeightBps;
-              const driftTone = diff > 0 ? "warning" : diff < 0 ? "success" : "neutral";
+              const driftTone = diff > 0 ? "success" : diff < 0 ? "danger" : "neutral";
               const balanceResult = holdingResults?.[index * 2];
               const decimalsResult = holdingResults?.[index * 2 + 1];
               const balance = balanceResult?.result as bigint | undefined;
@@ -4291,7 +4322,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     return { ...asset, current, activeTarget, delta: Number(asset.targetWeight || 0) - current };
   });
   const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
-  const maxDeviation = Math.max(0, ...targetChanges.map((asset) => Math.abs(asset.delta)));
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
   const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
   const targetBoundsKnown = vault.minNonZeroAssetWeightBps > 0
@@ -4511,7 +4541,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       <div className="previewBlock">
         <div className="subHeader">
           <span>Live portfolio vs targets</span>
-          <small>Estimated turnover {turnover.toFixed(1)}%</small>
         </div>
         <div className="weightPreviewList">
           {targetChanges.map((target, index) => (
@@ -4534,19 +4563,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <span className="live">Live holding</span>
           <span className="active">Active target</span>
           <span className="draft">Draft target</span>
-        </div>
-      </div>
-
-      <div className="riskMetricGrid">
-        <div className={turnoverBreach ? "danger" : "warning"}>
-          <span>Estimated turnover</span>
-          <strong>{turnover.toFixed(1)}%</strong>
-          <small>Limit {turnoverLimit.toFixed(1)}%</small>
-        </div>
-        <div className={maxDeviation === 0 ? "success" : "warning"}>
-          <span>Largest completion gap</span>
-          <strong>{maxDeviation.toFixed(1)}%</strong>
-          <small>Completion band +/- {(vault.maxWeightDeviationBps / 100).toFixed(1)}%</small>
         </div>
       </div>
 
@@ -4574,7 +4590,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <div className={`riskCallout ${rationaleBytes > 2_048 ? "danger" : "warning"}`}><BookOpen size={15} /><div><strong>{rationaleBytes > 2_048 ? "Strategy rationale is too long" : "Strategy rationale required"}</strong><span>{rationaleBytes > 2_048 ? "Shorten it to 2,048 UTF-8 bytes or fewer." : "Explain the target change before submitting the proposal."}</span></div></div>
         ) : null}
         {turnoverBreach ? (
-          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Turnover exceeds the immutable limit</strong><span>This transaction would revert atomically.</span></div></div>
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target changes are too large</strong><span>Reduce the proposed weight changes before submitting.</span></div></div>
         ) : null}
         {proposalBlocker ? (
           <div className="riskCallout warning"><Clock3 size={15} /><div><strong>{proposalBlocker.title}</strong><span>{proposalBlocker.detail}</span></div></div>
@@ -4608,7 +4624,15 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   );
 }
 
-function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+function RebalanceTradesPanel({
+  vault,
+  oraclePrices,
+  onRefresh,
+}: {
+  vault: VaultView;
+  oraclePrices: CatalogOraclePrices;
+  onRefresh: () => Promise<unknown>;
+}) {
   const sellOptions = useMemo(
     () => vault.allocations.filter((asset) => asset.actualWeightBps > asset.targetWeightBps),
     [vault.allocations],
@@ -4617,8 +4641,31 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
     () => vault.allocations.filter((asset) => asset.actualWeightBps < asset.targetWeightBps),
     [vault.allocations],
   );
-  const [tokenIn, setTokenIn] = useState(sellOptions[0]?.address ?? "");
-  const [tokenOut, setTokenOut] = useState(buyOptions[0]?.address ?? "");
+  const recommendedTrades = useMemo(() => {
+    const remainingSells = sellOptions
+      .map((asset) => ({ asset, remainingBps: asset.actualWeightBps - asset.targetWeightBps }))
+      .sort((left, right) => right.remainingBps - left.remainingBps);
+    const remainingBuys = buyOptions
+      .map((asset) => ({ asset, remainingBps: asset.targetWeightBps - asset.actualWeightBps }))
+      .sort((left, right) => right.remainingBps - left.remainingBps);
+    const trades: Array<{ sell: Allocation; buy: Allocation; transferBps: number }> = [];
+    let sellIndex = 0;
+    let buyIndex = 0;
+    while (sellIndex < remainingSells.length && buyIndex < remainingBuys.length) {
+      const sell = remainingSells[sellIndex];
+      const buy = remainingBuys[buyIndex];
+      const transferBps = Math.min(sell.remainingBps, buy.remainingBps);
+      if (transferBps > 0) trades.push({ sell: sell.asset, buy: buy.asset, transferBps });
+      sell.remainingBps -= transferBps;
+      buy.remainingBps -= transferBps;
+      if (sell.remainingBps === 0) sellIndex += 1;
+      if (buy.remainingBps === 0) buyIndex += 1;
+    }
+    return trades;
+  }, [buyOptions, sellOptions]);
+  const [tokenIn, setTokenIn] = useState(recommendedTrades[0]?.sell.address ?? "");
+  const [tokenOut, setTokenOut] = useState(recommendedTrades[0]?.buy.address ?? "");
+  const [tradeSize, setTradeSize] = useState<10 | 25 | 50 | 100 | "custom">(100);
   const [amountInText, setAmountInText] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");
   const [txState, setTxState] = useState<TxState>("idle");
@@ -4630,12 +4677,17 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   const quoterAddress = configuredUniswapV3QuoterAddress();
   const settlementToken = configuredSettlementTokenAddress();
   const constituentFee = configuredConstituentFee();
-  const hasAllowedTrade = sellOptions.length > 0 && buyOptions.length > 0;
+  const hasAllowedTrade = recommendedTrades.length > 0;
 
   useEffect(() => {
-    if (!sellOptions.some((asset) => asset.address === tokenIn)) setTokenIn(sellOptions[0]?.address ?? "");
-    if (!buyOptions.some((asset) => asset.address === tokenOut)) setTokenOut(buyOptions[0]?.address ?? "");
-  }, [buyOptions, sellOptions, tokenIn, tokenOut]);
+    const selectedTradeStillAvailable = recommendedTrades.some(
+      (trade) => trade.sell.address === tokenIn && trade.buy.address === tokenOut,
+    );
+    if (selectedTradeStillAvailable) return;
+    setTokenIn(recommendedTrades[0]?.sell.address ?? "");
+    setTokenOut(recommendedTrades[0]?.buy.address ?? "");
+    setTradeSize(100);
+  }, [recommendedTrades, tokenIn, tokenOut]);
 
   const { data: tokenInDecimalsResult } = useReadContract({
     address: isAddress(tokenIn) ? tokenIn : undefined,
@@ -4670,6 +4722,21 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
     query: { enabled: isAddress(tokenOut) },
   });
   const tokenOutDecimals = Number(tokenOutDecimalsResult ?? 18);
+  const {
+    data: tokenOutVaultBalance,
+    refetch: refetchTokenOutVaultBalance,
+  } = useReadContract({
+    address: isAddress(tokenOut) ? tokenOut : undefined,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: vault.address ? [vault.address] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(isAddress(tokenOut) && vault.address),
+      refetchInterval: 12_000,
+      refetchOnWindowFocus: true,
+    },
+  });
   let amountIn: bigint | undefined;
   try {
     amountIn = Number(amountInText) > 0 ? parseUnits(amountInText, tokenInDecimals) : undefined;
@@ -4731,11 +4798,90 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
     query: { enabled: quoteEnabled },
   });
   const quotedAmountOut = (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
-  const minAmountOut = quotedAmountOut && slippageValid
+  const poolMinimumAmountOut = quotedAmountOut && slippageValid
     ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
     : undefined;
   const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
   const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
+  const inputOraclePrice = oraclePrices[tokenIn.toLowerCase()];
+  const outputOraclePrice = oraclePrices[tokenOut.toLowerCase()];
+  const inputBalanceValue = oracleTokenValue(tokenInVaultBalance, tokenInDecimals, inputOraclePrice);
+  const outputBalanceValue = oracleTokenValue(tokenOutVaultBalance, tokenOutDecimals, outputOraclePrice);
+  const inputTradeValue = oracleTokenValue(amountIn, tokenInDecimals, inputOraclePrice);
+  const quotedOutputValue = oracleTokenValue(quotedAmountOut, tokenOutDecimals, outputOraclePrice);
+  const minimumOracleOutputValue = inputTradeValue !== undefined
+    ? inputTradeValue * BigInt(10_000 - vault.maxNavLossBps) / 10_000n
+    : undefined;
+  const minimumOracleOutputAmountBase = tokenAmountForOracleValue(
+    minimumOracleOutputValue,
+    tokenOutDecimals,
+    outputOraclePrice,
+  );
+  const minimumOracleOutputAmount = minimumOracleOutputAmountBase !== undefined
+    ? minimumOracleOutputAmountBase + 1n
+    : undefined;
+  const minAmountOut = poolMinimumAmountOut !== undefined && minimumOracleOutputAmount !== undefined
+    ? poolMinimumAmountOut > minimumOracleOutputAmount ? poolMinimumAmountOut : minimumOracleOutputAmount
+    : undefined;
+  const oracleValueLossTooHigh = Boolean(
+    quotedOutputValue !== undefined
+      && minimumOracleOutputValue !== undefined
+      && quotedOutputValue < minimumOracleOutputValue,
+  );
+  const quotedOracleLossBps = inputTradeValue !== undefined
+    && inputTradeValue > 0n
+    && quotedOutputValue !== undefined
+    && inputTradeValue > quotedOutputValue
+    ? Number((inputTradeValue - quotedOutputValue) * 10_000n / inputTradeValue)
+    : 0;
+  const inputTargetValue = vault.navValue !== undefined && inputAsset
+    ? vault.navValue * BigInt(inputAsset.targetWeightBps) / 10_000n
+    : undefined;
+  const outputIdealTargetValue = vault.navValue !== undefined && outputAsset
+    ? vault.navValue * BigInt(outputAsset.targetWeightBps) / 10_000n
+    : undefined;
+  const inputExcessValue = inputBalanceValue !== undefined && inputTargetValue !== undefined
+    ? inputBalanceValue > inputTargetValue ? inputBalanceValue - inputTargetValue : 0n
+    : undefined;
+  const outputDeficitValue = outputBalanceValue !== undefined && outputIdealTargetValue !== undefined
+    ? outputIdealTargetValue > outputBalanceValue ? outputIdealTargetValue - outputBalanceValue : 0n
+    : undefined;
+  const recommendedTradeValue = inputExcessValue !== undefined && outputDeficitValue !== undefined
+    ? inputExcessValue < outputDeficitValue ? inputExcessValue : outputDeficitValue
+    : undefined;
+  const oracleBalancedTradeAmount = tokenAmountForOracleValue(
+    recommendedTradeValue,
+    tokenInDecimals,
+    inputOraclePrice,
+  );
+  const weightScale = 1_000_000n;
+  const outputCurrentWeightScaled = vault.navValue !== undefined && vault.navValue > 0n && outputBalanceValue !== undefined
+    ? outputBalanceValue * weightScale / vault.navValue
+    : undefined;
+  const outputTargetWeightScaled = outputAsset
+    ? BigInt(outputAsset.targetWeightBps) * 100n
+    : undefined;
+  const outputCurrentDeviationScaled = outputCurrentWeightScaled !== undefined && outputTargetWeightScaled !== undefined
+    ? outputCurrentWeightScaled >= outputTargetWeightScaled
+      ? outputCurrentWeightScaled - outputTargetWeightScaled
+      : outputTargetWeightScaled - outputCurrentWeightScaled
+    : undefined;
+  const outputMirroredUpperWeightScaled = outputTargetWeightScaled !== undefined && outputCurrentDeviationScaled !== undefined
+    ? [weightScale, outputTargetWeightScaled + outputCurrentDeviationScaled].reduce(
+        (smallest, value) => value < smallest ? value : smallest,
+      )
+    : undefined;
+  const outputMirroredUpperValue = vault.navValue !== undefined && outputMirroredUpperWeightScaled !== undefined
+    ? vault.navValue * outputMirroredUpperWeightScaled / weightScale
+    : undefined;
+  const outputTargetCapacity = outputMirroredUpperValue !== undefined && outputBalanceValue !== undefined
+    ? outputMirroredUpperValue > outputBalanceValue ? outputMirroredUpperValue - outputBalanceValue : 0n
+    : undefined;
+  const buySideMaxAmount = tokenAmountForOracleValue(
+    outputTargetCapacity,
+    tokenInDecimals,
+    inputOraclePrice,
+  );
   const mirroredLowerWeightBps = inputAsset
     ? Math.max(0, (2 * inputAsset.targetWeightBps) - inputAsset.actualWeightBps)
     : 0;
@@ -4749,10 +4895,18 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
       * BigInt(vault.maxTurnoverBps)
       / BigInt(inputAsset.actualWeightBps)
     : undefined;
+  const recommendedTradeAmount = tokenInVaultBalance !== undefined
+    && oracleBalancedTradeAmount !== undefined
+    && turnoverMaxAmount !== undefined
+    ? [tokenInVaultBalance, oracleBalancedTradeAmount, turnoverMaxAmount].reduce(
+        (smallest, value) => value < smallest ? value : smallest,
+      )
+    : undefined;
   const maxSellAmount = tokenInVaultBalance !== undefined
     && sellSideMaxAmount !== undefined
     && turnoverMaxAmount !== undefined
-    ? [tokenInVaultBalance, sellSideMaxAmount, turnoverMaxAmount].reduce(
+    && buySideMaxAmount !== undefined
+    ? [tokenInVaultBalance, sellSideMaxAmount, turnoverMaxAmount, buySideMaxAmount].reduce(
         (smallest, value) => value < smallest ? value : smallest,
       )
     : undefined;
@@ -4773,11 +4927,59 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
   const sellLimitLabel = maxSellAmount === undefined
     ? "Unavailable"
     : `${formatWalletTokenBalance(maxSellAmount, tokenInDecimals, 12)} ${inputAsset?.symbol ?? "tokens"}`;
+  const recommendedTradeAmountLabel = recommendedTradeAmount === undefined
+    ? "Unavailable"
+    : `${formatWalletTokenBalance(recommendedTradeAmount, tokenInDecimals, 12)} ${inputAsset?.symbol ?? "tokens"}`;
+  const predictedNavValue = vault.navValue !== undefined
+    && inputTradeValue !== undefined
+    && quotedOutputValue !== undefined
+    && vault.navValue >= inputTradeValue
+    ? vault.navValue - inputTradeValue + quotedOutputValue
+    : undefined;
+  const predictedInputValue = inputBalanceValue !== undefined && inputTradeValue !== undefined
+    ? inputBalanceValue > inputTradeValue ? inputBalanceValue - inputTradeValue : 0n
+    : undefined;
+  const predictedOutputValue = outputBalanceValue !== undefined && quotedOutputValue !== undefined
+    ? outputBalanceValue + quotedOutputValue
+    : undefined;
+  const predictedInputWeight = weightPercentFromValue(predictedInputValue, predictedNavValue);
+  const predictedOutputWeight = weightPercentFromValue(predictedOutputValue, predictedNavValue);
+  const predictedOutputWeightScaled = predictedOutputValue !== undefined
+    && predictedNavValue !== undefined
+    && predictedNavValue > 0n
+    ? predictedOutputValue * weightScale / predictedNavValue
+    : undefined;
+  const predictedOutputDeviationScaled = predictedOutputWeightScaled !== undefined && outputTargetWeightScaled !== undefined
+    ? predictedOutputWeightScaled >= outputTargetWeightScaled
+      ? predictedOutputWeightScaled - outputTargetWeightScaled
+      : outputTargetWeightScaled - predictedOutputWeightScaled
+    : undefined;
+  const buyWouldMoveFartherFromTarget = Boolean(
+    predictedOutputDeviationScaled !== undefined
+      && outputCurrentDeviationScaled !== undefined
+      && predictedOutputDeviationScaled > outputCurrentDeviationScaled,
+  );
+  const predictedWeightsReady = predictedInputWeight !== undefined && predictedOutputWeight !== undefined;
+  const tradeWeightPreview = [
+    inputAsset ? { asset: inputAsset, predicted: predictedInputWeight } : undefined,
+    outputAsset ? { asset: outputAsset, predicted: predictedOutputWeight } : undefined,
+  ].filter((item): item is { asset: Allocation; predicted: number | undefined } => Boolean(item));
+
+  useEffect(() => {
+    if (tradeSize === "custom") return;
+    const presetAmount = recommendedTradeAmount !== undefined
+      ? recommendedTradeAmount * BigInt(tradeSize) / 100n
+      : undefined;
+    setAmountInText(presetAmount !== undefined ? formatUnits(presetAmount, tokenInDecimals) : "");
+    resetTradeState();
+  }, [recommendedTradeAmount, tokenInDecimals, tradeSize]);
+
   const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
-    hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid && rebalanceLiquidityReady,
+    hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
+    rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget && !oracleValueLossTooHigh,
   );
 
   function resetTradeState() {
@@ -4816,7 +5018,11 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
       setTxState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The rebalance trade reverted.");
-      await Promise.all([onRefresh(), refetchTokenInVaultBalance()]);
+      await Promise.all([
+        onRefresh(),
+        refetchTokenInVaultBalance(),
+        refetchTokenOutVaultBalance(),
+      ]);
       await refetchQuote();
       setTxState("confirmed");
       setAmountInText("");
@@ -4840,27 +5046,73 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
             <div><strong>No constrained trade is available</strong><span>The live basket has no overweight-to-underweight pair. Rebalance choices appear here only when a trade can move the portfolio closer to its active targets.</span></div>
           </div>
         ) : null}
-        <div className="tradeAssetPair">
-          <label>
-            <span>Sell · above target</span>
-            <select value={tokenIn} disabled={!hasAllowedTrade} onChange={(event) => { setTokenIn(event.target.value); resetTradeState(); }}>
-              {sellOptions.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol} · {(asset.actualWeightBps / 100).toFixed(1)}% live / {(asset.targetWeightBps / 100).toFixed(1)}% target</option>)}
-            </select>
-          </label>
-          <ArrowRight size={15} />
-          <label>
-            <span>Buy · below target</span>
-            <select value={tokenOut} disabled={!hasAllowedTrade} onChange={(event) => { setTokenOut(event.target.value); resetTradeState(); }}>
-              {buyOptions.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol} · {(asset.actualWeightBps / 100).toFixed(1)}% live / {(asset.targetWeightBps / 100).toFixed(1)}% target</option>)}
-            </select>
-          </label>
+        <div className="recommendedTradePlan">
+          <div className="subHeader">
+            <span>Recommended trades</span>
+            <small>{recommendedTrades.length} {recommendedTrades.length === 1 ? "trade" : "trades"} to minimize portfolio drift</small>
+          </div>
+          <div className="recommendedTradeList" role="radiogroup" aria-label="Recommended rebalance trades">
+            {recommendedTrades.map((trade) => {
+              const selected = trade.sell.address === tokenIn && trade.buy.address === tokenOut;
+              return (
+                <button
+                  className={selected ? "selected" : ""}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  key={`${trade.sell.address}-${trade.buy.address}`}
+                  onClick={() => {
+                    setTokenIn(trade.sell.address);
+                    setTokenOut(trade.buy.address);
+                    setTradeSize(100);
+                    resetTradeState();
+                  }}
+                >
+                  <span className="recommendedTradeAsset">
+                    <AssetLogo logoUrl={trade.sell.logoUrl} symbol={trade.sell.symbol} compact />
+                    <span><small>Sell</small><strong>{trade.sell.symbol}</strong></span>
+                  </span>
+                  <ArrowRight size={14} />
+                  <span className="recommendedTradeAsset">
+                    <AssetLogo logoUrl={trade.buy.logoUrl} symbol={trade.buy.symbol} compact />
+                    <span><small>Buy</small><strong>{trade.buy.symbol}</strong></span>
+                  </span>
+                  <span className="recommendedTradeWeight">{(trade.transferBps / 100).toFixed(1)}% NAV</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="tradeSizeControl">
+          <div className="subHeader">
+            <span>Trade size</span>
+            <small>100% recommended: {recommendedTradeAmountLabel}</small>
+          </div>
+          <div className="tradeSizeOptions" role="radiogroup" aria-label="Trade size">
+            {([10, 25, 50, 100, "custom"] as const).map((size) => (
+              <button
+                className={tradeSize === size ? "active" : ""}
+                type="button"
+                role="radio"
+                aria-checked={tradeSize === size}
+                key={size}
+                onClick={() => {
+                  setTradeSize(size);
+                  resetTradeState();
+                }}
+              >
+                {size === "custom" ? "Custom" : `${size}%`}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="tradeInputGrid">
           <label>
             <span className="positionFieldHeading">
               <span>Amount to sell</span>
-              <span className="positionWalletBalance">OTF balance: {tokenInVaultBalanceLabel} · Limit: {sellLimitLabel}</span>
+              <span className="positionWalletBalance">OTF balance: {tokenInVaultBalanceLabel} · Custom limit: {sellLimitLabel}</span>
             </span>
             <div className="inputWithSuffix tradeAmountInput">
               <input
@@ -4870,22 +5122,14 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
                 inputMode="decimal"
                 value={amountInText}
                 disabled={!hasAllowedTrade}
-                onChange={(event) => { setAmountInText(event.target.value); resetTradeState(); }}
-                placeholder="0.00"
-              />
-              <button
-                className="positionMaxButton"
-                type="button"
-                disabled={!hasAllowedTrade || maxSellAmount === undefined || maxSellAmount <= 0n}
-                onClick={() => {
-                  if (maxSellAmountText === undefined) return;
-                  setAmountInText(maxSellAmountText);
+                readOnly={tradeSize !== "custom"}
+                onChange={(event) => {
+                  if (tradeSize !== "custom") return;
+                  setAmountInText(event.target.value);
                   resetTradeState();
                 }}
-                aria-label={`Use maximum allowed ${inputAsset?.symbol ?? "asset"} sell amount`}
-              >
-                Max
-              </button>
+                placeholder="0.00"
+              />
               <span>{inputAsset?.symbol ?? "Asset"}</span>
             </div>
           </label>
@@ -4915,6 +5159,42 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
           <small>{`${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}`}</small>
         </div>
 
+        <div className="previewBlock tradeWeightPreview">
+          <div className="subHeader">
+            <span>Weight preview</span>
+            <small>Based on the current pool quote</small>
+          </div>
+          <div className="weightPreviewList">
+            {tradeWeightPreview.map(({ asset, predicted }) => {
+              const current = asset.actualWeightBps / 100;
+              const target = asset.targetWeightBps / 100;
+              return (
+                <div className="weightPreviewRow" key={`${asset.address}-trade-preview`}>
+                  <span className="assetNameWithLogo">
+                    <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} compact />
+                    <strong>{asset.symbol}</strong>
+                  </span>
+                  <div className="weightTrack" aria-label={`${asset.symbol} current weight ${current.toFixed(1)}%, predicted weight ${predicted?.toFixed(1) ?? "unavailable"}%, target weight ${target.toFixed(1)}%`}>
+                    <span style={{ width: `${Math.min(current, 100)}%` }} />
+                    {predicted !== undefined ? <i className="draft" style={{ left: `${Math.min(Math.max(predicted, 0), 100)}%` }} /> : null}
+                    <i className="active" style={{ left: `${Math.min(target, 100)}%` }} />
+                  </div>
+                  <div className="weightPreviewValues">
+                    <span><small>Current</small>{current.toFixed(1)}%</span>
+                    <strong><small>Predicted</small>{predicted === undefined ? "—" : `${predicted.toFixed(1)}%`}</strong>
+                    <span><small>Target</small>{target.toFixed(1)}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="weightPreviewLegend" aria-hidden="true">
+            <span className="live">Current weight</span>
+            <span className="draft">Predicted weight</span>
+            <span className="active">Current target</span>
+          </div>
+        </div>
+
         {!contractsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
@@ -4928,7 +5208,13 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
         ) : null}
         {amountExceedsSellLimit ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Amount exceeds the sell limit</strong><span>Enter no more than {sellLimitLabel}. The UI caps the amount by the OTF balance, turnover limit, and the sell asset&apos;s mirrored target deviation.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Amount exceeds the trade limit</strong><span>Enter no more than {sellLimitLabel}. The limit includes both assets&apos; mirrored deviations, turnover, and the OTF balance.</span></div></div>
+        ) : null}
+        {buyWouldMoveFartherFromTarget ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>{outputAsset?.symbol ?? "The buy asset"} would move too far past its target</strong><span>Crossing the target is allowed, but its predicted distance from target cannot exceed its current distance.</span></div></div>
+        ) : null}
+        {oracleValueLossTooHigh ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage or Custom amount.</span></div></div>
         ) : null}
         {quoteError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
@@ -4936,7 +5222,7 @@ function RebalanceTradesPanel({ vault, onRefresh }: { vault: VaultView; onRefres
         {txError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>
         ) : null}
-        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, turnover, and exposure limits, and move every affected asset closer to target.</span></div></div>
+        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, turnover, and exposure limits, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
         <TxStatus state={txState} />
         <button className="primaryAction" type="button" disabled={!canSubmit || busy} onClick={executeTrade}>
           {busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
@@ -6931,11 +7217,13 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
 
 function ManageVaultsView({
   vault,
+  oraclePrices,
   onBack,
   onOpenVault,
   onRefresh,
 }: {
   vault: VaultView;
+  oraclePrices: CatalogOraclePrices;
   onBack: () => void;
   onOpenVault: () => void;
   onRefresh: () => Promise<unknown>;
@@ -7177,7 +7465,7 @@ function ManageVaultsView({
 
       {activeOperation === "targets" ? <TargetWeightsBuilder vault={vault} onRefresh={onRefresh} /> : null}
 
-      {activeOperation === "rebalance" ? <RebalanceTradesPanel vault={vault} onRefresh={onRefresh} /> : null}
+      {activeOperation === "rebalance" ? <RebalanceTradesPanel vault={vault} oraclePrices={oraclePrices} onRefresh={onRefresh} /> : null}
 
       {activeOperation === "liquidity" ? <ShareMarketPanel vault={vault} /> : null}
 
