@@ -214,6 +214,63 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.previewMint(ONE).length, 1);
     }
 
+    function testManagerCanReplaceConstituentInSingleStrategyUpdate() public {
+        ManagedOTFVault vault = _createVault();
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenC);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 5_000;
+        weights[1] = 5_000;
+        vm.warp(START + 14 days);
+        _refreshPrices();
+
+        vault.proposeStrategy(
+            assets,
+            weights,
+            "Replace Stock B with Stock C while preserving equal target weights."
+        );
+
+        assertTrue(vault.strategyProposalPending());
+        assertTrue(vault.isConstituent(address(tokenB)));
+        assertFalse(vault.isConstituent(address(tokenC)));
+
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        vault.activatePendingStrategy();
+
+        assertTrue(vault.strategicRebalanceActive());
+        assertTrue(vault.isConstituent(address(tokenB)));
+        assertTrue(vault.isConstituent(address(tokenC)));
+        assertEq(vault.targetWeightBps(address(tokenB)), 0);
+        assertEq(vault.targetWeightBps(address(tokenC)), 5_000);
+        assertEq(vault.assetCount(), 3);
+        vm.expectPartialRevert(
+            ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector
+        );
+        vault.previewMint(ONE);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenB), address(tokenC), 500 * ONE, 500 * ONE);
+        vault.executeRebalanceTrades(trades);
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertEq(vault.rebalanceCount(), 1);
+        assertFalse(vault.isConstituent(address(tokenB)));
+        assertTrue(vault.isConstituent(address(tokenA)));
+        assertTrue(vault.isConstituent(address(tokenC)));
+        assertEq(vault.assetCount(), 2);
+        assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
+        assertEq(tokenB.balanceOf(address(vault)), 0);
+        assertEq(tokenC.balanceOf(address(vault)), 500 * ONE);
+        assertEq(vault.currentWeight(address(tokenA)), 5_000);
+        assertEq(vault.currentWeight(address(tokenC)), 5_000);
+        assertEq(vault.previewMint(ONE).length, 2);
+
+        RebalanceRecord memory record = vault.recentRebalanceRecord(0);
+        assertEq(record.turnoverBps, 5_000);
+    }
+
     function testRevokedConstituentImmediatelyChallengesAndPrunesWithoutNotice() public {
         ManagedOTFVault vault = _createVault();
         assetRegistry.setAssetApproved(address(tokenA), false);

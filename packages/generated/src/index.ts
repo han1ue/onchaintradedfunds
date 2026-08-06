@@ -239,10 +239,47 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "recentRebalanceCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "recentRebalanceRecord",
+    stateMutability: "view",
+    inputs: [{ name: "index", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "timestamp", type: "uint64" },
+          { name: "manager", type: "address" },
+          { name: "navBefore", type: "uint256" },
+          { name: "navAfter", type: "uint256" },
+          { name: "turnoverBps", type: "uint16" },
+          { name: "strategyVersion", type: "uint32" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
     name: "maxSingleAssetWeightBps",
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "error",
+    name: "ExposureLimitExceeded",
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "weightBefore", type: "uint256" },
+      { name: "weightAfter", type: "uint256" },
+      { name: "maximumWeightBps", type: "uint16" },
+    ],
   },
   {
     type: "function",

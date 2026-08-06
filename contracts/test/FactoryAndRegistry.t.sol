@@ -71,7 +71,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
-        params.maxNavLossBps = 1_001;
+        params.maxNavLossBps = 201;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
         factory.createVault(params);
 

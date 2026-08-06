@@ -24,7 +24,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 5_000;
     uint16 public constant GLOBAL_MAX_TURNOVER_BPS = 10_000;
-    uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 1_000;
+    uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
     uint8 public constant GLOBAL_MAX_ASSET_COUNT = 20;

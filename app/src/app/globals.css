@@ -1992,6 +1992,179 @@ button:disabled {
   font-size: 0.61rem;
 }
 
+.rebalanceHistoryBody,
+.rebalanceHistoryList {
+  display: grid;
+  gap: 12px;
+}
+
+.rebalanceHistorySummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+
+.rebalanceHistorySummary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.rebalanceHistorySummary > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.rebalanceHistorySummary span,
+.rebalanceImpactMetrics span {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rebalanceHistorySummary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebalanceHistorySummary small {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+}
+
+.rebalanceHistoryList {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.rebalanceHistoryEntry {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+}
+
+.rebalanceHistoryEntry + .rebalanceHistoryEntry {
+  border-top: 1px solid var(--border);
+}
+
+.rebalanceHistoryHeader,
+.rebalanceHistoryHeader > div,
+.rebalanceHistoryMeta,
+.rebalanceTargetChanges > div,
+.rebalanceTargetChanges > div > span {
+  display: flex;
+  align-items: center;
+}
+
+.rebalanceHistoryHeader {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rebalanceHistoryHeader > div {
+  gap: 8px;
+}
+
+.rebalanceHistoryHeader > div > strong {
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.rebalanceHistoryHeader time,
+.rebalanceHistoryMeta {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.rebalanceImpactMetrics {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr) minmax(90px, 0.8fr) minmax(80px, 0.7fr);
+  align-items: center;
+  gap: 10px;
+  border-radius: 5px;
+  background: var(--background);
+  padding: 10px 12px;
+}
+
+.rebalanceImpactMetrics > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rebalanceImpactMetrics strong {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebalanceImpactMetrics .danger strong {
+  color: var(--danger);
+}
+
+.rebalanceImpactMetrics .success strong {
+  color: var(--green);
+}
+
+.rebalanceTargetChanges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+}
+
+.rebalanceTargetChanges > div {
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  font-size: 0.66rem;
+}
+
+.rebalanceTargetChanges > div > span {
+  gap: 6px;
+  min-width: 0;
+}
+
+.rebalanceTargetChanges em {
+  color: var(--accent-text);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.rebalanceHistoryMeta {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rebalanceHistoryMeta code {
+  color: var(--text-soft);
+  font-size: 0.62rem;
+}
+
+.rebalanceHistoryNote,
+.rebalanceHistoryFootnote {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.rebalanceHistoryFootnote {
+  margin: 0;
+}
+
 .pendingStrategyHistoryEntry {
   margin: 0 0 16px;
   padding: 12px 14px;
@@ -8776,6 +8949,30 @@ input.invalid {
 }
 
 @media (max-width: 620px) {
+  .rebalanceHistorySummary,
+  .rebalanceTargetChanges {
+    grid-template-columns: 1fr;
+  }
+
+  .rebalanceHistorySummary > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .rebalanceHistoryHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .rebalanceImpactMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rebalanceImpactMetrics > svg {
+    display: none;
+  }
+
   .docsMobileMenu nav {
     grid-template-columns: 1fr;
   }
