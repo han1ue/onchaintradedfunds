@@ -145,7 +145,8 @@ flowchart LR
 
 `OracleRegistry`
 
-- Maps approved assets to Chainlink-compatible price feeds.
+- Maps approved assets to `AggregatorV3Interface` feeds, per-feed freshness thresholds, and an
+  explicit validation mode.
 - Lets vaults evaluate NAV, turnover, and post-trade weight deviation.
 
 `FeeCollector`
@@ -358,7 +359,7 @@ against the current basket. A new target cannot be proposed while the old portfo
 completion bands, during a challenge, while another proposal is pending, or while an earlier
 strategic target remains unfinished.
 
-After the notice period, `activatePendingStrategy()` revalidates assets, prices, turnover, fee and
+After the notice period, `activatePendingStrategy()` revalidates assets, prices, fee and
 challenge state, makes the target active, and emits the standard
 `Rebalanced(newTokens, newWeights)` plus `TargetWeightsActivated`. Activation performs no trades.
 Only the manager may activate or cancel the proposal. Manager transfer automatically cancels a
@@ -387,7 +388,7 @@ The vault grants exact temporary approvals to `RebalanceExecutor`, clears them a
 and receives output directly. There is no generic target/calldata execution function.
 
 Every partial batch must use current constituents and approved adapters, satisfy explicit and
-oracle-valued slippage, stay within turnover and NAV-loss bounds, avoid worsening any constituent,
+oracle-valued slippage, stay within the NAV-loss bound, avoid worsening any constituent,
 and strictly reduce total distance from the active target.
 
 When a successful strategic trade batch brings every constituent inside the narrower completion
@@ -400,7 +401,7 @@ Retained rebalance protections:
 
 - Approved assets only.
 - Approved trading adapters only.
-- Maximum portfolio turnover.
+- Onchain strategy-turnover disclosure.
 - Maximum NAV loss.
 - Narrow completion bands and wider challenge bands.
 - Protocol-wide minimum target weight, initialized at 1% and adjustable by the factory owner.
@@ -426,10 +427,9 @@ reimbursement from vault assets.
 Each target has a wider challenge band and a narrower completion band. Anyone may call
 `flagOutOfBand()`, but fresh approved prices must prove a real challenge-band breach.
 
-A valid challenge locks target changes and manager-fee withdrawals while the configured grace
-period runs. The protocol enforces a minimum of five days and the frontend uses that minimum by
-default so scheduled market weekends and holiday closures do not consume the entire response
-window. All valid fees earned before the challenge start are crystallized first and cannot be
+A valid challenge locks target changes and manager-fee withdrawals while the fixed seven-day grace
+period runs. This spans scheduled market weekends and typical holiday closures without making the
+response window a manager-selected policy. All valid fees earned before the challenge start are crystallized first and cannot be
 forfeited later. Natural price movement and constrained trades can both restore the basket. If the
 manager stops the challenge before the deadline, accrued fees are withdrawn normally. If the
 deadline is missed, manager fees from the challenge window are forfeited: 50% becomes a claimable
@@ -457,10 +457,14 @@ The vault rejects:
 - Future update timestamps.
 - Incomplete rounds.
 - Stale prices.
+- An enabled `oraclePaused()` flag or an unavailable required pause check.
 - Unsupported token or oracle decimals.
 
-Each vault fixes its oracle freshness threshold at creation. The factory caps that threshold at
-one hour; the frontend defaults to 30 minutes.
+`OracleRegistry` stores a feed, maximum staleness, and validation mode for each asset. Robinhood
+equity feeds publish 24/5; their configurations use 25 hours for the 24-hour heartbeat plus a one-hour
+delivery buffer and use `RobinhoodStockToken` mode, which requires the asset's `oraclePaused()` check. The freshness deadline is measured
+from each feed's latest update, so oracle-priced actions may continue into a weekend before pausing until
+fresh prices arrive. Future feeds can use different policies without manager-controlled oracle settings.
 
 Current weights:
 
@@ -479,6 +483,7 @@ turnover = 0.5 * sum(abs(currentWeight_i - targetWeight_i))
 ```
 
 The implementation evaluates the union of current and target assets. Removed assets contribute their current weight. New assets contribute their target weight.
+Turnover is recorded with each completed strategy for disclosure and history; it does not limit target proposals or trade batches.
 
 ## Management Fees
 

@@ -86,6 +86,8 @@ type ContractValue =
   | readonly string[]
   | readonly number[]
   | readonly bigint[]
+  | readonly [string, number]
+  | readonly [string, number, number]
   | undefined;
 
 type ReadResult = readonly { result?: ContractValue }[];
@@ -98,6 +100,8 @@ type PositionTradeReceipt = {
 };
 export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits" | "rwas";
 type DataMode = "live" | "empty" | "unavailable";
+
+const MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
 type Allocation = {
   symbol: string;
@@ -181,7 +185,6 @@ type VaultView = {
   nextStrategyChange?: number;
   cooldownProgress: number;
   allocations: Allocation[];
-  maxTurnoverBps: number;
   maxNavLossBps: number;
   maxWeightDeviationBps: number;
   challengeWeightDeviationBps: number;
@@ -204,7 +207,6 @@ type VaultView = {
   canProposeStrategy: boolean;
   authorizedExecutors: readonly string[];
   minTargetWeightBps?: number;
-  maxOracleStaleness: number;
   connectedIsManager: boolean;
   enabled: boolean;
   isLoading: boolean;
@@ -358,6 +360,17 @@ const protocolAssetReadAbi = [
     stateMutability: "view",
     inputs: [{ name: "asset", type: "address" }],
     outputs: [{ name: "feed", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "oracleConfigFor",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [
+      { name: "feed", type: "address" },
+      { name: "maxStaleness", type: "uint32" },
+      { name: "validationMode", type: "uint8" },
+    ],
   },
 ] as const;
 
@@ -634,6 +647,25 @@ function formatOraclePrice(value: number | undefined): string {
   });
 }
 
+function formatRwaOraclePrice(price: CatalogOraclePrice | undefined): string {
+  if (price?.value === undefined) return "Loading";
+
+  const formattedPrice = price.value.toLocaleString(undefined, {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+  if (price.updatedAt === undefined || price.updatedAt <= 0n) return `${formattedPrice}$`;
+
+  const ageSeconds = Math.max(
+    0,
+    Math.floor(Date.now() / 1_000) - Number(price.updatedAt),
+  );
+  if (ageSeconds < 60) return `${formattedPrice}$ (just now)`;
+  if (ageSeconds < 3_600) return `${formattedPrice}$ (${Math.floor(ageSeconds / 60)}m ago)`;
+  if (ageSeconds < 72 * 3_600) return `${formattedPrice}$ (${Math.floor(ageSeconds / 3_600)}h ago)`;
+  return `${formattedPrice}$ (${Math.floor(ageSeconds / 86_400)}d ago)`;
+}
+
 function formatSeedTokenAmount(value: bigint | undefined): string {
   if (value === undefined) return "";
   const formatted = Number(formatUnits(value, 18));
@@ -707,10 +739,6 @@ function txStateLabel(state: TxState): { label: string; tone: "muted" | "info" |
 
 function percentToBps(value: string | number): number {
   return Math.round(Number(value || 0) * 100);
-}
-
-function daysToSeconds(value: string | number): number {
-  return Math.round(Number(value || 0) * 86_400);
 }
 
 function errorMessage(error: unknown): string {
@@ -905,17 +933,15 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalSupply" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "assets" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "targetWeightsBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxTurnoverBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxNavLossBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxWeightDeviationBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "STRATEGY_CHANGE_COOLDOWN" },
         { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "minTargetWeightBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxOracleStaleness" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalAssetsValue" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navPerShare" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "currentWeightsBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeWeightDeviationBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeGracePeriod" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "CHALLENGE_GRACE_PERIOD" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "isWithinTargetBands" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "strategicRebalanceActive" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeActive" },
@@ -1010,45 +1036,43 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const totalSupply = resultAt<bigint>(results, 6);
   const assets = resultAt<readonly string[]>(results, 7);
   const targetWeights = resultAt<readonly number[] | readonly bigint[]>(results, 8);
-  const maxTurnoverBps = resultAt<number>(results, 9) ?? 0;
-  const maxNavLossBps = resultAt<number>(results, 10) ?? 0;
-  const maxWeightDeviationBps = resultAt<number>(results, 11) ?? 0;
-  const cooldownSeconds = Number(resultAt<bigint>(results, 12) ?? BigInt(14 * 86_400));
-  const minTargetWeightBps = resultAt<number>(results, 13);
-  const maxOracleStaleness = resultAt<number>(results, 14) ?? 0;
-  const totalAssetsValue = resultAt<bigint>(results, 15);
-  const navPerShareValue = resultAt<bigint>(results, 16);
-  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 17);
-  const challengeWeightDeviationBps = resultAt<number>(results, 18) ?? 0;
-  const challengeGracePeriod = resultAt<number>(results, 19) ?? 0;
-  const withinCompletionBands = Boolean(resultAt<boolean>(results, 20));
-  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 21));
-  const challengeActive = Boolean(resultAt<boolean>(results, 22));
-  const challengeStartedAt = resultAt<bigint>(results, 23)
-    ? Number(resultAt<bigint>(results, 23))
+  const maxNavLossBps = resultAt<number>(results, 9) ?? 0;
+  const maxWeightDeviationBps = resultAt<number>(results, 10) ?? 0;
+  const cooldownSeconds = Number(resultAt<bigint>(results, 11) ?? BigInt(14 * 86_400));
+  const minTargetWeightBps = resultAt<number>(results, 12);
+  const totalAssetsValue = resultAt<bigint>(results, 13);
+  const navPerShareValue = resultAt<bigint>(results, 14);
+  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 15);
+  const challengeWeightDeviationBps = resultAt<number>(results, 16) ?? 0;
+  const challengeGracePeriod = resultAt<number>(results, 17) ?? 0;
+  const withinCompletionBands = Boolean(resultAt<boolean>(results, 18));
+  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 19));
+  const challengeActive = Boolean(resultAt<boolean>(results, 20));
+  const challengeStartedAt = resultAt<bigint>(results, 21)
+    ? Number(resultAt<bigint>(results, 21))
     : undefined;
-  const challengeDeadline = resultAt<bigint>(results, 24)
-    ? Number(resultAt<bigint>(results, 24))
+  const challengeDeadline = resultAt<bigint>(results, 22)
+    ? Number(resultAt<bigint>(results, 22))
     : undefined;
-  const challengeTimeRemaining = Number(resultAt<bigint>(results, 25) ?? 0n);
-  const feeState = Number(resultAt<number>(results, 26) ?? 0);
-  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 27);
-  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 28);
-  const claimableChallengeRewardValue = resultAt<bigint>(results, 29);
-  const lastStrategyCompletion = resultAt<bigint>(results, 30)
-    ? Number(resultAt<bigint>(results, 30))
+  const challengeTimeRemaining = Number(resultAt<bigint>(results, 23) ?? 0n);
+  const feeState = Number(resultAt<number>(results, 24) ?? 0);
+  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 25);
+  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 26);
+  const claimableChallengeRewardValue = resultAt<bigint>(results, 27);
+  const lastStrategyCompletion = resultAt<bigint>(results, 28)
+    ? Number(resultAt<bigint>(results, 28))
     : undefined;
-  const canProposeStrategy = Boolean(resultAt<boolean>(results, 31));
-  const authorizedExecutors = resultAt<readonly string[]>(results, 32) ?? [];
-  const withinChallengeBands = Boolean(resultAt<boolean>(results, 33));
-  const strategyProposalPending = Boolean(resultAt<boolean>(results, 34));
-  const pendingStrategyActivationTime = resultAt<bigint>(results, 35)
-    ? Number(resultAt<bigint>(results, 35))
+  const canProposeStrategy = Boolean(resultAt<boolean>(results, 29));
+  const authorizedExecutors = resultAt<readonly string[]>(results, 30) ?? [];
+  const withinChallengeBands = Boolean(resultAt<boolean>(results, 31));
+  const strategyProposalPending = Boolean(resultAt<boolean>(results, 32));
+  const pendingStrategyActivationTime = resultAt<bigint>(results, 33)
+    ? Number(resultAt<bigint>(results, 33))
     : undefined;
-  const nextStrategyChange = resultAt<bigint>(results, 36)
-    ? Number(resultAt<bigint>(results, 36))
+  const nextStrategyChange = resultAt<bigint>(results, 34)
+    ? Number(resultAt<bigint>(results, 34))
     : undefined;
-  const challengeCaller = resultAt<string>(results, 37);
+  const challengeCaller = resultAt<string>(results, 35);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
@@ -1076,7 +1100,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     nextStrategyChange,
     cooldownProgress,
     allocations,
-    maxTurnoverBps,
     maxNavLossBps,
     maxWeightDeviationBps,
     challengeWeightDeviationBps,
@@ -1105,7 +1128,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     canProposeStrategy,
     authorizedExecutors,
     minTargetWeightBps,
-    maxOracleStaleness,
     connectedIsManager: Boolean(connectedIsManager),
     enabled,
     isLoading: Boolean(vaultAddress) && isLoading,
@@ -2171,6 +2193,13 @@ function PortfolioAllocation({
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="cardFooterAction">
+        <span className="mutedInline">
+          <Info size={14} />
+          Robinhood equity feeds publish 24/5. Oracle-priced actions require every constituent feed to remain fresh; with the current equity settings, each feed expires 25 hours after its own latest update. Those actions may therefore remain available into the weekend before pausing until all required feeds update. Transfers and proportional basket deposits or redemptions remain available.
+        </span>
       </div>
 
       <StrategyChallenge vault={vault} onRefresh={onRefresh} />
@@ -4515,7 +4544,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     const activeTarget = (currentAllocation?.targetWeightBps ?? 0) / 100;
     return { ...asset, current, activeTarget, delta: Number(asset.targetWeight || 0) - current };
   });
-  const turnover = Math.max(0, targetChanges.reduce((sum, asset) => sum + Math.abs(asset.delta), 0) / 2);
   const targetWeightBps = targets.map((asset) => Math.round(Number(asset.targetWeight) * 100));
   const weightSumValid = targetWeightBps.reduce((sum, weight) => sum + weight, 0) === 10_000;
   const protocolMinimumTargetWeightBps = vault.minTargetWeightBps;
@@ -4539,9 +4567,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   });
   const normalizedRationale = rationale.trim();
   const rationaleBytes = new TextEncoder().encode(normalizedRationale).length;
-  const rationaleValid = rationaleBytes > 0 && rationaleBytes <= 2_048;
-  const turnoverLimit = vault.maxTurnoverBps / 100;
-  const turnoverBreach = turnover > turnoverLimit;
+  const rationaleValid = rationaleBytes > 0 && rationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES;
   const targetEditorLocked = vault.strategyProposalPending
     || (vault.connectedIsManager && !vault.canProposeStrategy);
   const targetEditorLockMessage = vault.challengeActive
@@ -4562,9 +4588,12 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
 
   function distributeWeight(totalBps: number, weights: number[]) {
     if (weights.length === 0) return [];
-    const normalizedWeights = weights.some((weight) => weight > 0)
-      ? weights.map((weight) => Math.max(0, weight))
-      : weights.map(() => 1);
+    const nonnegativeWeights = weights.map((weight) => Math.max(0, weight));
+    const effectivelyEqual =
+      Math.max(...nonnegativeWeights) - Math.min(...nonnegativeWeights) <= 1;
+    const normalizedWeights = effectivelyEqual || !nonnegativeWeights.some((weight) => weight > 0)
+      ? nonnegativeWeights.map(() => 1)
+      : nonnegativeWeights;
     const weightTotal = normalizedWeights.reduce((sum, weight) => sum + weight, 0);
     const portions = normalizedWeights.map((weight, index) => {
       const numerator = totalBps * weight;
@@ -4784,7 +4813,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       <div className="builderBlock strategyRationaleComposer">
         <div className="subHeader">
           <span>Strategy rationale</span>
-          <small className={rationaleValid ? "successText" : rationaleBytes > 2_048 ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / 2,048 bytes</small>
+          <small className={rationaleValid ? "successText" : rationaleBytes > MAX_STRATEGY_RATIONALE_BYTES ? "dangerText" : "warningText"}>{rationaleBytes.toLocaleString()} / {MAX_STRATEGY_RATIONALE_BYTES.toLocaleString()} bytes</small>
         </div>
         <textarea
           value={rationale}
@@ -4796,7 +4825,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           rows={4}
           placeholder="Explain why these target changes advance the investment strategy."
           disabled={targetEditorLocked}
-          aria-invalid={rationaleBytes > 2_048}
+          aria-invalid={rationaleBytes > MAX_STRATEGY_RATIONALE_BYTES}
         />
         <p>This rationale is locked with the target proposal, becomes permanent when the targets activate, and cannot be edited.</p>
       </div>
@@ -4846,10 +4875,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Change at least one target</strong><span>Reordering the same assets or submitting identical weights does not create a new strategy.</span></div></div>
         ) : null}
         {!rationaleValid ? (
-          <div className={`riskCallout ${rationaleBytes > 2_048 ? "danger" : "warning"}`}><BookOpen size={15} /><div><strong>{rationaleBytes > 2_048 ? "Strategy rationale is too long" : "Strategy rationale required"}</strong><span>{rationaleBytes > 2_048 ? "Shorten it to 2,048 UTF-8 bytes or fewer." : "Explain the target change before submitting the proposal."}</span></div></div>
-        ) : null}
-        {turnoverBreach ? (
-          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Target changes are too large</strong><span>Reduce the proposed weight changes before submitting.</span></div></div>
+          <div className={`riskCallout ${rationaleBytes > MAX_STRATEGY_RATIONALE_BYTES ? "danger" : "warning"}`}><BookOpen size={15} /><div><strong>{rationaleBytes > MAX_STRATEGY_RATIONALE_BYTES ? "Strategy rationale is too long" : "Strategy rationale required"}</strong><span>{rationaleBytes > MAX_STRATEGY_RATIONALE_BYTES ? `Shorten it to ${MAX_STRATEGY_RATIONALE_BYTES.toLocaleString()} bytes or fewer.` : "Explain the target change before submitting the proposal."}</span></div></div>
         ) : null}
         </> : null}
         {txError ? (
@@ -4879,7 +4905,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || turnoverBreach || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -5159,23 +5185,16 @@ function RebalanceTradesPanel({
       * BigInt(inputAsset.actualWeightBps - mirroredLowerWeightBps)
       / BigInt(inputAsset.actualWeightBps)
     : undefined;
-  const turnoverMaxAmount = tokenInVaultBalance !== undefined && inputAsset?.actualWeightBps
-    ? tokenInVaultBalance
-      * BigInt(vault.maxTurnoverBps)
-      / BigInt(inputAsset.actualWeightBps)
-    : undefined;
   const recommendedTradeAmount = tokenInVaultBalance !== undefined
     && oracleBalancedTradeAmount !== undefined
-    && turnoverMaxAmount !== undefined
-    ? [tokenInVaultBalance, oracleBalancedTradeAmount, turnoverMaxAmount].reduce(
+    ? [tokenInVaultBalance, oracleBalancedTradeAmount].reduce(
         (smallest, value) => value < smallest ? value : smallest,
       )
     : undefined;
   const maxSellAmount = tokenInVaultBalance !== undefined
     && sellSideMaxAmount !== undefined
-    && turnoverMaxAmount !== undefined
     && buySideMaxAmount !== undefined
-    ? [tokenInVaultBalance, sellSideMaxAmount, turnoverMaxAmount, buySideMaxAmount].reduce(
+    ? [tokenInVaultBalance, sellSideMaxAmount, buySideMaxAmount].reduce(
         (smallest, value) => value < smallest ? value : smallest,
       )
     : undefined;
@@ -5462,7 +5481,7 @@ function RebalanceTradesPanel({
         {txError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>
         ) : null}
-        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value, NAV-loss, and turnover limits, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
+        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value and the NAV-loss limit, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
         <TxStatus state={txState} />
         <button className="primaryAction" type="button" disabled={!canSubmit || busy} onClick={executeTrade}>
           {busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
@@ -5607,12 +5626,10 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
 
 function SafetyLimits({ vault }: { vault: VaultView }) {
   const limits = [
-    ["Maximum turnover", bpsToPercent(vault.maxTurnoverBps), "Per rebalance, of NAV"],
     ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
     ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
     ["Minimum target weight", vault.minTargetWeightBps === undefined ? "Loading" : bpsToPercent(vault.minTargetWeightBps), "Admin-controlled protocol floor"],
-    ["Oracle max staleness", `${vault.maxOracleStaleness}s`, "Freshness required at execution"],
     ["Protocol strategy cooldown", formatCooldown(vault.cooldownSeconds), "Fixed protocol rule; not configurable per OTF"],
     ["Strategy activation delay", "48 hours", "Holder exit window"],
   ] as const;
@@ -5981,12 +5998,9 @@ function CreateVaultView({
     creatorFee: "0.50",
     initialShares: "100",
     initialPortfolioValue: "5",
-    maxTurnover: "30",
-    maxNavLoss: "2",
+    maxNavLoss: "0.5",
     maxDeviation: "2",
     challengeDeviation: "5",
-    challengeGraceDays: "5",
-    oracleStaleness: "1800",
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
     testnetCreateAssets.map((asset) => ({
@@ -6042,7 +6056,7 @@ function CreateVaultView({
     ? portfolio.map((asset) => ({
         address: oracleRegistryAddress as `0x${string}`,
         abi: protocolAssetReadAbi,
-        functionName: "priceFeedFor" as const,
+        functionName: "oracleConfigFor" as const,
         args: [asset.address as `0x${string}`],
         chainId: robinhoodChainTestnet.id,
       }))
@@ -6101,20 +6115,28 @@ function CreateVaultView({
       price,
     };
   });
-  const oracleStaleness = Number(draft.oracleStaleness);
-  const configuredMaxOracleAge = Number.isInteger(oracleStaleness) && oracleStaleness > 0
-    ? BigInt(oracleStaleness)
-    : 0n;
+  const protocolOracleConfigs = portfolio.map((_, index) => {
+    const config = protocolAssetResultReady
+      ? resultAt<readonly [string, number, number]>(protocolAssetResults as ReadResult | undefined, index)
+      : undefined;
+    return {
+      feed: config?.[0],
+      maxStaleness: Number(config?.[1] ?? 0),
+      validationMode: Number(config?.[2] ?? 0),
+    };
+  });
   const staleSeedAssets = portfolio.filter((asset, index) => {
     const updatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
-    return updatedAt !== undefined && updatedAt > 0n && configuredMaxOracleAge > 0n
-      ? currentTimestamp > updatedAt + configuredMaxOracleAge
+    const maxStaleness = BigInt(protocolOracleConfigs[index]?.maxStaleness ?? 0);
+    return updatedAt !== undefined && updatedAt > 0n && maxStaleness > 0n
+      ? currentTimestamp > updatedAt + maxStaleness
       : false;
   });
-  const seedOracleFreshnessReady = derivedSeedAmounts.every((seed) => {
+  const seedOracleFreshnessReady = derivedSeedAmounts.every((seed, index) => {
     const updatedAt = seed.price?.updatedAt;
-    return updatedAt !== undefined && updatedAt > 0n && configuredMaxOracleAge > 0n
-      ? currentTimestamp <= updatedAt + configuredMaxOracleAge
+    const maxStaleness = BigInt(protocolOracleConfigs[index]?.maxStaleness ?? 0);
+    return updatedAt !== undefined && updatedAt > 0n && maxStaleness > 0n
+      ? currentTimestamp <= updatedAt + maxStaleness
       : false;
   });
   const allSeedAmountsReady = derivedSeedAmounts.every(
@@ -6127,9 +6149,8 @@ function CreateVaultView({
       : (requiredAmount * 10_200n + 9_999n) / 10_000n;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
-    const priceFeed = protocolAssetResultReady
-      ? resultAt<string>(protocolAssetResults as ReadResult | undefined, index)
-      : undefined;
+    const priceFeed = protocolOracleConfigs[index]?.feed;
+    const oracleMaxStaleness = protocolOracleConfigs[index]?.maxStaleness ?? 0;
     const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
     const oracleUpdatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
     return {
@@ -6141,11 +6162,12 @@ function CreateVaultView({
       allowance,
       priceFeed,
       hasPriceFeed,
+      oracleMaxStaleness,
       oracleUpdatedAt,
       oracleFresh: oracleUpdatedAt !== undefined
         && oracleUpdatedAt > 0n
-        && configuredMaxOracleAge > 0n
-        && currentTimestamp <= oracleUpdatedAt + configuredMaxOracleAge,
+        && oracleMaxStaleness > 0
+        && currentTimestamp <= oracleUpdatedAt + BigInt(oracleMaxStaleness),
       balanceSufficient: requiredAmount !== undefined && balance !== undefined && balance >= requiredAmount,
       allowanceSufficient: requiredAmount !== undefined && allowance !== undefined && allowance >= requiredAmount,
     };
@@ -6159,7 +6181,7 @@ function CreateVaultView({
     );
   const protocolAssetReadsReady =
     protocolAssetResultReady &&
-    seedAuthorizations.every((asset) => asset.hasPriceFeed);
+    seedAuthorizations.every((asset) => asset.hasPriceFeed && asset.oracleMaxStaleness > 0);
   const seedBalancesSufficient =
     seedAuthorizationReadsReady && seedAuthorizations.every((asset) => asset.balanceSufficient);
   const seedAllowancesSufficient =
@@ -6172,10 +6194,16 @@ function CreateVaultView({
     seedAuthorizationReadsReady &&
     seedBalancesSufficient &&
     !approvalInProgress;
+  const initialRationaleBytes = new TextEncoder().encode(draft.rationale.trim()).length;
+  const initialRationaleValid =
+    initialRationaleBytes > 0 &&
+    initialRationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES;
+  const normalizedOtfName = draft.name.trim();
+  const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
   const basicsValid =
-    draft.name.trim().length > 2 &&
+    otfNameValid &&
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
-    draft.rationale.trim().length > 20 &&
+    initialRationaleValid &&
     isAddress(draft.manager) &&
     isAddress(draft.feeRecipient);
   const portfolioValid =
@@ -6190,25 +6218,24 @@ function CreateVaultView({
     totalWeightValid &&
     initialPortfolioValue !== undefined &&
     allSeedAmountsReady;
-  const oracleStalenessValid =
-    Number.isInteger(oracleStaleness) && oracleStaleness >= 1 && oracleStaleness <= 3_600;
-  const challengeGraceDays = Number(draft.challengeGraceDays);
-  const challengeGraceValid =
-    Number.isInteger(challengeGraceDays) && challengeGraceDays >= 5 && challengeGraceDays <= 30;
   const remainingSafetyLimitsValid =
     Number(draft.creatorFee) >= 0 &&
     Number(draft.creatorFee) <= 10 &&
     Number(draft.initialShares) > 0 &&
-    Number(draft.maxTurnover) > 0 &&
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxNavLoss) <= 2 &&
     Number(draft.maxDeviation) > 0 &&
     Number(draft.challengeDeviation) > Number(draft.maxDeviation);
-  const safetyValid = remainingSafetyLimitsValid && oracleStalenessValid && challengeGraceValid;
+  const safetyValid = remainingSafetyLimitsValid;
   const basicsIssues = [
-    draft.name.trim().length > 2 ? null : "Enter a fund name with at least 3 characters.",
+    otfNameValid ? null : "Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').",
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) ? null : "Enter a ticker using letters, numbers, or hyphens.",
-    draft.rationale.trim().length > 20 ? null : "Write an initial strategy rationale with at least 21 characters.",
+    initialRationaleBytes > 0
+      ? null
+      : "Write an initial strategy rationale.",
+    initialRationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES
+      ? null
+      : `Shorten the initial strategy rationale to ${MAX_STRATEGY_RATIONALE_BYTES.toLocaleString()} bytes or fewer.`,
     isAddress(draft.manager) ? null : "Provide a valid manager address.",
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
@@ -6226,8 +6253,6 @@ function CreateVaultView({
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.maxNavLoss) <= 2 ? null : "Maximum NAV loss cannot exceed the 2% protocol ceiling.",
     Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
-    oracleStalenessValid ? null : "Oracle max staleness must be between 1 and 3,600 seconds.",
-    challengeGraceValid ? null : "Challenge grace period must be between 5 and 30 whole days.",
     remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
   const allIssues = [...basicsIssues, ...portfolioIssues, ...safetyIssues];
@@ -6311,9 +6336,10 @@ function CreateVaultView({
   function distributePortfolioWeight(totalBps: number, assets: TargetAsset[]) {
     if (assets.length === 0) return [];
     const weights = assets.map((asset) => Math.max(0, percentToBps(asset.targetWeight)));
-    const normalizedWeights = weights.some((weight) => weight > 0)
-      ? weights
-      : weights.map(() => 1);
+    const effectivelyEqual = Math.max(...weights) - Math.min(...weights) <= 1;
+    const normalizedWeights = effectivelyEqual || !weights.some((weight) => weight > 0)
+      ? weights.map(() => 1)
+      : weights;
     const weightTotal = normalizedWeights.reduce((sum, weight) => sum + weight, 0);
     const portions = normalizedWeights.map((weight, index) => {
       const numerator = totalBps * weight;
@@ -6369,7 +6395,7 @@ function CreateVaultView({
     });
 
     return {
-      name: `${draft.name.trim()} OTF`,
+      name: normalizedOtfName,
       symbol: draft.symbol.trim(),
       initialStrategyRationale: draft.rationale.trim(),
       manager: draft.manager,
@@ -6384,12 +6410,9 @@ function CreateVaultView({
       }),
       initialShareSupply: parseUnits(draft.initialShares, 18),
       creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
-      maxTurnoverBps: percentToBps(draft.maxTurnover),
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
       challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
-      maxOracleStaleness: Number(draft.oracleStaleness),
-      challengeGracePeriod: daysToSeconds(draft.challengeGraceDays),
     };
   }
 
@@ -6578,16 +6601,18 @@ function CreateVaultView({
                 <div className="formGrid twoColumns">
                   <label>
                     <span>OTF name</span>
-                    <div className="tickerInput fixedSuffixInput">
-                      <input
+                    <input
                         value={draft.name}
-                        onChange={(event) => updateDraft("name", event.target.value.replace(/\s+OTF\s*$/i, ""))}
-                        placeholder="Technology Leaders"
-                        aria-label="OTF name without the required OTF suffix"
-                      />
-                      <span>OTF</span>
-                    </div>
-                    <small>Every name ends in OTF and cannot be changed after deployment.</small>
+                        onChange={(event) => {
+                          updateDraft("name", event.target.value);
+                        }}
+                        onBlur={() => {
+                          updateDraft("name", draft.name.trimEnd());
+                        }}
+                        placeholder="Technology Leaders OTF"
+                        aria-label="OTF name"
+                    />
+                    <small>Must end in ' OTF'. The name cannot be changed after deployment.</small>
                   </label>
                   <label>
                     <span>OTF ticker</span>
@@ -6602,12 +6627,24 @@ function CreateVaultView({
                       }}
                       placeholder="TECH"
                     />
-                    <small>Use letters, numbers, or hyphens. The ticker cannot be changed after deployment.</small>
+                    <small>The ticker cannot be changed after deployment.</small>
                   </label>
                 </div>
                 <label>
-                  <span>Initial strategy rationale</span>
-                  <textarea value={draft.rationale} onChange={(event) => updateDraft("rationale", event.target.value)} rows={4} placeholder="Describe the portfolio mandate and investment rationale." />
+                  <div className="subHeader">
+                    <span>Initial strategy rationale</span>
+                    <small className={initialRationaleValid ? "successText" : initialRationaleBytes > MAX_STRATEGY_RATIONALE_BYTES ? "dangerText" : "warningText"}>
+                      {initialRationaleBytes.toLocaleString()} / {MAX_STRATEGY_RATIONALE_BYTES.toLocaleString()} bytes
+                    </small>
+                  </div>
+                  <textarea
+                    value={draft.rationale}
+                    onChange={(event) => updateDraft("rationale", event.target.value)}
+                    rows={4}
+                    maxLength={MAX_STRATEGY_RATIONALE_BYTES}
+                    aria-invalid={initialRationaleBytes > MAX_STRATEGY_RATIONALE_BYTES}
+                    placeholder="Describe the portfolio mandate and investment rationale."
+                  />
                   <small>This becomes strategy version 0 and is permanently paired with the initial targets.</small>
                 </label>
                 <div className="formGrid twoColumns">
@@ -6802,18 +6839,15 @@ function CreateVaultView({
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
-                  <label><span>Maximum turnover</span><div className="inputWithSuffix"><input type="number" min={0} max={100} value={draft.maxTurnover} onChange={(event) => updateDraft("maxTurnover", event.target.value)} /><span>% NAV</span></div><small>Caps the oracle-valued volume traded in each partial rebalance. Protocol maximum: 100% of NAV.</small></label>
                   <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued loss in each atomic rebalance trade. Protocol maximum: 2%.</small></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
                   <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
-                  <label><span>Challenge grace period</span><div className="inputWithSuffix"><input type="number" min={5} max={30} value={draft.challengeGraceDays} onChange={(event) => updateDraft("challengeGraceDays", event.target.value)} /><span>days</span></div><small>Time allowed to restore the portfolio after a challenge. Protocol range: 5–30 whole days.</small></label>
-                  <label><span>Oracle max staleness</span><div className="inputWithSuffix"><input type="number" min={1} max={3600} step={60} value={draft.oracleStaleness} onChange={(event) => updateDraft("oracleStaleness", event.target.value)} /><span>seconds</span></div><small>Rejects rebalance valuations older than this. Protocol range: 1–3,600 seconds; default: 30 minutes.</small></label>
                 </div>
                 <div className="executionPolicy createGuarantees">
                   <ShieldCheck size={14} />
                   <div>
                     <strong>Trade execution remains constrained</strong>
-                    <span>Strategy changes unlock 14 days after the previous rebalance completes. Each partial trade uses current constituents, approved adapters, oracle limits, exact temporary approvals, and must move the basket closer to target.</span>
+                    <span>Strategy changes unlock 14 days after the previous rebalance completes. Robinhood equity feeds publish 24/5. Oracle-priced actions require every constituent feed to remain within its freshness window, currently 25 hours after that feed&apos;s latest update, and resume after all required feeds update. Each trade must move the basket closer to target.</span>
                   </div>
                 </div>
                 {safetyIssues.length ? (
@@ -6832,7 +6866,7 @@ function CreateVaultView({
               <div className="formSection reviewSection">
                 <div className="reviewHero">
                   <span className="vaultMonogram">NEW</span>
-                  <div><h2>{draft.name.trim()} OTF</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
+                  <div><h2>{normalizedOtfName}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
                 </div>
                 <div className="reviewGrid">
                   <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.creatorFee}%</strong></div>
@@ -6840,12 +6874,11 @@ function CreateVaultView({
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
                   <div><span>Strategy cooldown</span><strong>14 days after deployment or completion</strong></div>
-                  <div><span>Maximum turnover</span><strong>{draft.maxTurnover}%</strong></div>
                   <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
                   <div><span>Completion band</span><strong>+/- {draft.maxDeviation}%</strong></div>
                   <div><span>Challenge band</span><strong>+/- {draft.challengeDeviation}%</strong></div>
-                  <div><span>Challenge grace</span><strong>{draft.challengeGraceDays} days</strong></div>
-                  <div><span>Oracle staleness</span><strong>{formatCooldown(Number(draft.oracleStaleness))}</strong></div>
+                  <div><span>Challenge grace</span><strong>7 days</strong></div>
+                  <div><span>Oracle availability</span><strong>Per-asset freshness and pause checks</strong></div>
                 </div>
                 <div>
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
@@ -7379,6 +7412,7 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
             <thead><tr><th>Asset</th><th>Token address</th><th>Liquidity pool</th><th>Oracle price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
               const pool = configuredConstituentPool(asset.address);
+              const oraclePrice = oraclePrices[asset.address.toLowerCase()];
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
@@ -7408,7 +7442,13 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
                       </a>
                     ) : "Not configured"}
                   </td>
-                  <td data-label="Oracle price" className="monoValue">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
+                  <td
+                    data-label="Oracle price"
+                    className="monoValue"
+                    title={oraclePrice?.updatedAt ? `Updated ${formatTimestamp(Number(oraclePrice.updatedAt))}` : undefined}
+                  >
+                    {formatRwaOraclePrice(oraclePrice)}
+                  </td>
                 </tr>
               );
             })}</tbody>
@@ -8047,7 +8087,7 @@ function ManageVaultsView({
           <div className="permissionList">
             <div><CheckCircle size={14} /><span><strong>May propose strategic targets</strong><small>Targets lock until the basket reaches its completion bands.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May authorize constrained executors</strong><small>{vault.authorizedExecutors.length} currently authorized; all are cleared on manager transfer.</small></span></div>
-            <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, turnover, and NAV-loss limits.</small></span></div>
+            <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, and NAV-loss limits.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May propose targets with a rationale</strong><small>The rationale becomes permanent only when those targets activate.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot withdraw portfolio assets</strong><small>No arbitrary manager-call or asset-transfer path exists.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot shorten the change unlock</strong><small>The configured delay is permanently immutable.</small></span></div>

@@ -82,17 +82,17 @@ const contractRows = [
   ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
-  ["OracleRegistry", "Maps approved assets to fresh, Chainlink-compatible price feeds."],
+  ["OracleRegistry", "Maps approved assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
 ] as const;
 
 const safetyRows = [
   ["Approved assets", "Every target asset must be present in the protocol asset registry."],
-  ["Portfolio turnover", "The oracle-valued amount in each partial batch cannot exceed the vault limit."],
+  ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
   ["NAV loss", "Post-trade NAV cannot fall beyond the configured maximum loss."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
   ["Target weights", "Every included asset must meet the live protocol-wide minimum, initialized at 1% and adjustable by the factory owner; there is no maximum target weight."],
-  ["Oracle freshness", "Every valuation used for a rebalance must be recent enough for the vault's staleness bound."],
+  ["Oracle freshness", "Every valuation must satisfy the asset feed's protocol-configured staleness bound."],
   ["Execution", "Every partial batch is atomic, uses approved adapters, clears exact approvals, and must reduce target distance."],
 ] as const;
 
@@ -256,7 +256,7 @@ export default function DocsPage() {
             </div>
             <p>
               The creator selects a manager, fee recipient, approved assets, target weights, fee,
-              target-change cooldown, challenge and completion bands, grace period, and safety
+              challenge and completion bands, and safety
               limits. The factory validates these
               parameters, deploys a deterministic clone, transfers the exact initial basket, and
               initializes the vault. Target weights must total <code>10,000 bps</code>.
@@ -361,7 +361,11 @@ export default function DocsPage() {
             <p>
               NAV is the sum of every constituent&apos;s oracle-valued balance. NAV per share divides
               that value by the fee-adjusted share supply. Valuation-dependent actions require a
-              positive answer from an approved feed within the vault&apos;s freshness bound.
+              positive answer from an approved feed within the asset&apos;s freshness bound. For
+              Robinhood equities, feeds publish 24/5 and the current 25-hour limit is measured from
+              each asset&apos;s latest update—not from a fixed weekend cutoff. Oracle-priced actions may
+              therefore remain available into the weekend, then pause until fresh prices arrive.
+              Corporate-action pauses also make the affected asset&apos;s price temporarily unavailable.
             </p>
             <pre><code>{`asset value = token balance x oracle price
 portfolio NAV = sum(asset values)
@@ -407,7 +411,7 @@ completeStrategicRebalance()`}</code></pre>
               The manager is added to the executor allowlist automatically and may remove or
               restore their own execution permission. Any authorized executor may submit multiple partial trade batches.
               Every batch uses current constituents and approved adapters, returns output directly
-              to the vault, satisfies oracle-valued slippage, turnover, and NAV-loss limits, and
+              to the vault, satisfies oracle-valued slippage and NAV-loss limits, and
               must move every constituent closer to target. Temporary approvals are
               exact and cleared after execution. A final successful trade batch automatically
               completes the strategic rebalance when all weights enter their completion bands.
@@ -439,7 +443,7 @@ completeStrategicRebalance()`}</code></pre>
                 <ArrowRight aria-hidden="true" />
                 <div className="challengeLifecycleNode active">
                   <span>Challenged</span>
-                  <strong>Five-day response</strong>
+                  <strong>Seven-day response</strong>
                   <small>Older valid fees are crystallized; corrective trades remain available.</small>
                 </div>
                 <ArrowRight aria-hidden="true" />

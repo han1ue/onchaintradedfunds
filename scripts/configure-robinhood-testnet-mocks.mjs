@@ -24,6 +24,8 @@ const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.jso
 const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets.json");
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
+const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
+const robinhoodStockTokenValidationMode = 1;
 const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
 const catalog = supportedAssets.assets.flatMap((asset) => {
   const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
@@ -218,19 +220,26 @@ for (const item of catalog) {
         args: [asset, true],
       });
 
-  const configuredFeed = await publicClient.readContract({
+  const [configuredFeed, configuredMaxStaleness, configuredValidationMode] = await publicClient.readContract({
     address: oracleRegistry,
     abi: oracleRegistryArtifact.abi,
-    functionName: "priceFeedFor",
+    functionName: "oracleConfigFor",
     args: [asset],
   });
   const priceFeed = isAddressEqual(configuredFeed, feed)
+      && Number(configuredMaxStaleness) === robinhoodEquityMaxStalenessSeconds
+      && Number(configuredValidationMode) === robinhoodStockTokenValidationMode
     ? { alreadyConfigured: true }
     : await confirmedWrite({
         address: oracleRegistry,
         abi: oracleRegistryArtifact.abi,
-        functionName: "setPriceFeed",
-        args: [asset, feed],
+        functionName: "setOracleConfig",
+        args: [
+          asset,
+          feed,
+          robinhoodEquityMaxStalenessSeconds,
+          robinhoodStockTokenValidationMode,
+        ],
       });
 
   const record = {

@@ -5,6 +5,7 @@ import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
@@ -61,9 +62,15 @@ abstract contract ProtocolTestBase is TestBase {
         assetRegistry.setAssetApproved(address(tokenA), true);
         assetRegistry.setAssetApproved(address(tokenB), true);
         assetRegistry.setAssetApproved(address(tokenC), true);
-        oracleRegistry.setPriceFeed(address(tokenA), address(feedA));
-        oracleRegistry.setPriceFeed(address(tokenB), address(feedB));
-        oracleRegistry.setPriceFeed(address(tokenC), address(feedC));
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
+        oracleRegistry.setOracleConfig(
+            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
+        oracleRegistry.setOracleConfig(
+            address(tokenC), feedC, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
@@ -126,12 +133,9 @@ abstract contract ProtocolTestBase is TestBase {
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
             creatorFeeBpsPerYear: 100,
-            maxTurnoverBps: 5_000,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250,
-            maxOracleStaleness: uint32(1 hours),
-            challengeGracePeriod: uint32(5 days)
+            challengeWeightDeviationBps: 250
         });
     }
 

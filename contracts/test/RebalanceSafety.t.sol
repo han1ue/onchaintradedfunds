@@ -115,16 +115,14 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
     }
 
-    function testTurnoverLimitRejectsTargetBeforeTrading() public {
-        VaultInitParams memory params = _defaultParams();
-        params.maxTurnoverBps = 500;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+    function testStrategyTurnoverDoesNotBlockTargetProposal() public {
+        ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         vm.warp(START + 14 days);
         _refreshPrices();
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.TurnoverTooHigh.selector);
         vault.proposeStrategy(assets, _uint256Weights(weights), "Target update under test.");
+        assertTrue(vault.strategyProposalPending());
         assertEq(vault.lastCompletedStrategyTimestamp(), START);
     }
 
@@ -591,21 +589,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vault.setExecutor(address(this), true);
         assertTrue(vault.authorizedExecutor(address(this)));
-    }
-
-    function testExecutorCannotBypassTradeSizeLimit() public {
-        VaultInitParams memory params = _defaultParams();
-        params.maxTurnoverBps = 500;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
-        vault.setExecutor(ALICE, true);
-        feedA.setRoundData(2, 120_00000000, START, START, 2);
-        vault.flagOutOfBand();
-        TradeInstruction[] memory oversized =
-            _singleTrade(address(tokenA), address(tokenB), 100 * ONE, 100 * ONE);
-
-        vm.prank(ALICE);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.TurnoverTooHigh.selector);
-        vault.executeRebalanceTrades(oversized);
     }
 
     function testCoreExecutorRejectsArbitraryCallers() public {

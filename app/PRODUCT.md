@@ -22,7 +22,7 @@ For the MVP, success means making the complete OTF lifecycle understandable and 
 
 ## Positioning
 
-OTF combines human portfolio management with enforceable onchain limits. Managers may change a portfolio only through a narrow atomic rebalance path constrained by approved assets and adapters, fresh oracle prices, immutable portfolio limits, NAV-loss protection, turnover limits, target-weight checks, and a minimum cooldown.
+OTF combines human portfolio management with enforceable onchain limits. Managers may change a portfolio only through a narrow atomic rebalance path constrained by approved assets and adapters, fresh oracle prices, immutable portfolio limits, NAV-loss protection, target-weight checks, and a minimum cooldown. Strategy turnover is recorded for disclosure rather than capped.
 
 This makes each managed portfolio independently inspectable and mechanically bounded. The protocol's position is evolutionary: it rebuilds familiar fund ownership and management mechanics as transparent, programmable onchain infrastructure rather than presenting itself as an attack on traditional ETFs.
 
@@ -59,7 +59,8 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.
-- Portfolio changes are bounded by immutable limits covering turnover, NAV loss, and target-weight deviation. Every included asset must meet the factory owner's live protocol-wide minimum target weight, initialized at 1%, with no separate asset-count or maximum-target limit.
+- Portfolio changes are bounded by immutable limits covering NAV loss and target-weight deviation. Every included asset must meet the factory owner's live protocol-wide minimum target weight, initialized at 1%, with no separate asset-count, maximum-target, or turnover limit.
+- Every OTF uses a fixed seven-day challenge grace period. Oracle freshness and corporate-action pause checks are configured per asset by the protocol registry. Robinhood equity feeds publish 24/5; their current 25-hour limit is measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
 - Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.

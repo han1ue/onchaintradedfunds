@@ -66,7 +66,7 @@ Attempt to falsify each property:
 5. An executor cannot mutate strategy or administration and cannot trade outside the manager's
    constrained path.
 6. Every successful trade batch reduces target distance, moves no constituent farther from target,
-   respects NAV-loss and turnover bounds, and leaves no temporary allowance.
+   respects NAV-loss bounds, and leaves no temporary allowance.
 7. Target proposal, partial execution, and completion remain separate state transitions with the
    required ERC-7621 and custom events.
 8. Failed operations do not partially mutate balances, approvals, cooldowns, fee state, challenge
@@ -101,7 +101,7 @@ Analyze more than Solidity control flow:
 - Oracle decimal combinations and low-value truncation
 - Price manipulation within configured staleness
 - Donation-driven weight changes and challenge griefing
-- Repeated partial trades near NAV-loss and turnover limits
+- Repeated partial trades near the NAV-loss limit
 - Asset or adapter delisting while an OTF is active
 - Inability to remove a constituent while any reserve remains
 - Manager changes while fees are accrued or escrowed

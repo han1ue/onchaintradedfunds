@@ -126,7 +126,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               advances when every trade executes and every final safety check passes.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Maximum turnover enforced</span>
+              <span><CheckCircle size={13} /> Strategy turnover recorded</span>
               <span><CheckCircle size={13} /> Approved adapters only</span>
               <span><CheckCircle size={13} /> Atomic execution or full rollback</span>
             </div>

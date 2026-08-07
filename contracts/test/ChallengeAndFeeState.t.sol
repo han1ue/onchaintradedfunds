@@ -18,7 +18,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertTrue(vault.challengeActive());
         assertEq(vault.challengeCaller(), ALICE);
         assertEq(vault.challengeStartedAt(), START);
-        assertEq(vault.challengeDeadline(), START + 5 days);
+        assertEq(vault.challengeDeadline(), START + 7 days);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Escrowed));
 
         vm.prank(BOB);
@@ -202,7 +202,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.accrueFees(), 0);
         assertEq(vault.escrowedManagerFeeShares(), 0);
 
-        vm.warp(START + 5 days + 1);
+        vm.warp(START + 7 days + 1);
         _setPrices(120_00000000, 100_00000000);
         uint256 supplyBeforeReward = vault.totalSupply();
         uint256 balanceBeforeReward = vault.balanceOf(address(this));
@@ -278,7 +278,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertGt(preChallengeFees, 0);
         assertGt(recipientBalanceAtChallengeStart, recipientBalanceBefore);
 
-        vm.warp(block.timestamp + 5 days + 1);
+        vm.warp(block.timestamp + 7 days + 1);
         assertGt(vault.claimChallengeReward(), 0);
 
         assertGt(vault.forfeitedManagerFeeShares(), 0);
@@ -341,7 +341,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
-        vm.warp(START + 5 days + 1);
+        vm.warp(START + 7 days + 1);
         _setPrices(120_00000000, 100_00000000);
         vault.claimChallengeReward();
         uint256 supplyAtForfeiture = vault.totalSupply();
@@ -367,7 +367,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.prank(ALICE);
         vault.redeem(ONE, ALICE, ALICE, minimums);
 
-        vm.warp(START + 5 days + 1);
+        vm.warp(START + 7 days + 1);
         _setPrices(120_00000000, 100_00000000);
         _mintForAlice(vault, 5 * ONE);
         vm.prank(ALICE);

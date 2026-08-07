@@ -1,7 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-interface IOracleRegistry {
-    function priceFeedFor(address asset) external view returns (address);
+import { AggregatorV3Interface } from "./AggregatorV3Interface.sol";
+
+enum OracleValidationMode {
+    StandardChainlink,
+    RobinhoodStockToken
 }
 
+interface IOracleRegistry {
+    function priceFeedFor(address asset) external view returns (address);
+
+    function oracleConfigFor(address asset)
+        external
+        view
+        returns (
+            AggregatorV3Interface feed,
+            uint32 maxStaleness,
+            OracleValidationMode validationMode
+        );
+}

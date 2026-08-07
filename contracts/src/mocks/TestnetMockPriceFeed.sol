@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IPriceFeed } from "../interfaces/IPriceFeed.sol";
+import { AggregatorV3Interface } from "../interfaces/AggregatorV3Interface.sol";
 
 /// @notice Self-updating Chainlink V3-compatible synthetic feed for testnet development only.
 /// @dev Prices are deterministic functions of chain time. They are predictable and MUST NOT be
 ///      used as production or adversarial-test oracles.
-contract TestnetMockPriceFeed is IPriceFeed {
+contract TestnetMockPriceFeed is AggregatorV3Interface {
     error InvalidAnswer(int256 answer);
     error InvalidDecimals(uint8 decimals_);
     error NotOwner();

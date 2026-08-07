@@ -30,6 +30,8 @@ const { privateKeyToAccount } = accounts;
 
 const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
 const defaultChainId = 46630;
+const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
+const robinhoodStockTokenValidationMode = 1;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 
 function env(name, fallback) {
@@ -251,8 +253,13 @@ for (let i = 0; i < priceFeeds.length; i += 1) {
     ...(await writeContract({
       address: oracleRegistry.address,
       abi: oracleRegistryAbi,
-      functionName: "setPriceFeed",
-      args: [approvedAssets[i], priceFeeds[i]],
+      functionName: "setOracleConfig",
+      args: [
+        approvedAssets[i],
+        priceFeeds[i],
+        robinhoodEquityMaxStalenessSeconds,
+        robinhoodStockTokenValidationMode,
+      ],
     })),
   });
 }

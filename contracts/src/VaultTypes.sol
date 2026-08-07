@@ -12,12 +12,9 @@ struct VaultInitParams {
     uint256[] initialAmounts;
     uint256 initialShareSupply;
     uint16 creatorFeeBpsPerYear;
-    uint16 maxTurnoverBps;
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
     uint16 challengeWeightDeviationBps;
-    uint32 maxOracleStaleness;
-    uint32 challengeGracePeriod;
 }
 
 struct TradeInstruction {

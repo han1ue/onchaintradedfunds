@@ -6,6 +6,8 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
+import { AggregatorV3Interface } from "../src/interfaces/AggregatorV3Interface.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -80,8 +82,6 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
     }
 
     function testFactoryRejectsLimitsAboveGlobalBounds() public {
-        assertEq(factory.MAX_ORACLE_STALENESS(), 1 hours);
-
         VaultInitParams memory params = _defaultParams();
         params.maxNavLossBps = 201;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
@@ -91,20 +91,10 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         params.maxWeightDeviationBps = 1_001;
         vm.expectRevert(OTFFactory.LimitTooHigh.selector);
         factory.createVault(params);
-
-        params = _defaultParams();
-        params.maxOracleStaleness = factory.MAX_ORACLE_STALENESS() + 1;
-        vm.expectRevert(OTFFactory.LimitTooHigh.selector);
-        factory.createVault(params);
     }
 
     function testFactoryRejectsInvalidZeroLimits() public {
         VaultInitParams memory params = _defaultParams();
-        params.maxOracleStaleness = 0;
-        vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.createVault(params);
-
-        params = _defaultParams();
         params.maxWeightDeviationBps = 0;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
@@ -165,8 +155,6 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
     }
 
     function testFactoryRejectsInvalidChallengeConfiguration() public {
-        assertEq(factory.MIN_CHALLENGE_GRACE_PERIOD(), 5 days);
-
         VaultInitParams memory params = _defaultParams();
         params.challengeWeightDeviationBps = params.maxWeightDeviationBps;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
@@ -176,16 +164,43 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         params.challengeWeightDeviationBps = 2_501;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
+    }
 
-        params = _defaultParams();
-        params.challengeGracePeriod = 5 days - 1;
-        vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.createVault(params);
+    function testVaultUsesProtocolWideTimingRules() public {
+        ManagedOTFVault vault = _createVault();
+        assertEq(vault.CHALLENGE_GRACE_PERIOD(), 7 days);
+    }
 
-        params = _defaultParams();
-        params.challengeGracePeriod = 30 days + 1;
-        vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.createVault(params);
+    function testOracleConfigsUseIndependentStalenessThresholds() public {
+        ManagedOTFVault vault = _createVault();
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 1 hours, OracleValidationMode.RobinhoodStockToken
+        );
+        oracleRegistry.setOracleConfig(
+            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
+
+        vm.warp(START + 2 hours);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.StaleOraclePrice.selector);
+        vault.totalAssetsValue();
+
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 3 hours, OracleValidationMode.RobinhoodStockToken
+        );
+        assertEq(vault.totalAssetsValue(), 1_000 * ONE);
+    }
+
+    function testOraclePauseFlagBlocksValuationWhenConfigured() public {
+        ManagedOTFVault vault = _createVault();
+        tokenA.setOraclePaused(true);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.OraclePaused.selector);
+        vault.totalAssetsValue();
+
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 25 hours, OracleValidationMode.StandardChainlink
+        );
+        assertEq(vault.totalAssetsValue(), 1_000 * ONE);
     }
 
     function testFactoryCreationIsAtomicWhenVaultInitializationFails() public {
@@ -235,15 +250,23 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         vm.expectRevert(AssetRegistry.NotOwner.selector);
         assetRegistry.setAssetApproved(address(tokenA), false);
         vm.expectRevert(OracleRegistry.NotOwner.selector);
-        oracleRegistry.setPriceFeed(address(tokenA), address(feedB));
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
+        );
 
         vm.startPrank(ALICE);
         assetRegistry.setAssetApproved(address(tokenA), false);
-        oracleRegistry.setPriceFeed(address(tokenA), address(feedB));
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
+        );
         vm.stopPrank();
 
         assertFalse(assetRegistry.isApprovedAsset(address(tokenA)));
         assertEq(oracleRegistry.priceFeedFor(address(tokenA)), address(feedB));
+        (, uint32 maxStaleness, OracleValidationMode validationMode) =
+            oracleRegistry.oracleConfigFor(address(tokenA));
+        assertEq(maxStaleness, 1 hours);
+        assertEq(uint256(validationMode), uint256(OracleValidationMode.RobinhoodStockToken));
     }
 
     function testFactoryOwnershipTransferRequiresPendingOwner() public {
@@ -306,10 +329,22 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assetRegistry.setAssetApproved(ALICE, true);
 
         vm.expectPartialRevert(OracleRegistry.AssetNotContract.selector);
-        oracleRegistry.setPriceFeed(ALICE, address(feedA));
+        oracleRegistry.setOracleConfig(
+            ALICE, feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
 
         vm.expectPartialRevert(OracleRegistry.FeedNotContract.selector);
-        oracleRegistry.setPriceFeed(address(tokenA), ALICE);
+        oracleRegistry.setOracleConfig(
+            address(tokenA),
+            AggregatorV3Interface(ALICE),
+            25 hours,
+            OracleValidationMode.RobinhoodStockToken
+        );
+
+        vm.expectRevert(OracleRegistry.InvalidMaxStaleness.selector);
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 0, OracleValidationMode.RobinhoodStockToken
+        );
     }
 
     function testFactoryRejectsNonContractDependencies() public {

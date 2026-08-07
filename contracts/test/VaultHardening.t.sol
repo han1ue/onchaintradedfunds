@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -109,7 +110,12 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
-        oracleRegistry.setPriceFeed(address(reentrantToken), address(reentrantFeed));
+        oracleRegistry.setOracleConfig(
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
+        );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -136,7 +142,12 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
-        oracleRegistry.setPriceFeed(address(reentrantToken), address(reentrantFeed));
+        oracleRegistry.setOracleConfig(
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
+        );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -274,7 +285,12 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
-        oracleRegistry.setPriceFeed(address(reentrantToken), address(reentrantFeed));
+        oracleRegistry.setOracleConfig(
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
+        );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -345,7 +361,9 @@ contract VaultHardeningTest is ProtocolTestBase {
         taxedToken = new MockFeeOnTransferToken("Taxed Stock", "TAX", 18);
         taxedFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(taxedToken), true);
-        oracleRegistry.setPriceFeed(address(taxedToken), address(taxedFeed));
+        oracleRegistry.setOracleConfig(
+            address(taxedToken), taxedFeed, 25 hours, OracleValidationMode.StandardChainlink
+        );
         taxedToken.mint(address(this), 10_000 * ONE);
         taxedToken.approve(address(factory), type(uint256).max);
     }

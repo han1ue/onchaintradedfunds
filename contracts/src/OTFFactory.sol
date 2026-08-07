@@ -34,13 +34,9 @@ contract OTFFactory is IAdapterAllowlist {
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 5_000;
-    uint16 public constant GLOBAL_MAX_TURNOVER_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
-    uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
-    uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
-    uint32 public constant MAX_ORACLE_STALENESS = 1 hours;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
@@ -287,9 +283,6 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.creatorFeeBpsPerYear > MAX_CREATOR_FEE_BPS_PER_YEAR) {
             revert CreatorFeeTooHigh(params.creatorFeeBpsPerYear, MAX_CREATOR_FEE_BPS_PER_YEAR);
         }
-        if (params.maxOracleStaleness == 0) revert InvalidLimit();
-        if (params.maxOracleStaleness > MAX_ORACLE_STALENESS) revert LimitTooHigh();
-        if (params.maxTurnoverBps > GLOBAL_MAX_TURNOVER_BPS) revert LimitTooHigh();
         if (params.maxNavLossBps > GLOBAL_MAX_NAV_LOSS_BPS) revert LimitTooHigh();
         if (params.maxWeightDeviationBps == 0) revert InvalidLimit();
         if (params.maxWeightDeviationBps > GLOBAL_MAX_WEIGHT_DEVIATION_BPS) {
@@ -298,12 +291,6 @@ contract OTFFactory is IAdapterAllowlist {
         if (
             params.challengeWeightDeviationBps <= params.maxWeightDeviationBps
                 || params.challengeWeightDeviationBps > GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS
-        ) {
-            revert InvalidLimit();
-        }
-        if (
-            params.challengeGracePeriod < MIN_CHALLENGE_GRACE_PERIOD
-                || params.challengeGracePeriod > MAX_CHALLENGE_GRACE_PERIOD
         ) {
             revert InvalidLimit();
         }

@@ -17,8 +17,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant YEAR = 365 days;
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
-    uint256 public constant MIN_CHALLENGE_GRACE_PERIOD = 5 days;
-    uint256 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
+    uint32 public constant CHALLENGE_GRACE_PERIOD = 7 days;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
@@ -56,7 +55,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidWeightSum(uint256 sum);
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
     error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
-    error InvalidChallengeGracePeriod(uint32 supplied);
     error StrategyRationaleTooLong(uint256 length);
     error StrategyRationaleRequired();
     error StrategyTargetsUnchanged();
@@ -71,10 +69,11 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidOracleTimestamp(address asset, uint256 updatedAt);
     error IncompleteOracleRound(address asset, uint80 roundId, uint80 answeredInRound);
     error StaleOraclePrice(address asset, uint256 updatedAt, uint256 maxStaleness);
+    error OraclePauseStatusUnavailable(address asset);
+    error OraclePaused(address asset);
     error TokenDecimalsUnavailable(address token);
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
-    error TurnoverTooHigh(uint256 turnoverBps, uint256 maximum);
     error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
     error OracleSlippageTooHigh(
         address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
@@ -206,12 +205,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     uint16 public creatorFeeBpsPerYear;
     uint16 public protocolFeeShareBps;
-    uint16 public maxTurnoverBps;
     uint16 public maxNavLossBps;
     uint16 public maxWeightDeviationBps;
     uint16 public challengeWeightDeviationBps;
-    uint32 public maxOracleStaleness;
-    uint32 public challengeGracePeriod;
     uint64 public lastFeeAccrualTimestamp;
     uint64 public lastCompletedStrategyTimestamp;
     uint64 public strategicRebalanceStartedAt;

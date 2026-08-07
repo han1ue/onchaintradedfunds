@@ -190,7 +190,7 @@ The manager MUST NOT:
 - Transfer constituent assets to an arbitrary recipient.
 - approve arbitrary spenders.
 - use unsupported assets or adapters.
-- bypass oracle, slippage, turnover, NAV-loss, or target-improvement checks.
+- bypass oracle, slippage, NAV-loss, or target-improvement checks.
 - shorten the immutable target-change cooldown.
 
 The manager remains accountable for challenge, forfeiture, and caller-reward outcomes regardless
@@ -234,10 +234,9 @@ For every successful constrained trade batch:
 3. Every adapter is approved by the factory.
 4. The input amount is nonzero and input differs from output.
 5. Required oracle prices are valid and fresh.
-6. Batch oracle-valued turnover does not exceed `maxTurnoverBps`.
-7. Explicit adapter output is at least `minAmountOut`.
-8. Oracle-valued output loss does not exceed `maxNavLossBps`.
-9. Total post-trade NAV loss does not exceed `maxNavLossBps`.
+6. Explicit adapter output is at least `minAmountOut`.
+7. Oracle-valued output loss does not exceed `maxNavLossBps`.
+8. Total post-trade NAV loss does not exceed `maxNavLossBps`.
 10. Total portfolio distance from target strictly decreases.
 11. No individual constituent moves farther from its target.
 12. Output returns to the OTF.
@@ -295,7 +294,7 @@ A proposal requires:
 - At least one constituent, with every included target at or above the factory's live protocol-wide minimum target weight. The factory owner MAY update that minimum within 1–10,000 basis points; the initial value is 100 basis points (1%). Changes apply only when an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger a challenge retroactively.
 - Any constituent omitted from the proposal remains tracked at a zero target until its reserve is
   liquidated exactly to zero after activation.
-- Proposed turnover within the configured limit.
+- Proposed turnover is calculated for the eventual strategy-history record but does not block the proposal.
 
 It locks the rationale, emits `TargetWeightsProposed`, and leaves canonical strategy history
 unchanged. The standard `Rebalanced` event MUST NOT be emitted until the target becomes active.
@@ -305,7 +304,7 @@ unchanged. The standard `Rebalanced` event MUST NOT be emitted until the target 
 The active constituents and target weights MUST remain unchanged for at least 48 hours after a
 proposal. Deposits and proportional redemptions MUST remain available during this notice period.
 After the deadline, only the manager MAY call `activatePendingStrategy()`. Activation MUST
-revalidate asset approval, oracle freshness, portfolio shape, turnover, challenge state, fee state,
+revalidate asset approval, oracle freshness, portfolio shape, challenge state, fee state,
 and completion bands before changing the active target. It emits the standard `Rebalanced` event
 and `TargetWeightsActivated`, appends the canonical strategy version and target snapshot, but
 performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
@@ -345,16 +344,15 @@ proposals, failed trades, and partial trades MUST NOT update it.
 Anyone MAY flag a challenge only when fresh oracle-valued weights prove that at least one
 constituent is outside its challenge band.
 
-Every vault MUST configure a challenge grace period between five and thirty days. The five-day
-minimum is intended to span scheduled equity-market weekends and holiday closures while preserving
-a bounded response deadline.
+Every vault MUST use the protocol-wide seven-day challenge grace period. The fixed period spans
+scheduled equity-market weekends and typical holiday closures while keeping OTFs comparable.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Normal
     Normal --> Challenged: Fresh prices prove a challenge-band breach
     Challenged --> Normal: Timely restoration inside completion bands
-    Challenged --> Overdue: Five-day minimum period expires
+    Challenged --> Overdue: Seven-day protocol period expires
     Overdue --> Suspended: State change forfeits challenge-window fees once
     Suspended --> Normal: Late restoration inside completion bands
 ```
@@ -431,11 +429,18 @@ Every security-sensitive valuation MUST reject:
 - Nonpositive answers.
 - Zero or future timestamps.
 - Incomplete rounds.
-- Answers older than `maxOracleStaleness`.
+- Answers older than the asset's registry-configured `maxStaleness`.
+- An enabled asset-level `oraclePaused()` flag.
+- Failure to read `oraclePaused()` when the registry requires that check.
 - Unsupported token or feed decimals.
 
-The factory MUST reject a per-vault `maxOracleStaleness` above one hour. The value is fixed when
-the vault is created.
+Every oracle-registry entry MUST pair an `AggregatorV3Interface` feed with a nonzero `maxStaleness`
+and an explicit validation mode. Robinhood equity feeds publish 24/5; their entries use 25 hours for
+the 24-hour heartbeat plus a one-hour delivery buffer and `RobinhoodStockToken` validation, which
+requires the asset's `oraclePaused()` check.
+The deadline is measured from each feed's latest update, so oracle-priced actions may remain available
+into a weekend before pausing until fresh prices arrive. Other feed types MAY use different policies.
+Managers cannot select or override these values.
 
 The frontend MUST NOT substitute cached or offchain prices for onchain enforcement.
 

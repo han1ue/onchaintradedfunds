@@ -266,11 +266,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _validateRationale(rationale);
         if (!_targetsChanged(newTokens, newWeights)) revert StrategyTargetsUnchanged();
 
-        (uint256[] memory currentWeights,) = _currentPreciseWeightsAndNav();
-        uint256 turnover =
-            _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
-        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
-
         uint64 proposedAt = uint64(block.timestamp);
         strategyProposalPending = true;
         pendingStrategyProposedAt = proposedAt;
@@ -315,7 +310,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         (uint256[] memory currentWeights, uint256 navBefore) = _currentPreciseWeightsAndNav();
         uint256 turnover =
             _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
-        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
 
         uint64 activatedAt = uint64(block.timestamp);
         uint256 strategyVersion = _strategyVersions.length;
@@ -387,17 +381,13 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         (uint256[] memory weightsBefore, uint256 navBefore) = _currentPreciseWeightsAndNav();
         uint256[] memory balancesBefore = _trackedAssetBalances();
         uint256 distanceBefore = _distanceFromTarget(weightsBefore, WEIGHT_PRECISION_SCALE);
-        uint256 tradeValue;
         uint256[] memory valuesIn = new uint256[](trades.length);
 
         for (uint256 i = 0; i < trades.length; i++) {
             TradeInstruction calldata trade = trades[i];
             _validateTrade(trade);
             valuesIn[i] = _assetValue(trade.tokenIn, trade.amountIn);
-            tradeValue += valuesIn[i];
         }
-        uint256 turnover = MathEx.mulDiv(tradeValue, BPS, navBefore);
-        if (turnover > maxTurnoverBps) revert TurnoverTooHigh(turnover, maxTurnoverBps);
 
         for (uint256 i = 0; i < trades.length; i++) {
             TradeInstruction calldata trade = trades[i];
@@ -477,7 +467,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         challengeActive = true;
         challengeCaller = msg.sender;
         challengeStartedAt = startedAt;
-        challengeDeadline = startedAt + challengeGracePeriod;
+        challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
         emit OutOfBandChallengeStarted(msg.sender, startedAt, challengeDeadline, breached);
     }
 
@@ -574,7 +564,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 challengeActive = true;
                 challengeCaller = msg.sender;
                 challengeStartedAt = startedAt;
-                challengeDeadline = startedAt + challengeGracePeriod;
+                challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
                 emit OutOfBandChallengeStarted(
                     msg.sender, startedAt, challengeDeadline, breached
                 );
@@ -640,7 +630,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             if (weight < minimumTargetWeightBps) {
                 revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
             }
-            _calculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
+            _calculator.validateAsset(asset, oracleRegistry);
             for (uint256 j = i + 1; j < assets_.length; j++) {
                 if (assets_[j] == asset) revert DuplicateConstituent(asset);
             }
@@ -670,13 +660,12 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (!IAdapterAllowlist(factory).isTradeAdapterApproved(trade.adapter)) {
             revert UnapprovedAdapter(trade.adapter);
         }
-        _calculator.validateAsset(trade.tokenIn, oracleRegistry, maxOracleStaleness);
-        _calculator.validateAsset(trade.tokenOut, oracleRegistry, maxOracleStaleness);
+        _calculator.validateAsset(trade.tokenIn, oracleRegistry);
+        _calculator.validateAsset(trade.tokenOut, oracleRegistry);
     }
 
     function _currentWeightsAndNav() private view returns (uint256[] memory weights, uint256 nav) {
-        return
-            _calculator.portfolioState(address(this), _assets, oracleRegistry, maxOracleStaleness);
+        return _calculator.portfolioState(address(this), _assets, oracleRegistry);
     }
 
     function _currentPreciseWeightsAndNav()
@@ -684,9 +673,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         view
         returns (uint256[] memory weights, uint256 nav)
     {
-        return _calculator.precisePortfolioState(
-            address(this), _assets, oracleRegistry, maxOracleStaleness
-        );
+        return _calculator.precisePortfolioState(address(this), _assets, oracleRegistry);
     }
 
     function _isWithinBands(uint16 deviationBps) private view returns (bool) {
@@ -696,7 +683,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             _assets,
             _targetWeights(),
             oracleRegistry,
-            maxOracleStaleness,
             deviationBps
         );
     }
@@ -709,7 +695,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             _assets,
             _targetWeights(),
             oracleRegistry,
-            maxOracleStaleness,
             deviationBps
         );
     }
@@ -743,7 +728,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     }
 
     function _assetValue(address asset, uint256 rawBalance) private view returns (uint256) {
-        return _calculator.assetValue(asset, rawBalance, oracleRegistry, maxOracleStaleness);
+        return _calculator.assetValue(asset, rawBalance, oracleRegistry);
     }
 
     function _replacePortfolio(address[] memory assets_, uint256[] memory weights_) private {

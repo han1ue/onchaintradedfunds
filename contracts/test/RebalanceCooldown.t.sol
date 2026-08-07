@@ -7,6 +7,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
@@ -47,8 +48,12 @@ contract RebalanceCooldownTest is TestBase {
         assetRegistry.setAssetApproved(address(tokenB), true);
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
-        oracleRegistry.setPriceFeed(address(tokenA), address(feedA));
-        oracleRegistry.setPriceFeed(address(tokenB), address(feedB));
+        oracleRegistry.setOracleConfig(
+            address(tokenA), feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
+        oracleRegistry.setOracleConfig(
+            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
+        );
 
         tokenA.mint(address(this), 10_000 * ONE);
         tokenB.mint(address(this), 10_000 * ONE);
@@ -298,12 +303,9 @@ contract RebalanceCooldownTest is TestBase {
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
             creatorFeeBpsPerYear: feeBps,
-            maxTurnoverBps: 5_000,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250,
-            maxOracleStaleness: 1 hours,
-            challengeGracePeriod: 5 days
+            challengeWeightDeviationBps: 250
         });
     }
 

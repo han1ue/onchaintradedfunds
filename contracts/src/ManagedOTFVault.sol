@@ -73,12 +73,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         feeCollector = feeCollector_;
         creatorFeeBpsPerYear = params.creatorFeeBpsPerYear;
         protocolFeeShareBps = protocolFeeShareBps_;
-        maxTurnoverBps = params.maxTurnoverBps;
         maxNavLossBps = params.maxNavLossBps;
         maxWeightDeviationBps = params.maxWeightDeviationBps;
         challengeWeightDeviationBps = params.challengeWeightDeviationBps;
-        maxOracleStaleness = params.maxOracleStaleness;
-        challengeGracePeriod = params.challengeGracePeriod;
         _feeState = FeeState.Accruing;
 
         _validateInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
@@ -781,7 +778,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (weight < minimumTargetWeightBps) {
             revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
         }
-        _portfolioCalculator.validateAsset(asset, oracleRegistry, maxOracleStaleness);
+        _portfolioCalculator.validateAsset(asset, oracleRegistry);
         for (uint256 j = index + 1; j < assets_.length; j++) {
             if (assets_[j] == asset) revert DuplicateConstituent(asset);
         }
@@ -812,9 +809,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _currentWeightsAndNav() internal view returns (uint256[] memory weights, uint256 nav) {
-        return _portfolioCalculator.portfolioState(
-            address(this), _assets, oracleRegistry, maxOracleStaleness
-        );
+        return _portfolioCalculator.portfolioState(address(this), _assets, oracleRegistry);
     }
 
     function _isWithinBands(uint16 deviationBps) internal view returns (bool) {
@@ -824,7 +819,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             _assets,
             _weightsAsUint256(),
             oracleRegistry,
-            maxOracleStaleness,
             deviationBps
         );
     }
@@ -837,7 +831,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             _assets,
             _weightsAsUint256(),
             oracleRegistry,
-            maxOracleStaleness,
             deviationBps
         );
     }
@@ -847,7 +840,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         challengeActive = true;
         challengeCaller = caller;
         challengeStartedAt = startedAt;
-        challengeDeadline = startedAt + challengeGracePeriod;
+        challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
         emit OutOfBandChallengeStarted(caller, startedAt, challengeDeadline, breached);
     }
 
@@ -861,14 +854,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _portfolioValue() internal view returns (uint256 nav) {
-        return _portfolioCalculator.portfolioValue(
-            address(this), _assets, oracleRegistry, maxOracleStaleness
-        );
+        return _portfolioCalculator.portfolioValue(address(this), _assets, oracleRegistry);
     }
 
     function _assetValue(address asset, uint256 rawBalance) internal view returns (uint256) {
-        return
-            _portfolioCalculator.assetValue(asset, rawBalance, oracleRegistry, maxOracleStaleness);
+        return _portfolioCalculator.assetValue(asset, rawBalance, oracleRegistry);
     }
 
     // Storage and transfer helpers

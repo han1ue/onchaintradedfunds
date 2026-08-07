@@ -3,13 +3,17 @@ pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IOracleRegistry } from "./interfaces/IOracleRegistry.sol";
-import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
+import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
+import { IOracleRegistry, OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 
 interface ITargetWeightVault {
     function targetWeightBps(address asset) external view returns (uint16);
+}
+
+interface IOraclePauseStatus {
+    function oraclePaused() external view returns (bool);
 }
 
 contract PortfolioCalculator {
@@ -26,6 +30,8 @@ contract PortfolioCalculator {
     error InvalidOracleTimestamp(address asset, uint256 updatedAt);
     error IncompleteOracleRound(address asset, uint80 roundId, uint80 answeredInRound);
     error StaleOraclePrice(address asset, uint256 updatedAt, uint256 maxStaleness);
+    error OraclePauseStatusUnavailable(address asset);
+    error OraclePaused(address asset);
     error TokenDecimalsUnavailable(address token);
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
@@ -142,45 +148,38 @@ contract PortfolioCalculator {
     function portfolioValue(
         address vault,
         address[] calldata assets,
-        address oracleRegistry,
-        uint32 maxStaleness
+        address oracleRegistry
     ) external view returns (uint256 nav) {
-        (, nav) = _portfolioState(vault, assets, oracleRegistry, maxStaleness, false, BPS);
+        (, nav) = _portfolioState(vault, assets, oracleRegistry, false, BPS);
     }
 
     function portfolioState(
         address vault,
         address[] calldata assets,
-        address oracleRegistry,
-        uint32 maxStaleness
+        address oracleRegistry
     ) external view returns (uint256[] memory weights, uint256 nav) {
-        return _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, BPS);
+        return _portfolioState(vault, assets, oracleRegistry, true, BPS);
     }
 
     function precisePortfolioState(
         address vault,
         address[] calldata assets,
-        address oracleRegistry,
-        uint32 maxStaleness
+        address oracleRegistry
     ) external view returns (uint256[] memory weights, uint256 nav) {
-        return _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
+        return _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
     }
 
     function assetValue(
         address asset,
         uint256 rawBalance,
-        address oracleRegistry,
-        uint32 maxStaleness
+        address oracleRegistry
     ) external view returns (uint256) {
-        return _assetValue(asset, rawBalance, oracleRegistry, maxStaleness);
+        return _assetValue(asset, rawBalance, oracleRegistry);
     }
 
-    function validateAsset(address asset, address oracleRegistry, uint32 maxStaleness)
-        external
-        view
-    {
+    function validateAsset(address asset, address oracleRegistry) external view {
         _tokenDecimals(asset);
-        _validPrice(asset, oracleRegistry, maxStaleness);
+        _validPrice(asset, oracleRegistry);
     }
 
     function isWithinBands(
@@ -188,11 +187,10 @@ contract PortfolioCalculator {
         address[] calldata assets,
         uint256[] calldata targets,
         address oracleRegistry,
-        uint32 maxStaleness,
         uint16 deviationBps
     ) external view returns (bool) {
         (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
+            _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
         for (uint256 i = 0; i < assets.length; i++) {
             (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
             if (weights[i] < lower || weights[i] > upper) return false;
@@ -205,11 +203,10 @@ contract PortfolioCalculator {
         address[] calldata assets,
         uint256[] calldata targets,
         address oracleRegistry,
-        uint32 maxStaleness,
         uint16 deviationBps
     ) external view returns (address[] memory breached) {
         (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, maxStaleness, true, PRECISE_BPS);
+            _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
         uint256 count;
         for (uint256 i = 0; i < assets.length; i++) {
             (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
@@ -229,15 +226,13 @@ contract PortfolioCalculator {
         address vault,
         address[] calldata assets,
         address oracleRegistry,
-        uint32 maxStaleness,
         bool requireNonzero,
         uint256 weightScale
     ) private view returns (uint256[] memory weights, uint256 nav) {
         uint256[] memory values = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            values[i] = _assetValue(
-                assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry, maxStaleness
-            );
+            values[i] =
+                _assetValue(assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
             nav += values[i];
         }
         if (nav == 0) {
@@ -253,11 +248,10 @@ contract PortfolioCalculator {
     function _assetValue(
         address asset,
         uint256 rawBalance,
-        address oracleRegistry,
-        uint32 maxStaleness
+        address oracleRegistry
     ) private view returns (uint256) {
         if (rawBalance == 0) return 0;
-        (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry, maxStaleness);
+        (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry);
         uint8 tokenDecimals = _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
@@ -265,15 +259,25 @@ contract PortfolioCalculator {
         return MathEx.mulDiv(tokenAdjusted, 1e18, 10 ** uint256(priceDecimals));
     }
 
-    function _validPrice(address asset, address oracleRegistry, uint32 maxStaleness)
+    function _validPrice(address asset, address oracleRegistry)
         private
         view
         returns (uint256 price, uint8 priceDecimals)
     {
-        address feed = IOracleRegistry(oracleRegistry).priceFeedFor(asset);
-        if (feed == address(0)) revert OracleFeedMissing(asset);
+        (AggregatorV3Interface feed, uint32 maxStaleness, OracleValidationMode validationMode) =
+            IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
+        if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+        if (validationMode == OracleValidationMode.RobinhoodStockToken) {
+            bool paused;
+            try IOraclePauseStatus(asset).oraclePaused() returns (bool isPaused) {
+                paused = isPaused;
+            } catch {
+                revert OraclePauseStatusUnavailable(asset);
+            }
+            if (paused) revert OraclePaused(asset);
+        }
         (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            IPriceFeed(feed).latestRoundData();
+            feed.latestRoundData();
         if (answer <= 0) revert InvalidOraclePrice(asset, answer);
         // Oracle validity and freshness are necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
@@ -288,8 +292,8 @@ contract PortfolioCalculator {
         if (block.timestamp > updatedAt + maxStaleness) {
             revert StaleOraclePrice(asset, updatedAt, maxStaleness);
         }
-        priceDecimals = IPriceFeed(feed).decimals();
-        if (priceDecimals > 36) revert UnsupportedDecimals(feed, priceDecimals);
+        priceDecimals = feed.decimals();
+        if (priceDecimals > 36) revert UnsupportedDecimals(address(feed), priceDecimals);
         // The positive-answer check above makes this signed-to-unsigned cast lossless.
         // forge-lint: disable-next-line(unsafe-typecast)
         price = uint256(answer);
