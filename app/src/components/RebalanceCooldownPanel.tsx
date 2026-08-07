@@ -6823,7 +6823,7 @@ function CreateVaultView({
                   Add asset
                 </button>
                 {portfolioIssues.length ? (
-                  <div className="riskCallout warning">
+                  <div className="validationSummary warning" role="status">
                     <AlertTriangle size={15} />
                     <div>
                       <strong>Portfolio needs attention</strong>
