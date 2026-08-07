@@ -6612,7 +6612,7 @@ function CreateVaultView({
                         placeholder="Technology Leaders OTF"
                         aria-label="OTF name"
                     />
-                    <small>Must end in ' OTF'. The name cannot be changed after deployment.</small>
+                    <small>Must end in &apos; OTF&apos;. The name cannot be changed after deployment.</small>
                   </label>
                   <label>
                     <span>OTF ticker</span>

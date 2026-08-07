@@ -5349,6 +5349,11 @@ textarea::placeholder {
   background: var(--card-raised);
 }
 
+.createForm .inputWithSuffix input,
+.createForm .inputWithPrefix input {
+  background: transparent;
+}
+
 .stepNumber {
   display: grid;
   width: 21px;
