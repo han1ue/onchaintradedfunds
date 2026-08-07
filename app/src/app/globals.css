@@ -747,6 +747,10 @@ button.settingsOption:disabled {
   padding: 16px 20px;
 }
 
+.vaultHeader + .provenanceBanner {
+  margin-top: 16px;
+}
+
 .vaultBreadcrumb {
   display: flex;
   align-items: center;
@@ -815,7 +819,7 @@ button.settingsOption:disabled {
   font-weight: 700;
 }
 
-img.vaultMonogram {
+:is(img, svg).vaultMonogram {
   display: block;
   border: 0;
   background: none;

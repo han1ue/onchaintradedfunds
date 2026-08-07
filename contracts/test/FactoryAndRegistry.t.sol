@@ -187,7 +187,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 3 hours, OracleValidationMode.RobinhoodStockToken
         );
-        assertEq(vault.totalAssetsValue(), 1_000 * ONE);
+        assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
     function testOraclePauseFlagBlocksValuationWhenConfigured() public {
@@ -200,7 +200,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 25 hours, OracleValidationMode.StandardChainlink
         );
-        assertEq(vault.totalAssetsValue(), 1_000 * ONE);
+        assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
     function testFactoryCreationIsAtomicWhenVaultInitializationFails() public {

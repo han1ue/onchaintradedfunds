@@ -52,7 +52,16 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { encodeAbiParameters, encodePacked, formatUnits, isAddress, parseEventLogs, parseUnits, zeroAddress } from "viem";
+import {
+  encodeAbiParameters,
+  encodePacked,
+  formatUnits,
+  isAddress,
+  parseEventLogs,
+  parseUnits,
+  toFunctionSelector,
+  zeroAddress,
+} from "viem";
 import {
   useAccount,
   useBalance,
@@ -741,6 +750,84 @@ function percentToBps(value: string | number): number {
   return Math.round(Number(value || 0) * 100);
 }
 
+const protocolErrorMessages = new Map<string, string>(
+  [
+    ["SafeTransferFailed()", "A token transfer failed. Check the token balance and try again."],
+    ["SafeTransferFromFailed()", "A token transfer was rejected. Check the token balance and approval, then try again."],
+    ["SafeApproveFailed()", "The token approval failed. Reset the existing approval or try again."],
+    ["ERC20InsufficientBalance(address,uint256,uint256)", "The wallet does not have enough of one of the required tokens."],
+    ["ERC20InsufficientAllowance(address,uint256,uint256)", "A token approval is too small for this transaction. Approve the required amount and try again."],
+    ["ERC20InvalidReceiver(address)", "The receiving address cannot accept this token transfer."],
+    ["ERC20InvalidSender(address)", "The sending address is not valid for this token transfer."],
+    ["ERC20NonZeroAllowance(address,address,uint256)", "This token requires its existing approval to be reset before a new approval is set."],
+    ["UnapprovedAsset(address)", "A selected token is not enabled in the protocol asset registry."],
+    ["AssetNotContract(address)", "A selected asset address is not a deployed token contract."],
+    ["OracleFeedMissing(address)", "A selected token does not have a configured protocol price feed."],
+    ["InvalidOraclePrice(address,int256)", "A selected token's oracle returned an invalid price."],
+    ["InvalidOracleTimestamp(address,uint256)", "A selected token's oracle returned an invalid update time."],
+    ["IncompleteOracleRound(address,uint80,uint80)", "A selected token's latest oracle round is incomplete. Try again after the next price update."],
+    ["StaleOraclePrice(address,uint256,uint256)", "A selected token's oracle price is too old. Oracle-priced actions will resume after the feed updates."],
+    ["OraclePauseStatusUnavailable(address)", "A selected asset does not expose the pause status required by its oracle configuration."],
+    ["OraclePaused(address)", "A selected asset's oracle is paused. Oracle-priced actions will resume when the feed is available."],
+    ["TokenDecimalsUnavailable(address)", "A selected token did not report its decimals, so its value cannot be calculated safely."],
+    ["UnsupportedDecimals(address,uint8)", "A selected token uses a decimals value that the protocol does not support."],
+    ["ZeroNav()", "The portfolio currently has no measurable oracle value, so this action cannot be priced."],
+    ["InitialShareSupplyTooSmall(uint256,uint256)", "The initial portfolio deposit is too small. Increase the seed amounts and try again."],
+    ["InitialAmountZero(address)", "Every selected asset needs a seed amount greater than zero."],
+    ["InitialBalanceMismatch(address,uint256,uint256)", "The vault did not receive the expected seed-token amount. Check for fee-on-transfer tokens."],
+    ["AssetTransferMismatch(address,uint256,uint256,uint256)", "A token transfer delivered a different amount than expected. Fee-on-transfer tokens are not supported."],
+    ["InvalidArrayLength()", "Some portfolio fields are missing or do not match. Review the selected assets and amounts."],
+    ["LengthMismatch(uint256,uint256)", "The number of tokens and amounts does not match."],
+    ["EmptyPortfolio()", "Add at least one asset to the portfolio."],
+    ["InvalidOTFName()", "Enter a valid portfolio name and ticker."],
+    ["InvalidWeightSum(uint256)", "Portfolio target weights must add up to 100%."],
+    ["InvalidWeights(uint256)", "Portfolio target weights must add up to 100%."],
+    ["AssetWeightTooLow(address,uint256,uint256)", "One selected asset is below the protocol's minimum target weight."],
+    ["DuplicateConstituent(address)", "The same asset cannot be added to a portfolio more than once."],
+    ["StrategyRationaleRequired()", "Add a short rationale explaining this portfolio strategy."],
+    ["StrategyRationaleTooLong(uint256)", "The strategy rationale is too long. Shorten it and try again."],
+    ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
+    ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
+    ["ZeroShares()", "Enter a share amount greater than zero."],
+    ["ZeroAmount()", "Enter an amount greater than zero."],
+    ["AmountTooHigh(address,uint256,uint256)", "The required token amount exceeds the maximum allowed for this transaction."],
+    ["AmountTooLow(address,uint256,uint256)", "The token amount received is below the minimum allowed for this transaction."],
+    ["NonProportionalContribution(address,uint256,uint256)", "The supplied tokens do not match the portfolio's required proportions."],
+    ["DepositsPausedForAssetRemoval(address)", "Deposits are paused while an asset is being removed from the portfolio."],
+    ["InsufficientShares(uint256,uint256)", "The share output is below your selected minimum."],
+    ["InsufficientAmount(uint256,uint256,uint256)", "One token output is below your selected minimum."],
+    ["DeadlineExpired(uint256)", "This quote expired before it could be executed. Request a fresh quote and try again."],
+    ["MaximumInputTooLow(uint256,uint256)", "The trade needs more input than your selected maximum. Request a fresh quote or increase the limit."],
+    ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
+    ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
+    ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
+    ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
+    ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
+    ["AssetMovedAwayFromTarget(address,uint256,uint256)", "This trade moves one asset farther away from its target allocation."],
+    ["RemovedAssetBalanceRemaining(address,uint256)", "The removed asset still has a balance. Trade or redeem the remaining amount first."],
+    ["TooManyTrades(uint256,uint256)", "This rebalance contains more trades than the protocol allows."],
+    ["BadTrade(address,address,uint256)", "One rebalance trade has invalid assets or an invalid amount."],
+    ["TradeAssetNotTracked(address)", "A rebalance trade references an asset that is not tracked by this portfolio."],
+    ["UnapprovedAdapter(address)", "The selected trading adapter is not approved by the protocol."],
+    ["UnapprovedEntryAdapter(address)", "The selected entry adapter is not approved by the protocol."],
+    ["StrategyChangeCooldownActive(uint256)", "This portfolio is still in its strategy-change cooldown. Try again after the cooldown ends."],
+    ["StrategyActivationPending(uint256)", "A new strategy is waiting for activation and cannot be changed yet."],
+    ["PendingStrategyExists()", "This portfolio already has a strategy change waiting for activation."],
+    ["StrategyTargetsUnchanged()", "The proposed target allocation is identical to the current strategy."],
+    ["StrategyStateLocked()", "The strategy is temporarily locked while another strategy action is active."],
+    ["StrategicRebalanceNotActive()", "No strategic rebalance is currently active."],
+    ["TargetBandsNotReached()", "The portfolio has not yet reached the target completion bands."],
+    ["NoChallengeBreach()", "The portfolio is currently within its challenge limits."],
+    ["ChallengeAlreadyActive()", "A rebalance challenge is already active."],
+    ["ChallengeNotActive()", "There is no active rebalance challenge to resolve."],
+    ["NotManager()", "Only the portfolio manager can perform this action."],
+    ["NotTradeAuthority()", "This wallet is not authorized to execute portfolio trades."],
+    ["ExecutorNotAuthorized(address)", "This executor is not authorized for the portfolio."],
+    ["ExecutorAlreadyAuthorized(address)", "This executor is already authorized for the portfolio."],
+    ["Reentrancy()", "The contract is already processing another action. Wait for it to finish and try again."],
+  ].map(([signature, message]) => [toFunctionSelector(signature), message]),
+);
+
 function errorMessage(error: unknown): string {
   const serialized = (() => {
     try {
@@ -749,26 +836,44 @@ function errorMessage(error: unknown): string {
       return String(error);
     }
   })();
-  if (serialized.includes("0xf4059071")) {
-    return "A seed-token transfer was rejected. Approve every selected token for OTF creation and confirm that your balance covers each seed amount.";
+  const errorText = [
+    serialized,
+    error instanceof Error ? error.message : "",
+    error && typeof error === "object" && "shortMessage" in error
+      ? String((error as { shortMessage?: unknown }).shortMessage ?? "")
+      : "",
+  ].join(" ");
+  const normalizedError = errorText.toLowerCase();
+
+  if (/user rejected|user denied|request rejected|rejected the request|cancelled by user/.test(normalizedError)) {
+    return "The wallet request was cancelled. No transaction was submitted.";
   }
-  if (serialized.includes("0x3cb104db")) {
-    return "A selected token is not enabled in the protocol asset registry.";
+  if (/insufficient funds|exceeds the balance/.test(normalizedError)) {
+    return "This wallet does not have enough native currency to pay the network fee.";
   }
-  if (serialized.includes("0x7d3ae914")) {
-    return "A selected token does not have a configured protocol price feed.";
+  if (/chain mismatch|unsupported chain|wrong network|does not support chain/.test(normalizedError)) {
+    return "Switch to Robinhood Chain Testnet in your wallet and try again.";
   }
-  if (serialized.includes("0xdab4498d")) {
-    return "A selected oracle price is older than the configured maximum age. The testnet deployment may still be using a legacy mock feed.";
+
+  for (const selector of errorText.match(/0x[0-9a-fA-F]{8}\b/g) ?? []) {
+    const message = protocolErrorMessages.get(selector.toLowerCase());
+    if (message) return message;
   }
-  if (serialized.includes("0xc705736")) {
-    return "The pool quote loses more oracle value than this OTF allows. Choose a smaller trade size and try again.";
+
+  const shortMessage = error && typeof error === "object" && "shortMessage" in error
+    ? String((error as { shortMessage?: unknown }).shortMessage ?? "").trim()
+    : "";
+  const isOpaqueContractError = (message: string) =>
+    /0x[0-9a-f]{8}\b/i.test(message)
+    || /reverted with (?:the following )?signature/i.test(message)
+    || /^execution reverted\.?$/i.test(message)
+    || /unknown custom error/i.test(message);
+
+  if (shortMessage && !isOpaqueContractError(shortMessage)) return shortMessage;
+  if (/timeout|timed out|failed to fetch|network error|rpc request/.test(normalizedError)) {
+    return "The network request failed. Check your connection and try again.";
   }
-  if (error && typeof error === "object" && "shortMessage" in error) {
-    return String((error as { shortMessage?: unknown }).shortMessage);
-  }
-  if (error instanceof Error) return error.message;
-  return "The wallet request could not be completed.";
+  return "The contract rejected this request. Refresh the onchain data, review the form values and token approvals, then try again.";
 }
 
 const viewPaths: Record<AppView, string> = {
@@ -1691,7 +1796,7 @@ function VaultHeader({
       <section className="vaultHeader">
         <div className="vaultTitleRow">
           <div className="vaultIdentity">
-            <OtfTokenIcon className="vaultMonogram" size={46} />
+            <OtfTokenIcon className="vaultMonogram" size={46} ticker={vault.symbol} />
             <div>
               <div className="titleLine">
                 <h1>{vault.name}</h1>
@@ -5845,7 +5950,7 @@ function VaultsDirectory({
                   >
                     <td>
                       <div className="directoryVault">
-                        <OtfTokenIcon className="directoryVaultIcon" size={34} />
+                        <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
                         <div>
                           <strong>{row.name}</strong>
                           <small>{row.symbol} · {shortAddress(row.address)}</small>
@@ -5916,7 +6021,7 @@ function VaultsDirectory({
                 >
                   <td>
                     <div className="directoryVault">
-                      <OtfTokenIcon className="directoryVaultIcon" size={34} />
+                      <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
                       <div>
                         <strong>{row.name}</strong>
                         <small>{row.symbol} · {shortAddress(row.address)}</small>
@@ -7361,7 +7466,7 @@ function WalletView({
             {positions.length ? <div className="directoryTableWrap"><table className="directoryTable depositsTable">
               <thead><tr><th>OTF</th><th>Shares</th><th>NAV / share</th></tr></thead>
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
-                <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
+                <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} ticker={position.symbol} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
                 <td data-label="NAV / share">{position.navPerShare ?? "Unavailable"}</td>
               </tr>)}</tbody>
@@ -7911,7 +8016,7 @@ function ManageVaultsView({
 
       <section className="manageVaultHeader">
         <div className="vaultIdentity">
-          <OtfTokenIcon className="vaultMonogram" size={46} />
+          <OtfTokenIcon className="vaultMonogram" size={46} ticker={vault.symbol} />
           <div>
             <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span></div>
             <div className="addressLine"><AddressPill label="OTF" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>

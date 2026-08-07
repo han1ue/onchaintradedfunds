@@ -254,9 +254,8 @@ contract OTFFactory is IAdapterAllowlist {
         bytes calldata name = bytes(params.name);
         uint256 nameLength = name.length;
         if (
-            nameLength < 4 || name[nameLength - 4] != bytes1(" ")
-                || name[nameLength - 3] != bytes1("O") || name[nameLength - 2] != bytes1("T")
-                || name[nameLength - 1] != bytes1("F")
+            nameLength < 4 || name[nameLength - 4] != 0x20 || name[nameLength - 3] != 0x4f
+                || name[nameLength - 2] != 0x54 || name[nameLength - 1] != 0x46
         ) {
             revert InvalidOTFName();
         }

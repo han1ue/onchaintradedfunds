@@ -25,7 +25,7 @@ const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
-const robinhoodStockTokenValidationMode = 1;
+const standardChainlinkValidationMode = 0;
 const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
 const catalog = supportedAssets.assets.flatMap((asset) => {
   const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
@@ -228,7 +228,7 @@ for (const item of catalog) {
   });
   const priceFeed = isAddressEqual(configuredFeed, feed)
       && Number(configuredMaxStaleness) === robinhoodEquityMaxStalenessSeconds
-      && Number(configuredValidationMode) === robinhoodStockTokenValidationMode
+      && Number(configuredValidationMode) === standardChainlinkValidationMode
     ? { alreadyConfigured: true }
     : await confirmedWrite({
         address: oracleRegistry,
@@ -238,7 +238,7 @@ for (const item of catalog) {
           asset,
           feed,
           robinhoodEquityMaxStalenessSeconds,
-          robinhoodStockTokenValidationMode,
+          standardChainlinkValidationMode,
         ],
       });
 
