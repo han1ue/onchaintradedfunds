@@ -29,6 +29,27 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "sunset",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "sunsetAt",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "sunsetOtf",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "feeRecipient",
     stateMutability: "view",
     inputs: [],
@@ -564,6 +585,20 @@ export const otfFactoryAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "function",
+    name: "depositsPaused",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setDepositsPaused",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "paused", type: "bool" }],
+    outputs: [],
   },
   {
     type: "function",

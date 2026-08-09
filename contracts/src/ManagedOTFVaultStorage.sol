@@ -9,6 +9,7 @@ import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
 
 interface IProtocolPortfolioLimits {
     function minTargetWeightBps() external view returns (uint16);
+    function depositsPaused() external view returns (bool);
     function otfTokenURI() external pure returns (string memory);
 }
 
@@ -108,17 +109,19 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InsufficientAmount(uint256 index, uint256 minimum, uint256 actual);
     error DuplicateConstituent(address token);
     error ZeroAddress();
+    error VaultAlreadySunset();
+    error VaultSunset();
+    error ProtocolDepositsPaused();
 
     enum FeeState {
         Accruing,
         Escrowed,
-        Suspended
+        Suspended,
+        Sunset
     }
 
     event VaultInitialized(
-        address indexed factory,
-        address indexed manager,
-        address indexed feeRecipient
+        address indexed factory, address indexed manager, address indexed feeRecipient
     );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
@@ -179,7 +182,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     event ManagerFeesEscrowed(uint256 newlyEscrowed, uint256 totalEscrowed);
     event ManagerFeesReleased(address indexed recipient, uint256 amount);
     event ManagerFeesForfeited(uint256 amount);
-    event ChallengeRewardAccrued(address indexed caller, uint256 rewardShares, uint256 forfeitedShares);
+    event ChallengeRewardAccrued(
+        address indexed caller, uint256 rewardShares, uint256 forfeitedShares
+    );
     event ChallengeRewardClaimed(address indexed caller, uint256 rewardShares);
     event ManagerFeeAccrualSuspended(uint64 timestamp);
     event ManagerFeeAccrualResumed(uint64 timestamp);
@@ -191,6 +196,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     );
     event Rebalanced(address[] newTokens, uint256[] newWeights);
     event ConstituentRemoved(address indexed asset);
+    event OtfSunset(address indexed manager, uint64 sunsetAt);
 
     bool internal _initialized;
     uint256 internal _entered;
@@ -243,6 +249,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     RebalanceRecord[16] internal _recentRebalances;
     uint256 internal _feeAccrualRemainderWad;
     uint16 internal _protocolFeeSplitRemainderBps;
+    bool public sunset;
+    uint64 public sunsetAt;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();
@@ -277,8 +285,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {
-        return targetWeightBps[asset] == 0
-            || !IAssetRegistry(assetRegistry).isApprovedAsset(asset);
+        return targetWeightBps[asset] == 0 || !IAssetRegistry(assetRegistry).isApprovedAsset(asset);
     }
 
     function _effectiveTargetWeights() internal view returns (uint256[] memory weights) {

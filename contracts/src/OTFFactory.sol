@@ -18,8 +18,7 @@ interface IOfficialMarketRegistry {
 }
 
 contract OTFFactory is IAdapterAllowlist {
-    string private constant OTF_TOKEN_METADATA_URI =
-        "data:application/json;base64,eyJpbnRlcm9wIjp7ImVyYzEwNDYiOnRydWV9LCJkZXNjcmlwdGlvbiI6IkFuIE9uY2h"
+    string private constant OTF_TOKEN_METADATA_URI = "data:application/json;base64,eyJpbnRlcm9wIjp7ImVyYzEwNDYiOnRydWV9LCJkZXNjcmlwdGlvbiI6IkFuIE9uY2h"
         "haW4gVHJhZGVkIEZ1bmQgRVJDLTIwIHNoYXJlIHRva2VuLiIsImltYWdlIjoiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCx"
         "QSE4yWnlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpSUhacFpYZENiM2c5SWpBZ01DQXl"
         "OVFlnTWpVMklqNDhjbVZqZENCNFBTSTNJaUI1UFNJM0lpQjNhV1IwYUQwaU1qUXlJaUJvWldsbmFIUTlJakkwTWlJZ2NuZzl"
@@ -59,6 +58,7 @@ contract OTFFactory is IAdapterAllowlist {
     );
     error OfficialMarketRegistryNotConfigured();
     error OfficialMarketRegistryLocked();
+    error DepositsPaused();
 
     event VaultCreated(
         address indexed creator,
@@ -70,6 +70,7 @@ contract OTFFactory is IAdapterAllowlist {
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
     event OfficialMarketRegistryConfigured(address indexed registry);
+    event DepositsPauseChanged(bool paused);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     address public owner;
     address public pendingOwner;
@@ -81,6 +82,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public protocolFeeShareBps;
     uint16 public minTargetWeightBps = 100;
     address public officialMarketRegistry;
+    bool public depositsPaused;
 
     address[] private _vaults;
     mapping(address => address) public creatorOf;
@@ -162,6 +164,7 @@ contract OTFFactory is IAdapterAllowlist {
         nonReentrantCreation
         returns (address vault)
     {
+        if (depositsPaused) revert DepositsPaused();
         address marketRegistry = officialMarketRegistry;
         if (marketRegistry == address(0)) revert OfficialMarketRegistryNotConfigured();
         _validateFactoryBounds(params);
@@ -220,6 +223,13 @@ contract OTFFactory is IAdapterAllowlist {
         uint16 previousMinimumBps = minTargetWeightBps;
         minTargetWeightBps = newMinimumBps;
         emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);
+    }
+
+    /// @notice Reversibly pauses new OTF creation and primary deposits across every factory OTF.
+    /// @dev Redemptions, share transfers, and secondary-market trading remain available.
+    function setDepositsPaused(bool paused) external onlyOwner {
+        depositsPaused = paused;
+        emit DepositsPauseChanged(paused);
     }
 
     function otfTokenURI() external pure returns (string memory) {

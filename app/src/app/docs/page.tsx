@@ -283,6 +283,12 @@ export default function DocsPage() {
               each constituent for the selected vault. Deposits transfer the basket directly into
               that vault and mint the corresponding vault shares.
             </p>
+            <p>
+              Direct deposits stop permanently when a manager sunsets an OTF. The factory owner
+              can also pause new OTF creation and deposits across every OTF as a reversible precaution. Neither
+              control blocks proportional redemptions or standard share transfers; buying existing
+              shares from an independent liquidity pool is secondary-market trading, not a vault deposit.
+            </p>
             <div className="docsNotice">
               <Landmark size={17} />
               <div>
@@ -525,6 +531,8 @@ canProposeStrategy =
               <li>Current targets remain active throughout the 48-hour notice period.</li>
               <li>Failed proposals, failed trades, and partial trades do not update the timestamp.</li>
               <li>Challenges, staged rationales, fees, and role transfers do not reset it.</li>
+              <li>A manager may permanently sunset only after the strategy cooldown finishes and with no active challenge, proposal, or rebalance.</li>
+              <li>Sunset checkpoints fees once, then disables deposits, future fees, challenges, strategy changes, and rebalance trades while keeping redemptions open.</li>
             </ul>
           </section>
 
@@ -586,10 +594,10 @@ canProposeStrategy =
               </div>
             </div>
             <div className="docsRoleGrid">
-              <article><strong>Manager</strong><span>Controls strategy, bounded fees, and the executor allowlist; starts with execution permission.</span></article>
+              <article><strong>Manager</strong><span>Controls strategy, bounded fees, the executor allowlist, and the irreversible OTF sunset action; starts with execution permission.</span></article>
               <article><strong>Executor</strong><span>May only perform constrained partial trades toward the active target.</span></article>
               <article><strong>Fee recipient</strong><span>Receives released manager-fee shares.</span></article>
-              <article><strong>Factory owner</strong><span>Administers protocol registries, adapters, treasury, and hard caps.</span></article>
+              <article><strong>Factory owner</strong><span>Administers protocol registries, adapters, treasury, hard caps, and the reversible protocol-wide deposit pause.</span></article>
               <article><strong>Share holder</strong><span>Deposits, holds transferable vault shares, and redeems the proportional basket.</span></article>
             </div>
             <p>

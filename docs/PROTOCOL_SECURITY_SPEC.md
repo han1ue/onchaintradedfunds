@@ -21,7 +21,9 @@ An OTF MUST:
 5. Fail closed when required oracle data is missing, invalid, incomplete, future-dated, or stale.
 6. Keep strategic target changes, partial trade execution, and rebalance completion as distinct
    state transitions.
-7. Preserve deposits and proportional withdrawals during challenge and fee-suspension states.
+7. Preserve deposits and proportional withdrawals during challenge and fee-suspension states,
+   except that deposits MUST stop after vault sunset or while the factory emergency deposit pause
+   is active.
 8. Make the configured strategy module immutable for the lifetime of the vault implementation.
 9. Keep the vault and strategy storage layouts identical by construction.
 
@@ -223,7 +225,9 @@ A share holder MAY:
 - Transfer OTF shares.
 - Withdraw the proportional live basket.
 
-Contributions and withdrawals MUST remain enabled during active or overdue challenges.
+Contributions and withdrawals MUST remain enabled during active or overdue challenges. A vault
+sunset or the factory emergency deposit pause MAY disable contributions, but MUST NOT disable
+withdrawals or standard share transfers.
 
 ## 5. Portfolio and trade invariants
 
@@ -366,6 +370,27 @@ During a challenge:
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 
+### Terminal sunset state
+
+Only the manager MAY permanently sunset an OTF. Sunset MUST revert until the current strategy
+cooldown has ended and while a challenge, pending strategy proposal, or strategic rebalance is
+active. The transition MUST checkpoint the final valid
+fee interval before recording its timestamp. After sunset:
+
+- Contributions and basket mints MUST revert.
+- Future manager and protocol fee accrual MUST be zero.
+- New challenges, target proposals, activations, cancellations, and constrained trades MUST revert.
+- Proportional withdrawals, redemptions, challenge-reward claims already earned, and ERC-20 share
+  transfers MUST remain available.
+- The sunset flag and timestamp MUST remain publicly readable and the transition MUST be
+  irreversible.
+
+The factory owner MAY additionally call `setDepositsPaused(bool)` to set or clear one
+protocol-wide deposit pause. New OTF creation MUST revert while the pause is active, and every
+existing vault MUST read that live factory flag at deposit execution so entry routers cannot bypass
+it. This pause MUST not affect withdrawals,
+redemptions, transfers, or secondary-market share trades.
+
 Starting a challenge MUST first crystallize the entire valid fee interval through the challenge
 start timestamp. This applies whether `flagOutOfBand()` or a manager fee-withdrawal attempt detects
 the breach. Previously earned or minted fees MUST NOT be included in later challenge forfeiture.
@@ -420,6 +445,8 @@ the OTF from the manager's own assets or fee revenue.
     resulting fee is less than one share-wei; the new rate MUST apply only to future time.
 18. Fractional fee-share and protocol-split remainders MUST be retained across ordinary checkpoints.
 19. Fee calculations MUST NOT cap elapsed time and then advance past an unprocessed remainder.
+20. Sunset MUST checkpoint fees once at the transition timestamp and MUST prevent every later fee
+    preview or accrual from extending that interval.
 
 ## 9. Oracle requirements
 

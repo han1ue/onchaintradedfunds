@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
+import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IManagedOTFStrategyHistory } from "./interfaces/IManagedOTFStrategyHistory.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
@@ -183,9 +183,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function targetWeightsBps() external view returns (uint16[] memory weights) {
-        uint256[] memory effectiveWeights = _portfolioCalculator.effectiveTargetWeights(
-            address(this), _assets, assetRegistry
-        );
+        uint256[] memory effectiveWeights =
+            _portfolioCalculator.effectiveTargetWeights(address(this), _assets, assetRegistry);
         weights = new uint16[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
             weights[i] = uint16(effectiveWeights[i]);
@@ -245,6 +244,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function canProposeStrategy() public view returns (bool) {
+        if (sunset) return false;
         // Validator timestamp drift is immaterial to the fixed multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
         bool cooldownActive = block.timestamp < nextStrategyChangeTime();
@@ -268,6 +268,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function feeState() public view returns (FeeState) {
+        if (sunset) return FeeState.Sunset;
         if (!challengeActive) return FeeState.Accruing;
         // Challenge deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
@@ -283,7 +284,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function feesSuspended() external view returns (bool) {
-        return feeState() == FeeState.Suspended;
+        FeeState state = feeState();
+        return state == FeeState.Suspended || state == FeeState.Sunset;
     }
 
     function authorizedExecutors() external view returns (address[] memory) {
@@ -506,6 +508,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
+    /// @notice Permanently ends deposits, fee accrual, challenges, and portfolio management.
+    /// @dev Redemptions and ordinary ERC-20 share transfers remain available for an orderly wind-down.
+    function sunsetOtf() external {
+        _delegateStrategy();
+    }
+
     // ERC-7621 rebalance changes targets only. Trades and completion are separate calls.
 
     function rebalance(address[] calldata newTokens, uint256[] calldata newWeights) external {
@@ -648,6 +656,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     // Fee state machine
 
     function _accrueFees() internal returns (uint256 feeShares) {
+        if (sunset) return 0;
         uint64 previousTimestamp = lastFeeAccrualTimestamp;
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
         if (challengeActive) {
@@ -694,6 +703,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
         supply = totalSupply;
+        if (sunset) return supply;
         uint256 previousTimestamp = lastFeeAccrualTimestamp;
         // Fee previews must use the same chain-time boundary as state-changing accrual.
         // forge-lint: disable-next-line(block-timestamp)
@@ -703,10 +713,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
 
         (uint256 feeShares,) = _portfolioCalculator.feeSharesAfterElapsed(
-            totalSupply,
-            _feeAccrualRemainderWad,
-            creatorFeeBpsPerYear,
-            end - previousTimestamp
+            totalSupply, _feeAccrualRemainderWad, creatorFeeBpsPerYear, end - previousTimestamp
         );
         supply += feeShares;
     }
@@ -767,10 +774,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 index,
         uint256 weight,
         uint256 minimumTargetWeightBps
-    )
-        internal
-        view
-    {
+    ) internal view {
         address asset = assets_[index];
         if (asset == address(0)) revert ZeroAddress();
         if (asset.code.length == 0) revert AssetNotContract(asset);
@@ -801,9 +805,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _requireCurrentAssetsApproved() internal view {
+        if (sunset) revert VaultSunset();
+        if (IProtocolPortfolioLimits(factory).depositsPaused()) {
+            revert ProtocolDepositsPaused();
+        }
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) revert UnapprovedAsset(asset);
+            if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) {
+                revert UnapprovedAsset(asset);
+            }
             if (targetWeightBps[asset] == 0) revert DepositsPausedForAssetRemoval(asset);
         }
     }
@@ -815,11 +825,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _isWithinBands(uint16 deviationBps) internal view returns (bool) {
         if (!_retiringBalancesAreZero()) return false;
         return _portfolioCalculator.isWithinBands(
-            address(this),
-            _assets,
-            _weightsAsUint256(),
-            oracleRegistry,
-            deviationBps
+            address(this), _assets, _weightsAsUint256(), oracleRegistry, deviationBps
         );
     }
 
@@ -827,11 +833,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address[] memory retiring = _retiringBreaches();
         if (retiring.length != 0) return retiring;
         return _portfolioCalculator.breachedAssets(
-            address(this),
-            _assets,
-            _weightsAsUint256(),
-            oracleRegistry,
-            deviationBps
+            address(this), _assets, _weightsAsUint256(), oracleRegistry, deviationBps
         );
     }
 

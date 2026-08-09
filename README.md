@@ -283,6 +283,9 @@ Minting:
 - Enforces caller-provided max inputs.
 - Does not use oracles.
 - Is blocked while a rebalance is executing.
+- Is blocked permanently after that OTF is sunset.
+- Is blocked across every factory-created OTF while the factory owner has the reversible
+  protocol deposit pause enabled.
 
 ### USDG-only entry
 
@@ -422,6 +425,20 @@ All executor authorizations are cleared on manager transfer, then the new manage
 sole authorized executor. Executors receive no bounty or
 reimbursement from vault assets.
 
+### OTF Sunset And Emergency Deposit Pause
+
+The manager may permanently sunset an operational OTF only after its strategy cooldown has ended
+and when no challenge, pending proposal, or strategic rebalance is active. Sunset checkpoints the final valid fee interval and then
+permanently disables new deposits, future fee accrual, challenges, target changes, and constrained
+trades. Standard share transfers and proportional redemptions remain available so holders can wind
+down without depending on the manager, oracle freshness, or a separate protocol action.
+
+Separately, the factory owner may call `setDepositsPaused(bool)` to reversibly pause new OTF
+creation and deposits across all OTFs
+created by the factory. This emergency control is enforced inside each vault, including deposits
+routed through `OTFEntryRouter`; it does not pause redemptions, transfers, or ordinary
+secondary-market trading.
+
 ### Weight Bands And Challenges
 
 Each target has a wider challenge band and a narrower completion band. Anyone may call
@@ -517,6 +534,7 @@ Manager shares follow the fee state:
 - `Accruing`: manager shares are delivered normally.
 - `Escrowed`: a strategy challenge is active and manager-fee withdrawals are locked.
 - `Suspended`: the challenge deadline has passed and challenge-window fees are forfeitable.
+- `Sunset`: the final fee interval has been checkpointed and no future fees accrue.
 
 Timely restoration lets the manager stop the challenge and withdraw accrued fees. Missing the
 deadline credits 50% of the lost challenge-window fees to the caller and skips minting the rest.
@@ -744,6 +762,10 @@ Deterministic coverage includes:
 - The manager cannot shorten the cooldown.
 - The factory rejects every cooldown other than 14 days.
 - Active challenges and out-of-band portfolios block proposals.
+- Manager-only sunset is permanent, requires a completed cooldown and a challenge-free strategy state, stops future
+  fees, deposits, challenges, and strategy actions, and preserves proportional redemptions.
+- The factory-owner deposit pause blocks OTF creation and deposits across multiple
+  OTFs, is reversible, and does not block redemptions.
 - Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
   atomic creation rollback.
 - Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,

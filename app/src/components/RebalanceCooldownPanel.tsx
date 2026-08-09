@@ -48,6 +48,7 @@ import {
   Trash2,
   UserCog,
   Wallet,
+  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -178,6 +179,7 @@ type VaultSummary = {
   nav?: string;
   navPerShare?: string;
   navPerShareValue?: bigint;
+  sunset: boolean;
 };
 
 type VaultView = {
@@ -230,6 +232,9 @@ type VaultView = {
   factoryAddress?: `0x${string}`;
   factoryVaultCount: number;
   factoryReadFailed: boolean;
+  sunset: boolean;
+  sunsetAt?: number;
+  depositsPaused: boolean;
 };
 
 const navTabs = ["OTFs", "RWAs", "Liquidity"];
@@ -794,6 +799,10 @@ const protocolErrorMessages = new Map<string, string>(
     ["AmountTooLow(address,uint256,uint256)", "The token amount received is below the minimum allowed for this transaction."],
     ["NonProportionalContribution(address,uint256,uint256)", "The supplied tokens do not match the portfolio's required proportions."],
     ["DepositsPausedForAssetRemoval(address)", "Deposits are paused while an asset is being removed from the portfolio."],
+    ["ProtocolDepositsPaused()", "New deposits are temporarily paused by the protocol administrator. Redemptions remain available."],
+    ["DepositsPaused()", "New OTF creation and deposits are temporarily paused by the protocol administrator."],
+    ["VaultSunset()", "This OTF has been sunset. New deposits and portfolio-management actions are permanently disabled."],
+    ["VaultAlreadySunset()", "This OTF has already been sunset."],
     ["InsufficientShares(uint256,uint256)", "The share output is below your selected minimum."],
     ["InsufficientAmount(uint256,uint256,uint256)", "One token output is below your selected minimum."],
     ["DeadlineExpired(uint256)", "This quote expired before it could be executed. Request a fresh quote and try again."],
@@ -1065,6 +1074,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "pendingStrategyActivationTime" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "nextStrategyChangeTime" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeCaller" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunset" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunsetAt" },
+        { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "depositsPaused" },
       ] as const)
     : undefined;
 
@@ -1091,6 +1103,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           functionName: "creatorOf",
           args: [address],
         },
+        { address, abi: managedOtfVaultAbi, functionName: "sunset" },
       ] as const))
     : undefined;
   const {
@@ -1103,7 +1116,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const directoryResults = directoryData as ReadResult | undefined;
   const vaultSummaries = useMemo<VaultSummary[]>(
     () => factoryVaultAddresses.map((address, index) => {
-      const offset = index * 8;
+      const offset = index * 9;
       const name = resultAt<string>(directoryResults, offset);
       const symbol = resultAt<string>(directoryResults, offset + 1);
       const managerValue = resultAt<string>(directoryResults, offset + 2);
@@ -1112,6 +1125,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       const totalValue = resultAt<bigint>(directoryResults, offset + 5);
       const shareValue = resultAt<bigint>(directoryResults, offset + 6);
       const creatorValue = resultAt<string>(directoryResults, offset + 7);
+      const sunset = Boolean(resultAt<boolean>(directoryResults, offset + 8));
       return {
         address,
         name: name || shortAddress(address),
@@ -1123,6 +1137,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         navValue: totalValue,
         nav: formatUsd18(totalValue),
         navPerShare: formatUsd18(shareValue),
+        sunset,
       };
     }),
     [directoryResults, factoryVaultAddresses],
@@ -1178,6 +1193,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     ? Number(resultAt<bigint>(results, 34))
     : undefined;
   const challengeCaller = resultAt<string>(results, 35);
+  const sunset = Boolean(resultAt<boolean>(results, 36));
+  const sunsetAt = resultAt<bigint>(results, 37)
+    ? Number(resultAt<bigint>(results, 37))
+    : undefined;
+  const depositsPaused = Boolean(resultAt<boolean>(results, 38));
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
@@ -1247,6 +1267,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     factoryAddress,
     factoryVaultCount: factoryVaultAddresses.length,
     factoryReadFailed: Boolean(factoryError),
+    sunset,
+    sunsetAt,
+    depositsPaused,
   };
   const activeTab = view === "rwas" ? "RWAs" : "OTFs";
 
@@ -1334,6 +1357,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
               onManage={() => openView("manage")}
             />
             <DataProvenance vault={vault} />
+            <SunsetStatusBanner vault={vault} />
             <VaultMetrics vault={vault} />
 
             <div className="dashboardGrid">
@@ -1801,6 +1825,7 @@ function VaultHeader({
               <div className="titleLine">
                 <h1>{vault.name}</h1>
                 <span className="symbolBadge">{vault.symbol}</span>
+                {vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}
               </div>
               <div className="addressLine">
                 <AddressPill label="OTF" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
@@ -1839,13 +1864,15 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       ? `/liquidity?vault=${vault.address}`
       : `https://app.uniswap.org/explore/pools/ethereum/${officialPool}`
     : undefined;
-  const portfolioState = vault.challengeActive
-    ? "Challenge active"
-    : vault.strategicRebalanceActive
-      ? "Target in progress"
-      : vault.withinCompletionBands
-        ? "Within bands"
-        : "Outside completion";
+  const portfolioState = vault.sunset
+    ? "Sunset"
+    : vault.challengeActive
+      ? "Challenge active"
+      : vault.strategicRebalanceActive
+        ? "Target in progress"
+        : vault.withinCompletionBands
+          ? "Within bands"
+          : "Outside completion";
   return (
     <div className="metricGrid">
       <MetricCard label="NAV" value={vault.nav ?? "Oracle read failed"} tone={vault.nav ? "success" : "neutral"} />
@@ -1862,7 +1889,7 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
             : `Open pool ${officialPool} on Uniswap`
           : undefined}
       />
-      <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
+      <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.sunset || vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
       <MetricCard label="Total Shares" value={vault.totalSupply} />
     </div>
   );
@@ -1895,6 +1922,22 @@ function ChallengeCountdownBanner({ vault }: { vault: VaultView }) {
         <span style={{ width: `${progress}%` }} />
       </div>
       <p>{expired ? "Manager fees from the missed challenge window are forfeitable; 50% becomes the caller reward and the rest is never minted." : "The manager cannot withdraw fees until the portfolio returns to its completion band."}</p>
+    </div>
+  );
+}
+
+function SunsetStatusBanner({ vault }: { vault: VaultView }) {
+  if (!vault.sunset) return null;
+  return (
+    <div className="riskCallout danger sunsetStatusBanner" role="status">
+      <Sun size={16} />
+      <div>
+        <strong>This OTF has been sunset</strong>
+        <span>
+          Deposits, new fees, challenges, and portfolio changes are permanently disabled
+          {vault.sunsetAt ? ` since ${formatTimestamp(vault.sunsetAt)}` : ""}. Share transfers and proportional redemptions remain available for the wind-down.
+        </span>
+      </div>
     </div>
   );
 }
@@ -2092,20 +2135,22 @@ function RebalanceCooldown({ vault }: { vault: VaultView }) {
   const proposalAvailable = isLive && vault.canProposeStrategy;
   const lifecycleStage = !isLive
     ? "Live data required"
-    : vault.challengeActive
-      ? "Challenge active"
-      : vault.strategyProposalPending
-        ? "Activation pending"
-        : vault.strategicRebalanceActive
-          ? "Rebalancing"
-          : proposalAvailable
-            ? "Ready for proposal"
-            : portfolioCooldownComplete
-              ? "Portfolio state blocked"
-              : "Cooling down";
+    : vault.sunset
+      ? "Sunset"
+      : vault.challengeActive
+        ? "Challenge active"
+        : vault.strategyProposalPending
+          ? "Activation pending"
+          : vault.strategicRebalanceActive
+            ? "Rebalancing"
+            : proposalAvailable
+              ? "Ready for proposal"
+              : portfolioCooldownComplete
+                ? "Portfolio state blocked"
+                : "Cooling down";
   const lifecycleTone = !isLive
     ? "muted"
-    : vault.challengeActive
+    : vault.sunset || vault.challengeActive
       ? "danger"
       : proposalAvailable
         ? "success"
@@ -2578,6 +2623,21 @@ function UserActions({
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
   );
+  const vaultDepositsBlocked = vault.sunset || vault.depositsPaused || depositsPausedForAssetRemoval;
+
+  useEffect(() => {
+    if (!vault.sunset || activeAction !== "deposit") return;
+    setActiveAction("redeem");
+    setTradeAmount("");
+    setSelectedRoute(undefined);
+    setTradeReceipt(undefined);
+    setEntryState("idle");
+    setRedeemState("idle");
+    setMarketState("idle");
+    setEntryError(undefined);
+    setRedeemError(undefined);
+    setMarketError(undefined);
+  }, [activeAction, vault.sunset]);
   const entryContractsConfigured = Boolean(
     entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress,
   );
@@ -2713,7 +2773,7 @@ function UserActions({
   });
   const canQuoteEntry = Boolean(
     isLive &&
-    !depositsPausedForAssetRemoval &&
+    !vaultDepositsBlocked &&
     vault.address &&
     navRequestedEntryShares &&
     navRequestedEntryShares > 0n &&
@@ -3035,7 +3095,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: {
       enabled: Boolean(
-        !isUsdgMode && activeAction === "deposit" && requestedDirectMintShares && isLive,
+        !isUsdgMode && activeAction === "deposit" && requestedDirectMintShares && isLive && !vaultDepositsBlocked,
       ),
     },
   });
@@ -3203,7 +3263,8 @@ function UserActions({
     marketLiquidityReady && marketInputAmount && marketQuotedOutput && marketMinimumOutput && !marketQuoteError,
   );
   const marketRouteAvailable = Boolean(
-    marketLiquidityReady && uniswapV3QuoterAddress && uniswapV3SwapRouterAddress,
+    marketLiquidityReady && uniswapV3QuoterAddress && uniswapV3SwapRouterAddress &&
+    !(vault.sunset && activeAction === "deposit"),
   );
   const entryBalanceSufficient = maximumSettlementTotal !== undefined &&
     settlementBalance !== undefined && settlementBalance >= maximumSettlementTotal;
@@ -3314,7 +3375,7 @@ function UserActions({
   const underlyingRouteAvailable = entryContractsConfigured &&
     entryAdapterApproved !== false &&
     constituentPoolsReady &&
-    (activeAction === "redeem" || !depositsPausedForAssetRemoval);
+    (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
     entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
   );
@@ -3449,6 +3510,7 @@ function UserActions({
 
   async function enterWithSettlement() {
     if (
+      vaultDepositsBlocked ||
       !vault.address ||
       !connectedAddress ||
       !publicClient ||
@@ -3509,7 +3571,7 @@ function UserActions({
   }
 
   async function approveBasketAssets() {
-    if (!vault.address || !connectedAddress || !publicClient || !directBasketReady) return;
+    if (vaultDepositsBlocked || !vault.address || !connectedAddress || !publicClient || !directBasketReady) return;
     setEntryError(undefined);
     setTradeReceipt(undefined);
     try {
@@ -3551,6 +3613,7 @@ function UserActions({
 
   async function mintWithBasket() {
     if (
+      vaultDepositsBlocked ||
       !vault.address || !connectedAddress || !publicClient || !requestedDirectMintShares ||
       !directBasketReady || !directBasketBalanceSufficient || !directBasketAllowanceSufficient
     ) return;
@@ -3908,6 +3971,7 @@ function UserActions({
               className={activeAction === "deposit" ? "active" : ""}
               type="button"
               aria-pressed={activeAction === "deposit"}
+              disabled={vault.sunset}
               onClick={() => changeAction("deposit")}
             >
               Deposit
@@ -3945,6 +4009,18 @@ function UserActions({
             </div>
           </div>
         </div>
+
+        {vault.sunset ? (
+          <div className="validationSummary danger" role="status">
+            <Sun size={15} />
+            <div><strong>New positions are closed</strong><span>This OTF is in permanent wind-down mode. Proportional redemptions remain available.</span></div>
+          </div>
+        ) : vault.depositsPaused && activeAction === "deposit" ? (
+          <div className="validationSummary warning" role="status">
+            <ShieldCheck size={15} />
+            <div><strong>Primary deposits are paused protocol-wide</strong><span>Minting new OTF shares is temporarily disabled. Existing shares may still be bought from the liquidity pool, and redemptions remain available.</span></div>
+          </div>
+        ) : null}
 
         <div className="positionTicketInputs">
           <label>
@@ -4098,6 +4174,10 @@ function UserActions({
                 <small>
                   {!entryContractsConfigured || entryAdapterApproved === false
                     ? "Settlement route not configured"
+                    : activeAction === "deposit" && vault.sunset
+                      ? "OTF sunset — new positions closed"
+                    : activeAction === "deposit" && vault.depositsPaused
+                      ? "Primary deposits paused by protocol"
                     : activeAction === "deposit" && depositsPausedForAssetRemoval
                       ? "Paused while an asset is removed"
                     : !constituentPoolsConfigured
@@ -5953,7 +6033,7 @@ function VaultsDirectory({
                         <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
                         <div>
                           <strong>{row.name}</strong>
-                          <small>{row.symbol} · {shortAddress(row.address)}</small>
+                          <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
                         </div>
                       </div>
                     </td>
@@ -6023,8 +6103,8 @@ function VaultsDirectory({
                     <div className="directoryVault">
                       <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
                       <div>
-                        <strong>{row.name}</strong>
-                        <small>{row.symbol} · {shortAddress(row.address)}</small>
+                          <strong>{row.name}</strong>
+                        <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
                       </div>
                     </div>
                   </td>
@@ -6073,6 +6153,14 @@ function CreateVaultView({
   const protocolMinimumTargetWeightBps = protocolMinimumTargetWeightResult === undefined
     ? undefined
     : Number(protocolMinimumTargetWeightResult);
+  const { data: protocolDepositsPausedResult } = useReadContract({
+    address: factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "depositsPaused",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isTestnet && factoryAddress) },
+  });
+  const protocolDepositsPaused = Boolean(protocolDepositsPausedResult);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
@@ -6372,6 +6460,7 @@ function CreateVaultView({
     stepValid &&
     Boolean(factoryAddress) &&
     Boolean(connectedAddress) &&
+    !protocolDepositsPaused &&
     seedBalancesSufficient &&
     seedAllowancesSufficient &&
     protocolAssetReadsReady &&
@@ -6385,6 +6474,7 @@ function CreateVaultView({
   if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
   if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
+  if (protocolDepositsPaused) deploymentBlockers.push("Protocol deposits are paused");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
   if (!seedAllowancesSufficient) deploymentBlockers.push("Approve seed assets");
   if (!protocolAssetReadsReady) deploymentBlockers.push("Oracle feeds must be configured for seed assets");
@@ -7122,6 +7212,12 @@ function CreateVaultView({
                     </div>
                   ) : null}
                 </div>
+                {protocolDepositsPaused ? (
+                  <div className="validationSummary warning" role="status">
+                    <ShieldCheck size={15} />
+                    <div><strong>New OTF creation is temporarily paused</strong><span>The protocol-wide deposit precaution is active. Your draft is preserved; return after the factory owner resumes deposits.</span></div>
+                  </div>
+                ) : null}
                 {allIssues.length ? (
                   <div className="validationSummary danger" role="alert">
                     <AlertTriangle size={15} />
@@ -7838,6 +7934,11 @@ function ManageVaultsView({
   const [feeTransferError, setFeeTransferError] = useState<string>();
   const [executorState, setExecutorState] = useState<TxState>("idle");
   const [executorError, setExecutorError] = useState<string>();
+  const [sunsetConfirmationOpen, setSunsetConfirmationOpen] = useState(false);
+  const [sunsetConfirmation, setSunsetConfirmation] = useState("");
+  const [sunsetState, setSunsetState] = useState<TxState>("idle");
+  const [sunsetError, setSunsetError] = useState<string>();
+  const sunsetButtonRef = useRef<HTMLButtonElement>(null);
   const [activeOperation, setActiveOperation] = useState<"targets" | "rebalance" | "liquidity" | "roles" | "fees">("targets");
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
@@ -7852,7 +7953,7 @@ function ManageVaultsView({
     abi: vaultFeeAbi,
     functionName: "withdrawManagerFees",
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(vault.enabled && vault.address && vault.manager) },
+    query: { enabled: Boolean(vault.enabled && vault.address && vault.manager && !vault.sunset) },
   });
   const pendingManagerFeeShares = feeWithdrawalPreview?.result !== undefined
     ? feeWithdrawalPreview.result * BigInt(10_000 - vault.protocolFeeShareBps) / 10_000n
@@ -7877,6 +7978,44 @@ function ManageVaultsView({
   const managerTransferBusy = managerTransferState === "pending" || managerTransferState === "submitted";
   const feeTransferBusy = feeTransferState === "pending" || feeTransferState === "submitted";
   const executorBusy = executorState === "pending" || executorState === "submitted";
+  const sunsetBusy = sunsetState === "pending" || sunsetState === "submitted";
+  const sunsetCooldownRemaining = useLiveCountdown(vault.nextStrategyChange);
+  const sunsetBlockers = [
+    sunsetCooldownRemaining > 0
+      ? `Wait for the strategy cooldown to finish in ${formatCooldown(sunsetCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.`
+      : undefined,
+    vault.challengeActive ? "Resolve the active challenge first." : undefined,
+    vault.strategyProposalPending ? "Cancel or activate the pending strategy proposal first." : undefined,
+    vault.strategicRebalanceActive ? "Complete the active strategic rebalance first." : undefined,
+  ].filter((reason): reason is string => Boolean(reason));
+  const sunsetEligible = vault.enabled && vault.connectedIsManager && !vault.sunset && sunsetBlockers.length === 0;
+
+  function closeSunsetConfirmation() {
+    if (sunsetBusy) return;
+    setSunsetConfirmationOpen(false);
+    setSunsetConfirmation("");
+    setSunsetError(undefined);
+    window.requestAnimationFrame(() => sunsetButtonRef.current?.focus());
+  }
+
+  useEffect(() => {
+    if (!sunsetConfirmationOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !sunsetBusy) {
+        setSunsetConfirmationOpen(false);
+        setSunsetConfirmation("");
+        setSunsetError(undefined);
+        window.requestAnimationFrame(() => sunsetButtonRef.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [sunsetBusy, sunsetConfirmationOpen]);
 
   async function copyVaultAddress() {
     if (!vault.address) return;
@@ -7909,6 +8048,30 @@ function ManageVaultsView({
     } catch (error) {
       setFeeAccrualError(errorMessage(error));
       setFeeAccrualState("reverted");
+    }
+  }
+
+  async function submitSunset() {
+    if (!vault.address || !publicClient || !sunsetEligible || sunsetConfirmation !== vault.name) return;
+    setSunsetError(undefined);
+    try {
+      setSunsetState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "sunsetOtf",
+        chainId: robinhoodChainTestnet.id,
+      });
+      setSunsetState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The OTF sunset transaction reverted.");
+      await onRefresh();
+      setSunsetState("confirmed");
+      setSunsetConfirmation("");
+      setSunsetConfirmationOpen(false);
+    } catch (error) {
+      setSunsetError(errorMessage(error));
+      setSunsetState("reverted");
     }
   }
 
@@ -8007,18 +8170,105 @@ function ManageVaultsView({
         description="Administer OTF roles and routine protocol operations."
         icon={<UserCog size={18} />}
         actions={
-          <button className="secondaryAction" type="button" onClick={onOpenVault}>
-            Open OTF
-            <ChevronRight size={14} />
-          </button>
+          <>
+            <button
+              ref={sunsetButtonRef}
+              className="dangerAction"
+              type="button"
+              disabled={!vault.connectedIsManager || vault.sunset || sunsetBusy}
+              onClick={() => setSunsetConfirmationOpen(true)}
+            >
+              <Sun size={14} />
+              {vault.sunset ? "OTF sunset" : sunsetBusy ? "Sunsetting OTF" : "Sunset OTF"}
+            </button>
+            <button className="secondaryAction" type="button" onClick={onOpenVault}>
+              Open OTF
+              <ChevronRight size={14} />
+            </button>
+          </>
         }
       />
+
+      {sunsetConfirmationOpen && !vault.sunset ? (
+        <div className="sunsetDialogBackdrop">
+          <section
+            className="sunsetConfirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sunset-confirmation-title"
+            aria-describedby="sunset-confirmation-description"
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+                "button:not([disabled]), input:not([disabled])",
+              ));
+              const first = focusable.at(0);
+              const last = focusable.at(-1);
+              if (!first || !last) return;
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <div className="sunsetConfirmationCopy">
+              <span className="appPageIcon"><Sun size={18} /></span>
+              <div>
+                <h2 id="sunset-confirmation-title">Permanently sunset {vault.name}</h2>
+                <p id="sunset-confirmation-description">This is an irreversible wind-down action. Review every consequence before signing the transaction.</p>
+              </div>
+              <button className="iconButton sunsetDialogClose" type="button" aria-label="Cancel OTF sunset" autoFocus={sunsetBlockers.length > 0} disabled={sunsetBusy} onClick={closeSunsetConfirmation}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <ul className="sunsetConsequences">
+              <li><strong>Primary deposits close permanently.</strong><span>No new shares can be minted with USDG or an RWA basket.</span></li>
+              <li><strong>Fees stop after one final checkpoint.</strong><span>No further manager or protocol fees accrue.</span></li>
+              <li><strong>Strategy operations end.</strong><span>No new challenges, target changes, or rebalance trades can start.</span></li>
+              <li><strong>The exit remains open.</strong><span>Share transfers, secondary-market trading, and proportional redemptions continue.</span></li>
+            </ul>
+
+            {sunsetBlockers.length ? (
+              <div className="validationSummary warning" role="status">
+                <AlertTriangle size={15} />
+                <div><strong>This OTF is not ready to sunset</strong><span>{sunsetBlockers.join(" ")}</span></div>
+              </div>
+            ) : (
+              <label className="sunsetConfirmationField">
+                <span>Type the OTF name <strong>{vault.name}</strong> to confirm</span>
+                <input
+                  value={sunsetConfirmation}
+                  onChange={(event) => setSunsetConfirmation(event.target.value)}
+                  aria-label="OTF name confirmation"
+                  autoComplete="off"
+                  autoFocus
+                  spellCheck={false}
+                  disabled={sunsetBusy}
+                />
+              </label>
+            )}
+            {sunsetError ? <div className="validationSummary danger" role="alert"><XCircle size={15} /><div><strong>OTF sunset failed</strong><span>{sunsetError}</span></div></div> : null}
+            <TxStatus state={sunsetState} />
+            <div className="buttonRow">
+              <button className="secondaryAction" type="button" disabled={sunsetBusy} onClick={closeSunsetConfirmation}>Cancel</button>
+              <button className="dangerAction" type="button" disabled={!sunsetEligible || sunsetConfirmation !== vault.name || sunsetBusy} onClick={submitSunset}>
+                {sunsetBusy ? <Loader2 className="spin" size={14} /> : <Sun size={14} />}
+                {sunsetBusy ? "Confirming sunset" : "Permanently sunset OTF"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <section className="manageVaultHeader">
         <div className="vaultIdentity">
           <OtfTokenIcon className="vaultMonogram" size={46} ticker={vault.symbol} />
           <div>
-            <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span></div>
+            <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span>{vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}</div>
             <div className="addressLine"><AddressPill label="OTF" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>
           </div>
         </div>
@@ -8028,6 +8278,8 @@ function ManageVaultsView({
           </span>
         </div>
       </section>
+
+      <SunsetStatusBanner vault={vault} />
 
       <ChallengeCountdownBanner vault={vault} />
 
@@ -8040,6 +8292,26 @@ function ManageVaultsView({
         <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} />
       </div>
 
+      {vault.sunset ? (
+        <SectionCard
+          title="Wind-down mode"
+          subtitle="The portfolio is permanently closed to new capital and management changes"
+          icon={<Sun size={15} />}
+          action={<span className="stateBadge danger">Terminal state</span>}
+        >
+          <div className="operationFlow">
+            <div className="permissionList">
+              <div><CheckCircle size={14} /><span><strong>Proportional redemptions remain open</strong><small>Shareholders can burn shares and receive their portion of every constituent.</small></span></div>
+              <div><CheckCircle size={14} /><span><strong>Share transfers remain open</strong><small>OTF shares retain their standard ERC-20 transfer behavior.</small></span></div>
+              <div><XCircle size={14} /><span><strong>Deposits and new fees are stopped</strong><small>No new shares can be minted through a basket deposit, and fee accrual ended at sunset.</small></span></div>
+              <div><XCircle size={14} /><span><strong>Portfolio management is stopped</strong><small>New challenges, target changes, and rebalance trades are permanently disabled.</small></span></div>
+            </div>
+            <button className="primaryAction" type="button" onClick={onOpenVault}>
+              Open redemption view <ChevronRight size={14} />
+            </button>
+          </div>
+        </SectionCard>
+      ) : <>
       <div className="managerOperationTabs" role="tablist" aria-label="Manager operations">
         {([
           ["targets", "Update targets"],
@@ -8200,6 +8472,7 @@ function ManageVaultsView({
         </SectionCard>
         ) : null}
       </div> : null}
+      </>}
 
       <RebalanceHistoryPanel vault={vault} />
     </div>

@@ -56,6 +56,12 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
 - The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
 - Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
+- A manager may irreversibly sunset an OTF after its strategy cooldown finishes and while no
+  challenge, proposal, or rebalance is active. Sunset
+  checkpoints fees once, permanently closes deposits and portfolio management, and leaves share
+  transfers and proportional redemptions available for an orderly wind-down.
+- The factory owner may reversibly pause new OTF creation and deposits across all
+  factory-created OTFs without pausing redemptions, transfers, or secondary-market share trading.
 - Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
 - The manager has no arbitrary call or asset-withdrawal surface.
 - Rebalances use approved assets and trading adapters, exact temporary approvals, fresh onchain prices, and atomic execution.
