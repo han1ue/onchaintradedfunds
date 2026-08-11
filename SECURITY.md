@@ -103,10 +103,10 @@ inert for 48 hours, during which holders can redeem against the unchanged active
 revalidates the proposal. A new proposal is allowed only after the prior rebalance has been complete
 inside its target bands for 14 days, with no active challenge and while the portfolio is currently
 inside its completion bands. Every partial trade transaction is atomic. If a trade fails, slippage
-is too high, an oracle is invalid, the cumulative execution loss would exceed the current
-seven-day epoch budget, or the batch moves any holding farther from target, that transaction
-reverts while the activated strategic target remains active. Positive execution does not restore
-loss capacity already consumed in the epoch.
+is too high, an oracle is invalid, the cumulative execution loss would exceed the linearly
+replenishing NAV-loss budget, or the batch moves any holding farther from target, that transaction
+reverts while the activated strategic target remains active. Consumed capacity returns
+continuously over seven days; profitable execution does not restore it.
 
 Changing the protocol-wide minimum target weight is not retroactive: it does not invalidate an
 active portfolio or create a challenge. Existing and new vaults apply the live minimum when they

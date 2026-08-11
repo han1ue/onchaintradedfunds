@@ -23,9 +23,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 internal constant MAX_TRACKED_ASSETS = 100;
-    /// @notice Recovery period for the linearly replenishing NAV-loss budget.
-    /// @dev The legacy name is retained for ABI compatibility.
-    uint256 public constant NAV_LOSS_EPOCH = 7 days;
+    /// @notice Time required for a fully consumed NAV-loss budget to replenish.
+    uint256 public constant NAV_LOSS_RECOVERY_PERIOD = 7 days;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     /// @notice Maximum retiring balance that may be written off and pruned.
     /// @dev Approved constituents are restricted to 18 decimals, so this is 1e-9 tokens.
@@ -85,8 +84,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
     error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
-    error EpochNavLossExceeded(
-        uint64 epochId, uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
+    error NavLossBudgetExceeded(
+        uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
     );
     error OracleSlippageTooHigh(
         address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
@@ -187,10 +186,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     );
     event TradeExecutionRecorded(
         uint256 indexed executionId,
-        uint64 indexed epochId,
         address indexed executor,
         uint16 batchLossBps,
-        uint16 epochLossUsedBps,
+        uint16 navLossBudgetUsedBps,
         uint32 strategyVersion
     );
     event OutOfBandChallengeStarted(
@@ -273,11 +271,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint16 internal _protocolFeeSplitRemainderBps;
     bool public sunset;
     uint64 public sunsetAt;
-    uint64 public navLossEpochAnchor;
     /// @dev Timestamp when the currently consumed NAV-loss capacity is fully replenished.
     uint64 internal _navLossBucketRecoveryAt;
-    /// @dev Rounded bucket usage cached after the latest successful trade execution.
-    uint16 internal _navLossBucketUsedBps;
     uint32 internal _strategicExecutionLossBps;
     uint256 public tradeExecutionCount;
     TradeExecutionRecord[16] internal _recentTradeExecutions;

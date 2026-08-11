@@ -243,8 +243,7 @@ For every successful constrained trade batch:
 7. Every leg's oracle-valued output loss is included in the batch execution loss.
 8. The batch execution loss is the greater of gross per-leg oracle loss and net portfolio NAV loss.
 9. Adding the batch execution loss does not exceed the linearly replenishing `maxNavLossBps` budget.
-10. Consumed capacity returns continuously over seven days; a period boundary or profitable trade
-    does not restore it.
+10. Consumed capacity returns continuously over seven days; profitable trade does not restore it.
 11. Total portfolio distance from target strictly decreases.
 12. No individual constituent moves farther from its target.
 13. Output returns to the OTF.
@@ -258,9 +257,9 @@ Multiple partial transactions MAY be used to reach one target. Each transaction 
 satisfy every invariant above, and its execution loss consumes capacity from the shared replenishing
 bucket. A charge equal to the full configured budget takes seven days to recover completely.
 
-The legacy `navLossEpochState`, `EpochNavLossExceeded`, and `epochLossUsedBps` names are retained for
-ABI compatibility. The returned periods classify execution records only: crossing `endsAt` does not
-reset the budget, and `usedLossBps` is the current bucket usage rounded up to a whole basis point.
+`navLossBudgetState()` reports when the currently consumed capacity will be fully replenished,
+current usage rounded up to a whole basis point, and the configured maximum. Each execution record
+stores the rounded `navLossBudgetUsedBps` observed after that batch.
 
 For every successful settlement-token entry:
 

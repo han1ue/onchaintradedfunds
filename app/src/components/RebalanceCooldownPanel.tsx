@@ -105,7 +105,7 @@ type ContractValue =
   | readonly bigint[]
   | readonly [string, number]
   | readonly [string, number, number]
-  | readonly [bigint, bigint, bigint, number, number]
+  | readonly [bigint, number, number]
   | undefined;
 
 type ReadResult = readonly { result?: ContractValue }[];
@@ -179,12 +179,11 @@ type RebalanceRecordResult = {
 type TradeExecutionRecordResult = {
   timestamp: bigint;
   executor: `0x${string}`;
-  epochId: bigint;
   strategyVersion: number;
   navBefore: bigint;
   navAfter: bigint;
   batchLossBps: number;
-  epochLossUsedBps: number;
+  navLossBudgetUsedBps: number;
   tradeCount: number;
 };
 
@@ -218,10 +217,8 @@ type VaultView = {
   cooldownProgress: number;
   allocations: Allocation[];
   maxNavLossBps: number;
-  navLossEpochId: number;
-  navLossEpochStartsAt?: number;
-  navLossEpochEndsAt?: number;
-  navLossEpochUsedBps: number;
+  navLossBudgetRecoveryAt?: number;
+  navLossBudgetUsedBps: number;
   maxWeightDeviationBps: number;
   challengeWeightDeviationBps: number;
   challengeGracePeriod: number;
@@ -836,7 +833,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
-    ["EpochNavLossExceeded(uint64,uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Reduce the quoted loss or wait for capacity to replenish continuously."],
+    ["NavLossBudgetExceeded(uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Reduce the quoted loss or wait for capacity to replenish continuously."],
     ["CanonicalPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
     ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
     ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
@@ -865,7 +862,12 @@ const protocolErrorMessages = new Map<string, string>(
   ].map(([signature, message]) => [toFunctionSelector(signature), message]),
 );
 
-function errorMessage(error: unknown): string {
+const canonicalPoolAlreadyExistsSelector = toFunctionSelector("CanonicalPoolAlreadyExists(address,address)");
+
+function rawErrorText(error: unknown, seen = new Set<unknown>()): string {
+  if (error === null || error === undefined || seen.has(error)) return "";
+  seen.add(error);
+
   const serialized = (() => {
     try {
       return JSON.stringify(error, (_, value) => typeof value === "bigint" ? value.toString() : value);
@@ -873,13 +875,25 @@ function errorMessage(error: unknown): string {
       return String(error);
     }
   })();
-  const errorText = [
+  const nestedCause = error && typeof error === "object" && "cause" in error
+    ? rawErrorText((error as { cause?: unknown }).cause, seen)
+    : "";
+  return [
     serialized,
     error instanceof Error ? error.message : "",
     error && typeof error === "object" && "shortMessage" in error
       ? String((error as { shortMessage?: unknown }).shortMessage ?? "")
       : "",
+    nestedCause,
   ].join(" ");
+}
+
+function hasErrorSelector(error: unknown, selector: `0x${string}`): boolean {
+  return rawErrorText(error).toLowerCase().includes(selector.toLowerCase());
+}
+
+function errorMessage(error: unknown): string {
+  const errorText = rawErrorText(error);
   const normalizedError = errorText.toLowerCase();
 
   if (/user rejected|user denied|request rejected|rejected the request|cancelled by user/.test(normalizedError)) {
@@ -1156,7 +1170,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunset" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunsetAt" },
         { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "depositsPaused" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navLossEpochState" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navLossBudgetState" },
       ] as const)
     : undefined;
 
@@ -1278,11 +1292,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     ? Number(resultAt<bigint>(results, 37))
     : undefined;
   const depositsPaused = Boolean(resultAt<boolean>(results, 38));
-  const navLossEpoch = resultAt<readonly [bigint, bigint, bigint, number, number]>(results, 39);
-  const navLossEpochId = Number(navLossEpoch?.[0] ?? 0n);
-  const navLossEpochStartsAt = navLossEpoch?.[1] ? Number(navLossEpoch[1]) : undefined;
-  const navLossEpochEndsAt = navLossEpoch?.[2] ? Number(navLossEpoch[2]) : undefined;
-  const navLossEpochUsedBps = Number(navLossEpoch?.[3] ?? 0);
+  const navLossBudget = resultAt<readonly [bigint, number, number]>(results, 39);
+  const navLossBudgetRecoveryAt = navLossBudget?.[0] ? Number(navLossBudget[0]) : undefined;
+  const navLossBudgetUsedBps = Number(navLossBudget?.[1] ?? 0);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
@@ -1311,10 +1323,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     cooldownProgress,
     allocations,
     maxNavLossBps,
-    navLossEpochId,
-    navLossEpochStartsAt,
-    navLossEpochEndsAt,
-    navLossEpochUsedBps,
+    navLossBudgetRecoveryAt,
+    navLossBudgetUsedBps,
     maxWeightDeviationBps,
     challengeWeightDeviationBps,
     challengeGracePeriod,
@@ -4781,24 +4791,30 @@ function PortfolioBandStatus({
             detail: targetProposalBlockers.join(" "),
             tone: vault.challengeActive ? "danger" : "warning",
           }
-      : withinBands
-        ? {
-            title: vault.challengeActive ? "Portfolio restored — fees can be withdrawn" : "Portfolio is eligible for fee withdrawal",
-            detail: vault.challengeActive
-              ? "Withdrawing now resolves the active challenge and releases eligible manager fees."
-              : "Every constituent is within its completion band, so the fee-withdrawal requirement is satisfied.",
-            tone: "success",
-          }
-        : beyondChallengeBands
+      : !vault.challengeActive
+        ? beyondChallengeBands
           ? {
-              title: vault.challengeActive ? "Fee withdrawal blocked by the active challenge" : "Fee withdrawal would start a challenge",
-              detail: `The portfolio is beyond its wider ${bpsToPercent(vault.challengeWeightDeviationBps)} challenge bands. Rebalance within ${completionBand} before withdrawing manager fees.`,
-              tone: "danger",
+              title: "Fees are withdrawable; this also opens a challenge",
+              detail: `Fees earned before the challenge are paid normally. This withdrawal records the ${bpsToPercent(vault.challengeWeightDeviationBps)} challenge-band breach, after which new fees are escrowed until recovery.`,
+              tone: "warning",
             }
           : {
-              title: "Fee withdrawal is blocked",
-              detail: `The portfolio is outside its ${completionBand} completion bands, although it remains inside the wider challenge bands. Rebalance within the completion bands before withdrawing.`,
-              tone: "warning",
+              title: "Manager fees are withdrawable",
+              detail: withinBands
+                ? "The portfolio is healthy and no challenge is active."
+                : `The portfolio is outside its ${completionBand} completion bands but remains inside the wider challenge bands, so fees continue normally.`,
+              tone: withinBands ? "success" : "warning",
+            }
+        : withinBands
+          ? {
+              title: "Portfolio restored — escrowed fees can be released",
+              detail: "Withdrawing now resolves the active challenge and releases eligible manager fees.",
+              tone: "success",
+            }
+          : {
+              title: "Fee withdrawal is blocked by the active challenge",
+              detail: `New fees remain escrowed until every constituent returns within its ${completionBand} completion band.`,
+              tone: "danger",
             };
 
   return (
@@ -5454,16 +5470,16 @@ function RebalanceTradesPanel({
     && vault.navValue > 0n
     ? Number(((inputTradeValue - quotedOutputValue) * 10_000n + vault.navValue - 1n) / vault.navValue)
     : 0;
-  const remainingEpochLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossEpochUsedBps);
-  const epochBudgetUsedPercent = vault.maxNavLossBps > 0
-    ? Math.min(100, vault.navLossEpochUsedBps * 100 / vault.maxNavLossBps)
+  const remainingNavLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossBudgetUsedBps);
+  const navLossBudgetUsedPercent = vault.maxNavLossBps > 0
+    ? Math.min(100, vault.navLossBudgetUsedBps * 100 / vault.maxNavLossBps)
     : 0;
-  const epochBudgetTone = remainingEpochLossBps === 0
+  const navLossBudgetTone = remainingNavLossBps === 0
     ? "exhausted"
-    : epochBudgetUsedPercent >= 75
+    : navLossBudgetUsedPercent >= 75
       ? "warning"
       : "available";
-  const epochNavLossTooHigh = quotedPortfolioLossBps > remainingEpochLossBps;
+  const navLossBudgetTooHigh = quotedPortfolioLossBps > remainingNavLossBps;
   const inputTargetValue = vault.navValue !== undefined && inputAsset
     ? vault.navValue * BigInt(inputAsset.targetWeightBps) / 10_000n
     : undefined;
@@ -5585,7 +5601,7 @@ function RebalanceTradesPanel({
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
     rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
-    !oracleValueLossTooHigh && !epochNavLossTooHigh,
+    !oracleValueLossTooHigh && !navLossBudgetTooHigh,
   );
 
   function resetTradeState() {
@@ -5647,26 +5663,26 @@ function RebalanceTradesPanel({
     >
       <div className="rebalanceTradeForm">
         <PortfolioBandStatus vault={vault} context="rebalance" />
-        <div className={`navLossBudget ${epochBudgetTone}`}>
+        <div className={`navLossBudget ${navLossBudgetTone}`}>
           <div className="navLossBudgetHeader">
             <div>
               <span>Seven-day NAV-loss budget</span>
-              <strong>{bpsToPercent(vault.navLossEpochUsedBps)} consumed</strong>
+              <strong>{bpsToPercent(vault.navLossBudgetUsedBps)} consumed</strong>
             </div>
             <div className="navLossBudgetRemaining">
               <span>Remaining</span>
-              <strong>{bpsToPercent(remainingEpochLossBps)}</strong>
+              <strong>{bpsToPercent(remainingNavLossBps)}</strong>
             </div>
           </div>
           <div
             className="navLossBudgetTrack"
             role="progressbar"
-            aria-label={`NAV-loss budget: ${bpsToPercent(vault.navLossEpochUsedBps)} consumed of ${bpsToPercent(vault.maxNavLossBps)}`}
+            aria-label={`NAV-loss budget: ${bpsToPercent(vault.navLossBudgetUsedBps)} consumed of ${bpsToPercent(vault.maxNavLossBps)}`}
             aria-valuemin={0}
             aria-valuemax={vault.maxNavLossBps}
-            aria-valuenow={vault.navLossEpochUsedBps}
+            aria-valuenow={vault.navLossBudgetUsedBps}
           >
-            <span style={{ width: `${epochBudgetUsedPercent}%` }} />
+            <span style={{ width: `${navLossBudgetUsedPercent}%` }} />
           </div>
           <div className="navLossBudgetMeta">
             <span>{bpsToPercent(vault.maxNavLossBps)} total</span>
@@ -5836,8 +5852,8 @@ function RebalanceTradesPanel({
         {oracleValueLossTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
         ) : null}
-        {epochNavLossTooHigh ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingEpochLossBps)} currently remains. Reduce the trade loss or wait for capacity to replenish continuously.</span></div></div>
+        {navLossBudgetTooHigh ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingNavLossBps)} currently remains. Reduce the trade loss or wait for capacity to replenish continuously.</span></div></div>
         ) : null}
         {quoteError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
@@ -6007,8 +6023,8 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
 }
 
 function SafetyLimits({ vault }: { vault: VaultView }) {
-  const epochBudgetUsedPercent = vault.maxNavLossBps > 0
-    ? Math.min(100, vault.navLossEpochUsedBps * 100 / vault.maxNavLossBps)
+  const navLossBudgetUsedPercent = vault.maxNavLossBps > 0
+    ? Math.min(100, vault.navLossBudgetUsedBps * 100 / vault.maxNavLossBps)
     : 0;
   const limits = [
     ["Seven-day NAV-loss budget", bpsToPercent(vault.maxNavLossBps), "Cumulative, gains do not restore capacity"],
@@ -6040,19 +6056,21 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
       <div className="executionPolicy">
         <Activity size={14} />
         <div>
-          <strong>Epoch {vault.navLossEpochId + 1}: {bpsToPercent(vault.navLossEpochUsedBps)} of {bpsToPercent(vault.maxNavLossBps)} used</strong>
+          <strong>{bpsToPercent(vault.navLossBudgetUsedBps)} of {bpsToPercent(vault.maxNavLossBps)} used</strong>
           <div
             className="progressTrack"
             role="progressbar"
             aria-label="NAV-loss budget used"
             aria-valuemin={0}
             aria-valuemax={vault.maxNavLossBps}
-            aria-valuenow={vault.navLossEpochUsedBps}
+            aria-valuenow={vault.navLossBudgetUsedBps}
           >
-            <span style={{ width: `${epochBudgetUsedPercent}%` }} />
-            <i style={{ left: `calc(${epochBudgetUsedPercent}% - 5px)` }} />
+            <span style={{ width: `${navLossBudgetUsedPercent}%` }} />
+            <i style={{ left: `calc(${navLossBudgetUsedPercent}% - 5px)` }} />
           </div>
-          <span>Capacity replenishes continuously over seven days; period boundaries are reporting only.</span>
+          <span>{vault.navLossBudgetUsedBps > 0 && vault.navLossBudgetRecoveryAt
+            ? `Capacity replenishes continuously and will be full by ${formatTimestamp(vault.navLossBudgetRecoveryAt)}.`
+            : "Capacity replenishes continuously over seven days."}</span>
         </div>
       </div>
       <div className="executionPolicy">
@@ -6878,7 +6896,7 @@ function CreateVaultView({
           params = candidate;
           break;
         } catch (error) {
-          if (!errorMessage(error).includes("occupied canonical market")) throw error;
+          if (!hasErrorSelector(error, canonicalPoolAlreadyExistsSelector)) throw error;
         }
       }
       if (!params) {
@@ -8189,10 +8207,10 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
           <div className="rebalanceHistoryList">
             {[...executions].reverse().map(({ index, record }) => (
               <article className="rebalanceHistoryEntry" key={`execution-${index}-${record.timestamp}`}>
-                <div className="rebalanceHistoryHeader"><div><strong>Execution {index + 1}</strong><span className="stateBadge muted">Period {Number(record.epochId) + 1}</span></div><time>{formatTimestamp(Number(record.timestamp))}</time></div>
+                <div className="rebalanceHistoryHeader"><div><strong>Execution {index + 1}</strong></div><time>{formatTimestamp(Number(record.timestamp))}</time></div>
                 <div className="rebalanceImpactMetrics">
                   <div><span>Batch loss</span><strong>{bpsToPercent(Number(record.batchLossBps))}</strong></div>
-                  <div><span>Bucket used</span><strong>{bpsToPercent(Number(record.epochLossUsedBps))} / {bpsToPercent(vault.maxNavLossBps)}</strong></div>
+                  <div><span>Bucket used</span><strong>{bpsToPercent(Number(record.navLossBudgetUsedBps))} / {bpsToPercent(vault.maxNavLossBps)}</strong></div>
                   <div><span>NAV before</span><strong>{formatUsd18(record.navBefore) ?? "Unavailable"}</strong></div>
                   <ArrowRight size={13} />
                   <div><span>NAV after</span><strong>{formatUsd18(record.navAfter) ?? "Unavailable"}</strong></div>
@@ -8747,7 +8765,7 @@ function ManageVaultsView({
             <button
               className="secondaryAction"
               type="button"
-              disabled={!connectedAddress || !vault.connectedIsManager || !vault.withinCompletionBands || !pendingManagerFeeShares || feeAccrualState === "pending" || feeAccrualState === "submitted"}
+              disabled={!connectedAddress || !vault.connectedIsManager || (vault.challengeActive && !vault.withinCompletionBands) || !pendingManagerFeeShares || feeAccrualState === "pending" || feeAccrualState === "submitted"}
               onClick={withdrawVaultFees}
             >
               <CircleDollarSign size={14} />

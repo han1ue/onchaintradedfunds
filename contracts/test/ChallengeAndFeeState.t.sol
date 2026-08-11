@@ -70,7 +70,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceAfterRelease);
     }
 
-    function testUnchallengedActiveStrategyDoesNotLockManagerFees() public {
+    function testFeesLockOnlyAfterAChallengeStarts() public {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets,) = _equalPortfolio();
         uint16[] memory weights = new uint16[](2);
@@ -82,7 +82,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertFalse(vault.isWithinTargetBands());
         assertFalse(vault.challengeActive());
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(uint256(vault.lastFeeAccrualTimestamp()) + 1 days);
         _refreshPrices();
         uint256 recipientBefore = vault.balanceOf(FEE_RECIPIENT);
         assertGt(vault.accrueFees(), 0);
@@ -94,6 +94,21 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _refreshPrices();
         assertGt(vault.withdrawManagerFees(), 0);
         assertFalse(vault.challengeActive());
+
+        vm.warp(uint256(vault.lastFeeAccrualTimestamp()) + 1 days);
+        _setPrices(120_00000000, 100_00000000);
+        uint256 recipientBeforeChallenge = vault.balanceOf(FEE_RECIPIENT);
+        assertGt(vault.withdrawManagerFees(), 0);
+        assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBeforeChallenge);
+        assertTrue(vault.challengeActive());
+
+        vm.warp(uint256(vault.lastFeeAccrualTimestamp()) + 1 days);
+        _setPrices(120_00000000, 100_00000000);
+        uint256 recipientDuringChallenge = vault.balanceOf(FEE_RECIPIENT);
+        uint256 escrowBefore = vault.escrowedManagerFeeShares();
+        assertGt(vault.accrueFees(), 0);
+        assertEq(vault.balanceOf(FEE_RECIPIENT), recipientDuringChallenge);
+        assertGt(vault.escrowedManagerFeeShares(), escrowBefore);
     }
 
     function testManagerTradesAutomaticallyResolveChallenge() public {

@@ -419,7 +419,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256 netLossValue = navBefore > navAfter ? navBefore - navAfter : 0;
         uint256 lossValue = grossLossValue > netLossValue ? grossLossValue : netLossValue;
         uint256 batchLossBps = lossValue == 0 ? 0 : MathEx.mulDivUp(lossValue, BPS, navBefore);
-        (uint64 epochId, uint16 epochLossUsedBps) = _consumeNavLossBudget(batchLossBps);
+        uint16 navLossBudgetUsedBps = _consumeNavLossBudget(batchLossBps);
         if (strategicRebalanceActive) {
             uint256 cumulativeStrategyLossBps = uint256(_strategicExecutionLossBps) + batchLossBps;
             // A uint32 cumulative counter cannot be exhausted within a strategy's lifetime.
@@ -432,7 +432,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _recentTradeExecutions[executionId % RECENT_EXECUTION_CAP] = TradeExecutionRecord({
             timestamp: uint64(block.timestamp),
             executor: msg.sender,
-            epochId: epochId,
             // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
             // forge-lint: disable-next-line(unsafe-typecast)
             strategyVersion: uint32(currentStrategyVersion),
@@ -441,17 +440,16 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             // Both values were bounded by maxNavLossBps above.
             // forge-lint: disable-next-line(unsafe-typecast)
             batchLossBps: uint16(batchLossBps),
-            epochLossUsedBps: epochLossUsedBps,
+            navLossBudgetUsedBps: navLossBudgetUsedBps,
             tradeCount: uint16(trades.length)
         });
         tradeExecutionCount = executionId + 1;
         emit TradeExecutionRecorded(
             executionId,
-            epochId,
             msg.sender,
             // forge-lint: disable-next-line(unsafe-typecast)
             uint16(batchLossBps),
-            epochLossUsedBps,
+            navLossBudgetUsedBps,
             // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
             // forge-lint: disable-next-line(unsafe-typecast)
             uint32(currentStrategyVersion)
@@ -826,19 +824,16 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function _consumeNavLossBudget(uint256 batchLossBps)
         private
-        returns (uint64 epochId, uint16 usedLossBps)
+        returns (uint16 usedLossBps)
     {
         uint256 packedState = _calculator.navLossBudgetState(
-            _navLossBucketRecoveryAt, navLossEpochAnchor, maxNavLossBps, batchLossBps
+            _navLossBucketRecoveryAt, maxNavLossBps, batchLossBps
         );
         // Every packed value is bounded by the calculator before encoding.
         // forge-lint: disable-next-line(unsafe-typecast)
         usedLossBps = uint16(packedState);
         // forge-lint: disable-next-line(unsafe-typecast)
         _navLossBucketRecoveryAt = uint64(packedState >> 16);
-        _navLossBucketUsedBps = usedLossBps;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        epochId = uint64(packedState >> 80);
     }
 
     function _contains(address[] memory assets_, address asset) private pure returns (bool) {

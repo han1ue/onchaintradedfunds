@@ -169,58 +169,55 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
         vault.executeRebalanceTrades(lossy);
 
-        (,,, uint16 usedLossBps, uint16 maximumLossBps) = vault.navLossEpochState();
+        (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps) =
+            vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
         assertEq(maximumLossBps, 2);
+        assertGt(recoveryAt, block.timestamp);
 
         adapter.setRate(address(tokenB), address(tokenA), 10_001, 10_000);
         TradeInstruction[] memory profitable =
             _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn);
         vault.executeRebalanceTrades(profitable);
-        (,,, usedLossBps,) = vault.navLossEpochState();
+        (, usedLossBps,) = vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
 
         adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
         vault.executeRebalanceTrades(lossy);
-        (,,, usedLossBps,) = vault.navLossEpochState();
+        (, usedLossBps,) = vault.navLossBudgetState();
         assertEq(usedLossBps, 2);
 
         uint256 tokenBBefore = tokenB.balanceOf(address(vault));
-        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.NavLossBudgetExceeded.selector);
         vault.executeRebalanceTrades(lossy);
         assertEq(tokenB.balanceOf(address(vault)), tokenBBefore);
 
-        vm.warp(block.timestamp + vault.NAV_LOSS_EPOCH() / 2);
+        vm.warp(block.timestamp + vault.NAV_LOSS_RECOVERY_PERIOD() / 2);
         _refreshPrices();
-        (,,, usedLossBps,) = vault.navLossEpochState();
+        (, usedLossBps,) = vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
 
         vault.executeRebalanceTrades(lossy);
-        (uint64 periodId,,, uint16 replenishedUsedLossBps,) = vault.navLossEpochState();
+        (, uint16 replenishedUsedLossBps,) = vault.navLossBudgetState();
         assertEq(replenishedUsedLossBps, 2);
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.NavLossBudgetExceeded.selector);
         vault.executeRebalanceTrades(lossy);
 
         assertEq(vault.recentTradeExecutionCount(), 4);
         TradeExecutionRecord memory record = vault.recentTradeExecutionRecord(3);
-        assertEq(record.epochId, periodId);
         assertEq(record.batchLossBps, 1);
-        assertEq(record.epochLossUsedBps, 2);
+        assertEq(record.navLossBudgetUsedBps, 2);
         assertEq(record.tradeCount, 1);
     }
 
-    function testNavLossBudgetDoesNotResetAtObservationPeriodBoundary() public {
+    function testNavLossBudgetFullyReplenishesAtRecoveryTimestamp() public {
         VaultInitParams memory params = _defaultParams();
         params.maxNavLossBps = 2;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         vm.warp(START + 14 days);
         _proposeTarget(vault, assets, weights);
-
-        (uint64 periodId,, uint64 endsAt,,) = vault.navLossEpochState();
-        vm.warp(endsAt - 1);
-        _refreshPrices();
 
         uint256 amountIn = 20 * ONE;
         adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
@@ -229,20 +226,25 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.executeRebalanceTrades(lossy);
         vault.executeRebalanceTrades(lossy);
 
-        vm.warp(endsAt);
-        _refreshPrices();
-        (uint64 nextPeriodId,,, uint16 usedLossBps,) = vault.navLossEpochState();
-        assertEq(nextPeriodId, periodId + 1);
+        (uint64 recoveryAt, uint16 usedLossBps,) = vault.navLossBudgetState();
         assertEq(usedLossBps, 2);
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
-        vault.executeRebalanceTrades(lossy);
-
-        vm.warp(endsAt + vault.NAV_LOSS_EPOCH() / 2);
+        vm.warp(recoveryAt - 1);
         _refreshPrices();
+        (uint64 remainingRecoveryAt, uint16 remainingUsedLossBps,) =
+            vault.navLossBudgetState();
+        assertEq(remainingRecoveryAt, recoveryAt);
+        assertEq(remainingUsedLossBps, 1);
+
+        vm.warp(recoveryAt);
+        _refreshPrices();
+        (uint64 emptyRecoveryAt, uint16 emptyUsedLossBps,) = vault.navLossBudgetState();
+        assertEq(emptyRecoveryAt, recoveryAt);
+        assertEq(emptyUsedLossBps, 0);
+
         vault.executeRebalanceTrades(lossy);
-        (,,, usedLossBps,) = vault.navLossEpochState();
-        assertEq(usedLossBps, 2);
+        (, usedLossBps,) = vault.navLossBudgetState();
+        assertEq(usedLossBps, 1);
     }
 
     function testTradeMustMoveEveryExposureTowardTarget() public {

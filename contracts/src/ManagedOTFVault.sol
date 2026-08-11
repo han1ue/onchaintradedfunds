@@ -94,7 +94,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint64 timestamp = uint64(block.timestamp);
         lastFeeAccrualTimestamp = timestamp;
         lastCompletedStrategyTimestamp = timestamp;
-        navLossEpochAnchor = timestamp;
 
         _strategyVersions.push(
             StrategyVersion({
@@ -320,19 +319,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function navLossEpochState()
+    function navLossBudgetState()
         external
-        returns (
-            uint64 epochId,
-            uint64 startsAt,
-            uint64 endsAt,
-            uint16 usedLossBps,
-            uint16 maximumLossBps
-        )
+        returns (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps)
     {
-        epochId;
-        startsAt;
-        endsAt;
+        recoveryAt;
         usedLossBps;
         maximumLossBps;
         _delegateView();

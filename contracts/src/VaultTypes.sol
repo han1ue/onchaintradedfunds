@@ -48,11 +48,10 @@ struct RebalanceRecord {
 struct TradeExecutionRecord {
     uint64 timestamp;
     address executor;
-    uint64 epochId;
     uint32 strategyVersion;
     uint256 navBefore;
     uint256 navAfter;
     uint16 batchLossBps;
-    uint16 epochLossUsedBps;
+    uint16 navLossBudgetUsedBps;
     uint16 tradeCount;
 }

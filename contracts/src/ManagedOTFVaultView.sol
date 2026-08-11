@@ -107,36 +107,27 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         return _recentRebalances[(first + index) % RECENT_REBALANCE_CAP];
     }
 
-    function navLossEpochState()
+    function navLossBudgetState()
         external
         view
         onlyDelegateCall
-        returns (
-            uint64 epochId,
-            uint64 startsAt,
-            uint64 endsAt,
-            uint16 usedLossBps,
-            uint16 maximumLossBps
-        )
+        returns (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps)
     {
         // Bucket state is necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
         uint256 timestamp = block.timestamp;
-        uint256 calculatedId = (timestamp - uint256(navLossEpochAnchor)) / NAV_LOSS_EPOCH;
-        // Epoch counts and timestamps fit uint64 for the lifetime of the chain.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        epochId = uint64(calculatedId);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        startsAt = uint64(uint256(navLossEpochAnchor) + calculatedId * NAV_LOSS_EPOCH);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        endsAt = uint64(uint256(startsAt) + NAV_LOSS_EPOCH);
-        uint256 recoveryAt = _navLossBucketRecoveryAt;
-        if (recoveryAt > timestamp && maxNavLossBps != 0) {
-            uint256 used = MathEx.mulDivUp(recoveryAt - timestamp, maxNavLossBps, NAV_LOSS_EPOCH);
+        uint256 storedRecoveryAt = _navLossBucketRecoveryAt;
+        if (storedRecoveryAt > timestamp && maxNavLossBps != 0) {
+            uint256 used = MathEx.mulDivUp(
+                storedRecoveryAt - timestamp, maxNavLossBps, NAV_LOSS_RECOVERY_PERIOD
+            );
             // Bucket usage cannot exceed the configured maximum of 200 BPS.
             // forge-lint: disable-next-line(unsafe-typecast)
             usedLossBps = uint16(used);
         }
+        // Bucket recovery timestamps fit uint64 for the lifetime of the chain.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        recoveryAt = uint64(storedRecoveryAt > timestamp ? storedRecoveryAt : timestamp);
         maximumLossBps = maxNavLossBps;
     }
 
