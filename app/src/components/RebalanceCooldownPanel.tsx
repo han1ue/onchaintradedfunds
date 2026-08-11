@@ -5471,14 +5471,6 @@ function RebalanceTradesPanel({
     ? Number(((inputTradeValue - quotedOutputValue) * 10_000n + vault.navValue - 1n) / vault.navValue)
     : 0;
   const remainingNavLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossBudgetUsedBps);
-  const navLossBudgetUsedPercent = vault.maxNavLossBps > 0
-    ? Math.min(100, vault.navLossBudgetUsedBps * 100 / vault.maxNavLossBps)
-    : 0;
-  const navLossBudgetTone = remainingNavLossBps === 0
-    ? "exhausted"
-    : navLossBudgetUsedPercent >= 75
-      ? "warning"
-      : "available";
   const navLossBudgetTooHigh = quotedPortfolioLossBps > remainingNavLossBps;
   const inputTargetValue = vault.navValue !== undefined && inputAsset
     ? vault.navValue * BigInt(inputAsset.targetWeightBps) / 10_000n
@@ -5663,32 +5655,7 @@ function RebalanceTradesPanel({
     >
       <div className="rebalanceTradeForm">
         <PortfolioBandStatus vault={vault} context="rebalance" />
-        <div className={`navLossBudget ${navLossBudgetTone}`}>
-          <div className="navLossBudgetHeader">
-            <div>
-              <span>Seven-day NAV-loss budget</span>
-              <strong>{bpsToPercent(vault.navLossBudgetUsedBps)} consumed</strong>
-            </div>
-            <div className="navLossBudgetRemaining">
-              <span>Remaining</span>
-              <strong>{bpsToPercent(remainingNavLossBps)}</strong>
-            </div>
-          </div>
-          <div
-            className="navLossBudgetTrack"
-            role="progressbar"
-            aria-label={`NAV-loss budget: ${bpsToPercent(vault.navLossBudgetUsedBps)} consumed of ${bpsToPercent(vault.maxNavLossBps)}`}
-            aria-valuemin={0}
-            aria-valuemax={vault.maxNavLossBps}
-            aria-valuenow={vault.navLossBudgetUsedBps}
-          >
-            <span style={{ width: `${navLossBudgetUsedPercent}%` }} />
-          </div>
-          <div className="navLossBudgetMeta">
-            <span>{bpsToPercent(vault.maxNavLossBps)} total</span>
-            <span>Capacity replenishes continuously over seven days</span>
-          </div>
-        </div>
+        <NavLossBudgetStatus vault={vault} />
         {!hasAllowedTrade ? (
           <div className="inlineEmptyState rebalanceEmptyState">
             <CheckCircle size={16} />
@@ -6022,10 +5989,53 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   }
 }
 
-function SafetyLimits({ vault }: { vault: VaultView }) {
+function NavLossBudgetStatus({ vault }: { vault: VaultView }) {
   const navLossBudgetUsedPercent = vault.maxNavLossBps > 0
     ? Math.min(100, vault.navLossBudgetUsedBps * 100 / vault.maxNavLossBps)
     : 0;
+  const remainingNavLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossBudgetUsedBps);
+  const tone = remainingNavLossBps === 0
+    ? "exhausted"
+    : navLossBudgetUsedPercent >= 75
+      ? "warning"
+      : "available";
+  const recoveryMessage = vault.navLossBudgetUsedBps === 0
+    ? "Full capacity available"
+    : vault.navLossBudgetRecoveryAt
+      ? `Full capacity by ${formatTimestamp(vault.navLossBudgetRecoveryAt)}`
+      : "Used capacity replenishes continuously over seven days";
+
+  return (
+    <div className={`navLossBudget ${tone}`}>
+      <div className="navLossBudgetHeader">
+        <div>
+          <span>Seven-day NAV-loss budget</span>
+          <strong>{bpsToPercent(vault.navLossBudgetUsedBps)} consumed</strong>
+        </div>
+        <div className="navLossBudgetRemaining">
+          <span>Remaining</span>
+          <strong>{bpsToPercent(remainingNavLossBps)}</strong>
+        </div>
+      </div>
+      <div
+        className="navLossBudgetTrack"
+        role="progressbar"
+        aria-label={`NAV-loss budget: ${bpsToPercent(vault.navLossBudgetUsedBps)} consumed of ${bpsToPercent(vault.maxNavLossBps)}`}
+        aria-valuemin={0}
+        aria-valuemax={vault.maxNavLossBps}
+        aria-valuenow={vault.navLossBudgetUsedBps}
+      >
+        <span style={{ width: `${navLossBudgetUsedPercent}%` }} />
+      </div>
+      <div className="navLossBudgetMeta">
+        <span>{bpsToPercent(vault.maxNavLossBps)} total</span>
+        <span>{recoveryMessage}</span>
+      </div>
+    </div>
+  );
+}
+
+function SafetyLimits({ vault }: { vault: VaultView }) {
   const limits = [
     ["Seven-day NAV-loss budget", bpsToPercent(vault.maxNavLossBps), "Cumulative, gains do not restore capacity"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
@@ -6053,26 +6063,7 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
           </div>
         ))}
       </div>
-      <div className="executionPolicy">
-        <Activity size={14} />
-        <div>
-          <strong>{bpsToPercent(vault.navLossBudgetUsedBps)} of {bpsToPercent(vault.maxNavLossBps)} used</strong>
-          <div
-            className="progressTrack"
-            role="progressbar"
-            aria-label="NAV-loss budget used"
-            aria-valuemin={0}
-            aria-valuemax={vault.maxNavLossBps}
-            aria-valuenow={vault.navLossBudgetUsedBps}
-          >
-            <span style={{ width: `${navLossBudgetUsedPercent}%` }} />
-            <i style={{ left: `calc(${navLossBudgetUsedPercent}% - 5px)` }} />
-          </div>
-          <span>{vault.navLossBudgetUsedBps > 0 && vault.navLossBudgetRecoveryAt
-            ? `Capacity replenishes continuously and will be full by ${formatTimestamp(vault.navLossBudgetRecoveryAt)}.`
-            : "Capacity replenishes continuously over seven days."}</span>
-        </div>
-      </div>
+      <NavLossBudgetStatus vault={vault} />
       <div className="executionPolicy">
         <ShieldCheck size={14} />
         <div>
