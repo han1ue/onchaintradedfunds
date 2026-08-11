@@ -19,7 +19,7 @@ import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryAndRegistryTest is ProtocolTestBase {
     function testFactoryReportsSupportedProtocolVersion() public view {
-        assertEq(factory.PROTOCOL_VERSION(), 2);
+        assertEq(factory.PROTOCOL_VERSION(), 1);
     }
 
     function testFactoryRejectsZeroDeploymentSalt() public {

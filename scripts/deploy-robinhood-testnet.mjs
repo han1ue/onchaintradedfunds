@@ -30,6 +30,7 @@ const { privateKeyToAccount } = accounts;
 
 const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
 const defaultChainId = 46630;
+const expectedProtocolVersion = 1;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
 const standardChainlinkValidationMode = 0;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
@@ -216,6 +217,19 @@ const assetRegistryAbi = contractArtifact("AssetRegistry").abi;
 const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
 
+const factoryProtocolVersion = Number(
+  await publicClient.readContract({
+    address: factory.address,
+    abi: factoryAbi,
+    functionName: "PROTOCOL_VERSION",
+  }),
+);
+if (factoryProtocolVersion !== expectedProtocolVersion) {
+  throw new Error(
+    `Deployed factory reports protocol version ${factoryProtocolVersion}, expected ${expectedProtocolVersion}.`,
+  );
+}
+
 const setupTransactions = {
   setExecutorFactory: await writeContract({
     address: rebalanceExecutor.address,
@@ -268,7 +282,7 @@ for (let i = 0; i < priceFeeds.length; i += 1) {
 const deployment = {
   network: "robinhood-testnet",
   chainId,
-  protocolVersion: 2,
+  protocolVersion: expectedProtocolVersion,
   rpcUrl,
   deployedAt: new Date().toISOString(),
   deployer: account.address,
