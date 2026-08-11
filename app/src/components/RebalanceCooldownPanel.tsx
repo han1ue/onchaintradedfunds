@@ -3018,7 +3018,8 @@ function UserActions({
     navRequestedEntryShares &&
     requestedUsdgAmount !== undefined &&
     initialMaximumSettlementTotal !== undefined &&
-    initialMaximumSettlementTotal > requestedUsdgAmount
+    initialMaximumSettlementTotal > 0n &&
+    initialMaximumSettlementTotal !== requestedUsdgAmount
       ? navRequestedEntryShares * requestedUsdgAmount / initialMaximumSettlementTotal
       : undefined;
   const canQuoteAdjustedEntry = Boolean(
@@ -3063,22 +3064,112 @@ function UserActions({
     contracts: adjustedEntryQuoteContracts,
     query: { enabled: adjustedEntryQuoteContracts.length > 0 },
   });
-  const requestedEntryShares = adjustedEntryShares ?? navRequestedEntryShares;
-  const finalPreviewEntryAmounts = adjustedEntryShares
-    ? adjustedPreviewEntryAmounts
-    : previewEntryAmounts;
-  const finalEntryQuoteResults = adjustedEntryShares
-    ? adjustedEntryQuoteResults
-    : entryQuoteResults;
-  const finalPreviewEntryLoading = adjustedEntryShares
-    ? adjustedPreviewEntryLoading
-    : previewEntryLoading;
-  const finalEntryQuotesLoading = adjustedEntryShares
-    ? adjustedEntryQuotesLoading
-    : entryQuotesLoading;
-  const finalPreviewEntryError = adjustedEntryShares
-    ? adjustedPreviewEntryError
-    : previewEntryError;
+  const adjustedEntryLegs = deriveEntryLegs(adjustedPreviewEntryAmounts, adjustedEntryQuoteResults);
+  const adjustedEntryQuoteReady = Boolean(
+    adjustedEntryShares &&
+    adjustedPreviewEntryAmounts?.length === vault.allocations.length &&
+    adjustedEntryLegs.every((leg) =>
+      leg.requiredAmount !== undefined &&
+      leg.quotedSettlement !== undefined &&
+      leg.maximumSettlement !== undefined,
+    ),
+  );
+  const adjustedMaximumSettlementTotal = adjustedEntryQuoteReady
+    ? adjustedEntryLegs.reduce(
+        (sum, leg) => sum + (leg.isSettlement ? leg.requiredAmount ?? 0n : leg.maximumSettlement ?? 0n),
+        0n,
+      )
+    : undefined;
+  let refinedEntryShares: bigint | undefined;
+  if (
+    navRequestedEntryShares &&
+    adjustedEntryShares &&
+    initialMaximumSettlementTotal !== undefined &&
+    adjustedMaximumSettlementTotal !== undefined &&
+    requestedUsdgAmount !== undefined
+  ) {
+    const initialIsLower = initialMaximumSettlementTotal < requestedUsdgAmount;
+    const adjustedIsLower = adjustedMaximumSettlementTotal < requestedUsdgAmount;
+    if (initialIsLower !== adjustedIsLower) {
+      const lowerShares = initialIsLower ? navRequestedEntryShares : adjustedEntryShares;
+      const lowerCost = initialIsLower ? initialMaximumSettlementTotal : adjustedMaximumSettlementTotal;
+      const upperShares = initialIsLower ? adjustedEntryShares : navRequestedEntryShares;
+      const upperCost = initialIsLower ? adjustedMaximumSettlementTotal : initialMaximumSettlementTotal;
+      const interpolatedShares = lowerShares +
+        (upperShares - lowerShares) * (requestedUsdgAmount - lowerCost) / (upperCost - lowerCost);
+      if (interpolatedShares > lowerShares && interpolatedShares < upperShares) {
+        refinedEntryShares = interpolatedShares;
+      }
+    }
+  }
+  const canQuoteRefinedEntry = Boolean(
+    canQuoteEntry && refinedEntryShares && refinedEntryShares > 0n,
+  );
+  const {
+    data: refinedPreviewEntryAmounts,
+    error: refinedPreviewEntryError,
+    isLoading: refinedPreviewEntryLoading,
+  } = useReadContract({
+    address: vault.address,
+    abi: vaultDepositAbi,
+    functionName: "previewMint",
+    args: refinedEntryShares ? [refinedEntryShares] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: canQuoteRefinedEntry },
+  });
+  const refinedEntryQuoteContracts = canQuoteRefinedEntry && constituentPoolsReady && refinedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
+    ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = refinedPreviewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutputSingle" as const,
+          args: [{
+            tokenIn: settlementToken,
+            tokenOut: asset.address as `0x${string}`,
+            amountOut,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: refinedEntryQuoteResults,
+    isLoading: refinedEntryQuotesLoading,
+  } = useReadContracts({
+    contracts: refinedEntryQuoteContracts,
+    query: { enabled: refinedEntryQuoteContracts.length > 0 },
+  });
+  const requestedEntryShares = refinedEntryShares ?? adjustedEntryShares ?? navRequestedEntryShares;
+  const finalPreviewEntryAmounts = refinedEntryShares
+    ? refinedPreviewEntryAmounts
+    : adjustedEntryShares
+      ? adjustedPreviewEntryAmounts
+      : previewEntryAmounts;
+  const finalEntryQuoteResults = refinedEntryShares
+    ? refinedEntryQuoteResults
+    : adjustedEntryShares
+      ? adjustedEntryQuoteResults
+      : entryQuoteResults;
+  const finalPreviewEntryLoading = refinedEntryShares
+    ? refinedPreviewEntryLoading
+    : adjustedEntryShares
+      ? adjustedPreviewEntryLoading
+      : previewEntryLoading;
+  const finalEntryQuotesLoading = refinedEntryShares
+    ? refinedEntryQuotesLoading
+    : adjustedEntryShares
+      ? adjustedEntryQuotesLoading
+      : entryQuotesLoading;
+  const finalPreviewEntryError = refinedEntryShares
+    ? refinedPreviewEntryError
+    : adjustedEntryShares
+      ? adjustedPreviewEntryError
+      : previewEntryError;
   const entryAuthorizationContracts = ([
         {
           address: settlementToken ?? zeroAddress,
@@ -3304,6 +3395,9 @@ function UserActions({
         (sum, leg) => sum + (leg.isSettlement ? leg.requiredAmount ?? 0n : leg.maximumSettlement ?? 0n),
         0n,
       )
+    : undefined;
+  const quotedSettlementTotal = entryQuoteReady
+    ? entryLegs.reduce((sum, leg) => sum + (leg.quotedSettlement ?? 0n), 0n)
     : undefined;
   const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
   const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
@@ -4163,7 +4257,13 @@ function UserActions({
         <div className="positionTicketInputs">
           <label>
             <span className="positionFieldHeading">
-              <span>{!isUsdgMode && activeAction === "deposit" ? "Shares to mint" : `${inputTokenSymbol} amount`}</span>
+              <span>
+                {activeAction === "deposit" && isUsdgMode
+                  ? "Maximum USDG spend"
+                  : !isUsdgMode && activeAction === "deposit"
+                    ? "Shares to mint"
+                    : `${inputTokenSymbol} amount`}
+              </span>
               {showWalletInputBalance ? <span className="positionWalletBalance">Balance: {walletInputBalanceLabel}</span> : null}
             </span>
             <div className="positionAmountInput">
@@ -4174,7 +4274,7 @@ function UserActions({
                 min="0"
                 inputMode="decimal"
                 placeholder="0.00"
-                aria-label={`${inputTokenSymbol} amount`}
+                aria-label={activeAction === "deposit" && isUsdgMode ? "Maximum USDG spend" : `${inputTokenSymbol} amount`}
                 disabled={!isLive || entryBusy || redeemBusy || marketBusy}
               />
               {isUsdgMode || activeAction === "redeem" ? (
@@ -4239,7 +4339,7 @@ function UserActions({
               <strong>Choose how to execute</strong>
               <span>
                 {activeAction === "deposit"
-                  ? "Compare estimated OTF shares for the same USDG amount."
+                  ? "Compare share output within the same maximum USDG spend."
                   : "Compare estimated USDG proceeds for the same OTF shares."}
               </span>
             </div>
@@ -4331,7 +4431,7 @@ function UserActions({
                     : underlyingQuoteProblem
                       ? underlyingQuoteProblem.title
                     : activeAction === "deposit"
-                      ? `${vault.symbol} shares minted`
+                      ? `${vault.symbol} output shares`
                       : "USDG received"}
                 </small>
               </button>
@@ -4372,10 +4472,12 @@ function UserActions({
           <div className="positionRoutePrompt">
             <ArrowDownToLine size={17} />
             <div>
-              <strong>{isUsdgMode ? "Enter an amount to compare routes" : "Enter shares to preview the RWA basket"}</strong>
+              <strong>{isUsdgMode ? activeAction === "deposit" ? "Enter a spending limit to compare routes" : "Enter an amount to compare routes" : "Enter shares to preview the RWA basket"}</strong>
               <span>
                 {isUsdgMode
-                  ? `Both execution paths use the same ${inputTokenSymbol} amount and slippage limit.`
+                  ? activeAction === "deposit"
+                    ? `The liquidity pool spends the full amount. The RWA route mints an exact share output and refunds any unused ${inputTokenSymbol}.`
+                    : `Both execution paths use the same ${inputTokenSymbol} amount and slippage limit.`
                   : activeAction === "deposit"
                     ? `You will supply each underlying asset required to mint ${vault.symbol}.`
                     : "You will receive each underlying asset directly in your wallet."}
@@ -4596,7 +4698,7 @@ function UserActions({
                   <strong>Underlying RWA pools</strong>
                   <span>
                     {activeAction === "deposit"
-                      ? "Buy the portfolio assets and mint new OTF shares."
+                      ? "Buy the exact portfolio basket and mint the shares shown."
                       : "Burn OTF shares and sell the portfolio assets for USDG."}
                   </span>
                 </div>
@@ -4606,15 +4708,16 @@ function UserActions({
 
             {activeAction === "deposit" ? (
               <>
-                <div className="positionExecutionQuote">
-                  <div><span>USDG spent</span><strong>{maximumSettlementTotal !== undefined ? formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
-                  <div><span>Estimated shares</span><strong>{navEstimatedShares ? formatWalletTokenBalance(navEstimatedShares, 18) : "—"} {vault.symbol}</strong></div>
-                  <div><span>Minimum shares</span><strong>{requestedEntryShares ? formatWalletTokenBalance(requestedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
+                <div className="positionExecutionQuote positionExecutionQuoteFour">
+                  <div><span>Spending limit</span><strong>{requestedUsdgAmount !== undefined ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Estimated cost</span><strong>{quotedSettlementTotal !== undefined ? formatWalletTokenBalance(quotedSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Output shares</span><strong>{requestedEntryShares ? formatWalletTokenBalance(requestedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
+                  <div><span>Maximum cost</span><strong>{maximumSettlementTotal !== undefined ? formatWalletTokenBalance(maximumSettlementTotal, settlementDecimals) : "—"} USDG</strong></div>
                 </div>
                 {!entryWithinBudget && maximumSettlementTotal !== undefined ? (
                   <div className="validationSummary danger">
                     <AlertTriangle size={15} />
-                    <div><strong>Pool quote exceeds your USDG amount</strong><span>This route cannot guarantee the requested budget at the current constituent-pool prices.</span></div>
+                    <div><strong>Pool quote exceeds your spending limit</strong><span>This route cannot guarantee the requested output at the current constituent-pool prices.</span></div>
                   </div>
                 ) : null}
                 {entryQuoteReady && !entryBalanceSufficient ? (
@@ -4696,7 +4799,11 @@ function UserActions({
 
             <div className="routeExecutionNote">
               <Info size={14} />
-              <span>Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact.</span>
+              <span>
+                {activeAction === "deposit"
+                  ? "The output share amount is exact. Your slippage setting caps the USDG cost of each RWA purchase; unused USDG is refunded."
+                  : "Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact."}
+              </span>
             </div>
           </div>
         ) : null}

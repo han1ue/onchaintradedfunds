@@ -3011,6 +3011,10 @@ textarea::placeholder {
   border-bottom: 1px solid var(--border);
 }
 
+.positionExecutionQuoteFour {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .positionExecutionQuote > div {
   display: grid;
   gap: 5px;
