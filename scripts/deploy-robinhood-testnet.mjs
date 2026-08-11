@@ -184,9 +184,10 @@ const vaultStrategy = await deployContract({
   name: "ManagedOTFVaultStrategy",
   args: [portfolioCalculator.address],
 });
+const vaultView = await deployContract({ name: "ManagedOTFVaultView" });
 const vaultImplementation = await deployContract({
   name: "ManagedOTFVault",
-  args: [portfolioCalculator.address, vaultStrategy.address],
+  args: [portfolioCalculator.address, vaultStrategy.address, vaultView.address],
 });
 const factory = await deployContract({
   name: "OTFFactory",
@@ -267,6 +268,7 @@ for (let i = 0; i < priceFeeds.length; i += 1) {
 const deployment = {
   network: "robinhood-testnet",
   chainId,
+  protocolVersion: 2,
   rpcUrl,
   deployedAt: new Date().toISOString(),
   deployer: account.address,
@@ -279,6 +281,7 @@ const deployment = {
     feeCollector,
     portfolioCalculator,
     vaultStrategy,
+    vaultView,
     vaultImplementation,
     factory,
     ...(v3MarketRegistry ? { v3MarketRegistry } : {}),

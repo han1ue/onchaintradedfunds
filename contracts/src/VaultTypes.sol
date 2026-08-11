@@ -15,6 +15,7 @@ struct VaultInitParams {
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
     uint16 challengeWeightDeviationBps;
+    bytes32 deploymentSalt;
 }
 
 struct TradeInstruction {
@@ -37,8 +38,21 @@ struct StrategyVersion {
 struct RebalanceRecord {
     uint64 timestamp;
     address manager;
+    uint256 navPerShareBefore;
+    uint256 navPerShareAfter;
+    uint16 turnoverBps;
+    uint32 executionLossBps;
+    uint32 strategyVersion;
+}
+
+struct TradeExecutionRecord {
+    uint64 timestamp;
+    address executor;
+    uint64 epochId;
+    uint32 strategyVersion;
     uint256 navBefore;
     uint256 navAfter;
-    uint16 turnoverBps;
-    uint32 strategyVersion;
+    uint16 batchLossBps;
+    uint16 epochLossUsedBps;
+    uint16 tradeCount;
 }

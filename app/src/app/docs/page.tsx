@@ -89,7 +89,7 @@ const contractRows = [
 const safetyRows = [
   ["Approved assets", "Every target asset must be present in the protocol asset registry."],
   ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
-  ["NAV loss", "Post-trade NAV cannot fall beyond the configured maximum loss."],
+  ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
   ["Target weights", "Every included asset must meet the live protocol-wide minimum, initialized at 1% and adjustable by the factory owner; there is no maximum target weight."],
   ["Oracle freshness", "Every valuation must satisfy the asset feed's protocol-configured staleness bound."],

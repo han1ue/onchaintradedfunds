@@ -18,6 +18,10 @@ type V3VenueDeployment = {
 const contracts = deployment.contracts as Record<string, ContractDeployment | undefined>;
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
 const v3Venue = (deployment as { v3Venue?: V3VenueDeployment }).v3Venue;
+export const SUPPORTED_PROTOCOL_VERSION = 2;
+export const robinhoodTestnetProtocolVersion = Number(
+  (deployment as { protocolVersion?: unknown }).protocolVersion,
+);
 
 function address(value: unknown): Address | undefined {
   return typeof value === "string" && isAddress(value) ? getAddress(value) : undefined;

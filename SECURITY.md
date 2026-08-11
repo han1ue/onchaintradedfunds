@@ -102,10 +102,11 @@ Target proposal, delayed activation, trade execution, and completion are separat
 inert for 48 hours, during which holders can redeem against the unchanged active basket. Activation
 revalidates the proposal. A new proposal is allowed only after the prior rebalance has been complete
 inside its target bands for 14 days, with no active challenge and while the portfolio is currently
-inside its completion bands. Every partial trade
-transaction is atomic. If a trade fails, slippage is too high, an oracle is invalid, NAV loss
-exceeds the cap, or the batch does not move every holding toward target, that transaction reverts
-while the activated strategic target remains active.
+inside its completion bands. Every partial trade transaction is atomic. If a trade fails, slippage
+is too high, an oracle is invalid, the cumulative execution loss would exceed the current
+seven-day epoch budget, or the batch moves any holding farther from target, that transaction
+reverts while the activated strategic target remains active. Positive execution does not restore
+loss capacity already consumed in the epoch.
 
 Changing the protocol-wide minimum target weight is not retroactive: it does not invalidate an
 active portfolio or create a challenge. Existing and new vaults apply the live minimum when they
@@ -113,12 +114,12 @@ validate a new target proposal.
 
 The vault grants exact temporary approvals to the executor and clears them after each trade. This reduces approval exposure but does not remove adapter-integration risk.
 
-Strategy-only entry points are delegated to a fixed `ManagedOTFVaultStrategy` module so the custody
-contract remains deployable under the EVM runtime-code limit. The module address and expected
-runtime code hash are embedded in the vault implementation at construction and have no upgrade
-setter. Direct calls to the module revert. Both contracts inherit the same canonical
-`ManagedOTFVaultStorage` definition, and `contracts:security` rejects any compiled layout
-divergence.
+Strategy-only entry points are delegated to a fixed `ManagedOTFVaultStrategy` module and selected
+read-only entry points are delegated to a fixed `ManagedOTFVaultView` module so the custody contract
+remains deployable under the EVM runtime-code limit. Both module addresses and expected runtime code
+hashes are embedded in the vault implementation at construction and have no upgrade setter. Direct
+calls to either module revert. All three contracts inherit the same canonical
+`ManagedOTFVaultStorage` definition, and `contracts:security` rejects any compiled layout divergence.
 
 ## Challenge Risks
 
@@ -290,7 +291,9 @@ The project claims interface compatibility with documented restrictions, not ful
 ERC-7621 compliance. Contributions are intentionally restricted to the exact proportional live
 basket, so arbitrary contribution vectors do not follow the draft's generalized monotonic
 contribution and valuation behavior. Ownership renunciation is prevented, and constituents must be
-reduced to zero reserve before removal. ERC-7621 is a draft and may change.
+at or below the documented raw-unit retiring-dust bound before removal. If no approved
+positive-target constituent remains, the vault enters irreversible terminal shutdown rather than a
+normal challenge. ERC-7621 is a draft and may change.
 
 ## Unsupported Token Donations
 

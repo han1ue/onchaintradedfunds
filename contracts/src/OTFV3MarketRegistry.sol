@@ -42,6 +42,7 @@ contract OTFV3MarketRegistry {
     error NotOTFFactory(address caller);
     error InvalidVault(address vault);
     error OfficialPoolAlreadySet(address vault, address pool);
+    error CanonicalPoolAlreadyExists(address vault, address pool);
     error FeeTierUnavailable(uint24 fee);
     error InvalidInitialPrice(uint256 navPerShare);
     error PoolResolutionMismatch(address returnedPool, address resolvedPool);
@@ -122,8 +123,11 @@ contract OTFV3MarketRegistry {
             ? (vault, settlementToken)
             : (settlementToken, vault);
 
-        // If somebody permissionlessly created this canonical pair first, Uniswap returns the
-        // same pool. It still becomes the immutable official pool rather than blocking OTF creation.
+        address existing = IUniswapV3FactoryMarket(uniswapV3Factory).getPool(
+            token0, token1, OFFICIAL_FEE
+        );
+        if (existing != address(0)) revert CanonicalPoolAlreadyExists(vault, existing);
+
         pool = INonfungiblePositionManagerMarket(positionManager)
             .createAndInitializePoolIfNecessary(
                 token0, token1, OFFICIAL_FEE, sqrtPriceX96

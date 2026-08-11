@@ -239,19 +239,21 @@ For every successful constrained trade batch:
 4. The input amount is nonzero and input differs from output.
 5. Required oracle prices are valid and fresh.
 6. Explicit adapter output is at least `minAmountOut`.
-7. Oracle-valued output loss does not exceed `maxNavLossBps`.
-8. Total post-trade NAV loss does not exceed `maxNavLossBps`.
-10. Total portfolio distance from target strictly decreases.
-11. No individual constituent moves farther from its target.
-12. Output returns to the OTF.
-13. Temporary input approval is exact and is cleared after execution.
-14. The executor and adapter retain no unintended portfolio balance.
+7. Every leg's oracle-valued output loss is included in the batch execution loss.
+8. The batch execution loss is the greater of gross per-leg oracle loss and net portfolio NAV loss.
+9. Adding the batch execution loss does not exceed the current seven-day epoch's `maxNavLossBps` budget.
+10. Gains do not reduce loss already accumulated in the current epoch.
+11. Total portfolio distance from target strictly decreases.
+12. No individual constituent moves farther from its target.
+13. Output returns to the OTF.
+14. Temporary input approval is exact and is cleared after execution.
+15. The executor and adapter retain no unintended portfolio balance.
 
 If any final check fails, the complete transaction MUST revert, including token transfers and
 approvals.
 
 Multiple partial transactions MAY be used to reach one target. Each transaction MUST independently
-satisfy every invariant above.
+satisfy every invariant above, and their execution losses accumulate against the epoch budget.
 
 For every successful settlement-token entry:
 
@@ -325,20 +327,30 @@ A registry revocation is a global, immediate signal and MUST NOT enter the manag
 proposal delay. Every affected vault MUST treat the revoked asset's effective target as exactly
 zero, renormalize the remaining approved positive targets proportionally to exactly 10,000 basis
 points, and block all contribution and basket-mint paths, including previews. If no approved
-positive-target constituent remains, every effective target is zero and the vault remains in a
-deposit-blocked retirement state. Proportional
-in-kind redemption and constrained sell-side wind-down MUST remain available; buy-side trades into
-the revoked asset MUST remain forbidden. Any nonzero raw balance remains challengeable regardless
-of percentage-band rounding. Once the exact balance reaches zero, the asset MUST be pruned and
-primary deposits MAY resume if every remaining constituent is approved and has a positive target.
+positive-target constituent remains, every effective target is zero and the vault MUST enter
+irreversible terminal shutdown instead of creating or continuing a normal weight-band challenge.
+Because registry revocation has no per-vault callback, anyone MAY finalize this transition, and
+challenge flagging or pruning that observes the condition MUST perform it directly. Proportional
+in-kind redemption MUST remain available; buy-side trades into the
+revoked asset MUST remain forbidden. While at least one active constituent remains, a retiring raw
+balance above `MAX_RETIRING_DUST` remains challengeable regardless of percentage-band rounding.
+Once the balance is at or below that limit, the asset MAY be pruned, the exact written-off balance MUST be emitted, and primary deposits MAY
+resume if every remaining constituent is approved and has a positive target, unless the vault has
+already entered terminal shutdown.
+
+`MAX_RETIRING_DUST` is fixed at `1e9` raw units per retired asset. Because the asset registry
+accepts only 18-decimal constituents, this writes off at most `1e-9` whole tokens: $0.001 at a
+$1,000,000 unit price and $0.01 at a $10,000,000 unit price. This per-asset bound is an explicit
+protocol risk acceptance; changing the supported token decimals requires reassessing the limit.
 
 ### Completion
 
 `StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
-inside every completion band and every zero-target constituent has an exact zero raw balance. A
-successful strategic trade batch that reaches those conditions MUST prune retired constituents and
-complete atomically after all final trade safety checks. Permissionless explicit completion remains
-available when no trade is required or natural price movement restores the portfolio. Completion
+inside every completion band and every zero-target constituent has a raw balance no greater than
+`MAX_RETIRING_DUST`. A successful strategic trade batch that reaches those conditions MUST prune
+retired constituents and complete atomically after all final trade safety checks. Permissionless
+explicit completion remains available when no trade is required or natural price movement restores
+the portfolio. Completion
 marks the activated strategy version complete, resumes manager-fee withdrawals, and is the only
 point that updates `lastCompletedStrategyTimestamp`;
 proposals, failed trades, and partial trades MUST NOT update it.
@@ -372,7 +384,7 @@ During a challenge:
 
 ### Terminal sunset state
 
-Only the manager MAY permanently sunset an OTF. Sunset MUST revert until the current strategy
+The manager MAY permanently sunset an operational OTF. Manager sunset MUST revert until the current strategy
 cooldown has ended and while a challenge, pending strategy proposal, or strategic rebalance is
 active. The transition MUST checkpoint the final valid
 fee interval before recording its timestamp. After sunset:
@@ -384,6 +396,13 @@ fee interval before recording its timestamp. After sunset:
   transfers MUST remain available.
 - The sunset flag and timestamp MUST remain publicly readable and the transition MUST be
   irreversible.
+
+Separately, when no approved positive-target constituent remains, anyone MAY trigger the same
+irreversible terminal state without waiting for the cooldown. This path MUST NOT open a challenge:
+it checkpoints fees, applies ordinary challenge-deadline economics to any challenge already in
+progress, clears all challenge and strategy-transition state, sets every stored target to zero, and
+disables portfolio management. Reapproving an asset later MUST NOT revive the vault. Retiring assets
+MAY still be pruned at or below `MAX_RETIRING_DUST` during the wind-down.
 
 The factory owner MAY additionally call `setDepositsPaused(bool)` to set or clear one
 protocol-wide deposit pause. New OTF creation MUST revert while the pause is active, and every

@@ -8,11 +8,17 @@ import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-import { RebalanceRecord, StrategyVersion, TradeInstruction } from "./VaultTypes.sol";
+import {
+    RebalanceRecord,
+    StrategyVersion,
+    TradeExecutionRecord,
+    TradeInstruction
+} from "./VaultTypes.sol";
 
 interface IManagedOTFVaultModuleCallbacks {
     function moduleAccrueFees() external returns (uint256);
     function moduleMintFees(uint256 elapsed) external returns (uint256);
+    function moduleReleaseChallengeFees() external returns (uint256);
 }
 
 contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
@@ -43,37 +49,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function transferFrom(address, address, uint256) external pure override returns (bool) {
         revert DirectStrategyCall();
-    }
-
-    function strategyVersionCount() external view onlyDelegateCall returns (uint256) {
-        return _strategyVersions.length;
-    }
-
-    function getStrategyVersion(uint256 index)
-        external
-        view
-        onlyDelegateCall
-        returns (StrategyVersion memory)
-    {
-        return _strategyVersions[index];
-    }
-
-    function getStrategyTargets(uint256 index)
-        external
-        view
-        onlyDelegateCall
-        returns (address[] memory tokens, uint16[] memory weights)
-    {
-        tokens = _strategyAssets[index];
-        weights = _strategyTargetWeightsBps[index];
-    }
-
-    function pendingStrategyRationale() external view onlyDelegateCall returns (string memory) {
-        return _pendingStrategyRationale;
-    }
-
-    function nextStrategyRationale() external view onlyDelegateCall returns (string memory) {
-        return _nextStrategyRationale;
     }
 
     function transferOwnership(address newOwner)
@@ -128,7 +103,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             rewardShares = challengeRewardShares[msg.sender];
         }
         challengeRewardShares[msg.sender] = 0;
-        if (rewardShares != 0) _mint(msg.sender, rewardShares);
+        if (rewardShares != 0) _transfer(address(this), msg.sender, rewardShares);
         emit ChallengeRewardClaimed(msg.sender, rewardShares);
     }
 
@@ -320,7 +295,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256 strategyVersion = _strategyVersions.length;
         uint64 proposedAt = pendingStrategyProposedAt;
         string memory rationale = _pendingStrategyRationale;
-        _strategicNavBefore = navBefore;
+        _strategicNavPerShareBefore = MathEx.mulDiv(navBefore, 1e18, totalSupply);
+        _strategicExecutionLossBps = 0;
         // Factory bounds cap turnover at BPS, well below uint16.max.
         // forge-lint: disable-next-line(unsafe-typecast)
         _strategicTurnoverBps = uint16(turnover);
@@ -364,8 +340,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         nonReentrant
         returns (uint256 removed)
     {
-        if (sunset) revert VaultSunset();
-        removed = _pruneZeroBalanceRetiringAssets();
+        removed = _pruneRetiringAssetsWithinDust();
+        if (!sunset && !_hasActiveConstituent()) _enterTerminalShutdown();
     }
 
     function executeRebalanceTrades(TradeInstruction[] calldata trades)
@@ -384,6 +360,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256[] memory balancesBefore = _trackedAssetBalances();
         uint256 distanceBefore = _distanceFromTarget(weightsBefore, WEIGHT_PRECISION_SCALE);
         uint256[] memory valuesIn = new uint256[](trades.length);
+        uint256 grossLossValue;
 
         for (uint256 i = 0; i < trades.length; i++) {
             TradeInstruction calldata trade = trades[i];
@@ -399,6 +376,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             trade.tokenIn.safeApprove(rebalanceExecutor, 0);
 
             uint256 valueOut = _assetValue(trade.tokenOut, amountOut);
+            if (valuesIn[i] > valueOut) grossLossValue += valuesIn[i] - valueOut;
             uint256 minimumValue = MathEx.mulDiv(valuesIn[i], BPS - maxNavLossBps, BPS);
             if (valueOut < minimumValue) {
                 revert OracleSlippageTooHigh(
@@ -433,6 +411,59 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             }
         }
 
+        uint256 netLossValue = navBefore > navAfter ? navBefore - navAfter : 0;
+        uint256 lossValue = grossLossValue > netLossValue ? grossLossValue : netLossValue;
+        uint256 batchLossBps = lossValue == 0 ? 0 : MathEx.mulDivUp(lossValue, BPS, navBefore);
+        uint64 epochId = _syncNavLossEpoch();
+        uint256 epochLossUsedBps = uint256(_navLossEpochUsedBps) + batchLossBps;
+        if (epochLossUsedBps > maxNavLossBps) {
+            revert EpochNavLossExceeded(
+                epochId, _navLossEpochUsedBps, batchLossBps, maxNavLossBps
+            );
+        }
+        // The preceding maximum check bounds the epoch total to at most 200 BPS.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _navLossEpochUsedBps = uint16(epochLossUsedBps);
+        if (strategicRebalanceActive) {
+            uint256 cumulativeStrategyLossBps =
+                uint256(_strategicExecutionLossBps) + batchLossBps;
+            // A uint32 cumulative counter cannot be exhausted within a strategy's lifetime.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            _strategicExecutionLossBps = uint32(cumulativeStrategyLossBps);
+        }
+
+        uint256 executionId = tradeExecutionCount;
+        uint256 currentStrategyVersion = _strategyVersions.length - 1;
+        _recentTradeExecutions[executionId % RECENT_EXECUTION_CAP] = TradeExecutionRecord({
+            timestamp: uint64(block.timestamp),
+            executor: msg.sender,
+            epochId: epochId,
+            // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            strategyVersion: uint32(currentStrategyVersion),
+            navBefore: navBefore,
+            navAfter: navAfter,
+            // Both values were bounded by maxNavLossBps above.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            batchLossBps: uint16(batchLossBps),
+            // forge-lint: disable-next-line(unsafe-typecast)
+            epochLossUsedBps: uint16(epochLossUsedBps),
+            tradeCount: uint16(trades.length)
+        });
+        tradeExecutionCount = executionId + 1;
+        emit TradeExecutionRecorded(
+            executionId,
+            epochId,
+            msg.sender,
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint16(batchLossBps),
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint16(epochLossUsedBps),
+            // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint32(currentStrategyVersion)
+        );
+
         if ((challengeActive || strategicRebalanceActive) && _isWithinBands(maxWeightDeviationBps))
         {
             if (challengeActive) {
@@ -442,7 +473,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 _resumeFeeClock();
             }
         }
-        _pruneZeroBalanceRetiringAssets();
+        _pruneRetiringAssetsWithinDust();
     }
 
     function completeStrategicRebalance() external onlyDelegateCall nonReentrant {
@@ -460,17 +491,16 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function flagOutOfBand() external onlyDelegateCall nonReentrant {
         if (sunset) revert VaultSunset();
+        if (!_hasActiveConstituent()) {
+            _enterTerminalShutdown();
+            return;
+        }
         if (challengeActive) revert ChallengeAlreadyActive();
         _accrueViaVault();
         address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
         if (breached.length == 0) revert NoChallengeBreach();
 
-        uint64 startedAt = uint64(block.timestamp);
-        challengeActive = true;
-        challengeCaller = msg.sender;
-        challengeStartedAt = startedAt;
-        challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
-        emit OutOfBandChallengeStarted(msg.sender, startedAt, challengeDeadline, breached);
+        _startChallenge(msg.sender, breached);
     }
 
     function resolveOutOfBandChallenge() external onlyDelegateCall nonReentrant {
@@ -480,6 +510,12 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     function stopChallengeFees() external onlyDelegateCall onlyManager nonReentrant {
         if (sunset) revert VaultSunset();
         _resolveOutOfBandChallenge();
+    }
+
+    function finalizeTerminalShutdown() external onlyDelegateCall nonReentrant {
+        if (sunset) revert VaultAlreadySunset();
+        if (_hasActiveConstituent()) revert ActiveConstituentsRemain();
+        _enterTerminalShutdown();
     }
 
     function sunsetOtf() external onlyDelegateCall onlyManager nonReentrant {
@@ -503,46 +539,82 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         emit OtfSunset(msg.sender, timestamp);
     }
 
-    function _resolveOutOfBandChallenge() private {
-        if (!challengeActive) revert ChallengeNotActive();
+    function _enterTerminalShutdown() private {
         // Challenge deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > challengeDeadline) _accrueViaVault();
-        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+        bool beforeDeadline = challengeActive && block.timestamp <= challengeDeadline;
 
-        // forge-lint: disable-next-line(block-timestamp)
-        bool timely = block.timestamp <= challengeDeadline;
+        _accrueViaVault();
+        if (beforeDeadline) {
+            IManagedOTFVaultModuleCallbacks(address(this)).moduleReleaseChallengeFees();
+        }
+
+        if (strategyProposalPending) {
+            _clearPendingStrategy();
+            emit TargetWeightsProposalCancelled(rebalanceCount, manager);
+        }
+        delete _nextStrategyRationale;
+
+        // Freeze the terminal mandate at zero even if the registry later reapproves an asset.
+        for (uint256 i = 0; i < _assets.length; i++) {
+            delete targetWeightBps[_assets[i]];
+        }
+
         challengeActive = false;
         challengeCaller = address(0);
         challengeStartedAt = 0;
         challengeDeadline = 0;
+        strategicRebalanceActive = false;
+        strategicRebalanceStartedAt = 0;
+        _strategicExecutionLossBps = 0;
+
+        uint64 timestamp = uint64(block.timestamp);
+        sunset = true;
+        sunsetAt = timestamp;
+        _feeState = FeeState.Sunset;
+        emit OtfSunset(msg.sender, timestamp);
+    }
+
+    function _resolveOutOfBandChallenge() private returns (uint256 releasedFeeShares) {
+        if (!challengeActive) revert ChallengeNotActive();
+        _accrueViaVault();
+        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+
+        // forge-lint: disable-next-line(block-timestamp)
+        bool timely = block.timestamp <= challengeDeadline;
+        if (timely) {
+            releasedFeeShares = IManagedOTFVaultModuleCallbacks(address(this))
+                .moduleReleaseChallengeFees();
+        }
 
         if (strategicRebalanceActive) {
             _completeStrategicRebalance();
         } else {
-            _pruneZeroBalanceRetiringAssets();
+            _pruneRetiringAssetsWithinDust();
         }
-        if (timely) {
-            _accrueViaVault();
-        } else {
-            _resumeFeeClock();
-        }
+        challengeActive = false;
+        challengeCaller = address(0);
+        challengeStartedAt = 0;
+        challengeDeadline = 0;
+        if (!timely) _resumeFeeClock();
         emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), timely);
     }
 
     function _completeStrategicRebalance() private {
         uint64 completedAt = uint64(block.timestamp);
-        _pruneZeroBalanceRetiringAssets();
+        _pruneRetiringAssetsWithinDust();
         (uint256[] memory actualWeights, uint256 navAfter) = _currentWeightsAndNav();
+        uint256 navPerShareAfter = MathEx.mulDiv(navAfter, 1e18, totalSupply);
         uint256 rebalanceId = rebalanceCount;
         uint256 strategyVersion = _strategyVersions.length - 1;
         _strategyVersions[strategyVersion].completedAt = completedAt;
         _recentRebalances[rebalanceId % RECENT_REBALANCE_CAP] = RebalanceRecord({
             timestamp: completedAt,
             manager: manager,
-            navBefore: _strategicNavBefore,
-            navAfter: navAfter,
+            navPerShareBefore: _strategicNavPerShareBefore,
+            navPerShareAfter: navPerShareAfter,
             turnoverBps: _strategicTurnoverBps,
+            executionLossBps: _strategicExecutionLossBps,
             // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
             // forge-lint: disable-next-line(unsafe-typecast)
             strategyVersion: uint32(strategyVersion)
@@ -550,6 +622,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         rebalanceCount = rebalanceId + 1;
         strategicRebalanceActive = false;
         strategicRebalanceStartedAt = 0;
+        _strategicExecutionLossBps = 0;
         lastCompletedStrategyTimestamp = completedAt;
         emit StrategicRebalanceCompleted(rebalanceId, manager, completedAt, actualWeights);
         emit StrategyVersionCompleted(strategyVersion, completedAt);
@@ -564,32 +637,19 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     function _withdrawManagerFees() private returns (uint256 feeShares) {
         if (sunset) return _accrueViaVault();
         if (challengeActive) {
+            feeShares = _accrueViaVault();
             // Challenge deadlines intentionally use chain time.
             // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp > challengeDeadline) return _accrueViaVault();
-            if (!_isWithinBands(maxWeightDeviationBps)) return 0;
-            feeShares = IManagedOTFVaultModuleCallbacks(address(this))
-                .moduleMintFees(block.timestamp - uint256(lastFeeAccrualTimestamp));
-            lastFeeAccrualTimestamp = uint64(block.timestamp);
-            challengeActive = false;
-            challengeCaller = address(0);
-            challengeStartedAt = 0;
-            challengeDeadline = 0;
-            emit OutOfBandChallengeResolved(msg.sender, uint64(block.timestamp), true);
-            emit ManagerFeeAccrualResumed(uint64(block.timestamp));
-            return feeShares;
+            if (block.timestamp > challengeDeadline) return feeShares;
+            if (!_isWithinBands(maxWeightDeviationBps)) return feeShares;
+            return _resolveOutOfBandChallenge();
         }
 
         if (!_isWithinBands(maxWeightDeviationBps)) {
             address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
             if (breached.length != 0) {
                 feeShares = _accrueViaVault();
-                uint64 startedAt = uint64(block.timestamp);
-                challengeActive = true;
-                challengeCaller = msg.sender;
-                challengeStartedAt = startedAt;
-                challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
-                emit OutOfBandChallengeStarted(msg.sender, startedAt, challengeDeadline, breached);
+                _startChallenge(msg.sender, breached);
             }
             return feeShares;
         }
@@ -695,7 +755,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     }
 
     function _isWithinBands(uint16 deviationBps) private view returns (bool) {
-        if (!_retiringBalancesAreZero()) return false;
+        if (!_retiringBalancesAreWithinDust()) return false;
         return _calculator.isWithinBands(
             address(this), _assets, _targetWeights(), oracleRegistry, deviationBps
         );
@@ -785,6 +845,18 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function _targetWeights() private view returns (uint256[] memory weights) {
         return _effectiveTargetWeights();
+    }
+
+    function _syncNavLossEpoch() private returns (uint64 epochId) {
+        uint256 calculatedEpochId =
+            (block.timestamp - uint256(navLossEpochAnchor)) / NAV_LOSS_EPOCH;
+        // Epoch counts fit uint64 for the lifetime of the chain.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        epochId = uint64(calculatedEpochId);
+        if (epochId != _navLossEpochId) {
+            _navLossEpochId = epochId;
+            _navLossEpochUsedBps = 0;
+        }
     }
 
     function _weightOf(address[] memory assets_, uint256[] memory weights_, address asset)

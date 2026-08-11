@@ -5,6 +5,7 @@ import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
+import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
@@ -74,7 +75,9 @@ abstract contract ProtocolTestBase is TestBase {
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
-        ManagedOTFVault implementation = new ManagedOTFVault(calculator, address(strategy));
+        ManagedOTFVaultView viewModule = new ManagedOTFVaultView();
+        ManagedOTFVault implementation =
+            new ManagedOTFVault(calculator, address(strategy), address(viewModule));
         factory = new OTFFactory(
             address(implementation),
             address(collector),
@@ -135,7 +138,8 @@ abstract contract ProtocolTestBase is TestBase {
             creatorFeeBpsPerYear: 100,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250
+            challengeWeightDeviationBps: 250,
+            deploymentSalt: keccak256("default-test-deployment")
         });
     }
 

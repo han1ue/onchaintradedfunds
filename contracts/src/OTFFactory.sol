@@ -37,6 +37,8 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
+    uint256 public constant PROTOCOL_VERSION = 2;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
     error NotOwner();
@@ -52,6 +54,7 @@ contract OTFFactory is IAdapterAllowlist {
     error InvalidOTFName();
     error StrategyRationaleRequired();
     error StrategyRationaleTooLong(uint256 length);
+    error InvalidDeploymentSalt();
     error Reentrancy();
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
@@ -278,9 +281,10 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.manager == address(0) || params.feeRecipient == address(0)) {
             revert ZeroAddress();
         }
-        if (params.initialShareSupply <= MINIMUM_LIQUIDITY_SHARES) {
+        if (params.deploymentSalt == bytes32(0)) revert InvalidDeploymentSalt();
+        if (params.initialShareSupply < MINIMUM_INITIAL_SHARE_SUPPLY) {
             revert InitialShareSupplyTooSmall(
-                params.initialShareSupply, MINIMUM_LIQUIDITY_SHARES + 1
+                params.initialShareSupply, MINIMUM_INITIAL_SHARE_SUPPLY
             );
         }
         if (params.initialAssets.length != params.initialTargetWeightsBps.length) {
@@ -328,6 +332,8 @@ contract OTFFactory is IAdapterAllowlist {
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode(creator, nonce, keccak256(abi.encode(params))));
+        return keccak256(
+            abi.encode(creator, nonce, params.deploymentSalt, keccak256(abi.encode(params)))
+        );
     }
 }

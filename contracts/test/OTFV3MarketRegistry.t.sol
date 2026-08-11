@@ -43,7 +43,10 @@ contract MockV3Factory {
         return _pool[_key(tokenA, tokenB, fee)];
     }
 
-    function createPool(address tokenA, address tokenB, uint24 fee) external returns (address pool) {
+    function createPool(address tokenA, address tokenB, uint24 fee)
+        external
+        returns (address pool)
+    {
         bytes32 key = _key(tokenA, tokenB, fee);
         require(_pool[key] == address(0), "EXISTS");
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
@@ -122,17 +125,32 @@ contract OTFV3MarketRegistryTest is ProtocolTestBase {
         registry.createOfficialPool(address(vault));
     }
 
-    function testPrecreatedCanonicalPoolIsAdoptedInsteadOfBlockingCreation() public {
+    function testPrecreatedCanonicalPoolRevertsVaultCreationAtomically() public {
         VaultInitParams memory params = _defaultParams();
         uint256 nonce = factory.creatorNonce(address(this));
         address predicted = factory.predictVaultAddress(address(this), nonce, params);
         address existing = v3Factory.createPool(predicted, address(usdg), 500);
         MockV3Pool(existing).initialize(1234);
+        uint256 vaultCountBefore = factory.vaultCount();
+        uint256 tokenABalanceBefore = tokenA.balanceOf(address(this));
+        uint256 tokenBBalanceBefore = tokenB.balanceOf(address(this));
 
+        vm.expectPartialRevert(OTFV3MarketRegistry.CanonicalPoolAlreadyExists.selector);
+        factory.createVault(params);
+
+        assertEq(factory.creatorNonce(address(this)), nonce);
+        assertEq(factory.vaultCount(), vaultCountBefore);
+        assertEq(predicted.code.length, 0);
+        assertEq(tokenA.balanceOf(address(this)), tokenABalanceBefore);
+        assertEq(tokenB.balanceOf(address(this)), tokenBBalanceBefore);
+        assertEq(uint256(MockV3Pool(existing).sqrtPriceX96()), 1234);
+
+        params.deploymentSalt = keccak256("available-canonical-pool");
+        address nextPredicted = factory.predictVaultAddress(address(this), nonce, params);
         ManagedOTFVault second = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(address(second), predicted);
-        assertEq(registry.officialPool(address(second)), existing);
-        assertEq(uint256(MockV3Pool(existing).sqrtPriceX96()), 1234);
+        assertEq(address(second), nextPredicted);
+        assertTrue(nextPredicted != predicted);
+        assertTrue(registry.officialPool(nextPredicted) != address(0));
     }
 }

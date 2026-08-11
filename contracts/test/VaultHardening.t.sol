@@ -41,10 +41,19 @@ contract VaultHardeningTest is ProtocolTestBase {
 
     function testFactoryRejectsInitialSupplyThatCannotFundLockedLiquidity() public {
         VaultInitParams memory params = _defaultParams();
-        params.initialShareSupply = factory.MINIMUM_LIQUIDITY_SHARES();
+        params.initialShareSupply = ONE - 1;
 
         vm.expectPartialRevert(OTFFactory.InitialShareSupplyTooSmall.selector);
         factory.createVault(params);
+    }
+
+    function testFactoryAcceptsOneWholeInitialShare() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialShareSupply = ONE;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.totalSupply(), ONE);
     }
 
     function testDonationCannotBypassMaximumInputProtection() public {

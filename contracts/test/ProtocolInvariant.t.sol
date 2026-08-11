@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
+import { IManagedOTFVaultView } from "../src/interfaces/IManagedOTFVaultView.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
@@ -338,7 +339,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         );
         assertEq(vault.rebalanceCount(), handler.successfulRebalances());
         uint256 expectedRecent = vault.rebalanceCount() < 16 ? vault.rebalanceCount() : 16;
-        assertEq(vault.recentRebalanceCount(), expectedRecent);
+        assertEq(IManagedOTFVaultView(address(vault)).recentRebalanceCount(), expectedRecent);
         assertEq(handler.invalidRebalancesThatSucceeded(), 0);
     }
 

@@ -80,7 +80,7 @@ function normalizedStorage(layout) {
       encoding: type.encoding,
       numberOfBytes: type.numberOfBytes,
       typeLabel: type.label.replace(
-        /(?:ManagedOTFVault|ManagedOTFVaultStrategy|ManagedOTFVaultStorage)\./g,
+        /(?:ManagedOTFVault|ManagedOTFVaultStrategy|ManagedOTFVaultView|ManagedOTFVaultStorage)\./g,
         "OTF.",
       ),
     };
@@ -102,6 +102,9 @@ const vaultLayout = normalizedStorage(
 const strategyLayout = normalizedStorage(
   artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy").storageLayout,
 );
+const viewLayout = normalizedStorage(
+  artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView").storageLayout,
+);
 const canonicalLayout = normalizedStorage(
   artifact("ManagedOTFVaultStorage.sol", "ManagedOTFVaultStorage").storageLayout,
 );
@@ -113,12 +116,17 @@ assert(
   JSON.stringify(strategyLayout) === JSON.stringify(canonicalLayout),
   "strategy declares storage outside the canonical layout",
 );
+assert(
+  JSON.stringify(viewLayout) === JSON.stringify(canonicalLayout),
+  "view module declares storage outside the canonical layout",
+);
 
 const productionContracts = [
   ["AssetRegistry.sol", "AssetRegistry"],
   ["FeeCollector.sol", "FeeCollector"],
   ["ManagedOTFVault.sol", "ManagedOTFVault"],
   ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
+  ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
   ["OracleRegistry.sol", "OracleRegistry"],
   ["OTFFactory.sol", "OTFFactory"],
   ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
@@ -227,6 +235,8 @@ assert(
   vaultFunctions.includes("strategyModuleCodehash"),
   "strategy module codehash is not exposed",
 );
+assert(vaultFunctions.includes("viewModule"), "view module identity is not exposed");
+assert(vaultFunctions.includes("viewModuleCodehash"), "view module codehash is not exposed");
 
 console.log(
   `Contract security checks passed: ERC-7621 ID 0x${erc7621InterfaceId.toString(16)}, ${canonicalLayout.length} canonical storage entries, and ${productionContracts.length} production bytecode limits verified.`,

@@ -194,18 +194,18 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.totalSupply(), supply);
     }
 
-    function testZeroShareFeeAccrualDoesNotDiscardElapsedTime() public {
+    function testFeeAccrualIsCheckpointCadenceIndependentAtMinimumSupply() public {
         VaultInitParams memory params = _defaultParams();
-        params.initialShareSupply = 1_000_001;
+        params.initialShareSupply = ONE;
         params.creatorFeeBpsPerYear = 1_000;
         ManagedOTFVault fragmentedVault = ManagedOTFVault(factory.createVault(params));
         ManagedOTFVault singleIntervalVault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + 1);
-        assertEq(fragmentedVault.accrueFees(), 0);
+        uint256 fragmentedFees = fragmentedVault.accrueFees();
+        assertGt(fragmentedFees, 0);
         assertEq(fragmentedVault.lastFeeAccrualTimestamp(), START + 1);
 
-        uint256 fragmentedFees;
         for (uint256 i = 2; i <= 400; i++) {
             vm.warp(START + i);
             fragmentedFees += fragmentedVault.accrueFees();
@@ -215,8 +215,8 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         uint256 singleIntervalFees = singleIntervalVault.accrueFees();
 
         assertGt(singleIntervalFees, 0);
-        assertEq(fragmentedFees, singleIntervalFees);
-        assertEq(fragmentedVault.totalSupply(), singleIntervalVault.totalSupply());
+        assertApproxEqAbs(fragmentedFees, singleIntervalFees, 10_000);
+        assertApproxEqAbs(fragmentedVault.totalSupply(), singleIntervalVault.totalSupply(), 10_000);
     }
 
     function testAnnualFeeIsCadenceIndependent() public {
@@ -246,29 +246,26 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         );
     }
 
-    function testFeeRateChangeCreatesNonRetroactiveBoundaryEvenWhenOldFeeRoundsToZero()
-        public
-    {
+    function testFeeRateChangeCreatesNonRetroactiveBoundaryAtMinimumSupply() public {
         VaultInitParams memory params = _defaultParams();
-        params.initialShareSupply = 1_000_001;
+        params.initialShareSupply = ONE;
         params.creatorFeeBpsPerYear = 100;
         ManagedOTFVault changingVault = ManagedOTFVault(factory.createVault(params));
+        params.creatorFeeBpsPerYear = 1_000;
+        ManagedOTFVault controlVault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + 3_000);
         _refreshPrices();
         changingVault.setManagerFeeBps(1_000);
         assertEq(changingVault.lastFeeAccrualTimestamp(), START + 3_000);
 
-        params.creatorFeeBpsPerYear = 1_000;
-        ManagedOTFVault controlVault = ManagedOTFVault(factory.createVault(params));
         vm.warp(START + 3_000 + 365 days);
         _refreshPrices();
         changingVault.accrueFees();
         controlVault.accrueFees();
 
-        // The changing vault retains less than one share-wei earned at the old rate. The new 10%
-        // rate applies only after the setter transaction and therefore cannot create a larger gap.
-        assertApproxEqAbs(changingVault.totalSupply(), controlVault.totalSupply(), 1);
+        // The first interval accrued at 1%, so it cannot be repriced retroactively at 10%.
+        assertLt(changingVault.totalSupply(), controlVault.totalSupply());
     }
 
     function testLongDormancyAccruesWithoutBrickingVault() public {

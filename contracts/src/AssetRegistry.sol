@@ -2,12 +2,15 @@
 pragma solidity ^0.8.24;
 
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IERC20Metadata } from "./interfaces/IERC20.sol";
 
 contract AssetRegistry is IAssetRegistry {
     error NotOwner();
     error NotPendingOwner();
     error ZeroAddress();
     error AssetNotContract(address asset);
+    error TokenDecimalsUnavailable(address asset);
+    error UnsupportedAssetDecimals(address asset, uint8 decimals_);
 
     event AssetApprovalChanged(address indexed asset, bool approved);
     event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
@@ -44,7 +47,14 @@ contract AssetRegistry is IAssetRegistry {
 
     function setAssetApproved(address asset, bool approved) external onlyOwner {
         if (asset == address(0)) revert ZeroAddress();
-        if (approved && asset.code.length == 0) revert AssetNotContract(asset);
+        if (approved) {
+            if (asset.code.length == 0) revert AssetNotContract(asset);
+            try IERC20Metadata(asset).decimals() returns (uint8 decimals_) {
+                if (decimals_ != 18) revert UnsupportedAssetDecimals(asset, decimals_);
+            } catch {
+                revert TokenDecimalsUnavailable(asset);
+            }
+        }
         approvedAssets[asset] = approved;
         emit AssetApprovalChanged(asset, approved);
     }

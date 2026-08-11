@@ -5,6 +5,7 @@ import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
+import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
@@ -64,7 +65,9 @@ contract RebalanceCooldownTest is TestBase {
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
-        ManagedOTFVault implementation = new ManagedOTFVault(calculator, address(strategy));
+        ManagedOTFVaultView viewModule = new ManagedOTFVaultView();
+        ManagedOTFVault implementation =
+            new ManagedOTFVault(calculator, address(strategy), address(viewModule));
         FeeCollector collector = new FeeCollector(address(0xCAFE));
         factory = new OTFFactory(
             address(implementation),
@@ -275,11 +278,7 @@ contract RebalanceCooldownTest is TestBase {
         return ManagedOTFVault(factory.createVault(_params(feeBps)));
     }
 
-    function _params(uint16 feeBps)
-        internal
-        view
-        returns (VaultInitParams memory params)
-    {
+    function _params(uint16 feeBps) internal view returns (VaultInitParams memory params) {
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
@@ -305,7 +304,8 @@ contract RebalanceCooldownTest is TestBase {
             creatorFeeBpsPerYear: feeBps,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250
+            challengeWeightDeviationBps: 250,
+            deploymentSalt: keccak256("rebalance-cooldown-deployment")
         });
     }
 

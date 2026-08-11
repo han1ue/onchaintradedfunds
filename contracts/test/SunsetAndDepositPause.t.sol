@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
+import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract SunsetAndDepositPauseTest is ProtocolTestBase {
@@ -88,8 +89,7 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
         vault.setNextStrategyRationale("No strategy changes after sunset.");
         vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
         vault.setManagerFeeBps(0);
-        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
-        vault.pruneRetiredAssets();
+        assertEq(vault.pruneRetiredAssets(), 0);
 
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
@@ -111,6 +111,61 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
         assertEq(vault.balanceOf(address(this)), sharesBefore - ONE);
         assertGt(tokenA.balanceOf(address(this)), tokenABefore);
         assertGt(tokenB.balanceOf(address(this)), tokenBBefore);
+    }
+
+    function testSingleAssetVaultRemainsValidUntilItsAssetIsRevoked() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](1);
+        params.initialAssets[0] = address(tokenA);
+        params.initialTargetWeightsBps = new uint16[](1);
+        params.initialTargetWeightsBps[0] = 10_000;
+        params.initialAmounts = new uint256[](1);
+        params.initialAmounts[0] = 1_000 * ONE;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        vm.expectRevert(ManagedOTFVaultStorage.ActiveConstituentsRemain.selector);
+        vault.finalizeTerminalShutdown();
+        assertEq(vault.previewMint(ONE).length, 1);
+
+        assetRegistry.setAssetApproved(address(tokenA), false);
+        vm.prank(ALICE);
+        vault.flagOutOfBand();
+
+        assertTrue(vault.sunset());
+        assertFalse(vault.challengeActive());
+        assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Sunset));
+
+        assetRegistry.setAssetApproved(address(tokenA), true);
+        assertEq(vault.targetWeightBps(address(tokenA)), 0);
+        assertFalse(vault.isConstituent(address(tokenA)));
+        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
+        vault.previewMint(ONE);
+
+        uint256[] memory minimums = new uint256[](1);
+        uint256 balanceBefore = tokenA.balanceOf(address(this));
+        vault.redeem(ONE, address(this), address(this), minimums);
+        assertGt(tokenA.balanceOf(address(this)), balanceBefore);
+    }
+
+    function testTerminalShutdownClosesAnExistingChallenge() public {
+        ManagedOTFVault vault = _createVault();
+        tokenA.mint(address(vault), 100 * ONE);
+        _refreshPrices();
+        vm.prank(ALICE);
+        vault.flagOutOfBand();
+        assertTrue(vault.challengeActive());
+
+        assetRegistry.setAssetApproved(address(tokenA), false);
+        assetRegistry.setAssetApproved(address(tokenB), false);
+        vm.prank(BOB);
+        vault.finalizeTerminalShutdown();
+
+        assertTrue(vault.sunset());
+        assertFalse(vault.challengeActive());
+        assertFalse(vault.strategicRebalanceActive());
+        assertFalse(vault.strategyProposalPending());
+        assertEq(vault.challengeCaller(), address(0));
+        assertEq(vault.challengeDeadline(), 0);
     }
 
     function testSunsetRequiresStrategyCooldownToFinish() public {

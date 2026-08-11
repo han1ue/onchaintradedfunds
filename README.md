@@ -142,6 +142,8 @@ flowchart LR
 - Production integration point for an official Robinhood Chain stock-token registry.
 - A revoked constituent immediately receives a 0% effective target; remaining approved targets
   are renormalized proportionally to exactly 10,000 bps whenever at least one remains.
+- If no approved positive-target constituent remains, the vault enters permissionless,
+  irreversible terminal shutdown instead of opening a normal challenge.
 
 `OracleRegistry`
 
@@ -405,7 +407,7 @@ Retained rebalance protections:
 - Approved assets only.
 - Approved trading adapters only.
 - Onchain strategy-turnover disclosure.
-- Maximum NAV loss.
+- Cumulative seven-day NAV-loss budget; gains do not restore consumed capacity.
 - Narrow completion bands and wider challenge bands.
 - Protocol-wide minimum target weight, initialized at 1% and adjustable by the factory owner.
 - Fresh onchain prices.
@@ -432,6 +434,12 @@ and when no challenge, pending proposal, or strategic rebalance is active. Sunse
 permanently disables new deposits, future fee accrual, challenges, target changes, and constrained
 trades. Standard share transfers and proportional redemptions remain available so holders can wind
 down without depending on the manager, oracle freshness, or a separate protocol action.
+
+If registry revocations leave no approved positive-target constituent, anyone may call
+`finalizeTerminalShutdown()`. `flagOutOfBand()` detects the same condition and terminalizes
+instead of opening a normal challenge. This bypasses the manager cooldown, closes any existing
+challenge according to its deadline economics, and is irreversible even if an asset is later
+reapproved. Redemptions and bounded retiring-dust pruning remain available.
 
 Separately, the factory owner may call `setDepositsPaused(bool)` to reversibly pause new OTF
 creation and deposits across all OTFs

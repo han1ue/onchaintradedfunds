@@ -10,11 +10,35 @@ import { AggregatorV3Interface } from "../src/interfaces/AggregatorV3Interface.s
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
+import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryAndRegistryTest is ProtocolTestBase {
+    function testFactoryReportsSupportedProtocolVersion() public view {
+        assertEq(factory.PROTOCOL_VERSION(), 2);
+    }
+
+    function testFactoryRejectsZeroDeploymentSalt() public {
+        VaultInitParams memory params = _defaultParams();
+        params.deploymentSalt = bytes32(0);
+
+        vm.expectRevert(OTFFactory.InvalidDeploymentSalt.selector);
+        factory.createVault(params);
+    }
+
+    function testDeploymentSaltChangesPredictedAddressWithoutChangingConfiguration() public view {
+        VaultInitParams memory first = _defaultParams();
+        VaultInitParams memory second = _defaultParams();
+        second.deploymentSalt = keccak256("another-deployment");
+
+        address firstAddress = factory.predictVaultAddress(address(this), 0, first);
+        address secondAddress = factory.predictVaultAddress(address(this), 0, second);
+        assertTrue(firstAddress != secondAddress);
+    }
+
     function testFactoryCreatesAndEnumeratesVault() public {
         VaultInitParams memory params = _defaultParams();
         address predicted = factory.predictVaultAddress(address(this), 0, params);
@@ -345,6 +369,21 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 0, OracleValidationMode.RobinhoodStockToken
         );
+    }
+
+    function testAssetRegistryRejectsNonEighteenDecimalConstituents() public {
+        MockStockToken sixDecimalToken = new MockStockToken("Six Decimal", "SIX", 6);
+
+        vm.expectPartialRevert(AssetRegistry.UnsupportedAssetDecimals.selector);
+        assetRegistry.setAssetApproved(address(sixDecimalToken), true);
+
+        assertFalse(assetRegistry.isApprovedAsset(address(sixDecimalToken)));
+    }
+
+    function testAssetValuePreservesSubTokenPrecision() public {
+        PortfolioCalculator calculator = new PortfolioCalculator();
+
+        assertEq(calculator.assetValue(address(tokenA), 1, address(oracleRegistry)), 100);
     }
 
     function testFactoryRejectsNonContractDependencies() public {

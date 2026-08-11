@@ -59,7 +59,9 @@ contract PortfolioCalculator {
                 activeWeightTotal += storedWeight;
             }
         }
-        if (storedWeightTotal != BPS) revert InvalidTargetWeightSum(storedWeightTotal);
+        if (storedWeightTotal != 0 && storedWeightTotal != BPS) {
+            revert InvalidTargetWeightSum(storedWeightTotal);
+        }
         if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
 
         uint256 assignedWeight;
@@ -138,10 +140,8 @@ contract PortfolioCalculator {
         returns (uint256 value)
     {
         for (uint256 i = 0; i < assets.length; i++) {
-            uint8 tokenDecimals = _tokenDecimals(assets[i]);
-            value += MathEx.mulDiv(
-                IERC20(assets[i]).balanceOf(vault), 1e18, 10 ** uint256(tokenDecimals)
-            );
+            _tokenDecimals(assets[i]);
+            value += IERC20(assets[i]).balanceOf(vault);
         }
     }
 
@@ -252,11 +252,10 @@ contract PortfolioCalculator {
     ) private view returns (uint256) {
         if (rawBalance == 0) return 0;
         (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry);
-        uint8 tokenDecimals = _tokenDecimals(asset);
+        _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
-        uint256 tokenAdjusted = MathEx.mulDiv(rawBalance, price, 10 ** uint256(tokenDecimals));
-        return MathEx.mulDiv(tokenAdjusted, 1e18, 10 ** uint256(priceDecimals));
+        return MathEx.mulDiv(rawBalance, price, 10 ** uint256(priceDecimals));
     }
 
     function _validPrice(address asset, address oracleRegistry)
@@ -301,7 +300,7 @@ contract PortfolioCalculator {
 
     function _tokenDecimals(address token) private view returns (uint8 tokenDecimals) {
         try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
-            if (decimals_ > 36) revert UnsupportedDecimals(token, decimals_);
+            if (decimals_ != 18) revert UnsupportedDecimals(token, decimals_);
             return decimals_;
         } catch {
             revert TokenDecimalsUnavailable(token);

@@ -121,7 +121,9 @@ contract ProtocolFuzzTest is ProtocolTestBase {
     ) public {
         VaultInitParams memory params = _defaultParams();
         uint256 minimum = factory.MINIMUM_LIQUIDITY_SHARES();
-        params.initialShareSupply = bound(rawInitialSupply, minimum + 1, 1_000 * ONE);
+        params.initialShareSupply = bound(
+            rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE
+        );
         uint256 initialAmount = bound(rawInitialAmount, 1, 1_000 * ONE);
         params.initialAmounts[0] = initialAmount;
         params.initialAmounts[1] = initialAmount;

@@ -5,7 +5,7 @@ import { ERC20Base } from "./ERC20Base.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { MathEx } from "./libraries/MathEx.sol";
-import { RebalanceRecord, StrategyVersion } from "./VaultTypes.sol";
+import { RebalanceRecord, StrategyVersion, TradeExecutionRecord } from "./VaultTypes.sol";
 
 interface IProtocolPortfolioLimits {
     function minTargetWeightBps() external view returns (uint16);
@@ -22,12 +22,17 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
+    uint256 public constant NAV_LOSS_EPOCH = 7 days;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    /// @notice Maximum retiring balance that may be written off and pruned.
+    /// @dev Approved constituents are restricted to 18 decimals, so this is 1e-9 tokens.
+    uint256 public constant MAX_RETIRING_DUST = 1_000_000_000;
     uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
     uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 1_000;
     uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
     uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
     uint256 internal constant RECENT_REBALANCE_CAP = 16;
+    uint256 internal constant RECENT_EXECUTION_CAP = 16;
     bytes4 internal constant ERC165_INTERFACE_ID = 0x01ffc9a7;
     bytes4 internal constant ERC173_INTERFACE_ID = 0x7f5828d0;
     bytes4 internal constant ERC7621_INTERFACE_ID = 0xc9c80f73;
@@ -76,6 +81,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
     error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
+    error EpochNavLossExceeded(
+        uint64 epochId, uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
+    );
     error OracleSlippageTooHigh(
         address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
     );
@@ -111,6 +119,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error ZeroAddress();
     error VaultAlreadySunset();
     error VaultSunset();
+    error ActiveConstituentsRemain();
     error ProtocolDepositsPaused();
 
     enum FeeState {
@@ -172,6 +181,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         uint256 amountIn,
         uint256 amountOut
     );
+    event TradeExecutionRecorded(
+        uint256 indexed executionId,
+        uint64 indexed epochId,
+        address indexed executor,
+        uint16 batchLossBps,
+        uint16 epochLossUsedBps,
+        uint32 strategyVersion
+    );
     event OutOfBandChallengeStarted(
         address indexed caller, uint64 startedAt, uint64 deadline, address[] breachedAssets
     );
@@ -196,7 +213,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     );
     event Rebalanced(address[] newTokens, uint256[] newWeights);
     event ConstituentRemoved(address indexed asset);
-    event OtfSunset(address indexed manager, uint64 sunsetAt);
+    event RetiringDustWrittenOff(address indexed asset, uint256 amount);
+    event OtfSunset(address indexed caller, uint64 sunsetAt);
 
     bool internal _initialized;
     uint256 internal _entered;
@@ -234,7 +252,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => uint256) public challengeRewardShares;
 
     FeeState internal _feeState;
-    uint256 internal _strategicNavBefore;
+    uint256 internal _strategicNavPerShareBefore;
     uint16 internal _strategicTurnoverBps;
     address[] internal _assets;
     address[] internal _pendingAssets;
@@ -251,6 +269,13 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint16 internal _protocolFeeSplitRemainderBps;
     bool public sunset;
     uint64 public sunsetAt;
+    uint64 public navLossEpochAnchor;
+    uint64 internal _navLossEpochId;
+    uint16 internal _navLossEpochUsedBps;
+    uint32 internal _strategicExecutionLossBps;
+    uint256 public tradeExecutionCount;
+    TradeExecutionRecord[16] internal _recentTradeExecutions;
+    uint256 internal _challengeFeeAccrualRemainderWad;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();
@@ -288,6 +313,13 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         return targetWeightBps[asset] == 0 || !IAssetRegistry(assetRegistry).isApprovedAsset(asset);
     }
 
+    function _hasActiveConstituent() internal view returns (bool) {
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (!_isRetiringAsset(_assets[i])) return true;
+        }
+        return false;
+    }
+
     function _effectiveTargetWeights() internal view returns (uint256[] memory weights) {
         uint256 length = _assets.length;
         weights = new uint256[](length);
@@ -304,7 +336,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
             }
         }
 
-        if (storedWeightTotal != BPS) revert InvalidWeightSum(storedWeightTotal);
+        if (storedWeightTotal != 0 && storedWeightTotal != BPS) {
+            revert InvalidWeightSum(storedWeightTotal);
+        }
         if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
 
         uint256 assignedWeight;
@@ -324,10 +358,13 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         if (remainder != 0) revert InvalidWeightSum(BPS - remainder);
     }
 
-    function _retiringBalancesAreZero() internal view returns (bool) {
+    function _retiringBalancesAreWithinDust() internal view returns (bool) {
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) {
+            if (
+                _isRetiringAsset(asset)
+                    && IERC20(asset).balanceOf(address(this)) > MAX_RETIRING_DUST
+            ) {
                 return false;
             }
         }
@@ -358,37 +395,92 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         uint256 count;
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) count++;
+            if (
+                _isRetiringAsset(asset)
+                    && IERC20(asset).balanceOf(address(this)) > MAX_RETIRING_DUST
+            ) count++;
         }
         breached = new address[](count);
         uint256 cursor;
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) != 0) {
+            if (
+                _isRetiringAsset(asset)
+                    && IERC20(asset).balanceOf(address(this)) > MAX_RETIRING_DUST
+            ) {
                 breached[cursor++] = asset;
             }
         }
     }
 
-    function _pruneZeroBalanceRetiringAssets() internal returns (uint256 removed) {
-        uint256[] memory effectiveWeights = _effectiveTargetWeights();
-        uint256 writeIndex;
+    function _startChallenge(address caller, address[] memory breached) internal {
+        uint64 startedAt = uint64(block.timestamp);
+        challengeActive = true;
+        challengeCaller = caller;
+        challengeStartedAt = startedAt;
+        challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
+        _feeState = FeeState.Escrowed;
+        _challengeFeeAccrualRemainderWad = 0;
+        emit OutOfBandChallengeStarted(caller, startedAt, challengeDeadline, breached);
+    }
+
+    function _pruneRetiringAssetsWithinDust() internal returns (uint256 removed) {
         uint256 length = _assets.length;
+
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            if (
+                _isRetiringAsset(asset)
+                    && IERC20(asset).balanceOf(address(this)) <= MAX_RETIRING_DUST
+            ) {
+                removed++;
+            }
+        }
+        if (removed == 0) return 0;
+        removed = 0;
+
+        uint256 writeIndex;
+        uint256 remainingWeightTotal;
 
         for (uint256 readIndex = 0; readIndex < length; readIndex++) {
             address asset = _assets[readIndex];
-            if (_isRetiringAsset(asset) && IERC20(asset).balanceOf(address(this)) == 0) {
+            uint256 balance = IERC20(asset).balanceOf(address(this));
+            if (_isRetiringAsset(asset) && balance <= MAX_RETIRING_DUST) {
                 delete targetWeightBps[asset];
                 removed++;
+                if (balance != 0) emit RetiringDustWrittenOff(asset, balance);
                 emit ConstituentRemoved(asset);
                 continue;
             }
 
-            targetWeightBps[asset] = uint16(effectiveWeights[readIndex]);
+            remainingWeightTotal += targetWeightBps[asset];
             if (writeIndex != readIndex) _assets[writeIndex] = asset;
             writeIndex++;
         }
 
         while (_assets.length > writeIndex) _assets.pop();
+        if (remainingWeightTotal == 0 || remainingWeightTotal == BPS) return removed;
+
+        uint256 assignedWeight;
+        for (uint256 i = 0; i < _assets.length; i++) {
+            address asset = _assets[i];
+            uint256 storedWeight = targetWeightBps[asset];
+            if (storedWeight == 0) continue;
+            uint256 normalizedWeight = MathEx.mulDiv(storedWeight, BPS, remainingWeightTotal);
+            // A normalized basis-point weight cannot exceed BPS.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            targetWeightBps[asset] = uint16(normalizedWeight);
+            assignedWeight += normalizedWeight;
+        }
+
+        uint256 remainder = BPS - assignedWeight;
+        for (uint256 i = 0; i < _assets.length && remainder != 0; i++) {
+            address asset = _assets[i];
+            if (targetWeightBps[asset] != 0) {
+                targetWeightBps[asset]++;
+                remainder--;
+            }
+        }
+        if (remainder != 0) revert InvalidWeightSum(BPS - remainder);
     }
 }

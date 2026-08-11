@@ -62,6 +62,12 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.escrowedManagerFeeShares(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), 0);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
+
+        uint256 recipientBalanceAfterRelease = vault.balanceOf(FEE_RECIPIENT);
+        vm.warp(block.timestamp + 1 days);
+        _setPrices(100_00000000, 100_00000000);
+        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceAfterRelease);
     }
 
     function testManagerTradesAutomaticallyResolveChallenge() public {
@@ -206,12 +212,12 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         vm.warp(START + 1 days);
         _setPrices(120_00000000, 100_00000000);
-        assertEq(vault.accrueFees(), 0);
-        assertEq(vault.escrowedManagerFeeShares(), 0);
+        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.escrowedManagerFeeShares(), 0);
 
         vm.warp(START + 7 days + 1);
         _setPrices(120_00000000, 100_00000000);
-        uint256 supplyBeforeReward = vault.totalSupply();
+        uint256 initialSupply = 100 * ONE;
         uint256 balanceBeforeReward = vault.balanceOf(address(this));
         uint256 reward = vault.claimChallengeReward();
         uint256 forfeited = vault.forfeitedManagerFeeShares();
@@ -223,7 +229,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.lastFeeAccrualTimestamp(), vault.challengeDeadline());
         assertEq(vault.challengeRewardShares(address(this)), 0);
         assertEq(vault.balanceOf(address(this)), balanceBeforeReward + forfeited / 2);
-        assertEq(vault.totalSupply(), supplyBeforeReward + forfeited / 2);
+        assertEq(vault.totalSupply(), initialSupply + forfeited / 2);
     }
 
     function testOverdueChallengeForfeitureIsOneTimeAndDeadlineBounded() public {
@@ -369,10 +375,20 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
 
+        vm.warp(START + 1 days);
+        _setPrices(120_00000000, 100_00000000);
         _mintForAlice(vault, 5 * ONE);
+        uint256 escrowAfterDeposit = vault.escrowedManagerFeeShares();
+        assertGt(escrowAfterDeposit, 0);
+        assertEq(vault.lastFeeAccrualTimestamp(), block.timestamp);
+
+        vm.warp(START + 2 days);
+        _setPrices(120_00000000, 100_00000000);
         uint256[] memory minimums = new uint256[](2);
         vm.prank(ALICE);
         vault.redeem(ONE, ALICE, ALICE, minimums);
+        assertGt(vault.escrowedManagerFeeShares(), escrowAfterDeposit);
+        assertEq(vault.lastFeeAccrualTimestamp(), block.timestamp);
 
         vm.warp(START + 7 days + 1);
         _setPrices(120_00000000, 100_00000000);

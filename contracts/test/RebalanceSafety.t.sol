@@ -8,7 +8,12 @@ import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { RebalanceRecord, TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
+import {
+    RebalanceRecord,
+    TradeExecutionRecord,
+    TradeInstruction,
+    VaultInitParams
+} from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract RebalanceSafetyTest is ProtocolTestBase {
@@ -63,9 +68,10 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);
         assertEq(record.manager, address(this));
-        assertEq(record.navBefore, 100_000 * ONE);
-        assertEq(record.navAfter, 100_000 * ONE);
+        assertEq(record.navPerShareBefore, record.navPerShareAfter);
+        assertLt(record.navPerShareBefore, 1_000 * ONE);
         assertEq(record.turnoverBps, 1_000);
+        assertEq(record.executionLossBps, 0);
     }
 
     function testAdapterFailureRevertsTradeButLeavesTargetActive() public {
@@ -101,6 +107,57 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.allowance(address(vault), address(executor)), 0);
+    }
+
+    function testCumulativeNavLossIsBoundedPerSevenDayEpochAndGainsDoNotRefundIt() public {
+        VaultInitParams memory params = _defaultParams();
+        params.maxNavLossBps = 2;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        vm.warp(START + 14 days);
+        _proposeTarget(vault, assets, weights);
+
+        uint256 amountIn = 25 * ONE;
+        adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
+        TradeInstruction[] memory lossy =
+            _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
+        vault.executeRebalanceTrades(lossy);
+
+        (uint64 epochId,, uint64 endsAt, uint16 usedLossBps, uint16 maximumLossBps) =
+            vault.navLossEpochState();
+        assertEq(usedLossBps, 1);
+        assertEq(maximumLossBps, 2);
+
+        adapter.setRate(address(tokenB), address(tokenA), 10_001, 10_000);
+        TradeInstruction[] memory profitable =
+            _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn);
+        vault.executeRebalanceTrades(profitable);
+        (,,, usedLossBps,) = vault.navLossEpochState();
+        assertEq(usedLossBps, 1);
+
+        adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
+        vault.executeRebalanceTrades(lossy);
+        (,,, usedLossBps,) = vault.navLossEpochState();
+        assertEq(usedLossBps, 2);
+
+        uint256 tokenBBefore = tokenB.balanceOf(address(vault));
+        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
+        vault.executeRebalanceTrades(lossy);
+        assertEq(tokenB.balanceOf(address(vault)), tokenBBefore);
+
+        vm.warp(endsAt);
+        _refreshPrices();
+        vault.executeRebalanceTrades(lossy);
+        (uint64 nextEpochId,,, uint16 nextEpochLoss,) = vault.navLossEpochState();
+        assertEq(nextEpochId, epochId + 1);
+        assertEq(nextEpochLoss, 1);
+
+        assertEq(vault.recentTradeExecutionCount(), 4);
+        TradeExecutionRecord memory record = vault.recentTradeExecutionRecord(3);
+        assertEq(record.epochId, nextEpochId);
+        assertEq(record.batchLossBps, 1);
+        assertEq(record.epochLossUsedBps, 1);
+        assertEq(record.tradeCount, 1);
     }
 
     function testTradeMustMoveEveryExposureTowardTarget() public {
@@ -191,7 +248,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrices();
         vault.activatePendingStrategy();
 
-        assertTrue(vault.isConstituent(address(tokenB)));
+        assertFalse(vault.isConstituent(address(tokenB)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.assetCount(), 2);
         vm.expectPartialRevert(
@@ -236,7 +293,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.activatePendingStrategy();
 
         assertTrue(vault.strategicRebalanceActive());
-        assertTrue(vault.isConstituent(address(tokenB)));
+        assertFalse(vault.isConstituent(address(tokenB)));
         assertTrue(vault.isConstituent(address(tokenC)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.targetWeightBps(address(tokenC)), 5_000);
@@ -381,7 +438,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
     }
 
-    function testAllRevokedAssetsEnterZeroTargetShutdown() public {
+    function testAllRevokedAssetsEnterPermanentTerminalShutdown() public {
         ManagedOTFVault vault = _createVault();
         assetRegistry.setAssetApproved(address(tokenA), false);
         assetRegistry.setAssetApproved(address(tokenB), false);
@@ -389,31 +446,93 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         uint16[] memory effectiveTargets = vault.targetWeightsBps();
         assertEq(effectiveTargets[0], 0);
         assertEq(effectiveTargets[1], 0);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
+        assertEq(vault.pruneRetiredAssets(), 0);
+        assertTrue(vault.sunset());
+        assertFalse(vault.challengeActive());
+        assertEq(vault.targetWeightBps(address(tokenA)), 0);
+        assertEq(vault.targetWeightBps(address(tokenB)), 0);
+
+        assetRegistry.setAssetApproved(address(tokenA), true);
+        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
         vault.previewMint(ONE);
     }
 
-    function testRevokedConstituentDustRemainsChallengeableUntilExactZero() public {
+    function testPruneRetiredAssetsReturnsExactRemovalCount() public {
         ManagedOTFVault vault = _createVault();
         assetRegistry.setAssetApproved(address(tokenA), false);
 
-        TradeInstruction[] memory partialTrade =
-            _singleTrade(address(tokenA), address(tokenB), 500 * ONE - 1, 500 * ONE - 1);
-        vault.executeRebalanceTrades(partialTrade);
+        uint256 retiredBalance = tokenA.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenA.transfer(ALICE, retiredBalance));
 
-        assertEq(tokenA.balanceOf(address(vault)), 1);
-        assertTrue(vault.isConstituent(address(tokenA)));
+        assertEq(vault.pruneRetiredAssets(), 1);
+        assertFalse(vault.isConstituent(address(tokenA)));
+        assertEq(vault.targetWeightBps(address(tokenB)), 10_000);
+    }
+
+    function testRetiredConstituentAtDustThresholdCanBePruned() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        uint256 dust = vault.MAX_RETIRING_DUST();
+        uint256 retiredBalance = tokenA.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenA.transfer(ALICE, retiredBalance - dust));
+
+        assertEq(vault.pruneRetiredAssets(), 1);
+        assertEq(tokenA.balanceOf(address(vault)), dust);
+        assertFalse(vault.isConstituent(address(tokenA)));
+        assertEq(vault.assetCount(), 1);
+        assertEq(vault.getReserve(address(tokenA)), 0);
+        assertEq(vault.targetWeightBps(address(tokenB)), 10_000);
+    }
+
+    function testRetiredConstituentAboveDustThresholdRemainsChallengeable() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        uint256 remaining = vault.MAX_RETIRING_DUST() + 1;
+        uint256 retiredBalance = tokenA.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenA.transfer(ALICE, retiredBalance - remaining));
+
+        assertEq(vault.pruneRetiredAssets(), 0);
+        assertEq(tokenA.balanceOf(address(vault)), remaining);
+        assertEq(vault.assetCount(), 2);
+        assertEq(vault.getReserve(address(tokenA)), remaining);
         vm.prank(ATTACKER);
         vault.flagOutOfBand();
         assertTrue(vault.challengeActive());
+    }
 
-        TradeInstruction[] memory finalDust =
-            _singleTrade(address(tokenA), address(tokenB), 1, 1);
-        vault.executeRebalanceTrades(finalDust);
+    function testPruningFinalRevokedAssetLeavesVaultDepositBlocked() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](1);
+        params.initialAssets[0] = address(tokenA);
+        params.initialTargetWeightsBps = new uint16[](1);
+        params.initialTargetWeightsBps[0] = 10_000;
+        params.initialAmounts = new uint256[](1);
+        params.initialAmounts[0] = 1_000 * ONE;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertFalse(vault.challengeActive());
-        assertFalse(vault.isConstituent(address(tokenA)));
-        assertEq(vault.assetCount(), 1);
+        assetRegistry.setAssetApproved(address(tokenA), false);
+        uint256 dust = vault.MAX_RETIRING_DUST();
+        uint256 retiredBalance = tokenA.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenA.transfer(ALICE, retiredBalance - dust));
+
+        assertEq(vault.pruneRetiredAssets(), 1);
+        assertEq(vault.assetCount(), 0);
+        assertTrue(vault.sunset());
+
+        uint256 supplyBefore = vault.totalSupply();
+        uint256[] memory emptyAmounts = new uint256[](0);
+        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
+        vault.previewMint(ONE);
+        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
+        vault.mintWithBasket(ONE, ALICE, emptyAmounts);
+        assertEq(vault.totalSupply(), supplyBefore);
+        assertEq(vault.balanceOf(ALICE), 0);
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

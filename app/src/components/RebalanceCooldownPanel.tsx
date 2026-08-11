@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
+  bytesToHex,
   encodeAbiParameters,
   encodePacked,
   formatUnits,
@@ -77,7 +78,12 @@ import {
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetV3Venue } from "@/lib/deployment";
+import {
+  robinhoodTestnetAddresses,
+  robinhoodTestnetProtocolVersion,
+  robinhoodTestnetV3Venue,
+  SUPPORTED_PROTOCOL_VERSION,
+} from "@/lib/deployment";
 import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
   formatCooldown,
@@ -98,6 +104,7 @@ type ContractValue =
   | readonly bigint[]
   | readonly [string, number]
   | readonly [string, number, number]
+  | readonly [bigint, bigint, bigint, number, number]
   | undefined;
 
 type ReadResult = readonly { result?: ContractValue }[];
@@ -161,10 +168,23 @@ type StrategyHistoryEntry = StrategyVersionResult & {
 type RebalanceRecordResult = {
   timestamp: bigint;
   manager: `0x${string}`;
+  navPerShareBefore: bigint;
+  navPerShareAfter: bigint;
+  turnoverBps: number;
+  executionLossBps: number;
+  strategyVersion: number;
+};
+
+type TradeExecutionRecordResult = {
+  timestamp: bigint;
+  executor: `0x${string}`;
+  epochId: bigint;
+  strategyVersion: number;
   navBefore: bigint;
   navAfter: bigint;
-  turnoverBps: number;
-  strategyVersion: number;
+  batchLossBps: number;
+  epochLossUsedBps: number;
+  tradeCount: number;
 };
 
 type VaultSummary = {
@@ -197,6 +217,10 @@ type VaultView = {
   cooldownProgress: number;
   allocations: Allocation[];
   maxNavLossBps: number;
+  navLossEpochId: number;
+  navLossEpochStartsAt?: number;
+  navLossEpochEndsAt?: number;
+  navLossEpochUsedBps: number;
   maxWeightDeviationBps: number;
   challengeWeightDeviationBps: number;
   challengeGracePeriod: number;
@@ -791,6 +815,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["DuplicateConstituent(address)", "The same asset cannot be added to a portfolio more than once."],
     ["StrategyRationaleRequired()", "Add a short rationale explaining this portfolio strategy."],
     ["StrategyRationaleTooLong(uint256)", "The strategy rationale is too long. Shorten it and try again."],
+    ["InvalidDeploymentSalt()", "A secure deployment salt could not be generated. Retry the creation."],
     ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ZeroShares()", "Enter a share amount greater than zero."],
@@ -810,6 +835,8 @@ const protocolErrorMessages = new Map<string, string>(
     ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
+    ["EpochNavLossExceeded(uint64,uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Wait for the next epoch or reduce the quoted loss."],
+    ["CanonicalPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
     ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
     ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
     ["AssetMovedAwayFromTarget(address,uint256,uint256)", "This trade moves one asset farther away from its target allocation."],
@@ -935,6 +962,25 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       refetchInterval: 12_000,
     },
   });
+  const {
+    data: factoryProtocolVersionData,
+    isLoading: factoryProtocolVersionLoading,
+  } = useReadContract({
+    address: factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "PROTOCOL_VERSION",
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(factoryAddress) && isTestnet,
+      refetchInterval: 12_000,
+    },
+  });
+  const factoryProtocolVersion = factoryProtocolVersionData === undefined
+    ? undefined
+    : Number(factoryProtocolVersionData);
+  const protocolCompatible =
+    robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION
+    && factoryProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
 
   const { data: catalogOracleRegistryAddress } = useReadContract({
     address: factoryAddress,
@@ -1010,12 +1056,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   ), [catalogPriceResults]);
 
   const factoryVaultAddresses = useMemo(
-    () => isTestnet
+    () => isTestnet && protocolCompatible
       ? (factoryVaultData ?? []).filter(
           (address): address is `0x${string}` => isAddress(address),
         )
       : [],
-    [factoryVaultData, isTestnet],
+    [factoryVaultData, isTestnet, protocolCompatible],
   );
   const selectedIsFactoryVault = Boolean(
     selectedVaultAddress &&
@@ -1029,7 +1075,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     : selectedIsFactoryVault
       ? selectedVaultAddress
       : factoryVaultAddresses[0];
-  const enabled = Boolean(vaultAddress) && isTestnet;
+  const enabled = Boolean(vaultAddress) && isTestnet && protocolCompatible;
 
   const { data: blockNumber } = useBlockNumber({
     chainId: robinhoodChainTestnet.id,
@@ -1077,6 +1123,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunset" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunsetAt" },
         { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "depositsPaused" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navLossEpochState" },
       ] as const)
     : undefined;
 
@@ -1198,6 +1245,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     ? Number(resultAt<bigint>(results, 37))
     : undefined;
   const depositsPaused = Boolean(resultAt<boolean>(results, 38));
+  const navLossEpoch = resultAt<readonly [bigint, bigint, bigint, number, number]>(results, 39);
+  const navLossEpochId = Number(navLossEpoch?.[0] ?? 0n);
+  const navLossEpochStartsAt = navLossEpoch?.[1] ? Number(navLossEpoch[1]) : undefined;
+  const navLossEpochEndsAt = navLossEpoch?.[2] ? Number(navLossEpoch[2]) : undefined;
+  const navLossEpochUsedBps = Number(navLossEpoch?.[3] ?? 0);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
@@ -1226,6 +1278,10 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     cooldownProgress,
     allocations,
     maxNavLossBps,
+    navLossEpochId,
+    navLossEpochStartsAt,
+    navLossEpochEndsAt,
+    navLossEpochUsedBps,
     maxWeightDeviationBps,
     challengeWeightDeviationBps,
     challengeGracePeriod,
@@ -1348,6 +1404,15 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       />
 
       <main className="dashboardMain">
+        {isTestnet && !factoryProtocolVersionLoading && !protocolCompatible ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Unsupported protocol deployment</strong>
+              <span>This frontend supports protocol version {SUPPORTED_PROTOCOL_VERSION}, while the deployment manifest declares version {Number.isFinite(robinhoodTestnetProtocolVersion) ? robinhoodTestnetProtocolVersion : "unknown"} and the configured factory reports {factoryProtocolVersion ?? "unavailable"}. Contract writes are disabled until the manifest points to a compatible deployment.</span>
+            </div>
+          </div>
+        ) : null}
         {view === "detail" && isTestnet && vault.dataMode === "live" ? (
           <>
             <VaultHeader
@@ -1375,6 +1440,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
                 <SafetyLimits vault={vault} />
               </div>
             </div>
+            <RebalanceHistoryPanel vault={vault} />
           </>
         ) : null}
 
@@ -1402,6 +1468,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           <CreateVaultView
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
+            protocolCompatible={protocolCompatible}
             oraclePrices={catalogOraclePrices}
             onBack={() => openView("vaults")}
             onCreated={openCreatedVault}
@@ -5314,6 +5381,15 @@ function RebalanceTradesPanel({
     && inputTradeValue > quotedOutputValue
     ? Number((inputTradeValue - quotedOutputValue) * 10_000n / inputTradeValue)
     : 0;
+  const quotedPortfolioLossBps = inputTradeValue !== undefined
+    && quotedOutputValue !== undefined
+    && inputTradeValue > quotedOutputValue
+    && vault.navValue !== undefined
+    && vault.navValue > 0n
+    ? Number(((inputTradeValue - quotedOutputValue) * 10_000n + vault.navValue - 1n) / vault.navValue)
+    : 0;
+  const remainingEpochLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossEpochUsedBps);
+  const epochNavLossTooHigh = quotedPortfolioLossBps > remainingEpochLossBps;
   const inputTargetValue = vault.navValue !== undefined && inputAsset
     ? vault.navValue * BigInt(inputAsset.targetWeightBps) / 10_000n
     : undefined;
@@ -5435,7 +5511,7 @@ function RebalanceTradesPanel({
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
     rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
-    !oracleValueLossTooHigh,
+    !oracleValueLossTooHigh && !epochNavLossTooHigh,
   );
 
   function resetTradeState() {
@@ -5660,13 +5736,16 @@ function RebalanceTradesPanel({
         {oracleValueLossTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
         ) : null}
+        {epochNavLossTooHigh ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingEpochLossBps)} remains in epoch {vault.navLossEpochId + 1}. Reduce the trade loss or wait until {formatTimestamp(vault.navLossEpochEndsAt)}.</span></div></div>
+        ) : null}
         {quoteError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
         ) : null}
         {txError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>
         ) : null}
-        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, respect oracle value and the NAV-loss limit, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
+        <div className="riskCallout info"><ShieldCheck size={15} /><div><strong>The OTF contract performs the final checks</strong><span>The trade must use active constituents and an approved adapter, fit within the remaining seven-day NAV-loss budget, avoid moving any asset farther from target, and improve the portfolio overall.</span></div></div>
         <TxStatus state={txState} />
         <button className="primaryAction" type="button" disabled={!canSubmit || busy} onClick={executeTrade}>
           {busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
@@ -5698,6 +5777,24 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
   const hasStoredReward = Boolean(
     vault.claimableChallengeRewardValue && vault.claimableChallengeRewardValue > 0n,
   );
+  const { data: challengeRewardPreview } = useSimulateContract({
+    account: connectedAddress,
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "claimChallengeReward",
+    chainId: robinhoodChainTestnet.id,
+    query: {
+      enabled: Boolean(vault.enabled && vault.address && overdueRewardCanBeSettled && !hasStoredReward),
+    },
+  });
+  const simulatedChallengeReward = challengeRewardPreview?.result;
+  const challengeRewardDisplay = hasStoredReward
+    ? vault.claimableChallengeRewardShares
+    : simulatedChallengeReward !== undefined
+      ? `${formatWalletTokenBalance(simulatedChallengeReward, 18)} ${vault.symbol}`
+      : overdueRewardCanBeSettled
+        ? "Calculating"
+        : vault.claimableChallengeRewardShares;
   const canClaimReward = hasStoredReward || overdueRewardCanBeSettled;
   const challengeAction = !vault.challengeActive
     ? vault.withinChallengeBands ? undefined : "flagOutOfBand"
@@ -5743,7 +5840,7 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
           <ChallengeCountdownBanner vault={vault} />
           <div className="challengeRewardLine">
             <span>Caller reward</span>
-            <strong>{overdueRewardCanBeSettled && !hasStoredReward ? "Calculated on claim" : vault.claimableChallengeRewardShares}</strong>
+            <strong>{challengeRewardDisplay}</strong>
           </div>
           {challengeError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Challenge transaction failed</strong><span>{challengeError}</span></div></div> : null}
           {rewardError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Reward claim failed</strong><span>{rewardError}</span></div></div> : null}
@@ -5810,8 +5907,12 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
 }
 
 function SafetyLimits({ vault }: { vault: VaultView }) {
+  const epochRemaining = useLiveCountdown(vault.navLossEpochEndsAt);
+  const epochBudgetUsedPercent = vault.maxNavLossBps > 0
+    ? Math.min(100, vault.navLossEpochUsedBps * 100 / vault.maxNavLossBps)
+    : 0;
   const limits = [
-    ["Maximum NAV loss", bpsToPercent(vault.maxNavLossBps), "Atomic revert threshold"],
+    ["Seven-day NAV-loss budget", bpsToPercent(vault.maxNavLossBps), "Cumulative, gains do not restore capacity"],
     ["Maximum target deviation", `+/- ${bpsToPercent(vault.maxWeightDeviationBps)}`, "From oracle-priced actual weight"],
     ["Challenge deviation", `+/- ${bpsToPercent(vault.challengeWeightDeviationBps)}`, "Permissionless escalation threshold"],
     ["Minimum target weight", vault.minTargetWeightBps === undefined ? "Loading" : bpsToPercent(vault.minTargetWeightBps), "Admin-controlled protocol floor"],
@@ -5836,6 +5937,24 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
             <span>{value}</span>
           </div>
         ))}
+      </div>
+      <div className="executionPolicy">
+        <Activity size={14} />
+        <div>
+          <strong>Epoch {vault.navLossEpochId + 1}: {bpsToPercent(vault.navLossEpochUsedBps)} of {bpsToPercent(vault.maxNavLossBps)} used</strong>
+          <div
+            className="progressTrack"
+            role="progressbar"
+            aria-label="NAV-loss budget used"
+            aria-valuemin={0}
+            aria-valuemax={vault.maxNavLossBps}
+            aria-valuenow={vault.navLossEpochUsedBps}
+          >
+            <span style={{ width: `${epochBudgetUsedPercent}%` }} />
+            <i style={{ left: `calc(${epochBudgetUsedPercent}% - 5px)` }} />
+          </div>
+          <span>{vault.navLossEpochStartsAt ? `${formatTimestamp(vault.navLossEpochStartsAt)} to ${formatTimestamp(vault.navLossEpochEndsAt)}` : "Epoch timing unavailable"} · resets in {formatCooldown(epochRemaining)}</span>
+        </div>
       </div>
       <div className="executionPolicy">
         <ShieldCheck size={14} />
@@ -6132,12 +6251,14 @@ function VaultsDirectory({
 function CreateVaultView({
   connectedAddress,
   isTestnet,
+  protocolCompatible,
   oraclePrices,
   onBack,
   onCreated,
 }: {
   connectedAddress?: string;
   isTestnet: boolean;
+  protocolCompatible: boolean;
   oraclePrices: CatalogOraclePrices;
   onBack: () => void;
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
@@ -6414,7 +6535,7 @@ function CreateVaultView({
   const remainingSafetyLimitsValid =
     Number(draft.creatorFee) >= 0 &&
     Number(draft.creatorFee) <= 10 &&
-    Number(draft.initialShares) > 0 &&
+    Number(draft.initialShares) >= 1 &&
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxNavLoss) <= 2 &&
     Number(draft.maxDeviation) > 0 &&
@@ -6445,7 +6566,7 @@ function CreateVaultView({
   const safetyIssues = [
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.maxNavLoss) <= 2 ? null : "Maximum NAV loss cannot exceed the 2% protocol ceiling.",
-    Number(draft.initialShares) > 0 ? null : "Enter a positive initial share supply.",
+    Number(draft.initialShares) >= 1 ? null : "Initial supply must be at least 1 whole share.",
     remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
   const allIssues = [...basicsIssues, ...portfolioIssues, ...safetyIssues];
@@ -6459,6 +6580,7 @@ function CreateVaultView({
   const canSubmitDeployment =
     stepValid &&
     Boolean(factoryAddress) &&
+    protocolCompatible &&
     Boolean(connectedAddress) &&
     !protocolDepositsPaused &&
     seedBalancesSufficient &&
@@ -6473,6 +6595,7 @@ function CreateVaultView({
   const deploymentBlockers: string[] = [];
   if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
   if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
+  if (!protocolCompatible) deploymentBlockers.push("Factory protocol version is unsupported");
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
   if (protocolDepositsPaused) deploymentBlockers.push("Protocol deposits are paused");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
@@ -6580,7 +6703,7 @@ function CreateVaultView({
     });
   }
 
-  function vaultInitParams() {
+  function vaultInitParams(deploymentSalt: `0x${string}`) {
     if (!isAddress(draft.manager) || !isAddress(draft.feeRecipient)) {
       throw new Error("Manager and fee-recipient addresses must be valid.");
     }
@@ -6608,6 +6731,7 @@ function CreateVaultView({
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
       challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
+      deploymentSalt,
     };
   }
 
@@ -6632,14 +6756,26 @@ function CreateVaultView({
     setDeployTxHash(undefined);
     setDeployState("pending");
     try {
-      const params = vaultInitParams();
-      await publicClient.simulateContract({
-        address: factoryAddress,
-        abi: otfFactoryAbi,
-        functionName: "createVault",
-        args: [params],
-        account: connectedAddress as `0x${string}`,
-      });
+      let params: ReturnType<typeof vaultInitParams> | undefined;
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const candidate = vaultInitParams(bytesToHex(crypto.getRandomValues(new Uint8Array(32))));
+        try {
+          await publicClient.simulateContract({
+            address: factoryAddress,
+            abi: otfFactoryAbi,
+            functionName: "createVault",
+            args: [candidate],
+            account: connectedAddress as `0x${string}`,
+          });
+          params = candidate;
+          break;
+        } catch (error) {
+          if (!errorMessage(error).includes("occupied canonical market")) throw error;
+        }
+      }
+      if (!params) {
+        throw new Error("Could not find an available canonical market address after 16 deployment salts. Retry or use a private transaction endpoint.");
+      }
       const hash = await writeContractAsync({
         address: factoryAddress,
         abi: otfFactoryAbi,
@@ -7034,7 +7170,7 @@ function CreateVaultView({
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
-                  <label><span>Maximum NAV loss</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued loss in each atomic rebalance trade. Protocol maximum: 2%.</small></label>
+                  <label><span>Seven-day NAV-loss budget</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps cumulative oracle-valued execution loss in each seven-day epoch. Protocol maximum: 2%.</small></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
                   <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
                 </div>
@@ -7069,7 +7205,7 @@ function CreateVaultView({
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
                   <div><span>Strategy cooldown</span><strong>14 days after deployment or completion</strong></div>
-                  <div><span>Maximum NAV loss</span><strong>{draft.maxNavLoss}%</strong></div>
+                  <div><span>Seven-day NAV-loss budget</span><strong>{draft.maxNavLoss}%</strong></div>
                   <div><span>Completion band</span><strong>+/- {draft.maxDeviation}%</strong></div>
                   <div><span>Challenge band</span><strong>+/- {draft.challengeDeviation}%</strong></div>
                   <div><span>Challenge grace</span><strong>7 days</strong></div>
@@ -7784,6 +7920,40 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
     contracts: recordContracts,
     query: { enabled: recordContracts.length > 0, refetchInterval: 12_000 },
   });
+  const {
+    data: executionCountResult,
+    isLoading: executionCountLoading,
+    isError: executionCountFailed,
+  } = useReadContract({
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "recentTradeExecutionCount",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.address), refetchInterval: 12_000 },
+  });
+  const executionCount = Number(executionCountResult ?? 0n);
+  const executionContracts = vault.address
+    ? Array.from({ length: executionCount }, (_, index) => ({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "recentTradeExecutionRecord" as const,
+        args: [BigInt(index)],
+        chainId: robinhoodChainTestnet.id,
+      }))
+    : [];
+  const {
+    data: executionResults,
+    isLoading: executionsLoading,
+    isError: executionsFailed,
+  } = useReadContracts({
+    contracts: executionContracts,
+    query: { enabled: executionContracts.length > 0, refetchInterval: 12_000 },
+  });
+  const executions = Array.from({ length: executionCount }, (_, index) => {
+    const result = executionResults?.[index];
+    if (result?.status !== "success") return undefined;
+    return { index, record: result.result as TradeExecutionRecordResult };
+  }).filter((entry): entry is { index: number; record: TradeExecutionRecordResult } => Boolean(entry));
   const records = Array.from({ length: recentCount }, (_, index) => {
     const result = recordResults?.[index];
     if (result?.status !== "success") return undefined;
@@ -7817,16 +7987,15 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
     const [tokens, weights] = result.result as readonly [readonly string[], readonly (number | bigint)[]];
     targetsByVersion.set(strategyIndex, { tokens, weights });
   });
-  const retainedNavBefore = records.reduce((total, { record }) => total + record.navBefore, 0n);
-  const retainedNavLost = records.reduce(
-    (total, { record }) => total + (record.navBefore > record.navAfter ? record.navBefore - record.navAfter : 0n),
-    0n,
+  const retainedLossBps = records.reduce(
+    (total, { record }) => total + Number(record.executionLossBps),
+    0,
   );
-  const retainedLossBps = retainedNavBefore > 0n
-    ? Number(retainedNavLost * 10_000n / retainedNavBefore)
-    : 0;
-  const loading = countLoading || (recentCount > 0 && (recordsLoading || targetsLoading));
-  const failed = countFailed || recordsFailed || targetsFailed;
+  const loading = countLoading || executionCountLoading
+    || (recentCount > 0 && (recordsLoading || targetsLoading))
+    || (executionCount > 0 && executionsLoading);
+  const failed = countFailed || recordsFailed || targetsFailed
+    || executionCountFailed || executionsFailed;
 
   function targetChanges(record: RebalanceRecordResult) {
     const versionIndex = Number(record.strategyVersion);
@@ -7851,9 +8020,9 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
   return (
     <SectionCard
       title="Rebalance history"
-      subtitle="Completed target changes and their recorded NAV impact"
+      subtitle="Completed target changes and their associated onchain executions"
       icon={<Activity size={15} />}
-      action={<span className="stateBadge muted">{recentCount ? `Latest ${recentCount} of 16` : "No records"}</span>}
+      action={<span className="stateBadge muted">{recentCount || executionCount ? `${recentCount} completed · ${executionCount} executions` : "No records"}</span>}
     >
       {loading ? (
         <div className="inlineEmptyState"><Loader2 className="spin" size={17} /><div><strong>Loading rebalance history</strong><span>Reading retained completion records and target snapshots from the OTF.</span></div></div>
@@ -7863,14 +8032,14 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
         <div className="rebalanceHistoryBody">
           <div className="rebalanceHistorySummary">
             <div><span>Completed</span><strong>{records.length}</strong><small>retained onchain</small></div>
-            <div><span>Recorded NAV lost</span><strong>{bpsToPercent(retainedLossBps)}</strong><small>weighted across retained records</small></div>
+            <div><span>Execution loss</span><strong>{bpsToPercent(retainedLossBps)}</strong><small>cumulative across completed strategies</small></div>
             <div><span>Latest completion</span><strong>{formatTimestamp(Number(records.at(-1)?.record.timestamp ?? 0n))}</strong><small>chain timestamp</small></div>
           </div>
           <div className="rebalanceHistoryList">
             {[...records].reverse().map(({ index, record }) => {
               const changes = targetChanges(record);
-              const navChangeBps = record.navBefore > 0n
-                ? Number((record.navAfter - record.navBefore) * 10_000n / record.navBefore)
+              const navChangeBps = record.navPerShareBefore > 0n
+                ? Number((record.navPerShareAfter - record.navPerShareBefore) * 10_000n / record.navPerShareBefore)
                 : 0;
               return (
                 <article className="rebalanceHistoryEntry" key={`${index}-${record.timestamp}`}>
@@ -7879,11 +8048,12 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
                     <time>{formatTimestamp(Number(record.timestamp))}</time>
                   </div>
                   <div className="rebalanceImpactMetrics">
-                    <div><span>NAV before</span><strong>{formatUsd18(record.navBefore) ?? "Unavailable"}</strong></div>
+                    <div><span>NAV/share before</span><strong>{formatUsd18(record.navPerShareBefore) ?? "Unavailable"}</strong></div>
                     <ArrowRight size={13} />
-                    <div><span>NAV after</span><strong>{formatUsd18(record.navAfter) ?? "Unavailable"}</strong></div>
-                    <div className={navChangeBps < 0 ? "danger" : "success"}><span>NAV change</span><strong>{navChangeBps > 0 ? "+" : ""}{(navChangeBps / 100).toFixed(2)}%</strong></div>
+                    <div><span>NAV/share after</span><strong>{formatUsd18(record.navPerShareAfter) ?? "Unavailable"}</strong></div>
+                    <div className={navChangeBps < 0 ? "danger" : "success"}><span>NAV/share change</span><strong>{navChangeBps > 0 ? "+" : ""}{(navChangeBps / 100).toFixed(2)}%</strong></div>
                     <div><span>Turnover</span><strong>{bpsToPercent(Number(record.turnoverBps))}</strong></div>
+                    <div><span>Execution loss</span><strong>{bpsToPercent(Number(record.executionLossBps))}</strong></div>
                   </div>
                   {changes.length ? (
                     <div className="rebalanceTargetChanges" aria-label="Target weights before and after">
@@ -7900,11 +8070,31 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
               );
             })}
           </div>
-          <p className="rebalanceHistoryFootnote">Weights show the strategy targets before and after each rebalance. NAV values are the contract&apos;s oracle-valued snapshots at strategy activation and completion; deposits, redemptions, or market moves during that interval can also affect the change.</p>
+          <p className="rebalanceHistoryFootnote">Weights show strategy targets before and after each rebalance. Per-share NAV avoids making deposits and redemptions look like performance; oracle price changes and fees can still affect the interval.</p>
         </div>
       ) : (
         <div className="inlineEmptyState"><Activity size={17} /><div><strong>No completed rebalances yet</strong><span>The first completed strategy change will appear here with its target shift, turnover, and recorded NAV impact.</span></div></div>
       )}
+      {executions.length ? (
+        <div className="rebalanceHistoryBody">
+          <div className="rebalanceHistoryHeader"><div><strong>Latest trade executions</strong><span className="stateBadge muted">Last {executions.length} of 16</span></div></div>
+          <div className="rebalanceHistoryList">
+            {[...executions].reverse().map(({ index, record }) => (
+              <article className="rebalanceHistoryEntry" key={`execution-${index}-${record.timestamp}`}>
+                <div className="rebalanceHistoryHeader"><div><strong>Execution {index + 1}</strong><span className="stateBadge muted">Epoch {Number(record.epochId) + 1}</span></div><time>{formatTimestamp(Number(record.timestamp))}</time></div>
+                <div className="rebalanceImpactMetrics">
+                  <div><span>Batch loss</span><strong>{bpsToPercent(Number(record.batchLossBps))}</strong></div>
+                  <div><span>Epoch used</span><strong>{bpsToPercent(Number(record.epochLossUsedBps))} / {bpsToPercent(vault.maxNavLossBps)}</strong></div>
+                  <div><span>NAV before</span><strong>{formatUsd18(record.navBefore) ?? "Unavailable"}</strong></div>
+                  <ArrowRight size={13} />
+                  <div><span>NAV after</span><strong>{formatUsd18(record.navAfter) ?? "Unavailable"}</strong></div>
+                </div>
+                <div className="rebalanceHistoryMeta"><span>{Number(record.tradeCount)} trade{Number(record.tradeCount) === 1 ? "" : "s"}</span><span>Executor <code>{shortAddress(record.executor)}</code></span><span>Strategy {Number(record.strategyVersion)}</span></div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }

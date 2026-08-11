@@ -1,6 +1,7 @@
 {
   "network": "robinhood-testnet",
   "chainId": 46630,
+  "protocolVersion": 1,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
   "deployedAt": "2026-08-07T01:59:33.595Z",
   "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",

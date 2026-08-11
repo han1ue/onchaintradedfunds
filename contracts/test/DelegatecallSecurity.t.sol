@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
+import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { MinimalClones } from "../src/libraries/MinimalClones.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -34,6 +35,23 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
         assertEq(second.strategyModule(), module);
         assertEq(first.strategyModuleCodehash(), module.codehash);
         assertEq(second.strategyModuleCodehash(), module.codehash);
+
+        address viewModule = first.viewModule();
+        assertTrue(viewModule.code.length != 0);
+        assertEq(second.viewModule(), viewModule);
+        assertEq(first.viewModuleCodehash(), viewModule.codehash);
+        assertEq(second.viewModuleCodehash(), viewModule.codehash);
+    }
+
+    function testViewModuleRejectsDirectCallsAndUnknownFallbackSelectors() public {
+        ManagedOTFVault vault = _createVault();
+        ManagedOTFVaultView viewModule = ManagedOTFVaultView(vault.viewModule());
+
+        vm.expectRevert(ManagedOTFVaultStorage.DirectStrategyCall.selector);
+        viewModule.recentRebalanceCount();
+
+        (bool success,) = address(vault).call(abi.encodeWithSignature("unknownSelector()"));
+        assertFalse(success);
     }
 
     function testStrategyModuleRejectsDirectAdministrativeCalls() public {
@@ -71,5 +89,9 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
         vm.prank(ATTACKER);
         vm.expectRevert(ManagedOTFVaultStorage.UnauthorizedModuleCallback.selector);
         vault.moduleAccrueFees();
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(ManagedOTFVaultStorage.UnauthorizedModuleCallback.selector);
+        vault.moduleReleaseChallengeFees();
     }
 }
