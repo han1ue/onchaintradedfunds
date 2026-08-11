@@ -51,7 +51,7 @@ contract RebalanceExecutor {
         emit FactorySet(factory_);
     }
 
-    function executeTrade(TradeInstruction calldata instruction)
+    function executeTrade(TradeInstruction calldata instruction, uint256 amountIn)
         external
         returns (uint256 amountOut)
     {
@@ -61,17 +61,17 @@ contract RebalanceExecutor {
         if (!IAdapterAllowlist(factory_).isTradeAdapterApproved(instruction.adapter)) {
             revert UnapprovedAdapter(instruction.adapter);
         }
-        if (instruction.amountIn == 0) revert BadTradeAmount();
+        if (amountIn == 0) revert BadTradeAmount();
         if (instruction.tokenIn == instruction.tokenOut) revert BadTradeTokens();
 
-        _pullExact(instruction.tokenIn, msg.sender, instruction.adapter, instruction.amountIn);
+        _pullExact(instruction.tokenIn, msg.sender, instruction.adapter, amountIn);
 
         uint256 balanceBefore = IERC20(instruction.tokenOut).balanceOf(address(this));
         ITradeAdapter(instruction.adapter)
             .executeSwap(
                 instruction.tokenIn,
                 instruction.tokenOut,
-                instruction.amountIn,
+                amountIn,
                 instruction.minAmountOut,
                 instruction.adapterData
             );
@@ -89,7 +89,7 @@ contract RebalanceExecutor {
             instruction.adapter,
             instruction.tokenIn,
             instruction.tokenOut,
-            instruction.amountIn,
+            amountIn,
             amountOut
         );
     }

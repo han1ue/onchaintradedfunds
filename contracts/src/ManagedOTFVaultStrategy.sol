@@ -5,6 +5,7 @@ import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -288,8 +289,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         address[] memory newTokens = _pendingAssets;
         uint256[] memory newWeights = _pendingWeightsAsUint256();
         (uint256[] memory currentWeights, uint256 navBefore) = _currentPreciseWeightsAndNav();
-        uint256 turnover =
-            _turnoverBps(newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE);
+        uint256 turnover = _calculator.turnoverBps(
+            _assets, newTokens, newWeights, currentWeights, WEIGHT_PRECISION_SCALE
+        );
 
         uint64 activatedAt = uint64(block.timestamp);
         uint256 strategyVersion = _strategyVersions.length;
@@ -359,32 +361,35 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         (uint256[] memory weightsBefore, uint256 navBefore) = _currentPreciseWeightsAndNav();
         uint256[] memory balancesBefore = _trackedAssetBalances();
         uint256 distanceBefore = _distanceFromTarget(weightsBefore, WEIGHT_PRECISION_SCALE);
-        uint256[] memory valuesIn = new uint256[](trades.length);
         uint256 grossLossValue;
 
         for (uint256 i = 0; i < trades.length; i++) {
             TradeInstruction calldata trade = trades[i];
             _validateTrade(trade);
-            valuesIn[i] = _assetValue(trade.tokenIn, trade.amountIn);
-        }
-
-        for (uint256 i = 0; i < trades.length; i++) {
-            TradeInstruction calldata trade = trades[i];
+            uint256 amountIn = trade.amountIn;
+            if (amountIn == type(uint256).max) {
+                if (!_isRetiringAsset(trade.tokenIn)) {
+                    revert BadTrade(trade.tokenIn, trade.tokenOut, amountIn);
+                }
+                amountIn = IERC20(trade.tokenIn).balanceOf(address(this));
+                if (amountIn == 0) revert BadTrade(trade.tokenIn, trade.tokenOut, amountIn);
+            }
+            uint256 valueIn = _assetValue(trade.tokenIn, amountIn);
             trade.tokenIn.safeApprove(rebalanceExecutor, 0);
-            trade.tokenIn.safeApprove(rebalanceExecutor, trade.amountIn);
-            uint256 amountOut = RebalanceExecutor(rebalanceExecutor).executeTrade(trade);
+            trade.tokenIn.safeApprove(rebalanceExecutor, amountIn);
+            uint256 amountOut = RebalanceExecutor(rebalanceExecutor).executeTrade(trade, amountIn);
             trade.tokenIn.safeApprove(rebalanceExecutor, 0);
 
             uint256 valueOut = _assetValue(trade.tokenOut, amountOut);
-            if (valuesIn[i] > valueOut) grossLossValue += valuesIn[i] - valueOut;
-            uint256 minimumValue = MathEx.mulDiv(valuesIn[i], BPS - maxNavLossBps, BPS);
+            if (valueIn > valueOut) grossLossValue += valueIn - valueOut;
+            uint256 minimumValue = MathEx.mulDiv(valueIn, BPS - maxNavLossBps, BPS);
             if (valueOut < minimumValue) {
                 revert OracleSlippageTooHigh(
-                    trade.tokenIn, trade.tokenOut, valuesIn[i], valueOut, maxNavLossBps
+                    trade.tokenIn, trade.tokenOut, valueIn, valueOut, maxNavLossBps
                 );
             }
             emit MaintenanceTradeExecuted(
-                msg.sender, trade.adapter, trade.tokenIn, trade.tokenOut, trade.amountIn, amountOut
+                msg.sender, trade.adapter, trade.tokenIn, trade.tokenOut, amountIn, amountOut
             );
         }
 
@@ -414,19 +419,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256 netLossValue = navBefore > navAfter ? navBefore - navAfter : 0;
         uint256 lossValue = grossLossValue > netLossValue ? grossLossValue : netLossValue;
         uint256 batchLossBps = lossValue == 0 ? 0 : MathEx.mulDivUp(lossValue, BPS, navBefore);
-        uint64 epochId = _syncNavLossEpoch();
-        uint256 epochLossUsedBps = uint256(_navLossEpochUsedBps) + batchLossBps;
-        if (epochLossUsedBps > maxNavLossBps) {
-            revert EpochNavLossExceeded(
-                epochId, _navLossEpochUsedBps, batchLossBps, maxNavLossBps
-            );
-        }
-        // The preceding maximum check bounds the epoch total to at most 200 BPS.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        _navLossEpochUsedBps = uint16(epochLossUsedBps);
+        (uint64 epochId, uint16 epochLossUsedBps) = _consumeNavLossBudget(batchLossBps);
         if (strategicRebalanceActive) {
-            uint256 cumulativeStrategyLossBps =
-                uint256(_strategicExecutionLossBps) + batchLossBps;
+            uint256 cumulativeStrategyLossBps = uint256(_strategicExecutionLossBps) + batchLossBps;
             // A uint32 cumulative counter cannot be exhausted within a strategy's lifetime.
             // forge-lint: disable-next-line(unsafe-typecast)
             _strategicExecutionLossBps = uint32(cumulativeStrategyLossBps);
@@ -446,8 +441,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             // Both values were bounded by maxNavLossBps above.
             // forge-lint: disable-next-line(unsafe-typecast)
             batchLossBps: uint16(batchLossBps),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            epochLossUsedBps: uint16(epochLossUsedBps),
+            epochLossUsedBps: epochLossUsedBps,
             tradeCount: uint16(trades.length)
         });
         tradeExecutionCount = executionId + 1;
@@ -457,8 +451,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             msg.sender,
             // forge-lint: disable-next-line(unsafe-typecast)
             uint16(batchLossBps),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            uint16(epochLossUsedBps),
+            epochLossUsedBps,
             // A uint32 strategy counter cannot be exhausted within the chain's lifetime.
             // forge-lint: disable-next-line(unsafe-typecast)
             uint32(currentStrategyVersion)
@@ -583,8 +576,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         // forge-lint: disable-next-line(block-timestamp)
         bool timely = block.timestamp <= challengeDeadline;
         if (timely) {
-            releasedFeeShares = IManagedOTFVaultModuleCallbacks(address(this))
-                .moduleReleaseChallengeFees();
+            releasedFeeShares =
+                IManagedOTFVaultModuleCallbacks(address(this)).moduleReleaseChallengeFees();
         }
 
         if (strategicRebalanceActive) {
@@ -645,15 +638,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             return _resolveOutOfBandChallenge();
         }
 
-        if (!_isWithinBands(maxWeightDeviationBps)) {
-            address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
-            if (breached.length != 0) {
-                feeShares = _accrueViaVault();
-                _startChallenge(msg.sender, breached);
-            }
-            return feeShares;
-        }
-        return _accrueViaVault();
+        address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
+        if (breached.length == 0) return _accrueViaVault();
+        feeShares = _accrueViaVault();
+        _startChallenge(msg.sender, breached);
     }
 
     function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
@@ -694,14 +682,20 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
         if (assets_.length == 0) revert EmptyPortfolio();
         uint256 minimumTargetWeightBps = _protocolMinTargetWeightBps();
+        uint256 trackedCount = _assets.length;
         uint256 sum;
         for (uint256 i = 0; i < assets_.length; i++) {
             address asset = assets_[i];
             uint256 weight = weights_[i];
             if (asset == address(0)) revert ZeroAddress();
             if (asset.code.length == 0) revert AssetNotContract(asset);
+            bool alreadyTracked = _containsCurrentAsset(asset);
+            if (!alreadyTracked) {
+                trackedCount += 1;
+                if (trackedCount > MAX_TRACKED_ASSETS) revert TrackedAssetLimitExceeded();
+            }
             if (!IAssetRegistry(assetRegistry).isApprovedAsset(asset)) {
-                if (!_containsCurrentAsset(asset) || weight > targetWeightBps[asset]) {
+                if (!alreadyTracked || weight > targetWeightBps[asset]) {
                     revert UnapprovedAsset(asset);
                 }
             }
@@ -780,23 +774,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
     }
 
-    function _turnoverBps(
-        address[] memory newTokens,
-        uint256[] memory newWeights,
-        uint256[] memory currentWeights,
-        uint256 targetScale
-    ) private view returns (uint256) {
-        uint256 sumDiff;
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 targetWeight = _weightOf(newTokens, newWeights, _assets[i]) * targetScale;
-            sumDiff += currentWeights[i].absDiff(targetWeight);
-        }
-        for (uint256 i = 0; i < newTokens.length; i++) {
-            if (!_containsCurrentAsset(newTokens[i])) sumDiff += newWeights[i] * targetScale;
-        }
-        return MathEx.mulDivUp(sumDiff, 1, 2 * targetScale);
-    }
-
     function _assetValue(address asset, uint256 rawBalance) private view returns (uint256) {
         return _calculator.assetValue(asset, rawBalance, oracleRegistry);
     }
@@ -847,27 +824,21 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return _effectiveTargetWeights();
     }
 
-    function _syncNavLossEpoch() private returns (uint64 epochId) {
-        uint256 calculatedEpochId =
-            (block.timestamp - uint256(navLossEpochAnchor)) / NAV_LOSS_EPOCH;
-        // Epoch counts fit uint64 for the lifetime of the chain.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        epochId = uint64(calculatedEpochId);
-        if (epochId != _navLossEpochId) {
-            _navLossEpochId = epochId;
-            _navLossEpochUsedBps = 0;
-        }
-    }
-
-    function _weightOf(address[] memory assets_, uint256[] memory weights_, address asset)
+    function _consumeNavLossBudget(uint256 batchLossBps)
         private
-        pure
-        returns (uint256)
+        returns (uint64 epochId, uint16 usedLossBps)
     {
-        for (uint256 i = 0; i < assets_.length; i++) {
-            if (assets_[i] == asset) return weights_[i];
-        }
-        return 0;
+        uint256 packedState = _calculator.navLossBudgetState(
+            _navLossBucketRecoveryAt, navLossEpochAnchor, maxNavLossBps, batchLossBps
+        );
+        // Every packed value is bounded by the calculator before encoding.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        usedLossBps = uint16(packedState);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _navLossBucketRecoveryAt = uint64(packedState >> 16);
+        _navLossBucketUsedBps = usedLossBps;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        epochId = uint64(packedState >> 80);
     }
 
     function _contains(address[] memory assets_, address asset) private pure returns (bool) {

@@ -19,9 +19,11 @@ const contracts = deployment.contracts as Record<string, ContractDeployment | un
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
 const v3Venue = (deployment as { v3Venue?: V3VenueDeployment }).v3Venue;
 export const SUPPORTED_PROTOCOL_VERSION = 2;
-export const robinhoodTestnetProtocolVersion = Number(
-  (deployment as { protocolVersion?: unknown }).protocolVersion,
-);
+const deploymentProtocolVersion = (deployment as { protocolVersion?: unknown }).protocolVersion;
+export const robinhoodTestnetProtocolVersion =
+  typeof deploymentProtocolVersion === "number" && Number.isSafeInteger(deploymentProtocolVersion)
+    ? deploymentProtocolVersion
+    : undefined;
 
 function address(value: unknown): Address | undefined {
   return typeof value === "string" && isAddress(value) ? getAddress(value) : undefined;

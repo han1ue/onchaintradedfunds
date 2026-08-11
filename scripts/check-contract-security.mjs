@@ -129,9 +129,11 @@ const productionContracts = [
   ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
   ["OracleRegistry.sol", "OracleRegistry"],
   ["OTFFactory.sol", "OTFFactory"],
+  ["OTFEntryRouter.sol", "OTFEntryRouter"],
   ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RebalanceExecutor.sol", "RebalanceExecutor"],
+  ["UniswapV3Adapter.sol", "UniswapV3Adapter"],
 ];
 
 for (const [source, name] of productionContracts) {
@@ -144,6 +146,7 @@ for (const [source, name] of productionContracts) {
 
 const vault = artifact("ManagedOTFVault.sol", "ManagedOTFVault");
 const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy");
+const viewModule = artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView");
 const erc7621 = artifact("IERC7621.sol", "IERC7621");
 const vaultFunctions = vault.abi.filter((item) => item.type === "function").map((item) => item.name);
 const strategyFunctions = strategy.abi
@@ -237,6 +240,18 @@ assert(
 );
 assert(vaultFunctions.includes("viewModule"), "view module identity is not exposed");
 assert(vaultFunctions.includes("viewModuleCodehash"), "view module codehash is not exposed");
+
+for (const item of viewModule.abi) {
+  assert(
+    item.type !== "fallback" && item.type !== "receive",
+    `view module exposes a ${item.type} entry point`,
+  );
+  if (item.type !== "function") continue;
+  assert(
+    item.stateMutability === "view" || item.stateMutability === "pure",
+    `view-module function is mutative: ${abiSignature(item)}`,
+  );
+}
 
 console.log(
   `Contract security checks passed: ERC-7621 ID 0x${erc7621InterfaceId.toString(16)}, ${canonicalLayout.length} canonical storage entries, and ${productionContracts.length} production bytecode limits verified.`,

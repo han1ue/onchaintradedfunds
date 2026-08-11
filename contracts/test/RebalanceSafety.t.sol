@@ -5,7 +5,9 @@ import { ERC20Base } from "../src/ERC20Base.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import {
@@ -17,6 +19,50 @@ import {
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract RebalanceSafetyTest is ProtocolTestBase {
+    function testTrackedAssetLimitIncludesRetiringUnion() public {
+        ManagedOTFVault acceptedVault = _createVault();
+        ManagedOTFVault rejectedVault = _createVault();
+        vm.warp(START + 14 days);
+        _refreshPrices();
+
+        address[] memory additions = new address[](99);
+        for (uint256 i = 0; i < additions.length; i++) {
+            MockStockToken asset = new MockStockToken("Additional Stock", "ADD", 18);
+            MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
+            additions[i] = address(asset);
+            assetRegistry.setAssetApproved(address(asset), true);
+            oracleRegistry.setOracleConfig(
+                address(asset), feed, 25 hours, OracleValidationMode.RobinhoodStockToken
+            );
+        }
+
+        address[] memory acceptedTargets = new address[](99);
+        uint256[] memory acceptedWeights = new uint256[](99);
+        acceptedTargets[0] = address(tokenA);
+        acceptedWeights[0] = 200;
+        for (uint256 i = 1; i < acceptedTargets.length; i++) {
+            acceptedTargets[i] = additions[i - 1];
+            acceptedWeights[i] = 100;
+        }
+        acceptedVault.proposeStrategy(
+            acceptedTargets, acceptedWeights, "Exercise the 100 tracked-asset boundary."
+        );
+        assertTrue(acceptedVault.strategyProposalPending());
+
+        address[] memory rejectedTargets = new address[](100);
+        uint256[] memory rejectedWeights = new uint256[](100);
+        rejectedTargets[0] = address(tokenA);
+        rejectedWeights[0] = 100;
+        for (uint256 i = 1; i < rejectedTargets.length; i++) {
+            rejectedTargets[i] = additions[i - 1];
+            rejectedWeights[i] = 100;
+        }
+        vm.expectRevert(ManagedOTFVaultStorage.TrackedAssetLimitExceeded.selector);
+        rejectedVault.proposeStrategy(
+            rejectedTargets, rejectedWeights, "Reject a 101-asset tracked union."
+        );
+    }
+
     function testOnlyManagerCanChangeStrategy() public {
         ManagedOTFVault vault = _createVault();
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
@@ -109,7 +155,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenB.allowance(address(vault), address(executor)), 0);
     }
 
-    function testCumulativeNavLossIsBoundedPerSevenDayEpochAndGainsDoNotRefundIt() public {
+    function testNavLossBudgetReplenishesLinearlyAndGainsDoNotRefundIt() public {
         VaultInitParams memory params = _defaultParams();
         params.maxNavLossBps = 2;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
@@ -117,14 +163,13 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vm.warp(START + 14 days);
         _proposeTarget(vault, assets, weights);
 
-        uint256 amountIn = 25 * ONE;
+        uint256 amountIn = 20 * ONE;
         adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
         TradeInstruction[] memory lossy =
             _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
         vault.executeRebalanceTrades(lossy);
 
-        (uint64 epochId,, uint64 endsAt, uint16 usedLossBps, uint16 maximumLossBps) =
-            vault.navLossEpochState();
+        (,,, uint16 usedLossBps, uint16 maximumLossBps) = vault.navLossEpochState();
         assertEq(usedLossBps, 1);
         assertEq(maximumLossBps, 2);
 
@@ -145,19 +190,59 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.executeRebalanceTrades(lossy);
         assertEq(tokenB.balanceOf(address(vault)), tokenBBefore);
 
-        vm.warp(endsAt);
+        vm.warp(block.timestamp + vault.NAV_LOSS_EPOCH() / 2);
         _refreshPrices();
+        (,,, usedLossBps,) = vault.navLossEpochState();
+        assertEq(usedLossBps, 1);
+
         vault.executeRebalanceTrades(lossy);
-        (uint64 nextEpochId,,, uint16 nextEpochLoss,) = vault.navLossEpochState();
-        assertEq(nextEpochId, epochId + 1);
-        assertEq(nextEpochLoss, 1);
+        (uint64 periodId,,, uint16 replenishedUsedLossBps,) = vault.navLossEpochState();
+        assertEq(replenishedUsedLossBps, 2);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
+        vault.executeRebalanceTrades(lossy);
 
         assertEq(vault.recentTradeExecutionCount(), 4);
         TradeExecutionRecord memory record = vault.recentTradeExecutionRecord(3);
-        assertEq(record.epochId, nextEpochId);
+        assertEq(record.epochId, periodId);
         assertEq(record.batchLossBps, 1);
-        assertEq(record.epochLossUsedBps, 1);
+        assertEq(record.epochLossUsedBps, 2);
         assertEq(record.tradeCount, 1);
+    }
+
+    function testNavLossBudgetDoesNotResetAtObservationPeriodBoundary() public {
+        VaultInitParams memory params = _defaultParams();
+        params.maxNavLossBps = 2;
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        vm.warp(START + 14 days);
+        _proposeTarget(vault, assets, weights);
+
+        (uint64 periodId,, uint64 endsAt,,) = vault.navLossEpochState();
+        vm.warp(endsAt - 1);
+        _refreshPrices();
+
+        uint256 amountIn = 20 * ONE;
+        adapter.setRate(address(tokenB), address(tokenA), 9_998, 10_000);
+        TradeInstruction[] memory lossy =
+            _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
+        vault.executeRebalanceTrades(lossy);
+        vault.executeRebalanceTrades(lossy);
+
+        vm.warp(endsAt);
+        _refreshPrices();
+        (uint64 nextPeriodId,,, uint16 usedLossBps,) = vault.navLossEpochState();
+        assertEq(nextPeriodId, periodId + 1);
+        assertEq(usedLossBps, 2);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.EpochNavLossExceeded.selector);
+        vault.executeRebalanceTrades(lossy);
+
+        vm.warp(endsAt + vault.NAV_LOSS_EPOCH() / 2);
+        _refreshPrices();
+        vault.executeRebalanceTrades(lossy);
+        (,,, usedLossBps,) = vault.navLossEpochState();
+        assertEq(usedLossBps, 2);
     }
 
     function testTradeMustMoveEveryExposureTowardTarget() public {
@@ -248,12 +333,10 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrices();
         vault.activatePendingStrategy();
 
-        assertFalse(vault.isConstituent(address(tokenB)));
+        assertTrue(vault.isConstituent(address(tokenB)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.assetCount(), 2);
-        vm.expectPartialRevert(
-            ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector
-        );
+        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector);
         vault.previewMint(ONE);
 
         TradeInstruction[] memory trades =
@@ -265,6 +348,94 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.assetCount(), 1);
         assertEq(vault.currentWeight(address(tokenA)), 10_000);
         assertEq(vault.previewMint(ONE).length, 1);
+    }
+
+    function testFullBalanceRetirementTradeIncludesDonationAndPrunesAtomically() public {
+        ManagedOTFVault vault = _createVault();
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint16[] memory weights = new uint16[](1);
+        weights[0] = 10_000;
+        _proposeTarget(vault, assets, weights);
+
+        uint256 quotedBalance = tokenB.balanceOf(address(vault));
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenB), address(tokenA), type(uint256).max, quotedBalance);
+        uint256 donation = vault.MAX_RETIRING_DUST() + 1;
+        tokenB.mint(ATTACKER, donation);
+        vm.prank(ATTACKER);
+        assertTrue(tokenB.transfer(address(vault), donation));
+
+        uint256 tokenABefore = tokenA.balanceOf(address(vault));
+        vault.executeRebalanceTrades(trades);
+
+        assertEq(tokenA.balanceOf(address(vault)), tokenABefore + quotedBalance + donation);
+        assertEq(tokenB.balanceOf(address(vault)), 0);
+        assertEq(tokenB.allowance(address(vault), address(executor)), 0);
+        assertEq(vault.assetCount(), 1);
+        assertFalse(vault.isConstituent(address(tokenB)));
+        assertFalse(vault.strategicRebalanceActive());
+    }
+
+    function testFullBalanceSentinelRetiresRegistryRevokedAsset() public {
+        ManagedOTFVault vault = _createVault();
+        uint256 retiringBalance = tokenA.balanceOf(address(vault));
+        assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenA), address(tokenB), type(uint256).max, retiringBalance);
+        vault.executeRebalanceTrades(trades);
+
+        assertEq(tokenA.balanceOf(address(vault)), 0);
+        assertEq(tokenA.allowance(address(vault), address(executor)), 0);
+        assertFalse(vault.isConstituent(address(tokenA)));
+        assertEq(vault.assetCount(), 1);
+    }
+
+    function testFullBalanceSentinelRejectsActiveOrEmptyRetiringAsset() public {
+        ManagedOTFVault vault = _createVault();
+        TradeInstruction[] memory activeTrade =
+            _singleTrade(address(tokenA), address(tokenB), type(uint256).max, 1);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.BadTrade.selector);
+        vault.executeRebalanceTrades(activeTrade);
+
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint16[] memory weights = new uint16[](1);
+        weights[0] = 10_000;
+        _proposeTarget(vault, assets, weights);
+        uint256 retiringBalance = tokenB.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenB.transfer(ALICE, retiringBalance));
+
+        TradeInstruction[] memory emptyRetiringTrade =
+            _singleTrade(address(tokenB), address(tokenA), type(uint256).max, 1);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.BadTrade.selector);
+        vault.executeRebalanceTrades(emptyRetiringTrade);
+    }
+
+    function testFullBalanceSentinelUsesDonatedAmountForOracleSlippage() public {
+        ManagedOTFVault vault = _createVault();
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint16[] memory weights = new uint16[](1);
+        weights[0] = 10_000;
+        _proposeTarget(vault, assets, weights);
+
+        uint256 donation = 100 * ONE;
+        tokenB.mint(ATTACKER, donation);
+        vm.prank(ATTACKER);
+        assertTrue(tokenB.transfer(address(vault), donation));
+        adapter.setRate(address(tokenB), address(tokenA), 98, 100);
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenB), address(tokenA), type(uint256).max, 1);
+        uint256 retiringBalance = tokenB.balanceOf(address(vault));
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.OracleSlippageTooHigh.selector);
+        vault.executeRebalanceTrades(trades);
+        assertEq(tokenB.balanceOf(address(vault)), retiringBalance);
+        assertEq(tokenB.allowance(address(vault), address(executor)), 0);
     }
 
     function testManagerCanReplaceConstituentInSingleStrategyUpdate() public {
@@ -279,9 +450,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrices();
 
         vault.proposeStrategy(
-            assets,
-            weights,
-            "Replace Stock B with Stock C while preserving equal target weights."
+            assets, weights, "Replace Stock B with Stock C while preserving equal target weights."
         );
 
         assertTrue(vault.strategyProposalPending());
@@ -293,14 +462,12 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.activatePendingStrategy();
 
         assertTrue(vault.strategicRebalanceActive());
-        assertFalse(vault.isConstituent(address(tokenB)));
+        assertTrue(vault.isConstituent(address(tokenB)));
         assertTrue(vault.isConstituent(address(tokenC)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.targetWeightBps(address(tokenC)), 5_000);
         assertEq(vault.assetCount(), 3);
-        vm.expectPartialRevert(
-            ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector
-        );
+        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector);
         vault.previewMint(ONE);
 
         TradeInstruction[] memory trades =
@@ -721,6 +888,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         });
         vm.prank(ATTACKER);
         vm.expectRevert(RebalanceExecutor.UnauthorizedVault.selector);
-        executor.executeTrade(trade);
+        executor.executeTrade(trade, trade.amountIn);
     }
 }

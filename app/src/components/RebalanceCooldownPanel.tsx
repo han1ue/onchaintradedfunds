@@ -59,6 +59,7 @@ import {
   encodePacked,
   formatUnits,
   isAddress,
+  maxUint256,
   parseEventLogs,
   parseUnits,
   toFunctionSelector,
@@ -835,7 +836,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
-    ["EpochNavLossExceeded(uint64,uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Wait for the next epoch or reduce the quoted loss."],
+    ["EpochNavLossExceeded(uint64,uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Reduce the quoted loss or wait for capacity to replenish continuously."],
     ["CanonicalPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
     ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
     ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
@@ -964,6 +965,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   });
   const {
     data: factoryProtocolVersionData,
+    error: factoryProtocolVersionError,
+    isFetched: factoryProtocolVersionFetched,
     isLoading: factoryProtocolVersionLoading,
   } = useReadContract({
     address: factoryAddress,
@@ -971,16 +974,46 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     functionName: "PROTOCOL_VERSION",
     chainId: robinhoodChainTestnet.id,
     query: {
-      enabled: Boolean(factoryAddress) && isTestnet,
-      refetchInterval: 12_000,
+      enabled:
+        Boolean(factoryAddress)
+        && isTestnet
+        && robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION,
+      retry: false,
+      staleTime: Infinity,
+      refetchInterval: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
     },
   });
   const factoryProtocolVersion = factoryProtocolVersionData === undefined
     ? undefined
     : Number(factoryProtocolVersionData);
+  const manifestProtocolCompatible =
+    robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
+  const shouldCheckFactoryProtocolVersion =
+    Boolean(factoryAddress) && isTestnet && manifestProtocolCompatible;
+  const factoryProtocolVersionUnavailable =
+    shouldCheckFactoryProtocolVersion
+    && factoryProtocolVersionFetched
+    && (Boolean(factoryProtocolVersionError) || factoryProtocolVersion === undefined);
+  const factoryProtocolVersionMismatch =
+    factoryProtocolVersion !== undefined
+    && factoryProtocolVersion !== SUPPORTED_PROTOCOL_VERSION;
   const protocolCompatible =
-    robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION
+    manifestProtocolCompatible
     && factoryProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
+  const protocolCompatibilityBlocker = !manifestProtocolCompatible
+    ? "Deployment manifest version is unsupported"
+    : !factoryAddress
+      ? "Factory is not configured"
+      : factoryProtocolVersionLoading || !factoryProtocolVersionFetched
+        ? "Checking factory protocol version"
+        : factoryProtocolVersionUnavailable
+          ? "Factory protocol version is unavailable"
+          : factoryProtocolVersionMismatch
+            ? "Factory protocol version is unsupported"
+            : undefined;
 
   const { data: catalogOracleRegistryAddress } = useReadContract({
     address: factoryAddress,
@@ -1404,12 +1437,39 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       />
 
       <main className="dashboardMain">
-        {isTestnet && !factoryProtocolVersionLoading && !protocolCompatible ? (
+        {isTestnet && !manifestProtocolCompatible ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
             <div>
-              <strong>Unsupported protocol deployment</strong>
-              <span>This frontend supports protocol version {SUPPORTED_PROTOCOL_VERSION}, while the deployment manifest declares version {Number.isFinite(robinhoodTestnetProtocolVersion) ? robinhoodTestnetProtocolVersion : "unknown"} and the configured factory reports {factoryProtocolVersion ?? "unavailable"}. Contract writes are disabled until the manifest points to a compatible deployment.</span>
+              <strong>Deployment manifest version mismatch</strong>
+              <span>This frontend requires protocol version {SUPPORTED_PROTOCOL_VERSION}, but the downloaded deployment manifest declares version {robinhoodTestnetProtocolVersion ?? "unknown"}. Contract writes are disabled until the manifest is replaced with one generated for protocol version {SUPPORTED_PROTOCOL_VERSION}.</span>
+            </div>
+          </div>
+        ) : null}
+        {isTestnet && manifestProtocolCompatible && !factoryAddress ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Factory address missing</strong>
+              <span>The deployment manifest passed its version check but does not contain a valid factory address. Contract writes are disabled until the manifest points to the protocol version {SUPPORTED_PROTOCOL_VERSION} factory.</span>
+            </div>
+          </div>
+        ) : null}
+        {isTestnet && manifestProtocolCompatible && factoryAddress && factoryProtocolVersionUnavailable ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Factory protocol version unavailable</strong>
+              <span>The deployment manifest passed its version check, but the app could not read PROTOCOL_VERSION from the configured factory. Verify the factory address and RPC connection before enabling contract writes.</span>
+            </div>
+          </div>
+        ) : null}
+        {isTestnet && manifestProtocolCompatible && factoryAddress && factoryProtocolVersionMismatch ? (
+          <div className="validationSummary danger" role="alert">
+            <AlertTriangle size={15} />
+            <div>
+              <strong>Factory protocol version mismatch</strong>
+              <span>The deployment manifest declares protocol version {SUPPORTED_PROTOCOL_VERSION}, but the configured factory reports version {factoryProtocolVersion}. Contract writes are disabled until the manifest points to a protocol version {SUPPORTED_PROTOCOL_VERSION} factory.</span>
             </div>
           </div>
         ) : null}
@@ -1469,6 +1529,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
             protocolCompatible={protocolCompatible}
+            protocolCompatibilityBlocker={protocolCompatibilityBlocker}
             oraclePrices={catalogOraclePrices}
             onBack={() => openView("vaults")}
             onCreated={openCreatedVault}
@@ -5350,6 +5411,11 @@ function RebalanceTradesPanel({
     : undefined;
   const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
   const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
+  const submitFullRetiringBalance = Boolean(
+    inputAsset?.targetWeightBps === 0
+      && tokenInVaultBalance !== undefined
+      && amountIn === tokenInVaultBalance,
+  );
   const inputOraclePrice = oraclePrices[tokenIn.toLowerCase()];
   const outputOraclePrice = oraclePrices[tokenOut.toLowerCase()];
   const inputBalanceValue = oracleTokenValue(tokenInVaultBalance, tokenInDecimals, inputOraclePrice);
@@ -5389,6 +5455,14 @@ function RebalanceTradesPanel({
     ? Number(((inputTradeValue - quotedOutputValue) * 10_000n + vault.navValue - 1n) / vault.navValue)
     : 0;
   const remainingEpochLossBps = Math.max(0, vault.maxNavLossBps - vault.navLossEpochUsedBps);
+  const epochBudgetUsedPercent = vault.maxNavLossBps > 0
+    ? Math.min(100, vault.navLossEpochUsedBps * 100 / vault.maxNavLossBps)
+    : 0;
+  const epochBudgetTone = remainingEpochLossBps === 0
+    ? "exhausted"
+    : epochBudgetUsedPercent >= 75
+      ? "warning"
+      : "available";
   const epochNavLossTooHigh = quotedPortfolioLossBps > remainingEpochLossBps;
   const inputTargetValue = vault.navValue !== undefined && inputAsset
     ? vault.navValue * BigInt(inputAsset.targetWeightBps) / 10_000n
@@ -5528,7 +5602,7 @@ function RebalanceTradesPanel({
         adapter: adapterAddress,
         tokenIn: tokenIn as `0x${string}`,
         tokenOut: tokenOut as `0x${string}`,
-        amountIn,
+        amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
         minAmountOut,
         adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
       };
@@ -5573,6 +5647,32 @@ function RebalanceTradesPanel({
     >
       <div className="rebalanceTradeForm">
         <PortfolioBandStatus vault={vault} context="rebalance" />
+        <div className={`navLossBudget ${epochBudgetTone}`}>
+          <div className="navLossBudgetHeader">
+            <div>
+              <span>Seven-day NAV-loss budget</span>
+              <strong>{bpsToPercent(vault.navLossEpochUsedBps)} consumed</strong>
+            </div>
+            <div className="navLossBudgetRemaining">
+              <span>Remaining</span>
+              <strong>{bpsToPercent(remainingEpochLossBps)}</strong>
+            </div>
+          </div>
+          <div
+            className="navLossBudgetTrack"
+            role="progressbar"
+            aria-label={`NAV-loss budget: ${bpsToPercent(vault.navLossEpochUsedBps)} consumed of ${bpsToPercent(vault.maxNavLossBps)}`}
+            aria-valuemin={0}
+            aria-valuemax={vault.maxNavLossBps}
+            aria-valuenow={vault.navLossEpochUsedBps}
+          >
+            <span style={{ width: `${epochBudgetUsedPercent}%` }} />
+          </div>
+          <div className="navLossBudgetMeta">
+            <span>{bpsToPercent(vault.maxNavLossBps)} total</span>
+            <span>Capacity replenishes continuously over seven days</span>
+          </div>
+        </div>
         {!hasAllowedTrade ? (
           <div className="inlineEmptyState rebalanceEmptyState">
             <CheckCircle size={16} />
@@ -5737,7 +5837,7 @@ function RebalanceTradesPanel({
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Pool price impact is too high</strong><span>This quote loses approximately {(quotedOracleLossBps / 100).toFixed(2)}% of oracle value; the OTF allows at most {(vault.maxNavLossBps / 100).toFixed(2)}%. Choose a smaller percentage.</span></div></div>
         ) : null}
         {epochNavLossTooHigh ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingEpochLossBps)} remains in epoch {vault.navLossEpochId + 1}. Reduce the trade loss or wait until {formatTimestamp(vault.navLossEpochEndsAt)}.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingEpochLossBps)} currently remains. Reduce the trade loss or wait for capacity to replenish continuously.</span></div></div>
         ) : null}
         {quoteError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
@@ -5907,7 +6007,6 @@ function StrategyChallenge({ vault, onRefresh }: { vault: VaultView; onRefresh: 
 }
 
 function SafetyLimits({ vault }: { vault: VaultView }) {
-  const epochRemaining = useLiveCountdown(vault.navLossEpochEndsAt);
   const epochBudgetUsedPercent = vault.maxNavLossBps > 0
     ? Math.min(100, vault.navLossEpochUsedBps * 100 / vault.maxNavLossBps)
     : 0;
@@ -5953,7 +6052,7 @@ function SafetyLimits({ vault }: { vault: VaultView }) {
             <span style={{ width: `${epochBudgetUsedPercent}%` }} />
             <i style={{ left: `calc(${epochBudgetUsedPercent}% - 5px)` }} />
           </div>
-          <span>{vault.navLossEpochStartsAt ? `${formatTimestamp(vault.navLossEpochStartsAt)} to ${formatTimestamp(vault.navLossEpochEndsAt)}` : "Epoch timing unavailable"} · resets in {formatCooldown(epochRemaining)}</span>
+          <span>Capacity replenishes continuously over seven days; period boundaries are reporting only.</span>
         </div>
       </div>
       <div className="executionPolicy">
@@ -6252,6 +6351,7 @@ function CreateVaultView({
   connectedAddress,
   isTestnet,
   protocolCompatible,
+  protocolCompatibilityBlocker,
   oraclePrices,
   onBack,
   onCreated,
@@ -6259,6 +6359,7 @@ function CreateVaultView({
   connectedAddress?: string;
   isTestnet: boolean;
   protocolCompatible: boolean;
+  protocolCompatibilityBlocker?: string;
   oraclePrices: CatalogOraclePrices;
   onBack: () => void;
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
@@ -6554,14 +6655,14 @@ function CreateVaultView({
     isAddress(draft.feeRecipient) ? null : "Provide a valid fee-recipient address.",
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
-    portfolio.length >= 2 ? null : "Add at least two assets to create an OTF in the app.",
+    portfolio.length >= 2 ? null : "Select at least two assets to continue.",
     protocolMinimumTargetWeightBps !== undefined ? null : "Wait for the protocol target minimum to load.",
     protocolMinimumTargetWeightBps === undefined || portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
       ? null
       : `Every asset needs a target weight of at least ${bpsToPercent(protocolMinimumTargetWeightBps)}.`,
     initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
     allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
-    totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
+    portfolio.length === 0 || totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
@@ -6595,7 +6696,7 @@ function CreateVaultView({
   const deploymentBlockers: string[] = [];
   if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
   if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
-  if (!protocolCompatible) deploymentBlockers.push("Factory protocol version is unsupported");
+  if (!protocolCompatible) deploymentBlockers.push(protocolCompatibilityBlocker ?? "Protocol compatibility check failed");
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
   if (protocolDepositsPaused) deploymentBlockers.push("Protocol deposits are paused");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
@@ -6677,7 +6778,6 @@ function CreateVaultView({
 
   function removePortfolioAsset(index: number) {
     setPortfolio((current) => {
-      if (current.length <= 2) return current;
       const remaining = current.filter((_, itemIndex) => itemIndex !== index);
       const redistributed = distributePortfolioWeight(10_000, remaining);
       return remaining.map((asset, itemIndex) => ({
@@ -6690,6 +6790,14 @@ function CreateVaultView({
   function addPortfolioAsset() {
     if (!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined) return;
     setPortfolio((current) => {
+      if (current.length === 0) {
+        return [{
+          ticker: nextAvailableAsset.symbol,
+          address: nextAvailableAsset.address,
+          targetWeight: 100,
+          initialAmount: "",
+        }];
+      }
       const existingWeights = distributePortfolioWeight(10_000 - protocolMinimumTargetWeightBps, current);
       return [
         ...current.map((asset, index) => ({ ...asset, targetWeight: existingWeights[index] })),
@@ -7135,8 +7243,8 @@ function CreateVaultView({
                       </div>
                       <button
                         type="button"
-                        title={portfolio.length <= 2 ? "Creation requires at least two assets" : `Remove ${asset.ticker}`}
-                        disabled={portfolio.length <= 2}
+                        title={`Remove ${asset.ticker}`}
+                        aria-label={`Remove ${asset.ticker} from portfolio`}
                         onClick={() => removePortfolioAsset(index)}
                       >
                         <Trash2 size={14} />
@@ -7170,7 +7278,7 @@ function CreateVaultView({
                 <div className="formGrid threeColumns">
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
-                  <label><span>Seven-day NAV-loss budget</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps cumulative oracle-valued execution loss in each seven-day epoch. Protocol maximum: 2%.</small></label>
+                  <label><span>Seven-day NAV-loss budget</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued execution loss with capacity replenishing linearly over seven days. Protocol maximum: 2%.</small></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
                   <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
                 </div>
@@ -8081,10 +8189,10 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
           <div className="rebalanceHistoryList">
             {[...executions].reverse().map(({ index, record }) => (
               <article className="rebalanceHistoryEntry" key={`execution-${index}-${record.timestamp}`}>
-                <div className="rebalanceHistoryHeader"><div><strong>Execution {index + 1}</strong><span className="stateBadge muted">Epoch {Number(record.epochId) + 1}</span></div><time>{formatTimestamp(Number(record.timestamp))}</time></div>
+                <div className="rebalanceHistoryHeader"><div><strong>Execution {index + 1}</strong><span className="stateBadge muted">Period {Number(record.epochId) + 1}</span></div><time>{formatTimestamp(Number(record.timestamp))}</time></div>
                 <div className="rebalanceImpactMetrics">
                   <div><span>Batch loss</span><strong>{bpsToPercent(Number(record.batchLossBps))}</strong></div>
-                  <div><span>Epoch used</span><strong>{bpsToPercent(Number(record.epochLossUsedBps))} / {bpsToPercent(vault.maxNavLossBps)}</strong></div>
+                  <div><span>Bucket used</span><strong>{bpsToPercent(Number(record.epochLossUsedBps))} / {bpsToPercent(vault.maxNavLossBps)}</strong></div>
                   <div><span>NAV before</span><strong>{formatUsd18(record.navBefore) ?? "Unavailable"}</strong></div>
                   <ArrowRight size={13} />
                   <div><span>NAV after</span><strong>{formatUsd18(record.navAfter) ?? "Unavailable"}</strong></div>

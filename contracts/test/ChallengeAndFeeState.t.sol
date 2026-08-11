@@ -70,6 +70,32 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceAfterRelease);
     }
 
+    function testUnchallengedActiveStrategyDoesNotLockManagerFees() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets,) = _equalPortfolio();
+        uint16[] memory weights = new uint16[](2);
+        weights[0] = 5_050;
+        weights[1] = 4_950;
+        _proposeTarget(vault, assets, weights);
+
+        assertTrue(vault.strategicRebalanceActive());
+        assertFalse(vault.isWithinTargetBands());
+        assertFalse(vault.challengeActive());
+
+        vm.warp(block.timestamp + 1 days);
+        _refreshPrices();
+        uint256 recipientBefore = vault.balanceOf(FEE_RECIPIENT);
+        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBefore);
+        assertFalse(vault.challengeActive());
+        assertEq(vault.escrowedManagerFeeShares(), 0);
+
+        vm.warp(uint256(vault.lastFeeAccrualTimestamp()) + 1 days);
+        _refreshPrices();
+        assertGt(vault.withdrawManagerFees(), 0);
+        assertFalse(vault.challengeActive());
+    }
+
     function testManagerTradesAutomaticallyResolveChallenge() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
@@ -334,7 +360,9 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertGt(controlFees, 0);
         assertEq(claimedReward, reward);
         assertEq(claimVault.balanceOf(FEE_RECIPIENT), controlVault.balanceOf(FEE_RECIPIENT));
-        assertEq(claimVault.balanceOf(address(collector)), controlVault.balanceOf(address(collector)));
+        assertEq(
+            claimVault.balanceOf(address(collector)), controlVault.balanceOf(address(collector))
+        );
         assertEq(claimVault.totalSupply(), controlVault.totalSupply());
         assertEq(claimVault.lastFeeAccrualTimestamp(), controlVault.lastFeeAccrualTimestamp());
     }

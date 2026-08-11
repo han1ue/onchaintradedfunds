@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
 import { IManagedOTFVaultView } from "../src/interfaces/IManagedOTFVaultView.sol";
+import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
@@ -358,5 +359,26 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertTrue(factory.isVault(address(vault)));
         assertEq(factory.creatorOf(address(vault)), address(this));
         assertEq(vault.factory(), address(factory));
+    }
+
+    function invariantStandardRedemptionOrderMatchesTrackedAssets() public view {
+        address[] memory tracked = vault.assets();
+        IERC7621 basket = IERC7621(address(vault));
+        (address[] memory constituents, uint256[] memory weights) = basket.getConstituents();
+        uint256[] memory preview = vault.previewWithdraw(ONE);
+
+        assertLe(tracked.length, 100);
+        assertEq(constituents.length, tracked.length);
+        assertEq(weights.length, tracked.length);
+        assertEq(preview.length, tracked.length);
+        assertEq(basket.totalConstituents(), tracked.length);
+        uint256 totalWeight;
+        for (uint256 i; i < tracked.length; ++i) {
+            assertEq(constituents[i], tracked[i]);
+            assertTrue(basket.isConstituent(tracked[i]));
+            assertEq(basket.getWeight(tracked[i]), weights[i]);
+            totalWeight += weights[i];
+        }
+        if (!vault.sunset()) assertEq(totalWeight, 10_000);
     }
 }

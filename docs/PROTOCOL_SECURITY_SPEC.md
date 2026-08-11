@@ -234,15 +234,17 @@ withdrawals or standard share transfers.
 For every successful constrained trade batch:
 
 1. Every `tokenIn` and `tokenOut` is a current constituent.
-2. Every asset remains approved by the asset registry.
+2. Every output asset remains approved; an input asset is approved or is already retiring.
 3. Every adapter is approved by the factory.
-4. The input amount is nonzero and input differs from output.
+4. The input amount is nonzero and input differs from output. A full-balance sentinel is valid only
+   for a retiring input asset with a nonzero live balance.
 5. Required oracle prices are valid and fresh.
 6. Explicit adapter output is at least `minAmountOut`.
 7. Every leg's oracle-valued output loss is included in the batch execution loss.
 8. The batch execution loss is the greater of gross per-leg oracle loss and net portfolio NAV loss.
-9. Adding the batch execution loss does not exceed the current seven-day epoch's `maxNavLossBps` budget.
-10. Gains do not reduce loss already accumulated in the current epoch.
+9. Adding the batch execution loss does not exceed the linearly replenishing `maxNavLossBps` budget.
+10. Consumed capacity returns continuously over seven days; a period boundary or profitable trade
+    does not restore it.
 11. Total portfolio distance from target strictly decreases.
 12. No individual constituent moves farther from its target.
 13. Output returns to the OTF.
@@ -253,7 +255,12 @@ If any final check fails, the complete transaction MUST revert, including token 
 approvals.
 
 Multiple partial transactions MAY be used to reach one target. Each transaction MUST independently
-satisfy every invariant above, and their execution losses accumulate against the epoch budget.
+satisfy every invariant above, and its execution loss consumes capacity from the shared replenishing
+bucket. A charge equal to the full configured budget takes seven days to recover completely.
+
+The legacy `navLossEpochState`, `EpochNavLossExceeded`, and `epochLossUsedBps` names are retained for
+ABI compatibility. The returned periods classify execution records only: crossing `endsAt` does not
+reset the budget, and `usedLossBps` is the current bucket usage rounded up to a whole basis point.
 
 For every successful settlement-token entry:
 
@@ -297,7 +304,12 @@ A proposal requires:
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
 - Valid portfolio shape and approved assets.
-- At least one constituent, with every included target at or above the factory's live protocol-wide minimum target weight. The factory owner MAY update that minimum within 1–10,000 basis points; the initial value is 100 basis points (1%). Changes apply only when an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger a challenge retroactively.
+- At least one constituent, with every included target at or above the factory's live protocol-wide
+  minimum target weight. That minimum has a permanent floor of 100 basis points (1%); the factory
+  owner MAY raise it up to 10,000 basis points or reduce it back to the floor. Changes apply only when
+  an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger
+  a challenge retroactively.
+- The union of positive-target and zero-target retiring assets MUST NOT exceed 100 tracked assets.
 - Any constituent omitted from the proposal remains tracked at a zero target until its reserve is
   liquidated exactly to zero after activation.
 - Proposed turnover is calculated for the eventual strategy-history record but does not block the proposal.
@@ -338,6 +350,17 @@ Once the balance is at or below that limit, the asset MAY be pruned, the exact w
 resume if every remaining constituent is approved and has a positive target, unless the vault has
 already entered terminal shutdown.
 
+During this staged retirement, ERC-7621 discovery MUST return the complete live redemption basket in
+the same order used by mint and withdrawal previews. Retiring assets remain discoverable with a zero
+effective target until pruning. This deliberate zero-weight retirement extension is not a claim of
+strict conformance with the draft's positive-weight constituent rule.
+
+To make a final retirement sale atomic with pruning, the manager or an authorized executor MAY set
+`TradeInstruction.amountIn` to `type(uint256).max` only for a retiring input asset. The vault MUST
+resolve the full live balance inside that transaction and use the resolved amount consistently for
+approval, adapter execution, emitted amounts, oracle and NAV-loss checks, and post-trade pruning. The
+sentinel MUST revert for an active asset or an empty retiring balance.
+
 `MAX_RETIRING_DUST` is fixed at `1e9` raw units per retired asset. Because the asset registry
 accepts only 18-decimal constituents, this writes off at most `1e-9` whole tokens: $0.001 at a
 $1,000,000 unit price and $0.01 at a $10,000,000 unit price. This per-asset bound is an explicit
@@ -350,10 +373,13 @@ inside every completion band and every zero-target constituent has a raw balance
 `MAX_RETIRING_DUST`. A successful strategic trade batch that reaches those conditions MUST prune
 retired constituents and complete atomically after all final trade safety checks. Permissionless
 explicit completion remains available when no trade is required or natural price movement restores
-the portfolio. Completion
-marks the activated strategy version complete, resumes manager-fee withdrawals, and is the only
-point that updates `lastCompletedStrategyTimestamp`;
+the portfolio. Completion marks the activated strategy version complete and is the only point that
+updates `lastCompletedStrategyTimestamp`;
 proposals, failed trades, and partial trades MUST NOT update it.
+
+An active strategy alone MUST NOT suspend accrual or manager-fee withdrawals. A proven challenge
+breach escrows challenge-window fees; timely recovery releases them to the manager. Sunset
+checkpoints the final interval and permanently stops future accrual.
 
 ## 7. Challenge and fee accountability
 

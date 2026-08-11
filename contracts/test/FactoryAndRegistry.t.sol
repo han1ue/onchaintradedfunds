@@ -13,6 +13,7 @@ import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
+import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -163,6 +164,19 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.setMinTargetWeightBps(0);
     }
 
+    function testFactoryEnforcesOnePercentMinimumTargetWeightFloor() public {
+        assertEq(factory.MIN_TARGET_WEIGHT_BPS(), 100);
+
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+        factory.setMinTargetWeightBps(99);
+        assertEq(factory.minTargetWeightBps(), 100);
+
+        factory.setMinTargetWeightBps(200);
+        assertEq(factory.minTargetWeightBps(), 200);
+        factory.setMinTargetWeightBps(100);
+        assertEq(factory.minTargetWeightBps(), 100);
+    }
+
     function testFactoryAllowsSingleAssetPortfolio() public {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets = new address[](1);
@@ -253,6 +267,24 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.setTradeAdapterApproved(address(adapter), false);
         assertFalse(assetRegistry.isApprovedAsset(address(tokenA)));
         assertFalse(factory.isTradeAdapterApproved(address(adapter)));
+    }
+
+    function testTradeAdapterCanBeRevokedAfterItsCodeDisappears() public {
+        address retiredAdapter = address(adapter);
+        assertTrue(factory.isTradeAdapterApproved(retiredAdapter));
+
+        vm.etch(retiredAdapter, bytes(""));
+        factory.setTradeAdapterApproved(retiredAdapter, false);
+        assertFalse(factory.isTradeAdapterApproved(retiredAdapter));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, retiredAdapter)
+        );
+        factory.setTradeAdapterApproved(retiredAdapter, true);
+
+        MockTradeAdapter replacement = new MockTradeAdapter();
+        factory.setTradeAdapterApproved(address(replacement), true);
+        assertTrue(factory.isTradeAdapterApproved(address(replacement)));
     }
 
     function testRegistryOwnershipTransfersAreEnforced() public {

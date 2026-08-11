@@ -19,6 +19,7 @@ interface Vm {
         address emitter
     ) external;
     function deal(address account, uint256 newBalance) external;
+    function etch(address target, bytes calldata newRuntimeBytecode) external;
 }
 
 abstract contract TestBase {

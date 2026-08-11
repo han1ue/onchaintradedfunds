@@ -113,6 +113,63 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(ALICE), expected[1]);
     }
 
+    function testRetiringAssetRemainsInStandardRedemptionOrderUntilPruned() public {
+        ManagedOTFVault vault = _createVault();
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint16[] memory weights = new uint16[](1);
+        weights[0] = 10_000;
+        _proposeTarget(vault, assets, weights);
+
+        address[] memory tracked = vault.assets();
+        (address[] memory constituents, uint256[] memory constituentWeights) =
+            vault.getConstituents();
+        assertEq(constituents.length, tracked.length);
+        assertEq(constituents[0], tracked[0]);
+        assertEq(constituents[1], tracked[1]);
+        assertEq(constituentWeights[0], 10_000);
+        assertEq(constituentWeights[1], 0);
+        assertEq(vault.totalConstituents(), tracked.length);
+        assertTrue(vault.isConstituent(address(tokenB)));
+        assertEq(vault.getWeight(address(tokenB)), 0);
+
+        uint256 shares = 10 * ONE;
+        uint256[] memory minimums = vault.previewWithdraw(shares);
+        assertEq(minimums.length, constituents.length);
+        uint256[] memory withdrawn = vault.withdraw(shares, ALICE, minimums);
+        assertEq(withdrawn.length, constituents.length);
+        assertGt(tokenA.balanceOf(ALICE), 0);
+        assertGt(tokenB.balanceOf(ALICE), 0);
+
+        uint256 retiringBalance = tokenB.balanceOf(address(vault));
+        vault.executeRebalanceTrades(
+            _singleTrade(address(tokenB), address(tokenA), retiringBalance, retiringBalance)
+        );
+        assertFalse(vault.isConstituent(address(tokenB)));
+        assertEq(vault.totalConstituents(), 1);
+    }
+
+    function testRevokedAssetRemainsInStandardRedemptionOrderUntilPruned() public {
+        ManagedOTFVault vault = _createVault();
+        assetRegistry.setAssetApproved(address(tokenA), false);
+
+        address[] memory tracked = vault.assets();
+        (address[] memory constituents, uint256[] memory weights) = vault.getConstituents();
+        assertEq(constituents.length, tracked.length);
+        assertEq(constituents[0], tracked[0]);
+        assertEq(constituents[1], tracked[1]);
+        assertEq(weights[0], 0);
+        assertEq(weights[1], 10_000);
+        assertTrue(vault.isConstituent(address(tokenA)));
+        assertEq(vault.getWeight(address(tokenA)), 0);
+
+        uint256[] memory minimums = vault.previewWithdraw(10 * ONE);
+        assertEq(minimums.length, constituents.length);
+        vault.withdraw(10 * ONE, ALICE, minimums);
+        assertGt(tokenA.balanceOf(ALICE), 0);
+        assertGt(tokenB.balanceOf(ALICE), 0);
+    }
+
     function testPreviewZeroAndLengthSemanticsMatchDraft() public {
         ManagedOTFVault vault = _createVault();
         uint256[] memory zeros = new uint256[](2);

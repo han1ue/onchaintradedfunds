@@ -38,6 +38,77 @@ contract PortfolioCalculator {
     error InvalidTargetWeightSum(uint256 sum);
     error InvalidFeeRate(uint16 feeBps);
     error FeeExponentOverflow(uint256 exponentWad);
+    error EpochNavLossExceeded(
+        uint64 epochId, uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
+    );
+
+    /// @dev Packs used BPS in bits 0..15, recovery timestamp in 16..79, and period ID in 80..143.
+    function navLossBudgetState(
+        uint64 recoveryAt,
+        uint64 periodAnchor,
+        uint16 maximumLossBps,
+        uint256 batchLossBps
+    ) external view returns (uint256 packedState) {
+        uint256 period = 7 days;
+        // Replenishment is necessarily measured against chain time.
+        // forge-lint: disable-next-line(block-timestamp)
+        uint256 timestamp = block.timestamp;
+        uint256 periodId = (timestamp - uint256(periodAnchor)) / period;
+        // Period identifiers fit uint64 for the lifetime of the chain.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 epochId = uint64(periodId);
+        uint256 nextRecoveryAt = recoveryAt;
+        if (nextRecoveryAt < timestamp) nextRecoveryAt = timestamp;
+        uint256 usedBefore = nextRecoveryAt == timestamp
+            ? 0
+            : MathEx.mulDivUp(nextRecoveryAt - timestamp, maximumLossBps, period);
+
+        if (batchLossBps != 0) {
+            if (maximumLossBps == 0) {
+                revert EpochNavLossExceeded(epochId, 0, batchLossBps, 0);
+            }
+            nextRecoveryAt += MathEx.mulDivUp(batchLossBps, period, maximumLossBps);
+            if (nextRecoveryAt > timestamp + period) {
+                revert EpochNavLossExceeded(epochId, usedBefore, batchLossBps, maximumLossBps);
+            }
+        }
+
+        uint256 usedLossBps = nextRecoveryAt == timestamp
+            ? 0
+            : MathEx.mulDivUp(nextRecoveryAt - timestamp, maximumLossBps, period);
+        packedState = usedLossBps | (nextRecoveryAt << 16) | (periodId << 80);
+    }
+
+    function turnoverBps(
+        address[] calldata currentAssets,
+        address[] calldata newAssets,
+        uint256[] calldata newWeights,
+        uint256[] calldata currentWeights,
+        uint256 weightScale
+    ) external pure returns (uint256) {
+        uint256 sumDiff;
+        for (uint256 i = 0; i < currentAssets.length; i++) {
+            uint256 targetWeight;
+            for (uint256 j = 0; j < newAssets.length; j++) {
+                if (newAssets[j] == currentAssets[i]) {
+                    targetWeight = newWeights[j] * weightScale;
+                    break;
+                }
+            }
+            sumDiff += currentWeights[i].absDiff(targetWeight);
+        }
+        for (uint256 i = 0; i < newAssets.length; i++) {
+            bool alreadyTracked;
+            for (uint256 j = 0; j < currentAssets.length; j++) {
+                if (currentAssets[j] == newAssets[i]) {
+                    alreadyTracked = true;
+                    break;
+                }
+            }
+            if (!alreadyTracked) sumDiff += newWeights[i] * weightScale;
+        }
+        return MathEx.mulDivUp(sumDiff, 1, 2 * weightScale);
+    }
 
     function effectiveTargetWeights(address vault, address[] calldata assets, address assetRegistry)
         external
@@ -51,10 +122,7 @@ contract PortfolioCalculator {
         for (uint256 i = 0; i < assets.length; i++) {
             uint256 storedWeight = ITargetWeightVault(vault).targetWeightBps(assets[i]);
             storedWeightTotal += storedWeight;
-            if (
-                storedWeight != 0
-                    && IAssetRegistry(assetRegistry).isApprovedAsset(assets[i])
-            ) {
+            if (storedWeight != 0 && IAssetRegistry(assetRegistry).isApprovedAsset(assets[i])) {
                 weights[i] = storedWeight;
                 activeWeightTotal += storedWeight;
             }
@@ -145,35 +213,35 @@ contract PortfolioCalculator {
         }
     }
 
-    function portfolioValue(
-        address vault,
-        address[] calldata assets,
-        address oracleRegistry
-    ) external view returns (uint256 nav) {
+    function portfolioValue(address vault, address[] calldata assets, address oracleRegistry)
+        external
+        view
+        returns (uint256 nav)
+    {
         (, nav) = _portfolioState(vault, assets, oracleRegistry, false, BPS);
     }
 
-    function portfolioState(
-        address vault,
-        address[] calldata assets,
-        address oracleRegistry
-    ) external view returns (uint256[] memory weights, uint256 nav) {
+    function portfolioState(address vault, address[] calldata assets, address oracleRegistry)
+        external
+        view
+        returns (uint256[] memory weights, uint256 nav)
+    {
         return _portfolioState(vault, assets, oracleRegistry, true, BPS);
     }
 
-    function precisePortfolioState(
-        address vault,
-        address[] calldata assets,
-        address oracleRegistry
-    ) external view returns (uint256[] memory weights, uint256 nav) {
+    function precisePortfolioState(address vault, address[] calldata assets, address oracleRegistry)
+        external
+        view
+        returns (uint256[] memory weights, uint256 nav)
+    {
         return _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
     }
 
-    function assetValue(
-        address asset,
-        uint256 rawBalance,
-        address oracleRegistry
-    ) external view returns (uint256) {
+    function assetValue(address asset, uint256 rawBalance, address oracleRegistry)
+        external
+        view
+        returns (uint256)
+    {
         return _assetValue(asset, rawBalance, oracleRegistry);
     }
 
@@ -231,8 +299,7 @@ contract PortfolioCalculator {
     ) private view returns (uint256[] memory weights, uint256 nav) {
         uint256[] memory values = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            values[i] =
-                _assetValue(assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
+            values[i] = _assetValue(assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
             nav += values[i];
         }
         if (nav == 0) {
@@ -245,11 +312,11 @@ contract PortfolioCalculator {
         }
     }
 
-    function _assetValue(
-        address asset,
-        uint256 rawBalance,
-        address oracleRegistry
-    ) private view returns (uint256) {
+    function _assetValue(address asset, uint256 rawBalance, address oracleRegistry)
+        private
+        view
+        returns (uint256)
+    {
         if (rawBalance == 0) return 0;
         (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry);
         _tokenDecimals(asset);

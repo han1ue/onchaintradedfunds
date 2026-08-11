@@ -192,8 +192,11 @@ standard events. Target proposal, trade execution, and completion are separate t
 The implementation is ERC-7621 interface-compatible with documented restrictions; it does not
 claim full or unconditional compliance. It intentionally accepts only exact proportional basket
 contributions, prevents ownership renunciation, and stages constituent removal until its reserve is
-zero. The proportional-only contribution behavior differs from the draft's generalized monotonic
-contribution and valuation requirements.
+zero. During staged retirement, `getConstituents()` continues to return every asset in the live
+redemption basket and reports a zero effective target for each retiring asset; this keeps previews,
+withdrawals, and discovery in the same order until atomic liquidation and pruning. The draft rejects
+zero constituent weights, so this retirement behavior and the proportional-only contribution model
+remain documented extensions rather than a claim of unconditional conformance.
 
 ## Portfolio And Strategy Timing
 
@@ -392,24 +395,33 @@ struct TradeInstruction {
 The vault grants exact temporary approvals to `RebalanceExecutor`, clears them after each trade,
 and receives output directly. There is no generic target/calldata execution function.
 
+For a final sale of a retiring asset, `amountIn = type(uint256).max` means "sell the vault's full
+live balance." The vault resolves that balance inside the transaction and uses the resolved amount
+for approval, execution, events, oracle-loss accounting, and same-transaction pruning. The sentinel
+is rejected for active assets and for an empty retiring balance.
+
 Every partial batch must use current constituents and approved adapters, satisfy explicit and
 oracle-valued slippage, stay within the NAV-loss bound, avoid worsening any constituent,
 and strictly reduce total distance from the active target.
 
 When a successful strategic trade batch brings every constituent inside the narrower completion
 bands, the vault completes the strategic rebalance atomically, emits
-`StrategicRebalanceCompleted`, updates `lastCompletedStrategyTimestamp`, and resumes fee withdrawals.
+`StrategicRebalanceCompleted`, and updates `lastCompletedStrategyTimestamp`. An active strategy does
+not itself lock manager fees; only a challenge escrows them, and sunset stops future accrual.
 Anyone may still call `completeStrategicRebalance()` when no trade is needed or
 natural price movement reaches the bands.
 
 Retained rebalance protections:
 
-- Approved assets only.
+- Approved output assets; retiring inputs may only be sold down.
 - Approved trading adapters only.
 - Onchain strategy-turnover disclosure.
-- Cumulative seven-day NAV-loss budget; gains do not restore consumed capacity.
+- Linearly replenishing NAV-loss budget; a full charge recovers over seven days and gains do not
+  restore consumed capacity.
 - Narrow completion bands and wider challenge bands.
-- Protocol-wide minimum target weight, initialized at 1% and adjustable by the factory owner.
+- Protocol-wide minimum target weight with a permanent 1% floor; the factory owner may raise it or
+  reduce it back to, but never below, that floor.
+- At most 100 tracked assets, including zero-target assets awaiting retirement.
 - Fresh onchain prices.
 - Atomicity of each partial trade transaction.
 - No arbitrary manager calls.

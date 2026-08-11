@@ -87,7 +87,8 @@ contract OTFEntryRouter {
     bool private _entered;
 
     constructor(address initialOwner, address factory_, address settlementToken_) {
-        if (initialOwner == address(0) || factory_ == address(0) || settlementToken_ == address(0)) {
+        if (initialOwner == address(0) || factory_ == address(0) || settlementToken_ == address(0))
+        {
             revert ZeroAddress();
         }
         if (factory_.code.length == 0) revert InvalidDependency(factory_);
@@ -111,7 +112,7 @@ contract OTFEntryRouter {
     }
 
     function setEntryAdapterApproved(address adapter, bool approved) external onlyOwner {
-        if (adapter == address(0) || adapter.code.length == 0) {
+        if (adapter == address(0) || (approved && adapter.code.length == 0)) {
             revert InvalidDependency(adapter);
         }
         isEntryAdapterApproved[adapter] = approved;
@@ -184,13 +185,10 @@ contract OTFEntryRouter {
             uint256 assetBefore = IERC20(asset).balanceOf(address(this));
             settlementToken.safeApprove(swap.adapter, 0);
             settlementToken.safeApprove(swap.adapter, swap.maxSettlementIn);
-            uint256 reportedInput = IEntryAdapter(swap.adapter).buyExactOutput(
-                settlementToken,
-                asset,
-                required,
-                swap.maxSettlementIn,
-                swap.adapterData
-            );
+            uint256 reportedInput = IEntryAdapter(swap.adapter)
+                .buyExactOutput(
+                    settlementToken, asset, required, swap.maxSettlementIn, swap.adapterData
+                );
             settlementToken.safeApprove(swap.adapter, 0);
 
             uint256 settlementAfter = IERC20(settlementToken).balanceOf(address(this));
@@ -286,17 +284,21 @@ contract OTFEntryRouter {
             }
             _pushExact(asset, swap.adapter, observedRedeemed);
             uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
-            uint256 reportedOutput = ITradeAdapter(swap.adapter).executeSwap(
-                asset,
-                settlementToken,
-                observedRedeemed,
-                swap.minSettlementOut,
-                swap.adapterData
-            );
+            uint256 reportedOutput = ITradeAdapter(swap.adapter)
+                .executeSwap(
+                    asset,
+                    settlementToken,
+                    observedRedeemed,
+                    swap.minSettlementOut,
+                    swap.adapterData
+                );
             uint256 observedOutput =
                 IERC20(settlementToken).balanceOf(address(this)) - settlementBefore;
             if (reportedOutput != observedOutput) {
                 revert AdapterOutputMismatch(i, reportedOutput, observedOutput);
+            }
+            if (observedOutput < swap.minSettlementOut) {
+                revert MinimumOutputNotMet(swap.minSettlementOut, observedOutput);
             }
             settlementReceived += observedOutput;
         }

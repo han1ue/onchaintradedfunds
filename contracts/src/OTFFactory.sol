@@ -36,6 +36,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
+    uint16 public constant MIN_TARGET_WEIGHT_BPS = 100;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
     uint256 public constant PROTOCOL_VERSION = 2;
@@ -83,7 +84,7 @@ contract OTFFactory is IAdapterAllowlist {
     address public oracleRegistry;
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
-    uint16 public minTargetWeightBps = 100;
+    uint16 public minTargetWeightBps = MIN_TARGET_WEIGHT_BPS;
     address public officialMarketRegistry;
     bool public depositsPaused;
 
@@ -216,13 +217,16 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function setTradeAdapterApproved(address adapter, bool approved) external onlyOwner {
-        if (adapter == address(0) || adapter.code.length == 0) revert ZeroAddress();
+        if (adapter == address(0)) revert ZeroAddress();
+        if (approved && adapter.code.length == 0) revert InvalidDependency(adapter);
         isTradeAdapterApproved[adapter] = approved;
         emit TradeAdapterApprovalChanged(adapter, approved);
     }
 
     function setMinTargetWeightBps(uint16 newMinimumBps) external onlyOwner {
-        if (newMinimumBps == 0 || newMinimumBps > 10_000) revert InvalidLimit();
+        if (newMinimumBps < MIN_TARGET_WEIGHT_BPS || newMinimumBps > 10_000) {
+            revert InvalidLimit();
+        }
         uint16 previousMinimumBps = minTargetWeightBps;
         minTargetWeightBps = newMinimumBps;
         emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);

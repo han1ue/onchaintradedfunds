@@ -3,9 +3,23 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
+import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
+import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { MockEntryAdapter } from "../src/mocks/MockEntryAdapter.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
+
+contract MinimumIgnoringTradeAdapter is ITradeAdapter {
+    using SafeTransferLib for address;
+
+    function executeSwap(address, address tokenOut, uint256 amountIn, uint256, bytes calldata)
+        external
+        returns (uint256 amountOut)
+    {
+        amountOut = amountIn / 2;
+        tokenOut.safeTransfer(msg.sender, amountOut);
+    }
+}
 
 contract OTFEntryRouterTest is ProtocolTestBase {
     OTFEntryRouter private entryRouter;
@@ -139,6 +153,24 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         entryRouter.setEntryAdapterApproved(address(entryAdapter), false);
     }
 
+    function testEntryAdapterCanBeRevokedAfterItsCodeDisappears() public {
+        address retiredAdapter = address(entryAdapter);
+        assertTrue(entryRouter.isEntryAdapterApproved(retiredAdapter));
+
+        vm.etch(retiredAdapter, bytes(""));
+        entryRouter.setEntryAdapterApproved(retiredAdapter, false);
+        assertFalse(entryRouter.isEntryAdapterApproved(retiredAdapter));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryRouter.InvalidDependency.selector, retiredAdapter)
+        );
+        entryRouter.setEntryAdapterApproved(retiredAdapter, true);
+
+        MockEntryAdapter replacement = new MockEntryAdapter();
+        entryRouter.setEntryAdapterApproved(address(replacement), true);
+        assertTrue(entryRouter.isEntryAdapterApproved(address(replacement)));
+    }
+
     function testUserCanRedeemBasketToSettlementTokenAtomically() public {
         ManagedOTFVault vault = _createVault();
         uint256 shares = 10 * ONE;
@@ -150,12 +182,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         vm.startPrank(ALICE);
         vault.approve(address(entryRouter), shares);
         uint256 received = entryRouter.redeemToSettlement(
-            address(vault),
-            shares,
-            ALICE,
-            expectedSettlement,
-            block.timestamp + 1 hours,
-            swaps
+            address(vault), shares, ALICE, expectedSettlement, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
 
@@ -199,31 +226,58 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(vault.balanceOf(ALICE), shares);
     }
 
-    function _swaps(uint256 maxA, uint256 maxB)
-        private
-        view
-        returns (EntrySwap[] memory swaps)
-    {
-        swaps = new EntrySwap[](2);
-        swaps[0] = EntrySwap({
-            adapter: address(entryAdapter), maxSettlementIn: maxA, adapterData: ""
-        });
-        swaps[1] = EntrySwap({
-            adapter: address(entryAdapter), maxSettlementIn: maxB, adapterData: ""
-        });
+    function testSettlementExitEnforcesEachObservedLegMinimum() public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = 10 * ONE;
+        vault.transfer(ALICE, shares);
+        uint256[] memory expectedAssets = vault.previewRedeem(shares);
+
+        MinimumIgnoringTradeAdapter minimumIgnoringAdapter = new MinimumIgnoringTradeAdapter();
+        entryRouter.setEntryAdapterApproved(address(minimumIgnoringAdapter), true);
+        tokenC.mint(address(minimumIgnoringAdapter), expectedAssets[0]);
+        exitAdapter.setRate(address(tokenB), address(tokenC), 2, 1);
+
+        ExitSwap[] memory swaps = _exitSwaps(expectedAssets[0], expectedAssets[1]);
+        swaps[0].adapter = address(minimumIgnoringAdapter);
+        uint256 observedFirstLeg = expectedAssets[0] / 2;
+
+        vm.startPrank(ALICE);
+        vault.approve(address(entryRouter), shares);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFEntryRouter.MinimumOutputNotMet.selector, expectedAssets[0], observedFirstLeg
+            )
+        );
+        entryRouter.redeemToSettlement(
+            address(vault),
+            shares,
+            ALICE,
+            expectedAssets[0] + expectedAssets[1],
+            block.timestamp + 1 hours,
+            swaps
+        );
+        vm.stopPrank();
+
+        assertEq(vault.balanceOf(ALICE), shares);
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
     }
 
-    function _exitSwaps(uint256 minA, uint256 minB)
-        private
-        view
-        returns (ExitSwap[] memory swaps)
-    {
+    function _swaps(uint256 maxA, uint256 maxB) private view returns (EntrySwap[] memory swaps) {
+        swaps = new EntrySwap[](2);
+        swaps[0] =
+            EntrySwap({ adapter: address(entryAdapter), maxSettlementIn: maxA, adapterData: "" });
+        swaps[1] =
+            EntrySwap({ adapter: address(entryAdapter), maxSettlementIn: maxB, adapterData: "" });
+    }
+
+    function _exitSwaps(uint256 minA, uint256 minB) private view returns (ExitSwap[] memory swaps) {
         swaps = new ExitSwap[](2);
-        swaps[0] = ExitSwap({
-            adapter: address(exitAdapter), minSettlementOut: minA, adapterData: ""
-        });
-        swaps[1] = ExitSwap({
-            adapter: address(exitAdapter), minSettlementOut: minB, adapterData: ""
-        });
+        swaps[0] =
+            ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minA, adapterData: "" });
+        swaps[1] =
+            ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minB, adapterData: "" });
     }
 }

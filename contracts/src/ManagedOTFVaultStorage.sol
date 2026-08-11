@@ -22,6 +22,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
+    uint256 internal constant MAX_TRACKED_ASSETS = 100;
+    /// @notice Recovery period for the linearly replenishing NAV-loss budget.
+    /// @dev The legacy name is retained for ABI compatibility.
     uint256 public constant NAV_LOSS_EPOCH = 7 days;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     /// @notice Maximum retiring balance that may be written off and pruned.
@@ -60,6 +63,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnapprovedAsset(address asset);
     error InvalidWeightSum(uint256 sum);
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
+    error TrackedAssetLimitExceeded();
     error InvalidWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps);
     error StrategyRationaleTooLong(uint256 length);
     error StrategyRationaleRequired();
@@ -270,8 +274,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     bool public sunset;
     uint64 public sunsetAt;
     uint64 public navLossEpochAnchor;
-    uint64 internal _navLossEpochId;
-    uint16 internal _navLossEpochUsedBps;
+    /// @dev Timestamp when the currently consumed NAV-loss capacity is fully replenished.
+    uint64 internal _navLossBucketRecoveryAt;
+    /// @dev Rounded bucket usage cached after the latest successful trade execution.
+    uint16 internal _navLossBucketUsedBps;
     uint32 internal _strategicExecutionLossBps;
     uint256 public tradeExecutionCount;
     TradeExecutionRecord[16] internal _recentTradeExecutions;

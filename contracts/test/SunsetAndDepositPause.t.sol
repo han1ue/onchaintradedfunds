@@ -137,7 +137,7 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
 
         assetRegistry.setAssetApproved(address(tokenA), true);
         assertEq(vault.targetWeightBps(address(tokenA)), 0);
-        assertFalse(vault.isConstituent(address(tokenA)));
+        assertTrue(vault.isConstituent(address(tokenA)));
         vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
         vault.previewMint(ONE);
 

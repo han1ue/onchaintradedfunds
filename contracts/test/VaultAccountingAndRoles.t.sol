@@ -146,6 +146,27 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(BOB), 50 * ONE);
     }
 
+    function testRedeemRemainsAvailableWhenOracleStalesDuringActiveStrategy() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        _proposeTarget(vault, assets, weights);
+        vault.transfer(ALICE, 10 * ONE);
+
+        vm.warp(block.timestamp + 26 hours);
+        uint256[] memory minimums = vault.previewRedeem(10 * ONE);
+        uint256 tokenABefore = tokenA.balanceOf(ALICE);
+        uint256 tokenBBefore = tokenB.balanceOf(ALICE);
+
+        vm.prank(ALICE);
+        vault.redeem(10 * ONE, ALICE, ALICE, minimums);
+
+        assertTrue(vault.strategicRebalanceActive());
+        assertGt(tokenA.balanceOf(ALICE), tokenABefore);
+        assertGt(tokenB.balanceOf(ALICE), tokenBBefore);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.StaleOraclePrice.selector);
+        vault.completeStrategicRebalance();
+    }
+
     function testApproveRequiresZeroResetBeforeNonzeroReplacement() public {
         ManagedOTFVault vault = _createVault();
         vault.transfer(ALICE, 20 * ONE);
@@ -293,8 +314,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(history.nextStrategyRationale(), "Authorized rationale");
         assertEq(history.strategyVersionCount(), 1);
         assertEq(
-            history.getStrategyVersion(0).rationale,
-            "A test portfolio with explicit safety limits."
+            history.getStrategyVersion(0).rationale, "A test portfolio with explicit safety limits."
         );
     }
 
