@@ -580,6 +580,32 @@ export const otfEntryRouterAbi = [
   },
   {
     type: "function",
+    name: "enterWithExactSettlement",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "settlementIn", type: "uint256" },
+      { name: "minShares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "deadline", type: "uint256" },
+      {
+        name: "swaps",
+        type: "tuple[]",
+        components: [
+          { name: "adapter", type: "address" },
+          { name: "settlementIn", type: "uint256" },
+          { name: "minAssetOut", type: "uint256" },
+          { name: "adapterData", type: "bytes" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "shares", type: "uint256" },
+      { name: "refunds", type: "uint256[]" },
+    ],
+  },
+  {
+    type: "function",
     name: "redeemToSettlement",
     stateMutability: "nonpayable",
     inputs: [
@@ -599,6 +625,18 @@ export const otfEntryRouterAbi = [
       },
     ],
     outputs: [{ name: "settlementReceived", type: "uint256" }],
+  },
+  {
+    type: "event",
+    name: "EnteredWithExactSettlement",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "payer", type: "address" },
+      { indexed: true, name: "receiver", type: "address" },
+      { indexed: true, name: "vault", type: "address" },
+      { indexed: false, name: "settlementIn", type: "uint256" },
+      { indexed: false, name: "shares", type: "uint256" },
+    ],
   },
 ] as const;
 

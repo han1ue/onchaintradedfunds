@@ -2,7 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
+import {
+    EntrySwap,
+    ExactInputEntrySwap,
+    ExitSwap,
+    OTFEntryRouter
+} from "../src/OTFEntryRouter.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { MockEntryAdapter } from "../src/mocks/MockEntryAdapter.sol";
@@ -93,6 +98,105 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(vault.balanceOf(ALICE), shares);
         assertEq(tokenC.allowance(address(entryRouter), address(entryAdapter)), 0);
         assertEq(tokenC.allowance(address(entryRouter), address(secondAdapter)), 0);
+    }
+
+    function testUserCanSpendExactSettlementAndMintLargestProportionalBasket() public {
+        ManagedOTFVault vault = _createVault();
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
+        exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
+        tokenA.mint(address(exitAdapter), 100 * ONE);
+        tokenB.mint(address(exitAdapter), 100 * ONE);
+
+        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
+        uint256[] memory available = new uint256[](2);
+        available[0] = 60 * ONE;
+        available[1] = 40 * ONE;
+        uint256 expectedShares = 8 * ONE;
+        uint256[] memory required = vault.previewMint(expectedShares);
+        assertEq(expectedShares, 8 * ONE);
+        assertEq(required[0], 40 * ONE);
+        assertEq(required[1], 40 * ONE);
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        (uint256 shares, uint256[] memory refunds) = entryRouter.enterWithExactSettlement(
+            address(vault), 100 * ONE, expectedShares, ALICE, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertEq(shares, expectedShares);
+        assertEq(vault.balanceOf(ALICE), expectedShares);
+        assertEq(refunds[0], 20 * ONE);
+        assertEq(refunds[1], 0);
+        assertEq(tokenA.balanceOf(ALICE), 20 * ONE);
+        assertEq(tokenC.balanceOf(ALICE), 9_900 * ONE);
+        assertEq(tokenA.balanceOf(address(vault)), 540 * ONE);
+        assertEq(tokenB.balanceOf(address(vault)), 540 * ONE);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
+    }
+
+    function testExactSettlementEntryRevertsBelowMinimumSharesAtomically() public {
+        ManagedOTFVault vault = _createVault();
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
+        exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
+        tokenA.mint(address(exitAdapter), 100 * ONE);
+        tokenB.mint(address(exitAdapter), 100 * ONE);
+        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryRouter.MinimumOutputNotMet.selector, 9 * ONE, 8 * ONE)
+        );
+        entryRouter.enterWithExactSettlement(
+            address(vault), 100 * ONE, 9 * ONE, ALICE, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertEq(vault.balanceOf(ALICE), 0);
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
+    }
+
+    function testExactSettlementEntryUsesFeeAdjustedProportionalSupply() public {
+        ManagedOTFVault vault = _createVault();
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
+        exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
+        tokenA.mint(address(exitAdapter), 100 * ONE);
+        tokenB.mint(address(exitAdapter), 100 * ONE);
+        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(50 * ONE, 50 * ONE);
+        vm.warp(START + 365 days);
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        (uint256 shares,) = entryRouter.enterWithExactSettlement(
+            address(vault), 100 * ONE, 10 * ONE, ALICE, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertGt(shares, 10 * ONE);
+        assertEq(vault.balanceOf(ALICE), shares);
+        assertEq(tokenA.balanceOf(address(vault)), 550 * ONE);
+        assertEq(tokenB.balanceOf(address(vault)), 550 * ONE);
+    }
+
+    function testExactSettlementEntryRequiresFullyAllocatedInput() public {
+        ManagedOTFVault vault = _createVault();
+        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(50 * ONE, 40 * ONE);
+
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFEntryRouter.SettlementInputMismatch.selector, 100 * ONE, 90 * ONE
+            )
+        );
+        entryRouter.enterWithExactSettlement(
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
+        );
     }
 
     function testUnapprovedAdapterRevertsBeforePullingSettlement() public {
@@ -279,5 +383,25 @@ contract OTFEntryRouterTest is ProtocolTestBase {
             ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minA, adapterData: "" });
         swaps[1] =
             ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minB, adapterData: "" });
+    }
+
+    function _exactInputSwaps(uint256 settlementA, uint256 settlementB)
+        private
+        view
+        returns (ExactInputEntrySwap[] memory swaps)
+    {
+        swaps = new ExactInputEntrySwap[](2);
+        swaps[0] = ExactInputEntrySwap({
+            adapter: address(exitAdapter),
+            settlementIn: settlementA,
+            minAssetOut: 0,
+            adapterData: ""
+        });
+        swaps[1] = ExactInputEntrySwap({
+            adapter: address(exitAdapter),
+            settlementIn: settlementB,
+            minAssetOut: 0,
+            adapterData: ""
+        });
     }
 }

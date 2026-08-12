@@ -296,18 +296,18 @@ async function requireCode(label, address) {
   if (!code || code === "0x") throw new Error(`${label} has no bytecode at ${address}.`);
 }
 
-async function ensureDeployment(name, compiled, args) {
+async function ensureDeployment(name, compiled, args, requiredVersion) {
   const existing = contracts[name];
-  if (existing?.address) {
+  if (existing?.address && (requiredVersion === undefined || existing.version === requiredVersion)) {
     const address = getAddress(existing.address);
     const code = await publicClient.getCode({ address });
     if (code && code !== "0x") return { ...existing, address };
   }
   const deployed = await deployContract({ artifact: compiled, args });
-  contracts[name] = deployed;
+  contracts[name] = requiredVersion === undefined ? deployed : { ...deployed, version: requiredVersion };
   saveDeployment(deployment);
   console.log(`${name}: ${deployed.address}`);
-  return deployed;
+  return contracts[name];
 }
 
 const actualChainId = await publicClient.getChainId();
@@ -386,6 +386,7 @@ const entryRouter = await ensureDeployment(
   "entryRouter",
   entryRouterArtifact,
   [account.address, factory, settlementToken],
+  2,
 );
 
 const [adapterOwner, adapterRouter, adapterSettlement, adapterFee, entryOwner, entryFactory, entrySettlement] =

@@ -69,7 +69,7 @@ const contractRows = [
   ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
-  ["OTFEntryRouter", "Atomically converts an approved settlement token into the exact basket needed for OTF shares."],
+  ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and surplus-asset refunds."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
   ["OracleRegistry", "Maps approved assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
@@ -303,17 +303,18 @@ export default function DocsPage() {
                 <strong>Two USDG entry routes</strong>
                 <span>
                   The app can buy existing shares from an optional OTF/USDG market, or use the
-                  settlement router to buy the exact constituent basket and mint new shares
-                  atomically. The manager creates and seeds the direct share market from their own
-                  wallet. Either route can price above or below the Chainlink-priced OTF value.
+                  settlement router to spend a fixed USDG amount across constituent pools and mint
+                  the largest proportional basket. Both routes show estimated and minimum shares.
+                  The manager creates and seeds the direct share market from their own wallet.
+                  Either route can price above or below the Chainlink-priced OTF value.
                 </span>
               </div>
             </div>
-            <pre><code>{`enterWithSettlement(
+            <pre><code>{`enterWithExactSettlement(
   vault,
-  shares,
+  settlementIn,
+  minShares,
   receiver,
-  maxSettlementIn,
   deadline,
   swaps
 )`}</code></pre>

@@ -5,10 +5,13 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IEntryAdapter } from "./interfaces/IEntryAdapter.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
+import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IEntryVault {
     function assets() external view returns (address[] memory);
+
+    function totalSupply() external view returns (uint256);
 
     function previewMint(uint256 shares) external view returns (uint256[] memory amountsIn);
 
@@ -27,6 +30,13 @@ interface IEntryVault {
 struct EntrySwap {
     address adapter;
     uint256 maxSettlementIn;
+    bytes adapterData;
+}
+
+struct ExactInputEntrySwap {
+    address adapter;
+    uint256 settlementIn;
+    uint256 minAssetOut;
     bytes adapterData;
 }
 
@@ -51,6 +61,7 @@ contract OTFEntryRouter {
     error DeadlineExpired(uint256 deadline);
     error UnapprovedEntryAdapter(address adapter);
     error InvalidSettlementLeg(uint256 index);
+    error SettlementInputMismatch(uint256 expected, uint256 actual);
     error MaximumInputTooLow(uint256 requiredMaximum, uint256 suppliedMaximum);
     error AdapterInputMismatch(uint256 index, uint256 reported, uint256 observed);
     error AdapterOutputMismatch(uint256 index, uint256 expected, uint256 observed);
@@ -71,6 +82,13 @@ contract OTFEntryRouter {
         uint256 shares,
         uint256 settlementSpent,
         uint256 settlementRefunded
+    );
+    event EnteredWithExactSettlement(
+        address indexed payer,
+        address indexed receiver,
+        address indexed vault,
+        uint256 settlementIn,
+        uint256 shares
     );
     event RedeemedToSettlement(
         address indexed owner,
@@ -221,6 +239,167 @@ contract OTFEntryRouter {
         uint256 refund = maxSettlementIn - settlementSpent;
         if (refund != 0) _pushExact(settlementToken, msg.sender, refund);
         emit EnteredWithSettlement(msg.sender, receiver, vault, shares, settlementSpent, refund);
+    }
+
+    /// @notice Spends a fixed settlement amount and mints the largest proportional OTF basket.
+    /// @dev Any constituent amounts above the limiting basket ratio are returned to the payer.
+    function enterWithExactSettlement(
+        address vault,
+        uint256 settlementIn,
+        uint256 minShares,
+        address receiver,
+        uint256 deadline,
+        ExactInputEntrySwap[] calldata swaps
+    ) external nonReentrant returns (uint256 shares, uint256[] memory refunds) {
+        // User-supplied swap deadlines intentionally use chain time.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > deadline) revert DeadlineExpired(deadline);
+        if (settlementIn == 0) revert ZeroMaximumInput();
+        if (minShares == 0) revert ZeroMinimumOutput();
+        if (receiver == address(0) || receiver == address(this) || receiver == vault) {
+            revert InvalidReceiver(receiver);
+        }
+        if (!IAdapterAllowlist(factory).isVault(vault)) revert InvalidVault(vault);
+
+        address[] memory assets = IEntryVault(vault).assets();
+        if (swaps.length != assets.length) revert InvalidArrayLength();
+        uint256 allocatedSettlement;
+        for (uint256 i = 0; i < assets.length; i++) {
+            ExactInputEntrySwap calldata swap = swaps[i];
+            allocatedSettlement += swap.settlementIn;
+            if (assets[i] == settlementToken) {
+                if (
+                    swap.adapter != address(0) || swap.minAssetOut != swap.settlementIn
+                        || swap.adapterData.length != 0
+                ) {
+                    revert InvalidSettlementLeg(i);
+                }
+            } else if (!isEntryAdapterApproved[swap.adapter]) {
+                revert UnapprovedEntryAdapter(swap.adapter);
+            }
+        }
+        if (allocatedSettlement != settlementIn) {
+            revert SettlementInputMismatch(settlementIn, allocatedSettlement);
+        }
+
+        _pullExact(settlementToken, msg.sender, address(this), settlementIn);
+        uint256[] memory availableAmounts = new uint256[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            ExactInputEntrySwap calldata swap = swaps[i];
+            if (assets[i] == settlementToken) {
+                availableAmounts[i] = swap.settlementIn;
+                continue;
+            }
+            if (swap.settlementIn == 0) continue;
+
+            _pushExact(settlementToken, swap.adapter, swap.settlementIn);
+            uint256 assetBefore = IERC20(assets[i]).balanceOf(address(this));
+            uint256 reportedOutput = ITradeAdapter(swap.adapter)
+                .executeSwap(
+                    settlementToken,
+                    assets[i],
+                    swap.settlementIn,
+                    swap.minAssetOut,
+                    swap.adapterData
+                );
+            uint256 observedOutput = IERC20(assets[i]).balanceOf(address(this)) - assetBefore;
+            if (reportedOutput != observedOutput) {
+                revert AdapterOutputMismatch(i, reportedOutput, observedOutput);
+            }
+            if (observedOutput < swap.minAssetOut) {
+                revert MinimumOutputNotMet(swap.minAssetOut, observedOutput);
+            }
+            availableAmounts[i] = observedOutput;
+        }
+
+        uint256[] memory requiredAmounts;
+        (shares, requiredAmounts) = _largestProportionalMint(vault, assets, availableAmounts);
+        if (shares < minShares) revert MinimumOutputNotMet(minShares, shares);
+
+        for (uint256 i = 0; i < assets.length; i++) {
+            assets[i].safeApprove(vault, 0);
+            assets[i].safeApprove(vault, requiredAmounts[i]);
+        }
+        uint256[] memory deposited =
+            IEntryVault(vault).mintWithBasket(shares, receiver, requiredAmounts);
+        if (deposited.length != requiredAmounts.length) revert InvalidArrayLength();
+
+        refunds = new uint256[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            assets[i].safeApprove(vault, 0);
+            if (deposited[i] != requiredAmounts[i]) {
+                revert VaultInputMismatch(i, requiredAmounts[i], deposited[i]);
+            }
+            refunds[i] = availableAmounts[i] - deposited[i];
+            if (refunds[i] != 0) _pushExact(assets[i], msg.sender, refunds[i]);
+        }
+        emit EnteredWithExactSettlement(msg.sender, receiver, vault, settlementIn, shares);
+    }
+
+    function _largestProportionalMint(
+        address vault,
+        address[] memory assets,
+        uint256[] memory availableAmounts
+    ) private view returns (uint256 shares, uint256[] memory requiredAmounts) {
+        uint256 supply = IEntryVault(vault).totalSupply();
+        uint256 lower = type(uint256).max;
+        for (uint256 i = 0; i < assets.length; i++) {
+            uint256 reserve = IERC20(assets[i]).balanceOf(vault);
+            if (reserve == 0) continue;
+            uint256 candidate = MathEx.mulDiv(availableAmounts[i], supply, reserve);
+            if (candidate < lower) lower = candidate;
+        }
+        if (lower == type(uint256).max || lower == 0) {
+            return (0, new uint256[](assets.length));
+        }
+
+        requiredAmounts = IEntryVault(vault).previewMint(lower);
+        if (!_amountsFit(requiredAmounts, availableAmounts)) {
+            return _searchLargestMint(vault, 0, lower, availableAmounts);
+        }
+
+        uint256 upper = lower;
+        for (uint256 i = 0; i < 64; i++) {
+            if (upper > type(uint256).max / 2) break;
+            upper *= 2;
+            uint256[] memory upperAmounts = IEntryVault(vault).previewMint(upper);
+            if (!_amountsFit(upperAmounts, availableAmounts)) {
+                return _searchLargestMint(vault, lower, upper, availableAmounts);
+            }
+            lower = upper;
+            requiredAmounts = upperAmounts;
+        }
+        return (lower, requiredAmounts);
+    }
+
+    function _searchLargestMint(
+        address vault,
+        uint256 lower,
+        uint256 upper,
+        uint256[] memory availableAmounts
+    ) private view returns (uint256 shares, uint256[] memory requiredAmounts) {
+        while (upper - lower > 1) {
+            uint256 midpoint = lower + (upper - lower) / 2;
+            uint256[] memory midpointAmounts = IEntryVault(vault).previewMint(midpoint);
+            if (_amountsFit(midpointAmounts, availableAmounts)) lower = midpoint;
+            else upper = midpoint;
+        }
+        shares = lower;
+        requiredAmounts = shares == 0
+            ? new uint256[](availableAmounts.length)
+            : IEntryVault(vault).previewMint(shares);
+    }
+
+    function _amountsFit(uint256[] memory required, uint256[] memory available)
+        private
+        pure
+        returns (bool)
+    {
+        if (required.length != available.length) return false;
+        for (uint256 i = 0; i < required.length; i++) {
+            if (required[i] > available[i]) return false;
+        }
+        return true;
     }
 
     function redeemToSettlement(

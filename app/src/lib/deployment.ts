@@ -1,7 +1,7 @@
 import deployment from "@/config/robinhood-testnet.json";
 import { getAddress, isAddress, type Address } from "viem";
 
-type ContractDeployment = { address?: unknown };
+type ContractDeployment = { address?: unknown; version?: unknown };
 type ConstituentPoolDeployment = {
   asset?: unknown;
   pool?: unknown;
@@ -33,6 +33,11 @@ function deployedContract(name: string): Address | undefined {
   return address(contracts[name]?.address);
 }
 
+function deployedContractVersion(name: string): number | undefined {
+  const version = contracts[name]?.version;
+  return typeof version === "number" && Number.isSafeInteger(version) ? version : undefined;
+}
+
 const constituentPools = Array.isArray(v3Venue?.constituentPools)
   ? (v3Venue.constituentPools as ConstituentPoolDeployment[]).flatMap((record) => {
       const asset = address(record.asset);
@@ -60,6 +65,9 @@ export const robinhoodTestnetAddresses = Object.freeze({
   uniswapV3SwapRouter: address(externalContracts.uniswapV3SwapRouter),
   uniswapV3Quoter: address(externalContracts.uniswapV3Quoter),
 });
+
+export const robinhoodTestnetEntryRouterSupportsExactInput =
+  deployedContractVersion("entryRouter") === 2;
 
 export const robinhoodTestnetV3Venue = Object.freeze({
   provider: typeof v3Venue?.provider === "string" ? v3Venue.provider : undefined,

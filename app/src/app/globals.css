@@ -6169,8 +6169,33 @@ input.invalid {
 }
 
 .sunsetDialogClose {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
+  place-items: center;
   margin-inline-start: auto;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.sunsetDialogClose:hover:not(:disabled) {
+  border-color: var(--border);
+  background: rgb(var(--accent-rgb) / 7%);
+  color: var(--text);
+}
+
+.sunsetDialogClose:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .sunsetConsequences {

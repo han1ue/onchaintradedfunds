@@ -192,11 +192,14 @@ Adapter review should verify:
 
 ### Settlement entry adapters
 
-`OTFEntryRouter` is an optional convenience layer for acquiring an exact proportional basket with
-USDG. It is not part of vault custody or valuation. The router accepts only factory-registered
-OTFs, requires an independently approved entry adapter for every non-settlement constituent,
-checks observed token deltas against adapter return values, uses exact temporary approvals, and
-mints shares only after every exact-output purchase succeeds.
+`OTFEntryRouter` is an optional convenience layer for acquiring a proportional basket with USDG.
+It is not part of vault custody or valuation. The router accepts only factory-registered OTFs,
+requires an independently approved entry adapter for every non-settlement constituent, checks
+observed token deltas against adapter return values, and uses exact temporary approvals. The
+exact-share path mints only after every exact-output purchase succeeds. The exact-USDG path spends
+fixed per-leg inputs, derives the largest strictly proportional mint from observed outputs, enforces
+an aggregate minimum-share floor, and returns every surplus constituent to the payer rather than
+depositing it off-weight.
 
 The entry path still inherits liquidity and integration risks:
 
