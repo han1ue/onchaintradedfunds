@@ -282,7 +282,6 @@ for (let i = 0; i < priceFeeds.length; i += 1) {
 const deployment = {
   network: "robinhood-testnet",
   chainId,
-  protocolVersion: expectedProtocolVersion,
   rpcUrl,
   deployedAt: new Date().toISOString(),
   deployer: account.address,

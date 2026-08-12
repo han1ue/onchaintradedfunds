@@ -1,7 +1,7 @@
 import deployment from "@/config/robinhood-testnet.json";
 import { getAddress, isAddress, type Address } from "viem";
 
-type ContractDeployment = { address?: unknown; version?: unknown };
+type ContractDeployment = { address?: unknown };
 type ConstituentPoolDeployment = {
   asset?: unknown;
   pool?: unknown;
@@ -19,11 +19,6 @@ const contracts = deployment.contracts as Record<string, ContractDeployment | un
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
 const v3Venue = (deployment as { v3Venue?: V3VenueDeployment }).v3Venue;
 export const SUPPORTED_PROTOCOL_VERSION = 1;
-const deploymentProtocolVersion = (deployment as { protocolVersion?: unknown }).protocolVersion;
-export const robinhoodTestnetProtocolVersion =
-  typeof deploymentProtocolVersion === "number" && Number.isSafeInteger(deploymentProtocolVersion)
-    ? deploymentProtocolVersion
-    : undefined;
 
 function address(value: unknown): Address | undefined {
   return typeof value === "string" && isAddress(value) ? getAddress(value) : undefined;
@@ -31,11 +26,6 @@ function address(value: unknown): Address | undefined {
 
 function deployedContract(name: string): Address | undefined {
   return address(contracts[name]?.address);
-}
-
-function deployedContractVersion(name: string): number | undefined {
-  const version = contracts[name]?.version;
-  return typeof version === "number" && Number.isSafeInteger(version) ? version : undefined;
 }
 
 const constituentPools = Array.isArray(v3Venue?.constituentPools)
@@ -65,9 +55,6 @@ export const robinhoodTestnetAddresses = Object.freeze({
   uniswapV3SwapRouter: address(externalContracts.uniswapV3SwapRouter),
   uniswapV3Quoter: address(externalContracts.uniswapV3Quoter),
 });
-
-export const robinhoodTestnetEntryRouterSupportsExactInput =
-  deployedContractVersion("entryRouter") === 2;
 
 export const robinhoodTestnetV3Venue = Object.freeze({
   provider: typeof v3Venue?.provider === "string" ? v3Venue.provider : undefined,

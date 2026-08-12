@@ -81,8 +81,6 @@ import {
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
-  robinhoodTestnetEntryRouterSupportsExactInput,
-  robinhoodTestnetProtocolVersion,
   robinhoodTestnetV3Venue,
   SUPPORTED_PROTOCOL_VERSION,
 } from "@/lib/deployment";
@@ -990,10 +988,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     functionName: "PROTOCOL_VERSION",
     chainId: robinhoodChainTestnet.id,
     query: {
-      enabled:
-        Boolean(factoryAddress)
-        && isTestnet
-        && robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION,
+      enabled: Boolean(factoryAddress) && isTestnet,
       retry: false,
       staleTime: Infinity,
       refetchInterval: false,
@@ -1005,10 +1000,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const factoryProtocolVersion = factoryProtocolVersionData === undefined
     ? undefined
     : Number(factoryProtocolVersionData);
-  const manifestProtocolCompatible =
-    robinhoodTestnetProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
   const shouldCheckFactoryProtocolVersion =
-    Boolean(factoryAddress) && isTestnet && manifestProtocolCompatible;
+    Boolean(factoryAddress) && isTestnet;
   const factoryProtocolVersionUnavailable =
     shouldCheckFactoryProtocolVersion
     && factoryProtocolVersionFetched
@@ -1016,20 +1009,16 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const factoryProtocolVersionMismatch =
     factoryProtocolVersion !== undefined
     && factoryProtocolVersion !== SUPPORTED_PROTOCOL_VERSION;
-  const protocolCompatible =
-    manifestProtocolCompatible
-    && factoryProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
-  const protocolCompatibilityBlocker = !manifestProtocolCompatible
-    ? "Deployment manifest version is unsupported"
-    : !factoryAddress
-      ? "Factory is not configured"
-      : factoryProtocolVersionLoading || !factoryProtocolVersionFetched
-        ? "Checking factory protocol version"
-        : factoryProtocolVersionUnavailable
-          ? "Factory protocol version is unavailable"
-          : factoryProtocolVersionMismatch
-            ? "Factory protocol version is unsupported"
-            : undefined;
+  const protocolCompatible = factoryProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
+  const protocolCompatibilityBlocker = !factoryAddress
+    ? "Factory is not configured"
+    : factoryProtocolVersionLoading || !factoryProtocolVersionFetched
+      ? "Checking factory protocol version"
+      : factoryProtocolVersionUnavailable
+        ? "Factory protocol version is unavailable"
+        : factoryProtocolVersionMismatch
+          ? "Factory protocol version is unsupported"
+          : undefined;
 
   const { data: catalogOracleRegistryAddress } = useReadContract({
     address: factoryAddress,
@@ -1449,39 +1438,30 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       />
 
       <main className="dashboardMain">
-        {isTestnet && !manifestProtocolCompatible ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div>
-              <strong>Deployment manifest version mismatch</strong>
-              <span>This frontend requires protocol version {SUPPORTED_PROTOCOL_VERSION}, but the downloaded deployment manifest declares version {robinhoodTestnetProtocolVersion ?? "unknown"}. Contract writes are disabled until the manifest is replaced with one generated for protocol version {SUPPORTED_PROTOCOL_VERSION}.</span>
-            </div>
-          </div>
-        ) : null}
-        {isTestnet && manifestProtocolCompatible && !factoryAddress ? (
+        {isTestnet && !factoryAddress ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
             <div>
               <strong>Factory address missing</strong>
-              <span>The deployment manifest passed its version check but does not contain a valid factory address. Contract writes are disabled until the manifest points to the protocol version {SUPPORTED_PROTOCOL_VERSION} factory.</span>
+              <span>The deployment manifest does not contain a valid factory address. Contract writes are disabled until a factory is configured.</span>
             </div>
           </div>
         ) : null}
-        {isTestnet && manifestProtocolCompatible && factoryAddress && factoryProtocolVersionUnavailable ? (
+        {isTestnet && factoryAddress && factoryProtocolVersionUnavailable ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
             <div>
               <strong>Factory protocol version unavailable</strong>
-              <span>The deployment manifest passed its version check, but the app could not read PROTOCOL_VERSION from the configured factory. Verify the factory address and RPC connection before enabling contract writes.</span>
+              <span>The app could not read PROTOCOL_VERSION from the configured factory. Verify the factory address and RPC connection before enabling contract writes.</span>
             </div>
           </div>
         ) : null}
-        {isTestnet && manifestProtocolCompatible && factoryAddress && factoryProtocolVersionMismatch ? (
+        {isTestnet && factoryAddress && factoryProtocolVersionMismatch ? (
           <div className="validationSummary danger" role="alert">
             <AlertTriangle size={15} />
             <div>
               <strong>Factory protocol version mismatch</strong>
-              <span>The deployment manifest declares protocol version {SUPPORTED_PROTOCOL_VERSION}, but the configured factory reports version {factoryProtocolVersion}. Contract writes are disabled until the manifest points to a protocol version {SUPPORTED_PROTOCOL_VERSION} factory.</span>
+              <span>This frontend supports protocol version {SUPPORTED_PROTOCOL_VERSION}, but the configured factory reports version {factoryProtocolVersion}. Contract writes are disabled until a supported factory is configured.</span>
             </div>
           </div>
         ) : null}
@@ -3713,7 +3693,7 @@ function UserActions({
   const underlyingRouteAvailable = entryContractsConfigured &&
     entryAdapterApproved !== false &&
     constituentPoolsReady &&
-    (activeAction === "redeem" || (robinhoodTestnetEntryRouterSupportsExactInput && !vaultDepositsBlocked));
+    (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
     entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
   );
@@ -4526,8 +4506,6 @@ function UserActions({
                 <small>
                   {!entryContractsConfigured || entryAdapterApproved === false
                     ? "Settlement route not configured"
-                    : activeAction === "deposit" && !robinhoodTestnetEntryRouterSupportsExactInput
-                      ? "Exact-input entry router not deployed"
                     : activeAction === "deposit" && vault.sunset
                       ? "OTF sunset — new positions closed"
                     : activeAction === "deposit" && vault.depositsPaused
