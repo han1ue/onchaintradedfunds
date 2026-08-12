@@ -11,6 +11,7 @@ function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(
 export default async function HomePage() {
   const [competition, leaderboard, session] = await Promise.all([getCompetition(), getLeaderboard(), auth()]);
   const preview = competition.id.startsWith("preview");
+  const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
       <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
@@ -23,8 +24,8 @@ export default async function HomePage() {
     </div>
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>
-        <ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} />
-        <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/rules">How ranking works <ArrowRight size={14} /></Link></div>
+        <ResponsiveLeaderboard entries={leaderboardPreview} final={competition.phase === "final"} />
+        <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
       <HowItWorks connected={Boolean(session?.user)} />
     </div>

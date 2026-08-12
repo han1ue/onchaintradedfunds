@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BrandMark } from "./BrandMark";
+import { PrimaryNav } from "./PrimaryNav";
 import { ThemeToggle } from "./ThemeToggle";
 import { auth } from "@/server/auth";
 
@@ -8,11 +9,7 @@ export async function Header() {
   return <header className="topNav"><div className="navInner">
     <BrandMark />
     <strong className="launchLabel">Launch Competition</strong>
-    <nav className="primaryNav" aria-label="Primary navigation">
-      <Link href="/">Leaderboard</Link>
-      <Link href="/submit">Submit OTF</Link>
-      <Link href="/rules">Rules</Link>
-    </nav>
+    <PrimaryNav />
     <div className="navActions">
       <ThemeToggle />
       {session?.user?.xUsername

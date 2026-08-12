@@ -79,8 +79,8 @@ button { color: inherit; }
 .primaryNav { height: 100%; display: flex; align-items: stretch; gap: 4px; margin-left: 20px; }
 .primaryNav a { position: relative; display: grid; place-items: center; padding: 0 17px; color: var(--text-muted); font-size: .86rem; font-weight: 600; }
 .primaryNav a:hover { color: var(--text); }
-.primaryNav a:first-child { color: var(--text); }
-.primaryNav a:first-child::after { content: ""; position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--teal); }
+.primaryNav a.active { color: var(--teal); }
+.primaryNav a.active::after { content: ""; position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--teal); }
 .navActions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .iconButton { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; }
 .iconButton:hover { border-color: var(--border-strong); background: var(--card-raised); }
@@ -122,6 +122,7 @@ button { color: inherit; }
 .cardHeading svg { color: var(--teal); }
 .leaderboardHeader, .leaderboardRow { display: grid; grid-template-columns: 64px minmax(270px, 1.4fr) minmax(220px, .95fr) minmax(125px, .6fr) 110px; align-items: center; }
 .leaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
+.leaderboardHeader span:first-child { text-align: center; }
 .leaderboardHeader span:last-child { text-align: right; }
 .leaderboardRow { min-height: 102px; padding: 12px 16px; border-bottom: 1px solid var(--border); animation: row-enter .32s both; }
 .leaderboardRow:nth-child(3) { animation-delay: 45ms; }
@@ -129,10 +130,14 @@ button { color: inherit; }
 .leaderboardRow:nth-child(5) { animation-delay: 135ms; }
 .leaderboardRow:last-child { border-bottom: 0; }
 .leaderboardRow:hover { background: rgb(var(--accent-rgb) / 2.5%); }
-.rank { color: var(--text-muted); font-size: 1.05rem; text-align: center; }
+.rank { position: relative; width: 64px; min-height: 34px; display: grid; place-items: center; justify-self: center; color: var(--text-muted); font-size: 1.05rem; text-align: center; }
+.rank > span { position: relative; z-index: 1; line-height: 1; }
+.rankWings { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.rankWings path { fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; opacity: .72; }
 .rank1 { color: var(--gold); font-weight: 800; }
 .rank2 { color: var(--text-soft); font-weight: 700; }
-.rank3 { color: #d98a4d; font-weight: 700; }
+.rank3 { color: color-mix(in srgb, var(--gold) 58%, var(--rose)); font-weight: 700; }
+.podiumRank > span { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, currentColor 42%, transparent); border-radius: 50%; background: var(--card); font-size: .82rem; }
 .otfIdentity { min-width: 0; display: flex; align-items: flex-start; gap: 11px; padding-right: 18px; }
 .otfIdentity svg { flex: 0 0 auto; }
 .proposalMark path, .proposalMark circle { vector-effect: non-scaling-stroke; }
@@ -155,6 +160,17 @@ button { color: inherit; }
 .voteTotal span { display: block; margin-top: 4px; color: var(--text-muted); font-size: .64rem; }
 .cardFooter { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: .68rem; }
 .cardFooter a, .compactInfo a { display: inline-flex; align-items: center; gap: 5px; color: var(--teal); font-weight: 650; }
+.leaderboardPreviewFooter a { min-height: 28px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--teal) 38%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--teal) 6%, transparent); }
+.leaderboardPreviewFooter a:hover { background: color-mix(in srgb, var(--teal) 11%, transparent); }
+
+.leaderboardPage { max-width: 1360px; }
+.leaderboardPageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 18px; }
+.leaderboardPageHeader h1 { margin: 0; font-size: clamp(1.85rem, 4vw, 3rem); line-height: 1; letter-spacing: -.04em; }
+.leaderboardPageHeader p { margin: 10px 0 0; color: var(--text-muted); font-size: .82rem; }
+.leaderboardSummary { display: grid; justify-items: end; gap: 9px; color: var(--text-muted); font-size: .7rem; }
+.leaderboardSummary > span { display: flex; align-items: center; gap: 6px; }
+.leaderboardSummary svg { color: var(--teal); }
+.fullLeaderboardCard { overflow: hidden; }
 
 .howCard { padding-bottom: 16px; }
 .howCard .cardHeading { border-bottom: 0; padding-bottom: 6px; }
@@ -318,7 +334,6 @@ button { color: inherit; }
   .launchLabel { display: none; }
   .primaryNav { margin-left: 8px; }
   .primaryNav a { padding: 0 9px; font-size: .75rem; }
-  .primaryNav a:first-child { display: none; }
   .navActions .iconButton { display: none; }
   .compactButton { padding: 0 10px; font-size: .7rem; }
   .pageShell { padding: 26px 14px 42px; }
@@ -331,12 +346,14 @@ button { color: inherit; }
   .metricCard small { display: none; }
   .leaderboardHeader { display: none; }
   .leaderboardRow { position: relative; grid-template-columns: 42px minmax(0, 1fr) 70px; min-height: 132px; padding: 14px; align-items: start; }
-  .rank { padding-top: 8px; }
+  .rank { width: 42px; }
   .otfIdentity { padding-right: 8px; }
   .otfIdentity p { -webkit-line-clamp: 2; }
   .allocationVisual { grid-column: 2 / 4; width: 100%; margin-top: 12px; padding-right: 0; }
   .voteTotal { grid-column: 3; grid-row: 1; padding-top: 8px; }
   .cardFooter { align-items: flex-start; flex-direction: column; padding: 11px 14px; }
+  .leaderboardPageHeader { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .leaderboardSummary { justify-items: start; }
   .howCard { display: block; padding-bottom: 16px; }
   .howCard > .button { width: calc(100% - 36px); }
   .lowerGrid { grid-template-columns: 1fr; }
@@ -354,7 +371,7 @@ button { color: inherit; }
 
 @media (max-width: 440px) {
   .primaryNav a { padding: 0 7px; }
-  .primaryNav a:last-child { display: none; }
+  .primaryNav .navSecondary { display: none; }
   .competitionHero h1 br { display: none; }
   .metricsGrid { gap: 7px; }
   .metricCard { padding: 11px 9px; }
