@@ -1507,6 +1507,18 @@ h2 {
   line-height: 1.35;
 }
 
+.oracleFreshnessNotice {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.oracleFreshnessNotice > svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-top: 1px;
+}
+
 .ghostAction,
 .secondaryAction,
 .primaryAction,

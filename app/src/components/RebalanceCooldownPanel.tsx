@@ -2464,7 +2464,7 @@ function PortfolioAllocation({
       </div>
 
       <div className="cardFooterAction">
-        <span className="mutedInline">
+        <span className="mutedInline oracleFreshnessNotice">
           <Info size={20} strokeWidth={2.25} />
           Robinhood equity feeds publish 24/5. Oracle-priced actions require every constituent feed to remain fresh; with the current equity settings, each feed expires 25 hours after its own latest update. Those actions may therefore remain available into the weekend before pausing until all required feeds update. Transfers and proportional basket deposits or redemptions remain available.
         </span>
