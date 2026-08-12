@@ -3061,7 +3061,6 @@ textarea::placeholder {
 
 .routeExecutionNote svg {
   flex: 0 0 auto;
-  margin-top: 1px;
   color: var(--blue);
 }
 

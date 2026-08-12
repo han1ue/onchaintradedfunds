@@ -4799,10 +4799,6 @@ function UserActions({
                 </strong>
               </div>
             </div>
-            <div className="routeExecutionNote">
-              <Info size={14} />
-              <span>The open-market price comes from the direct OTF / USDG pool and can differ from portfolio value.</span>
-            </div>
             {marketRequiredInput && !marketBalanceSufficient ? (
               <div className="validationSummary danger">
                 <AlertTriangle size={15} />
@@ -4835,6 +4831,10 @@ function UserActions({
                 {marketBusy ? <Loader2 className="spin" size={14} /> : activeAction === "deposit" ? <ArrowDownToLine size={14} /> : <ArrowRight size={14} />}
                 {activeAction === "deposit" ? `Buy ${vault.symbol}` : `Redeem for USDG`}
               </button>
+            </div>
+            <div className="routeExecutionNote">
+              <Info size={14} />
+              <span>The open-market price comes from the direct OTF / USDG pool and can differ from portfolio value.</span>
             </div>
           </div>
         ) : null}
