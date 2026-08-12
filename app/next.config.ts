@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@onchaintradedfunds/generated"],
+  transpilePackages: ["@onchaintradedfunds/brand", "@onchaintradedfunds/generated"],
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

@@ -74,7 +74,7 @@ button { color: inherit; }
   backdrop-filter: blur(14px);
 }
 .navInner { width: min(1360px, 100%); height: 100%; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; }
-.brandMark { width: 43px; height: 38px; display: grid; place-items: center; border: 1px solid var(--teal); border-radius: 5px; color: var(--teal); font-size: .93rem; font-weight: 800; letter-spacing: -.03em; }
+.brandMarkLink { display: inline-flex; flex: 0 0 auto; }
 .launchLabel { margin-left: 16px; padding-right: 16px; border-right: 1px solid var(--border); font-size: .78rem; white-space: nowrap; }
 .primaryNav { height: 100%; display: flex; align-items: stretch; gap: 4px; margin-left: 20px; }
 .primaryNav a { position: relative; display: grid; place-items: center; padding: 0 17px; color: var(--text-muted); font-size: .86rem; font-weight: 600; }
@@ -315,7 +315,6 @@ button { color: inherit; }
 
 @media (max-width: 760px) {
   .navInner { padding: 0 14px; }
-  .brandMark { width: 38px; height: 34px; font-size: .82rem; }
   .launchLabel { display: none; }
   .primaryNav { margin-left: 8px; }
   .primaryNav a { padding: 0 9px; font-size: .75rem; }

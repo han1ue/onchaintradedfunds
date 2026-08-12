@@ -1,16 +1,8 @@
 import Link from "next/link";
+import { OtfBrandMark } from "@onchaintradedfunds/brand";
 
 export function BrandMark() {
-  return <Link className="brandMark" href="/" aria-label="OTF Launch Competition home"><span>OTF</span></Link>;
-}
-
-export function OtfTokenIcon({ ticker = "OTF", size = 38 }: { ticker?: string; size?: number }) {
-  const label = ticker.trim().replace(/^OTF-/i, "").toUpperCase() || "OTF";
-  const fontSize = label.length <= 3 ? 76 : label.length === 4 ? 57 : label.length === 5 ? 48 : 40;
-  return <svg width={size} height={size} viewBox="0 0 256 256" aria-hidden="true" focusable="false">
-    <rect x="7" y="7" width="242" height="242" rx="44" fill="#132625" stroke="#37b7aa" strokeOpacity=".68" strokeWidth="5" />
-    <text x="128" y="148" fill="#7bd8ce" fontFamily="Inter, Arial, sans-serif" fontSize={fontSize} fontWeight="800" letterSpacing="-2" textAnchor="middle">{label}</text>
-  </svg>;
+  return <Link className="brandMarkLink" href="/" aria-label="OTF Launch Competition home"><OtfBrandMark /></Link>;
 }
 
 export function ProposalMark({ ticker, size = 38 }: { ticker: string; size?: number }) {

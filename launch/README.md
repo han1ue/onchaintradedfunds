@@ -45,4 +45,4 @@ Do not share the main app’s database, Auth.js secret, X application, Redis ins
 
 ## Design provenance
 
-The launch UI snapshots the operational tokens and patterns from main app commit `e2c21c6238390aec812970dff5b919b4d8d91e62`. It does not import from `app/src` at runtime.
+The launch UI snapshots the operational tokens and patterns from main app commit `e2c21c6238390aec812970dff5b919b4d8d91e62`. Canonical product marks and favicon data come from the neutral `@onchaintradedfunds/brand` workspace package. Launch never imports from `app/src` at runtime.

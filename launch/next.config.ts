@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  transpilePackages: ["@onchaintradedfunds/brand"],
   experimental: { optimizePackageImports: ["lucide-react"] },
   async headers() {
     return [{

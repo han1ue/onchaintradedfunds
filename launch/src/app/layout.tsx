@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { OTF_FAVICON_DATA_URL } from "@onchaintradedfunds/brand";
+import "@onchaintradedfunds/brand/styles.css";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -6,7 +8,8 @@ import { Footer } from "@/components/Footer";
 export const metadata: Metadata = {
   title: { default: "OTF Launch Competition", template: "%s · OTF Launch" },
   description: "Propose, verify and rank the next Onchain Traded Funds.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001")
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001"),
+  icons: { icon: OTF_FAVICON_DATA_URL }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

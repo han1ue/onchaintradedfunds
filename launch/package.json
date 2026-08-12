@@ -14,6 +14,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@onchaintradedfunds/brand": "workspace:*",
     "@auth/drizzle-adapter": "1.11.1",
     "@upstash/ratelimit": "2.0.7",
     "@upstash/redis": "1.35.3",

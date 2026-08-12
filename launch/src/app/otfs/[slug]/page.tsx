@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { BadgeCheck, ExternalLink } from "lucide-react";
+import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import { AllocationStrip } from "@/components/AllocationStrip";
-import { OtfTokenIcon } from "@/components/BrandMark";
 import { VotePanel } from "@/components/VotePanel";
 import { SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";

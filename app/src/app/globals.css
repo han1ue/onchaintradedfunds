@@ -235,20 +235,6 @@ main {
   gap: 10px;
 }
 
-.otfLogo {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid rgb(var(--accent-rgb) / 34%);
-  border-radius: 6px;
-  background: rgb(var(--accent-rgb) / 13%);
-  color: var(--accent-text);
-  font-size: 0.56rem;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
 .brandText {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   managedOtfVaultAbi,
   otfEntryRouterAbi,
@@ -92,7 +93,6 @@ import {
   progressThroughCooldown,
 } from "@/lib/time";
 import { LandingPage } from "./LandingPage";
-import { OtfTokenIcon } from "./OtfTokenIcon";
 
 type ContractValue =
   | string
@@ -1685,7 +1685,7 @@ export function TopNav({
     <header className="topNav">
       <div className="topNavInner">
         <button className="logoGroup brandHomeButton" type="button" onClick={onHome} title="Back to homepage">
-          <div className="otfLogo">OTF</div>
+          <OtfBrandMark />
           <div className="brandText">
             <strong>Onchain Traded Funds</strong>
           </div>
