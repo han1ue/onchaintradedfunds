@@ -18,6 +18,7 @@ export function DocsNavigation({ groups }: { groups: readonly DocsSectionGroup[]
 
   useEffect(() => {
     let frame = 0;
+    let disposed = false;
 
     const updateActiveSection = () => {
       frame = 0;
@@ -45,11 +46,26 @@ export function DocsNavigation({ groups }: { groups: readonly DocsSectionGroup[]
     };
 
     updateActiveSection();
+    const delayedUpdate = window.setTimeout(updateActiveSection, 500);
+    const sectionObserver = new IntersectionObserver(scheduleUpdate, {
+      rootMargin: "-15% 0px -70% 0px",
+      threshold: [0, 0.01],
+    });
+    sectionIds.forEach((id) => {
+      const section = document.getElementById(id);
+      if (section) sectionObserver.observe(section);
+    });
+    document.fonts?.ready.then(() => {
+      if (!disposed) scheduleUpdate();
+    });
     window.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
     window.addEventListener("hashchange", scheduleUpdate);
     return () => {
+      disposed = true;
       if (frame) window.cancelAnimationFrame(frame);
+      window.clearTimeout(delayedUpdate);
+      sectionObserver.disconnect();
       window.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
       window.removeEventListener("hashchange", scheduleUpdate);
