@@ -2,26 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ArrowDownToLine,
   ArrowRight,
-  ArrowUpFromLine,
-  BookOpen,
   Boxes,
-  Braces,
-  ChartPie,
-  ChevronDown,
-  Clock3,
   Coins,
   ExternalLink,
-  FileCode2,
   Landmark,
-  Menu,
-  ReceiptText,
   RotateCcw,
   Scale,
   ShieldCheck,
-  Users,
 } from "lucide-react";
+import { DocsNavigation } from "./DocsNavigation";
 
 export const metadata: Metadata = {
   title: "Documentation | Onchain Traded Funds",
@@ -41,8 +31,8 @@ const sectionGroups: readonly DocsSectionGroup[] = [
     sections: [["overview", "Overview"], ["architecture", "Architecture"]],
   },
   {
-    label: "Vault lifecycle",
-    sections: [["creation", "Vault creation"], ["deposits", "Deposits"], ["redemptions", "Redemptions"]],
+    label: "OTF lifecycle",
+    sections: [["lifecycle", "OTF lifecycle"], ["creation", "OTF creation"], ["deposits", "Deposits"], ["redemptions", "Redemptions"]],
   },
   {
     label: "Portfolio",
@@ -122,46 +112,7 @@ export default function DocsPage() {
       </header>
 
       <div className="docsLayout">
-        <aside className="docsSidebar">
-          <div className="docsSidebarTitle">
-            <BookOpen size={15} />
-            Documentation index
-          </div>
-          <nav className="docsDesktopNav" aria-label="Documentation sections">
-            {sectionGroups.map((group) => (
-              <div className="docsNavGroup" key={group.label}>
-                <span className="docsNavGroupLabel">{group.label}</span>
-                {group.sections.map(([id, label]) => (
-                  <a href={`#${id}`} key={id}>{label}</a>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <div className="docsStatus">
-            <span />
-            <div>
-              <strong>MVP documentation</strong>
-              <small>Robinhood Testnet</small>
-            </div>
-          </div>
-          <details className="docsMobileMenu">
-            <summary>
-              <Menu size={16} />
-              <span>Documentation index</span>
-              <ChevronDown size={15} />
-            </summary>
-            <nav aria-label="Documentation sections">
-              {sectionGroups.map((group) => (
-                <div className="docsNavGroup" key={group.label}>
-                  <span className="docsNavGroupLabel">{group.label}</span>
-                  {group.sections.map(([id, label]) => (
-                    <a href={`#${id}`} key={id}>{label}</a>
-                  ))}
-                </div>
-              ))}
-            </nav>
-          </details>
-        </aside>
+        <DocsNavigation groups={sectionGroups} />
 
         <main className="docsContent">
           <section className="docsIntro" id="overview">
@@ -206,11 +157,7 @@ export default function DocsPage() {
 
           <section className="docsSection" id="architecture">
             <div className="docsSectionHeading">
-              <Landmark size={18} />
-              <div>
-                <span>System design</span>
-                <h2>Architecture</h2>
-              </div>
+              <h2>Architecture</h2>
             </div>
             <p>
               The factory creates minimal-proxy vaults. Each vault reads asset eligibility and
@@ -246,13 +193,78 @@ export default function DocsPage() {
             </div>
           </section>
 
+          <section className="docsSection" id="lifecycle">
+            <div className="docsSectionHeading">
+              <h2>OTF lifecycle</h2>
+            </div>
+            <p>
+              An OTF begins with an active initial strategy, waits through a fixed 14-day strategy
+              cooldown, and then permits a new target proposal. Every accepted proposal remains
+              visible for a separate 48-hour holder exit window before activation. Rebalance
+              execution begins after activation and completes only when the portfolio returns
+              inside its completion bands. A valid out-of-band challenge can interrupt this path
+              and starts its own seven-day response window.
+            </p>
+            <figure className="otfLifecycleFigure" aria-labelledby="otf-lifecycle-caption">
+              <div
+                className="otfLifecycleGantt"
+                role="img"
+                aria-label="OTF lifecycle Gantt chart from creation through cooldown, proposal, holder notice, activation, rebalance, and challenge response"
+              >
+                <div className="otfLifecycleAxis">
+                  <strong>Phase</strong>
+                  <div>
+                    <span className="axisStart">Day 0</span>
+                    <span className="axisWeek">Day 7</span>
+                    <span className="axisCooldown">Day 14</span>
+                    <span className="axisActivation">Day 16</span>
+                    <span className="axisOngoing">Ongoing</span>
+                  </div>
+                </div>
+                <div className="otfLifecycleRow creation">
+                  <span>OTF creation</span>
+                  <div><b>Initial strategy active</b></div>
+                </div>
+                <div className="otfLifecycleRow cooldown">
+                  <span>Strategy cooldown</span>
+                  <div><b>14 days</b></div>
+                </div>
+                <div className="otfLifecycleRow proposal">
+                  <span>Proposal eligible</span>
+                  <div><b>In-band check</b></div>
+                </div>
+                <div className="otfLifecycleRow notice">
+                  <span>Holder notice</span>
+                  <div><b>48 hours</b></div>
+                </div>
+                <div className="otfLifecycleRow activation">
+                  <span>Activation</span>
+                  <div><b>Targets switch</b></div>
+                </div>
+                <div className="otfLifecycleRow rebalance">
+                  <span>Rebalance</span>
+                  <div><b>Until completion bands</b></div>
+                </div>
+                <div className="otfLifecycleRow challenge">
+                  <span>Challenge branch</span>
+                  <div><b>7-day response if out of band</b></div>
+                </div>
+              </div>
+              <div className="otfLifecycleOutcomes">
+                <span><RotateCcw size={14} aria-hidden="true" />Completion restarts the 14-day cooldown</span>
+                <span><ShieldCheck size={14} aria-hidden="true" />Timely challenge recovery preserves accrued fees</span>
+                <span><Scale size={14} aria-hidden="true" />An overdue challenge suspends fees until recovery</span>
+              </div>
+              <figcaption id="otf-lifecycle-caption">
+                Challenge timing is conditional: it can begin whenever fresh oracle prices prove
+                that a live constituent has crossed its wider challenge band.
+              </figcaption>
+            </figure>
+          </section>
+
           <section className="docsSection" id="creation">
             <div className="docsSectionHeading">
-              <Boxes size={18} />
-              <div>
-                <span>Configuration and funding</span>
-                <h2>Vault creation</h2>
-              </div>
+              <h2>OTF creation</h2>
             </div>
             <p>
               The creator selects a manager, fee recipient, approved assets, target weights, fee,
@@ -271,11 +283,7 @@ export default function DocsPage() {
 
           <section className="docsSection" id="deposits">
             <div className="docsSectionHeading">
-              <ArrowDownToLine size={18} />
-              <div>
-                <span>Proportional entry</span>
-                <h2>Deposits</h2>
-              </div>
+              <h2>Deposits</h2>
             </div>
             <p>
               New shares require a proportional deposit of every current constituent. Required
@@ -313,11 +321,7 @@ export default function DocsPage() {
 
           <section className="docsSection" id="redemptions">
             <div className="docsSectionHeading">
-              <ArrowUpFromLine size={18} />
-              <div>
-                <span>Proportional exit</span>
-                <h2>Redemptions</h2>
-              </div>
+              <h2>Redemptions</h2>
             </div>
             <p>
               Redemptions burn vault shares and return a proportional amount of every current
@@ -341,11 +345,7 @@ export default function DocsPage() {
 
           <section className="docsSection" id="portfolio-structure">
             <div className="docsSectionHeading">
-              <Coins size={18} />
-              <div>
-                <span>The live basket</span>
-                <h2>Constituents and weights</h2>
-              </div>
+              <h2>Constituents and weights</h2>
             </div>
             <p>
               A portfolio stores its tracked asset addresses and target weights. Actual weights are
@@ -358,11 +358,7 @@ export default function DocsPage() {
 
           <section className="docsSection" id="valuation">
             <div className="docsSectionHeading">
-              <ChartPie size={18} />
-              <div>
-                <span>Oracle-denominated accounting</span>
-                <h2>Valuation and NAV</h2>
-              </div>
+              <h2>Valuation and NAV</h2>
             </div>
             <p>
               NAV is the sum of every constituent&apos;s oracle-valued balance. NAV per share divides
@@ -381,11 +377,7 @@ NAV per share = portfolio NAV / total share supply`}</code></pre>
 
           <section className="docsSection" id="target-proposals">
             <div className="docsSectionHeading">
-              <Braces size={18} />
-              <div>
-                <span>Strategic changes</span>
-                <h2>Target proposals</h2>
-              </div>
+              <h2>Target proposals</h2>
             </div>
             <p>
               Every target proposal requires a non-empty rationale and a real constituent or
@@ -404,11 +396,7 @@ activatePendingStrategy()`}</code></pre>
 
           <section className="docsSection" id="trade-execution">
             <div className="docsSectionHeading">
-              <Scale size={18} />
-              <div>
-                <span>Constrained restoration</span>
-                <h2>Trade execution and completion</h2>
-              </div>
+              <h2>Trade execution and completion</h2>
             </div>
             <pre><code>{`executeRebalanceTrades(TradeInstruction[] trades)
 
@@ -428,11 +416,7 @@ completeStrategicRebalance()`}</code></pre>
 
           <section className="docsSection" id="challenges">
             <div className="docsSectionHeading">
-              <Scale size={18} />
-              <div>
-                <span>Permissionless accountability</span>
-                <h2>Weight bands and challenges</h2>
-              </div>
+              <h2>Weight bands and challenges</h2>
             </div>
             <p>
               Each constituent has a wider challenge band and a narrower completion band around
@@ -471,11 +455,7 @@ completeStrategicRebalance()`}</code></pre>
 
           <section className="docsSection" id="fee-accountability">
             <div className="docsSectionHeading">
-              <ReceiptText size={18} />
-              <div>
-                <span>Consequences and recovery</span>
-                <h2>Fee accountability</h2>
-              </div>
+              <h2>Fee accountability</h2>
             </div>
             <p>
               Deposits and proportional withdrawals stay enabled during ordinary weight
@@ -499,11 +479,7 @@ completeStrategicRebalance()`}</code></pre>
 
           <section className="docsSection" id="cooldown">
             <div className="docsSectionHeading">
-              <Clock3 size={18} />
-              <div>
-                <span>One cooldown, one notice window</span>
-                <h2>Strategy timing</h2>
-              </div>
+              <h2>Strategy timing</h2>
             </div>
             <p>
               Deployment records the initial rationale and targets as completed strategy version zero,
@@ -524,7 +500,7 @@ nextStrategyChangeTime =
 canProposeStrategy =
   block.timestamp >= nextStrategyChangeTime`}</code></pre>
             <ul className="docsChecklist">
-              <li>The first target proposal waits 14 days from vault creation.</li>
+              <li>The first target proposal waits 14 days from OTF creation.</li>
               <li>Later proposals wait 14 days from successful rebalance completion.</li>
               <li>Being in-band before that deadline does not make an early proposal valid.</li>
               <li>Active challenges and out-of-band portfolios block proposals.</li>
@@ -538,11 +514,7 @@ canProposeStrategy =
 
           <section className="docsSection" id="safety">
             <div className="docsSectionHeading">
-              <ShieldCheck size={18} />
-              <div>
-                <span>Managed by people, bounded by code</span>
-                <h2>Safety limits</h2>
-              </div>
+              <h2>Safety limits</h2>
             </div>
             <p>
               Protocol-bounded controls become part of the vault&apos;s mandate. Target proposals
@@ -570,11 +542,7 @@ canProposeStrategy =
 
           <section className="docsSection" id="management-fees">
             <div className="docsSectionHeading">
-              <ReceiptText size={18} />
-              <div>
-                <span>Share-based accrual</span>
-                <h2>Management fees</h2>
-              </div>
+              <h2>Management fees</h2>
             </div>
             <p>
               Fees accrue lazily as shares rather than by removing portfolio assets. The growth
@@ -587,11 +555,7 @@ canProposeStrategy =
 
           <section className="docsSection" id="roles">
             <div className="docsSectionHeading">
-              <Users size={18} />
-              <div>
-                <span>Authority and responsibility</span>
-                <h2>Protocol roles</h2>
-              </div>
+              <h2>Protocol roles</h2>
             </div>
             <div className="docsRoleGrid">
               <article><strong>Manager</strong><span>Controls strategy, bounded fees, the executor allowlist, and the irreversible OTF sunset action; starts with execution permission.</span></article>
@@ -609,14 +573,10 @@ canProposeStrategy =
 
           <section className="docsSection" id="approval-scopes">
             <div className="docsSectionHeading">
-              <ShieldCheck size={18} />
-              <div>
-                <span>Who may transfer each token</span>
-                <h2>Approval scopes</h2>
-              </div>
+              <h2>Approval scopes</h2>
             </div>
             <p>
-              Vault creation approvals are granted to the factory so it can transfer the seed
+              OTF creation approvals are granted to the factory so it can transfer the seed
               basket during deployment. Deposit approvals are granted to the specific vault that
               receives the assets. The interface supports approving all required constituents or
               reviewing and approving them one by one; there is no single global approval shared
@@ -630,11 +590,7 @@ canProposeStrategy =
 
           <section className="docsSection" id="interfaces">
             <div className="docsSectionHeading">
-              <FileCode2 size={18} />
-              <div>
-                <span>Useful public reads</span>
-                <h2>Contract interfaces</h2>
-              </div>
+              <h2>Contract interfaces</h2>
             </div>
             <pre><code>{`function getConstituents() external view returns (address[] memory, uint256[] memory);
 function getReserve(address token) external view returns (uint256);
@@ -660,11 +616,7 @@ function canProposeStrategy() external view returns (bool);`}</code></pre>
 
           <section className="docsSection" id="developers">
             <div className="docsSectionHeading">
-              <Braces size={18} />
-              <div>
-                <span>Local workspace</span>
-                <h2>Developer guide</h2>
-              </div>
+              <h2>Developer guide</h2>
             </div>
             <p>
               The repository is a pnpm workspace containing the Next.js application, Solidity

@@ -8538,7 +8538,13 @@ input.invalid {
 .docsSidebar {
   position: sticky;
   top: calc(var(--testnet-banner-height) + 92px);
+  max-height: calc(100dvh - var(--testnet-banner-height) - 116px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   align-self: start;
+  padding-right: 8px;
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
 }
 
 .docsSidebarTitle {
@@ -8594,6 +8600,13 @@ input.invalid {
   color: var(--text);
 }
 
+.docsSidebar nav a.active {
+  border-left-color: var(--accent-text);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text);
+  font-weight: 650;
+}
+
 .docsStatus {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr);
@@ -8640,8 +8653,7 @@ input.invalid {
   padding: 14px 0 54px;
 }
 
-.docsEyebrow,
-.docsSectionHeading span {
+.docsEyebrow {
   color: var(--accent-text);
   font-size: 0.6rem;
   font-weight: 700;
@@ -8742,19 +8754,11 @@ input.invalid {
 }
 
 .docsSectionHeading {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  margin-bottom: 20px;
-}
-
-.docsSectionHeading > svg {
-  color: var(--accent-text);
-  margin-top: 2px;
+  margin-bottom: 16px;
 }
 
 .docsSectionHeading h2 {
-  margin: 5px 0 0;
+  margin: 0;
   font-size: 1.52rem;
   font-weight: 620;
 }
@@ -8816,6 +8820,187 @@ input.invalid {
   border-color: rgb(var(--accent-rgb) / 32%);
   background: rgb(var(--accent-rgb) / 8%);
   color: var(--accent-text);
+}
+
+.otfLifecycleFigure {
+  margin: 24px 0 8px;
+}
+
+.otfLifecycleGantt {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+}
+
+.otfLifecycleAxis,
+.otfLifecycleRow {
+  display: grid;
+  min-width: 820px;
+  grid-template-columns: 150px minmax(630px, 1fr);
+}
+
+.otfLifecycleAxis {
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--card-raised);
+}
+
+.otfLifecycleAxis > strong,
+.otfLifecycleRow > span {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  padding: 9px 12px;
+  color: var(--text-soft);
+  font-size: 0.63rem;
+  font-weight: 650;
+}
+
+.otfLifecycleAxis > div,
+.otfLifecycleRow > div {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(21, minmax(28px, 1fr));
+  align-items: center;
+}
+
+.otfLifecycleAxis > div {
+  min-height: 38px;
+  color: var(--text-muted);
+  font-size: 0.56rem;
+}
+
+.otfLifecycleAxis > div span {
+  align-self: end;
+  padding: 0 4px 8px;
+  white-space: nowrap;
+}
+
+.otfLifecycleAxis .axisStart {
+  grid-column: 1;
+}
+
+.otfLifecycleAxis .axisWeek {
+  grid-column: 8;
+}
+
+.otfLifecycleAxis .axisCooldown {
+  grid-column: 15;
+}
+
+.otfLifecycleAxis .axisActivation {
+  grid-column: 17;
+}
+
+.otfLifecycleAxis .axisOngoing {
+  grid-column: 21;
+  justify-self: end;
+}
+
+.otfLifecycleRow {
+  border-bottom: 1px solid var(--border);
+}
+
+.otfLifecycleRow:last-child {
+  border-bottom: 0;
+}
+
+.otfLifecycleRow > div {
+  min-height: 48px;
+  padding: 7px 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc((100% / 21) - 1px),
+    rgb(var(--accent-rgb) / 7%) calc((100% / 21) - 1px),
+    rgb(var(--accent-rgb) / 7%) calc(100% / 21)
+  );
+}
+
+.otfLifecycleRow b {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  overflow: visible;
+  border: 1px solid rgb(var(--accent-rgb) / 36%);
+  border-radius: 4px;
+  background: rgb(var(--accent-rgb) / 12%);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 0.6rem;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.otfLifecycleRow.creation b {
+  grid-column: 1 / span 4;
+}
+
+.otfLifecycleRow.cooldown b {
+  grid-column: 1 / span 14;
+}
+
+.otfLifecycleRow.proposal b {
+  grid-column: 15 / span 3;
+  border-color: rgb(86 172 211 / 38%);
+  background: rgb(86 172 211 / 11%);
+}
+
+.otfLifecycleRow.notice b {
+  grid-column: 15 / span 2;
+  min-width: 82px;
+  border-color: rgb(241 185 61 / 40%);
+  background: rgb(241 185 61 / 11%);
+}
+
+.otfLifecycleRow.activation b {
+  grid-column: 17 / span 3;
+  border-color: rgb(46 208 154 / 40%);
+  background: rgb(46 208 154 / 11%);
+}
+
+.otfLifecycleRow.rebalance b {
+  grid-column: 17 / -1;
+  border-color: rgb(156 139 229 / 40%);
+  background: rgb(156 139 229 / 11%);
+}
+
+.otfLifecycleRow.challenge b {
+  grid-column: 6 / span 7;
+  border-color: rgb(235 101 112 / 42%);
+  background: rgb(235 101 112 / 10%);
+}
+
+.otfLifecycleOutcomes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.otfLifecycleOutcomes span {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.otfLifecycleOutcomes svg {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+  margin-top: 1px;
+}
+
+.otfLifecycleFigure figcaption {
+  margin-top: 11px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.5;
 }
 
 .challengeLifecycle {
@@ -9118,6 +9303,9 @@ input.invalid {
     top: calc(var(--testnet-banner-height) + 62px);
     min-width: 0;
     max-width: 100%;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .docsSidebarTitle,
@@ -9327,6 +9515,11 @@ input.invalid {
   .challengeLifecycleReturns {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .otfLifecycleOutcomes {
+    grid-template-columns: 1fr;
+    gap: 7px;
   }
 
   .docsSection {
