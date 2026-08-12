@@ -1,0 +1,36 @@
+import Link from "next/link";
+import { ArrowRight, BadgeCheck, Clock3, FileCheck2, Trophy, Vote } from "lucide-react";
+import { HowItWorks } from "@/components/HowItWorks";
+import { ResponsiveLeaderboard } from "@/components/Leaderboard";
+import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
+import { auth } from "@/server/auth";
+import { getCompetition, getLeaderboard } from "@/server/data";
+
+function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
+
+export default async function HomePage() {
+  const [competition, leaderboard, session] = await Promise.all([getCompetition(), getLeaderboard(), auth()]);
+  const preview = competition.id.startsWith("preview");
+  return <div className="pageShell homePage">
+    <section className="competitionHero compactHero">
+      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
+      <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
+    </section>
+    <div className="metricsGrid">
+      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} detail="Accepted X proofs" />
+      <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} detail="Public entries" />
+      <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} detail="Verified X accounts" />
+    </div>
+    <div className="boardGrid">
+      <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>
+        <ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} />
+        <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/rules">How ranking works <ArrowRight size={14} /></Link></div>
+      </SectionCard>
+      <HowItWorks connected={Boolean(session?.user)} />
+    </div>
+    <div className="lowerGrid">
+      <SectionCard className="rulesPanel"><div className="cardHeading"><div><span>Competition rules</span><small>The V1 essentials</small></div><FileCheck2 size={18} /></div><ul><li>Verified, public X accounts only.</li><li>At least two eligible assets totaling exactly 100%.</li><li>Original public proof post for every submission and vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="activityPanel"><div className="cardHeading"><div><span>Recent activity</span><small>Verified community actions</small></div><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted ${entry.name}` : `reached ${entry.votes.toLocaleString()} verified votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
+    </div>
+  </div>;
+}

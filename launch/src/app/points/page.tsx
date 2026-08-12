@@ -1,0 +1,3 @@
+import { SectionCard } from "@/components/ui";
+export const metadata = { title: "Verified activity" };
+export default function ActivityPolicyPage() { return <div className="pageShell contentPage"><header className="pageHeader"><h1>Verified activity</h1><p>Activity is recorded now so a future methodology can be applied fairly and retroactively.</p></header><SectionCard className="contentCard"><h2>Methodology not announced</h2><p>V1 does not display a score, balance, estimated award, claim, monetary value, or guaranteed eligibility. Creator and voter actions retain their verification, identity, rule-version, moderation and final-rank history.</p></SectionCard></div>; }
