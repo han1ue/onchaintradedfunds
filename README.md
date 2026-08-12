@@ -127,7 +127,7 @@ flowchart LR
 
 - Lets a user request an exact number of OTF shares while supplying only the configured settlement token, initially USDG.
 - Buys the exact proportional basket through independently approved entry adapters, deposits it atomically, and refunds unused settlement tokens.
-- Also supports exact-USDG entry: it allocates the fixed input across constituent pools, mints the largest strictly proportional basket supported by the received assets, enforces minimum shares, and returns surplus constituents to the payer.
+- Also supports exact-USDG entry: it allocates the fixed input across constituent pools, mints the largest strictly proportional basket supported by the received assets, enforces minimum shares, and sells surplus constituents back to USDG under user-defined minimum refund rates.
 - Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
@@ -305,7 +305,8 @@ share mint failure reverts the entire operation.
 The router also exposes an exact-USDG path used by the investor interface. It spends the entered
 USDG across the constituent pools, derives the largest proportional basket from the assets actually
 received, and reverts unless that basket mints at least the user's minimum shares. Only the strict
-proportional amounts enter the OTF; surplus constituent tokens are returned to the payer.
+proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
+using protected minimum USDG rates and the resulting USDG is returned to the payer.
 
 The cost shown by a Uniswap pool is not the OTF's accounting NAV. OTF NAV uses approved Chainlink
 feeds, while entry cost depends on available AMM liquidity and price impact. The frontend displays
@@ -805,7 +806,7 @@ Deterministic coverage includes:
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
 - Atomic USDG-only entry, exact-input minimum-share protection, proportional-only deposits,
-  surplus-constituent refunds, unused-input refunds, entry-adapter authorization, exact-output
+  slippage-protected USDG surplus refunds, unused-input refunds, entry-adapter authorization, exact-output
   bounds, expired entry rejection, and Uniswap-compatible direct and USDG-hop adapter behavior.
 - Atomic USDG redemption, exact share approval, per-leg and aggregate minimum outputs, deadline
   enforcement, and complete rollback when an exit adapter or quote is invalid.

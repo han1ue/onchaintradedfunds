@@ -69,7 +69,7 @@ const contractRows = [
   ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
-  ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and surplus-asset refunds."],
+  ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
   ["OracleRegistry", "Maps approved assets to Chainlink-compatible feeds and per-feed freshness thresholds."],

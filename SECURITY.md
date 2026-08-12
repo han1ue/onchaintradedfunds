@@ -198,8 +198,9 @@ requires an independently approved entry adapter for every non-settlement consti
 observed token deltas against adapter return values, and uses exact temporary approvals. The
 exact-share path mints only after every exact-output purchase succeeds. The exact-USDG path spends
 fixed per-leg inputs, derives the largest strictly proportional mint from observed outputs, enforces
-an aggregate minimum-share floor, and returns every surplus constituent to the payer rather than
-depositing it off-weight.
+an aggregate minimum-share floor, and sells every surplus constituent back to USDG rather than
+depositing it off-weight. Each refund sale uses a caller-provided minimum USDG-per-constituent rate;
+the whole entry reverts if any purchase, mint, or refund sale violates its bound.
 
 The entry path still inherits liquidity and integration risks:
 

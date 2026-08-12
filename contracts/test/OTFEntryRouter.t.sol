@@ -119,19 +119,44 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 100 * ONE);
-        (uint256 shares, uint256[] memory refunds) = entryRouter.enterWithExactSettlement(
+        (uint256 shares, uint256 settlementRefunded) = entryRouter.enterWithExactSettlement(
             address(vault), 100 * ONE, expectedShares, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
 
         assertEq(shares, expectedShares);
         assertEq(vault.balanceOf(ALICE), expectedShares);
-        assertEq(refunds[0], 20 * ONE);
-        assertEq(refunds[1], 0);
-        assertEq(tokenA.balanceOf(ALICE), 20 * ONE);
-        assertEq(tokenC.balanceOf(ALICE), 9_900 * ONE);
+        assertEq(settlementRefunded, 20 * ONE);
+        assertEq(tokenA.balanceOf(ALICE), 0);
+        assertEq(tokenC.balanceOf(ALICE), 9_920 * ONE);
         assertEq(tokenA.balanceOf(address(vault)), 540 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 540 * ONE);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
+    }
+
+    function testExactSettlementEntryRefundSwapEnforcesMinimumRateAtomically() public {
+        ManagedOTFVault vault = _createVault();
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
+        exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
+        exitAdapter.setRate(address(tokenA), address(tokenC), 1, 2);
+        tokenA.mint(address(exitAdapter), 100 * ONE);
+        tokenB.mint(address(exitAdapter), 100 * ONE);
+        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MockTradeAdapter.Slippage.selector, 10 * ONE, 20 * ONE)
+        );
+        entryRouter.enterWithExactSettlement(
+            address(vault), 100 * ONE, 8 * ONE, ALICE, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertEq(vault.balanceOf(ALICE), 0);
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE);
         assertEq(tokenA.balanceOf(address(entryRouter)), 0);
         assertEq(tokenB.balanceOf(address(entryRouter)), 0);
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
@@ -395,13 +420,17 @@ contract OTFEntryRouterTest is ProtocolTestBase {
             adapter: address(exitAdapter),
             settlementIn: settlementA,
             minAssetOut: 0,
-            adapterData: ""
+            minRefundSettlementRate: ONE,
+            adapterData: "",
+            refundAdapterData: ""
         });
         swaps[1] = ExactInputEntrySwap({
             adapter: address(exitAdapter),
             settlementIn: settlementB,
             minAssetOut: 0,
-            adapterData: ""
+            minRefundSettlementRate: ONE,
+            adapterData: "",
+            refundAdapterData: ""
         });
     }
 }

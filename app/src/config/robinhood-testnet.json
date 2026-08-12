@@ -74,10 +74,10 @@
       "gasUsed": "1353773"
     },
     "entryRouter": {
-      "address": "0xE8A541d07Ba4bB22a855FE38E2eE10f458649e39",
-      "transactionHash": "0xc43e13b23494c23c5b32f86b4f66710a4b66d5b5a533c12eb4c299ca8e0703e5",
-      "blockNumber": "100019177",
-      "gasUsed": "2623514"
+      "address": "0xd5f87a3f0C82E1219920b676293a9E672Fc806EF",
+      "transactionHash": "0x04302c510dfc8391e0fa66f5f50f49431c802184ce0b3af11df9480ed73e63d5",
+      "blockNumber": "100042725",
+      "gasUsed": "2674813"
     }
   },
   "externalContracts": {
@@ -102,11 +102,11 @@
         "initializedSqrtPriceX96": "79180668357225202841323746057608988",
         "activeLiquidity": "999400539460",
         "oracleFeed": "0xFe4682bFc463762DdF7d07805B4c2989Ab0D4606",
-        "oracleAnswer": "100680000",
+        "oracleAnswer": "100740000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1786535879",
+        "oracleUpdatedAt": "1786539552",
         "alreadyConfigured": true,
-        "observedAtBlock": "100019126"
+        "observedAtBlock": "100042674"
       },
       {
         "symbol": "AMZN",
@@ -116,11 +116,11 @@
         "initializedSqrtPriceX96": "117738521084973557025164",
         "activeLiquidity": "3969934352210",
         "oracleFeed": "0x3d97BB4Cd4EA14615c8cB3EdA7b47B194E70088a",
-        "oracleAnswer": "100610000",
+        "oracleAnswer": "100030000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1786535880",
+        "oracleUpdatedAt": "1786539553",
         "alreadyConfigured": true,
-        "observedAtBlock": "100019131"
+        "observedAtBlock": "100042684"
       },
       {
         "symbol": "PLTR",
@@ -130,11 +130,11 @@
         "initializedSqrtPriceX96": "79370645087677552619726",
         "activeLiquidity": "4991024219758",
         "oracleFeed": "0xB1e138F936A0b727852b521cf6d723AcCC87d6aA",
-        "oracleAnswer": "100170000",
+        "oracleAnswer": "100360000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1786535881",
+        "oracleUpdatedAt": "1786539554",
         "alreadyConfigured": true,
-        "observedAtBlock": "100019136"
+        "observedAtBlock": "100042694"
       },
       {
         "symbol": "NFLX",
@@ -144,11 +144,11 @@
         "initializedSqrtPriceX96": "81386617006029722018998",
         "activeLiquidity": "1799879396145",
         "oracleFeed": "0x8FCD32ee90aF309A6fB642b95170D4A1f9be3Fd8",
-        "oracleAnswer": "100750000",
+        "oracleAnswer": "99930000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1786535882",
+        "oracleUpdatedAt": "1786539555",
         "alreadyConfigured": true,
-        "observedAtBlock": "100019141"
+        "observedAtBlock": "100042697"
       },
       {
         "symbol": "AMD",
@@ -158,14 +158,14 @@
         "initializedSqrtPriceX96": "124472460208574960678769",
         "activeLiquidity": "4141227269055",
         "oracleFeed": "0x6A0C8fFaF35770D66657C5B6470a6A1acea4201c",
-        "oracleAnswer": "100670000",
+        "oracleAnswer": "100120000",
         "oracleDecimals": 8,
-        "oracleUpdatedAt": "1786535882",
+        "oracleUpdatedAt": "1786539556",
         "alreadyConfigured": true,
-        "observedAtBlock": "100019143"
+        "observedAtBlock": "100042706"
       }
     ],
-    "configuredAt": "2026-08-12T11:58:23.220Z"
+    "configuredAt": "2026-08-12T12:59:29.712Z"
   },
   "setupTransactions": {
     "setExecutorFactory": {
@@ -247,7 +247,8 @@
         "adapter": "0x1E83290940b98D5bd1128D386C5c6FC81FF67129",
         "transactionHash": "0x56daef0edeff5dccfc50089e1371b24ba08d88f992f74ab51120740fcb05a979",
         "blockNumber": "100019203",
-        "gasUsed": "58518"
+        "gasUsed": "58518",
+        "alreadyConfigured": true
       }
     ],
     "settlementEntry": [
@@ -255,25 +256,27 @@
         "action": "approve-trade-adapter",
         "transactionHash": "0x56daef0edeff5dccfc50089e1371b24ba08d88f992f74ab51120740fcb05a979",
         "blockNumber": "100019203",
-        "gasUsed": "58518"
+        "gasUsed": "58518",
+        "alreadyConfigured": true
       },
       {
         "action": "approve-entry-adapter",
-        "transactionHash": "0x2ba80c551d3f7774a4abcdbe50e7c08300cabe64fd49bd469f93735bdd5c2802",
-        "blockNumber": "100019221",
-        "gasUsed": "57666"
+        "transactionHash": "0x14ae604c1cdb118482917a2c156c5875d904de70673d3293b249439c4c8c677d",
+        "blockNumber": "100042738",
+        "gasUsed": "53832"
       },
       {
         "action": "authorize-rebalance-executor",
         "transactionHash": "0xe68dbcbf9e5975d3cd76289856b24858d22a558a52773db2ca5e3c672588abc7",
         "blockNumber": "100019238",
-        "gasUsed": "55102"
+        "gasUsed": "55102",
+        "alreadyConfigured": true
       },
       {
         "action": "authorize-entry-router",
-        "transactionHash": "0x1aa2e0b8afa6e33a677189081ee5793d19f0c15c4eed0e001cb7335f6cdb445b",
-        "blockNumber": "100019263",
-        "gasUsed": "55102"
+        "transactionHash": "0xf26255bc699cd57b4e9e74f4566c99b17ebc4f6cf9d7f902f819e27256598c71",
+        "blockNumber": "100042754",
+        "gasUsed": "51268"
       }
     ],
     "setOfficialMarketRegistry": {

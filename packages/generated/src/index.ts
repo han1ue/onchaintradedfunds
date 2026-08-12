@@ -595,13 +595,15 @@ export const otfEntryRouterAbi = [
           { name: "adapter", type: "address" },
           { name: "settlementIn", type: "uint256" },
           { name: "minAssetOut", type: "uint256" },
+          { name: "minRefundSettlementRate", type: "uint256" },
           { name: "adapterData", type: "bytes" },
+          { name: "refundAdapterData", type: "bytes" },
         ],
       },
     ],
     outputs: [
       { name: "shares", type: "uint256" },
-      { name: "refunds", type: "uint256[]" },
+      { name: "settlementRefunded", type: "uint256" },
     ],
   },
   {
@@ -636,6 +638,7 @@ export const otfEntryRouterAbi = [
       { indexed: true, name: "vault", type: "address" },
       { indexed: false, name: "settlementIn", type: "uint256" },
       { indexed: false, name: "shares", type: "uint256" },
+      { indexed: false, name: "settlementRefunded", type: "uint256" },
     ],
   },
 ] as const;

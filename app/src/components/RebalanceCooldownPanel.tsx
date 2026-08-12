@@ -3452,20 +3452,67 @@ function UserActions({
       quoteError,
     };
   });
+  const entryRefundRateQuoteContracts = settlementToken && uniswapV3QuoterAddress
+    ? exactInputEntryLegs.flatMap((leg) => {
+        if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle" as const,
+          args: [{
+            tokenIn: leg.address as `0x${string}`,
+            tokenOut: settlementToken,
+            amountIn: leg.quotedAssetOut,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: entryRefundRateQuoteResults,
+    isLoading: entryRefundRateQuotesLoading,
+    refetch: refetchEntryRefundRateQuotes,
+  } = useReadContracts({
+    contracts: entryRefundRateQuoteContracts,
+    query: { enabled: entryRefundRateQuoteContracts.length > 0 },
+  });
+  let entryRefundRateQuoteIndex = 0;
+  const protectedExactInputEntryLegs = exactInputEntryLegs.map((leg) => {
+    if (leg.isSettlement) return { ...leg, minimumRefundSettlementRate: 0n };
+    const result = entryRefundRateQuoteResults?.[entryRefundRateQuoteIndex];
+    entryRefundRateQuoteIndex += 1;
+    const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+    const quotedRefundSettlement = quote?.[0];
+    const refundRateQuoteFailed = result?.status === "failure";
+    const minimumRefundSettlementRate = quotedRefundSettlement !== undefined && leg.quotedAssetOut
+      ? quotedRefundSettlement * BigInt(10_000 - entrySlippageBps) / 10_000n
+        * 10n ** 18n / leg.quotedAssetOut
+      : undefined;
+    return {
+      ...leg,
+      minimumRefundSettlementRate,
+      quoteFailed: leg.quoteFailed || refundRateQuoteFailed,
+      quoteError: leg.quoteError ?? (refundRateQuoteFailed ? errorMessage(result?.error) : undefined),
+    };
+  });
   const entryAssetQuotesReady = Boolean(
     entrySizingQuoteReady &&
-    exactInputEntryLegs.every((leg) =>
+    protectedExactInputEntryLegs.every((leg) =>
       leg.settlementIn !== undefined &&
       leg.quotedAssetOut !== undefined &&
       leg.minimumAssetOut !== undefined &&
+      leg.minimumRefundSettlementRate !== undefined &&
+      (leg.isSettlement || leg.minimumRefundSettlementRate > 0n) &&
       !leg.quoteFailed,
     ),
   );
   const estimatedEntryAssetAmounts = entryAssetQuotesReady
-    ? exactInputEntryLegs.map((leg) => leg.quotedAssetOut as bigint)
+    ? protectedExactInputEntryLegs.map((leg) => leg.quotedAssetOut as bigint)
     : undefined;
   const minimumEntryAssetAmounts = entryAssetQuotesReady
-    ? exactInputEntryLegs.map((leg) => leg.minimumAssetOut as bigint)
+    ? protectedExactInputEntryLegs.map((leg) => leg.minimumAssetOut as bigint)
     : undefined;
   function deriveEntrySharesFromAmounts(amounts: readonly bigint[] | undefined) {
     if (!amounts || !requestedEntryShares || finalPreviewEntryAmounts?.length !== amounts.length) {
@@ -3702,7 +3749,7 @@ function UserActions({
     : redeemQuoteReady;
   const underlyingQuoteLoading = activeAction === "deposit"
     ? constituentLiquidityLoading || finalPreviewEntryLoading || finalEntryQuotesLoading ||
-      exactInputEntryQuotesLoading
+      exactInputEntryQuotesLoading || entryRefundRateQuotesLoading
     : constituentLiquidityLoading || previewRedeemLoading || redeemQuotesLoading;
   const underlyingQuotedOutput = activeAction === "deposit"
     ? estimatedEntryShares
@@ -3718,7 +3765,7 @@ function UserActions({
           detail: "The OTF / USDG pool did not return a usable output for this amount. Try a smaller amount or confirm that the pool has active liquidity.",
         }
     : undefined;
-  const failedUnderlyingLegs = (activeAction === "deposit" ? exactInputEntryLegs : redeemLegs)
+  const failedUnderlyingLegs = (activeAction === "deposit" ? protectedExactInputEntryLegs : redeemLegs)
     .filter((leg) => leg.quoteFailed);
   const underlyingQuoteProblem = routeInputsReady && underlyingRouteAvailable && !underlyingQuoteLoading && !underlyingQuoteReady
     ? activeAction === "deposit" && finalPreviewEntryError
@@ -3837,20 +3884,27 @@ function UserActions({
       !entryBalanceSufficient ||
       !entryAllowanceSufficient
     ) return;
-    const swaps = exactInputEntryLegs.map((leg) => leg.isSettlement
+    const swaps = protectedExactInputEntryLegs.map((leg) => leg.isSettlement
       ? {
           adapter: zeroAddress,
           settlementIn: leg.settlementIn as bigint,
           minAssetOut: leg.settlementIn as bigint,
+          minRefundSettlementRate: 0n,
           adapterData: "0x" as `0x${string}`,
+          refundAdapterData: "0x" as `0x${string}`,
         }
       : {
           adapter: entryAdapterAddress,
           settlementIn: leg.settlementIn as bigint,
           minAssetOut: leg.minimumAssetOut as bigint,
+          minRefundSettlementRate: leg.minimumRefundSettlementRate as bigint,
           adapterData: encodeAbiParameters(
             [{ type: "address[]" }],
             [[settlementToken, leg.address as `0x${string}`]],
+          ),
+          refundAdapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[leg.address as `0x${string}`, settlementToken]],
           ),
         });
     setEntryError(undefined);
@@ -3879,16 +3933,18 @@ function UserActions({
         logs: receipt.logs,
       });
       const mintedShares = entryEvents[0]?.args.shares;
+      const settlementRefunded = entryEvents[0]?.args.settlementRefunded ?? 0n;
       await Promise.all([
         refetchEntryAuthorization(),
         refetchEntryPreview(),
         refetchEntryQuotes(),
         refetchExactInputEntryQuotes(),
+        refetchEntryRefundRateQuotes(),
       ]);
       setEntryState("confirmed");
       setTradeReceipt({
         action: "deposit",
-        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through the underlying RWA pools.`,
+        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through the underlying RWA pools.${settlementRefunded > 0n ? ` ${formatWalletTokenBalance(settlementRefunded, settlementDecimals)} USDG refunded.` : ""}`,
         transactionHash: hash,
       });
       setTradeAmount("");
@@ -4803,7 +4859,7 @@ function UserActions({
             {activeAction === "deposit" ? (
               <>
                 <div className="positionExecutionQuote">
-                  <div><span>USDG spent</span><strong>{requestedUsdgAmount !== undefined ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>USDG supplied</span><strong>{requestedUsdgAmount !== undefined ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong></div>
                   <div><span>Estimated shares</span><strong>{estimatedEntryShares ? formatWalletTokenBalance(estimatedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                   <div><span>Minimum shares</span><strong>{minimumEntryShares ? formatWalletTokenBalance(minimumEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                 </div>
@@ -4888,7 +4944,7 @@ function UserActions({
               <Info size={14} />
               <span>
                 {activeAction === "deposit"
-                  ? "The OTF receives only a proportional basket. If one pool returns surplus RWA tokens, they are sent to your wallet."
+                  ? "The OTF receives only a proportional basket. Surplus RWA tokens are sold back under your slippage limit and refunded to your wallet as USDG."
                   : "Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact."}
               </span>
             </div>
