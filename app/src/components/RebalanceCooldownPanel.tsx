@@ -4528,7 +4528,7 @@ function UserActions({
                     : marketQuoteProblem
                       ? marketQuoteProblem.title
                     : activeAction === "deposit"
-                      ? `${vault.symbol} shares received`
+                      ? `${vault.symbol} shares bought`
                       : "USDG received"}
                 </small>
               </button>
@@ -4581,7 +4581,7 @@ function UserActions({
                     : underlyingQuoteProblem
                       ? underlyingQuoteProblem.title
                     : activeAction === "deposit"
-                      ? `${vault.symbol} estimated shares`
+                      ? `${vault.symbol} shares minted`
                       : "USDG received"}
                 </small>
               </button>
