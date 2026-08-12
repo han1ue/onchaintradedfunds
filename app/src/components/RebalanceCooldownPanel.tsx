@@ -1528,7 +1528,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
             aumLoading={factoryLoading || directoryLoading}
-            onManageVault={(address) => openView("manage", address)}
             onOpenVault={(address) => openView("detail", address)}
             onCreateVault={() => openView("create")}
           />
@@ -1962,7 +1961,6 @@ function VaultHeader({
             <div>
               <div className="titleLine">
                 <h1>{vault.name}</h1>
-                <span className="symbolBadge">{vault.symbol}</span>
                 {vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}
               </div>
               <div className="addressLine">
@@ -6250,7 +6248,6 @@ function VaultsDirectory({
   connectedAddress,
   isTestnet,
   aumLoading,
-  onManageVault,
   onOpenVault,
   onCreateVault,
 }: {
@@ -6259,7 +6256,6 @@ function VaultsDirectory({
   connectedAddress?: string;
   isTestnet: boolean;
   aumLoading: boolean;
-  onManageVault: (address: `0x${string}`) => void;
   onOpenVault: (address: `0x${string}`) => void;
   onCreateVault: () => void;
 }) {
@@ -6348,7 +6344,6 @@ function VaultsDirectory({
                   <th>Assets</th>
                   <th>Creator fee</th>
                   <th>Manager</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -6375,17 +6370,6 @@ function VaultsDirectory({
                     <td data-label="Assets">{row.assetCount}</td>
                     <td data-label="Creator fee">{bpsToPercent(row.creatorFeeBps)}</td>
                     <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
-                    <td>
-                      <div className="managedTableActions">
-                        <button className="primaryAction" type="button" onClick={(event) => {
-                          event.stopPropagation();
-                          onManageVault(row.address);
-                        }}>
-                          <UserCog size={14} />
-                          Manage
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -8584,22 +8568,10 @@ function ManageVaultsView({
         description="Administer OTF roles and routine protocol operations."
         icon={<UserCog size={18} />}
         actions={
-          <>
-            <button
-              ref={sunsetButtonRef}
-              className="dangerAction"
-              type="button"
-              disabled={!vault.connectedIsManager || vault.sunset || sunsetBusy}
-              onClick={() => setSunsetConfirmationOpen(true)}
-            >
-              <Sun size={14} />
-              {vault.sunset ? "OTF sunset" : sunsetBusy ? "Sunsetting OTF" : "Sunset OTF"}
-            </button>
-            <button className="secondaryAction" type="button" onClick={onOpenVault}>
-              Open OTF
-              <ChevronRight size={14} />
-            </button>
-          </>
+          <button className="secondaryAction" type="button" onClick={onOpenVault}>
+            Open OTF
+            <ChevronRight size={14} />
+          </button>
         }
       />
 
@@ -8682,7 +8654,7 @@ function ManageVaultsView({
         <div className="vaultIdentity">
           <OtfTokenIcon className="vaultMonogram" size={46} ticker={vault.symbol} />
           <div>
-            <div className="titleLine"><h2>{vault.name}</h2><span className="symbolBadge">{vault.symbol}</span>{vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}</div>
+            <div className="titleLine"><h2>{vault.name}</h2>{vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}</div>
             <div className="addressLine"><AddressPill label="OTF" address={vault.address} copied={copied} onCopy={copyVaultAddress} /></div>
           </div>
         </div>
@@ -8889,6 +8861,31 @@ function ManageVaultsView({
       </>}
 
       <RebalanceHistoryPanel vault={vault} />
+
+      {!vault.sunset ? (
+        <SectionCard
+          title="Danger zone"
+          subtitle="Permanent actions that affect every OTF holder"
+          icon={<AlertTriangle size={15} />}
+        >
+          <div className="dangerZoneContent">
+            <div>
+              <strong>Sunset this OTF</strong>
+              <p>Permanently stop deposits, fee accrual, strategy changes, and rebalance operations. Proportional redemptions and share transfers remain available.</p>
+            </div>
+            <button
+              ref={sunsetButtonRef}
+              className="dangerAction"
+              type="button"
+              disabled={!vault.connectedIsManager || sunsetBusy}
+              onClick={() => setSunsetConfirmationOpen(true)}
+            >
+              <Sun size={14} />
+              {sunsetBusy ? "Sunsetting OTF" : "Sunset OTF"}
+            </button>
+          </div>
+        </SectionCard>
+      ) : null}
     </div>
   );
 }

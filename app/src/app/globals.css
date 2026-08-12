@@ -925,13 +925,12 @@ h2 {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 0.72rem;
 }
 
 .addressPill strong {
-  min-width: 96px;
   color: var(--text-soft);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.69rem;
@@ -4720,22 +4719,6 @@ textarea::placeholder {
   gap: 7px;
 }
 
-.managedDirectoryTable th:last-child,
-.managedDirectoryTable td:last-child {
-  width: 178px;
-}
-
-.managedTableActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.managedTableActions button {
-  white-space: nowrap;
-}
-
 .directoryToolbar {
   display: flex;
   align-items: center;
@@ -4950,7 +4933,6 @@ textarea::placeholder {
   .directoryPanel .directoryTable td:first-child,
   .managedVaultsPanel .directoryTable td:first-child,
   .depositPositions .directoryTable td:first-child,
-  .managedVaultsPanel .directoryTable td:last-child,
   .walletAssets .directoryTable td:first-child,
   .walletAssets .directoryTable td:last-child {
     grid-column: 1 / -1;
@@ -4961,10 +4943,6 @@ textarea::placeholder {
   .walletAssets .rwaCatalogTable td:first-child {
     justify-content: flex-start;
     text-align: left;
-  }
-
-  .managedVaultsPanel .directoryTable td:last-child {
-    justify-content: flex-end;
   }
 
   .walletAssets .directoryTable tbody {
@@ -4983,14 +4961,6 @@ textarea::placeholder {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .managedTableActions {
-    width: 100%;
-  }
-
-  .managedTableActions button {
-    flex: 1 1 0;
-    justify-content: center;
-  }
 }
 
 .tableAddressLink {
@@ -6317,6 +6287,34 @@ input.invalid {
   gap: 11px;
 }
 
+.dangerZoneContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.dangerZoneContent > div {
+  min-width: 0;
+}
+
+.dangerZoneContent strong {
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.dangerZoneContent p {
+  max-width: 78ch;
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.dangerZoneContent .dangerAction {
+  flex: 0 0 auto;
+}
+
 .manageChallengeWarning {
   margin: 0;
   padding: 13px 15px;
@@ -7112,6 +7110,16 @@ input.invalid {
     flex-wrap: wrap;
   }
 
+  .dangerZoneContent {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .dangerZoneContent .dangerAction {
+    align-self: flex-start;
+  }
+
   .vaultTitleRow,
   .vaultIdentity,
   .cardFooterAction,
@@ -7400,24 +7408,10 @@ input.invalid {
   .directoryPanel .directoryTable td:first-child,
   .managedVaultsPanel .directoryTable td:first-child,
   .depositPositions .directoryTable td:first-child,
-  .walletAssets .directoryTable td:first-child,
-  .managedVaultsPanel .directoryTable td:last-child {
+  .walletAssets .directoryTable td:first-child {
     grid-column: 1 / -1;
     width: auto;
     padding: 0;
-  }
-
-  .managedVaultsPanel .directoryTable td:last-child {
-    justify-content: flex-end;
-  }
-
-  .managedTableActions {
-    width: 100%;
-  }
-
-  .managedTableActions button {
-    flex: 1 1 0;
-    justify-content: center;
   }
 
   .directoryVault small,
