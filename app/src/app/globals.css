@@ -7921,16 +7921,17 @@ input.invalid {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .landingNav nav a {
   display: inline-flex;
+  min-height: 38px;
   align-items: center;
   gap: 5px;
   color: #9ba8b8;
-  padding: 8px 10px;
-  font-size: 0.72rem;
+  padding: 0 14px;
+  font-size: 0.76rem;
   text-decoration: none;
 }
 

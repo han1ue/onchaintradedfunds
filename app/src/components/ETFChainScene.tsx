@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 const TICKERS = ["TSLA", "AMZN", "AMD"] as const;
 const STATE_WEIGHTS = [
-  [44, 34, 22],
+  [34, 44, 22],
   [40, 35, 25],
   [36, 39, 25],
   [42, 33, 25],
