@@ -13,7 +13,7 @@ export function VotePanel({ proposal, connected, turnstileSiteKey, siteUrl }: { 
   const [publishedPostUrl, setPublishedPostUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
-  const postText = buildVotePost(reason || "Your perspective goes here.", proposal, siteUrl);
+  const postText = buildVotePost(reason || "[You reason]", proposal, siteUrl);
 
   async function postVote() {
     if (!connected) {

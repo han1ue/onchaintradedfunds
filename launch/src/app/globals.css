@@ -144,7 +144,6 @@ button { color: inherit; }
 .otfIdentity > div { min-width: 0; }
 .otfIdentity a { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-size: .86rem; font-weight: 700; }
 .otfIdentity a:hover { color: var(--teal); }
-.ticker { display: block; margin-top: 2px; color: var(--teal); font-size: .65rem; font-weight: 750; letter-spacing: .07em; }
 .otfIdentity p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--text-muted); font-size: .71rem; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .allocationVisual { min-width: 0; padding-right: 20px; }
 .allocationLabels { display: flex; margin-bottom: 5px; color: var(--text-soft); font-size: .61rem; }
@@ -277,7 +276,7 @@ button { color: inherit; }
 .proposalHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .proposalTitle { display: flex; align-items: center; gap: 16px; }
 .proposalTitle h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.045em; }
-.proposalTitle > div > p { margin: 5px 0 0; color: var(--teal); font-size: .85rem; font-weight: 750; letter-spacing: .08em; }
+.proposalMeta { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-muted); font-size: .72rem; }
 .creatorBlock { display: grid; justify-items: end; gap: 5px; }
 .creatorBlock > span { color: var(--text-muted); font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; }
 .creatorBlock strong { display: flex; align-items: center; gap: 5px; font-size: .8rem; }

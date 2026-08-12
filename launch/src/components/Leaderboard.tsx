@@ -21,7 +21,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
         <ProposalMark ticker={entry.ticker} />
-        <div><Link href={`/otfs/${entry.slug}`}>{entry.name}<ChevronRight size={14} /></Link><span className="ticker">${entry.ticker}</span><p>{entry.thesis}</p></div>
+        <div><Link href={`/otfs/${entry.slug}`}>{entry.name}<ChevronRight size={14} /></Link><p>{entry.thesis}</p></div>
       </div>
       <AllocationStrip allocations={entry.allocations} />
       <div className="creator"><span>@{entry.creator.username}</span><BadgeCheck size={15} aria-label="Verified X creator" /></div>

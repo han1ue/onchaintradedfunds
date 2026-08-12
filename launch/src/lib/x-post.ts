@@ -13,7 +13,7 @@ export function buildSubmissionPost(reason: string, proposal: XPostProposal, sit
 }
 
 export function buildVotePost(reason: string, proposal: XPostProposal, siteUrl: string) {
-  return `${reason}\n\n${proposal.name} ($${proposal.ticker}) — my vote in OTF Launch\n${proposalUrl(siteUrl, proposal.slug)}`;
+  return `${reason}\n\nI just voted for ${proposal.name} in OTF Launch\n${proposalUrl(siteUrl, proposal.slug)}`;
 }
 
 export function approximateXPostLength(text: string) {
