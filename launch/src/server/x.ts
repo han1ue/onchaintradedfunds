@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { env } from "./env";
 import { parseXPostId } from "@/lib/validation";
+import { approximateXPostLength } from "@/lib/x-post";
 
 export type XUser = {
   id: string;
@@ -25,6 +26,8 @@ export type XPost = {
   entities?: { urls?: { expanded_url?: string; unwound_url?: string }[] };
 };
 
+export type CreatedXPost = { id: string; text: string };
+
 async function xFetch<T>(path: string): Promise<T> {
   if (!env.X_BEARER_TOKEN) throw new Error("X_UNAVAILABLE");
   const response = await fetch(`https://api.x.com${path}`, {
@@ -46,6 +49,28 @@ export async function getXPost(postIdOrUrl: string) {
   const id = /^\d+$/.test(postIdOrUrl) ? postIdOrUrl : parseXPostId(postIdOrUrl);
   const result = await xFetch<{ data: XPost }>(`/2/tweets/${id}?tweet.fields=author_id,created_at,edit_history_tweet_ids,entities,referenced_tweets,text`);
   return result.data;
+}
+
+export async function createXPost(accessToken: string, text: string) {
+  if (approximateXPostLength(text) > 280) throw new Error("POST_TOO_LONG");
+  const response = await fetch("https://api.x.com/2/tweets", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) throw new Error("X_RECONNECT_REQUIRED");
+    if (response.status === 429) throw new Error("X_RATE_LIMITED");
+    throw new Error("X_POST_FAILED");
+  }
+  const result = await response.json() as { data?: CreatedXPost };
+  if (!result.data?.id || typeof result.data.text !== "string") throw new Error("X_POST_FAILED");
+  return result.data;
+}
+
+export function hashXPostText(text: string) {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 export function snapshotFromXUser(userId: string, profile: XUser) {
@@ -74,24 +99,9 @@ export function assertXEligible(profile: XUser, options: { minFollowers?: number
   if (options.minFollowers !== undefined && profile.public_metrics.followers_count < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
 }
 
-export function verifyXPost(post: XPost, expected: { authorId: string; proofUrl: string; challengeCreatedAt: Date; expiresAt: Date; minContextCharacters?: number; allowExpired?: boolean }) {
-  const now = new Date();
-  if (!expected.allowExpired && now > expected.expiresAt) throw new Error("PROOF_EXPIRED");
-  if (post.author_id !== expected.authorId) throw new Error("PROOF_MISMATCH");
-  const postedAt = new Date(post.created_at);
-  if (postedAt < expected.challengeCreatedAt || postedAt > expected.expiresAt) throw new Error("PROOF_MISMATCH");
-  if (post.referenced_tweets?.some((reference) => reference.type === "retweeted")) throw new Error("PROOF_MISMATCH");
-  const expanded = post.entities?.urls?.flatMap((url) => [url.expanded_url, url.unwound_url]).filter(Boolean) ?? [];
-  const includesProof = post.text.includes(expected.proofUrl) || expanded.some((url) => url === expected.proofUrl || url?.startsWith(`${expected.proofUrl}?`));
-  if (!includesProof) throw new Error("PROOF_MISMATCH");
-  const context = post.text.replace(/https?:\/\/\S+/g, "").trim();
-  if (context.length < (expected.minContextCharacters ?? 20)) throw new Error("PROOF_MISMATCH");
-  return {
-    postId: post.id,
-    authorId: post.author_id,
-    postedAt,
-    editHistoryIds: post.edit_history_tweet_ids ?? [post.id],
-    evidenceHash: createHash("sha256").update(JSON.stringify(post)).digest("hex"),
-    rawText: post.text
-  };
+export function verifyStoredXPost(post: XPost, expected: { authorId: string; evidenceHash: string }) {
+  if (post.author_id !== expected.authorId) throw new Error("X_POST_CHANGED");
+  if (post.referenced_tweets?.some((reference) => reference.type === "retweeted")) throw new Error("X_POST_CHANGED");
+  if (hashXPostText(post.text) !== expected.evidenceHash) throw new Error("X_POST_CHANGED");
+  return { editHistoryIds: post.edit_history_tweet_ids ?? [post.id] };
 }

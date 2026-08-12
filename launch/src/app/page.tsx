@@ -17,7 +17,7 @@ export default async function HomePage() {
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">
-      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} detail="Accepted X proofs" />
+      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} detail="Valid public X posts" />
       <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} detail="Public entries" />
       <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} detail="Verified X accounts" />
     </div>
@@ -29,7 +29,7 @@ export default async function HomePage() {
       <HowItWorks connected={Boolean(session?.user)} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><div><span>Competition rules</span><small>The V1 essentials</small></div><FileCheck2 size={18} /></div><ul><li>Verified, public X accounts only.</li><li>At least two eligible assets totaling exactly 100%.</li><li>Original public proof post for every submission and vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><div><span>Competition rules</span><small>The V1 essentials</small></div><FileCheck2 size={18} /></div><ul><li>Verified, public X accounts only.</li><li>At least two eligible assets totaling exactly 100%.</li><li>Approve one public X post for every submission and vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
       <SectionCard className="activityPanel"><div className="cardHeading"><div><span>Recent activity</span><small>Verified community actions</small></div><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted ${entry.name}` : `reached ${entry.votes.toLocaleString()} verified votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
     </div>
   </div>;

@@ -1,17 +1,15 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { proposalInputSchema, proofInputSchema } from "@/lib/validation";
-import { createChallengeToken, xIntent } from "./challenge";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { proposalInputSchema, xPostActionSchema } from "@/lib/validation";
+import { buildSubmissionPost, buildVotePost, slugifyProposalName } from "@/lib/x-post";
 import { requireDb } from "./db";
 import {
   activityEvents, assetEligibilitySnapshots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
-  tweetChallenges, tweetEvidence, votes
+  tweetEvidence, votes
 } from "./db/schema";
-import { requireEligibleActor, requireSession } from "./guards";
-import { getXPost, verifyXPost } from "./x";
-
-function slugify(value: string) {
-  return value.toLowerCase().replace(/\s+otf$/i, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-otf";
-}
+import { requireEligibleActor } from "./guards";
+import { createXPost, hashXPostText } from "./x";
+import { getXUserAccessToken } from "./x-oauth-token";
+import { env } from "./env";
 
 export async function saveProposalDraft(input: unknown) {
   const parsed = proposalInputSchema.parse(input);
@@ -34,7 +32,7 @@ export async function saveProposalDraft(input: unknown) {
     const [existing] = await transaction.select().from(proposals)
       .where(and(eq(proposals.competitionId, competition.id), eq(proposals.creatorUserId, session.user.id))).limit(1);
     if (existing && existing.status !== "draft") throw new Error("PROPOSAL_IMMUTABLE");
-    const values = { competitionId: competition.id, creatorUserId: session.user.id, slug: slugify(parsed.name), name: parsed.name, ticker: parsed.ticker, thesis: parsed.thesis, updatedAt: new Date() };
+    const values = { competitionId: competition.id, creatorUserId: session.user.id, slug: slugifyProposalName(parsed.name), name: parsed.name, ticker: parsed.ticker, thesis: parsed.thesis, updatedAt: new Date() };
     const [proposal] = existing
       ? await transaction.update(proposals).set(values).where(eq(proposals.id, existing.id)).returning()
       : await transaction.insert(proposals).values(values).returning();
@@ -50,91 +48,112 @@ export async function saveProposalDraft(input: unknown) {
   });
 }
 
-export async function issueSubmissionChallenge(proposalId: string) {
+export async function publishProposalToX(proposalId: string, input: unknown) {
+  const { reason } = xPostActionSchema.parse(input);
   const database = requireDb();
-  const { session, competition } = await requireEligibleActor();
-  const [proposal] = await database.select().from(proposals).where(and(eq(proposals.id, proposalId), eq(proposals.creatorUserId, session.user.id), eq(proposals.status, "draft"))).limit(1);
+  const { session, competition, snapshot } = await requireEligibleActor();
+  const accessToken = await getXUserAccessToken(session.user.id);
+  const [proposal] = await database.select().from(proposals).where(and(
+    eq(proposals.id, proposalId), eq(proposals.creatorUserId, session.user.id), eq(proposals.competitionId, competition.id), eq(proposals.status, "draft")
+  )).limit(1);
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
-  const token = createChallengeToken();
-  const expiresAt = new Date(Date.now() + competition.proofWindowMinutes * 60_000);
-  const [challenge] = await database.transaction(async (transaction) => {
-    await transaction.update(proposals).set({ status: "proof_pending", updatedAt: new Date() }).where(eq(proposals.id, proposal.id));
-    return transaction.insert(tweetChallenges).values({
-      action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
-      nonceHash: token.nonceHash, proofUrl: token.proofUrl, expiresAt
-    }).returning();
-  });
-  return { challengeId: challenge.id, proofUrl: token.proofUrl, expiresAt, intentUrl: xIntent(`I submitted ${proposal.name} ($${proposal.ticker}) to the OTF launch competition.`, token.proofUrl) };
-}
 
-export async function issueVoteChallenge(proposalId: string) {
-  const database = requireDb();
-  const { session, competition, snapshot } = await requireEligibleActor({ forVote: true });
-  const [proposal] = await database.select().from(proposals).where(and(eq(proposals.id, proposalId), eq(proposals.status, "accepted"))).limit(1);
-  if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
-  if (proposal.creatorUserId === session.user.id) throw new Error("SELF_VOTE");
-  const [existing] = await database.select().from(votes).where(and(eq(votes.proposalId, proposal.id), eq(votes.voterUserId, session.user.id))).limit(1);
-  if (existing) throw new Error("DUPLICATE_VOTE");
-  const token = createChallengeToken();
-  const expiresAt = new Date(Date.now() + competition.proofWindowMinutes * 60_000);
-  const result = await database.transaction(async (transaction) => {
-    const [vote] = await transaction.insert(votes).values({
-      competitionId: competition.id, proposalId: proposal.id, voterUserId: session.user.id,
-      identitySnapshotId: snapshot.id, followerCount: snapshot.followersCount
-    }).returning();
-    const [challenge] = await transaction.insert(tweetChallenges).values({
-      action: "vote", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
-      nonceHash: token.nonceHash, proofUrl: token.proofUrl, expiresAt
-    }).returning();
-    return { vote, challenge };
-  });
-  return { voteId: result.vote.id, challengeId: result.challenge.id, proofUrl: token.proofUrl, expiresAt, intentUrl: xIntent(`I voted for ${proposal.name} ($${proposal.ticker}) in the OTF launch competition.`, token.proofUrl) };
-}
+  const [reserved] = await database.update(proposals).set({ status: "posting", updatedAt: new Date() }).where(and(
+    eq(proposals.id, proposal.id), eq(proposals.status, "draft")
+  )).returning({ id: proposals.id });
+  if (!reserved) throw new Error("ACTION_IN_PROGRESS");
 
-export async function verifyProof(input: unknown) {
-  const parsed = proofInputSchema.parse(input);
-  const database = requireDb();
-  const session = await requireSession();
-  const [challenge] = await database.select().from(tweetChallenges)
-    .where(and(eq(tweetChallenges.id, parsed.challengeId), eq(tweetChallenges.userId, session.user.id))).limit(1);
-  if (!challenge) throw new Error("PROOF_MISMATCH");
-  if (challenge.usedAt) throw new Error("PROOF_REUSED");
-  const post = await getXPost(parsed.postUrl);
-  const verified = verifyXPost(post, {
-    authorId: session.user.xUserId!, proofUrl: challenge.proofUrl,
-    challengeCreatedAt: challenge.createdAt, expiresAt: challenge.expiresAt
-  });
+  let created: Awaited<ReturnType<typeof createXPost>>;
+  try {
+    created = await createXPost(accessToken, buildSubmissionPost(reason, proposal, env.NEXT_PUBLIC_SITE_URL));
+  } catch (error) {
+    await database.update(proposals).set({ status: "draft", updatedAt: new Date() }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "posting")));
+    throw error;
+  }
+
+  const acceptedAt = new Date();
   try {
     return await database.transaction(async (transaction) => {
-      const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, challenge.competitionId), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
+      const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(
+        eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`
+      )).limit(1);
       if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
-      const consumed = await transaction.update(tweetChallenges).set({ usedAt: new Date() })
-        .where(and(eq(tweetChallenges.id, challenge.id), isNull(tweetChallenges.usedAt))).returning({ id: tweetChallenges.id });
-      if (!consumed.length) throw new Error("PROOF_REUSED");
       const [evidence] = await transaction.insert(tweetEvidence).values({
-        challengeId: challenge.id, xPostId: verified.postId, xAuthorId: verified.authorId, postUrl: parsed.postUrl,
-        postedAt: verified.postedAt, editHistoryIds: verified.editHistoryIds, evidenceHash: verified.evidenceHash,
-        status: "valid", verifiedAt: new Date(), lastCheckedAt: new Date(), rawText: verified.rawText,
+        action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
+        xPostId: created.id, xAuthorId: session.user.xUserId!, postUrl: `https://x.com/i/web/status/${created.id}`,
+        postedAt: acceptedAt, editHistoryIds: [created.id], evidenceHash: hashXPostText(created.text),
+        status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt, rawText: created.text,
         rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
       }).returning();
-      await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "initial-verification" });
-      if (challenge.action === "submission") {
-        const acceptedAt = new Date();
-        const [proposal] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt })
-          .where(and(eq(proposals.id, challenge.proposalId!), eq(proposals.status, "proof_pending"))).returning();
-        if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
-        await transaction.insert(activityEvents).values({ competitionId: challenge.competitionId, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: "v1", metadata: { ticker: proposal.ticker } });
-        return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug };
-      }
-      const acceptedAt = new Date();
-      const [vote] = await transaction.update(votes).set({ status: "valid", evidenceId: evidence.id, acceptedAt, updatedAt: acceptedAt })
-        .where(and(eq(votes.proposalId, challenge.proposalId!), eq(votes.voterUserId, session.user.id), eq(votes.status, "proof_pending"))).returning();
-      if (!vote) throw new Error("VOTE_NOT_FOUND");
-      await transaction.insert(activityEvents).values({ competitionId: challenge.competitionId, actorUserId: session.user.id, proposalId: challenge.proposalId, voteId: vote.id, evidenceId: evidence.id, eventType: "vote.accepted", occurredAt: acceptedAt, ruleVersion: "v1", metadata: { followers: vote.followerCount } });
-      return { action: "vote" as const, proposalId: challenge.proposalId };
+      await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "created-by-authorized-x-api" });
+      const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt })
+        .where(and(eq(proposals.id, proposal.id), eq(proposals.status, "posting"))).returning();
+      if (!accepted) throw new Error("PROPOSAL_NOT_FOUND");
+      await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: created.id, publishedBy: "otf-launch" } });
+      return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
     });
   } catch (error) {
-    if (error instanceof Error && /unique|duplicate/i.test(error.message)) throw new Error("PROOF_REUSED");
+    await database.update(proposals).set({ status: "draft", updatedAt: new Date() }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "posting")));
+    throw error;
+  }
+}
+
+export async function publishVoteToX(proposalIdOrSlug: string, input: unknown) {
+  const { reason } = xPostActionSchema.parse(input);
+  const database = requireDb();
+  const { session, competition, snapshot } = await requireEligibleActor({ forVote: true });
+  const accessToken = await getXUserAccessToken(session.user.id);
+  const [proposal] = await database.select().from(proposals).where(and(
+    or(eq(proposals.id, proposalIdOrSlug), eq(proposals.slug, proposalIdOrSlug)),
+    eq(proposals.competitionId, competition.id), eq(proposals.status, "accepted")
+  )).limit(1);
+  if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
+  if (proposal.creatorUserId === session.user.id) throw new Error("SELF_VOTE");
+  const [existing] = await database.select({ id: votes.id }).from(votes).where(and(eq(votes.proposalId, proposal.id), eq(votes.voterUserId, session.user.id))).limit(1);
+  if (existing) throw new Error("DUPLICATE_VOTE");
+
+  let vote: typeof votes.$inferSelect;
+  try {
+    [vote] = await database.insert(votes).values({
+      competitionId: competition.id, proposalId: proposal.id, voterUserId: session.user.id,
+      identitySnapshotId: snapshot.id, followerCount: snapshot.followersCount, status: "posting"
+    }).returning();
+  } catch (error) {
+    if (error instanceof Error && /unique|duplicate/i.test(error.message)) throw new Error("DUPLICATE_VOTE");
+    throw error;
+  }
+
+  let created: Awaited<ReturnType<typeof createXPost>>;
+  try {
+    created = await createXPost(accessToken, buildVotePost(reason, proposal, env.NEXT_PUBLIC_SITE_URL));
+  } catch (error) {
+    await database.delete(votes).where(and(eq(votes.id, vote.id), eq(votes.status, "posting")));
+    throw error;
+  }
+
+  const acceptedAt = new Date();
+  try {
+    return await database.transaction(async (transaction) => {
+      const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(
+        eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`
+      )).limit(1);
+      if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
+      const [evidence] = await transaction.insert(tweetEvidence).values({
+        action: "vote", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
+        xPostId: created.id, xAuthorId: session.user.xUserId!, postUrl: `https://x.com/i/web/status/${created.id}`,
+        postedAt: acceptedAt, editHistoryIds: [created.id], evidenceHash: hashXPostText(created.text),
+        status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt, rawText: created.text,
+        rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
+      }).returning();
+      await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "created-by-authorized-x-api" });
+      const [accepted] = await transaction.update(votes).set({ status: "valid", evidenceId: evidence.id, acceptedAt, updatedAt: acceptedAt })
+        .where(and(eq(votes.id, vote.id), eq(votes.status, "posting"))).returning();
+      if (!accepted) throw new Error("VOTE_NOT_FOUND");
+      await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, voteId: vote.id, evidenceId: evidence.id, eventType: "vote.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { followers: vote.followerCount, xPostId: created.id, publishedBy: "otf-launch" } });
+      return { action: "vote" as const, proposalId: proposal.id, postUrl: evidence.postUrl };
+    });
+  } catch (error) {
+    await database.delete(votes).where(and(eq(votes.id, vote.id), eq(votes.status, "posting")));
     throw error;
   }
 }

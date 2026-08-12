@@ -5,15 +5,15 @@
 - Apply launch-only Drizzle migrations to a backed-up Neon branch.
 - Verify X OAuth callbacks for preview and production URLs.
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
-- Reconcile Robinhood assets and enable only reviewed, liquid RWA/USDG V3 pools.
+- Run the one-time post-deployment Robinhood asset reconciliation and enable only reviewed, liquid RWA/USDG V3 pools. Asset discovery is not a recurring cron job.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
-- Exercise one real submission and vote in a non-production competition, including proof retry and expiry cleanup.
+- Exercise one real submission and vote in a non-production competition. Confirm each button publishes only the exact previewed text and the returned post URL is stored.
 
 ## During the competition
 
-- Monitor X API rate limits and spend, pool reconciliation failures, proof errors, and moderation actions.
+- Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
-- If X verification is unavailable, new actions remain disabled until reads recover.
+- If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 
 ## Closing and finalization
 

@@ -8,9 +8,9 @@ import { requireDb } from "./db";
 import {
   activityEvents, adminActions, assetEligibilitySnapshots, assetPools, competitions, eligibleAssets, evidenceChecks,
   finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposalAssets, proposals,
-  tweetChallenges, tweetEvidence, votes
+  tweetEvidence, votes
 } from "./db/schema";
-import { getXPost, verifyXPost } from "./x";
+import { getXPost, verifyStoredXPost } from "./x";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -51,27 +51,26 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
 
 export async function recheckEvidence(competitionId: string, runId?: string) {
   const database = requireDb();
-  const records = await database.select({ evidence: tweetEvidence, challenge: tweetChallenges })
-    .from(tweetEvidence).innerJoin(tweetChallenges, eq(tweetChallenges.id, tweetEvidence.challengeId))
-    .where(and(eq(tweetChallenges.competitionId, competitionId), eq(tweetEvidence.status, "valid")))
+  const records = await database.select().from(tweetEvidence)
+    .where(and(eq(tweetEvidence.competitionId, competitionId), eq(tweetEvidence.status, "valid")))
     .orderBy(tweetEvidence.id);
-  for (const record of records) {
+  for (const evidence of records) {
     try {
-      const post = await getXPost(record.evidence.xPostId);
-      verifyXPost(post, { authorId: record.evidence.xAuthorId, proofUrl: record.challenge.proofUrl, challengeCreatedAt: record.challenge.createdAt, expiresAt: record.challenge.expiresAt, allowExpired: true });
-      await database.insert(evidenceChecks).values({ evidenceId: record.evidence.id, status: "valid", reason: "finalization-recheck" });
-      await database.update(tweetEvidence).set({ lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, record.evidence.id));
+      const post = await getXPost(evidence.xPostId);
+      verifyStoredXPost(post, { authorId: evidence.xAuthorId, evidenceHash: evidence.evidenceHash });
+      await database.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "evidence-recheck" });
+      await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: post.edit_history_tweet_ids ?? [post.id] }).where(eq(tweetEvidence.id, evidence.id));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "X_UNAVAILABLE";
       if (reason === "X_UNAVAILABLE" || reason === "X_RATE_LIMITED") throw error;
       await database.transaction(async (transaction) => {
-        await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, record.evidence.id));
-        await transaction.insert(evidenceChecks).values({ evidenceId: record.evidence.id, status: "invalid", reason });
-        await transaction.update(votes).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(votes.evidenceId, record.evidence.id));
-        if (record.challenge.action === "submission" && record.challenge.proposalId) await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `Proof invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, record.challenge.proposalId));
+        await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
+        await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
+        await transaction.update(votes).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(votes.evidenceId, evidence.id));
+        if (evidence.action === "submission") await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
       });
     }
-    if (runId) await database.update(finalizationRuns).set({ cursor: record.evidence.id }).where(eq(finalizationRuns.id, runId));
+    if (runId) await database.update(finalizationRuns).set({ cursor: evidence.id }).where(eq(finalizationRuns.id, runId));
   }
 }
 

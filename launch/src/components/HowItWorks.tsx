@@ -5,7 +5,7 @@ export function HowItWorks({ connected = false }: { connected?: boolean }) {
   const steps = [
     { icon: BadgeCheck, title: "Connect X", text: "Use a verified, public X account." },
     { icon: PenLine, title: "Create or vote", text: "Build an OTF or back the ones you believe in." },
-    { icon: ShieldCheck, title: "Verify your post", text: "Share your reason on X and paste the post URL." }
+    { icon: ShieldCheck, title: "Approve the X post", text: "Review the exact text, then let OTF Launch publish it." }
   ];
   return <SectionCard className="howCard"><div className="cardHeading"><span>How it works</span><small>Verified actions only</small></div>
     <ol className="steps">{steps.map(({ icon: Icon, title, text }, index) => <li key={title}><div className="stepIcon"><Icon size={20} /></div><span className="stepNumber">{index + 1}</span><div><strong>{title}</strong><p>{text}</p></div></li>)}</ol>

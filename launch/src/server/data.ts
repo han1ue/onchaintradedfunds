@@ -51,6 +51,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
     )
     select o.id::text, o.slug, o.rank, o.name, o.ticker, o.thesis, o.votes,
       o.accepted_at as "acceptedAt",
+      (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
       json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name) as creator,
       coalesce((select json_agg(json_build_object(
         'assetId', pa.asset_id::text, 'symbol', a.symbol, 'name', a.name, 'weightBps', pa.weight_bps

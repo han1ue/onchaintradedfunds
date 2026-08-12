@@ -250,6 +250,11 @@ button { color: inherit; }
 .sideNote ul { margin: 12px 0 0; padding-left: 18px; color: var(--text-muted); font-size: .72rem; line-height: 1.55; }
 .sideNote li + li { margin-top: 8px; }
 .intentLink, .proofLink { display: inline-flex; align-items: center; gap: 5px; color: var(--teal); font-size: .72rem; font-weight: 650; }
+.xPostPreview { overflow: hidden; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--card-raised); }
+.xPostPreview > div { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .67rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.xPostPreview > div svg { color: var(--teal); }
+.xPostPreview p { margin: 0; padding: 13px 14px; color: var(--text-soft); font-size: .78rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.xPostPreview.compact p { font-size: .72rem; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
 .turnstile { min-height: 65px; display: grid; align-items: center; overflow: hidden; }
 

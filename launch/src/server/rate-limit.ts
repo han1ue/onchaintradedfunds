@@ -8,10 +8,10 @@ const redis = env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN
 
 const limiters = redis ? {
   write: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(8, "10 m"), prefix: "otf-launch:write" }),
-  proof: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(12, "10 m"), prefix: "otf-launch:proof" })
+  post: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(6, "10 m"), prefix: "otf-launch:post" })
 } : null;
 
-export async function enforceRateLimit(kind: "write" | "proof", request: Request, actorId?: string) {
+export async function enforceRateLimit(kind: "write" | "post", request: Request, actorId?: string) {
   if (!limiters) return;
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const secret = env.IP_HASH_SECRET ?? env.AUTH_SECRET ?? "local-development-only";

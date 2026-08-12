@@ -1,5 +1,5 @@
 {
-  "id": "f6f01955-c459-40dd-be62-7c970176950f",
+  "id": "d5e1ebd2-3d62-4214-b0d4-e5ad61966f9c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -706,13 +706,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 100
-        },
-        "proof_window_minutes": {
-          "name": "proof_window_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 30
         },
         "rule_version": {
           "name": "rule_version",
@@ -1768,8 +1761,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.tweet_challenges": {
-      "name": "tweet_challenges",
+    "public.tweet_evidence": {
+      "name": "tweet_evidence",
       "schema": "",
       "columns": {
         "id": {
@@ -1781,7 +1774,7 @@
         },
         "action": {
           "name": "action",
-          "type": "challenge_action",
+          "type": "evidence_action",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
@@ -1802,138 +1795,10 @@
           "name": "proposal_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "nonce_hash": {
-          "name": "nonce_hash",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true
         },
-        "proof_url": {
-          "name": "proof_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "challenge_expiry_idx": {
-          "name": "challenge_expiry_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "used_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "tweet_challenges_competition_id_competitions_id_fk": {
-          "name": "tweet_challenges_competition_id_competitions_id_fk",
-          "tableFrom": "tweet_challenges",
-          "tableTo": "competitions",
-          "columnsFrom": [
-            "competition_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "tweet_challenges_user_id_users_id_fk": {
-          "name": "tweet_challenges_user_id_users_id_fk",
-          "tableFrom": "tweet_challenges",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "tweet_challenges_proposal_id_proposals_id_fk": {
-          "name": "tweet_challenges_proposal_id_proposals_id_fk",
-          "tableFrom": "tweet_challenges",
-          "tableTo": "proposals",
-          "columnsFrom": [
-            "proposal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "tweet_challenges_nonce_hash_unique": {
-          "name": "tweet_challenges_nonce_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "nonce_hash"
-          ]
-        },
-        "tweet_challenges_proof_url_unique": {
-          "name": "tweet_challenges_proof_url_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "proof_url"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.tweet_evidence": {
-      "name": "tweet_evidence",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "challenge_id": {
-          "name": "challenge_id",
+        "identity_snapshot_id": {
+          "name": "identity_snapshot_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -2014,14 +1879,91 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "tweet_evidence_competition_status_idx": {
+          "name": "tweet_evidence_competition_status_idx",
+          "columns": [
+            {
+              "expression": "competition_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "submission_evidence_once_uq": {
+          "name": "submission_evidence_once_uq",
+          "columns": [
+            {
+              "expression": "proposal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"tweet_evidence\".\"action\" = 'submission'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "tweet_evidence_challenge_id_tweet_challenges_id_fk": {
-          "name": "tweet_evidence_challenge_id_tweet_challenges_id_fk",
+        "tweet_evidence_competition_id_competitions_id_fk": {
+          "name": "tweet_evidence_competition_id_competitions_id_fk",
           "tableFrom": "tweet_evidence",
-          "tableTo": "tweet_challenges",
+          "tableTo": "competitions",
           "columnsFrom": [
-            "challenge_id"
+            "competition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tweet_evidence_user_id_users_id_fk": {
+          "name": "tweet_evidence_user_id_users_id_fk",
+          "tableFrom": "tweet_evidence",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "tweet_evidence_proposal_id_proposals_id_fk": {
+          "name": "tweet_evidence_proposal_id_proposals_id_fk",
+          "tableFrom": "tweet_evidence",
+          "tableTo": "proposals",
+          "columnsFrom": [
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tweet_evidence_identity_snapshot_id_x_identity_snapshots_id_fk": {
+          "name": "tweet_evidence_identity_snapshot_id_x_identity_snapshots_id_fk",
+          "tableFrom": "tweet_evidence",
+          "tableTo": "x_identity_snapshots",
+          "columnsFrom": [
+            "identity_snapshot_id"
           ],
           "columnsTo": [
             "id"
@@ -2032,13 +1974,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "tweet_evidence_challenge_id_unique": {
-          "name": "tweet_evidence_challenge_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "challenge_id"
-          ]
-        },
         "tweet_evidence_x_post_id_unique": {
           "name": "tweet_evidence_x_post_id_unique",
           "nullsNotDistinct": false,
@@ -2227,7 +2162,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'proof_pending'"
+          "default": "'posting'"
         },
         "accepted_at": {
           "name": "accepted_at",
@@ -2530,14 +2465,6 @@
     }
   },
   "enums": {
-    "public.challenge_action": {
-      "name": "challenge_action",
-      "schema": "public",
-      "values": [
-        "submission",
-        "vote"
-      ]
-    },
     "public.competition_phase": {
       "name": "competition_phase",
       "schema": "public",
@@ -2548,6 +2475,14 @@
         "auditing",
         "final",
         "cancelled"
+      ]
+    },
+    "public.evidence_action": {
+      "name": "evidence_action",
+      "schema": "public",
+      "values": [
+        "submission",
+        "vote"
       ]
     },
     "public.evidence_status": {
@@ -2575,7 +2510,7 @@
       "schema": "public",
       "values": [
         "draft",
-        "proof_pending",
+        "posting",
         "accepted",
         "hidden",
         "disqualified",
@@ -2586,7 +2521,7 @@
       "name": "vote_status",
       "schema": "public",
       "values": [
-        "proof_pending",
+        "posting",
         "valid",
         "invalid"
       ]

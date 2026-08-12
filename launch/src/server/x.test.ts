@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertXEligible, verifyXPost, type XPost, type XUser } from "./x";
+import { assertXEligible, hashXPostText, verifyStoredXPost, type XPost, type XUser } from "./x";
 
 const eligibleUser: XUser = { id: "42", username: "verified", name: "Verified", created_at: "2020-01-01T00:00:00Z", protected: false, verified: true, public_metrics: { followers_count: 100, following_count: 20, tweet_count: 30, listed_count: 1 } };
 
@@ -10,10 +10,10 @@ describe("X eligibility", () => {
 });
 
 describe("X post evidence", () => {
-  const proofUrl = "https://launch.example/proof/nonce";
-  const post: XPost = { id: "123", author_id: "42", text: "I support this portfolio because the thesis is durable https://t.co/abc", created_at: "2026-01-01T00:05:00Z", edit_history_tweet_ids: ["123"], entities: { urls: [{ expanded_url: proofUrl }] } };
-  const expected = { authorId: "42", proofUrl, challengeCreatedAt: new Date("2026-01-01T00:00:00Z"), expiresAt: new Date("2026-01-01T00:30:00Z"), allowExpired: true };
-  it("accepts the right author, expanded proof URL and user context", () => expect(verifyXPost(post, expected).postId).toBe("123"));
-  it("rejects a wrong author", () => expect(() => verifyXPost({ ...post, author_id: "99" }, expected)).toThrow("PROOF_MISMATCH"));
-  it("rejects repost evidence", () => expect(() => verifyXPost({ ...post, referenced_tweets: [{ type: "retweeted", id: "1" }] }, expected)).toThrow("PROOF_MISMATCH"));
+  const post: XPost = { id: "123", author_id: "42", text: "I support this portfolio because the thesis is durable https://t.co/abc", created_at: "2026-01-01T00:05:00Z", edit_history_tweet_ids: ["123"] };
+  const expected = { authorId: "42", evidenceHash: hashXPostText(post.text) };
+  it("accepts an unchanged post from the connected author", () => expect(verifyStoredXPost(post, expected).editHistoryIds).toEqual(["123"]));
+  it("rejects a wrong author", () => expect(() => verifyStoredXPost({ ...post, author_id: "99" }, expected)).toThrow("X_POST_CHANGED"));
+  it("rejects edited text", () => expect(() => verifyStoredXPost({ ...post, text: "Changed" }, expected)).toThrow("X_POST_CHANGED"));
+  it("rejects repost evidence", () => expect(() => verifyStoredXPost({ ...post, referenced_tweets: [{ type: "retweeted", id: "1" }] }, expected)).toThrow("X_POST_CHANGED"));
 });

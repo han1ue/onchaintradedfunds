@@ -16,7 +16,12 @@ export const proposalInputSchema = z.object({
   })
 });
 
-export const proofInputSchema = z.object({ challengeId: z.string().uuid(), postUrl: z.string().url() });
+export const xPostReasonSchema = z.string().trim().min(20, "Add at least 20 characters of your own context").max(120, "Keep your context to 120 characters or fewer");
+
+export const xPostActionSchema = z.object({
+  reason: xPostReasonSchema,
+  turnstileToken: z.string().optional()
+});
 
 export function parseXPostId(value: string) {
   const url = new URL(value);
@@ -38,14 +43,3 @@ export function earliestLaunchAt(start: Date, rank: number, intervalDays = 4) {
   if (!Number.isInteger(rank) || rank < 1) throw new Error("INVALID_RANK");
   return new Date(start.getTime() + (rank - 1) * intervalDays * 86_400_000);
 }
-
-export const errorMessages: Record<string, string> = {
-  X_NOT_VERIFIED: "A verified, public X account is required.",
-  FOLLOWER_THRESHOLD: "Your X account does not meet the follower requirement.",
-  ASSET_INELIGIBLE: "One or more portfolio assets are not currently eligible.",
-  WEIGHTS_NOT_100: "Portfolio weights must total 100%.",
-  PROOF_EXPIRED: "This proof link expired. Create a new one and try again.",
-  PROOF_MISMATCH: "The X post does not match this action.",
-  PROOF_REUSED: "That X post has already been used.",
-  DUPLICATE_VOTE: "You have already voted for this OTF."
-};

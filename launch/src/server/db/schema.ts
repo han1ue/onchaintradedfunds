@@ -21,10 +21,10 @@ const timestamps = {
 };
 
 export const competitionPhase = pgEnum("competition_phase", ["draft", "scheduled", "open", "auditing", "final", "cancelled"]);
-export const proposalStatus = pgEnum("proposal_status", ["draft", "proof_pending", "accepted", "hidden", "disqualified", "withdrawn"]);
-export const voteStatus = pgEnum("vote_status", ["proof_pending", "valid", "invalid"]);
+export const proposalStatus = pgEnum("proposal_status", ["draft", "posting", "accepted", "hidden", "disqualified", "withdrawn"]);
+export const voteStatus = pgEnum("vote_status", ["posting", "valid", "invalid"]);
 export const evidenceStatus = pgEnum("evidence_status", ["pending", "valid", "invalid", "unavailable"]);
-export const challengeAction = pgEnum("challenge_action", ["submission", "vote"]);
+export const evidenceAction = pgEnum("evidence_action", ["submission", "vote"]);
 export const launchStatus = pgEnum("launch_status", ["waiting", "eligible", "launched", "void"]);
 
 export const users = pgTable("users", {
@@ -95,7 +95,6 @@ export const competitions = pgTable("competitions", {
   minAccountAgeDays: integer("min_account_age_days").default(30).notNull(),
   minAssets: integer("min_assets").default(2).notNull(),
   minAssetWeightBps: integer("min_asset_weight_bps").default(100).notNull(),
-  proofWindowMinutes: integer("proof_window_minutes").default(30).notNull(),
   ruleVersion: text("rule_version").default("v1").notNull(),
   rankingPolicyVersion: text("ranking_policy_version").default("votes-v1").notNull(),
   rulesFrozenAt: timestamp("rules_frozen_at", { withTimezone: true }),
@@ -187,22 +186,13 @@ export const proposalAssets = pgTable("proposal_assets", {
   check("proposal_asset_minimum", sql`${table.weightBps} >= 100 and ${table.weightBps} <= 10000`)
 ]);
 
-export const tweetChallenges = pgTable("tweet_challenges", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  action: challengeAction("action").notNull(),
-  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "cascade" }),
-  nonceHash: text("nonce_hash").notNull().unique(),
-  proofUrl: text("proof_url").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  usedAt: timestamp("used_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [index("challenge_expiry_idx").on(table.expiresAt, table.usedAt)]);
-
 export const tweetEvidence = pgTable("tweet_evidence", {
   id: uuid("id").defaultRandom().primaryKey(),
-  challengeId: uuid("challenge_id").notNull().unique().references(() => tweetChallenges.id, { onDelete: "restrict" }),
+  action: evidenceAction("action").notNull(),
+  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
   xPostId: text("x_post_id").notNull().unique(),
   xAuthorId: text("x_author_id").notNull(),
   postUrl: text("post_url").notNull(),
@@ -215,7 +205,10 @@ export const tweetEvidence = pgTable("tweet_evidence", {
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
   rawTextExpiresAt: timestamp("raw_text_expires_at", { withTimezone: true }),
   rawText: text("raw_text")
-});
+}, (table) => [
+  index("tweet_evidence_competition_status_idx").on(table.competitionId, table.status),
+  uniqueIndex("submission_evidence_once_uq").on(table.proposalId).where(sql`${table.action} = 'submission'`)
+]);
 
 export const evidenceChecks = pgTable("evidence_checks", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -234,7 +227,7 @@ export const votes = pgTable("votes", {
   evidenceId: uuid("evidence_id").unique().references(() => tweetEvidence.id, { onDelete: "restrict" }),
   identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
   followerCount: integer("follower_count").notNull(),
-  status: voteStatus("status").default("proof_pending").notNull(),
+  status: voteStatus("status").default("posting").notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
   ...timestamps

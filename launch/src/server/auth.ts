@@ -6,6 +6,7 @@ import { db } from "./db";
 import { accounts, sessions, users, verificationTokens, xIdentitySnapshots } from "./db/schema";
 import { env } from "./env";
 import { getXUser, snapshotFromXUser } from "./x";
+import { encryptOAuthToken } from "./x-oauth-token";
 
 const adapter = db ? DrizzleAdapter(db, { usersTable: users, accountsTable: accounts, sessionsTable: sessions, verificationTokensTable: verificationTokens }) : undefined;
 
@@ -17,7 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Twitter({
     clientId: env.AUTH_X_ID ?? "not-configured",
     clientSecret: env.AUTH_X_SECRET ?? "not-configured",
-    authorization: { params: { scope: "users.read tweet.read" } }
+    authorization: { params: { scope: "users.read tweet.read tweet.write offline.access" } }
   })],
   callbacks: {
     async jwt({ token, account, profile }) {
@@ -47,7 +48,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       await db.transaction(async (transaction) => {
         await transaction.update(users).set({ xUserId: profile.id, xUsername: profile.username, updatedAt: new Date() }).where(eq(users.id, user.id!));
         await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(user.id!, profile));
-        await transaction.update(accounts).set({ access_token: null, refresh_token: null }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));
+        await transaction.update(accounts).set({
+          access_token: encryptOAuthToken(account.access_token),
+          refresh_token: encryptOAuthToken(account.refresh_token),
+          expires_at: account.expires_at,
+          scope: account.scope,
+          token_type: account.token_type
+        }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));
       });
     }
   }
