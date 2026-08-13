@@ -17,7 +17,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Twitter({
     clientId: env.AUTH_X_ID ?? "not-configured",
     clientSecret: env.AUTH_X_SECRET ?? "not-configured",
-    authorization: { params: { scope: "users.read" } }
+    authorization: {
+      url: "https://x.com/i/oauth2/authorize",
+      params: { scope: "users.read" }
+    }
   })],
   callbacks: {
     async jwt({ token, account, profile }) {
@@ -43,6 +46,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   events: {
     async signIn({ user, account }) {
       if (!db || account?.provider !== "twitter" || !user.id) return;
+      const [existingSnapshot] = await db.select({ username: xIdentitySnapshots.username })
+        .from(xIdentitySnapshots)
+        .where(and(eq(xIdentitySnapshots.userId, user.id), eq(xIdentitySnapshots.xUserId, account.providerAccountId)))
+        .limit(1);
+
+      if (existingSnapshot) {
+        await db.transaction(async (transaction) => {
+          await transaction.update(users).set({
+            xUserId: account.providerAccountId,
+            xUsername: existingSnapshot.username,
+            updatedAt: new Date()
+          }).where(eq(users.id, user.id!));
+          await transaction.update(accounts).set({
+            access_token: null,
+            refresh_token: null,
+            expires_at: null,
+            scope: account.scope,
+            token_type: account.token_type
+          }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));
+        });
+        return;
+      }
+
       const profile = await getXUserById(account.providerAccountId);
       await db.transaction(async (transaction) => {
         await transaction.update(users).set({ xUserId: profile.id, xUsername: profile.username, updatedAt: new Date() }).where(eq(users.id, user.id!));

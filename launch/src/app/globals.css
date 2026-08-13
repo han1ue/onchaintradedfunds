@@ -282,6 +282,12 @@ button { color: inherit; }
 .xPostPreview > div svg { color: var(--teal); }
 .xPostPreview p { margin: 0; padding: 13px 14px; color: var(--text-soft); font-size: .78rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xPostPreview.compact p { font-size: .72rem; }
+.evidencePanel { margin-top: 12px; }
+.xPostEmbed { min-width: 0; margin-top: 12px; overflow: hidden; }
+.xPostEmbedBody { display: grid; justify-items: center; min-width: 0; }
+.xPostEmbedBody .twitter-tweet { width: 100% !important; margin: 0 !important; color: var(--text-soft); font-size: .78rem; line-height: 1.55; overflow-wrap: anywhere; }
+.xPostEmbedBody iframe { max-width: 100% !important; }
+.xPostEmbedFallback { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--teal); font-size: .7rem; font-weight: 700; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
 .turnstile { min-height: 65px; display: grid; align-items: center; overflow: hidden; }
 

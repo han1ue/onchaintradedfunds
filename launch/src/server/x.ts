@@ -42,15 +42,6 @@ type TwitterApiIoUser = {
   unavailable?: boolean;
 };
 
-type TwitterApiIoTweet = {
-  id: string;
-  url?: string;
-  text: string;
-  createdAt: string;
-  author: TwitterApiIoUser;
-  retweeted_tweet?: unknown;
-};
-
 async function twitterApiIoFetch<T>(path: string): Promise<T> {
   if (!env.TWITTERAPI_IO_API_KEY) throw new Error("X_UNAVAILABLE");
   const response = await fetch(`https://api.twitterapi.io${path}`, {
@@ -90,19 +81,52 @@ export async function getXUserById(xUserId: string) {
   return mapTwitterApiIoUser(profile);
 }
 
-export async function getXPost(postUrl: string) {
+type XOEmbed = { html?: unknown; author_url?: unknown };
+
+function decodeHtmlText(value: string) {
+  const named: Record<string, string> = { amp: "&", apos: "'", gt: ">", lt: "<", quot: '"' };
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_, code: string) => {
+      const point = Number.parseInt(code.startsWith("x") || code.startsWith("X") ? code.slice(1) : code, code.startsWith("x") || code.startsWith("X") ? 16 : 10);
+      try { return String.fromCodePoint(point); } catch { return ""; }
+    })
+    .replace(/&(amp|apos|gt|lt|quot);/gi, (_, entity: string) => named[entity.toLowerCase()] ?? "");
+}
+
+async function fetchXOEmbed(postUrl: string, revalidate?: number) {
   const id = parseXPostId(postUrl);
-  const query = new URLSearchParams({ tweet_ids: id });
-  const result = await twitterApiIoFetch<{ tweets?: TwitterApiIoTweet[] }>(`/twitter/tweets?${query}`);
-  const post = result.tweets?.find((tweet) => tweet.id === id);
-  if (!post?.author?.userName || post.retweeted_tweet) throw new Error("X_POST_NOT_FOUND");
-  return {
-    id,
-    authorId: post.author.id,
-    username: post.author.userName,
-    text: post.text,
-    postUrl: `https://x.com/${post.author.userName}/status/${id}`,
-  };
+  const query = new URLSearchParams({
+    url: `https://x.com/i/status/${id}`,
+    dnt: "true",
+    omit_script: "true",
+    maxwidth: "550",
+  });
+  const response = await fetch(`https://publish.twitter.com/oembed?${query}`, {
+    signal: AbortSignal.timeout(5_000),
+    ...(revalidate ? { next: { revalidate } } : { cache: "no-store" as const }),
+  });
+  if (!response.ok) throw new Error("X_POST_NOT_FOUND");
+  const result = await response.json() as XOEmbed;
+  if (typeof result.html !== "string" || result.html.length > 50_000 || !result.html.includes("twitter-tweet") || /<script/i.test(result.html)) {
+    throw new Error("X_POST_NOT_FOUND");
+  }
+  return { id, html: result.html, authorUrl: result.author_url };
+}
+
+export async function getXPost(postUrl: string) {
+  const { id, html, authorUrl: rawAuthorUrl } = await fetchXOEmbed(postUrl);
+  if (typeof rawAuthorUrl !== "string") throw new Error("X_POST_NOT_FOUND");
+  const authorUrl = new URL(rawAuthorUrl);
+  const username = authorUrl.pathname.split("/").filter(Boolean)[0];
+  const textMatch = html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+  if (!username || !/^[A-Za-z0-9_]{1,15}$/.test(username) || !textMatch) throw new Error("X_POST_NOT_FOUND");
+  return { id, username, text: decodeHtmlText(textMatch[1]), postUrl: `https://x.com/${username}/status/${id}`, embedHtml: html };
+}
+
+export async function getXEmbedHtml(postUrl: string) {
+  return (await fetchXOEmbed(postUrl, 3_600)).html;
 }
 
 export function hashXPostText(text: string) {

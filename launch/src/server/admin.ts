@@ -65,8 +65,8 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
   for (const evidence of records) {
     try {
       const post = await getXPost(evidence.postUrl);
-      const [snapshot] = await database.select({ xUserId: xIdentitySnapshots.xUserId, username: xIdentitySnapshots.username }).from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, evidence.identitySnapshotId)).limit(1);
-      if (!snapshot || post.authorId !== snapshot.xUserId || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("X_POST_CHANGED");
+      const [snapshot] = await database.select({ username: xIdentitySnapshots.username }).from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, evidence.identitySnapshotId)).limit(1);
+      if (!snapshot || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("X_POST_CHANGED");
       if (hashXPostText(post.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
       await database.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "evidence-recheck" });
       await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: [post.id] }).where(eq(tweetEvidence.id, evidence.id));
