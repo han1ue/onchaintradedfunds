@@ -18,7 +18,7 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. `ADMIN_X_IDS` contains immutable X IDs, not handles.
 3. Create an X OAuth 2.0 application with callback URL `/api/auth/callback/twitter` and scope `users.read`. Login performs one authenticated profile lookup to snapshot immutable X ID, verification, account age, public status, and follower count. Submissions and votes use free X intents plus single-use oEmbed challenges; the app never publishes posts through the X API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
-5. After each production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and open the competition only after rules are frozen. Asset discovery is intentionally not scheduled as a recurring cron job.
+5. After the production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and create the competition after the rules are frozen. If dates are omitted, it opens immediately and closes two calendar months later. Asset discovery is intentionally not scheduled as a recurring cron job.
 
 The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
 
@@ -37,9 +37,9 @@ Cron handlers require `Authorization: Bearer $CRON_SECRET`. On Vercel Hobby, pub
 
 ## Vercel
 
-Create a second Vercel project from this repository with Root Directory `launch`. Keep source files outside the Root Directory enabled so Vercel can read the workspace manifest and root lockfile. Configure the launch environment variables only on that project, enable unaffected-project skipping, and attach `launch.onchaintradedfunds.com` after production validation.
+Create a second Vercel project from this repository with Root Directory `launch`. Keep source files outside the Root Directory enabled so Vercel can read the workspace manifest and root lockfile. Configure the launch environment variables only on that project, enable unaffected-project skipping, and use `https://onchaintradedfunds-launch.vercel.app` as the initial production URL.
 
-The configured daily cron schedule is compatible with Vercel Hobby. Begin on the project’s `*.vercel.app` URL. For cutover, add the exact CNAME Vercel supplies, verify TLS, set `NEXT_PUBLIC_SITE_URL=https://launch.onchaintradedfunds.com`, update the X callback, and redirect the Vercel alias to the custom hostname.
+The configured daily cron schedule is compatible with Vercel Hobby. Set `NEXT_PUBLIC_SITE_URL=https://onchaintradedfunds-launch.vercel.app`, `TURNSTILE_HOSTNAMES=onchaintradedfunds-launch.vercel.app`, and the X callback to `https://onchaintradedfunds-launch.vercel.app/api/auth/callback/twitter`. Update all three together if a custom hostname is added later.
 
 Do not share the main app’s database, Auth.js secret, X application, Redis instance, analytics property, or environment variables with this project.
 
