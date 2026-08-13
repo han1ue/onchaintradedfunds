@@ -22,6 +22,12 @@ async function getRedis() {
   return globalForRedis.launchRedisPromise;
 }
 
+export async function pingRedis() {
+  const redis = await getRedis();
+  if (!redis) return false;
+  return (await redis.ping()) === "PONG";
+}
+
 const limits = { write: 8, post: 6 } as const;
 const windowSeconds = 10 * 60;
 const incrementWithExpiry = `

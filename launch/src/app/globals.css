@@ -214,6 +214,12 @@ button { color: inherit; }
 .footer { width: min(1360px, 100%); min-height: 64px; display: flex; align-items: center; justify-content: space-between; margin: 0 auto; padding: 0 24px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: .7rem; }
 .footer nav { display: flex; gap: 18px; }
 .footer a:hover { color: var(--text); }
+.infrastructureStatus { display: flex; align-items: center; gap: 12px; font-size: .62rem; }
+.serviceState { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.serviceDot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.serviceState[data-state="connected"] .serviceDot { background: var(--positive); box-shadow: 0 0 5px color-mix(in srgb, var(--positive) 45%, transparent); }
+.serviceState[data-state="unavailable"] .serviceDot { background: var(--danger); }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .contentPage { max-width: 1000px; }
 .pageHeader { margin-bottom: 22px; }
@@ -358,7 +364,8 @@ button { color: inherit; }
   .howCard { display: block; padding-bottom: 16px; }
   .howCard > .button { width: calc(100% - 36px); }
   .lowerGrid { grid-template-columns: 1fr; }
-  .footer { padding: 0 14px; }
+  .footer { flex-wrap: wrap; gap: 8px 16px; padding: 12px 14px; }
+  .infrastructureStatus { order: 3; width: 100%; }
   .wizardLayout, .proposalGrid { grid-template-columns: 1fr; }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }
