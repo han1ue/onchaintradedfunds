@@ -85,7 +85,7 @@ button { color: inherit; }
 .iconButton { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; }
 .iconButton:hover { border-color: var(--border-strong); background: var(--card-raised); }
 .accountButton { width: fit-content; max-width: 180px; height: 34px; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 11px 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text-soft); font-size: .82rem; }
-.accountButton span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
+.accountButton span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
 
 .pageShell { width: min(1360px, 100%); margin: 0 auto; padding: 34px 24px 56px; }
 .competitionHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 24px; }
@@ -98,7 +98,7 @@ button { color: inherit; }
 .heroDeadline strong { font-size: .94rem; }
 .compactHero { align-items: center; margin-bottom: 18px; }
 .compactHero h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
-.competitionStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; color: var(--text-muted); font-size: .72rem; }
+.competitionStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 17px; color: var(--text-muted); font-size: .72rem; }
 .compactHero .heroDeadline { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 
 .statusBadge { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
@@ -197,10 +197,11 @@ button { color: inherit; }
 .stepNumber { width: 21px; height: 21px; display: grid; place-items: center; margin-top: 8px; border-radius: 50%; background: var(--teal); color: var(--accent-foreground); font-size: .67rem; font-weight: 800; }
 .steps strong { display: block; margin-top: 2px; font-size: .8rem; }
 .steps p { margin: 5px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.45; }
-.howCard > .button { width: calc(100% - 36px); margin: 0 18px; }
-.finePrint { margin: 10px 18px 0; color: var(--text-muted); font-size: .65rem; text-align: center; }
+.howActions { padding: 0 18px; }
+.howActions .button { width: 100%; }
+.finePrint { margin: 10px 0 0; color: var(--text-muted); font-size: .65rem; line-height: 1.45; text-align: center; }
 
-.button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid transparent; border-radius: 6px; font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+.button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid transparent; border-radius: 6px; font-size: .78rem; font-weight: 700; line-height: 1.25; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
 .button:hover { transform: translateY(-1px); }
 .buttonPrimary { background: var(--teal); color: var(--accent-foreground); }
 .buttonPrimary:hover { background: var(--teal-hover); }
@@ -384,13 +385,18 @@ button { color: inherit; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
 .accountTitle { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.accountNameActions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .accountTitle h1 { line-height: 1.05; }
 .accountControls { display: flex; align-items: center; gap: 10px; }
 .accountIdentitySummary { display: flex; align-items: center; gap: 10px; }
 .accountHeaderActionForm { display: inline-flex; }
 .accountFollowerCount { min-height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.accountFollowerCount svg { color: var(--teal); }
+.accountFollowerCount.eligible svg { color: var(--green); }
+.accountFollowerCount.underMinimum svg { color: var(--danger); }
 .accountFollowerCount strong { color: var(--text); font-size: .82rem; }
+.accountVerificationStatus { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.accountVerificationStatus.verified { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); background: color-mix(in srgb, var(--green) 6%, transparent); }
+.accountVerificationStatus.unverified { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); background: color-mix(in srgb, var(--danger) 6%, transparent); }
 .disconnectButton { min-height: 30px; padding: 0 10px; }
 .accountMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
 .accountMetrics > section { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 16px; }
@@ -399,6 +405,10 @@ button { color: inherit; }
 .accountMetrics strong { font-size: .88rem; text-transform: capitalize; }
 .activityList > div { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); color: var(--text-soft); font-size: .76rem; }
 .activityList time { color: var(--text-muted); }
+.accountEligibilityPrompt { display: grid; justify-items: start; gap: 9px; }
+.accountEligibilityPrompt > svg { color: var(--gold); }
+.accountEligibilityPrompt > strong { font-size: .86rem; }
+.accountEligibilityPrompt > p { margin: 0 0 5px; color: var(--text-muted); font-size: .76rem; line-height: 1.55; }
 .inlineLink { color: var(--teal); }
 .adminGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .callout { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--blue) 4%, var(--card-raised)); color: var(--text-soft); font-size: .78rem; line-height: 1.5; }
@@ -407,10 +417,10 @@ button { color: inherit; }
 
 @media (max-width: 1120px) {
   .boardGrid { grid-template-columns: 1fr; }
-  .howCard { display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 0; }
+  .howCard { display: grid; grid-template-columns: 1fr 1fr; align-items: start; padding: 0 0 16px; }
   .howCard .cardHeading { grid-column: 1 / -1; }
   .steps { margin-bottom: 5px; }
-  .howCard > .button, .finePrint { grid-column: 2; }
+  .howActions { grid-column: 2; padding-top: 10px; }
   .leaderboardHeader, .leaderboardRow { grid-template-columns: 58px minmax(245px, 1.3fr) minmax(190px, .8fr) 110px; }
   .leaderboardHeader span:nth-child(4), .creator { display: none; }
 }
@@ -448,7 +458,7 @@ button { color: inherit; }
   .leaderboardPageHeader { align-items: flex-start; flex-direction: column; gap: 14px; }
   .leaderboardSummary { justify-items: start; }
   .howCard { display: block; padding-bottom: 16px; }
-  .howCard > .button { width: calc(100% - 36px); }
+  .howActions { padding-top: 0; }
   .lowerGrid { grid-template-columns: 1fr; }
   .footer { flex-wrap: wrap; gap: 8px 16px; padding: 12px 14px; }
   .infrastructureStatus { width: 100%; }
