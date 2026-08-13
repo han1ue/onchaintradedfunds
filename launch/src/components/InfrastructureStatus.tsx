@@ -46,7 +46,7 @@ function ServiceState({ label, state }: { label: string; state: State }) {
     <span className="serviceState" data-state={state} title={`${label}: ${state}`}>
       <span className="serviceDot" aria-hidden="true" />
       <span>{label}</span>
-      <span className="serviceValue">{state}</span>
+      <span className="srOnly"> {state}</span>
     </span>
   );
 }
