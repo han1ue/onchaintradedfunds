@@ -46,3 +46,14 @@ export type EligibleAsset = {
   observedAt: string;
   reason: string;
 };
+
+export type ParticipationEligibility = {
+  connected: boolean;
+  eligible: boolean;
+  verified: boolean | null;
+  publicAccount: boolean | null;
+  followersCount: number | null;
+  minFollowers: number;
+  oldEnough: boolean | null;
+  minAccountAgeDays: number;
+};

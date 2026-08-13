@@ -5,11 +5,13 @@ import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
+import { getParticipationEligibility } from "@/server/participation";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
 export default async function HomePage() {
   const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
+  const eligibility = await getParticipationEligibility(session?.user, competition);
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
@@ -27,10 +29,10 @@ export default async function HomePage() {
         <ResponsiveLeaderboard entries={leaderboardPreview} final={competition.phase === "final"} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
-      <HowItWorks connected={Boolean(session?.user)} />
+      <HowItWorks eligibility={eligibility} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><div><span>Competition rules</span><small>The V1 essentials</small></div><FileCheck2 size={18} /></div><ul><li>Verified, public X accounts only.</li><li>At least two eligible assets totaling exactly 100%.</li><li>Approve one public X post for every submission and vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><div><span>Competition rules</span><small>The V1 essentials</small></div><FileCheck2 size={18} /></div><ul><li>Verified, public X accounts with at least {competition.minFollowers.toLocaleString()} followers.</li><li>At least two eligible assets totaling exactly 100%.</li><li>Approve one public X post for every submission and vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
       <SectionCard className="activityPanel"><div className="cardHeading"><div><span>Recent activity</span><small>Verified community actions</small></div><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted ${entry.name}` : `reached ${entry.votes.toLocaleString()} verified votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
     </div>
   </div>;

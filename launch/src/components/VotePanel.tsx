@@ -1,16 +1,18 @@
 "use client";
 
-import { ExternalLink, Send, Vote } from "lucide-react";
+import { ExternalLink, Send, ShieldAlert, Vote } from "lucide-react";
 import { useState } from "react";
 import { errorMessages } from "@/lib/errors";
+import type { ParticipationEligibility } from "@/lib/types";
 import { buildVotePost } from "@/lib/x-post";
 import { Button, Callout, SectionCard } from "./ui";
+import { EligibilityAction } from "./EligibilityGate";
 import { Turnstile } from "./Turnstile";
 import { XPostEmbed } from "./XPostEmbed";
 
 type Challenge = { challengeId: string; intentUrl: string; postText: string; expiresAt: string };
 
-export function VotePanel({ proposal, connected, turnstileSiteKey, siteUrl }: { proposal: { id: string; name: string; ticker: string; slug: string }; connected: boolean; turnstileSiteKey?: string; siteUrl: string }) {
+export function VotePanel({ proposal, eligibility, turnstileSiteKey, siteUrl }: { proposal: { id: string; name: string; ticker: string; slug: string }; eligibility: ParticipationEligibility; turnstileSiteKey?: string; siteUrl: string }) {
   const [reason, setReason] = useState("");
   const [postUrl, setPostUrl] = useState("");
   const [challenge, setChallenge] = useState<Challenge | null>(null);
@@ -23,10 +25,6 @@ export function VotePanel({ proposal, connected, turnstileSiteKey, siteUrl }: { 
   const previewText = buildVotePost(reason || "[You reason]", proposal, siteUrl, "[verification code]");
 
   async function request(action: "prepare" | "verify") {
-    if (!connected) {
-      window.location.href = `/api/auth/x?callbackUrl=${encodeURIComponent(window.location.pathname)}`;
-      return;
-    }
     setBusy(true);
     setMessage(null);
     const response = await fetch(`/api/v1/proposals/${proposal.id}/vote`, {
@@ -50,8 +48,9 @@ export function VotePanel({ proposal, connected, turnstileSiteKey, siteUrl }: { 
     }
   }
 
-  return <SectionCard className="votePanel"><div className="cardHeading"><div><span>Cast a verified vote</span><small>Verified X account with at least 50 followers</small></div><Vote size={19} /></div><div className="panelBody">
-    {!publishedPostUrl && !challenge && <><label className="formField"><span>Your reason</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why should this OTF launch?" rows={3} maxLength={120} /><small>{reason.length} / 120 characters · minimum 20</small></label><div className="xPostPreview compact"><div><span>Post preview</span><Send size={13} /></div><p>{previewText}</p></div><Callout>We’ll prepare this post with a one-time verification code. You publish it from X, then paste its URL here.</Callout><Turnstile siteKey={connected ? turnstileSiteKey : undefined} action="vote_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} /><Button onClick={() => request("prepare")} disabled={busy || reason.trim().length < 20 || Boolean(connected && turnstileSiteKey && !turnstileToken)}>{busy ? "Preparing…" : connected ? "Prepare X post" : "Sign in with X to vote"}</Button></>}
+  return <SectionCard className="votePanel"><div className="cardHeading"><div><span>Cast a verified vote</span><small>Verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers</small></div><Vote size={19} /></div><div className="panelBody">
+    {!eligibility.eligible && <div className="eligibilityPrompt"><ShieldAlert size={22} aria-hidden="true" /><strong>Eligible X account required</strong><p>Voting is limited to verified, public accounts with at least {eligibility.minFollowers.toLocaleString()} followers.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl={`/otfs/${proposal.slug}`}>{eligibility.connected ? "Use another X account" : "Sign in with an eligible account"}</EligibilityAction></div>}
+    {eligibility.eligible && !publishedPostUrl && !challenge && <><label className="formField"><span>Your reason</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why should this OTF launch?" rows={3} maxLength={120} /><small>{reason.length} / 120 characters · minimum 20</small></label><div className="xPostPreview compact"><div><span>Post preview</span><Send size={13} /></div><p>{previewText}</p></div><Callout>We’ll prepare this post with a one-time verification code. You publish it from X, then paste its URL here.</Callout><Turnstile siteKey={turnstileSiteKey} action="vote_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} /><Button onClick={() => request("prepare")} disabled={busy || reason.trim().length < 20 || Boolean(turnstileSiteKey && !turnstileToken)}>{busy ? "Preparing…" : "Prepare X post"}</Button></>}
     {!publishedPostUrl && challenge && <div className="proofFlow"><div className="xPostPreview compact"><div><span>Ready to publish</span><Send size={13} /></div><p>{challenge.postText}</p></div><a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a><label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" /><small>Paste the URL of the public post containing the verification code.</small></label><Button onClick={() => request("verify")} disabled={busy || !postUrl.trim()}>{busy ? "Verifying…" : "Verify post and count vote"}</Button><Button variant="ghost" onClick={() => { setChallenge(null); setPostUrl(""); }}>Start again</Button></div>}
     {message && <p className="formMessage" role="status">{message}</p>}
     {publishedPostUrl && <XPostEmbed html={publishedPostHtml} postUrl={publishedPostUrl} />}

@@ -1,6 +1,6 @@
 export const errorMessages: Record<string, string> = {
   X_NOT_VERIFIED: "A verified, public X account is required.",
-  FOLLOWER_THRESHOLD: "Your X account does not meet the follower requirement.",
+  FOLLOWER_THRESHOLD: "Your X account must have at least 50 followers to submit or vote.",
   ASSET_INELIGIBLE: "One or more portfolio assets are not currently eligible.",
   WEIGHTS_NOT_100: "Portfolio weights must total 100%.",
   X_RECONNECT_REQUIRED: "Sign in with X again so OTF Launch can refresh your eligibility.",

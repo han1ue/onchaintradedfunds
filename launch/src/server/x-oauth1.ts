@@ -92,9 +92,10 @@ export async function requestXOAuthToken(callbackUrl: string) {
   return { requestToken, requestTokenSecret };
 }
 
-export function xAuthenticateUrl(requestToken: string) {
+export function xAuthenticateUrl(requestToken: string, forceLogin = false) {
   const url = new URL(authenticateUrl);
   url.searchParams.set("oauth_token", requestToken);
+  if (forceLogin) url.searchParams.set("force_login", "true");
   return url;
 }
 

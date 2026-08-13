@@ -19,7 +19,7 @@ export async function currentCompetition() {
   return competition;
 }
 
-export async function requireEligibleActor(options: { forVote?: boolean } = {}) {
+export async function requireEligibleActor() {
   const database = requireDb();
   const session = await requireSession();
   const competition = await currentCompetition();
@@ -27,7 +27,7 @@ export async function requireEligibleActor(options: { forVote?: boolean } = {}) 
   if (!snapshot || snapshot.xUserId !== session.user.xUserId) throw new Error("X_RECONNECT_REQUIRED");
   assertStoredXEligible(snapshot, {
     minAccountAgeDays: competition.minAccountAgeDays,
-    minFollowers: options.forVote ? competition.minFollowers : undefined
+    minFollowers: competition.minFollowers
   });
   return { session, snapshot, competition };
 }

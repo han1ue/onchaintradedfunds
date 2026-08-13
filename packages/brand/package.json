@@ -10,7 +10,8 @@
       "types": "./src/index.tsx",
       "default": "./src/index.tsx"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./assets/*": "./assets/*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

@@ -53,7 +53,7 @@ function newChallengeToken() {
 async function prepareProof(action: "submission" | "vote", proposalIdOrSlug: string, input: unknown) {
   const { reason } = xPostActionSchema.parse(input);
   const database = requireDb();
-  const { session, competition, snapshot } = await requireEligibleActor({ forVote: action === "vote" });
+  const { session, competition, snapshot } = await requireEligibleActor();
   const [proposal] = await database.select().from(proposals).where(and(
     or(eq(proposals.id, proposalIdOrSlug), eq(proposals.slug, proposalIdOrSlug)),
     eq(proposals.competitionId, competition.id),
@@ -81,7 +81,7 @@ async function prepareProof(action: "submission" | "vote", proposalIdOrSlug: str
 async function loadVerifiedProof(action: "submission" | "vote", proposalIdOrSlug: string, input: unknown) {
   const parsed = xPostProofSchema.parse(input);
   const database = requireDb();
-  const { session, competition } = await requireEligibleActor({ forVote: action === "vote" });
+  const { session, competition } = await requireEligibleActor();
   const [proposal] = await database.select().from(proposals).where(and(
     or(eq(proposals.id, proposalIdOrSlug), eq(proposals.slug, proposalIdOrSlug)), eq(proposals.competitionId, competition.id)
   )).limit(1);

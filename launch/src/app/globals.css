@@ -205,6 +205,35 @@ button { color: inherit; }
 .compactButton { min-height: 34px; white-space: nowrap; }
 .button:disabled { cursor: not-allowed; opacity: .48; transform: none; }
 
+.eligibilityDialog { width: min(480px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); padding: 0; overflow: auto; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--card); color: var(--text); box-shadow: 0 22px 70px rgb(0 0 0 / 42%); }
+.eligibilityDialog::backdrop { background: rgb(4 8 13 / 76%); backdrop-filter: blur(3px); }
+.eligibilityDialogBody { position: relative; padding: 24px; }
+.dialogClose { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.dialogClose:hover { border-color: var(--border-strong); background: var(--card-raised); color: var(--text); }
+.eligibilityDialogIcon { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--gold) 36%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--gold) 8%, var(--card-raised)); color: var(--gold); }
+.eligibilityDialog h2 { margin: 18px 42px 7px 0; font-size: 1.3rem; letter-spacing: -.025em; }
+.eligibilityDialogBody > p { margin: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.6; }
+.eligibilityRequirements { display: grid; margin: 20px 0; border-top: 1px solid var(--border); }
+.eligibilityRequirements > div { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.eligibilityRequirements > div > svg { margin-top: 2px; color: var(--text-muted); }
+.eligibilityRequirements > div[data-state="met"] > svg { color: var(--green); }
+.eligibilityRequirements > div[data-state="failed"] > svg { color: var(--danger); }
+.eligibilityRequirements strong, .eligibilityRequirements small { display: block; }
+.eligibilityRequirements strong { font-size: .78rem; }
+.eligibilityRequirements small { margin-top: 4px; color: var(--text-muted); font-size: .68rem; line-height: 1.45; }
+.eligibilityDialogActions { display: flex; gap: 8px; }
+.eligibilityDialogActions .buttonPrimary { flex: 1; }
+.eligibilityDialogMessage { margin-top: 12px !important; color: var(--danger) !important; }
+.eligibilityPrompt { display: grid; justify-items: start; gap: 9px; }
+.eligibilityPrompt > svg { color: var(--gold); }
+.eligibilityPrompt > strong { font-size: .86rem; }
+.eligibilityPrompt > p { margin: 0 0 5px; color: var(--text-muted); font-size: .73rem; line-height: 1.55; }
+.eligibilityPrompt .button { width: 100%; }
+.eligibilityBlocked { min-height: 320px; display: grid; align-content: center; justify-items: start; padding: 32px; }
+.eligibilityBlocked > svg { color: var(--gold); }
+.eligibilityBlocked h2 { margin: 16px 0 7px; font-size: 1.2rem; }
+.eligibilityBlocked p { max-width: 590px; margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; line-height: 1.6; }
+
 .lowerGrid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 12px; margin-top: 12px; }
 .compactInfo { display: flex; gap: 13px; padding: 18px; }
 .compactInfo > svg { flex: 0 0 auto; color: var(--teal); }
@@ -352,10 +381,12 @@ button { color: inherit; }
 .emptyState h1 { margin: 16px 0 7px; font-size: 1.5rem; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
+.accountControls { display: flex; align-items: center; gap: 10px; }
 .accountIdentitySummary { display: flex; align-items: center; gap: 10px; }
 .accountFollowerCount { min-height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .accountFollowerCount svg { color: var(--teal); }
 .accountFollowerCount strong { color: var(--text); font-size: .82rem; }
+.disconnectButton { min-height: 30px; padding: 0 10px; }
 .accountMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
 .accountMetrics > section { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 16px; }
 .accountMetrics svg { grid-row: 1 / 3; color: var(--teal); }
@@ -425,6 +456,7 @@ button { color: inherit; }
   .proposalHero { align-items: flex-start; flex-direction: column; }
   .creatorBlock { justify-items: start; }
   .accountHeader { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .accountControls { width: 100%; align-items: flex-start; flex-direction: column; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
   .rwaDirectoryHeading { display: none; }
