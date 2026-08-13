@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const session = await createXSession(user.userId);
     const response = NextResponse.redirect(new URL(state.callbackPath, origin));
     const secure = new URL(origin).protocol === "https:";
-    response.cookies.set(`${secure ? "__Secure-" : ""}authjs.session-token`, session.sessionToken, {
+    response.cookies.set(`${secure ? "__Secure-" : ""}otf-launch.session-token`, session.sessionToken, {
       httpOnly: true,
       sameSite: "lax",
       path: "/",

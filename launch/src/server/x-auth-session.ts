@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { accounts, sessions, users, verificationTokens, xIdentitySnapshots } from "./db/schema";
+import { eq, sql } from "drizzle-orm";
+import { sessions, users, verificationTokens } from "./db/schema";
 import { requireDb } from "./db";
-import { getXUserById, snapshotFromXUser } from "./x";
+import { getXUserById, userIdentityFromXUser } from "./x";
 import { openXOAuthState, sealXOAuthState, xOAuthStateTtlMs } from "./x-oauth1";
 
 const oauthStateIdentifier = (requestToken: string) => `x-oauth1:${requestToken}`;
@@ -30,69 +30,21 @@ export async function findOrCreateXUser(xUserId: string) {
   const database = requireDb();
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${xUserId}))`);
-
-    const [existingSnapshot] = await transaction.select().from(xIdentitySnapshots)
-      .where(eq(xIdentitySnapshots.xUserId, xUserId))
-      .orderBy(desc(xIdentitySnapshots.observedAt))
-      .limit(1);
-    const [existingAccount] = await transaction.select({ userId: accounts.userId }).from(accounts)
-      .where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, xUserId)))
-      .limit(1);
+    const fetchedProfile = await getXUserById(xUserId);
+    const identity = userIdentityFromXUser(fetchedProfile.profile, fetchedProfile.providerProfile);
     const [existingUser] = await transaction.select({ id: users.id }).from(users)
       .where(eq(users.xUserId, xUserId))
       .limit(1);
-
-    const fetchedProfile = existingSnapshot ? null : await getXUserById(xUserId);
-    const profile = fetchedProfile?.profile;
-    const username = existingSnapshot?.username ?? profile!.username;
-    const displayName = existingSnapshot?.displayName ?? profile!.name;
-    const image = existingSnapshot?.profileImageUrl ?? profile?.profile_image_url ?? null;
-    let userId = existingAccount?.userId ?? existingUser?.id ?? existingSnapshot?.userId;
-
-    if (!userId) {
+    let userId = existingUser?.id;
+    if (userId) {
+      await transaction.update(users).set(identity).where(eq(users.id, userId));
+    } else {
       const [createdUser] = await transaction.insert(users).values({
-        name: displayName,
-        image,
-        xUserId,
-        xUsername: username,
+        ...identity,
       }).returning({ id: users.id });
       userId = createdUser.id;
-    } else {
-      await transaction.update(users).set({
-        name: displayName,
-        image,
-        xUserId,
-        xUsername: username,
-        updatedAt: new Date(),
-      }).where(eq(users.id, userId));
     }
-
-    if (!existingAccount) {
-      await transaction.insert(accounts).values({
-        userId,
-        type: "oauth",
-        provider: "twitter",
-        providerAccountId: xUserId,
-      }).onConflictDoNothing();
-    } else {
-      await transaction.update(accounts).set({
-        access_token: null,
-        refresh_token: null,
-        expires_at: null,
-        scope: null,
-        token_type: null,
-      }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, xUserId)));
-    }
-
-    if (profile && fetchedProfile) {
-      await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(
-        userId,
-        profile,
-        fetchedProfile.providerProfile,
-        { status: fetchedProfile.responseStatus, message: fetchedProfile.responseMessage }
-      ));
-    }
-    return { userId, username };
+    return { userId, username: identity.xUsername };
   });
 }
 

@@ -5,7 +5,7 @@ import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/
 import { requireDb } from "./db";
 import {
   activityEvents, assetEligibilitySnapshots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
-  tweetEvidence, votes, xActionChallenges, xIdentitySnapshots
+  tweetEvidence, users, votes, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
@@ -53,7 +53,7 @@ function newChallengeToken() {
 async function prepareProof(action: "submission" | "vote", proposalIdOrSlug: string, input: unknown) {
   const { reason } = xPostActionSchema.parse(input);
   const database = requireDb();
-  const { session, competition, snapshot } = await requireEligibleActor();
+  const { session, competition } = await requireEligibleActor();
   const [proposal] = await database.select().from(proposals).where(and(
     or(eq(proposals.id, proposalIdOrSlug), eq(proposals.slug, proposalIdOrSlug)),
     eq(proposals.competitionId, competition.id),
@@ -73,7 +73,7 @@ async function prepareProof(action: "submission" | "vote", proposalIdOrSlug: str
   if (approximateXPostLength(postText) > 280) throw new Error("POST_TOO_LONG");
   const [challenge] = await database.insert(xActionChallenges).values({
     action, competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
-    identitySnapshotId: snapshot.id, token, reason, postText, expiresAt: new Date(Date.now() + challengeLifetimeMs)
+    token, reason, postText, expiresAt: new Date(Date.now() + challengeLifetimeMs)
   }).returning({ id: xActionChallenges.id, expiresAt: xActionChallenges.expiresAt });
   return { challengeId: challenge.id, expiresAt: challenge.expiresAt.toISOString(), postText, intentUrl: buildXIntentUrl(postText) };
 }
@@ -91,13 +91,13 @@ async function loadVerifiedProof(action: "submission" | "vote", proposalIdOrSlug
     eq(xActionChallenges.proposalId, proposal.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, new Date())
   )).limit(1);
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
-  const [snapshot] = await database.select().from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, challenge.identitySnapshotId)).limit(1);
-  if (!snapshot) throw new Error("X_RECONNECT_REQUIRED");
+  const [user] = await database.select().from(users).where(eq(users.id, challenge.userId)).limit(1);
+  if (!user) throw new Error("X_RECONNECT_REQUIRED");
   const post = await getXPost(parsed.postUrl);
-  if (post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
+  if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
   const embedHtml = action === "vote" ? post.embedHtml : undefined;
-  return { database, session, competition, proposal, challenge, snapshot, post, embedHtml };
+  return { database, session, competition, proposal, challenge, user, post, embedHtml };
 }
 
 export function prepareProposalProof(proposalId: string, input: unknown) {
@@ -110,7 +110,7 @@ export function prepareVoteProof(proposalIdOrSlug: string, input: unknown) {
 
 export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof("submission", proposalId, input);
-  const { database, session, competition, proposal, challenge, snapshot, post } = context;
+  const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
   const acceptedAt = new Date();
   return database.transaction(async (transaction) => {
@@ -119,8 +119,8 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
     const [evidence] = await transaction.insert(tweetEvidence).values({
-      action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
-      xPostId: post.id, xAuthorId: snapshot.xUserId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
+      action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
+      xPostId: post.id, xAuthorId: user.xUserId, xAuthorUsername: user.xUsername, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
       evidenceHash: hashXPostText(post.text), status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt,
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
@@ -134,7 +134,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
 
 export async function verifyVoteProof(proposalIdOrSlug: string, input: unknown) {
   const context = await loadVerifiedProof("vote", proposalIdOrSlug, input);
-  const { database, session, competition, proposal, challenge, snapshot, post, embedHtml } = context;
+  const { database, session, competition, proposal, challenge, user, post, embedHtml } = context;
   if (proposal.status !== "accepted") throw new Error("PROPOSAL_NOT_FOUND");
   if (proposal.creatorUserId === session.user.id) throw new Error("SELF_VOTE");
   const acceptedAt = new Date();
@@ -145,15 +145,15 @@ export async function verifyVoteProof(proposalIdOrSlug: string, input: unknown) 
       const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
       if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
       const [evidence] = await transaction.insert(tweetEvidence).values({
-        action: "vote", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
-        xPostId: post.id, xAuthorId: snapshot.xUserId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
+        action: "vote", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
+        xPostId: post.id, xAuthorId: user.xUserId, xAuthorUsername: user.xUsername, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
         evidenceHash: hashXPostText(post.text), status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt,
         rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
       }).returning();
       await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
       const [vote] = await transaction.insert(votes).values({
         competitionId: competition.id, proposalId: proposal.id, voterUserId: session.user.id, evidenceId: evidence.id,
-        identitySnapshotId: snapshot.id, followerCount: snapshot.followersCount, status: "valid", acceptedAt
+        followerCount: user.followersCount, status: "valid", acceptedAt
       }).returning();
       await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, voteId: vote.id, evidenceId: evidence.id, eventType: "vote.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { followers: vote.followerCount, xPostId: post.id, verifiedBy: "oembed-challenge" } });
       return { action: "vote" as const, proposalId: proposal.id, postUrl: evidence.postUrl, embedHtml };

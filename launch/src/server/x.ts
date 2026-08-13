@@ -162,17 +162,13 @@ export function hashXPostText(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export function snapshotFromXUser(
-  userId: string,
+export function userIdentityFromXUser(
   profile: XUser,
-  providerProfile: TwitterApiIoUser,
-  response: { status?: string; message?: string }
+  providerProfile: TwitterApiIoUser
 ) {
   return {
-    userId,
-    providerType: providerProfile.type,
     xUserId: profile.id,
-    username: profile.username,
+    xUsername: profile.username,
     displayName: profile.name,
     profileUrl: providerProfile.url,
     profileImageUrl: profile.profile_image_url,
@@ -202,9 +198,8 @@ export function snapshotFromXUser(
     providerMessage: providerProfile.message,
     unavailableReason: providerProfile.unavailableReason,
     profileBio: providerProfile.profile_bio ?? {},
-    responseStatus: response.status,
-    responseMessage: response.message,
-    observedAt: new Date()
+    profileFetchedAt: new Date(),
+    updatedAt: new Date()
   };
 }
 

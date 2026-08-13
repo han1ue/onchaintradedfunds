@@ -16,7 +16,7 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 
 1. Create a launch-only Neon database and run `corepack pnpm --filter @onchaintradedfunds/launch db:migrate`. The baseline migration automatically creates the open `Genesis Competition` in the `competitions` table, starting at migration time and ending at 00:00 UTC about 60 days later.
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. Use the same `AUTH_SECRET` in Preview and Production. `ADMIN_X_IDS` contains immutable X IDs, not handles. `AUTH_X_CONSUMER_SECRET` and `TWITTERAPI_IO_API_KEY` remain server-only.
-3. Enable X OAuth 1.0a with read-only access and callback URL `/api/auth/x/callback`. The OAuth access-token exchange proves account ownership and returns the immutable X user ID without a paid profile read. TwitterAPI.io supplies one profile snapshot only when that X ID is absent from the database. Submissions and votes use free X intents plus oEmbed verification; the app never publishes posts through an API.
+3. Enable X OAuth 1.0a with read-only access and callback URL `/api/auth/x/callback`. The OAuth access-token exchange proves account ownership and returns the immutable X user ID. TwitterAPI.io refreshes that user's public profile fields on each connection. Submissions and votes use free X intents plus oEmbed verification; the app never publishes posts through an API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
 5. After the production deployment, run the administrator asset reconciliation once and explicitly enable healthy pools. Asset discovery is intentionally not scheduled as a recurring cron job.
 
@@ -27,8 +27,8 @@ The reconciler reads Robinhood Chain mainnet (`4663`), canonical USDG, and the o
 ## Verification and finalization
 
 - Every submission and vote shows the exact X post with a 15-minute single-use code. The user publishes it through X, pastes the public post URL, and the application verifies that the post exists, contains the code, and belongs to the signed-in handle through free X oEmbed.
-- The returned X post ID, canonical URL, text hash, author, and action-time identity snapshot become the durable evidence record. No nonce, pasted URL, or challenge cleanup is involved.
-- The immutable X ID is the actor identity. Verification, protection, account age, and follower state are snapshotted at action time.
+- The returned X post ID, canonical URL, text hash, and author become the durable evidence record. No nonce, pasted URL, or challenge cleanup is involved.
+- The immutable X ID is the actor identity. Current X identity and eligibility fields live on the user record; action-specific facts such as accepted follower count stay with the action.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.
 - Finalization rechecks evidence and pool health before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.

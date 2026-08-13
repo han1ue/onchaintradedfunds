@@ -44,8 +44,8 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   const rows = await sqlClient<LeaderboardEntry[]>`
     with ranked as (
       select p.id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
-        u.x_user_id, u.x_username, coalesce(u.name, u.x_username) as creator_name,
-        coalesce((select xis.profile_image_url from x_identity_snapshots xis where xis.user_id = u.id order by xis.observed_at desc limit 1), u.image) as creator_profile_image_url,
+        u.x_user_id, u.x_username, u.display_name as creator_name,
+        u.profile_image_url as creator_profile_image_url,
         count(v.id) filter (where v.status = 'valid')::int as votes
       from proposals p join users u on u.id = p.creator_user_id
       left join votes v on v.proposal_id = p.id

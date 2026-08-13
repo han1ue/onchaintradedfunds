@@ -4,21 +4,6 @@ CREATE TYPE "public"."evidence_status" AS ENUM('pending', 'valid', 'invalid', 'u
 CREATE TYPE "public"."launch_status" AS ENUM('waiting', 'eligible', 'launched', 'void');--> statement-breakpoint
 CREATE TYPE "public"."proposal_status" AS ENUM('draft', 'posting', 'accepted', 'hidden', 'disqualified', 'withdrawn');--> statement-breakpoint
 CREATE TYPE "public"."vote_status" AS ENUM('posting', 'valid', 'invalid');--> statement-breakpoint
-CREATE TABLE "accounts" (
-	"user_id" text NOT NULL,
-	"type" text NOT NULL,
-	"provider" text NOT NULL,
-	"provider_account_id" text NOT NULL,
-	"refresh_token" text,
-	"access_token" text,
-	"expires_at" integer,
-	"token_type" text,
-	"scope" text,
-	"id_token" text,
-	"session_state" text,
-	CONSTRAINT "accounts_provider_provider_account_id_pk" PRIMARY KEY("provider","provider_account_id")
-);
---> statement-breakpoint
 CREATE TABLE "activity_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"competition_id" uuid,
@@ -208,9 +193,9 @@ CREATE TABLE "tweet_evidence" (
 	"competition_id" uuid NOT NULL,
 	"user_id" text NOT NULL,
 	"proposal_id" uuid NOT NULL,
-	"identity_snapshot_id" uuid NOT NULL,
 	"x_post_id" text NOT NULL,
 	"x_author_id" text NOT NULL,
+	"x_author_username" text NOT NULL,
 	"post_url" text NOT NULL,
 	"posted_at" timestamp with time zone NOT NULL,
 	"edit_history_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -226,66 +211,11 @@ CREATE TABLE "tweet_evidence" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"id" text PRIMARY KEY NOT NULL,
-	"name" text,
-	"email" text,
-	"email_verified" timestamp,
-	"image" text,
-	"x_user_id" text,
-	"x_username" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "users_email_unique" UNIQUE("email"),
-	CONSTRAINT "users_x_user_id_unique" UNIQUE("x_user_id")
-);
---> statement-breakpoint
-CREATE TABLE "verification_tokens" (
-	"identifier" text NOT NULL,
-	"token" text NOT NULL,
-	"expires" timestamp NOT NULL,
-	CONSTRAINT "verification_tokens_identifier_token_pk" PRIMARY KEY("identifier","token")
-);
---> statement-breakpoint
-CREATE TABLE "votes" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"competition_id" uuid NOT NULL,
-	"proposal_id" uuid NOT NULL,
-	"voter_user_id" text NOT NULL,
-	"evidence_id" uuid,
-	"identity_snapshot_id" uuid NOT NULL,
-	"follower_count" integer NOT NULL,
-	"status" "vote_status" DEFAULT 'posting' NOT NULL,
-	"accepted_at" timestamp with time zone,
-	"invalidated_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "votes_evidence_id_unique" UNIQUE("evidence_id")
-);
---> statement-breakpoint
-CREATE TABLE "x_action_challenges" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"action" "evidence_action" NOT NULL,
-	"competition_id" uuid NOT NULL,
-	"user_id" text NOT NULL,
-	"proposal_id" uuid NOT NULL,
-	"identity_snapshot_id" uuid NOT NULL,
-	"token" text NOT NULL,
-	"reason" text NOT NULL,
-	"post_text" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"consumed_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "x_action_challenges_token_unique" UNIQUE("token")
-);
---> statement-breakpoint
-CREATE TABLE "x_identity_snapshots" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" text NOT NULL,
-	"provider_type" text,
 	"x_user_id" text NOT NULL,
-	"username" text NOT NULL,
+	"x_username" text NOT NULL,
 	"display_name" text NOT NULL,
-	"profile_url" text,
 	"profile_image_url" text,
+	"profile_url" text,
 	"cover_image_url" text,
 	"description" text,
 	"location" text,
@@ -312,12 +242,49 @@ CREATE TABLE "x_identity_snapshots" (
 	"provider_message" text,
 	"unavailable_reason" text,
 	"profile_bio" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"response_status" text,
-	"response_message" text,
-	"observed_at" timestamp with time zone DEFAULT now() NOT NULL
+	"profile_fetched_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "users_x_user_id_unique" UNIQUE("x_user_id")
 );
 --> statement-breakpoint
-ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE TABLE "verification_tokens" (
+	"identifier" text NOT NULL,
+	"token" text NOT NULL,
+	"expires" timestamp NOT NULL,
+	CONSTRAINT "verification_tokens_identifier_token_pk" PRIMARY KEY("identifier","token")
+);
+--> statement-breakpoint
+CREATE TABLE "votes" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"competition_id" uuid NOT NULL,
+	"proposal_id" uuid NOT NULL,
+	"voter_user_id" text NOT NULL,
+	"evidence_id" uuid,
+	"follower_count" integer NOT NULL,
+	"status" "vote_status" DEFAULT 'posting' NOT NULL,
+	"accepted_at" timestamp with time zone,
+	"invalidated_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "votes_evidence_id_unique" UNIQUE("evidence_id")
+);
+--> statement-breakpoint
+CREATE TABLE "x_action_challenges" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"action" "evidence_action" NOT NULL,
+	"competition_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
+	"proposal_id" uuid NOT NULL,
+	"token" text NOT NULL,
+	"reason" text NOT NULL,
+	"post_text" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"consumed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "x_action_challenges_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -343,17 +310,13 @@ ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_identity_snapshot_id_x_identity_snapshots_id_fk" FOREIGN KEY ("identity_snapshot_id") REFERENCES "public"."x_identity_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_voter_user_id_users_id_fk" FOREIGN KEY ("voter_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_evidence_id_tweet_evidence_id_fk" FOREIGN KEY ("evidence_id") REFERENCES "public"."tweet_evidence"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "votes" ADD CONSTRAINT "votes_identity_snapshot_id_x_identity_snapshots_id_fk" FOREIGN KEY ("identity_snapshot_id") REFERENCES "public"."x_identity_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_identity_snapshot_id_x_identity_snapshots_id_fk" FOREIGN KEY ("identity_snapshot_id") REFERENCES "public"."x_identity_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "x_identity_snapshots" ADD CONSTRAINT "x_identity_snapshots_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "activity_actor_time_idx" ON "activity_events" USING btree ("actor_user_id","occurred_at");--> statement-breakpoint
 CREATE INDEX "asset_snapshot_latest_idx" ON "asset_eligibility_snapshots" USING btree ("asset_id","observed_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "asset_pool_address_uq" ON "asset_pools" USING btree (lower("pool_address"));--> statement-breakpoint
@@ -372,7 +335,6 @@ CREATE UNIQUE INDEX "submission_evidence_once_uq" ON "tweet_evidence" USING btre
 CREATE UNIQUE INDEX "vote_once_per_otf_uq" ON "votes" USING btree ("competition_id","proposal_id","voter_user_id");--> statement-breakpoint
 CREATE INDEX "valid_votes_idx" ON "votes" USING btree ("proposal_id","status");--> statement-breakpoint
 CREATE INDEX "x_action_challenge_lookup_idx" ON "x_action_challenges" USING btree ("user_id","proposal_id","expires_at");--> statement-breakpoint
-CREATE INDEX "x_identity_user_observed_idx" ON "x_identity_snapshots" USING btree ("user_id","observed_at");--> statement-breakpoint
 INSERT INTO "competitions" (
 	"slug",
 	"name",

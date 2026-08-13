@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { signOut } from "next-auth/react";
 import { BadgeCheck, ShieldAlert, Users, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ParticipationEligibility } from "@/lib/types";
@@ -42,7 +41,10 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
     setSwitching(true);
     setMessage(null);
     try {
-      if (eligibility.connected) await signOut({ redirect: false });
+      if (eligibility.connected) {
+        const response = await fetch("/api/auth/x/disconnect", { method: "POST" });
+        if (!response.ok) throw new Error("DISCONNECT_FAILED");
+      }
       window.location.assign(`/api/auth/x?callbackUrl=${encodeURIComponent(callbackUrl)}&forceLogin=1`);
     } catch {
       setSwitching(false);
@@ -56,10 +58,10 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
       <button className="dialogClose" type="button" onClick={onClose} aria-label="Close eligibility requirements"><X size={17} /></button>
       <div className="eligibilityDialogIcon"><ShieldAlert size={24} aria-hidden="true" /></div>
       <h2 id="eligibility-title">{title}</h2>
-      <p>To submit or vote, connect an X account that meets every requirement when it first signs in.</p>
+      <p>To submit or vote, connect an X account that currently meets every requirement.</p>
       <div className="eligibilityRequirements">
         <div data-state={requirementState(accountRequirement)}><BadgeCheck size={17} /><span><strong>Verified and public</strong><small>{eligibility.connected ? (accountRequirement ? "This account meets this requirement" : "This account does not meet this requirement") : "Required for every participant"}</small></span></div>
-        <div data-state={requirementState(followerRequirement)}><Users size={17} /><span><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong><small>{eligibility.followersCount === null ? "Checked when the account first connects" : `This account has ${eligibility.followersCount.toLocaleString()} followers`}</small></span></div>
+        <div data-state={requirementState(followerRequirement)}><Users size={17} /><span><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong><small>{eligibility.followersCount === null ? "Checked when the account connects" : `This account has ${eligibility.followersCount.toLocaleString()} followers`}</small></span></div>
         <div data-state={requirementState(eligibility.oldEnough)}><BadgeCheck size={17} /><span><strong>At least {eligibility.minAccountAgeDays} days old</strong><small>{eligibility.connected && eligibility.oldEnough === false ? "This account is too new" : "Protects the competition from newly created accounts"}</small></span></div>
       </div>
       <div className="eligibilityDialogActions">

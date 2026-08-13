@@ -84,7 +84,8 @@ button { color: inherit; }
 .navActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; margin-left: auto; }
 .iconButton { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; }
 .iconButton:hover { border-color: var(--border-strong); background: var(--card-raised); }
-.accountButton { height: 34px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text-soft); font-size: .82rem; }
+.accountButton { width: fit-content; max-width: 180px; height: 34px; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 11px 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text-soft); font-size: .82rem; }
+.accountButton span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .pageShell { width: min(1360px, 100%); margin: 0 auto; padding: 34px 24px 56px; }
 .competitionHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 24px; }
@@ -383,6 +384,7 @@ button { color: inherit; }
 .emptyState h1 { margin: 16px 0 7px; font-size: 1.5rem; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
+.accountTitle { display: flex; align-items: center; gap: 12px; }
 .accountControls { display: flex; align-items: center; gap: 10px; }
 .accountIdentitySummary { display: flex; align-items: center; gap: 10px; }
 .accountFollowerCount { min-height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -476,6 +478,7 @@ button { color: inherit; }
 @media (max-width: 440px) {
   .primaryNav a { padding: 0 7px; }
   .primaryNav .navSecondary { display: none; }
+  .accountButton { max-width: 108px; }
   .competitionHero h1 br { display: none; }
   .metricsGrid { gap: 7px; }
   .metricCard { padding: 11px 9px; }

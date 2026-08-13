@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { ParticipationEligibility } from "@/lib/types";
 import { db } from "./db";
-import { xIdentitySnapshots } from "./db/schema";
+import { users } from "./db/schema";
 
 type ConnectedUser = { id?: string | null; xUserId?: string | null } | null | undefined;
 type Requirements = { minFollowers: number; minAccountAgeDays: number };
@@ -18,23 +18,20 @@ export async function getParticipationEligibility(user: ConnectedUser, requireme
     return { ...base, connected: true, eligible: false, verified: null, publicAccount: null, followersCount: null, oldEnough: null };
   }
 
-  const [snapshot] = await db.select().from(xIdentitySnapshots)
-    .where(eq(xIdentitySnapshots.userId, user.id))
-    .orderBy(desc(xIdentitySnapshots.observedAt))
-    .limit(1);
-  if (!snapshot || snapshot.xUserId !== user.xUserId) {
+  const [identity] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  if (!identity || identity.xUserId !== user.xUserId) {
     return { ...base, connected: true, eligible: false, verified: null, publicAccount: null, followersCount: null, oldEnough: null };
   }
 
-  const publicAccount = !snapshot.protected;
-  const oldEnough = Date.now() - snapshot.accountCreatedAt.getTime() >= requirements.minAccountAgeDays * 86_400_000;
+  const publicAccount = !identity.protected;
+  const oldEnough = Date.now() - identity.accountCreatedAt.getTime() >= requirements.minAccountAgeDays * 86_400_000;
   return {
     ...base,
     connected: true,
-    eligible: snapshot.verified && publicAccount && snapshot.followersCount >= requirements.minFollowers && oldEnough,
-    verified: snapshot.verified,
+    eligible: identity.verified && publicAccount && identity.followersCount >= requirements.minFollowers && oldEnough,
+    verified: identity.verified,
     publicAccount,
-    followersCount: snapshot.followersCount,
+    followersCount: identity.followersCount,
     oldEnough,
   };
 }

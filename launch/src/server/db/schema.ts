@@ -29,50 +29,11 @@ export const launchStatus = pgEnum("launch_status", ["waiting", "eligible", "lau
 
 export const users = pgTable("users", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name"),
-  email: text("email").unique(),
-  emailVerified: timestamp("email_verified", { mode: "date" }),
-  image: text("image"),
-  xUserId: text("x_user_id").unique(),
-  xUsername: text("x_username"),
-  ...timestamps
-});
-
-export const accounts = pgTable("accounts", {
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type: text("type").$type<"oauth" | "oidc" | "email" | "webauthn">().notNull(),
-  provider: text("provider").notNull(),
-  providerAccountId: text("provider_account_id").notNull(),
-  refresh_token: text("refresh_token"),
-  access_token: text("access_token"),
-  expires_at: integer("expires_at"),
-  token_type: text("token_type"),
-  scope: text("scope"),
-  id_token: text("id_token"),
-  session_state: text("session_state")
-}, (table) => [primaryKey({ columns: [table.provider, table.providerAccountId] })]);
-
-export const sessions = pgTable("sessions", {
-  sessionToken: text("session_token").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  expires: timestamp("expires", { mode: "date" }).notNull()
-});
-
-export const verificationTokens = pgTable("verification_tokens", {
-  identifier: text("identifier").notNull(),
-  token: text("token").notNull(),
-  expires: timestamp("expires", { mode: "date" }).notNull()
-}, (table) => [primaryKey({ columns: [table.identifier, table.token] })]);
-
-export const xIdentitySnapshots = pgTable("x_identity_snapshots", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  providerType: text("provider_type"),
-  xUserId: text("x_user_id").notNull(),
-  username: text("username").notNull(),
+  xUserId: text("x_user_id").notNull().unique(),
+  xUsername: text("x_username").notNull(),
   displayName: text("display_name").notNull(),
-  profileUrl: text("profile_url"),
   profileImageUrl: text("profile_image_url"),
+  profileUrl: text("profile_url"),
   coverImageUrl: text("cover_image_url"),
   description: text("description"),
   location: text("location"),
@@ -99,10 +60,21 @@ export const xIdentitySnapshots = pgTable("x_identity_snapshots", {
   providerMessage: text("provider_message"),
   unavailableReason: text("unavailable_reason"),
   profileBio: jsonb("profile_bio").$type<Record<string, unknown>>().default({}).notNull(),
-  responseStatus: text("response_status"),
-  responseMessage: text("response_message"),
-  observedAt: timestamp("observed_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [index("x_identity_user_observed_idx").on(table.userId, table.observedAt)]);
+  profileFetchedAt: timestamp("profile_fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  ...timestamps
+});
+
+export const sessions = pgTable("sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { mode: "date" }).notNull()
+});
+
+export const verificationTokens = pgTable("verification_tokens", {
+  identifier: text("identifier").notNull(),
+  token: text("token").notNull(),
+  expires: timestamp("expires", { mode: "date" }).notNull()
+}, (table) => [primaryKey({ columns: [table.identifier, table.token] })]);
 
 export const competitions = pgTable("competitions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -214,9 +186,9 @@ export const tweetEvidence = pgTable("tweet_evidence", {
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
-  identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
   xPostId: text("x_post_id").notNull().unique(),
   xAuthorId: text("x_author_id").notNull(),
+  xAuthorUsername: text("x_author_username").notNull(),
   postUrl: text("post_url").notNull(),
   postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
   editHistoryIds: jsonb("edit_history_ids").$type<string[]>().default([]).notNull(),
@@ -238,7 +210,6 @@ export const xActionChallenges = pgTable("x_action_challenges", {
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
-  identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
   token: text("token").notNull().unique(),
   reason: text("reason").notNull(),
   postText: text("post_text").notNull(),
@@ -262,7 +233,6 @@ export const votes = pgTable("votes", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   voterUserId: text("voter_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   evidenceId: uuid("evidence_id").unique().references(() => tweetEvidence.id, { onDelete: "restrict" }),
-  identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
   followerCount: integer("follower_count").notNull(),
   status: voteStatus("status").default("posting").notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
@@ -341,7 +311,7 @@ export const adminActions = pgTable("admin_actions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
-export const usersRelations = relations(users, ({ many }) => ({ snapshots: many(xIdentitySnapshots), proposals: many(proposals), votes: many(votes) }));
+export const usersRelations = relations(users, ({ many }) => ({ proposals: many(proposals), votes: many(votes), sessions: many(sessions) }));
 export const proposalsRelations = relations(proposals, ({ many, one }) => ({
   assets: many(proposalAssets), votes: many(votes), creator: one(users, { fields: [proposals.creatorUserId], references: [users.id] })
 }));
