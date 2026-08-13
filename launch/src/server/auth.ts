@@ -30,7 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     clientSecret: env.AUTH_X_SECRET ?? "not-configured",
     authorization: {
       url: "https://x.com/i/oauth2/authorize",
-      params: { scope: "users.read" }
+      params: { scope: "tweet.read users.read" }
     }
   })],
   callbacks: {
