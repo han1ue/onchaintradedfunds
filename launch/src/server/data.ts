@@ -1,5 +1,6 @@
 import { demoAssets, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "@/lib/types";
+import { getLaunchAssetName, isLaunchAsset } from "@/lib/launch-assets";
 import { sqlClient } from "./db";
 
 export async function getCompetition(): Promise<CompetitionSummary> {
@@ -21,7 +22,7 @@ export async function getCompetition(): Promise<CompetitionSummary> {
 
 export async function getEligibleAssets(): Promise<EligibleAsset[]> {
   if (!sqlClient) return demoAssets;
-  return sqlClient<EligibleAsset[]>`
+  const assets = await sqlClient<EligibleAsset[]>`
     select a.id::text, a.robinhood_uid as "robinhoodUid", a.symbol, a.name,
       a.contract_address as "contractAddress", a.logo_url as "logoUrl",
       p.fee_tier as "feeTier", p.pool_address as "poolAddress",
@@ -33,6 +34,9 @@ export async function getEligibleAssets(): Promise<EligibleAsset[]> {
     ) s on s.eligible = true
     where a.admin_enabled = true and a.status = 'active'
     order by a.symbol`;
+  return assets
+    .filter((asset) => isLaunchAsset(asset.symbol))
+    .map((asset) => ({ ...asset, name: getLaunchAssetName(asset.symbol) ?? asset.name }));
 }
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {

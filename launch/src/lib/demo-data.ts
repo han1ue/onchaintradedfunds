@@ -1,12 +1,21 @@
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "./types";
+import { launchAssets } from "./launch-assets";
 
-export const demoAssets: EligibleAsset[] = [
-  { id: "asset-tsla", robinhoodUid: "preview-tsla", symbol: "TSLA", name: "Tesla", contractAddress: "0x0000000000000000000000000000000000000001", feeTier: 3000, poolAddress: "0x0000000000000000000000000000000000000011", observedAt: new Date().toISOString(), reason: "Preview data" },
-  { id: "asset-nvda", robinhoodUid: "preview-nvda", symbol: "NVDA", name: "NVIDIA", contractAddress: "0x0000000000000000000000000000000000000002", feeTier: 3000, poolAddress: "0x0000000000000000000000000000000000000012", observedAt: new Date().toISOString(), reason: "Preview data" },
-  { id: "asset-amd", robinhoodUid: "preview-amd", symbol: "AMD", name: "AMD", contractAddress: "0x0000000000000000000000000000000000000003", feeTier: 3000, poolAddress: "0x0000000000000000000000000000000000000013", observedAt: new Date().toISOString(), reason: "Preview data" },
-  { id: "asset-aapl", robinhoodUid: "preview-aapl", symbol: "AAPL", name: "Apple", contractAddress: "0x0000000000000000000000000000000000000004", feeTier: 3000, poolAddress: "0x0000000000000000000000000000000000000014", observedAt: new Date().toISOString(), reason: "Preview data" },
-  { id: "asset-msft", robinhoodUid: "preview-msft", symbol: "MSFT", name: "Microsoft", contractAddress: "0x0000000000000000000000000000000000000005", feeTier: 3000, poolAddress: "0x0000000000000000000000000000000000000015", observedAt: new Date().toISOString(), reason: "Preview data" }
-];
+export const demoAssets: EligibleAsset[] = launchAssets.map((asset, index) => {
+  const tokenSuffix = (index + 1).toString(16).padStart(40, "0");
+  const poolSuffix = (index + 101).toString(16).padStart(40, "0");
+  return {
+    id: `asset-${asset.symbol.toLowerCase()}`,
+    robinhoodUid: `preview-${asset.symbol.toLowerCase()}`,
+    symbol: asset.symbol,
+    name: asset.name,
+    contractAddress: `0x${tokenSuffix}`,
+    feeTier: 3000,
+    poolAddress: `0x${poolSuffix}`,
+    observedAt: new Date().toISOString(),
+    reason: "Preview data"
+  };
+});
 
 const colors = ["#23d7b0", "#59a7ff", "#a982ff", "#f0b65a", "#e56f91"];
 

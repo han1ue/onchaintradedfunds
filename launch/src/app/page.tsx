@@ -3,20 +3,21 @@ import { ArrowRight, BadgeCheck, Clock3, FileCheck2, Trophy, Vote } from "lucide
 import { HowItWorks } from "@/components/HowItWorks";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
+import { launchAssets } from "@/lib/launch-assets";
 import { auth } from "@/server/auth";
-import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
+import { getCompetition, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
 export default async function HomePage() {
-  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
+  const [competition, leaderboard, session] = await Promise.all([getCompetition(), getLeaderboard(), auth()]);
   const eligibility = await getParticipationEligibility(session?.user, competition);
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
-      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge><StatusBadge href="/rwas">{assets.length.toLocaleString()} supported RWAs</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
+      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge><StatusBadge href="/rwas">{launchAssets.length.toLocaleString()} supported RWAs</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">

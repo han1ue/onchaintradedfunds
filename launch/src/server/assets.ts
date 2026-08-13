@@ -2,6 +2,7 @@ import { createPublicClient, defineChain, getAddress, http, type Address } from 
 import { requireDb } from "./db";
 import { assetEligibilitySnapshots, assetPools, eligibleAssets } from "./db/schema";
 import { env } from "./env";
+import { isLaunchAsset } from "@/lib/launch-assets";
 
 export const ROBINHOOD_CHAIN_ID = 4663;
 export const USDG_ADDRESS = getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168");
@@ -110,6 +111,7 @@ export async function reconcileEligibleAssets() {
   const remote = await fetchRobinhoodAssets();
   const results: { symbol: string; eligible: boolean; reason: string }[] = [];
   for (const asset of remote) {
+    if (!isLaunchAsset(asset.symbol)) continue;
     const deployment = asset.deployments?.find((item) => item.chainId === ROBINHOOD_CHAIN_ID);
     if (!deployment || asset.status !== "active") continue;
     const [record] = await database.insert(eligibleAssets).values({
