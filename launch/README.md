@@ -18,7 +18,7 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. `ADMIN_X_IDS` contains immutable X IDs, not handles.
 3. Create an X OAuth 2.0 application with callback URL `/api/auth/callback/twitter` and scope `users.read`. Login performs one authenticated profile lookup to snapshot immutable X ID, verification, account age, public status, and follower count. Submissions and votes use free X intents plus single-use oEmbed challenges; the app never publishes posts through the X API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
-5. After the production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and create the competition after the rules are frozen. If dates are omitted, it opens immediately and closes two calendar months later. Asset discovery is intentionally not scheduled as a recurring cron job.
+5. After the production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and create the competition after the rules are frozen. If dates are omitted, it opens immediately and closes about 60 days later at 00:00 UTC. Asset discovery is intentionally not scheduled as a recurring cron job.
 
 The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
 
@@ -26,7 +26,7 @@ The reconciler reads Robinhood Chain mainnet (`4663`), canonical USDG, and the o
 
 ## Verification and finalization
 
-- Every submission and vote shows the exact X post with a 15-minute single-use code. The user publishes it through X, pastes the public post URL, and the application verifies the code and connected handle through oEmbed.
+- Every submission and vote shows the exact X post with a 15-minute single-use code. The user publishes it through X, pastes the public post URL, and the application verifies the code and signed-in handle through oEmbed.
 - The returned X post ID, canonical URL, text hash, author, and action-time identity snapshot become the durable evidence record. No nonce, pasted URL, or challenge cleanup is involved.
 - The immutable X ID is the actor identity. Verification, protection, account age, and follower state are snapshotted at action time.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.

@@ -18,9 +18,9 @@ export default async function HomePage() {
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">
-      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} detail="Valid public X posts" />
-      <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} detail="Public entries" />
-      <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} detail="Verified X accounts" />
+      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} />
+      <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} />
+      <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} />
     </div>
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>

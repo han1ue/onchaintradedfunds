@@ -8,7 +8,7 @@ import { activityEvents, proposals, votes, xIdentitySnapshots } from "@/server/d
 export const metadata = { title: "My activity" };
 export default async function MePage() {
   const session = await auth();
-  if (!session?.user?.id) return <div className="pageShell contentPage"><SectionCard className="emptyState"><LogIn size={30} /><h1>Connect X to view your activity</h1><p>Your submissions, verified votes and proof history appear here.</p><Button href="/api/auth/signin?callbackUrl=%2Fme">Connect X</Button></SectionCard></div>;
+  if (!session?.user?.id) return <div className="pageShell contentPage"><SectionCard className="emptyState"><LogIn size={30} /><h1>Sign in with X to view your activity</h1><p>Your submissions, verified votes and proof history appear here.</p><Button href="/api/auth/signin?callbackUrl=%2Fme">Sign in with X</Button></SectionCard></div>;
   const [identityRows, ownProposals, ownVotes, activity] = db ? await Promise.all([
     db.select().from(xIdentitySnapshots).where(eq(xIdentitySnapshots.userId, session.user.id)).orderBy(desc(xIdentitySnapshots.observedAt)).limit(1),
     db.select().from(proposals).where(eq(proposals.creatorUserId, session.user.id)),

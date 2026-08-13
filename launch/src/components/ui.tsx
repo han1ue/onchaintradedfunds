@@ -18,6 +18,6 @@ export function Callout({ children, tone = "info" }: { children: ReactNode; tone
   return <div className={`callout ${tone}`}>{children}</div>;
 }
 
-export function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="metricCard"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+export function MetricCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return <div className="metricCard"><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</div>;
 }

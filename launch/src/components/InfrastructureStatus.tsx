@@ -36,7 +36,7 @@ export function InfrastructureStatus() {
   return (
     <div className="infrastructureStatus" aria-label="Service status">
       <ServiceState label="Database" state={health.database} />
-      <ServiceState label="Redis" state={health.redis} />
+      <ServiceState label="Rate limiting" state={health.redis} />
     </div>
   );
 }
