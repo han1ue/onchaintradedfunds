@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
-import { env } from "./env";
 import { parseXPostId } from "@/lib/validation";
-import { approximateXPostLength } from "@/lib/x-post";
 
 export type XUser = {
   id: string;
@@ -28,10 +26,9 @@ export type XPost = {
 
 export type CreatedXPost = { id: string; text: string };
 
-async function xFetch<T>(path: string): Promise<T> {
-  if (!env.X_BEARER_TOKEN) throw new Error("X_UNAVAILABLE");
+async function xFetch<T>(path: string, accessToken: string): Promise<T> {
   const response = await fetch(`https://api.x.com${path}`, {
-    headers: { Authorization: `Bearer ${env.X_BEARER_TOKEN}` },
+    headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store"
   });
   if (!response.ok) throw new Error(response.status === 429 ? "X_RATE_LIMITED" : response.status === 403 || response.status === 404 ? "X_NOT_FOUND" : "X_UNAVAILABLE");
@@ -40,33 +37,26 @@ async function xFetch<T>(path: string): Promise<T> {
 
 const userFields = "created_at,description,id,is_identity_verified,name,profile_image_url,protected,public_metrics,username,verified,verified_type";
 
-export async function getXUser(xUserId: string) {
-  const result = await xFetch<{ data: XUser }>(`/2/users/${encodeURIComponent(xUserId)}?user.fields=${userFields}`);
+export async function getAuthenticatedXUser(accessToken: string) {
+  const result = await xFetch<{ data: XUser }>(`/2/users/me?user.fields=${userFields}`, accessToken);
   return result.data;
 }
 
-export async function getXPost(postIdOrUrl: string) {
-  const id = /^\d+$/.test(postIdOrUrl) ? postIdOrUrl : parseXPostId(postIdOrUrl);
-  const result = await xFetch<{ data: XPost }>(`/2/tweets/${id}?tweet.fields=author_id,created_at,edit_history_tweet_ids,entities,referenced_tweets,text`);
-  return result.data;
+function decodeHtml(value: string) {
+  return value.replace(/<[^>]*>/g, "").replace(/&#(x?[0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code.replace(/^x/i, ""), code[0]?.toLowerCase() === "x" ? 16 : 10)))
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
 
-export async function createXPost(accessToken: string, text: string) {
-  if (approximateXPostLength(text) > 280) throw new Error("POST_TOO_LONG");
-  const response = await fetch("https://api.x.com/2/tweets", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ text }),
-    cache: "no-store"
-  });
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new Error("X_RECONNECT_REQUIRED");
-    if (response.status === 429) throw new Error("X_RATE_LIMITED");
-    throw new Error("X_POST_FAILED");
-  }
-  const result = await response.json() as { data?: CreatedXPost };
-  if (!result.data?.id || typeof result.data.text !== "string") throw new Error("X_POST_FAILED");
-  return result.data;
+export async function getXOEmbed(postUrl: string) {
+  const id = parseXPostId(postUrl);
+  const response = await fetch(`https://publish.x.com/oembed?omit_script=true&hide_thread=true&url=${encodeURIComponent(postUrl)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("X_POST_NOT_FOUND");
+  const result = await response.json() as { author_url?: string; html?: string };
+  if (!result.author_url || !result.html) throw new Error("X_POST_NOT_FOUND");
+  const username = new URL(result.author_url).pathname.split("/").filter(Boolean)[0];
+  const paragraph = result.html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
+  if (!username || !paragraph) throw new Error("X_POST_NOT_FOUND");
+  return { id, username, text: decodeHtml(paragraph), postUrl: `https://x.com/${username}/status/${id}` };
 }
 
 export function hashXPostText(text: string) {
@@ -97,6 +87,12 @@ export function assertXEligible(profile: XUser, options: { minFollowers?: number
   const ageMs = Date.now() - new Date(profile.created_at).getTime();
   if (ageMs < options.minAccountAgeDays * 86_400_000) throw new Error("ACCOUNT_TOO_NEW");
   if (options.minFollowers !== undefined && profile.public_metrics.followers_count < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
+}
+
+export function assertStoredXEligible(snapshot: { verified: boolean; protected: boolean; accountCreatedAt: Date; followersCount: number }, options: { minFollowers?: number; minAccountAgeDays: number }) {
+  if (!snapshot.verified || snapshot.protected) throw new Error("X_NOT_VERIFIED");
+  if (Date.now() - snapshot.accountCreatedAt.getTime() < options.minAccountAgeDays * 86_400_000) throw new Error("ACCOUNT_TOO_NEW");
+  if (options.minFollowers !== undefined && snapshot.followersCount < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
 }
 
 export function verifyStoredXPost(post: XPost, expected: { authorId: string; evidenceHash: string }) {

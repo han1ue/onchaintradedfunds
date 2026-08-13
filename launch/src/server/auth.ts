@@ -5,8 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { accounts, sessions, users, verificationTokens, xIdentitySnapshots } from "./db/schema";
 import { env } from "./env";
-import { getXUser, snapshotFromXUser } from "./x";
-import { encryptOAuthToken } from "./x-oauth-token";
+import { getAuthenticatedXUser, snapshotFromXUser } from "./x";
 
 const adapter = db ? DrizzleAdapter(db, { usersTable: users, accountsTable: accounts, sessionsTable: sessions, verificationTokensTable: verificationTokens }) : undefined;
 
@@ -18,7 +17,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Twitter({
     clientId: env.AUTH_X_ID ?? "not-configured",
     clientSecret: env.AUTH_X_SECRET ?? "not-configured",
-    authorization: { params: { scope: "users.read tweet.read tweet.write offline.access" } }
+    authorization: { params: { scope: "users.read" } }
   })],
   callbacks: {
     async jwt({ token, account, profile }) {
@@ -44,14 +43,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   events: {
     async signIn({ user, account }) {
       if (!db || account?.provider !== "twitter" || !user.id) return;
-      const profile = await getXUser(account.providerAccountId);
+      if (!account.access_token) throw new Error("X_RECONNECT_REQUIRED");
+      const profile = await getAuthenticatedXUser(account.access_token);
       await db.transaction(async (transaction) => {
         await transaction.update(users).set({ xUserId: profile.id, xUsername: profile.username, updatedAt: new Date() }).where(eq(users.id, user.id!));
         await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(user.id!, profile));
         await transaction.update(accounts).set({
-          access_token: encryptOAuthToken(account.access_token),
-          refresh_token: encryptOAuthToken(account.refresh_token),
-          expires_at: account.expires_at,
+          access_token: null,
+          refresh_token: null,
+          expires_at: null,
           scope: account.scope,
           token_type: account.token_type
         }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));

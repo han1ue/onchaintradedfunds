@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { auth } from "./auth";
 import { requireDb } from "./db";
 import { competitions, xIdentitySnapshots } from "./db/schema";
-import { assertXEligible, getXUser, snapshotFromXUser } from "./x";
+import { assertStoredXEligible } from "./x";
 
 export async function requireSession() {
   const session = await auth();
@@ -23,11 +23,11 @@ export async function requireEligibleActor(options: { forVote?: boolean } = {}) 
   const database = requireDb();
   const session = await requireSession();
   const competition = await currentCompetition();
-  const profile = await getXUser(session.user.xUserId!);
-  assertXEligible(profile, {
+  const [snapshot] = await database.select().from(xIdentitySnapshots).where(eq(xIdentitySnapshots.userId, session.user.id)).orderBy(desc(xIdentitySnapshots.observedAt)).limit(1);
+  if (!snapshot || snapshot.xUserId !== session.user.xUserId) throw new Error("X_RECONNECT_REQUIRED");
+  assertStoredXEligible(snapshot, {
     minAccountAgeDays: competition.minAccountAgeDays,
     minFollowers: options.forVote ? competition.minFollowers : undefined
   });
-  const [snapshot] = await database.insert(xIdentitySnapshots).values(snapshotFromXUser(session.user.id, profile)).returning();
-  return { session, profile, snapshot, competition };
+  return { session, snapshot, competition };
 }

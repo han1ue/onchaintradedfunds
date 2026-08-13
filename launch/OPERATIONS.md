@@ -7,7 +7,7 @@
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
 - Run the one-time post-deployment Robinhood asset reconciliation and enable only reviewed, liquid RWA/USDG V3 pools. Asset discovery is not a recurring cron job.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
-- Exercise one real submission and vote in a non-production competition. Confirm each button publishes only the exact previewed text and the returned post URL is stored.
+- Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 
 ## During the competition
 

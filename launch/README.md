@@ -16,7 +16,7 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 
 1. Create a launch-only Neon database and run `corepack pnpm --filter @onchaintradedfunds/launch db:migrate`.
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. `ADMIN_X_IDS` contains immutable X IDs, not handles.
-3. Create an X OAuth 2.0 application with callback URL `/api/auth/callback/twitter` and scopes `users.read tweet.read tweet.write offline.access`. Configure an app bearer token for action-time user checks and daily post verification. OAuth user tokens are encrypted with a key derived from `AUTH_SECRET` before database storage.
+3. Create an X OAuth 2.0 application with callback URL `/api/auth/callback/twitter` and scope `users.read`. Login performs one authenticated profile lookup to snapshot immutable X ID, verification, account age, public status, and follower count. Submissions and votes use free X intents plus single-use oEmbed challenges; the app never publishes posts through the X API.
 4. Configure Upstash Redis and Cloudflare Turnstile. Production writes fail closed when launch data or X checks are unavailable.
 5. After each production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and open the competition only after rules are frozen. Asset discovery is intentionally not scheduled as a recurring cron job.
 
@@ -26,7 +26,7 @@ The reconciler reads Robinhood Chain mainnet (`4663`), canonical USDG, and the o
 
 ## Verification and finalization
 
-- Every submission and vote shows the exact X post first. The user supplies 20–120 characters of context and explicitly approves the `POST /2/tweets` call; the application never posts in the background.
+- Every submission and vote shows the exact X post with a 15-minute single-use code. The user publishes it through X, pastes the public post URL, and the application verifies the code and connected handle through oEmbed.
 - The returned X post ID, canonical URL, text hash, author, and action-time identity snapshot become the durable evidence record. No nonce, pasted URL, or challenge cleanup is involved.
 - The immutable X ID is the actor identity. Verification, protection, account age, and follower state are snapshotted at action time.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.

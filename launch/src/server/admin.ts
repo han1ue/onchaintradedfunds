@@ -8,9 +8,9 @@ import { requireDb } from "./db";
 import {
   activityEvents, adminActions, assetEligibilitySnapshots, assetPools, competitions, eligibleAssets, evidenceChecks,
   finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposalAssets, proposals,
-  tweetEvidence, votes
+  tweetEvidence, votes, xIdentitySnapshots
 } from "./db/schema";
-import { getXPost, verifyStoredXPost } from "./x";
+import { getXOEmbed, hashXPostText } from "./x";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -33,7 +33,7 @@ export async function createCompetition(input: { slug: string; name: string; sta
   const database = requireDb(); const session = await requireAdmin();
   const startsAt = new Date(input.startsAt); const endsAt = new Date(input.endsAt);
   if (!/^[a-z0-9-]{2,40}$/.test(input.slug) || input.name.trim().length < 3 || !Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) throw new Error("INVALID_COMPETITION");
-  const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 100, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
+  const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 50, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: "competition.create", targetType: "competition", targetId: competition.id, reason: "Create competition with frozen V1 defaults", after: competition });
   return competition;
 }
@@ -56,13 +56,15 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
     .orderBy(tweetEvidence.id);
   for (const evidence of records) {
     try {
-      const post = await getXPost(evidence.xPostId);
-      verifyStoredXPost(post, { authorId: evidence.xAuthorId, evidenceHash: evidence.evidenceHash });
+      const post = await getXOEmbed(evidence.postUrl);
+      const [snapshot] = await database.select({ username: xIdentitySnapshots.username }).from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, evidence.identitySnapshotId)).limit(1);
+      if (!snapshot || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("X_POST_CHANGED");
+      if (hashXPostText(post.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
       await database.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "evidence-recheck" });
-      await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: post.edit_history_tweet_ids ?? [post.id] }).where(eq(tweetEvidence.id, evidence.id));
+      await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: [post.id] }).where(eq(tweetEvidence.id, evidence.id));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "X_UNAVAILABLE";
-      if (reason === "X_UNAVAILABLE" || reason === "X_RATE_LIMITED") throw error;
+      if (reason === "X_UNAVAILABLE") throw error;
       await database.transaction(async (transaction) => {
         await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
         await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });

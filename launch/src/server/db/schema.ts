@@ -91,7 +91,7 @@ export const competitions = pgTable("competitions", {
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   launchStartAt: timestamp("launch_start_at", { withTimezone: true }),
   launchIntervalDays: integer("launch_interval_days").default(4).notNull(),
-  minFollowers: integer("min_followers").default(100).notNull(),
+  minFollowers: integer("min_followers").default(50).notNull(),
   minAccountAgeDays: integer("min_account_age_days").default(30).notNull(),
   minAssets: integer("min_assets").default(2).notNull(),
   minAssetWeightBps: integer("min_asset_weight_bps").default(100).notNull(),
@@ -209,6 +209,21 @@ export const tweetEvidence = pgTable("tweet_evidence", {
   index("tweet_evidence_competition_status_idx").on(table.competitionId, table.status),
   uniqueIndex("submission_evidence_once_uq").on(table.proposalId).where(sql`${table.action} = 'submission'`)
 ]);
+
+export const xActionChallenges = pgTable("x_action_challenges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  action: evidenceAction("action").notNull(),
+  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  identitySnapshotId: uuid("identity_snapshot_id").notNull().references(() => xIdentitySnapshots.id, { onDelete: "restrict" }),
+  token: text("token").notNull().unique(),
+  reason: text("reason").notNull(),
+  postText: text("post_text").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("x_action_challenge_lookup_idx").on(table.userId, table.proposalId, table.expiresAt)]);
 
 export const evidenceChecks = pgTable("evidence_checks", {
   id: uuid("id").defaultRandom().primaryKey(),

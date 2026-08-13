@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Plus, Send, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Plus, Send, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CompetitionSummary, EligibleAsset } from "@/lib/types";
 import { errorMessages } from "@/lib/errors";
@@ -9,6 +9,7 @@ import { Button, Callout, SectionCard } from "./ui";
 import { Turnstile } from "./Turnstile";
 
 type Row = { assetId: string; weight: number };
+type Challenge = { challengeId: string; intentUrl: string; postText: string; expiresAt: string };
 
 function friendlyError(code: string | undefined, fallback: string) {
   return code ? errorMessages[code] ?? code : fallback;
@@ -24,9 +25,12 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [postUrl, setPostUrl] = useState("");
   const total = useMemo(() => rows.reduce((sum, row) => sum + Number(row.weight || 0), 0), [rows]);
   const preview = competition.id.startsWith("preview");
-  const postText = buildSubmissionPost(reason || "Your perspective goes here.", { name: name || "Your OTF", ticker: ticker || "TICKER", slug: slugifyProposalName(name || "Your OTF") }, siteUrl);
+  const postText = buildSubmissionPost(reason || "[You reason]", { name: name || "Your OTF", ticker: ticker || "TICKER", slug: slugifyProposalName(name || "Your OTF") }, siteUrl, "[verification code]");
 
   function updateRow(index: number, patch: Partial<Row>) {
     setRows((current) => current.map((row, itemIndex) => itemIndex === index ? { ...row, ...patch } : row));
@@ -39,6 +43,21 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
     }
     setBusy(true);
     setMessage(null);
+    if (challenge && draftId) {
+      const verifyResponse = await fetch(`/api/v1/submissions/${draftId}/publish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ challengeId: challenge.challengeId, postUrl })
+      });
+      const verifyJson = await verifyResponse.json();
+      setBusy(false);
+      if (!verifyResponse.ok) {
+        setMessage(friendlyError(verifyJson.error?.code, "The X post could not be verified"));
+        return;
+      }
+      window.location.href = `/otfs/${verifyJson.data.slug}`;
+      return;
+    }
     const draftResponse = await fetch("/api/v1/submissions", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -56,6 +75,7 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
       setMessage(friendlyError(draftJson.error?.code, "Draft could not be saved"));
       return;
     }
+    setDraftId(draftJson.data.id);
     const publishResponse = await fetch(`/api/v1/submissions/${draftJson.data.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -64,10 +84,10 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
     const publishJson = await publishResponse.json();
     setBusy(false);
     if (!publishResponse.ok) {
-      setMessage(friendlyError(publishJson.error?.code, "X could not publish the submission post"));
+      setMessage(friendlyError(publishJson.error?.code, "The X post could not be prepared"));
       return;
     }
-    window.location.href = `/otfs/${publishJson.data.slug}`;
+    setChallenge(publishJson.data);
   }
 
   return <div className="wizardLayout"><SectionCard className="wizardCard">
@@ -77,9 +97,10 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
       {step === 1 && <div className="formStack"><label className="formField"><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="AI Infrastructure OTF" maxLength={80} /><small>Must end in “OTF”.</small></label><label className="formField"><span>Ticker</span><input value={ticker} onChange={(event) => setTicker(event.target.value.toUpperCase())} placeholder="AIX" maxLength={16} /></label><label className="formField"><span>Investment thesis</span><textarea value={thesis} onChange={(event) => setThesis(event.target.value)} placeholder="Explain what this portfolio owns, why it belongs together, and the long-term case…" rows={7} /><small>{new TextEncoder().encode(thesis).length} / 2,048 bytes</small></label></div>}
       {step === 2 && <div className="formStack"><div className="allocationTotal"><span>Portfolio allocation</span><strong className={total === 100 ? "valid" : ""}>{total}%</strong></div>{rows.map((row, index) => <div className="allocationInput" key={index}><label className="formField"><span>Asset {index + 1}</span><select value={row.assetId} onChange={(event) => updateRow(index, { assetId: event.target.value })}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.symbol} · {asset.name}</option>)}</select></label><label className="formField weightField"><span>Weight</span><div><input type="number" min="1" max="99" value={row.weight} onChange={(event) => updateRow(index, { weight: Number(event.target.value) })} /><span>%</span></div></label>{rows.length > 2 && <button className="removeButton" type="button" onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove asset ${index + 1}`}><Trash2 size={16} /></button>}</div>)}<Button variant="secondary" onClick={() => setRows((current) => [...current, { assetId: assets.find((asset) => !current.some((row) => row.assetId === asset.id))?.id ?? assets[0]?.id ?? "", weight: 1 }])} disabled={rows.length >= assets.length}><Plus size={15} /> Add asset</Button></div>}
       {step === 3 && <div className="reviewBlock"><div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row) => <li key={row.assetId}><span>{assets.find((asset) => asset.id === row.assetId)?.symbol}</span><strong>{row.weight}%</strong></li>)}</ul></div><Callout>Submitting locks this proposal. The final step shows the exact X post for your approval.</Callout></div>}
-      {step === 4 && <div className="formStack"><label className="formField"><span>Your context</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this OTF deserves to launch…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters · minimum 20</small></label><div className="xPostPreview"><div><span>Post preview</span><Send size={14} /></div><p>{postText}</p></div><Callout>By clicking below, OTF Launch will publish this exact post to your connected X account. It will not post anything else.</Callout><Turnstile siteKey={connected ? turnstileSiteKey : undefined} onToken={setTurnstileToken} /></div>}
+      {step === 4 && !challenge && <div className="formStack"><label className="formField"><span>Your context</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this OTF deserves to launch…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters · minimum 20</small></label><div className="xPostPreview"><div><span>Post preview</span><Send size={14} /></div><p>{postText}</p></div><Callout>We’ll prepare this post with a one-time verification code. You publish it from X, then paste its URL here.</Callout><Turnstile siteKey={connected ? turnstileSiteKey : undefined} onToken={setTurnstileToken} /></div>}
+      {step === 4 && challenge && <div className="proofFlow"><div className="xPostPreview"><div><span>Ready to publish</span><Send size={14} /></div><p>{challenge.postText}</p></div><a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a><label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" /><small>Paste the URL of the public post containing the verification code.</small></label></div>}
       {message && <p className="formMessage" role="status">{message}</p>}
     </div>
-    <div className="wizardFooter"><Button variant="secondary" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}>Back</Button>{step < 4 ? <Button onClick={() => setStep((current) => current + 1)} disabled={step === 1 ? !name.endsWith(" OTF") || ticker.length < 1 || thesis.length < 20 : step === 2 ? total !== 100 || new Set(rows.map((row) => row.assetId)).size !== rows.length : false}>Continue</Button> : <Button onClick={postSubmission} disabled={busy || preview || reason.trim().length < 20 || Boolean(connected && turnstileSiteKey && !turnstileToken)}>{busy ? "Posting to X…" : connected ? "Post and submit OTF" : "Connect X to submit"}</Button>}</div>
+    <div className="wizardFooter"><Button variant="secondary" onClick={() => challenge ? setChallenge(null) : setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}>{challenge ? "Start again" : "Back"}</Button>{step < 4 ? <Button onClick={() => setStep((current) => current + 1)} disabled={step === 1 ? !name.endsWith(" OTF") || ticker.length < 1 || thesis.length < 20 : step === 2 ? total !== 100 || new Set(rows.map((row) => row.assetId)).size !== rows.length : false}>Continue</Button> : <Button onClick={postSubmission} disabled={busy || preview || (challenge ? !postUrl.trim() : reason.trim().length < 20 || Boolean(connected && turnstileSiteKey && !turnstileToken))}>{busy ? (challenge ? "Verifying…" : "Preparing…") : challenge ? "Verify post and submit OTF" : connected ? "Prepare X post" : "Connect X to submit"}</Button>}</div>
   </SectionCard><aside><SectionCard className="sideNote"><strong>Before you submit</strong><ul><li>One accepted proposal per X account.</li><li>At least two eligible assets.</li><li>Every asset must have a usable direct V3 pool.</li><li>Weights must total exactly 100%.</li><li>Accepted proposals cannot be edited.</li></ul></SectionCard></aside></div>;
 }

@@ -23,6 +23,11 @@ export const xPostActionSchema = z.object({
   turnstileToken: z.string().optional()
 });
 
+export const xPostProofSchema = z.object({
+  challengeId: z.string().uuid(),
+  postUrl: z.string().url().max(300)
+});
+
 export function parseXPostId(value: string) {
   const url = new URL(value);
   if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname.toLowerCase())) throw new Error("PROOF_MISMATCH");
