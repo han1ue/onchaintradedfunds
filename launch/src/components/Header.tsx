@@ -3,12 +3,7 @@ import { BrandMark } from "./BrandMark";
 import { PrimaryNav } from "./PrimaryNav";
 import { ThemeToggle } from "./ThemeToggle";
 import { XMark } from "./XMark";
-import { auth, signIn } from "@/server/auth";
-
-async function signInWithX() {
-  "use server";
-  await signIn("twitter", { redirectTo: "/" });
-}
+import { auth } from "@/server/auth";
 
 export async function Header() {
   const session = await auth();
@@ -20,7 +15,7 @@ export async function Header() {
       <ThemeToggle />
       {session?.user?.xUsername
         ? <Link className="accountButton" href="/me">@{session.user.xUsername}</Link>
-        : <form action={signInWithX}><button className="button buttonSecondary compactButton" type="submit"><XMark /> Sign in with X</button></form>}
+        : <Link className="button buttonSecondary compactButton" href="/api/auth/signin?callbackUrl=%2F"><XMark /> Sign in with X</Link>}
     </div>
   </div></header>;
 }

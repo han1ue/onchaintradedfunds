@@ -6,6 +6,7 @@ const schema = z.object({
   NEXT_PUBLIC_SITE_URL: optionalUrl.default("http://localhost:3001"),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
   AUTH_SECRET: z.string().min(32).optional(),
+  AUTH_REDIRECT_PROXY_URL: optionalUrl,
   AUTH_X_ID: z.string().optional(),
   AUTH_X_SECRET: z.string().optional(),
   TWITTERAPI_IO_API_KEY: z.string().optional(),

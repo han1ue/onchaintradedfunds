@@ -9,9 +9,20 @@ import { getXUserById, snapshotFromXUser } from "./x";
 
 const adapter = db ? DrizzleAdapter(db, { usersTable: users, accountsTable: accounts, sessionsTable: sessions, verificationTokensTable: verificationTokens }) : undefined;
 
+function authRedirectProxyUrl() {
+  if (env.AUTH_REDIRECT_PROXY_URL) return env.AUTH_REDIRECT_PROXY_URL;
+  if (process.env.VERCEL_ENV !== "preview") return undefined;
+
+  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (!productionHost) return undefined;
+
+  return `https://${productionHost}/api/auth`;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter,
   secret: env.AUTH_SECRET ?? (process.env.NODE_ENV !== "production" ? "otf-launch-local-development-secret" : undefined),
+  redirectProxyUrl: authRedirectProxyUrl(),
   trustHost: true,
   session: { strategy: adapter ? "database" : "jwt" },
   providers: [Twitter({

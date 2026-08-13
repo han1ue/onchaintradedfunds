@@ -4,12 +4,12 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
-import { getCompetition, getLeaderboard } from "@/server/data";
+import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
 export default async function HomePage() {
-  const [competition, leaderboard, session] = await Promise.all([getCompetition(), getLeaderboard(), auth()]);
+  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
@@ -21,6 +21,7 @@ export default async function HomePage() {
       <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} />
       <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} />
       <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} />
+      <MetricCard label="Supported RWAs" value={assets.length.toLocaleString()} href="/rwas" />
     </div>
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>
