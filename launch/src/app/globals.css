@@ -224,9 +224,8 @@ button { color: inherit; }
 .eligibilityRequirements > div > svg { margin-top: 2px; color: var(--text-muted); }
 .eligibilityRequirements > div[data-state="met"] > svg { color: var(--green); }
 .eligibilityRequirements > div[data-state="failed"] > svg { color: var(--danger); }
-.eligibilityRequirements strong, .eligibilityRequirements small { display: block; }
+.eligibilityRequirements strong { display: block; }
 .eligibilityRequirements strong { font-size: .78rem; }
-.eligibilityRequirements small { margin-top: 4px; color: var(--text-muted); font-size: .68rem; line-height: 1.45; }
 .eligibilityDialogActions { display: flex; gap: 8px; }
 .eligibilityDialogActions .buttonPrimary { flex: 1; }
 .eligibilityDialogMessage { margin-top: 12px !important; color: var(--danger) !important; }
@@ -275,6 +274,7 @@ button { color: inherit; }
 .pageHeader p { max-width: 680px; margin: 10px 0 0; color: var(--text-muted); line-height: 1.55; }
 .contentCard { padding: 22px; }
 .contentCard h2 { margin: 0 0 12px; font-size: 1rem; }
+.contentCard h2[id] { scroll-margin-top: 76px; }
 .contentCard h2:not(:first-child) { margin-top: 26px; }
 .contentCard p, .contentCard li { color: var(--text-soft); font-size: .82rem; line-height: 1.65; }
 .contentCard ul, .contentCard ol { padding-left: 20px; }
@@ -394,9 +394,9 @@ button { color: inherit; }
 .accountFollowerCount.eligible svg { color: var(--green); }
 .accountFollowerCount.underMinimum svg { color: var(--danger); }
 .accountFollowerCount strong { color: var(--text); font-size: .82rem; }
-.accountVerificationStatus { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
-.accountVerificationStatus.verified { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); background: color-mix(in srgb, var(--green) 6%, transparent); }
-.accountVerificationStatus.unverified { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.accountVerificationStatus { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.accountVerificationStatus.verified svg { color: var(--green); }
+.accountVerificationStatus.unverified svg { color: var(--danger); }
 .disconnectButton { min-height: 30px; padding: 0 10px; }
 .accountMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
 .accountMetrics > section { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 16px; }

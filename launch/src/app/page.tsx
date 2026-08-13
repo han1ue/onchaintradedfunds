@@ -26,7 +26,7 @@ export default async function HomePage() {
       <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} />
     </div>
     <div className="boardGrid">
-      <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>
+      <SectionCard className="leaderboardCard"><div className="cardHeading"><span>Live leaderboard</span><BadgeCheck size={18} /></div>
         <ResponsiveLeaderboard entries={leaderboardPreview} final={competition.phase === "final"} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>

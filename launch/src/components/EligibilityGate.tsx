@@ -60,9 +60,9 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
       <h2 id="eligibility-title">{title}</h2>
       <p>To submit or vote, connect an X account that currently meets every requirement.</p>
       <div className="eligibilityRequirements">
-        <div data-state={requirementState(accountRequirement)}><BadgeCheck size={17} /><span><strong>Verified and public</strong><small>{eligibility.connected ? (accountRequirement ? "This account meets this requirement" : "This account does not meet this requirement") : "Required for every participant"}</small></span></div>
-        <div data-state={requirementState(followerRequirement)}><Users size={17} /><span><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong><small>{eligibility.followersCount === null ? "Checked when the account connects" : `This account has ${eligibility.followersCount.toLocaleString()} followers`}</small></span></div>
-        <div data-state={requirementState(eligibility.oldEnough)}><BadgeCheck size={17} /><span><strong>At least {eligibility.minAccountAgeDays} days old</strong><small>{eligibility.connected && eligibility.oldEnough === false ? "This account is too new" : "Protects the competition from newly created accounts"}</small></span></div>
+        <div data-state={requirementState(accountRequirement)}><BadgeCheck size={17} /><strong>Verified and public</strong></div>
+        <div data-state={requirementState(followerRequirement)}><Users size={17} /><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong></div>
+        <div data-state={requirementState(eligibility.oldEnough)}><BadgeCheck size={17} /><strong>At least {eligibility.minAccountAgeDays} days old</strong></div>
       </div>
       <div className="eligibilityDialogActions">
         <button className="button buttonPrimary" type="button" onClick={connectEligibleAccount} disabled={switching}>{switching ? "Opening X…" : eligibility.connected ? "Use another X account" : "Sign in with X"}</button>
