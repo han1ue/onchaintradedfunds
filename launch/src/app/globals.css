@@ -107,6 +107,8 @@ button { color: inherit; }
 .statusBadge.positive::before { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 10%, transparent); }
 .statusBadge.warning { color: var(--gold); }
 .statusBadge.danger { color: var(--danger); }
+.rwasCountPill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 9px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.rwasCountPill:hover { border-color: color-mix(in srgb, var(--teal) 45%, var(--border)); background: color-mix(in srgb, var(--teal) 7%, transparent); color: var(--teal); }
 .statusBadgeLink { transition: border-color .15s ease, color .15s ease, background .15s ease; }
 .statusBadgeLink:hover { border-color: color-mix(in srgb, var(--teal) 45%, var(--border)); background: color-mix(in srgb, var(--teal) 7%, transparent); color: var(--teal); }
 

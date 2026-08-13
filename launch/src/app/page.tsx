@@ -17,7 +17,7 @@ export default async function HomePage() {
   const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
-      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge><StatusBadge href="/rwas">{launchAssets.length.toLocaleString()} supported RWAs</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
+      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge><Link href="/rwas" className="rwasCountPill">{launchAssets.length.toLocaleString()} supported RWAs</Link>{preview && <span>Preview data · not final</span>}</div></div>
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">
@@ -38,3 +38,4 @@ export default async function HomePage() {
     </div>
   </div>;
 }
+
