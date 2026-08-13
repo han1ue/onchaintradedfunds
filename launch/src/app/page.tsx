@@ -14,14 +14,13 @@ export default async function HomePage() {
   const leaderboardPreview = leaderboard.slice(0, 5);
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
-      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
+      <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge><StatusBadge href="/rwas">{assets.length.toLocaleString()} supported RWAs</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">
       <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} />
       <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} />
       <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} />
-      <MetricCard label="Supported RWAs" value={assets.length.toLocaleString()} href="/rwas" />
     </div>
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><div><span>Live leaderboard</span><small>Final rank becomes launch order</small></div><BadgeCheck size={18} /></div>

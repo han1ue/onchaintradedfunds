@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLink, Send, Vote } from "lucide-react";
+import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { errorMessages } from "@/lib/errors";
 import { buildVotePost } from "@/lib/x-post";
@@ -24,7 +25,7 @@ export function VotePanel({ proposal, connected, turnstileSiteKey, siteUrl }: { 
 
   async function request(action: "prepare" | "verify") {
     if (!connected) {
-      window.location.href = "/api/auth/signin?callbackUrl=" + encodeURIComponent(window.location.pathname);
+      await signIn("twitter", { redirectTo: window.location.pathname });
       return;
     }
     setBusy(true);

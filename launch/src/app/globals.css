@@ -97,7 +97,7 @@ button { color: inherit; }
 .heroDeadline strong { font-size: .94rem; }
 .compactHero { align-items: center; margin-bottom: 18px; }
 .compactHero h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
-.competitionStatus { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--text-muted); font-size: .72rem; }
+.competitionStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; color: var(--text-muted); font-size: .72rem; }
 .compactHero .heroDeadline { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 
 .statusBadge { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
@@ -106,8 +106,10 @@ button { color: inherit; }
 .statusBadge.positive::before { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 10%, transparent); }
 .statusBadge.warning { color: var(--gold); }
 .statusBadge.danger { color: var(--danger); }
+.statusBadgeLink { transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.statusBadgeLink:hover { border-color: color-mix(in srgb, var(--teal) 45%, var(--border)); background: color-mix(in srgb, var(--teal) 7%, transparent); color: var(--teal); }
 
-.metricsGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+.metricsGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
 .metricCard, .sectionCard { border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--card) 96%, transparent); }
 .metricCard { min-height: 104px; display: flex; flex-direction: column; justify-content: center; padding: 16px 18px; }
 .metricCard span { color: var(--text-muted); font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }

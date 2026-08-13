@@ -6,8 +6,9 @@ export function SectionCard({ className = "", ...props }: HTMLAttributes<HTMLEle
   return <section className={`sectionCard ${className}`} {...props} />;
 }
 
-export function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "positive" | "warning" | "danger" }) {
-  return <span className={`statusBadge ${tone}`}>{children}</span>;
+export function StatusBadge({ children, tone = "neutral", href }: { children: ReactNode; tone?: "neutral" | "positive" | "warning" | "danger"; href?: string }) {
+  const classes = `statusBadge ${tone}${href ? " statusBadgeLink" : ""}`;
+  return href ? <Link className={classes} href={href}>{children}</Link> : <span className={classes}>{children}</span>;
 }
 
 export function Button({ href, children, variant = "primary", className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { href?: string; variant?: "primary" | "secondary" | "ghost" }) {

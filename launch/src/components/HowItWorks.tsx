@@ -1,5 +1,6 @@
 import { BadgeCheck, PenLine, ShieldCheck } from "lucide-react";
 import { Button, SectionCard } from "./ui";
+import { XSignInButton } from "./XSignInButton";
 
 export function HowItWorks({ connected = false }: { connected?: boolean }) {
   const steps = [
@@ -9,7 +10,7 @@ export function HowItWorks({ connected = false }: { connected?: boolean }) {
   ];
   return <SectionCard className="howCard"><div className="cardHeading"><span>How it works</span><small>Verified actions only</small></div>
     <ol className="steps">{steps.map(({ icon: Icon, title, text }, index) => <li key={title}><div className="stepIcon"><Icon size={20} /></div><span className="stepNumber">{index + 1}</span><div><strong>{title}</strong><p>{text}</p></div></li>)}</ol>
-    <Button href={connected ? "/submit" : "/api/auth/signin?callbackUrl=%2F"}>{connected ? "Submit OTF" : "Sign in with X to get started"}</Button>
+    {connected ? <Button href="/submit">Submit OTF</Button> : <XSignInButton>Sign in with X to get started</XSignInButton>}
     <p className="finePrint">We never post without your permission.</p>
   </SectionCard>;
 }
