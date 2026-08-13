@@ -6,9 +6,8 @@ const schema = z.object({
   NEXT_PUBLIC_SITE_URL: optionalUrl.default("http://localhost:3001"),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
   AUTH_SECRET: z.string().min(32).optional(),
-  AUTH_REDIRECT_PROXY_URL: optionalUrl,
-  AUTH_X_ID: z.string().optional(),
-  AUTH_X_SECRET: z.string().optional(),
+  AUTH_X_CONSUMER_KEY: z.string().optional(),
+  AUTH_X_CONSUMER_SECRET: z.string().optional(),
   TWITTERAPI_IO_API_KEY: z.string().optional(),
   DATABASE_URL: optionalUrl,
   REDIS_URL: z.string().regex(/^rediss?:\/\//).optional().or(z.literal("")),
@@ -24,5 +23,5 @@ const schema = z.object({
 
 export const env = schema.parse(process.env);
 export const isDatabaseConfigured = Boolean(env.DATABASE_URL);
-export const isXConfigured = Boolean(env.AUTH_X_ID && env.AUTH_X_SECRET);
+export const isXConfigured = Boolean(env.AUTH_X_CONSUMER_KEY && env.AUTH_X_CONSUMER_SECRET && env.TWITTERAPI_IO_API_KEY);
 export const adminXIds = new Set((env.ADMIN_X_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));

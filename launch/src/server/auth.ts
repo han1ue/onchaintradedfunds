@@ -1,46 +1,19 @@
 import NextAuth from "next-auth";
-import Twitter from "next-auth/providers/twitter";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { accounts, sessions, users, verificationTokens, xIdentitySnapshots } from "./db/schema";
+import { accounts, sessions, users, verificationTokens } from "./db/schema";
 import { env } from "./env";
-import { getXUserById, snapshotFromXUser } from "./x";
 
 const adapter = db ? DrizzleAdapter(db, { usersTable: users, accountsTable: accounts, sessionsTable: sessions, verificationTokensTable: verificationTokens }) : undefined;
 
-function authRedirectProxyUrl() {
-  if (env.AUTH_REDIRECT_PROXY_URL) return env.AUTH_REDIRECT_PROXY_URL;
-  if (process.env.VERCEL_ENV !== "preview") return undefined;
-
-  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (!productionHost) return undefined;
-
-  return `https://${productionHost}/api/auth`;
-}
-
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signOut } = NextAuth({
   adapter,
   secret: env.AUTH_SECRET ?? (process.env.NODE_ENV !== "production" ? "otf-launch-local-development-secret" : undefined),
-  redirectProxyUrl: authRedirectProxyUrl(),
   trustHost: true,
   session: { strategy: adapter ? "database" : "jwt" },
-  providers: [Twitter({
-    clientId: env.AUTH_X_ID ?? "not-configured",
-    clientSecret: env.AUTH_X_SECRET ?? "not-configured",
-    authorization: {
-      url: "https://x.com/i/oauth2/authorize",
-      params: { scope: "tweet.read users.read" }
-    }
-  })],
+  providers: [],
   callbacks: {
-    async jwt({ token, account, profile }) {
-      if (account?.provider === "twitter") {
-        token.xUserId = account.providerAccountId;
-        token.xUsername = typeof profile?.data === "object" && profile.data && "username" in profile.data ? String(profile.data.username) : undefined;
-      }
-      return token;
-    },
     async session({ session, user, token }) {
       session.user.id = user?.id ?? String(token.sub ?? "");
       if (db && user?.id) {
@@ -52,46 +25,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.xUsername = typeof token.xUsername === "string" ? token.xUsername : null;
       }
       return session;
-    }
-  },
-  events: {
-    async signIn({ user, account }) {
-      if (!db || account?.provider !== "twitter" || !user.id) return;
-      const [existingSnapshot] = await db.select({ username: xIdentitySnapshots.username })
-        .from(xIdentitySnapshots)
-        .where(and(eq(xIdentitySnapshots.userId, user.id), eq(xIdentitySnapshots.xUserId, account.providerAccountId)))
-        .limit(1);
-
-      if (existingSnapshot) {
-        await db.transaction(async (transaction) => {
-          await transaction.update(users).set({
-            xUserId: account.providerAccountId,
-            xUsername: existingSnapshot.username,
-            updatedAt: new Date()
-          }).where(eq(users.id, user.id!));
-          await transaction.update(accounts).set({
-            access_token: null,
-            refresh_token: null,
-            expires_at: null,
-            scope: account.scope,
-            token_type: account.token_type
-          }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));
-        });
-        return;
-      }
-
-      const profile = await getXUserById(account.providerAccountId);
-      await db.transaction(async (transaction) => {
-        await transaction.update(users).set({ xUserId: profile.id, xUsername: profile.username, updatedAt: new Date() }).where(eq(users.id, user.id!));
-        await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(user.id!, profile));
-        await transaction.update(accounts).set({
-          access_token: null,
-          refresh_token: null,
-          expires_at: null,
-          scope: account.scope,
-          token_type: account.token_type
-        }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, account.providerAccountId)));
-      });
     }
   }
 });

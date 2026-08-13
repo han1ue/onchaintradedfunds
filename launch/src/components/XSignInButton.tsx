@@ -1,7 +1,5 @@
-"use client";
-
 import type { ReactNode } from "react";
-import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { XMark } from "./XMark";
 
 export function XSignInButton({
@@ -17,12 +15,12 @@ export function XSignInButton({
   className?: string;
   showMark?: boolean;
 }) {
-  return <button
-    type="button"
+  const href = `/api/auth/x?callbackUrl=${encodeURIComponent(redirectTo)}`;
+  return <Link
+    href={href}
     className={`button button${variant[0].toUpperCase()}${variant.slice(1)} ${className}`}
-    onClick={() => void signIn("twitter", { redirectTo })}
   >
     {showMark ? <XMark /> : null}
     {children}
-  </button>;
+  </Link>;
 }

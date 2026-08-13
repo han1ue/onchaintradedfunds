@@ -1,7 +1,6 @@
 "use client";
 
 import { Check, ExternalLink, Plus, Send, Trash2 } from "lucide-react";
-import { signIn } from "next-auth/react";
 import { useMemo, useState } from "react";
 import type { CompetitionSummary, EligibleAsset } from "@/lib/types";
 import { errorMessages } from "@/lib/errors";
@@ -40,7 +39,7 @@ export function SubmitWizard({ competition, assets, connected, turnstileSiteKey,
 
   async function postSubmission() {
     if (!connected) {
-      await signIn("twitter", { redirectTo: "/submit" });
+      window.location.href = "/api/auth/x?callbackUrl=%2Fsubmit";
       return;
     }
     setBusy(true);
