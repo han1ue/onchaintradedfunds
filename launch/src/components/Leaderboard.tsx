@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BadgeCheck, ChevronRight } from "lucide-react";
+import { BadgeCheck, ChevronRight, Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/lib/types";
 import { AllocationStrip } from "./AllocationStrip";
 import { ProposalMark } from "./BrandMark";
@@ -15,6 +15,12 @@ function RankEmblem({ rank }: { rank: number }) {
 }
 
 export function ResponsiveLeaderboard({ entries, final = false }: { entries: LeaderboardEntry[]; final?: boolean }) {
+  if (!entries.length) return <div className="leaderboardEmpty">
+    <Trophy size={24} aria-hidden="true" />
+    <div><strong>No OTFs yet</strong><p>Submit the first OTF to start the leaderboard.</p></div>
+    <Link className="button buttonPrimary" href="/submit">Submit an OTF</Link>
+  </div>;
+
   return <div className="leaderboard">
     <div className="leaderboardHeader"><span>Rank</span><span>OTF identity & thesis</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Verified votes"}</span></div>
     {entries.map((entry) => <article className="leaderboardRow" key={entry.id}>
