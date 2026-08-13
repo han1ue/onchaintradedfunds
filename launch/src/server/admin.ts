@@ -41,7 +41,7 @@ export async function createCompetition(input: { slug: string; name: string; sta
   const startsAt = input.startsAt ? new Date(input.startsAt) : new Date();
   const endsAt = input.endsAt ? new Date(input.endsAt) : defaultCompetitionEnd(startsAt);
   if (!/^[a-z0-9-]{2,40}$/.test(input.slug) || input.name.trim().length < 3 || !Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) throw new Error("INVALID_COMPETITION");
-  const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 50, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
+  const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 100, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: "competition.create", targetType: "competition", targetId: competition.id, reason: "Create competition with frozen V1 defaults", after: competition });
   return competition;
 }

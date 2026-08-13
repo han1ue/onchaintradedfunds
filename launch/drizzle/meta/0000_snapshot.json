@@ -684,7 +684,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 50
+          "default": 100
         },
         "min_account_age_days": {
           "name": "min_account_age_days",

@@ -113,7 +113,7 @@ export const competitions = pgTable("competitions", {
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   launchStartAt: timestamp("launch_start_at", { withTimezone: true }),
   launchIntervalDays: integer("launch_interval_days").default(4).notNull(),
-  minFollowers: integer("min_followers").default(50).notNull(),
+  minFollowers: integer("min_followers").default(100).notNull(),
   minAccountAgeDays: integer("min_account_age_days").default(30).notNull(),
   minAssets: integer("min_assets").default(2).notNull(),
   minAssetWeightBps: integer("min_asset_weight_bps").default(100).notNull(),

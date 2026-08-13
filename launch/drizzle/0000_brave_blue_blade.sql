@@ -85,7 +85,7 @@ CREATE TABLE "competitions" (
 	"ends_at" timestamp with time zone NOT NULL,
 	"launch_start_at" timestamp with time zone,
 	"launch_interval_days" integer DEFAULT 4 NOT NULL,
-	"min_followers" integer DEFAULT 50 NOT NULL,
+	"min_followers" integer DEFAULT 100 NOT NULL,
 	"min_account_age_days" integer DEFAULT 30 NOT NULL,
 	"min_assets" integer DEFAULT 2 NOT NULL,
 	"min_asset_weight_bps" integer DEFAULT 100 NOT NULL,
@@ -388,7 +388,7 @@ INSERT INTO "competitions" (
 	'open',
 	CURRENT_TIMESTAMP,
 	date_trunc('day', CURRENT_TIMESTAMP + interval '60 days'),
-	50,
+	100,
 	30,
 	CURRENT_TIMESTAMP
 ) ON CONFLICT ("slug") DO NOTHING;

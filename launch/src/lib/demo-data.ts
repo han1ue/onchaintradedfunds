@@ -39,6 +39,6 @@ export const demoLeaderboard: LeaderboardEntry[] = [
 
 export const demoCompetition: CompetitionSummary = {
   id: "preview-competition", slug: "genesis", name: "Genesis Competition", phase: "open",
-  startsAt: "2026-07-15T12:00:00Z", endsAt: "2026-08-31T20:00:00Z", minFollowers: 50, minAccountAgeDays: 30,
+  startsAt: "2026-07-15T12:00:00Z", endsAt: "2026-08-31T20:00:00Z", minFollowers: 100, minAccountAgeDays: 30,
   proposalCount: demoLeaderboard.length, verifiedVoteCount: demoLeaderboard.reduce((sum, row) => sum + row.votes, 0), uniqueVoterCount: 2_916
 };
