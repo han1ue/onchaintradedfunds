@@ -6,6 +6,14 @@ import { getXUserById, userIdentityFromXUser } from "./x";
 import { openXOAuthState, sealXOAuthState, xOAuthStateTtlMs } from "./x-oauth1";
 
 const oauthStateIdentifier = (requestToken: string) => `x-oauth1:${requestToken}`;
+type StoredXUser = { id: string; xUsername: string };
+type XProfileFetcher = typeof getXUserById;
+
+export async function resolveXUserForSignIn(existingUser: StoredXUser | undefined, xUserId: string, fetchProfile: XProfileFetcher = getXUserById) {
+  if (existingUser) return { kind: "existing" as const, userId: existingUser.id, username: existingUser.xUsername };
+  const fetchedProfile = await fetchProfile(xUserId);
+  return { kind: "new" as const, identity: userIdentityFromXUser(fetchedProfile.profile, fetchedProfile.providerProfile) };
+}
 
 export async function storeXOAuthState(requestToken: string, requestTokenSecret: string, callbackPath: string) {
   const database = requireDb();
@@ -30,21 +38,14 @@ export async function findOrCreateXUser(xUserId: string) {
   const database = requireDb();
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${xUserId}))`);
-    const fetchedProfile = await getXUserById(xUserId);
-    const identity = userIdentityFromXUser(fetchedProfile.profile, fetchedProfile.providerProfile);
-    const [existingUser] = await transaction.select({ id: users.id }).from(users)
+    const [existingUser] = await transaction.select({ id: users.id, xUsername: users.xUsername }).from(users)
       .where(eq(users.xUserId, xUserId))
       .limit(1);
-    let userId = existingUser?.id;
-    if (userId) {
-      await transaction.update(users).set(identity).where(eq(users.id, userId));
-    } else {
-      const [createdUser] = await transaction.insert(users).values({
-        ...identity,
-      }).returning({ id: users.id });
-      userId = createdUser.id;
-    }
-    return { userId, username: identity.xUsername };
+    // Cost invariant: the paid profile API is creation-only. Never fetch before this existing-user check.
+    const resolved = await resolveXUserForSignIn(existingUser, xUserId);
+    if (resolved.kind === "existing") return { userId: resolved.userId, username: resolved.username };
+    const [createdUser] = await transaction.insert(users).values(resolved.identity).returning({ id: users.id });
+    return { userId: createdUser.id, username: resolved.identity.xUsername };
   });
 }
 
