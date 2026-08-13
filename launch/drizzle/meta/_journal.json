@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786573715718,
-      "tag": "0000_last_frank_castle",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1786580619084,
-      "tag": "0001_empty_the_hunter",
+      "when": 1786580937433,
+      "tag": "0000_modern_cannonball",
       "breakpoints": true
     }
   ]

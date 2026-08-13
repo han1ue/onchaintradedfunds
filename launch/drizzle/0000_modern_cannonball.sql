@@ -85,7 +85,7 @@ CREATE TABLE "competitions" (
 	"ends_at" timestamp with time zone NOT NULL,
 	"launch_start_at" timestamp with time zone,
 	"launch_interval_days" integer DEFAULT 4 NOT NULL,
-	"min_followers" integer DEFAULT 100 NOT NULL,
+	"min_followers" integer DEFAULT 50 NOT NULL,
 	"min_account_age_days" integer DEFAULT 30 NOT NULL,
 	"min_assets" integer DEFAULT 2 NOT NULL,
 	"min_asset_weight_bps" integer DEFAULT 100 NOT NULL,
@@ -261,6 +261,22 @@ CREATE TABLE "votes" (
 	CONSTRAINT "votes_evidence_id_unique" UNIQUE("evidence_id")
 );
 --> statement-breakpoint
+CREATE TABLE "x_action_challenges" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"action" "evidence_action" NOT NULL,
+	"competition_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
+	"proposal_id" uuid NOT NULL,
+	"identity_snapshot_id" uuid NOT NULL,
+	"token" text NOT NULL,
+	"reason" text NOT NULL,
+	"post_text" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"consumed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "x_action_challenges_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
 CREATE TABLE "x_identity_snapshots" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" text NOT NULL,
@@ -311,6 +327,10 @@ ALTER TABLE "votes" ADD CONSTRAINT "votes_proposal_id_proposals_id_fk" FOREIGN K
 ALTER TABLE "votes" ADD CONSTRAINT "votes_voter_user_id_users_id_fk" FOREIGN KEY ("voter_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_evidence_id_tweet_evidence_id_fk" FOREIGN KEY ("evidence_id") REFERENCES "public"."tweet_evidence"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_identity_snapshot_id_x_identity_snapshots_id_fk" FOREIGN KEY ("identity_snapshot_id") REFERENCES "public"."x_identity_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_identity_snapshot_id_x_identity_snapshots_id_fk" FOREIGN KEY ("identity_snapshot_id") REFERENCES "public"."x_identity_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_identity_snapshots" ADD CONSTRAINT "x_identity_snapshots_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "activity_actor_time_idx" ON "activity_events" USING btree ("actor_user_id","occurred_at");--> statement-breakpoint
 CREATE INDEX "asset_snapshot_latest_idx" ON "asset_eligibility_snapshots" USING btree ("asset_id","observed_at");--> statement-breakpoint
@@ -329,4 +349,5 @@ CREATE INDEX "tweet_evidence_competition_status_idx" ON "tweet_evidence" USING b
 CREATE UNIQUE INDEX "submission_evidence_once_uq" ON "tweet_evidence" USING btree ("proposal_id") WHERE "tweet_evidence"."action" = 'submission';--> statement-breakpoint
 CREATE UNIQUE INDEX "vote_once_per_otf_uq" ON "votes" USING btree ("competition_id","proposal_id","voter_user_id");--> statement-breakpoint
 CREATE INDEX "valid_votes_idx" ON "votes" USING btree ("proposal_id","status");--> statement-breakpoint
+CREATE INDEX "x_action_challenge_lookup_idx" ON "x_action_challenges" USING btree ("user_id","proposal_id","expires_at");--> statement-breakpoint
 CREATE INDEX "x_identity_user_observed_idx" ON "x_identity_snapshots" USING btree ("user_id","observed_at");
