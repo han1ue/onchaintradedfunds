@@ -1,24 +1,46 @@
 import { createHmac } from "node:crypto";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import { createClient } from "redis";
 import { env } from "./env";
 
-const redis = env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN
-  ? new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN }) : null;
+type LaunchRedisClient = ReturnType<typeof createClient>;
+const globalForRedis = globalThis as unknown as { launchRedis?: LaunchRedisClient; launchRedisPromise?: Promise<LaunchRedisClient> };
 
-const limiters = redis ? {
-  write: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(8, "10 m"), prefix: "otf-launch:write" }),
-  post: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(6, "10 m"), prefix: "otf-launch:post" })
-} : null;
+async function getRedis() {
+  if (!env.REDIS_URL) return null;
+  if (globalForRedis.launchRedis?.isReady) return globalForRedis.launchRedis;
+  if (!globalForRedis.launchRedisPromise) {
+    const client = createClient({ url: env.REDIS_URL });
+    client.on("error", () => undefined);
+    globalForRedis.launchRedisPromise = client.connect().then(() => {
+      globalForRedis.launchRedis = client;
+      return client;
+    }).catch((error) => {
+      globalForRedis.launchRedisPromise = undefined;
+      throw error;
+    });
+  }
+  return globalForRedis.launchRedisPromise;
+}
+
+const limits = { write: 8, post: 6 } as const;
+const windowSeconds = 10 * 60;
+const incrementWithExpiry = `
+  local count = redis.call('INCR', KEYS[1])
+  if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+  return count
+`;
 
 export async function enforceRateLimit(kind: "write" | "post", request: Request, actorId?: string) {
-  if (!limiters) return;
+  const redis = await getRedis().catch(() => { throw new Error("RATE_LIMIT_UNAVAILABLE"); });
+  if (!redis) return;
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const secret = env.IP_HASH_SECRET ?? env.AUTH_SECRET ?? "local-development-only";
-  const ipHash = createHmac("sha256", secret).update(`${new Date().toISOString().slice(0, 10)}:${forwarded}`).digest("hex");
-  const key = `${actorId ?? "anonymous"}:${ipHash}`;
-  const result = await limiters[kind].limit(key);
-  if (!result.success) throw new Error("RATE_LIMITED");
+  const day = new Date().toISOString().slice(0, 10);
+  const ipHash = createHmac("sha256", secret).update(`${day}:${forwarded}`).digest("hex");
+  const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
+  const key = `otf-launch:${kind}:${bucket}:${actorId ?? "anonymous"}:${ipHash}`;
+  const count = Number(await redis.eval(incrementWithExpiry, { keys: [key], arguments: [String(windowSeconds)] }).catch(() => { throw new Error("RATE_LIMIT_UNAVAILABLE"); }));
+  if (count > limits[kind]) throw new Error("RATE_LIMITED");
 }
 
 export async function verifyTurnstile(token: string | undefined, request: Request) {

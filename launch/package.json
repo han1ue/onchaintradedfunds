@@ -14,10 +14,8 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@onchaintradedfunds/brand": "workspace:*",
     "@auth/drizzle-adapter": "1.11.1",
-    "@upstash/ratelimit": "2.0.7",
-    "@upstash/redis": "1.35.3",
+    "@onchaintradedfunds/brand": "workspace:*",
     "drizzle-orm": "0.44.5",
     "lucide-react": "0.468.0",
     "next": "15.5.22",
@@ -25,6 +23,7 @@
     "postgres": "3.4.7",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "redis": "5.8.2",
     "viem": "2.33.3",
     "zod": "3.25.76"
   },

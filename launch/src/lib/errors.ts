@@ -10,6 +10,8 @@ export const errorMessages: Record<string, string> = {
   PROOF_MISMATCH: "Paste a valid public x.com post URL.",
   CHALLENGE_EXPIRED: "This verification code expired. Prepare a new X post and try again.",
   X_RATE_LIMITED: "X is temporarily rate limited. Please try again shortly.",
+  RATE_LIMITED: "Too many attempts. Please wait ten minutes and try again.",
+  RATE_LIMIT_UNAVAILABLE: "Request protection is temporarily unavailable. Please try again shortly.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
   DUPLICATE_VOTE: "You have already voted for this OTF.",
