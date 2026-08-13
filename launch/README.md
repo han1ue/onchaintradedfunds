@@ -14,11 +14,11 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 
 ## Production setup
 
-1. Create a launch-only Neon database and run `corepack pnpm --filter @onchaintradedfunds/launch db:migrate`.
+1. Create a launch-only Neon database and run `corepack pnpm --filter @onchaintradedfunds/launch db:migrate`. The baseline migration automatically creates the open `Genesis Competition` in the `competitions` table, starting at migration time and ending at 00:00 UTC about 60 days later.
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. Use the same `AUTH_SECRET` in Preview and Production. `ADMIN_X_IDS` contains immutable X IDs, not handles. `AUTH_X_CONSUMER_SECRET` and `TWITTERAPI_IO_API_KEY` remain server-only.
 3. Enable X OAuth 1.0a with read-only access and callback URL `/api/auth/x/callback`. The OAuth access-token exchange proves account ownership and returns the immutable X user ID without a paid profile read. TwitterAPI.io supplies one profile snapshot only when that X ID is absent from the database. Submissions and votes use free X intents plus oEmbed verification; the app never publishes posts through an API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
-5. After the production deployment, run the administrator asset reconciliation once, explicitly enable healthy pools, and create the competition after the rules are frozen. If dates are omitted, it opens immediately and closes about 60 days later at 00:00 UTC. Asset discovery is intentionally not scheduled as a recurring cron job.
+5. After the production deployment, run the administrator asset reconciliation once and explicitly enable healthy pools. Asset discovery is intentionally not scheduled as a recurring cron job.
 
 The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
 

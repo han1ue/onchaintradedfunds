@@ -372,4 +372,23 @@ CREATE UNIQUE INDEX "submission_evidence_once_uq" ON "tweet_evidence" USING btre
 CREATE UNIQUE INDEX "vote_once_per_otf_uq" ON "votes" USING btree ("competition_id","proposal_id","voter_user_id");--> statement-breakpoint
 CREATE INDEX "valid_votes_idx" ON "votes" USING btree ("proposal_id","status");--> statement-breakpoint
 CREATE INDEX "x_action_challenge_lookup_idx" ON "x_action_challenges" USING btree ("user_id","proposal_id","expires_at");--> statement-breakpoint
-CREATE INDEX "x_identity_user_observed_idx" ON "x_identity_snapshots" USING btree ("user_id","observed_at");
+CREATE INDEX "x_identity_user_observed_idx" ON "x_identity_snapshots" USING btree ("user_id","observed_at");--> statement-breakpoint
+INSERT INTO "competitions" (
+	"slug",
+	"name",
+	"phase",
+	"starts_at",
+	"ends_at",
+	"min_followers",
+	"min_account_age_days",
+	"rules_frozen_at"
+) VALUES (
+	'genesis',
+	'Genesis Competition',
+	'open',
+	CURRENT_TIMESTAMP,
+	date_trunc('day', CURRENT_TIMESTAMP + interval '60 days'),
+	50,
+	30,
+	CURRENT_TIMESTAMP
+) ON CONFLICT ("slug") DO NOTHING;
