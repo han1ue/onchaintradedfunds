@@ -9,7 +9,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const body = await request.json();
     const id = (await context.params).id;
     if (body.postUrl) return apiOk(await verifyProposalProof(id, body), { status: 201 });
-    await verifyTurnstile(body.turnstileToken, request);
+    await verifyTurnstile(body.turnstileToken, request, "submit_otf");
     return apiOk(await prepareProposalProof(id, body), { status: 201 });
   } catch (error) {
     return apiError(error);

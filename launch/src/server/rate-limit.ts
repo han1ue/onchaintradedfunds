@@ -49,15 +49,25 @@ export async function enforceRateLimit(kind: "write" | "post", request: Request,
   if (count > limits[kind]) throw new Error("RATE_LIMITED");
 }
 
-export async function verifyTurnstile(token: string | undefined, request: Request) {
+export async function verifyTurnstile(token: string | undefined, request: Request, expectedAction: "submit_otf" | "vote_otf") {
   if (!env.TURNSTILE_SECRET_KEY) return;
-  if (!token) throw new Error("TURNSTILE_REQUIRED");
-  const body = new FormData();
-  body.set("secret", env.TURNSTILE_SECRET_KEY);
-  body.set("response", token);
+  const expectedHostnames = new Set((env.TURNSTILE_HOSTNAMES ?? "").split(",").map((hostname) => hostname.trim()).filter(Boolean));
+  if (!token || token.length > 2_048) throw new Error("TURNSTILE_REQUIRED");
+  if (!expectedHostnames.size) throw new Error("TURNSTILE_FAILED");
+  const body = new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token });
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (ip) body.set("remoteip", ip);
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body });
-  const result = await response.json() as { success: boolean };
-  if (!result.success) throw new Error("TURNSTILE_FAILED");
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("TURNSTILE_FAILED");
+    const result = await response.json() as { success?: boolean; action?: string; hostname?: string };
+    if (!result.success || result.action !== expectedAction || !result.hostname || !expectedHostnames.has(result.hostname)) throw new Error("TURNSTILE_FAILED");
+  } catch {
+    throw new Error("TURNSTILE_FAILED");
+  }
 }

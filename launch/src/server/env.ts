@@ -11,6 +11,7 @@ const schema = z.object({
   DATABASE_URL: optionalUrl,
   REDIS_URL: z.string().regex(/^rediss?:\/\//).optional().or(z.literal("")),
   TURNSTILE_SECRET_KEY: z.string().optional(),
+  TURNSTILE_HOSTNAMES: z.string().optional(),
   CRON_SECRET: z.string().min(16).optional(),
   IP_HASH_SECRET: z.string().min(16).optional(),
   ADMIN_X_IDS: z.string().optional(),
