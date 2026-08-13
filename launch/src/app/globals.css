@@ -280,7 +280,7 @@ button { color: inherit; }
 .rwaDirectoryCount { flex: 0 0 auto; color: var(--text-muted); font-size: .74rem; }
 .rwaDirectoryCount strong { color: var(--text); font-size: 1rem; }
 .rwaDirectory { overflow: hidden; }
-.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(180px, .85fr) minmax(180px, .85fr) 90px; align-items: center; gap: 18px; }
+.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(260px, 1fr); align-items: center; gap: 18px; }
 .rwaDirectoryHeading { min-height: 38px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--card-raised); color: var(--text-muted); font-size: .63rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
 .rwaDirectoryRow { min-height: 76px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
 .rwaDirectoryRow:last-child { border-bottom: 0; }
@@ -290,9 +290,6 @@ button { color: inherit; }
 .rwaDirectoryIdentity strong { font-size: .82rem; }
 .rwaDirectoryIdentity small { margin-top: 4px; color: var(--text-muted); font-size: .69rem; }
 .rwaDirectoryAddress { min-width: 0; overflow: hidden; color: var(--text-soft); font-family: "SFMono-Regular", Consolas, monospace; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
-.rwaDirectoryFee { color: var(--text-soft); font-size: .72rem; }
-.rwaDirectoryStatus { display: inline-flex; align-items: center; justify-self: start; gap: 6px; color: var(--green); font-size: .69rem; font-weight: 650; }
-.rwaDirectoryStatus::before { width: 6px; height: 6px; border-radius: 50%; background: var(--green); content: ""; }
 .rwaDirectoryEmpty { display: grid; min-height: 180px; place-content: center; justify-items: center; padding: 30px 18px; text-align: center; }
 .rwaDirectoryEmpty strong { font-size: .9rem; }
 .rwaDirectoryEmpty p { max-width: 530px; margin: 7px 0 0; color: var(--text-muted); font-size: .74rem; line-height: 1.55; }
@@ -464,10 +461,8 @@ button { color: inherit; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
   .rwaDirectoryHeading { display: none; }
-  .rwaDirectoryRow { grid-template-columns: minmax(0, 1fr) auto; gap: 9px 14px; }
+  .rwaDirectoryRow { grid-template-columns: minmax(0, 1fr); gap: 9px; }
   .rwaDirectoryAddress { grid-column: 1 / -1; }
-  .rwaDirectoryFee { grid-column: 1; }
-  .rwaDirectoryStatus { grid-column: 2; grid-row: 1; }
 }
 
 @media (max-width: 560px) {

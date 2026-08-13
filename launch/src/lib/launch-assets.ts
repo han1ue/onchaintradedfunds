@@ -1,4 +1,10 @@
-export const launchAssets = [
+type LaunchAsset = {
+  symbol: string;
+  name: string;
+  contractAddress?: `0x${string}`;
+};
+
+export const launchAssets: readonly LaunchAsset[] = [
   { symbol: "AAPL", name: "Apple" },
   { symbol: "AMD", name: "Advanced Micro Devices" },
   { symbol: "AMZN", name: "Amazon" },
@@ -7,6 +13,7 @@ export const launchAssets = [
   { symbol: "COIN", name: "Coinbase" },
   { symbol: "COST", name: "Costco Wholesale" },
   { symbol: "CRCL", name: "Circle Internet Group" },
+  { symbol: "DELL", name: "Dell Technologies", contractAddress: "0x941AE714EC6D8130c7B75d67160Ca08f1e7d11Dd" },
   { symbol: "GME", name: "GameStop" },
   { symbol: "GOOGL", name: "Alphabet Class A" },
   { symbol: "INTC", name: "Intel" },
@@ -19,6 +26,7 @@ export const launchAssets = [
   { symbol: "PLTR", name: "Palantir Technologies" },
   { symbol: "QQQ", name: "Invesco QQQ Trust" },
   { symbol: "QUBT", name: "Quantum Computing Inc." },
+  { symbol: "RBLX", name: "Roblox", contractAddress: "0xF0C4BF4C582cb3836e98394b1d4e7B7281101bE8" },
   { symbol: "RDDT", name: "Reddit" },
   { symbol: "SGOV", name: "iShares 0–3 Month Treasury Bond ETF" },
   { symbol: "SLV", name: "iShares Silver Trust" },
