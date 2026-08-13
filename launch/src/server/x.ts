@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseXPostId } from "@/lib/validation";
+import { env } from "./env";
 
 export type XUser = {
   id: string;
@@ -26,37 +27,82 @@ export type XPost = {
 
 export type CreatedXPost = { id: string; text: string };
 
-async function xFetch<T>(path: string, accessToken: string): Promise<T> {
-  const response = await fetch(`https://api.x.com${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+type TwitterApiIoUser = {
+  id: string;
+  userName: string;
+  name: string;
+  isBlueVerified?: boolean;
+  verifiedType?: string;
+  profilePicture?: string;
+  followers: number;
+  following: number;
+  createdAt: string;
+  statusesCount: number;
+  protected?: boolean;
+  unavailable?: boolean;
+};
+
+type TwitterApiIoTweet = {
+  id: string;
+  url?: string;
+  text: string;
+  createdAt: string;
+  author: TwitterApiIoUser;
+  retweeted_tweet?: unknown;
+};
+
+async function twitterApiIoFetch<T>(path: string): Promise<T> {
+  if (!env.TWITTERAPI_IO_API_KEY) throw new Error("X_UNAVAILABLE");
+  const response = await fetch(`https://api.twitterapi.io${path}`, {
+    headers: { "x-api-key": env.TWITTERAPI_IO_API_KEY },
     cache: "no-store"
   });
   if (!response.ok) throw new Error(response.status === 429 ? "X_RATE_LIMITED" : response.status === 403 || response.status === 404 ? "X_NOT_FOUND" : "X_UNAVAILABLE");
   return response.json() as Promise<T>;
 }
 
-const userFields = "created_at,description,id,is_identity_verified,name,profile_image_url,protected,public_metrics,username,verified,verified_type";
-
-export async function getAuthenticatedXUser(accessToken: string) {
-  const result = await xFetch<{ data: XUser }>(`/2/users/me?user.fields=${userFields}`, accessToken);
-  return result.data;
+function mapTwitterApiIoUser(profile: TwitterApiIoUser): XUser {
+  const verifiedType = profile.verifiedType?.trim();
+  const verified = Boolean(profile.isBlueVerified || (verifiedType && verifiedType.toLowerCase() !== "none"));
+  return {
+    id: profile.id,
+    username: profile.userName,
+    name: profile.name,
+    created_at: profile.createdAt,
+    protected: Boolean(profile.protected || profile.unavailable),
+    verified,
+    verified_type: verifiedType,
+    profile_image_url: profile.profilePicture,
+    public_metrics: {
+      followers_count: profile.followers,
+      following_count: profile.following,
+      tweet_count: profile.statusesCount,
+      listed_count: 0,
+    },
+  };
 }
 
-function decodeHtml(value: string) {
-  return value.replace(/<[^>]*>/g, "").replace(/&#(x?[0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code.replace(/^x/i, ""), code[0]?.toLowerCase() === "x" ? 16 : 10)))
-    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+export async function getXUserById(xUserId: string) {
+  const query = new URLSearchParams({ userIds: xUserId });
+  const result = await twitterApiIoFetch<{ users?: TwitterApiIoUser[] }>(`/twitter/user/batch_info_by_ids?${query}`);
+  const profile = result.users?.find((user) => user.id === xUserId);
+  if (!profile) throw new Error("X_NOT_FOUND");
+  return mapTwitterApiIoUser(profile);
 }
 
-export async function getXOEmbed(postUrl: string) {
+export async function getXPost(postUrl: string) {
   const id = parseXPostId(postUrl);
-  const response = await fetch(`https://publish.x.com/oembed?omit_script=true&hide_thread=true&url=${encodeURIComponent(postUrl)}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("X_POST_NOT_FOUND");
-  const result = await response.json() as { author_url?: string; html?: string };
-  if (!result.author_url || !result.html) throw new Error("X_POST_NOT_FOUND");
-  const username = new URL(result.author_url).pathname.split("/").filter(Boolean)[0];
-  const paragraph = result.html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
-  if (!username || !paragraph) throw new Error("X_POST_NOT_FOUND");
-  return { id, username, text: decodeHtml(paragraph), postUrl: `https://x.com/${username}/status/${id}` };
+  const query = new URLSearchParams({ tweet_ids: id });
+  const result = await twitterApiIoFetch<{ tweets?: TwitterApiIoTweet[] }>(`/twitter/tweets?${query}`);
+  const post = result.tweets?.find((tweet) => tweet.id === id);
+  if (!post?.author?.userName || post.retweeted_tweet) throw new Error("X_POST_NOT_FOUND");
+  return {
+    id,
+    authorId: post.author.id,
+    username: post.author.userName,
+    text: post.text,
+    postUrl: `https://x.com/${post.author.userName}/status/${id}`,
+  };
 }
 
 export function hashXPostText(text: string) {

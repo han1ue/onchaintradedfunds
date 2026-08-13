@@ -9,7 +9,7 @@ import {
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
-import { getXOEmbed, hashXPostText } from "./x";
+import { getXPost, hashXPostText } from "./x";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -93,8 +93,8 @@ async function loadVerifiedProof(action: "submission" | "vote", proposalIdOrSlug
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
   const [snapshot] = await database.select().from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, challenge.identitySnapshotId)).limit(1);
   if (!snapshot) throw new Error("X_RECONNECT_REQUIRED");
-  const post = await getXOEmbed(parsed.postUrl);
-  if (post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
+  const post = await getXPost(parsed.postUrl);
+  if (post.authorId !== snapshot.xUserId || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
   return { database, session, competition, proposal, challenge, snapshot, post };
 }
@@ -119,14 +119,14 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
-      xPostId: post.id, xAuthorId: snapshot.xUserId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
+      xPostId: post.id, xAuthorId: post.authorId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
       evidenceHash: hashXPostText(post.text), status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt,
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
-    await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
+    await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "twitterapi-single-use-challenge" });
     const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
     if (!accepted) throw new Error("PROPOSAL_NOT_FOUND");
-    await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
+    await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "twitterapi-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
 }
@@ -145,16 +145,16 @@ export async function verifyVoteProof(proposalIdOrSlug: string, input: unknown) 
       if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
       const [evidence] = await transaction.insert(tweetEvidence).values({
         action: "vote", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id, identitySnapshotId: snapshot.id,
-        xPostId: post.id, xAuthorId: snapshot.xUserId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
+        xPostId: post.id, xAuthorId: post.authorId, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
         evidenceHash: hashXPostText(post.text), status: "valid", verifiedAt: acceptedAt, lastCheckedAt: acceptedAt,
         rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
       }).returning();
-      await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
+      await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "twitterapi-single-use-challenge" });
       const [vote] = await transaction.insert(votes).values({
         competitionId: competition.id, proposalId: proposal.id, voterUserId: session.user.id, evidenceId: evidence.id,
         identitySnapshotId: snapshot.id, followerCount: snapshot.followersCount, status: "valid", acceptedAt
       }).returning();
-      await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, voteId: vote.id, evidenceId: evidence.id, eventType: "vote.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { followers: vote.followerCount, xPostId: post.id, verifiedBy: "oembed-challenge" } });
+      await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, voteId: vote.id, evidenceId: evidence.id, eventType: "vote.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { followers: vote.followerCount, xPostId: post.id, verifiedBy: "twitterapi-challenge" } });
       return { action: "vote" as const, proposalId: proposal.id, postUrl: evidence.postUrl };
     });
   } catch (error) {

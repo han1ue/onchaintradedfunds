@@ -8,6 +8,7 @@ const schema = z.object({
   AUTH_SECRET: z.string().min(32).optional(),
   AUTH_X_ID: z.string().optional(),
   AUTH_X_SECRET: z.string().optional(),
+  TWITTERAPI_IO_API_KEY: z.string().optional(),
   DATABASE_URL: optionalUrl,
   REDIS_URL: z.string().regex(/^rediss?:\/\//).optional().or(z.literal("")),
   TURNSTILE_SECRET_KEY: z.string().optional(),

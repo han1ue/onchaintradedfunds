@@ -383,6 +383,11 @@ button { color: inherit; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 560px) {
+  .brandMarkLink { display: none; }
+  .launchLabel { display: none; }
+}
+
 @media (max-width: 440px) {
   .primaryNav a { padding: 0 7px; }
   .primaryNav .navSecondary { display: none; }

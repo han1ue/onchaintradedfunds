@@ -10,7 +10,7 @@ import {
   finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposalAssets, proposals,
   tweetEvidence, votes, xIdentitySnapshots
 } from "./db/schema";
-import { getXOEmbed, hashXPostText } from "./x";
+import { getXPost, hashXPostText } from "./x";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -64,9 +64,9 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
     .orderBy(tweetEvidence.id);
   for (const evidence of records) {
     try {
-      const post = await getXOEmbed(evidence.postUrl);
-      const [snapshot] = await database.select({ username: xIdentitySnapshots.username }).from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, evidence.identitySnapshotId)).limit(1);
-      if (!snapshot || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("X_POST_CHANGED");
+      const post = await getXPost(evidence.postUrl);
+      const [snapshot] = await database.select({ xUserId: xIdentitySnapshots.xUserId, username: xIdentitySnapshots.username }).from(xIdentitySnapshots).where(eq(xIdentitySnapshots.id, evidence.identitySnapshotId)).limit(1);
+      if (!snapshot || post.authorId !== snapshot.xUserId || post.username.toLowerCase() !== snapshot.username.toLowerCase()) throw new Error("X_POST_CHANGED");
       if (hashXPostText(post.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
       await database.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "evidence-recheck" });
       await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: [post.id] }).where(eq(tweetEvidence.id, evidence.id));
