@@ -10,7 +10,6 @@ export type XUser = {
   protected: boolean;
   verified: boolean;
   verified_type?: string;
-  is_identity_verified?: boolean;
   profile_image_url?: string;
   public_metrics: { followers_count: number; following_count: number; tweet_count: number; listed_count: number };
 };
@@ -28,18 +27,43 @@ export type XPost = {
 export type CreatedXPost = { id: string; text: string };
 
 type TwitterApiIoUser = {
+  type?: string;
   id: string;
   userName: string;
+  url?: string;
   name: string;
   isBlueVerified?: boolean;
   verifiedType?: string;
   profilePicture?: string;
+  coverPicture?: string;
+  description?: string;
+  location?: string;
   followers: number;
   following: number;
+  canDm?: boolean;
   createdAt: string;
+  favouritesCount?: number;
+  hasCustomTimelines?: boolean;
+  isTranslator?: boolean;
+  mediaCount?: number;
   statusesCount: number;
+  withheldInCountries?: string[];
+  affiliatesHighlightedLabel?: Record<string, unknown>;
+  possiblySensitive?: boolean;
+  pinnedTweetIds?: string[];
+  isAutomated?: boolean;
+  automatedBy?: string;
   protected?: boolean;
   unavailable?: boolean;
+  message?: string;
+  unavailableReason?: string;
+  profile_bio?: Record<string, unknown>;
+};
+
+type TwitterApiIoUserResponse = {
+  users?: TwitterApiIoUser[];
+  status?: string;
+  msg?: string;
 };
 
 async function twitterApiIoFetch<T>(path: string): Promise<T> {
@@ -75,10 +99,15 @@ function mapTwitterApiIoUser(profile: TwitterApiIoUser): XUser {
 
 export async function getXUserById(xUserId: string) {
   const query = new URLSearchParams({ userIds: xUserId });
-  const result = await twitterApiIoFetch<{ users?: TwitterApiIoUser[] }>(`/twitter/user/batch_info_by_ids?${query}`);
+  const result = await twitterApiIoFetch<TwitterApiIoUserResponse>(`/twitter/user/batch_info_by_ids?${query}`);
   const profile = result.users?.find((user) => user.id === xUserId);
   if (!profile) throw new Error("X_NOT_FOUND");
-  return mapTwitterApiIoUser(profile);
+  return {
+    profile: mapTwitterApiIoUser(profile),
+    providerProfile: profile,
+    responseStatus: result.status,
+    responseMessage: result.msg,
+  };
 }
 
 type XOEmbed = { html?: unknown; author_url?: unknown };
@@ -133,21 +162,48 @@ export function hashXPostText(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export function snapshotFromXUser(userId: string, profile: XUser) {
+export function snapshotFromXUser(
+  userId: string,
+  profile: XUser,
+  providerProfile: TwitterApiIoUser,
+  response: { status?: string; message?: string }
+) {
   return {
     userId,
+    providerType: providerProfile.type,
     xUserId: profile.id,
     username: profile.username,
     displayName: profile.name,
+    profileUrl: providerProfile.url,
     profileImageUrl: profile.profile_image_url,
+    coverImageUrl: providerProfile.coverPicture,
+    description: providerProfile.description,
+    location: providerProfile.location,
     accountCreatedAt: new Date(profile.created_at),
     protected: profile.protected,
     verified: profile.verified,
+    blueVerified: Boolean(providerProfile.isBlueVerified),
     verifiedType: profile.verified_type,
-    identityVerified: profile.is_identity_verified,
     followersCount: profile.public_metrics.followers_count,
     followingCount: profile.public_metrics.following_count,
+    canDm: providerProfile.canDm,
+    favouritesCount: providerProfile.favouritesCount,
+    hasCustomTimelines: providerProfile.hasCustomTimelines,
+    translator: providerProfile.isTranslator,
+    mediaCount: providerProfile.mediaCount,
     tweetCount: profile.public_metrics.tweet_count,
+    withheldInCountries: providerProfile.withheldInCountries ?? [],
+    affiliatesHighlightedLabel: providerProfile.affiliatesHighlightedLabel ?? {},
+    possiblySensitive: providerProfile.possiblySensitive,
+    pinnedTweetIds: providerProfile.pinnedTweetIds ?? [],
+    automated: providerProfile.isAutomated,
+    automatedBy: providerProfile.automatedBy,
+    unavailable: providerProfile.unavailable,
+    providerMessage: providerProfile.message,
+    unavailableReason: providerProfile.unavailableReason,
+    profileBio: providerProfile.profile_bio ?? {},
+    responseStatus: response.status,
+    responseMessage: response.message,
     observedAt: new Date()
   };
 }

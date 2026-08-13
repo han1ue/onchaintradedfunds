@@ -13,7 +13,7 @@ export type LeaderboardEntry = {
   name: string;
   ticker: string;
   thesis: string;
-  creator: { xId: string; username: string; displayName: string };
+  creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null };
   votes: number;
   acceptedAt: string;
   allocations: Allocation[];

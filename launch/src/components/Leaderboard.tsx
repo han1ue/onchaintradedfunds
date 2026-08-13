@@ -3,6 +3,7 @@ import { BadgeCheck, ChevronRight, Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/lib/types";
 import { AllocationStrip } from "./AllocationStrip";
 import { ProposalMark } from "./BrandMark";
+import { XProfileImage } from "./XProfileImage";
 
 function RankEmblem({ rank }: { rank: number }) {
   const podium = rank <= 3;
@@ -30,7 +31,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
         <div><Link href={`/otfs/${entry.slug}`}>{entry.name}<ChevronRight size={14} /></Link><p>{entry.thesis}</p></div>
       </div>
       <AllocationStrip allocations={entry.allocations} />
-      <div className="creator"><span>@{entry.creator.username}</span><BadgeCheck size={15} aria-label="Verified X creator" /></div>
+      <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck size={15} aria-label="Verified X creator" /></div>
       <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong><span>verified</span></div>
     </article>)}
   </div>;

@@ -42,7 +42,8 @@ export async function findOrCreateXUser(xUserId: string) {
       .where(eq(users.xUserId, xUserId))
       .limit(1);
 
-    const profile = existingSnapshot ? null : await getXUserById(xUserId);
+    const fetchedProfile = existingSnapshot ? null : await getXUserById(xUserId);
+    const profile = fetchedProfile?.profile;
     const username = existingSnapshot?.username ?? profile!.username;
     const displayName = existingSnapshot?.displayName ?? profile!.name;
     const image = existingSnapshot?.profileImageUrl ?? profile?.profile_image_url ?? null;
@@ -83,7 +84,14 @@ export async function findOrCreateXUser(xUserId: string) {
       }).where(and(eq(accounts.provider, "twitter"), eq(accounts.providerAccountId, xUserId)));
     }
 
-    if (profile) await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(userId, profile));
+    if (profile && fetchedProfile) {
+      await transaction.insert(xIdentitySnapshots).values(snapshotFromXUser(
+        userId,
+        profile,
+        fetchedProfile.providerProfile,
+        { status: fetchedProfile.responseStatus, message: fetchedProfile.responseMessage }
+      ));
+    }
     return { userId, username };
   });
 }

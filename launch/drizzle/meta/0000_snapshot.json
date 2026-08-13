@@ -1,5 +1,5 @@
 {
-  "id": "71859bb5-8551-4de1-b638-17ba073c3319",
+  "id": "52403ff7-3142-4761-bab0-072d74e3d355",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2516,6 +2516,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "provider_type": {
+          "name": "provider_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "x_user_id": {
           "name": "x_user_id",
           "type": "text",
@@ -2534,8 +2540,32 @@
           "primaryKey": false,
           "notNull": true
         },
+        "profile_url": {
+          "name": "profile_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "profile_image_url": {
           "name": "profile_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_image_url": {
+          "name": "cover_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location": {
+          "name": "location",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2558,15 +2588,15 @@
           "primaryKey": false,
           "notNull": true
         },
+        "blue_verified": {
+          "name": "blue_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
         "verified_type": {
           "name": "verified_type",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "identity_verified": {
-          "name": "identity_verified",
-          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },
@@ -2582,11 +2612,117 @@
           "primaryKey": false,
           "notNull": true
         },
+        "can_dm": {
+          "name": "can_dm",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "favourites_count": {
+          "name": "favourites_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_custom_timelines": {
+          "name": "has_custom_timelines",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "translator": {
+          "name": "translator",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "media_count": {
+          "name": "media_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "tweet_count": {
           "name": "tweet_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "withheld_in_countries": {
+          "name": "withheld_in_countries",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "affiliates_highlighted_label": {
+          "name": "affiliates_highlighted_label",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "possibly_sensitive": {
+          "name": "possibly_sensitive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pinned_tweet_ids": {
+          "name": "pinned_tweet_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "ARRAY[]::text[]"
+        },
+        "automated": {
+          "name": "automated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automated_by": {
+          "name": "automated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unavailable": {
+          "name": "unavailable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_message": {
+          "name": "provider_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unavailable_reason": {
+          "name": "unavailable_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profile_bio": {
+          "name": "profile_bio",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_message": {
+          "name": "response_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "observed_at": {
           "name": "observed_at",

@@ -41,6 +41,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
     with ranked as (
       select p.id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, coalesce(u.name, u.x_username) as creator_name,
+        coalesce((select xis.profile_image_url from x_identity_snapshots xis where xis.user_id = u.id order by xis.observed_at desc limit 1), u.image) as creator_profile_image_url,
         count(v.id) filter (where v.status = 'valid')::int as votes
       from proposals p join users u on u.id = p.creator_user_id
       left join votes v on v.proposal_id = p.id
@@ -52,7 +53,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
     select o.id::text, o.slug, o.rank, o.name, o.ticker, o.thesis, o.votes,
       o.accepted_at as "acceptedAt",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
-      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name) as creator,
+      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
       coalesce((select json_agg(json_build_object(
         'assetId', pa.asset_id::text, 'symbol', a.symbol, 'name', a.name, 'weightBps', pa.weight_bps
       ) order by pa.position) from proposal_assets pa join eligible_assets a on a.id = pa.asset_id where pa.proposal_id = o.id), '[]') as allocations

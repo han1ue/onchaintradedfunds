@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   transpilePackages: ["@onchaintradedfunds/brand"],
+  images: { remotePatterns: [{ protocol: "https", hostname: "pbs.twimg.com" }, { protocol: "https", hostname: "abs.twimg.com" }] },
   experimental: { optimizePackageImports: ["lucide-react"] },
   async headers() {
     return [{

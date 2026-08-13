@@ -163,9 +163,11 @@ button { color: inherit; }
 .allocationStrip { display: flex; width: 100%; height: 6px; overflow: hidden; border-radius: 4px; background: var(--muted); }
 .allocationStrip span { display: block; min-width: 2px; }
 .allocationLabels.percentages { margin: 5px 0 0; color: var(--text-muted); }
-.creator { min-width: 0; display: flex; align-items: center; gap: 4px; padding-right: 12px; color: var(--text-soft); font-size: .72rem; }
+.creator { min-width: 0; display: flex; align-items: center; gap: 7px; padding-right: 12px; color: var(--text-soft); font-size: .72rem; }
 .creator span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .creator svg { flex: 0 0 auto; color: var(--teal); }
+.xProfileImage { display: block; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--muted); }
+.xProfileImageFallback { display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 42%, var(--border)); color: var(--teal); font-size: .58rem; font-weight: 800; }
 .voteTotal { text-align: right; }
 .voteTotal strong { display: block; font-size: 1rem; letter-spacing: -.02em; }
 .voteTotal span { display: block; margin-top: 4px; color: var(--text-muted); font-size: .64rem; }
@@ -353,7 +355,7 @@ button { color: inherit; }
 .proposalMeta { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-muted); font-size: .72rem; }
 .creatorBlock { display: grid; justify-items: end; gap: 5px; }
 .creatorBlock > span { color: var(--text-muted); font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; }
-.creatorBlock strong { display: flex; align-items: center; gap: 5px; font-size: .8rem; }
+.creatorBlock strong { display: flex; align-items: center; gap: 7px; font-size: .8rem; }
 .creatorBlock svg { color: var(--teal); }
 .proposalGrid { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 12px; align-items: start; }
 .thesisLong { margin: 0; font-size: .92rem !important; line-height: 1.75 !important; }
