@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BadgeCheck, ShieldAlert, Users, X } from "lucide-react";
+import { BadgeCheck, ShieldAlert, Users, Watch, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ParticipationEligibility } from "@/lib/types";
 
@@ -62,7 +62,7 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
       <div className="eligibilityRequirements">
         <div data-state={requirementState(accountRequirement)}><BadgeCheck size={17} /><strong>Verified and public</strong></div>
         <div data-state={requirementState(followerRequirement)}><Users size={17} /><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong></div>
-        <div data-state={requirementState(eligibility.oldEnough)}><BadgeCheck size={17} /><strong>At least {eligibility.minAccountAgeDays} days old</strong></div>
+        <div data-state={requirementState(eligibility.oldEnough)}><Watch size={17} /><strong>At least {eligibility.minAccountAgeDays} days old</strong></div>
       </div>
       <div className="eligibilityDialogActions">
         <button className="button buttonPrimary" type="button" onClick={connectEligibleAccount} disabled={switching}>{switching ? "Opening X…" : eligibility.connected ? "Use another X account" : "Sign in with X"}</button>

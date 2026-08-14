@@ -107,8 +107,6 @@ button { color: inherit; }
 .statusBadge.positive::before { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 10%, transparent); }
 .statusBadge.warning { color: var(--gold); }
 .statusBadge.danger { color: var(--danger); }
-.rwasCountPill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 9px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); transition: border-color .15s ease, color .15s ease, background .15s ease; }
-.rwasCountPill:hover { border-color: color-mix(in srgb, var(--teal) 45%, var(--border)); background: color-mix(in srgb, var(--teal) 7%, transparent); color: var(--teal); }
 .statusBadgeLink { transition: border-color .15s ease, color .15s ease, background .15s ease; }
 .statusBadgeLink:hover { border-color: color-mix(in srgb, var(--teal) 45%, var(--border)); background: color-mix(in srgb, var(--teal) 7%, transparent); color: var(--teal); }
 
@@ -130,6 +128,7 @@ button { color: inherit; }
 .cardHeading > span, .cardHeading > div > span { display: block; font-size: .98rem; font-weight: 700; letter-spacing: -.015em; }
 .cardHeading small, .cardHeading > div > small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .71rem; font-weight: 450; }
 .cardHeading svg { color: var(--teal); }
+.leaderboardSubmitButton { min-height: 32px; height: 32px; padding: 0 12px; }
 .leaderboardHeader, .leaderboardRow { display: grid; grid-template-columns: 76px minmax(270px, 1.4fr) minmax(220px, .95fr) minmax(125px, .6fr) 110px; column-gap: 12px; align-items: center; }
 .leaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
 .leaderboardHeader span:first-child { text-align: left; }
@@ -146,9 +145,9 @@ button { color: inherit; }
 .leaderboardRow:last-child { border-bottom: 0; }
 .leaderboardRow:hover { background: rgb(var(--accent-rgb) / 2.5%); }
 .leaderboardRow:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
-.rank { position: relative; width: 100%; max-width: 72px; min-height: 42px; display: grid; place-items: center; justify-self: center; color: var(--text-muted); font-size: 1.05rem; text-align: center; }
+.rank { position: relative; width: 100%; max-width: 72px; min-height: 42px; display: grid; place-items: center start; justify-self: start; color: var(--text-muted); font-size: 1.05rem; text-align: left; }
 .rank > span { position: relative; z-index: 1; line-height: 1; }
-.rankWings { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transform: translateY(-3px); }
+.rankWings { position: absolute; top: 0; left: -17px; width: 58px; height: 100%; overflow: visible; transform: translateY(-3px); }
 .rankWings path { fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; opacity: .86; }
 .rank1 { color: var(--gold); font-weight: 800; }
 .rank2 { color: var(--text-soft); font-weight: 700; }
@@ -255,6 +254,10 @@ button { color: inherit; }
 .participationActivity > div { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border); color: var(--text-soft); font-size: .7rem; }
 .participationActivity > div:last-child { border-bottom: 0; }
 .participationActivity svg { color: var(--teal); }
+.activitySentence { display: flex; flex-wrap: wrap; gap: 3px 5px; line-height: 1.5; }
+.activitySentence > span { color: var(--text-muted); }
+.activitySentence a { color: var(--text-soft); font-weight: 650; transition: color .15s ease; }
+.activitySentence a:hover { color: var(--teal); }
 
 @keyframes row-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -351,10 +354,14 @@ button { color: inherit; }
 .xPostPreview p { margin: 0; padding: 13px 14px; color: var(--text-soft); font-size: .78rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xPostPreview.compact p { font-size: .72rem; }
 .evidencePanel { margin-top: 12px; }
-.xPostEmbed { min-width: 0; margin-top: 12px; overflow: hidden; }
+.xPostEmbed { min-width: 0; overflow: hidden; }
 .xPostEmbedBody { display: grid; justify-items: center; min-width: 0; }
 .xPostEmbedBody .twitter-tweet { width: 100% !important; margin: 0 !important; color: var(--text-soft); font-size: .78rem; line-height: 1.55; overflow-wrap: anywhere; }
 .xPostEmbedBody iframe { max-width: 100% !important; }
+.postAction { display: grid; gap: 7px; }
+.postAction > .button { width: 100%; }
+.postAssurance { margin: 0; color: var(--text-muted); font-size: .66rem; line-height: 1.4; text-align: center; }
+.wizardFooterAction { display: grid; justify-items: stretch; gap: 6px; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
 .turnstile { min-height: 65px; display: grid; align-items: center; overflow: hidden; }
 
@@ -549,11 +556,11 @@ button { color: inherit; }
 @media (max-width: 560px) {
   .brandMarkLink { display: none; }
   .launchLabel { display: none; }
+  .primaryNav .navSecondary { display: none; }
 }
 
 @media (max-width: 440px) {
   .primaryNav a { padding: 0 7px; }
-  .primaryNav .navSecondary { display: none; }
   .accountButton { max-width: 108px; }
   .competitionHero h1 br { display: none; }
   .metricsGrid { gap: 7px; }

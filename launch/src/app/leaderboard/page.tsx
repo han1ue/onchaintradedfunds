@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Clock3 } from "lucide-react";
+import { ArrowRight, Clock3 } from "lucide-react";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { SectionCard, StatusBadge } from "@/components/ui";
 import { getCompetition, getLeaderboard } from "@/server/data";
@@ -22,9 +22,9 @@ export default async function LeaderboardPage() {
       </div>
     </section>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
-      <div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div><BadgeCheck size={18} /></div>
+      <div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div><Link className="button buttonPrimary leaderboardSubmitButton" href="/submit">Submit OTF</Link></div>
       <ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} />
-      <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : "Rankings update when voters redistribute their 100 votes."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div>
+      <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : "Rankings update when voters distribute their 100 votes."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div>
     </SectionCard>
   </div>;
 }

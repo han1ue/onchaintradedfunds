@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema } from "./validation";
+import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
 const assetB = "22222222-2222-4222-8222-222222222222";
 const competitionId = "33333333-3333-4333-8333-333333333333";
 
 describe("proposal validation", () => {
+  it("normalizes ticker input before submission", () => {
+    expect(normalizeTickerInput(" aix  ")).toBe("AIX");
+    expect(normalizeTickerInput("ai/x-longer-than-sixteen-characters")).toBe("AIX-LONGER-THAN-");
+  });
   it("accepts exactly 10,000 basis points across distinct assets", () => {
     expect(proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).allocations).toHaveLength(2);
   });
