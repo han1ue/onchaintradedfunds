@@ -9,7 +9,7 @@ function proposalUrl(siteUrl: string, slug: string) {
 }
 
 export function buildSubmissionPost(reason: string, proposal: XPostProposal, siteUrl: string, challenge?: string) {
-  return `${reason}\n\nI submitted ${proposal.name} to OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
+  return `${reason}\n\nI submitted ${proposal.name} as an OTF proposal to OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
 }
 
 export function buildVotePost(reason: string, proposal: XPostProposal, siteUrl: string, challenge?: string) {

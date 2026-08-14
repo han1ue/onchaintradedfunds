@@ -128,7 +128,7 @@
       { "name": "The Tabular Evidence Rule", "body": "Votes, ranks, percentages, dates, and metrics use tabular numerals so comparison never shifts horizontally.", "section": "typography" },
       { "name": "The Restrained Hierarchy Rule", "body": "Only page identity earns large type. Operational cards and controls remain compact so data, not headings, dominates the viewport.", "section": "typography" },
       { "name": "The Twelve-Pixel Grid Rule", "body": "Sibling cards and primary panel divisions use the recurring 12px gap unless a component's internal rhythm requires a tighter control-scale gap.", "section": "layout" },
-      { "name": "The Evidence-Preserving Collapse Rule", "body": "Responsive layouts may remove repeated labels and lower-priority creator metadata, but they retain proposal identity, rank, vote total, and allocation shape.", "section": "layout" },
+      { "name": "The Evidence-Preserving Collapse Rule", "body": "Responsive layouts remove portfolio comparison before creator metadata, then retain OTF identity, rank, and vote total through every narrower collapse.", "section": "layout" },
       { "name": "The Border Carries Depth Rule", "body": "Prefer border and tonal contrast for hierarchy. Do not add card shadows to create depth the neutral ladder already provides.", "section": "elevation" },
       { "name": "The State-Only Halo Rule", "body": "Glow is permitted only for focus visibility or a small live-status indicator, never as ambient decoration.", "section": "elevation" },
       { "name": "The Tight Corner Rule", "body": "Operational surfaces stay within the 4px-to-8px radius family; pill geometry belongs to compact state badges only.", "section": "shapes" }
@@ -137,7 +137,7 @@
       "Do use bordered tonal layers and the recurring 12px grid to organize dense operational content.",
       "Do keep action, verification, and focus in teal while reserving status hues for their literal semantic state.",
       "Do preserve tabular numerals, right-aligned totals, and explicit percentage detail where comparison requires precision.",
-      "Do retain rank, proposal identity, vote total, and allocation shape through every responsive collapse.",
+      "Do remove portfolio comparison before creator metadata, then retain rank, OTF identity, and vote total through every narrower collapse.",
       "Do honor reduced-motion preference by removing nonessential animation and transition."
     ],
     "donts": [

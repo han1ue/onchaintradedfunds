@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { BadgeCheck, ChevronRight, Trophy } from "lucide-react";
+import { OtfTokenIcon } from "@onchaintradedfunds/brand";
+import { BadgeCheck, Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/lib/types";
 import { AllocationStrip } from "./AllocationStrip";
-import { ProposalMark } from "./BrandMark";
 import { XProfileImage } from "./XProfileImage";
 
 function RankEmblem({ rank }: { rank: number }) {
@@ -18,21 +18,21 @@ function RankEmblem({ rank }: { rank: number }) {
 export function ResponsiveLeaderboard({ entries, final = false }: { entries: LeaderboardEntry[]; final?: boolean }) {
   if (!entries.length) return <div className="leaderboardEmpty">
     <Trophy size={24} aria-hidden="true" />
-    <div><strong>No OTFs yet</strong><p>Submit the first OTF to start the leaderboard.</p></div>
-    <Link className="button buttonPrimary" href="/submit">Submit an OTF</Link>
+    <div><strong>No OTF proposals yet</strong><p>Submit the first proposal to start the leaderboard.</p></div>
+    <Link className="button buttonPrimary" href="/submit">Submit a proposal</Link>
   </div>;
 
   return <div className="leaderboard">
-    <div className="leaderboardHeader"><span>Rank</span><span>OTF identity & thesis</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Verified votes"}</span></div>
-    {entries.map((entry) => <article className="leaderboardRow" key={entry.id}>
+    <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Verified votes"}</span></div>
+    {entries.map((entry) => <Link className="leaderboardRow" href={`/otfs/${entry.slug}`} aria-label={`View ${entry.name} proposal details`} key={entry.id}>
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
-        <ProposalMark ticker={entry.ticker} />
-        <div><Link href={`/otfs/${entry.slug}`}>{entry.name}<ChevronRight size={14} /></Link><p>{entry.thesis}</p></div>
+        <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
+        <div><span className="otfName">{entry.name}</span><p>{entry.thesis}</p></div>
       </div>
-      <AllocationStrip allocations={entry.allocations} />
-      <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck size={15} aria-label="Verified X creator" /></div>
+      <AllocationStrip allocations={entry.allocations} showPercentages />
+      <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
       <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong><span>verified</span></div>
-    </article>)}
+    </Link>)}
   </div>;
 }

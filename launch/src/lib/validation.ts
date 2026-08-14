@@ -9,7 +9,7 @@ export const proposalInputSchema = z.object({
   competitionId: z.string().uuid(),
   name: z.string().trim().min(5).max(80).refine((value) => value.endsWith(" OTF"), "Name must end in OTF"),
   ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9-]{0,15}$/),
-  thesis: z.string().trim().min(20).refine((value) => Buffer.byteLength(value, "utf8") <= 2048, "Thesis must be at most 2,048 bytes"),
+  thesis: z.string().trim().min(1, "Thesis is required").refine((value) => Buffer.byteLength(value, "utf8") <= 2048, "Thesis must be at most 2,048 bytes"),
   allocations: z.array(allocationSchema).min(2).superRefine((items, context) => {
     if (new Set(items.map((item) => item.assetId)).size !== items.length) context.addIssue({ code: "custom", message: "Assets must be unique" });
     if (items.reduce((sum, item) => sum + item.weightBps, 0) !== 10_000) context.addIssue({ code: "custom", message: "Weights must total 100%" });

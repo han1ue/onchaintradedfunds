@@ -9,6 +9,9 @@ describe("proposal validation", () => {
   it("accepts exactly 10,000 basis points across distinct assets", () => {
     expect(proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).allocations).toHaveLength(2);
   });
+  it("accepts a thesis of any non-empty length", () => {
+    expect(proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).thesis).toBe("A");
+  });
   it("rejects allocations that do not total 100%", () => {
     expect(() => proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 3000 }] })).toThrow(/100%/);
   });

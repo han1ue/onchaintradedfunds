@@ -208,11 +208,11 @@ The palette is a cool near-black neutral ladder with a single teal interaction v
 
 The desktop shell is centered at a maximum width of 1360px. Navigation is a sticky 56px band; page content uses 24px horizontal gutters and a 12px recurring grid gap. The primary desktop composition places a flexible leaderboard beside a 300px action rail, while proposal detail uses a flexible content column beside a 310px voting rail. Content pages narrow to 1000px, and forms may use a 1160px working width with a 270px guidance rail.
 
-At 1120px, the primary board collapses to one column and the leaderboard removes its creator column. At 760px, gutters contract to 14px, main split layouts become single columns, the leaderboard turns from a header-led table into self-contained rows, and supporting metric detail is reduced. At 440px, navigation and row density tighten again while preserving the rank, identity, total, and allocation shape. The minimum supported canvas is 320px.
+At 1120px, the primary board collapses to one column and the leaderboard removes its portfolio column before creator identity. At 760px, gutters contract to 14px, main split layouts become single columns, the leaderboard turns from a header-led table into self-contained rows, creator metadata then recedes, and supporting metric detail is reduced. At 440px, navigation and row density tighten again while preserving rank, OTF identity, and vote total. The minimum supported canvas is 320px.
 
 **The Twelve-Pixel Grid Rule.** Sibling cards and primary panel divisions use the recurring 12px gap unless a component's internal rhythm requires a tighter control-scale gap.
 
-**The Evidence-Preserving Collapse Rule.** Responsive layouts may remove repeated labels and lower-priority creator metadata, but they retain proposal identity, rank, vote total, and allocation shape.
+**The Evidence-Preserving Collapse Rule.** Responsive layouts remove portfolio comparison before creator metadata, then retain OTF identity, rank, and vote total through every narrower collapse.
 
 ## Elevation & Depth
 
@@ -265,7 +265,7 @@ The 56px sticky navigation uses a translucent navigation-ink material, a bottom 
 
 ### Ranked Leaderboard
 
-The signature comparison component aligns rank, identity and thesis, portfolio shape, creator, and verified total in a single desktop row. Each row is at least 102px high, divided by hairlines, and gains only a faint teal wash on hover. Allocation is encoded by a 6px segmented strip with clipped symbol labels; exact percentages appear on proposal detail, where the strip grows to 9px and a full allocation table follows. Entry animation is a restrained 5px rise over 320ms with staggered delays, and it is removed for reduced-motion preference.
+The signature comparison component aligns rank, OTF identity and thesis, portfolio shape, creator, and verified total in a single desktop row. Each row is at least 102px high, divided by hairlines, and gains only a faint teal wash on hover. OTF identity uses the shared ticker-aware `OtfTokenIcon`. Allocation is encoded by a 6px segmented strip with clipped symbol and percentage labels; proposal detail grows the strip to 9px and follows it with a full allocation table. Entry animation is a restrained 5px rise over 320ms with staggered delays, and it is removed for reduced-motion preference.
 
 ### Wizard Progress
 
@@ -278,7 +278,7 @@ Four equal steps sit in a 70px band above the form. A 24px circular marker and a
 - **Do** use bordered tonal layers and the recurring 12px grid to organize dense operational content.
 - **Do** keep action, verification, and focus in teal while reserving status hues for their literal semantic state.
 - **Do** preserve tabular numerals, right-aligned totals, and explicit percentage detail where comparison requires precision.
-- **Do** retain rank, proposal identity, vote total, and allocation shape through every responsive collapse.
+- **Do** remove portfolio comparison before creator metadata, then retain rank, OTF identity, and vote total through every narrower collapse.
 - **Do** honor reduced-motion preference by removing nonessential animation and transition.
 
 ### Don't:

@@ -14,7 +14,7 @@ export default async function LeaderboardPage() {
     <section className="leaderboardPageHeader">
       <div>
         <h1>Live leaderboard</h1>
-        <p>Every accepted OTF proposal, ranked by verified community votes.</p>
+        <p>Every OTF proposal, ranked by verified community votes.</p>
       </div>
       <div className="leaderboardSummary">
         <StatusBadge tone={competition.phase === "open" ? "positive" : "neutral"}>{competition.phase === "open" ? "Competition live" : competition.phase}</StatusBadge>

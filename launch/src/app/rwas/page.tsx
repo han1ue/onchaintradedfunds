@@ -1,3 +1,4 @@
+import { ExternalLink } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { getEligibleAssets } from "@/server/data";
 
@@ -25,7 +26,9 @@ export default async function RwasPage() {
         <div className="rwaDirectoryHeading"><span>Asset</span><span>Token contract</span></div>
         {assets.map((asset) => <div className="rwaDirectoryRow" key={asset.id}>
           <div className="rwaDirectoryIdentity"><span className="rwaDirectoryMark">{asset.symbol.slice(0, 3)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div>
-          <span className="rwaDirectoryAddress" title={asset.contractAddress}>{shortAddress(asset.contractAddress)}</span>
+          <a className="rwaDirectoryAddress" href={`https://robinhoodchain.blockscout.com/address/${asset.contractAddress}`} target="_blank" rel="noreferrer" title={asset.contractAddress} aria-label={`View ${asset.symbol} token contract on Robinhood Chain explorer`}>
+            <span>{shortAddress(asset.contractAddress)}</span><ExternalLink size={13} aria-hidden="true" />
+          </a>
         </div>)}
       </>}
     </SectionCard>

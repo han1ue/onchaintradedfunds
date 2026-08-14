@@ -52,13 +52,13 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
     }
   }
 
-  const title = eligibility.connected ? "This X account isn’t eligible" : `Sign in to ${action === "vote" ? "vote" : "create an OTF"}`;
+  const title = eligibility.connected ? "This X account isn’t eligible" : `Sign in to ${action === "vote" ? "vote" : "submit an OTF proposal"}`;
   return <dialog ref={dialogRef} className="eligibilityDialog" onClose={onClose} onCancel={onClose} aria-labelledby="eligibility-title">
     <div className="eligibilityDialogBody">
       <button className="dialogClose" type="button" onClick={onClose} aria-label="Close eligibility requirements"><X size={17} /></button>
       <div className="eligibilityDialogIcon"><ShieldAlert size={24} aria-hidden="true" /></div>
       <h2 id="eligibility-title">{title}</h2>
-      <p>To submit or vote, connect an X account that currently meets every requirement.</p>
+      <p>To submit a proposal or vote, connect an X account that currently meets every requirement.</p>
       <div className="eligibilityRequirements">
         <div data-state={requirementState(accountRequirement)}><BadgeCheck size={17} /><strong>Verified and public</strong></div>
         <div data-state={requirementState(followerRequirement)}><Users size={17} /><strong>At least {eligibility.minFollowers.toLocaleString()} followers</strong></div>
