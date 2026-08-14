@@ -22,7 +22,6 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "redis": "5.8.2",
-    "viem": "2.33.3",
     "zod": "3.25.76"
   },
   "devDependencies": {

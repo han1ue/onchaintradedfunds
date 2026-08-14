@@ -5,7 +5,7 @@
 - Apply launch-only Drizzle migrations to a backed-up Neon branch.
 - Verify X OAuth callbacks for preview and production URLs.
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
-- Run the one-time post-deployment Robinhood asset reconciliation and enable only reviewed, liquid RWA/USDG V3 pools. Asset discovery is not a recurring cron job.
+- Verify the seeded Supported RWA records contain the intended names, tickers, and Robinhood Chain token contracts.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
 - Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 

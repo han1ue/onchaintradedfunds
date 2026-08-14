@@ -36,15 +36,9 @@ export type CompetitionSummary = {
 
 export type EligibleAsset = {
   id: string;
-  robinhoodUid: string;
   symbol: string;
   name: string;
   contractAddress: string;
-  logoUrl?: string | null;
-  feeTier: number;
-  poolAddress: string;
-  observedAt: string;
-  reason: string;
 };
 
 export type ParticipationEligibility = {

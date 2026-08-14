@@ -18,11 +18,11 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. Use the same `AUTH_SECRET` in Preview and Production. `ADMIN_X_IDS` contains immutable X IDs, not handles. `AUTH_X_CONSUMER_SECRET` and `TWITTERAPI_IO_API_KEY` remain server-only.
 3. Enable X OAuth 1.0a with read-only access and callback URL `/api/auth/x/callback`. The OAuth access-token exchange proves account ownership and returns the immutable X user ID. TwitterAPI.io supplies the public profile exactly once, when that immutable X ID is first added to `users`; repeat sign-ins never call it. Submissions and votes use free X intents plus oEmbed verification; the app never publishes posts through an API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
-5. After the production deployment, run the administrator asset reconciliation once and explicitly enable healthy pools. Asset discovery is intentionally not scheduled as a recurring cron job.
+5. Verify the seeded Supported RWA records after migration. The database is the sole runtime source for asset names, tickers, and Robinhood Chain token contracts.
 
 The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
 
-The reconciler reads Robinhood Chain mainnet (`4663`), canonical USDG, and the official Robinhood Uniswap V3 factory/quoter. It verifies pool bytecode, pair tokens, initialization, liquidity, and $1,000 two-way quotes against multiplier-adjusted Robinhood bid/ask prices. Discovery never publishes an asset; an administrator must enable it.
+The initial Supported RWA records use one-time token contract data from the Robinhood assets API for Robinhood Chain (`4663`). Runtime pages do not call Robinhood or maintain a second static catalog.
 
 ## Verification and finalization
 
@@ -30,10 +30,10 @@ The reconciler reads Robinhood Chain mainnet (`4663`), canonical USDG, and the o
 - The returned X post ID, canonical URL, text hash, and author become the durable evidence record. No nonce, pasted URL, or challenge cleanup is involved.
 - The immutable X ID is the actor identity. Current X identity and eligibility fields live on the user record; action-specific facts such as accepted follower count stay with the action.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.
-- Finalization rechecks evidence and pool health before creating the leaderboard snapshot and private launch queue in one transaction.
+- Finalization rechecks evidence before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. On Vercel Hobby, public X evidence is rechecked and expired raw post text is cleaned once daily at 02:42 UTC. Asset reconciliation is a one-time post-deployment administrator action.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. On Vercel Hobby, public X evidence is rechecked and expired raw post text is cleaned once daily at 02:42 UTC.
 
 ## Vercel
 

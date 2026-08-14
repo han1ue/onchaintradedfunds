@@ -1,21 +1,6 @@
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "./types";
-import { launchAssets } from "./launch-assets";
 
-export const demoAssets: EligibleAsset[] = launchAssets.map((asset, index) => {
-  const tokenSuffix = (index + 1).toString(16).padStart(40, "0");
-  const poolSuffix = (index + 101).toString(16).padStart(40, "0");
-  return {
-    id: `asset-${asset.symbol.toLowerCase()}`,
-    robinhoodUid: `preview-${asset.symbol.toLowerCase()}`,
-    symbol: asset.symbol,
-    name: asset.name,
-    contractAddress: `0x${tokenSuffix}`,
-    feeTier: 3000,
-    poolAddress: `0x${poolSuffix}`,
-    observedAt: new Date().toISOString(),
-    reason: "Preview data"
-  };
-});
+export const demoAssets: EligibleAsset[] = [];
 
 const colors = ["#23d7b0", "#59a7ff", "#a982ff", "#f0b65a", "#e56f91"];
 

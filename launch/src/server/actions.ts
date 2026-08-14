@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { approximateXPostLength, buildSubmissionPost, buildVotePost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
-  activityEvents, assetEligibilitySnapshots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  activityEvents, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   tweetEvidence, users, votes, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
@@ -20,15 +20,7 @@ export async function saveProposalDraft(input: unknown) {
   if (parsed.competitionId !== competition.id) throw new Error("COMPETITION_NOT_OPEN");
 
   const selectedAssets = await database.select().from(eligibleAssets).where(inArray(eligibleAssets.id, parsed.allocations.map((item) => item.assetId)));
-  if (selectedAssets.length !== parsed.allocations.length || selectedAssets.some((asset) => !asset.adminEnabled || asset.status !== "active")) throw new Error("ASSET_INELIGIBLE");
-  const snapshotMap = new Map<string, string>();
-  for (const asset of selectedAssets) {
-    const [snapshot] = await database.select().from(assetEligibilitySnapshots)
-      .where(and(eq(assetEligibilitySnapshots.assetId, asset.id), eq(assetEligibilitySnapshots.eligible, true)))
-      .orderBy(desc(assetEligibilitySnapshots.observedAt)).limit(1);
-    if (!snapshot || Date.now() - snapshot.observedAt.getTime() > 15 * 60_000) throw new Error("ASSET_INELIGIBLE");
-    snapshotMap.set(asset.id, snapshot.id);
-  }
+  if (selectedAssets.length !== parsed.allocations.length) throw new Error("ASSET_INELIGIBLE");
 
   return database.transaction(async (transaction) => {
     const [existing] = await transaction.select().from(proposals)
@@ -40,7 +32,7 @@ export async function saveProposalDraft(input: unknown) {
       : await transaction.insert(proposals).values(values).returning();
     await transaction.delete(proposalAssets).where(eq(proposalAssets.proposalId, proposal.id));
     await transaction.insert(proposalAssets).values(parsed.allocations.map((allocation, position) => ({
-      proposalId: proposal.id, assetId: allocation.assetId, eligibilitySnapshotId: snapshotMap.get(allocation.assetId)!, weightBps: allocation.weightBps, position
+      proposalId: proposal.id, assetId: allocation.assetId, weightBps: allocation.weightBps, position
     })));
     return proposal;
   });

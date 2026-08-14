@@ -5,7 +5,6 @@ import {
   index,
   integer,
   jsonb,
-  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -101,50 +100,14 @@ export const competitions = pgTable("competitions", {
 
 export const eligibleAssets = pgTable("eligible_assets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  robinhoodUid: text("robinhood_uid").notNull().unique(),
-  chainId: integer("chain_id").default(4663).notNull(),
-  contractAddress: text("contract_address").notNull(),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
-  logoUrl: text("logo_url"),
-  status: text("status").notNull(),
-  multiplier: numeric("multiplier", { precision: 38, scale: 18 }).notNull(),
-  adminEnabled: boolean("admin_enabled").default(false).notNull(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  contractAddress: text("contract_address").notNull(),
   ...timestamps
 }, (table) => [
-  uniqueIndex("eligible_asset_chain_address_uq").on(table.chainId, sql`lower(${table.contractAddress})`),
-  index("eligible_asset_enabled_idx").on(table.adminEnabled, table.status)
+  uniqueIndex("eligible_asset_symbol_uq").on(sql`upper(${table.symbol})`),
+  uniqueIndex("eligible_asset_contract_address_uq").on(sql`lower(${table.contractAddress})`)
 ]);
-
-export const assetPools = pgTable("asset_pools", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
-  protocol: text("protocol").default("uniswap-v3").notNull(),
-  poolAddress: text("pool_address").notNull(),
-  usdgAddress: text("usdg_address").notNull(),
-  feeTier: integer("fee_tier").notNull(),
-  enabled: boolean("enabled").default(false).notNull(),
-  ...timestamps
-}, (table) => [uniqueIndex("asset_pool_address_uq").on(sql`lower(${table.poolAddress})`)]);
-
-export const assetEligibilitySnapshots = pgTable("asset_eligibility_snapshots", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
-  poolId: uuid("pool_id").references(() => assetPools.id, { onDelete: "set null" }),
-  observedAt: timestamp("observed_at", { withTimezone: true }).defaultNow().notNull(),
-  blockNumber: numeric("block_number", { precision: 78, scale: 0 }),
-  liquidity: numeric("liquidity", { precision: 78, scale: 0 }),
-  buyQuoteOut: numeric("buy_quote_out", { precision: 78, scale: 0 }),
-  sellQuoteOut: numeric("sell_quote_out", { precision: 78, scale: 0 }),
-  buyPriceImpactBps: integer("buy_price_impact_bps"),
-  sellPriceImpactBps: integer("sell_price_impact_bps"),
-  referenceNotionalUsd: numeric("reference_notional_usd", { precision: 20, scale: 2 }).default("1000").notNull(),
-  eligible: boolean("eligible").notNull(),
-  reason: text("reason").notNull(),
-  configVersion: text("config_version").default("v1").notNull(),
-  rawEvidence: jsonb("raw_evidence").$type<Record<string, unknown>>().default({}).notNull()
-}, (table) => [index("asset_snapshot_latest_idx").on(table.assetId, table.observedAt)]);
 
 export const proposals = pgTable("proposals", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -171,7 +134,6 @@ export const proposals = pgTable("proposals", {
 export const proposalAssets = pgTable("proposal_assets", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "restrict" }),
-  eligibilitySnapshotId: uuid("eligibility_snapshot_id").notNull().references(() => assetEligibilitySnapshots.id, { onDelete: "restrict" }),
   weightBps: integer("weight_bps").notNull(),
   position: integer("position").notNull()
 }, (table) => [

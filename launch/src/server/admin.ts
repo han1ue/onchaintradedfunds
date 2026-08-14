@@ -1,13 +1,12 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { earliestLaunchAt, rankEntries } from "@/lib/validation";
-import { inspectDirectPool } from "./assets";
 import { requireSession } from "./guards";
 import { adminXIds } from "./env";
 import { requireDb } from "./db";
 import {
-  activityEvents, adminActions, assetEligibilitySnapshots, assetPools, competitions, eligibleAssets, evidenceChecks,
-  finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposalAssets, proposals,
+  activityEvents, adminActions, competitions, evidenceChecks,
+  finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposals,
   tweetEvidence, votes
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
@@ -16,17 +15,6 @@ export async function requireAdmin() {
   const session = await requireSession();
   if (!session.user.xUserId || !adminXIds.has(session.user.xUserId)) throw new Error("FORBIDDEN");
   return session;
-}
-
-export async function setAssetEnabled(assetId: string, enabled: boolean, reason: string) {
-  const database = requireDb(); const session = await requireAdmin();
-  if (reason.trim().length < 8) throw new Error("REASON_REQUIRED");
-  const [before] = await database.select().from(eligibleAssets).where(eq(eligibleAssets.id, assetId)).limit(1);
-  if (!before) throw new Error("ASSET_NOT_FOUND");
-  const [after] = await database.update(eligibleAssets).set({ adminEnabled: enabled, updatedAt: new Date() }).where(eq(eligibleAssets.id, assetId)).returning();
-  await database.update(assetPools).set({ enabled, updatedAt: new Date() }).where(eq(assetPools.assetId, assetId));
-  await database.insert(adminActions).values({ adminUserId: session.user.id, action: enabled ? "asset.enable" : "asset.disable", targetType: "asset", targetId: assetId, reason, before, after });
-  return after;
 }
 
 function defaultCompetitionEnd(date: Date) {
@@ -83,24 +71,6 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
   }
 }
 
-async function recheckAssetHealth(competitionId: string) {
-  const database = requireDb();
-  const selected = await database.selectDistinct({ asset: eligibleAssets }).from(proposalAssets)
-    .innerJoin(proposals, and(eq(proposals.id, proposalAssets.proposalId), eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted")))
-    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId));
-  for (const { asset } of selected) {
-    const price = await (await import("./assets")).fetchRobinhoodPrice(asset.symbol);
-    const result = await inspectDirectPool(asset.contractAddress as `0x${string}`, { bid: price.bid, ask: price.ask, multiplier: String(asset.multiplier) });
-    await database.insert(assetEligibilitySnapshots).values({ assetId: asset.id, blockNumber: "blockNumber" in result ? result.blockNumber?.toString() : undefined, liquidity: "liquidity" in result ? result.liquidity?.toString() : undefined, buyQuoteOut: "buyQuoteOut" in result ? result.buyQuoteOut?.toString() : undefined, sellQuoteOut: "sellQuoteOut" in result ? result.sellQuoteOut?.toString() : undefined, buyPriceImpactBps: "buyImpactBps" in result ? result.buyImpactBps : undefined, sellPriceImpactBps: "sellImpactBps" in result ? result.sellImpactBps : undefined, eligible: result.eligible, reason: result.reason, rawEvidence: { finalization: true, referenceGeneratedAt: price.generatedAt } });
-    if (!result.eligible) {
-      const [competition] = await database.select().from(competitions).where(eq(competitions.id, competitionId)).limit(1);
-      if (Date.now() < competition.endsAt.getTime() + 48 * 60 * 60_000) throw new Error("ASSET_GRACE_ACTIVE");
-      const affected = await database.select({ id: proposals.id }).from(proposals).innerJoin(proposalAssets, eq(proposalAssets.proposalId, proposals.id)).where(and(eq(proposals.competitionId, competitionId), eq(proposalAssets.assetId, asset.id), eq(proposals.status, "accepted")));
-      if (affected.length) await database.update(proposals).set({ status: "disqualified", moderatedReason: `Asset ${asset.symbol} remained unusable after grace period`, updatedAt: new Date() }).where(inArray(proposals.id, affected.map((item) => item.id)));
-    }
-  }
-}
-
 export async function finalizeCompetition(competitionId: string) {
   const database = requireDb(); await requireAdmin();
   const [competition] = await database.select().from(competitions).where(eq(competitions.id, competitionId)).limit(1);
@@ -110,7 +80,6 @@ export async function finalizeCompetition(competitionId: string) {
   await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
   try {
     await recheckEvidence(competitionId, run.id);
-    await recheckAssetHealth(competitionId);
     const scored = await database.select({ id: proposals.id, acceptedAt: proposals.acceptedAt, votes: sql<number>`count(${votes.id}) filter (where ${votes.status} = 'valid')::int` })
       .from(proposals).leftJoin(votes, eq(votes.proposalId, proposals.id))
       .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted"))).groupBy(proposals.id);

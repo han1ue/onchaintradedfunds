@@ -15,10 +15,7 @@ const schema = z.object({
   TURNSTILE_HOSTNAMES: z.string().optional(),
   CRON_SECRET: z.string().min(16).optional(),
   IP_HASH_SECRET: z.string().min(16).optional(),
-  ADMIN_X_IDS: z.string().optional(),
-  ROBINHOOD_RPC_URL: optionalUrl.default("https://rpc.mainnet.chain.robinhood.com"),
-  UNISWAP_V3_FACTORY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).default("0x1f7d7550b1b028f7571e69a784071f0205fd2efa"),
-  UNISWAP_V3_QUOTER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).default("0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7")
+  ADMIN_X_IDS: z.string().optional()
 });
 
 export const env = schema.parse(process.env);
