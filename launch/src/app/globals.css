@@ -131,7 +131,7 @@ button { color: inherit; }
 .leaderboardSubmitButton { min-height: 32px; height: 32px; padding: 0 12px; }
 .leaderboardHeader, .leaderboardRow { display: grid; grid-template-columns: 76px minmax(270px, 1.4fr) minmax(220px, .95fr) minmax(125px, .6fr) 110px; column-gap: 12px; align-items: center; }
 .leaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.leaderboardHeader span:first-child { text-align: left; }
+.leaderboardHeader span:first-child { text-align: left; padding-left: 6px; }
 .leaderboardHeader span:last-child { text-align: right; }
 .leaderboardEmpty { min-height: 190px; display: grid; justify-items: center; align-content: center; gap: 12px; padding: 28px 18px; text-align: center; }
 .leaderboardEmpty > svg { color: var(--teal); }
@@ -145,9 +145,9 @@ button { color: inherit; }
 .leaderboardRow:last-child { border-bottom: 0; }
 .leaderboardRow:hover { background: rgb(var(--accent-rgb) / 2.5%); }
 .leaderboardRow:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
-.rank { position: relative; width: 100%; max-width: 72px; min-height: 42px; display: grid; place-items: center start; justify-self: start; color: var(--text-muted); font-size: 1.05rem; text-align: left; }
+.rank { position: relative; width: 100%; max-width: 72px; min-height: 42px; display: grid; place-items: center start; justify-self: start; color: var(--text-muted); font-size: 1.05rem; text-align: left; padding-left: 6px; }
 .rank > span { position: relative; z-index: 1; line-height: 1; }
-.rankWings { position: absolute; top: 0; left: -17px; width: 58px; height: 100%; overflow: visible; transform: translateY(-3px); }
+.rankWings { position: absolute; top: 0; left: -11px; width: 58px; height: 100%; overflow: visible; transform: translateY(-3px); }
 .rankWings path { fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; opacity: .86; }
 .rank1 { color: var(--gold); font-weight: 800; }
 .rank2 { color: var(--text-soft); font-weight: 700; }
