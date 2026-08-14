@@ -327,6 +327,7 @@ button { color: inherit; }
 .allocationTotal { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: .8rem; }
 .allocationTotal strong { color: var(--danger); font-size: 1rem; }
 .allocationTotal strong.valid { color: var(--green); }
+.assetDirectoryPrompt { margin: 9px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
 .allocationInput { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 104px 34px; gap: 10px; align-items: end; }
 .weightField > div { position: relative; }
 .weightField input { padding-right: 30px; }
@@ -419,7 +420,8 @@ button { color: inherit; }
 .accountEligibilityPrompt > svg { color: var(--gold); }
 .accountEligibilityPrompt > strong { font-size: .86rem; }
 .accountEligibilityPrompt > p { margin: 0 0 5px; color: var(--text-muted); font-size: .76rem; line-height: 1.55; }
-.inlineLink { color: var(--teal); }
+.inlineLink { color: var(--teal); font-weight: 650; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--teal) 42%, transparent); text-underline-offset: 3px; }
+.inlineLink:hover { text-decoration-color: currentColor; }
 .adminGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .callout { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--blue) 4%, var(--card-raised)); color: var(--text-soft); font-size: .78rem; line-height: 1.5; }
 .callout.warning { border-color: color-mix(in srgb, var(--gold) 42%, var(--border)); background: color-mix(in srgb, var(--gold) 4%, var(--card-raised)); }
