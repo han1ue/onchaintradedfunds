@@ -36,7 +36,7 @@ export default async function MePage() {
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
         <XProfileImage src={identity?.profileImageUrl ?? session.user.image} username={username} size={46} />
-        <div className="accountNameActions"><h1>@{username}</h1><form className="accountHeaderActionForm" action={disconnectX}><Button type="submit" variant="secondary" className="disconnectButton"><LogOut size={15} /> Disconnect X</Button></form></div>
+        <div className="accountNameActions"><h1>@{username}</h1><form className="accountHeaderActionForm" action={disconnectX}><Button type="submit" variant="ghost" className="disconnectButton"><LogOut size={15} /> Disconnect X</Button></form></div>
       </div>
       <div className="accountControls"><div className="accountIdentitySummary" aria-label="X account details">
         <div className={`accountFollowerCount ${meetsFollowerRequirement ? "eligible" : "underMinimum"}`}><Users size={17} aria-hidden="true" /><span><strong>{identity ? identity.followersCount.toLocaleString() : "—"}</strong> followers</span></div>

@@ -384,12 +384,12 @@ button { color: inherit; }
 .emptyState h1 { margin: 16px 0 7px; font-size: 1.5rem; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
-.accountTitle { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.accountNameActions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.accountTitle { display: flex; align-items: flex-start; gap: 12px; }
+.accountNameActions { min-width: 0; display: grid; justify-items: start; gap: 5px; }
 .accountTitle h1 { line-height: 1.05; }
 .accountControls { display: flex; align-items: center; gap: 10px; }
 .accountIdentitySummary { display: flex; align-items: center; gap: 10px; }
-.accountHeaderActionForm { display: inline-flex; }
+.accountHeaderActionForm { display: inline-flex; margin-left: 2px; }
 .accountFollowerCount { min-height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .accountFollowerCount.eligible svg { color: var(--green); }
 .accountFollowerCount.underMinimum svg { color: var(--danger); }
@@ -397,7 +397,8 @@ button { color: inherit; }
 .accountVerificationStatus { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: .7rem; font-weight: 700; white-space: nowrap; }
 .accountVerificationStatus.verified svg { color: var(--green); }
 .accountVerificationStatus.unverified svg { color: var(--danger); }
-.disconnectButton { min-height: 30px; padding: 0 10px; }
+.disconnectButton { min-height: 30px; padding: 0 2px; color: var(--text-muted); font-size: .7rem; }
+.disconnectButton:hover { color: var(--text); background: transparent; }
 .accountMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
 .accountMetrics > section { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 16px; }
 .accountMetrics svg { grid-row: 1 / 3; color: var(--teal); }

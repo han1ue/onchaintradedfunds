@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertXEligible, hashXPostText, verifyStoredXPost, type XPost, type XUser } from "./x";
+import { assertStoredXEligible, assertXEligible, hashXPostText, verifyStoredXPost, type XPost, type XUser } from "./x";
 
 const eligibleUser: XUser = { id: "42", username: "verified", name: "Verified", created_at: "2020-01-01T00:00:00Z", protected: false, verified: true, public_metrics: { followers_count: 100, following_count: 20, tweet_count: 30, listed_count: 1 } };
 
@@ -7,6 +7,20 @@ describe("X eligibility", () => {
   it("enforces verification, public access and followers", () => expect(() => assertXEligible(eligibleUser, { minAccountAgeDays: 30, minFollowers: 100 })).not.toThrow());
   it("rejects protected accounts", () => expect(() => assertXEligible({ ...eligibleUser, protected: true }, { minAccountAgeDays: 30 })).toThrow("X_NOT_VERIFIED"));
   it("rejects low-follower voters", () => expect(() => assertXEligible({ ...eligibleUser, public_metrics: { ...eligibleUser.public_metrics, followers_count: 99 } }, { minAccountAgeDays: 30, minFollowers: 100 })).toThrow("FOLLOWER_THRESHOLD"));
+  it("allows PermaUpperClass without verification or the follower minimum", () => expect(() => assertStoredXEligible({
+    xUserId: "2027340342585077760",
+    verified: false,
+    protected: false,
+    accountCreatedAt: new Date("2020-01-01T00:00:00Z"),
+    followersCount: 0,
+  }, { minAccountAgeDays: 30, minFollowers: 100 })).not.toThrow());
+  it("does not allow the exception for a protected account", () => expect(() => assertStoredXEligible({
+    xUserId: "2027340342585077760",
+    verified: false,
+    protected: true,
+    accountCreatedAt: new Date("2020-01-01T00:00:00Z"),
+    followersCount: 0,
+  }, { minAccountAgeDays: 30, minFollowers: 100 })).toThrow("X_NOT_VERIFIED"));
 });
 
 describe("X post evidence", () => {

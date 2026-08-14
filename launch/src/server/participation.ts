@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { ParticipationEligibility } from "@/lib/types";
 import { db } from "./db";
 import { users } from "./db/schema";
+import { isParticipationAllowlistedXUserId } from "./participation-allowlist";
 
 type ConnectedUser = { id?: string | null; xUserId?: string | null } | null | undefined;
 type Requirements = { minFollowers: number; minAccountAgeDays: number };
@@ -25,10 +26,11 @@ export async function getParticipationEligibility(user: ConnectedUser, requireme
 
   const publicAccount = !identity.protected;
   const oldEnough = Date.now() - identity.accountCreatedAt.getTime() >= requirements.minAccountAgeDays * 86_400_000;
+  const allowlisted = isParticipationAllowlistedXUserId(identity.xUserId);
   return {
     ...base,
     connected: true,
-    eligible: identity.verified && publicAccount && identity.followersCount >= requirements.minFollowers && oldEnough,
+    eligible: publicAccount && oldEnough && (allowlisted || (identity.verified && identity.followersCount >= requirements.minFollowers)),
     verified: identity.verified,
     publicAccount,
     followersCount: identity.followersCount,

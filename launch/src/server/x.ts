@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { parseXPostId } from "@/lib/validation";
 import { env } from "./env";
+import { isParticipationAllowlistedXUserId } from "./participation-allowlist";
 
 export type XUser = {
   id: string;
@@ -204,16 +205,18 @@ export function userIdentityFromXUser(
 }
 
 export function assertXEligible(profile: XUser, options: { minFollowers?: number; minAccountAgeDays: number }) {
-  if (!profile.verified || profile.protected) throw new Error("X_NOT_VERIFIED");
+  const allowlisted = isParticipationAllowlistedXUserId(profile.id);
+  if (profile.protected || (!profile.verified && !allowlisted)) throw new Error("X_NOT_VERIFIED");
   const ageMs = Date.now() - new Date(profile.created_at).getTime();
   if (ageMs < options.minAccountAgeDays * 86_400_000) throw new Error("ACCOUNT_TOO_NEW");
-  if (options.minFollowers !== undefined && profile.public_metrics.followers_count < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
+  if (!allowlisted && options.minFollowers !== undefined && profile.public_metrics.followers_count < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
 }
 
-export function assertStoredXEligible(snapshot: { verified: boolean; protected: boolean; accountCreatedAt: Date; followersCount: number }, options: { minFollowers?: number; minAccountAgeDays: number }) {
-  if (!snapshot.verified || snapshot.protected) throw new Error("X_NOT_VERIFIED");
+export function assertStoredXEligible(snapshot: { xUserId: string; verified: boolean; protected: boolean; accountCreatedAt: Date; followersCount: number }, options: { minFollowers?: number; minAccountAgeDays: number }) {
+  const allowlisted = isParticipationAllowlistedXUserId(snapshot.xUserId);
+  if (snapshot.protected || (!snapshot.verified && !allowlisted)) throw new Error("X_NOT_VERIFIED");
   if (Date.now() - snapshot.accountCreatedAt.getTime() < options.minAccountAgeDays * 86_400_000) throw new Error("ACCOUNT_TOO_NEW");
-  if (options.minFollowers !== undefined && snapshot.followersCount < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
+  if (!allowlisted && options.minFollowers !== undefined && snapshot.followersCount < options.minFollowers) throw new Error("FOLLOWER_THRESHOLD");
 }
 
 export function verifyStoredXPost(post: XPost, expected: { authorId: string; evidenceHash: string }) {
