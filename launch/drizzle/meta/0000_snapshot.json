@@ -1,5 +1,5 @@
 {
-  "id": "8e78ce05-983e-4258-b67a-fffe63519aec",
+  "id": "ae8bfd5a-973e-476c-9aaf-75315fb01fb2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -263,265 +263,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.asset_eligibility_snapshots": {
-      "name": "asset_eligibility_snapshots",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "asset_id": {
-          "name": "asset_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pool_id": {
-          "name": "pool_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "observed_at": {
-          "name": "observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "block_number": {
-          "name": "block_number",
-          "type": "numeric(78, 0)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "liquidity": {
-          "name": "liquidity",
-          "type": "numeric(78, 0)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "buy_quote_out": {
-          "name": "buy_quote_out",
-          "type": "numeric(78, 0)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sell_quote_out": {
-          "name": "sell_quote_out",
-          "type": "numeric(78, 0)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "buy_price_impact_bps": {
-          "name": "buy_price_impact_bps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sell_price_impact_bps": {
-          "name": "sell_price_impact_bps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reference_notional_usd": {
-          "name": "reference_notional_usd",
-          "type": "numeric(20, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'1000'"
-        },
-        "eligible": {
-          "name": "eligible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "config_version": {
-          "name": "config_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'v1'"
-        },
-        "raw_evidence": {
-          "name": "raw_evidence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        }
-      },
-      "indexes": {
-        "asset_snapshot_latest_idx": {
-          "name": "asset_snapshot_latest_idx",
-          "columns": [
-            {
-              "expression": "asset_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "observed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "asset_eligibility_snapshots_asset_id_eligible_assets_id_fk": {
-          "name": "asset_eligibility_snapshots_asset_id_eligible_assets_id_fk",
-          "tableFrom": "asset_eligibility_snapshots",
-          "tableTo": "eligible_assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "asset_eligibility_snapshots_pool_id_asset_pools_id_fk": {
-          "name": "asset_eligibility_snapshots_pool_id_asset_pools_id_fk",
-          "tableFrom": "asset_eligibility_snapshots",
-          "tableTo": "asset_pools",
-          "columnsFrom": [
-            "pool_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.asset_pools": {
-      "name": "asset_pools",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "asset_id": {
-          "name": "asset_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "protocol": {
-          "name": "protocol",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'uniswap-v3'"
-        },
-        "pool_address": {
-          "name": "pool_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "usdg_address": {
-          "name": "usdg_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fee_tier": {
-          "name": "fee_tier",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "asset_pool_address_uq": {
-          "name": "asset_pool_address_uq",
-          "columns": [
-            {
-              "expression": "lower(\"pool_address\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "asset_pools_asset_id_eligible_assets_id_fk": {
-          "name": "asset_pools_asset_id_eligible_assets_id_fk",
-          "tableFrom": "asset_pools",
-          "tableTo": "eligible_assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.competitions": {
       "name": "competitions",
       "schema": "",
@@ -683,25 +424,6 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "robinhood_uid": {
-          "name": "robinhood_uid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "chain_id": {
-          "name": "chain_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 4663
-        },
-        "contract_address": {
-          "name": "contract_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "symbol": {
           "name": "symbol",
           "type": "text",
@@ -714,34 +436,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "logo_url": {
-          "name": "logo_url",
+        "contract_address": {
+          "name": "contract_address",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "multiplier": {
-          "name": "multiplier",
-          "type": "numeric(38, 18)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "admin_enabled": {
-          "name": "admin_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
@@ -761,15 +458,24 @@
         }
       },
       "indexes": {
-        "eligible_asset_chain_address_uq": {
-          "name": "eligible_asset_chain_address_uq",
+        "eligible_asset_symbol_uq": {
+          "name": "eligible_asset_symbol_uq",
           "columns": [
             {
-              "expression": "chain_id",
-              "isExpression": false,
+              "expression": "upper(\"symbol\")",
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
-            },
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "eligible_asset_contract_address_uq": {
+          "name": "eligible_asset_contract_address_uq",
+          "columns": [
             {
               "expression": "lower(\"contract_address\")",
               "asc": true,
@@ -781,40 +487,11 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "eligible_asset_enabled_idx": {
-          "name": "eligible_asset_enabled_idx",
-          "columns": [
-            {
-              "expression": "admin_enabled",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "eligible_assets_robinhood_uid_unique": {
-          "name": "eligible_assets_robinhood_uid_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "robinhood_uid"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -1298,12 +975,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "eligibility_snapshot_id": {
-          "name": "eligibility_snapshot_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "weight_bps": {
           "name": "weight_bps",
           "type": "integer",
@@ -1360,19 +1031,6 @@
           "tableTo": "eligible_assets",
           "columnsFrom": [
             "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "proposal_assets_eligibility_snapshot_id_asset_eligibility_snapshots_id_fk": {
-          "name": "proposal_assets_eligibility_snapshot_id_asset_eligibility_snapshots_id_fk",
-          "tableFrom": "proposal_assets",
-          "tableTo": "asset_eligibility_snapshots",
-          "columnsFrom": [
-            "eligibility_snapshot_id"
           ],
           "columnsTo": [
             "id"
