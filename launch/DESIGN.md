@@ -269,7 +269,7 @@ The signature comparison component aligns rank, OTF identity and thesis, portfol
 
 ### 100-Vote Ballot
 
-The ballot is a single competition-wide workspace, not a set of independent proposal actions. Each proposal receives a numeric vote field, the running total remains visible in a sticky rail, and exactly 100 votes are required to activate or save. The voter’s own proposal is visibly disabled. One public X post activates the ballot; later redistributions reuse that verified ballot without requesting another post.
+The ballot is a single competition-wide workspace, not a set of independent proposal actions. Each proposal receives a numeric vote field, including the voter’s own proposal, and exactly 100 votes are required to activate or save. The running total remains visible in a sticky rail. One public X post activates the ballot; later redistributions reuse that verified ballot without requesting another post. A rolling 24-hour cooldown begins at activation and restarts after every saved redistribution.
 
 ### Wizard Progress
 

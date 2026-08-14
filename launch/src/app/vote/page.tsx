@@ -12,6 +12,5 @@ export default async function VotePage({ searchParams }: { searchParams: Promise
     getParticipationEligibility(session?.user, competition),
     session?.user.id ? getBallotSummary(competition.id, session.user.id) : null,
   ]);
-  const ownProposalId = session?.user.xUserId ? proposals.find((proposal) => proposal.creator.xId === session.user.xUserId)?.id : undefined;
-  return <div className="pageShell ballotPage"><header className="pageHeader ballotPageHeader"><h1>Distribute your 100 votes</h1><p>Back one OTF or spread your votes across several proposals. Activate your ballot with one X post, then change the distribution anytime before voting closes.</p></header><BallotPanel proposals={proposals} ballot={ballot} eligibility={eligibility} ownProposalId={ownProposalId} focusSlug={params.focus} turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001"} /></div>;
+  return <div className="pageShell ballotPage"><header className="pageHeader ballotPageHeader"><h1>Distribute your 100 votes</h1><p>Back one OTF or spread your votes across several proposals, including your own. Activate your ballot with one X post, then change the distribution once every 24 hours.</p></header><BallotPanel proposals={proposals} ballot={ballot} eligibility={eligibility} focusSlug={params.focus} turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001"} /></div>;
 }

@@ -19,15 +19,15 @@ type AccountActivity = {
   proposalName: string | null;
 };
 
-function activityLabel(event: AccountActivity) {
+function activityDetails(event: AccountActivity) {
   const proposalName = event.proposalName ?? "OTF proposal";
-  if (event.eventType === "proposal.accepted") return `Submitted ${proposalName}`;
-  if (event.eventType === "ballot.activated") return "Activated a 100-vote ballot";
-  if (event.eventType === "ballot.updated") return "Redistributed 100 votes";
-  if (event.eventType === "proposal.hidden") return `${proposalName} was hidden from the leaderboard`;
-  if (event.eventType === "proposal.disqualified") return `${proposalName} was removed from the competition`;
-  if (event.eventType === "proposal.withdrawn") return `Withdrew ${proposalName}`;
-  return `Activity recorded for ${proposalName}`;
+  if (event.eventType === "proposal.accepted") return { title: `Proposed ${proposalName}`, detail: "Added to the OTF competition", kind: "proposal" };
+  if (event.eventType === "ballot.activated") return { title: "Cast your first 100 votes", detail: "Activated your ballot", kind: "vote" };
+  if (event.eventType === "ballot.updated") return { title: "Changed your vote distribution", detail: "Redistributed all 100 votes", kind: "vote" };
+  if (event.eventType === "proposal.hidden") return { title: `${proposalName} was hidden`, detail: "Removed from the public leaderboard", kind: "proposal" };
+  if (event.eventType === "proposal.disqualified") return { title: `${proposalName} was disqualified`, detail: "Removed from the competition", kind: "proposal" };
+  if (event.eventType === "proposal.withdrawn") return { title: `Withdrew ${proposalName}`, detail: "Removed your proposal from the competition", kind: "proposal" };
+  return { title: `Updated ${proposalName}`, detail: "Account activity", kind: "activity" };
 }
 
 async function disconnectX() {
@@ -75,6 +75,9 @@ export default async function MePage() {
       <SectionCard><Activity size={19} /><span>Running</span><strong>{runningOtfCount}</strong></SectionCard>
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
-    <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => <div key={event.id}><span>{activityLabel(event)}</span><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Submit an OTF proposal</Link> or <Link className="inlineLink" href="/vote">distribute your 100 votes</Link>.</p>}</SectionCard>
+    <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => {
+      const details = activityDetails(event);
+      return <div className="activityRow" key={event.id}><span className={`activityIcon ${details.kind}`} aria-hidden="true">{details.kind === "vote" ? <Vote size={16} /> : details.kind === "proposal" ? <Layers3 size={16} /> : <Activity size={16} />}</span><div className="activityCopy"><strong>{details.title}</strong><small>{details.detail}</small></div><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>;
+    })}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Submit an OTF proposal</Link> or <Link className="inlineLink" href="/vote">distribute your 100 votes</Link>.</p>}</SectionCard>
   </div>;
 }

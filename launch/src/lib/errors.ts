@@ -16,7 +16,7 @@ export const errorMessages: Record<string, string> = {
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
   BALLOT_ALREADY_ACTIVE: "Your 100-vote ballot is already active. Update its distribution instead.",
   BALLOT_NOT_ACTIVE: "Activate your 100-vote ballot before changing its distribution.",
-  SELF_VOTE: "You cannot vote for your own OTF.",
+  BALLOT_COOLDOWN: "Vote distributions can only change once every 24 hours. Return after the current cooldown ends.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
   COMPETITION_NOT_OPEN: "The competition is not currently open."
 };

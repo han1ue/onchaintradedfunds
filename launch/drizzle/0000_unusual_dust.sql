@@ -320,7 +320,7 @@ BEGIN
     JOIN ballots b ON b.id = ba.ballot_id
     JOIN proposals p ON p.id = ba.proposal_id
     WHERE ba.ballot_id = target_ballot_id
-      AND (p.competition_id <> b.competition_id OR p.creator_user_id = b.voter_user_id)
+      AND p.competition_id <> b.competition_id
   ) THEN
     RAISE EXCEPTION 'INVALID_BALLOT_ALLOCATION';
   END IF;

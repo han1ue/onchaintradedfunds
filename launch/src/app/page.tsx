@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Clock3, FileCheck2, Trophy, Vote } from "lucide-react";
+import { ArrowRight, BadgeCheck, Clock3, FileCheck2, Layers3, Vote } from "lucide-react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
@@ -8,6 +8,16 @@ import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data
 import { getParticipationEligibility } from "@/server/participation";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
+
+function voterActivityLabel(count: number) {
+  if (count === 0) return "No one has voted yet";
+  return `${count.toLocaleString()} ${count === 1 ? "person has" : "people have"} voted`;
+}
+
+function proposalActivityLabel(count: number) {
+  if (count === 0) return "No one has proposed an OTF yet";
+  return `${count.toLocaleString()} ${count === 1 ? "person has" : "people have"} proposed an OTF`;
+}
 
 export default async function HomePage() {
   const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
@@ -32,8 +42,8 @@ export default async function HomePage() {
       <HowItWorks eligibility={eligibility} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Include at least two eligible assets totaling exactly 100%.</li><li>Each eligible account distributes exactly 100 votes.</li><li>Activate your ballot with one public X post, then redistribute without posting again.</li><li>No votes for your own proposal; final rank determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
-      <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted proposal ${entry.name}` : `reached ${entry.votes.toLocaleString()} votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Include at least two eligible assets totaling exactly 100%.</li><li>Each eligible account distributes exactly 100 votes.</li><li>Activate your ballot with one public X post, then redistribute once every 24 hours.</li><li>Creators may vote for their own proposal; final rank determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="activityPanel"><div className="cardHeading"><span>Competition activity</span><Vote size={18} /></div><div className="participationActivity"><div><Vote size={16} /><span>{voterActivityLabel(competition.uniqueVoterCount)}</span></div><div><Layers3 size={16} /><span>{proposalActivityLabel(competition.proposalCount)}</span></div></div></SectionCard>
     </div>
   </div>;
 }

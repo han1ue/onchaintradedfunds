@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
+import { canUpdateBallot, getBallotUpdateAvailableAt } from "@/lib/ballot-cooldown";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
 import { ballotActivationSchema, ballotUpdateSchema, voteDistributionSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
@@ -21,18 +22,16 @@ function newChallengeToken() {
 async function assertValidDistribution(
   database: ReturnType<typeof requireDb>,
   competitionId: string,
-  voterUserId: string,
   allocations: VoteAllocation[]
 ) {
   const proposalIds = allocations.map((allocation) => allocation.proposalId);
-  const selected = await database.select({ id: proposals.id, creatorUserId: proposals.creatorUserId })
+  const selected = await database.select({ id: proposals.id })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
       eq(proposals.status, "accepted"),
       inArray(proposals.id, proposalIds)
-    ));
+  ));
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
-  if (selected.some((proposal) => proposal.creatorUserId === voterUserId)) throw new Error("SELF_VOTE");
 }
 
 export async function getBallotSummary(competitionId: string, voterUserId: string): Promise<BallotSummary | null> {
@@ -41,6 +40,7 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
     id: ballots.id,
     status: ballots.status,
     activatedAt: ballots.activatedAt,
+    updatedAt: ballots.updatedAt,
     proofUrl: tweetEvidence.postUrl,
   }).from(ballots).leftJoin(tweetEvidence, eq(ballots.evidenceId, tweetEvidence.id)).where(and(
     eq(ballots.competitionId, competitionId),
@@ -53,6 +53,9 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
     id: ballot.id,
     status: ballot.status,
     activatedAt: ballot.activatedAt?.toISOString() ?? null,
+    updatedAt: ballot.updatedAt.toISOString(),
+    updateAvailableAt: getBallotUpdateAvailableAt(ballot.updatedAt).toISOString(),
+    canUpdate: canUpdateBallot(ballot.updatedAt),
     proofUrl: ballot.proofUrl,
     allocations,
   };
@@ -62,7 +65,7 @@ export async function prepareBallotProof(input: unknown) {
   const parsed = ballotActivationSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
-  await assertValidDistribution(database, competition.id, session.user.id, parsed.allocations);
+  await assertValidDistribution(database, competition.id, parsed.allocations);
   const [existing] = await database.select({ status: ballots.status }).from(ballots).where(and(
     eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id)
   )).limit(1);
@@ -99,7 +102,7 @@ export async function verifyBallotProof(input: unknown) {
   )).limit(1);
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
   const allocations = voteDistributionSchema.parse(challenge.payload.allocations);
-  await assertValidDistribution(database, competition.id, session.user.id, allocations);
+  await assertValidDistribution(database, competition.id, allocations);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
@@ -153,7 +156,15 @@ export async function verifyBallotProof(input: unknown) {
       ruleVersion: competition.ruleVersion,
       metadata: { votes: 100, proposals: allocations.length, xPostId: post.id, verifiedBy: "oembed-challenge" },
     });
-    return { action: "ballot" as const, ballotId: ballot.id, postUrl: evidence.postUrl, embedHtml: post.embedHtml, allocations };
+    return {
+      action: "ballot" as const,
+      ballotId: ballot.id,
+      postUrl: evidence.postUrl,
+      embedHtml: post.embedHtml,
+      allocations,
+      updatedAt: activatedAt.toISOString(),
+      updateAvailableAt: getBallotUpdateAvailableAt(activatedAt).toISOString(),
+    };
   });
 }
 
@@ -161,14 +172,15 @@ export async function updateBallotDistribution(input: unknown) {
   const parsed = ballotUpdateSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
-  await assertValidDistribution(database, competition.id, session.user.id, parsed.allocations);
+  await assertValidDistribution(database, competition.id, parsed.allocations);
   const updatedAt = new Date();
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select id from ballots where competition_id = ${competition.id} and voter_user_id = ${session.user.id} for update`);
-    const [ballot] = await transaction.select({ id: ballots.id }).from(ballots).where(and(
+    const [ballot] = await transaction.select({ id: ballots.id, updatedAt: ballots.updatedAt }).from(ballots).where(and(
       eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id), eq(ballots.status, "valid")
     )).limit(1);
     if (!ballot) throw new Error("BALLOT_NOT_ACTIVE");
+    if (!canUpdateBallot(ballot.updatedAt, updatedAt)) throw new Error("BALLOT_COOLDOWN");
     await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
     await transaction.insert(ballotAllocations).values(parsed.allocations.map((allocation) => ({ ballotId: ballot.id, ...allocation, updatedAt })));
     await transaction.update(ballots).set({ updatedAt }).where(eq(ballots.id, ballot.id));
@@ -181,6 +193,11 @@ export async function updateBallotDistribution(input: unknown) {
       ruleVersion: competition.ruleVersion,
       metadata: { votes: 100, proposals: parsed.allocations.length },
     });
-    return { ballotId: ballot.id, allocations: parsed.allocations, updatedAt: updatedAt.toISOString() };
+    return {
+      ballotId: ballot.id,
+      allocations: parsed.allocations,
+      updatedAt: updatedAt.toISOString(),
+      updateAvailableAt: getBallotUpdateAvailableAt(updatedAt).toISOString(),
+    };
   });
 }

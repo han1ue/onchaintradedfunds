@@ -8,6 +8,13 @@
       "when": 1786674663670,
       "tag": "0000_unusual_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786676361480,
+      "tag": "0001_allow_self_votes",
+      "breakpoints": true
     }
   ]
 }
