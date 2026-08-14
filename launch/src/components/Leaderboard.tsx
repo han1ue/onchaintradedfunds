@@ -23,7 +23,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
   </div>;
 
   return <div className="leaderboard">
-    <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Verified votes"}</span></div>
+    <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Votes"}</span></div>
     {entries.map((entry) => <Link className="leaderboardRow" href={`/otfs/${entry.slug}`} aria-label={`View ${entry.name} proposal details`} key={entry.id}>
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
@@ -32,7 +32,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       </div>
       <AllocationStrip allocations={entry.allocations} showPercentages />
       <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
-      <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong><span>verified</span></div>
+      <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong></div>
     </Link>)}
   </div>;
 }

@@ -7,14 +7,12 @@ export async function getCompetition(): Promise<CompetitionSummary> {
   const rows = await sqlClient<CompetitionSummary[]>`
     select c.id::text, c.slug, c.name, c.phase, c.starts_at as "startsAt", c.ends_at as "endsAt",
       c.min_followers as "minFollowers", c.min_account_age_days as "minAccountAgeDays",
-      count(distinct p.id)::int as "proposalCount",
-      count(distinct v.id) filter (where v.status = 'valid')::int as "verifiedVoteCount",
-      count(distinct v.voter_user_id) filter (where v.status = 'valid')::int as "uniqueVoterCount"
+      (select count(*)::int from proposals p where p.competition_id = c.id and p.status in ('accepted','hidden')) as "proposalCount",
+      (select coalesce(sum(ba.votes), 0)::int from ballots b join ballot_allocations ba on ba.ballot_id = b.id where b.competition_id = c.id and b.status = 'valid') as "voteCount",
+      (select count(*)::int from ballots b where b.competition_id = c.id and b.status = 'valid') as "uniqueVoterCount"
     from competitions c
-    left join proposals p on p.competition_id = c.id and p.status in ('accepted','hidden')
-    left join votes v on v.competition_id = c.id
     where c.phase in ('open','auditing','final')
-    group by c.id order by c.starts_at desc limit 1`;
+    order by c.starts_at desc limit 1`;
   if (!rows[0]) throw new Error("COMPETITION_NOT_FOUND");
   return rows[0];
 }
@@ -34,9 +32,10 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       select p.id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, u.display_name as creator_name,
         u.profile_image_url as creator_profile_image_url,
-        count(v.id) filter (where v.status = 'valid')::int as votes
+        coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
       from proposals p join users u on u.id = p.creator_user_id
-      left join votes v on v.proposal_id = p.id
+      left join ballot_allocations ba on ba.proposal_id = p.id
+      left join ballots b on b.id = ba.ballot_id
       where p.status = 'accepted'
       group by p.id, u.id
     ), ordered as (

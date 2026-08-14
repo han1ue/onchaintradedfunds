@@ -8,7 +8,7 @@ import { XProfileImage } from "@/components/XProfileImage";
 import { auth, signOut } from "@/server/auth";
 import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
-import { activityEvents, proposals, users, votes } from "@/server/db/schema";
+import { activityEvents, ballots, proposals, users } from "@/server/db/schema";
 import { getParticipationEligibility } from "@/server/participation";
 export const metadata = { title: "My profile" };
 
@@ -22,7 +22,8 @@ type AccountActivity = {
 function activityLabel(event: AccountActivity) {
   const proposalName = event.proposalName ?? "OTF proposal";
   if (event.eventType === "proposal.accepted") return `Submitted ${proposalName}`;
-  if (event.eventType === "vote.accepted") return `Voted for ${proposalName}`;
+  if (event.eventType === "ballot.activated") return "Activated a 100-vote ballot";
+  if (event.eventType === "ballot.updated") return "Redistributed 100 votes";
   if (event.eventType === "proposal.hidden") return `${proposalName} was hidden from the leaderboard`;
   if (event.eventType === "proposal.disqualified") return `${proposalName} was removed from the competition`;
   if (event.eventType === "proposal.withdrawn") return `Withdrew ${proposalName}`;
@@ -36,11 +37,11 @@ async function disconnectX() {
 
 export default async function MePage() {
   const session = await auth();
-  if (!session?.user?.id) return <div className="pageShell contentPage"><SectionCard className="emptyState"><LogIn size={30} /><h1>Sign in with X to view your activity</h1><p>Your proposals, verified votes and proof history appear here.</p><XSignInButton redirectTo="/me" /></SectionCard></div>;
-  const [identityRows, ownProposals, ownVotes, activity] = db ? await Promise.all([
+  if (!session?.user?.id) return <div className="pageShell contentPage"><SectionCard className="emptyState"><LogIn size={30} /><h1>Sign in with X to view your activity</h1><p>Your proposals, vote distribution and proof history appear here.</p><XSignInButton redirectTo="/me" /></SectionCard></div>;
+  const [identityRows, ownProposals, ownBallots, activity] = db ? await Promise.all([
     db.select().from(users).where(eq(users.id, session.user.id)).limit(1),
     db.select().from(proposals).where(eq(proposals.creatorUserId, session.user.id)),
-    db.select().from(votes).where(eq(votes.voterUserId, session.user.id)),
+    db.select().from(ballots).where(eq(ballots.voterUserId, session.user.id)),
     db.select({
       id: activityEvents.id,
       eventType: activityEvents.eventType,
@@ -56,7 +57,7 @@ export default async function MePage() {
   const username = session.user.xUsername ?? session.user.name ?? "X user";
   const proposedOtfCount = ownProposals.filter((proposal) => proposal.status !== "draft" && proposal.status !== "posting").length;
   const runningOtfCount = ownProposals.filter((proposal) => proposal.status === "accepted").length;
-  const votesCast = ownVotes.filter((vote) => vote.status === "valid").length;
+  const votesAllocated = ownBallots.some((ballot) => ballot.status === "valid") ? 100 : 0;
   return <div className="pageShell contentPage">
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
@@ -72,8 +73,8 @@ export default async function MePage() {
     <div className="accountMetrics">
       <SectionCard><Layers3 size={19} /><span>OTF proposals</span><strong>{proposedOtfCount}</strong></SectionCard>
       <SectionCard><Activity size={19} /><span>Running</span><strong>{runningOtfCount}</strong></SectionCard>
-      <SectionCard><Vote size={19} /><span>Votes cast</span><strong>{votesCast}</strong></SectionCard>
+      <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
-    <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => <div key={event.id}><span>{activityLabel(event)}</span><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Submit an OTF proposal</Link> or vote from the leaderboard.</p>}</SectionCard>
+    <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => <div key={event.id}><span>{activityLabel(event)}</span><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Submit an OTF proposal</Link> or <Link className="inlineLink" href="/vote">distribute your 100 votes</Link>.</p>}</SectionCard>
   </div>;
 }

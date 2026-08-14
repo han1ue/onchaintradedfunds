@@ -88,8 +88,8 @@ export const competitions = pgTable("competitions", {
   minAccountAgeDays: integer("min_account_age_days").default(30).notNull(),
   minAssets: integer("min_assets").default(2).notNull(),
   minAssetWeightBps: integer("min_asset_weight_bps").default(100).notNull(),
-  ruleVersion: text("rule_version").default("v1").notNull(),
-  rankingPolicyVersion: text("ranking_policy_version").default("votes-v1").notNull(),
+  ruleVersion: text("rule_version").default("v2").notNull(),
+  rankingPolicyVersion: text("ranking_policy_version").default("allocated-votes-v2").notNull(),
   rulesFrozenAt: timestamp("rules_frozen_at", { withTimezone: true }),
   finalizedAt: timestamp("finalized_at", { withTimezone: true }),
   ...timestamps
@@ -147,7 +147,7 @@ export const tweetEvidence = pgTable("tweet_evidence", {
   action: evidenceAction("action").notNull(),
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "cascade" }),
   xPostId: text("x_post_id").notNull().unique(),
   xAuthorId: text("x_author_id").notNull(),
   xAuthorUsername: text("x_author_username").notNull(),
@@ -171,10 +171,11 @@ export const xActionChallenges = pgTable("x_action_challenges", {
   action: evidenceAction("action").notNull(),
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
   reason: text("reason").notNull(),
   postText: text("post_text").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
@@ -189,20 +190,30 @@ export const evidenceChecks = pgTable("evidence_checks", {
   responseMeta: jsonb("response_meta").$type<Record<string, unknown>>().default({}).notNull()
 }, (table) => [index("evidence_check_history_idx").on(table.evidenceId, table.checkedAt)]);
 
-export const votes = pgTable("votes", {
+export const ballots = pgTable("ballots", {
   id: uuid("id").defaultRandom().primaryKey(),
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
-  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   voterUserId: text("voter_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   evidenceId: uuid("evidence_id").unique().references(() => tweetEvidence.id, { onDelete: "restrict" }),
   followerCount: integer("follower_count").notNull(),
   status: voteStatus("status").default("posting").notNull(),
-  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
   invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [
-  uniqueIndex("vote_once_per_otf_uq").on(table.competitionId, table.proposalId, table.voterUserId),
-  index("valid_votes_idx").on(table.proposalId, table.status)
+  uniqueIndex("ballot_once_per_competition_uq").on(table.competitionId, table.voterUserId),
+  index("valid_ballots_idx").on(table.competitionId, table.status)
+]);
+
+export const ballotAllocations = pgTable("ballot_allocations", {
+  ballotId: uuid("ballot_id").notNull().references(() => ballots.id, { onDelete: "cascade" }),
+  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
+  votes: integer("votes").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.ballotId, table.proposalId] }),
+  index("ballot_allocations_proposal_idx").on(table.proposalId),
+  check("ballot_allocation_votes_range", sql`${table.votes} between 1 and 100`)
 ]);
 
 export const activityEvents = pgTable("activity_events", {
@@ -210,7 +221,7 @@ export const activityEvents = pgTable("activity_events", {
   competitionId: uuid("competition_id").references(() => competitions.id, { onDelete: "set null" }),
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "set null" }),
-  voteId: uuid("vote_id").references(() => votes.id, { onDelete: "set null" }),
+  ballotId: uuid("ballot_id").references(() => ballots.id, { onDelete: "set null" }),
   evidenceId: uuid("evidence_id").references(() => tweetEvidence.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
@@ -243,7 +254,7 @@ export const leaderboardRows = pgTable("leaderboard_rows", {
   snapshotId: uuid("snapshot_id").notNull().references(() => leaderboardSnapshots.id, { onDelete: "cascade" }),
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "restrict" }),
   rank: integer("rank").notNull(),
-  validVotes: integer("valid_votes").notNull()
+  votes: integer("votes").notNull()
 }, (table) => [
   primaryKey({ columns: [table.snapshotId, table.proposalId] }),
   uniqueIndex("leaderboard_rank_uq").on(table.snapshotId, table.rank)
@@ -273,7 +284,14 @@ export const adminActions = pgTable("admin_actions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
-export const usersRelations = relations(users, ({ many }) => ({ proposals: many(proposals), votes: many(votes), sessions: many(sessions) }));
+export const usersRelations = relations(users, ({ many }) => ({ proposals: many(proposals), ballots: many(ballots), sessions: many(sessions) }));
 export const proposalsRelations = relations(proposals, ({ many, one }) => ({
-  assets: many(proposalAssets), votes: many(votes), creator: one(users, { fields: [proposals.creatorUserId], references: [users.id] })
+  assets: many(proposalAssets), ballotAllocations: many(ballotAllocations), creator: one(users, { fields: [proposals.creatorUserId], references: [users.id] })
+}));
+export const ballotsRelations = relations(ballots, ({ many, one }) => ({
+  allocations: many(ballotAllocations), voter: one(users, { fields: [ballots.voterUserId], references: [users.id] })
+}));
+export const ballotAllocationsRelations = relations(ballotAllocations, ({ one }) => ({
+  ballot: one(ballots, { fields: [ballotAllocations.ballotId], references: [ballots.id] }),
+  proposal: one(proposals, { fields: [ballotAllocations.proposalId], references: [proposals.id] })
 }));

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en" suppressHydrationWarning><body>
     {/* <!-- DIRECTION
-    1. Intent: Operate — compare proposed OTFs, inspect their thesis and portfolio shape, then submit or cast an X-verified vote.
+    1. Intent: Operate — compare proposed OTFs, inspect their thesis and portfolio shape, then submit or distribute a 100-vote ballot.
     2. Composition: A dominant ranked leaderboard with thesis excerpts and compact allocation strips, paired with a focused action rail; details reveal exact percentages.
     3. Typography: The incumbent OTF system stack, compact labels, tabular numerals, and restrained hierarchy.
     4. Color: Dark teal product palette with flat bordered surfaces; status color is sparse and semantic.

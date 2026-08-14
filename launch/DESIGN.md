@@ -206,7 +206,7 @@ The palette is a cool near-black neutral ladder with a single teal interaction v
 
 ## Layout
 
-The desktop shell is centered at a maximum width of 1360px. Navigation is a sticky 56px band; page content uses 24px horizontal gutters and a 12px recurring grid gap. The primary desktop composition places a flexible leaderboard beside a 300px action rail, while proposal detail uses a flexible content column beside a 310px voting rail. Content pages narrow to 1000px, and forms may use a 1160px working width with a 270px guidance rail.
+The desktop shell is centered at a maximum width of 1360px. Navigation is a sticky 56px band; page content uses 24px horizontal gutters and a 12px recurring grid gap. The primary desktop composition places a flexible leaderboard beside a 300px action rail, while proposal detail uses a flexible content column beside a 310px voting rail. The 100-vote ballot uses a flexible proposal list beside a sticky 320px total and activation rail. Content pages narrow to 1000px, and forms may use a 1160px working width with a 270px guidance rail.
 
 At 1120px, the primary board collapses to one column and the leaderboard removes its portfolio column before creator identity. At 760px, gutters contract to 14px, main split layouts become single columns, the leaderboard turns from a header-led table into self-contained rows, creator metadata then recedes, and supporting metric detail is reduced. At 440px, navigation and row density tighten again while preserving rank, OTF identity, and vote total. The minimum supported canvas is 320px.
 
@@ -265,7 +265,11 @@ The 56px sticky navigation uses a translucent navigation-ink material, a bottom 
 
 ### Ranked Leaderboard
 
-The signature comparison component aligns rank, OTF identity and thesis, portfolio shape, creator, and verified total in a single desktop row. Each row is at least 102px high, divided by hairlines, and gains only a faint teal wash on hover. OTF identity uses the shared ticker-aware `OtfTokenIcon`. Allocation is encoded by a 6px segmented strip with clipped symbol and percentage labels; proposal detail grows the strip to 9px and follows it with a full allocation table. Entry animation is a restrained 5px rise over 320ms with staggered delays, and it is removed for reduced-motion preference.
+The signature comparison component aligns rank, OTF identity and thesis, portfolio shape, creator, and allocated vote total in a single desktop row. Each row is at least 102px high, divided by hairlines, and gains only a faint teal wash on hover. OTF identity uses the shared ticker-aware `OtfTokenIcon`. Allocation is encoded by a 6px segmented strip with clipped symbol and percentage labels; proposal detail grows the strip to 9px and follows it with a full allocation table. Entry animation is a restrained 5px rise over 320ms with staggered delays, and it is removed for reduced-motion preference.
+
+### 100-Vote Ballot
+
+The ballot is a single competition-wide workspace, not a set of independent proposal actions. Each proposal receives a numeric vote field, the running total remains visible in a sticky rail, and exactly 100 votes are required to activate or save. The voter’s own proposal is visibly disabled. One public X post activates the ballot; later redistributions reuse that verified ballot without requesting another post.
 
 ### Wizard Progress
 

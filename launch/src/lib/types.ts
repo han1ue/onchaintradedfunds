@@ -30,7 +30,7 @@ export type CompetitionSummary = {
   minFollowers: number;
   minAccountAgeDays: number;
   proposalCount: number;
-  verifiedVoteCount: number;
+  voteCount: number;
   uniqueVoterCount: number;
 };
 
@@ -50,4 +50,14 @@ export type ParticipationEligibility = {
   minFollowers: number;
   oldEnough: boolean | null;
   minAccountAgeDays: number;
+};
+
+export type VoteAllocation = { proposalId: string; votes: number };
+
+export type BallotSummary = {
+  id: string;
+  status: "posting" | "valid" | "invalid";
+  activatedAt: string | null;
+  proofUrl?: string | null;
+  allocations: VoteAllocation[];
 };

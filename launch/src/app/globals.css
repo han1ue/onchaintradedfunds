@@ -381,6 +381,47 @@ button { color: inherit; }
 .votePanel .cardHeading svg { color: var(--teal); }
 .panelBody { display: grid; gap: 14px; padding: 18px; }
 .panelBody .button { width: 100%; }
+.ballotCta > div:not(.eligibilityPrompt) { display: grid; gap: 7px; }
+.ballotCta > div:not(.eligibilityPrompt) > strong { font-size: .86rem; }
+.ballotCta > div:not(.eligibilityPrompt) > p { margin: 0; color: var(--text-muted); font-size: .73rem; line-height: 1.55; }
+.ballotPage { max-width: 1360px; }
+.ballotPageHeader { max-width: 760px; }
+.ballotLayout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: start; }
+.ballotCard { overflow: hidden; }
+.ballotToolbar { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
+.ballotToolbar > div:first-child { display: grid; gap: 4px; }
+.ballotToolbar > div:first-child > span { font-size: .86rem; font-weight: 750; }
+.ballotToolbar small { color: var(--text-muted); font-size: .68rem; line-height: 1.4; }
+.ballotTotal { display: flex; align-items: baseline; gap: 5px; color: var(--danger); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ballotTotal.valid { color: var(--green); }
+.ballotTotal strong { font-size: 1.3rem; letter-spacing: -.03em; }
+.ballotTotal span { color: var(--text-muted); font-size: .67rem; }
+.ballotRows { display: grid; }
+.ballotRow { min-height: 66px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 140px; gap: 12px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--border); }
+.ballotRow:last-child { border-bottom: 0; }
+.ballotRow.ownProposal { background: color-mix(in srgb, var(--card-raised) 58%, transparent); }
+.ballotIdentity { min-width: 0; display: grid; gap: 3px; }
+.ballotIdentity strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.ballotIdentity span { color: var(--text-muted); font-size: .66rem; }
+.ballotVoteInput { height: 38px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); overflow: hidden; }
+.ballotVoteInput:focus-within { border-color: var(--teal); box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 12%); }
+.ballotVoteInput input { width: 100%; min-width: 0; height: 100%; padding: 0 8px 0 11px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: .82rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.ballotVoteInput > span:last-child { padding-right: 10px; color: var(--text-muted); font-size: .65rem; }
+.ownProposalLabel { justify-self: end; color: var(--text-muted); font-size: .67rem; font-weight: 700; }
+.ballotRail { position: sticky; top: 68px; display: grid; gap: 12px; }
+.ballotSummary { padding: 18px; }
+.ballotSummary > div { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.ballotSummary span { color: var(--text-muted); font-size: .7rem; }
+.ballotSummary strong { color: var(--gold); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.ballotSummary strong.complete { color: var(--green); }
+.ballotSummary strong.over { color: var(--danger); }
+.ballotSummary p { margin: 10px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
+.ballotAction { display: grid; gap: 14px; padding: 18px; }
+.ballotAction > strong { font-size: .86rem; }
+.ballotAction > p { margin: -6px 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.5; }
+.ballotAction .button { width: 100%; }
+.ballotAction .inlineLink { display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; }
+.ballotMessage { margin: 0; padding: 0 4px; line-height: 1.5; }
 .proofFlow { display: grid; gap: 14px; }
 .proofFlow .button { width: 100%; }
 .proofLink { margin: 12px 4px; color: var(--text-muted); }
@@ -482,7 +523,9 @@ button { color: inherit; }
   .howActions { padding-top: 0; }
   .footer { flex-wrap: wrap; gap: 8px 16px; padding: 12px 14px; }
   .infrastructureStatus { width: 100%; }
-  .wizardLayout, .proposalGrid { grid-template-columns: 1fr; }
+  .wizardLayout, .proposalGrid, .ballotLayout { grid-template-columns: 1fr; }
+  .ballotRail { position: static; }
+  .ballotToolbar { align-items: flex-start; }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }
   .progressSteps > div { justify-content: flex-start; }
@@ -519,6 +562,10 @@ button { color: inherit; }
   .leaderboardRow { grid-template-columns: 42px minmax(0, 1fr) 57px; column-gap: 6px; padding: 12px 10px; }
   .voteTotal strong { font-size: .88rem; }
   .allocationInput { grid-template-columns: minmax(0, 1fr) 82px 34px; }
+  .ballotToolbar { padding: 12px; }
+  .ballotRow { grid-template-columns: 38px minmax(0, 1fr); gap: 9px; padding: 11px 12px; }
+  .ballotVoteInput, .ownProposalLabel { grid-column: 1 / -1; width: 100%; justify-self: stretch; }
+  .ownProposalLabel { padding: 2px 0 4px 47px; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }

@@ -14,7 +14,8 @@ export const errorMessages: Record<string, string> = {
   RATE_LIMIT_UNAVAILABLE: "Request protection is temporarily unavailable. Please try again shortly.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
-  DUPLICATE_VOTE: "You have already voted for this OTF.",
+  BALLOT_ALREADY_ACTIVE: "Your 100-vote ballot is already active. Update its distribution instead.",
+  BALLOT_NOT_ACTIVE: "Activate your 100-vote ballot before changing its distribution.",
   SELF_VOTE: "You cannot vote for your own OTF.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
   COMPETITION_NOT_OPEN: "The competition is not currently open."

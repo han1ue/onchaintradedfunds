@@ -28,6 +28,24 @@ export const xPostProofSchema = z.object({
   postUrl: z.string().url().max(300)
 });
 
+export const voteAllocationSchema = z.object({
+  proposalId: z.string().uuid(),
+  votes: z.number().int().min(1).max(100)
+});
+
+export const voteDistributionSchema = z.array(voteAllocationSchema).min(1).superRefine((items, context) => {
+  if (new Set(items.map((item) => item.proposalId)).size !== items.length) context.addIssue({ code: "custom", message: "OTF proposals must be unique" });
+  if (items.reduce((sum, item) => sum + item.votes, 0) !== 100) context.addIssue({ code: "custom", message: "Votes must total 100" });
+});
+
+export const ballotActivationSchema = z.object({
+  reason: xPostReasonSchema,
+  allocations: voteDistributionSchema,
+  turnstileToken: z.string().optional()
+});
+
+export const ballotUpdateSchema = z.object({ allocations: voteDistributionSchema });
+
 export function parseXPostId(value: string) {
   const url = new URL(value);
   if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname.toLowerCase())) throw new Error("PROOF_MISMATCH");

@@ -20,7 +20,7 @@ export default async function HomePage() {
       <div className="heroDeadline"><Clock3 size={17} /><span>Voting closes</span><strong>{new Date(competition.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(competition.endsAt)} days remaining</small></div>
     </section>
     <div className="metricsGrid">
-      <MetricCard label="Verified votes" value={competition.verifiedVoteCount.toLocaleString()} />
+      <MetricCard label="Votes" value={competition.voteCount.toLocaleString()} />
       <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} />
       <MetricCard label="Unique voters" value={competition.uniqueVoterCount.toLocaleString()} />
     </div>
@@ -32,8 +32,8 @@ export default async function HomePage() {
       <HowItWorks eligibility={eligibility} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Include at least two eligible assets totaling exactly 100%.</li><li>Approve one public X post when submitting a proposal or casting a vote.</li><li>One vote per account per OTF; no self-votes.</li><li>Final rank directly determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
-      <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted proposal ${entry.name}` : `reached ${entry.votes.toLocaleString()} verified votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Include at least two eligible assets totaling exactly 100%.</li><li>Each eligible account distributes exactly 100 votes.</li><li>Activate your ballot with one public X post, then redistribute without posting again.</li><li>No votes for your own proposal; final rank determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><Vote size={18} /></div><div className="recentActivity">{leaderboard.slice(0, 4).map((entry, index) => <div key={entry.id}>{index === 0 ? <Trophy size={16} /> : <BadgeCheck size={16} />}<span><strong>@{entry.creator.username}</strong> {index % 2 ? `submitted proposal ${entry.name}` : `reached ${entry.votes.toLocaleString()} votes`}</span><small>{index * 7 + 2}m ago</small></div>)}</div></SectionCard>
     </div>
   </div>;
 }

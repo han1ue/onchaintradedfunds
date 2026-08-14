@@ -5,9 +5,9 @@ import { requireSession } from "./guards";
 import { adminXIds } from "./env";
 import { requireDb } from "./db";
 import {
-  activityEvents, adminActions, competitions, evidenceChecks,
+  activityEvents, adminActions, ballotAllocations, ballots, competitions, evidenceChecks,
   finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposals,
-  tweetEvidence, votes
+  tweetEvidence
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
 
@@ -30,7 +30,7 @@ export async function createCompetition(input: { slug: string; name: string; sta
   const endsAt = input.endsAt ? new Date(input.endsAt) : defaultCompetitionEnd(startsAt);
   if (!/^[a-z0-9-]{2,40}$/.test(input.slug) || input.name.trim().length < 3 || !Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) throw new Error("INVALID_COMPETITION");
   const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 100, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
-  await database.insert(adminActions).values({ adminUserId: session.user.id, action: "competition.create", targetType: "competition", targetId: competition.id, reason: "Create competition with frozen V1 defaults", after: competition });
+  await database.insert(adminActions).values({ adminUserId: session.user.id, action: "competition.create", targetType: "competition", targetId: competition.id, reason: "Create competition with frozen 100-vote ballot defaults", after: competition });
   return competition;
 }
 
@@ -41,7 +41,7 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   if (!before) throw new Error("PROPOSAL_NOT_FOUND");
   const [after] = await database.update(proposals).set({ status, moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
-  await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: "v1", metadata: { reason } });
+  await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: "v2", metadata: { reason } });
   return after;
 }
 
@@ -63,8 +63,8 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
       await database.transaction(async (transaction) => {
         await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
         await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
-        await transaction.update(votes).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(votes.evidenceId, evidence.id));
-        if (evidence.action === "submission") await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
+        await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.evidenceId, evidence.id));
+        if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
       });
     }
     if (runId) await database.update(finalizationRuns).set({ cursor: evidence.id }).where(eq(finalizationRuns.id, runId));
@@ -80,17 +80,17 @@ export async function finalizeCompetition(competitionId: string) {
   await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
   try {
     await recheckEvidence(competitionId, run.id);
-    const scored = await database.select({ id: proposals.id, acceptedAt: proposals.acceptedAt, votes: sql<number>`count(${votes.id}) filter (where ${votes.status} = 'valid')::int` })
-      .from(proposals).leftJoin(votes, eq(votes.proposalId, proposals.id))
+    const scored = await database.select({ id: proposals.id, acceptedAt: proposals.acceptedAt, votes: sql<number>`coalesce(sum(case when ${ballots.status} = 'valid' then ${ballotAllocations.votes} else 0 end), 0)::int` })
+      .from(proposals).leftJoin(ballotAllocations, eq(ballotAllocations.proposalId, proposals.id)).leftJoin(ballots, eq(ballots.id, ballotAllocations.ballotId))
       .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted"))).groupBy(proposals.id);
     const ranked = rankEntries(scored.map((item) => ({ id: item.id, acceptedAt: item.acceptedAt!, votes: item.votes })));
-    const canonical = { competitionId, ruleVersion: competition.ruleVersion, rankingPolicyVersion: competition.rankingPolicyVersion, rows: ranked.map(({ id, rank, votes }) => ({ rank, proposalId: id, validVotes: votes })) };
+    const canonical = { competitionId, ruleVersion: competition.ruleVersion, rankingPolicyVersion: competition.rankingPolicyVersion, rows: ranked.map(({ id, rank, votes }) => ({ rank, proposalId: id, votes })) };
     const canonicalHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
     const launchStartAt = competition.launchStartAt ?? new Date(Date.now() + 86_400_000);
     await database.transaction(async (transaction) => {
       const [snapshot] = await transaction.insert(leaderboardSnapshots).values({ competitionId, canonicalHash, canonicalJson: canonical }).returning();
       if (ranked.length) {
-        await transaction.insert(leaderboardRows).values(ranked.map((row) => ({ snapshotId: snapshot.id, proposalId: row.id, rank: row.rank, validVotes: row.votes })));
+        await transaction.insert(leaderboardRows).values(ranked.map((row) => ({ snapshotId: snapshot.id, proposalId: row.id, rank: row.rank, votes: row.votes })));
         await transaction.insert(launchQueue).values(ranked.map((row) => ({ competitionId, proposalId: row.id, rank: row.rank, earliestLaunchAt: earliestLaunchAt(launchStartAt, row.rank, competition.launchIntervalDays) })));
       }
       await transaction.update(competitions).set({ phase: "final", launchStartAt, finalizedAt: new Date(), updatedAt: new Date() }).where(eq(competitions.id, competitionId));

@@ -12,8 +12,8 @@ export function buildSubmissionPost(reason: string, proposal: XPostProposal, sit
   return `${reason}\n\nI submitted ${proposal.name} as an OTF proposal to OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
 }
 
-export function buildVotePost(reason: string, proposal: XPostProposal, siteUrl: string, challenge?: string) {
-  return `${reason}\n\nI just voted for ${proposal.name} in OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
+export function buildVotePost(reason: string, siteUrl: string, challenge?: string) {
+  return `${reason}\n\nI activated my 100 votes in OTF Launch${challenge ? ` · ${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
 }
 
 export function buildXIntentUrl(text: string) {

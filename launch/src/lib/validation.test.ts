@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries } from "./validation";
+import { earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema } from "./validation";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
 const assetB = "22222222-2222-4222-8222-222222222222";
@@ -26,6 +26,18 @@ describe("proof links", () => {
     expect(parseXPostId("https://twitter.com/otf/status/987654321")).toBe("987654321");
   });
   it("rejects lookalike hosts", () => expect(() => parseXPostId("https://x.com.evil.test/a/status/1")).toThrow("PROOF_MISMATCH"));
+});
+
+describe("100-vote ballot validation", () => {
+  it("accepts exactly 100 votes across distinct proposals", () => {
+    expect(voteDistributionSchema.parse([{ proposalId: assetA, votes: 65 }, { proposalId: assetB, votes: 35 }])).toHaveLength(2);
+  });
+  it("rejects distributions that do not total 100 votes", () => {
+    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 60 }, { proposalId: assetB, votes: 30 }])).toThrow(/100/);
+  });
+  it("rejects duplicate proposals", () => {
+    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 50 }, { proposalId: assetA, votes: 50 }])).toThrow(/unique/);
+  });
 });
 
 describe("ranking and launch windows", () => {
