@@ -4,6 +4,29 @@ import { useEffect, useState } from "react";
 
 type State = "checking" | "connected" | "unavailable";
 type Health = { database: boolean; redis: boolean };
+type CachedHealth = Health & { checkedAt: number };
+
+const healthCacheKey = "otf-launch.infrastructure-health.v1";
+const healthCacheTtlMs = 60_000;
+
+function readCachedHealth(): CachedHealth | null {
+  try {
+    const value = window.localStorage.getItem(healthCacheKey);
+    if (!value) return null;
+    const cached = JSON.parse(value) as Partial<CachedHealth>;
+    if (typeof cached.database !== "boolean" || typeof cached.redis !== "boolean" || typeof cached.checkedAt !== "number") return null;
+    return cached as CachedHealth;
+  } catch {
+    return null;
+  }
+}
+
+function displayHealth(result: Health) {
+  return {
+    database: result.database ? "connected" as const : "unavailable" as const,
+    redis: result.redis ? "connected" as const : "unavailable" as const,
+  };
+}
 
 export function InfrastructureStatus() {
   const [health, setHealth] = useState<{ database: State; redis: State }>({
@@ -12,6 +35,12 @@ export function InfrastructureStatus() {
   });
 
   useEffect(() => {
+    const cached = readCachedHealth();
+    if (cached && Date.now() - cached.checkedAt < healthCacheTtlMs) {
+      setHealth(displayHealth(cached));
+      return;
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
 
@@ -20,10 +49,14 @@ export function InfrastructureStatus() {
         if (!response.ok) throw new Error("HEALTH_CHECK_FAILED");
         return response.json() as Promise<Health>;
       })
-      .then((result) => setHealth({
-        database: result.database ? "connected" : "unavailable",
-        redis: result.redis ? "connected" : "unavailable",
-      }))
+      .then((result) => {
+        setHealth(displayHealth(result));
+        try {
+          window.localStorage.setItem(healthCacheKey, JSON.stringify({ ...result, checkedAt: Date.now() } satisfies CachedHealth));
+        } catch {
+          // Storage can be unavailable in private or restricted browsing contexts.
+        }
+      })
       .catch(() => setHealth({ database: "unavailable", redis: "unavailable" }))
       .finally(() => clearTimeout(timeout));
 
