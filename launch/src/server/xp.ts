@@ -14,6 +14,7 @@ import {
 } from "@/lib/xp";
 import { requireDb, sqlClient } from "./db";
 import { voteTranches, xpCalculationRuns, xpSnapshotRows } from "./db/schema";
+import { publicVoterName } from "@/lib/voter-alias";
 
 type ProposalRow = {
   id: string;
@@ -220,10 +221,10 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
       released: { performance: 2_520_000, participation: 360_000, creator: 720_000, total: 3_600_000 },
       allocated: { performance: 2_520_000, participation: 360_000, creator: 720_000, total: 3_600_000 },
       rows: [
-        { userId: "preview-1", username: "satoshi_data", displayName: "Satoshi Data", performanceXp: 884_321, participationXp: 126_486, creatorXp: 251_908, totalXp: 1_262_715, uniqueSupporterCount: 18, submissionBoost: true, pendingTrancheCount: 0 },
-        { userId: "preview-2", username: "chaincap", displayName: "Chain Capital", performanceXp: 701_204, participationXp: 103_514, creatorXp: 215_742, totalXp: 1_020_460, uniqueSupporterCount: 13, submissionBoost: true, pendingTrancheCount: 1 },
-        { userId: "preview-3", username: "robotconomy", displayName: "Robotconomy", performanceXp: 582_991, participationXp: 82_000, creatorXp: 162_350, totalXp: 827_341, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 0 },
-        { userId: "preview-4", username: "marble_fund", displayName: "Marble Fund", performanceXp: 351_484, participationXp: 48_000, creatorXp: 90_000, totalXp: 489_484, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 0 },
+        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 884_321, participationXp: 126_486, creatorXp: 251_908, totalXp: 1_262_715, uniqueSupporterCount: 18, submissionBoost: true, pendingTrancheCount: 0 },
+        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 701_204, participationXp: 103_514, creatorXp: 215_742, totalXp: 1_020_460, uniqueSupporterCount: 13, submissionBoost: true, pendingTrancheCount: 1 },
+        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 582_991, participationXp: 82_000, creatorXp: 162_350, totalXp: 827_341, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 0 },
+        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 351_484, participationXp: 48_000, creatorXp: 90_000, totalXp: 489_484, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 0 },
       ],
     };
   }
@@ -239,12 +240,21 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
   if (!run) {
     return { status: "live", calculatedAt: new Date(0).toISOString(), priceCheckpointAt: null, policyVersion: XP_POLICY_VERSION, released: { performance: 0, participation: 0, creator: 0, total: 0 }, allocated: { performance: 0, participation: 0, creator: 0, total: 0 }, rows: [] };
   }
-  const rows = await sqlClient<XpLeaderboard["rows"]>`
-    select x.user_id as "userId", u.x_username as username, u.display_name as "displayName", u.profile_image_url as "profileImageUrl",
+  const privateRows = await sqlClient<{
+    userId: string; username: string; allowRealUsername: boolean;
+    performanceXp: number; participationXp: number; creatorXp: number; totalXp: number;
+    uniqueSupporterCount: number; submissionBoost: boolean; pendingTrancheCount: number;
+  }[]>`
+    select x.user_id as "userId", u.x_username as username, u.show_real_username_on_voter_leaderboard as "allowRealUsername",
       x.performance_xp as "performanceXp", x.participation_xp as "participationXp", x.creator_xp as "creatorXp", x.total_xp as "totalXp",
       x.unique_supporter_count as "uniqueSupporterCount", x.submission_boost as "submissionBoost", x.pending_tranche_count as "pendingTrancheCount"
     from xp_snapshot_rows x join users u on u.id = x.user_id where x.run_id = ${run.id}::uuid
     order by x.total_xp desc, x.user_id`;
+  const rows: XpLeaderboard["rows"] = privateRows.map(({ userId, username, allowRealUsername, ...row }) => ({
+    ...row,
+    publicName: publicVoterName({ userId, username, allowRealUsername }),
+    usesRealUsername: allowRealUsername,
+  }));
   return {
     status: run.status, calculatedAt: run.calculatedAt, priceCheckpointAt: run.priceCheckpointAt, policyVersion: run.policyVersion,
     released: { performance: run.performanceReleased, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
@@ -255,5 +265,16 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
 
 export async function getUserXp(userId: string) {
   const leaderboard = await getXpLeaderboard();
-  return { ...leaderboard, rows: leaderboard.rows.filter((row) => row.userId === userId) };
+  if (!sqlClient) return { ...leaderboard, rows: [] };
+  const [row] = await sqlClient<{
+    performanceXp: number; participationXp: number; creatorXp: number; totalXp: number;
+    uniqueSupporterCount: number; submissionBoost: boolean; pendingTrancheCount: number;
+  }[]>`
+    select x.performance_xp as "performanceXp", x.participation_xp as "participationXp", x.creator_xp as "creatorXp", x.total_xp as "totalXp",
+      x.unique_supporter_count as "uniqueSupporterCount", x.submission_boost as "submissionBoost", x.pending_tranche_count as "pendingTrancheCount"
+    from xp_snapshot_rows x
+    where x.user_id = ${userId}
+      and x.run_id = (select id from xp_calculation_runs order by case when status = 'final' then 0 else 1 end, calculated_at desc limit 1)
+    limit 1`;
+  return { ...leaderboard, rows: row ? [{ ...row, userId, publicName: "You", usesRealUsername: false }] : [] };
 }

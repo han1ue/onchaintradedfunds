@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, BadgeCheck, CircleX, Gauge, Layers3, LogIn, LogOut, ShieldAlert, Users, Vote } from "lucide-react";
+import { Activity, BadgeCheck, CircleX, Gauge, Layers3, LogIn, LogOut, ShieldAlert, ShieldCheck, Users, Vote } from "lucide-react";
 import { desc, eq } from "drizzle-orm";
 import { EligibilityAction } from "@/components/EligibilityGate";
 import { Button, SectionCard } from "@/components/ui";
@@ -11,6 +11,8 @@ import { db } from "@/server/db";
 import { activityEvents, ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
 import { getParticipationEligibility } from "@/server/participation";
 import { getUserXp } from "@/server/xp";
+import { generatedVoterAlias } from "@/lib/voter-alias";
+import { VoterLeaderboardPrivacyForm } from "@/components/VoterLeaderboardPrivacyForm";
 export const metadata = { title: "My profile" };
 
 type AccountActivity = {
@@ -60,6 +62,7 @@ export default async function MePage() {
   const proposedOtfCount = ownProposals.filter((proposal) => proposal.status !== "draft" && proposal.status !== "posting").length;
   const runningOtfCount = ownProposals.filter((proposal) => proposal.status === "accepted").length;
   const votesAllocated = ownVoteAllocations.filter((allocation) => allocation.status === "valid").reduce((sum, allocation) => sum + allocation.votes, 0);
+  const voterAlias = generatedVoterAlias(session.user.id);
   return <div className="pageShell contentPage">
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
@@ -78,6 +81,7 @@ export default async function MePage() {
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
     <SectionCard className="accountXpSummary"><div><Gauge size={21} aria-hidden="true" /><span>Your {xp.status === "final" ? "Final" : "Live"} XP</span><strong>{(ownXp?.totalXp ?? 0).toLocaleString()} XP</strong></div><dl><div><dt>Performance</dt><dd>{(ownXp?.performanceXp ?? 0).toLocaleString()}</dd></div><div><dt>Participation</dt><dd>{(ownXp?.participationXp ?? 0).toLocaleString()}</dd></div><div><dt>Creator</dt><dd>{(ownXp?.creatorXp ?? 0).toLocaleString()}</dd></div></dl><div className="accountXpActions">{ownXp?.pendingTrancheCount ? <span>Awaiting price checkpoint · {ownXp.pendingTrancheCount}</span> : <span>Latest canonical calculation</span>}<Link className="inlineLink" href="/points">View XP leaderboard</Link></div></SectionCard>
+    <SectionCard className="accountPrivacyCard" id="voter-leaderboard-privacy"><div className="accountPrivacyHeading"><ShieldCheck size={22} aria-hidden="true" /><div><h2>Public leaderboard privacy</h2><p>Your generated alias is public by default. Your real X username appears on voter and XP leaderboards only when you explicitly allow it here.</p></div></div><VoterLeaderboardPrivacyForm username={username} generatedAlias={voterAlias} defaultChecked={identity?.showRealUsernameOnVoterLeaderboard ?? false} /></SectionCard>
     <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => {
       const details = activityDetails(event);
       return <div className="activityRow" key={event.id}><span className={`activityIcon ${details.kind}`} aria-hidden="true">{details.kind === "vote" ? <Vote size={16} /> : details.kind === "proposal" ? <Layers3 size={16} /> : <Activity size={16} />}</span><div className="activityCopy"><strong>{details.title}</strong><small>{details.detail}</small></div><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>;

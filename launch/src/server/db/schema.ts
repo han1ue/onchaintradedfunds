@@ -60,6 +60,7 @@ export const users = pgTable("users", {
   unavailable: boolean("unavailable"),
   providerMessage: text("provider_message"),
   unavailableReason: text("unavailable_reason"),
+  showRealUsernameOnVoterLeaderboard: boolean("show_real_username_on_voter_leaderboard").default(false).notNull(),
   profileBio: jsonb("profile_bio").$type<Record<string, unknown>>().default({}).notNull(),
   profileFetchedAt: timestamp("profile_fetched_at", { withTimezone: true }).defaultNow().notNull(),
   ...timestamps

@@ -1,8 +1,7 @@
-import { AlertTriangle, Clock3, DatabaseZap, Gauge, TrendingUp, Users, Vote } from "lucide-react";
+import { AlertTriangle, Clock3, DatabaseZap, Gauge, TrendingUp, UserRound, Users, Vote } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
-import { XProfileImage } from "@/components/XProfileImage";
 import { auth } from "@/server/auth";
-import { getXpLeaderboard } from "@/server/xp";
+import { getUserXp, getXpLeaderboard } from "@/server/xp";
 
 export const metadata = { title: "Live XP" };
 
@@ -16,8 +15,9 @@ function formatTimestamp(value: string | null) {
 }
 
 export default async function PointsPage() {
-  const [xp, session] = await Promise.all([getXpLeaderboard(), auth()]);
-  const own = session?.user?.id ? xp.rows.find((row) => row.userId === session.user.id) : undefined;
+  const session = await auth();
+  const [xp, ownXp] = await Promise.all([getXpLeaderboard(), session?.user?.id ? getUserXp(session.user.id) : null]);
+  const own = ownXp?.rows[0];
   return <div className="pageShell pointsPage">
     <header className="pointsHeader">
       <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1><StatusBadge tone={xp.status === "final" ? "positive" : "warning"}>{xp.status === "final" ? "Final" : "Provisional"}</StatusBadge></div><p>Ten million XP tracks voter performance, voting participation, and unique creator support—entirely separate from OTF launch order.</p></div>
@@ -47,7 +47,7 @@ export default async function PointsPage() {
       <div className="xpTable" role="table" aria-label="XP leaderboard">
         <div className="xpTableHeader" role="row"><span>Rank / participant</span><span>Performance</span><span>Participation</span><span>Creator</span><span>Supporters</span><span>Total XP</span></div>
         {xp.rows.length ? xp.rows.map((row, index) => <div className="xpTableRow" role="row" key={row.userId}>
-          <div className="xpParticipant"><span className="xpRank">{index + 1}</span><XProfileImage src={row.profileImageUrl} username={row.username} size={30} /><div><strong>@{row.username}</strong><small>{row.displayName}</small></div></div>
+          <div className="xpParticipant"><span className="xpRank">{index + 1}</span><span className="xpAliasAvatar" aria-hidden="true"><UserRound size={15} /></span><div><strong>{row.publicName}</strong><small>{row.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
           <span data-label="Performance">{formatXp(row.performanceXp)}{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting price checkpoint</small>}</span>
           <span data-label="Participation">{formatXp(row.participationXp)}</span>
           <span data-label="Creator">{formatXp(row.creatorXp)}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</span>

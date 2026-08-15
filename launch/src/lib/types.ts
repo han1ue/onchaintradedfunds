@@ -22,6 +22,15 @@ export type LeaderboardEntry = {
   proofUrl?: string;
 };
 
+export type VoterLeaderboardEntry = {
+  rank: number;
+  publicName: string;
+  usesRealUsername: boolean;
+  totalXp: number;
+  votesCast: number;
+  otfsSupported: number;
+};
+
 export type CompetitionSummary = {
   id: string;
   slug: string;
@@ -77,10 +86,9 @@ export type PortfolioReturns = {
 };
 
 export type XpLeaderboardRow = {
-  userId: string;
-  username: string;
-  displayName: string;
-  profileImageUrl?: string | null;
+  userId?: string;
+  publicName: string;
+  usesRealUsername: boolean;
   performanceXp: number;
   participationXp: number;
   creatorXp: number;

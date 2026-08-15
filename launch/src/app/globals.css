@@ -13,9 +13,11 @@
   --text-muted: #8794a7;
   --teal: #37b7aa;
   --teal-hover: #42c3b6;
+  --teal-readable: #37b7aa;
   --accent-rgb: 55 183 170;
   --accent-foreground: #071716;
   --green: #2ed09a;
+  --green-readable: #2ed09a;
   --gold: #f1b93d;
   --blue: #56acd3;
   --rose: #e9717e;
@@ -39,9 +41,11 @@
   --text-muted: #697985;
   --teal: #13877e;
   --teal-hover: #0f796f;
+  --teal-readable: #0b6d66;
   --accent-rgb: 19 135 126;
   --accent-foreground: #fff;
   --green: #078b64;
+  --green-readable: #04704f;
   --gold: #9a6506;
   --blue: #267fa6;
   --rose: #c84b59;
@@ -216,6 +220,27 @@ button { color: inherit; }
 .leaderboardSummary { display: grid; justify-items: end; gap: 9px; color: var(--text-muted); font-size: .7rem; }
 .leaderboardSummary > span { display: flex; align-items: center; gap: 6px; }
 .leaderboardSummary svg { color: var(--teal); }
+.leaderboardViewTabs { width: fit-content; max-width: 100%; display: flex; gap: 3px; margin: 0 auto 12px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); }
+.leaderboardViewTabs a { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 5px; color: var(--text-muted); font-size: .7rem; font-weight: 700; }
+.leaderboardViewTabs a:hover { color: var(--text); background: var(--card-raised); }
+.leaderboardViewTabs a[aria-current="page"] { background: color-mix(in srgb, var(--teal) 11%, var(--surface)); color: var(--teal-readable); }
+.leaderboardPrivacyButton { min-height: 32px; height: 32px; font-size: .68rem; }
+.voterLeaderboardHeader, .voterLeaderboardRow { display: grid; grid-template-columns: 84px minmax(240px, 1fr) 180px 140px; align-items: center; gap: 12px; }
+.voterLeaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
+.voterLeaderboardHeader span:first-child { text-align: center; transform: translateX(-4px); }
+.voterLeaderboardHeader span:nth-last-child(-n+2) { text-align: right; }
+.voterLeaderboardRow { min-height: 78px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.voterLeaderboardRow:last-child { border-bottom: 0; }
+.voterLeaderboardRow:hover { background: rgb(var(--accent-rgb) / 2.5%); }
+.voterIdentity { min-width: 0; display: flex; align-items: center; gap: 11px; }
+.generatedVoterAvatar { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 38%, var(--border)); border-radius: 50%; background: color-mix(in srgb, var(--teal) 7%, var(--surface)); color: var(--teal); }
+.voterIdentity > div { min-width: 0; display: grid; gap: 3px; }
+.voterIdentity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
+.voterIdentity small { color: var(--text-muted); font-size: .64rem; }
+.voterParticipation, .voterXp { display: grid; justify-items: end; gap: 3px; }
+.voterParticipation small, .voterXp small { color: var(--text-muted); font-size: .58rem; font-weight: 650; text-transform: uppercase; }
+.voterParticipation strong { font-size: .76rem; }
+.voterXp strong { color: var(--teal-readable); font-size: 1rem; }
 .fullLeaderboardCard { overflow: hidden; }
 
 .howCard { padding-bottom: 16px; }
@@ -576,6 +601,16 @@ button { color: inherit; }
 .accountXpSummary dt { color: var(--text-muted); font-size: .58rem; text-transform: uppercase; }
 .accountXpSummary dd { margin: 4px 0 0; font-size: .72rem; font-weight: 700; }
 .accountXpActions { display: grid; justify-items: end; gap: 5px; color: var(--text-muted); font-size: .62rem; }
+.accountPrivacyCard { display: grid; grid-template-columns: minmax(250px, .85fr) minmax(360px, 1.15fr); gap: 22px; align-items: center; margin-bottom: 12px; padding: 18px; scroll-margin-top: 72px; }
+.accountPrivacyHeading { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; }
+.accountPrivacyHeading > svg { color: var(--teal); }
+.accountPrivacyHeading h2 { margin: 1px 0 6px; font-size: .9rem; }
+.accountPrivacyHeading p { margin: 0; color: var(--text-muted); font-size: .7rem; line-height: 1.55; }
+.voterPrivacyForm { display: grid; gap: 9px; }
+.voterPrivacyActions { display: flex; align-items: center; gap: 10px; }
+.privacySaveMessage { margin: 0; color: var(--text-muted); font-size: .66rem; line-height: 1.4; }
+.privacySaveMessage.success { color: var(--green-readable); }
+.privacySaveMessage.error { color: var(--danger); }
 .activityRow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border); }
 .activityIcon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 9%, transparent); color: var(--text-muted); }
 .activityIcon.proposal { background: color-mix(in srgb, var(--teal) 10%, transparent); color: var(--teal); }
@@ -640,6 +675,7 @@ button { color: inherit; }
 .xpParticipant strong, .xpParticipant small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xpParticipant strong { font-size: .75rem; }
 .xpParticipant small { color: var(--text-muted); font-size: .64rem; }
+.xpAliasAvatar { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--border)); border-radius: 50%; background: color-mix(in srgb, var(--teal) 6%, var(--surface)); color: var(--teal); }
 .xpTableRow > span { display: grid; justify-items: end; gap: 4px; }
 .xpTableRow > strong { font-size: .82rem; color: var(--teal); }
 .xpPending, .xpBoost { width: fit-content; max-width: 150px; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--gold) 5%, transparent); color: var(--gold); font-size: .56rem; font-weight: 650; line-height: 1.25; text-align: center; }
@@ -663,6 +699,7 @@ button { color: inherit; }
   .howActions { padding-top: 0; }
   .leaderboardHeader, .leaderboardRow { grid-template-columns: 72px minmax(245px, 1.3fr) minmax(150px, .65fr) 110px; column-gap: 10px; }
   .leaderboardHeader span:nth-child(3), .leaderboardRow > .allocationVisual { display: none; }
+  .voterLeaderboardHeader, .voterLeaderboardRow { grid-template-columns: 72px minmax(220px, 1fr) 155px 125px; gap: 10px; }
   .xpTableHeader, .xpTableRow { grid-template-columns: minmax(195px, 1.25fr) repeat(3, minmax(88px, .6fr)) 72px minmax(92px, .62fr); gap: 9px; }
 }
 
@@ -698,6 +735,14 @@ button { color: inherit; }
   .cardFooter { align-items: flex-start; flex-direction: column; padding: 11px 14px; }
   .leaderboardPageHeader { align-items: flex-start; flex-direction: column; gap: 14px; }
   .leaderboardSummary { justify-items: start; }
+  .leaderboardViewTabs { width: fit-content; }
+  .leaderboardViewTabs a { flex: 1; justify-content: center; }
+  .voterLeaderboardHeader { position: absolute; width: 1px; height: 1px; overflow: hidden; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
+  .voterLeaderboardRow { grid-template-columns: 52px minmax(0, 1fr) 76px; grid-template-rows: auto auto; gap: 4px 9px; min-height: 102px; padding: 13px 14px; align-items: center; }
+  .voterLeaderboardRow > .rank { grid-row: 1 / 3; }
+  .voterIdentity { grid-column: 2; grid-row: 1; }
+  .voterParticipation { grid-column: 2; grid-row: 2; justify-items: start; grid-auto-flow: column; justify-content: start; gap: 6px; }
+  .voterXp { grid-column: 3; grid-row: 1 / 3; }
   .timelineHeader { align-items: flex-start; flex-direction: column; gap: 8px; }
   .competitionTimeline ol { grid-template-columns: 1fr; }
   .competitionTimeline li + li { border-top: 1px solid var(--border); border-left: 0; }
@@ -732,6 +777,8 @@ button { color: inherit; }
   .accountXpSummary { grid-template-columns: 1fr; }
   .accountXpSummary dl > div:first-child { padding-left: 0; border-left: 0; }
   .accountXpActions { justify-items: start; }
+  .accountPrivacyCard { grid-template-columns: 1fr; gap: 14px; }
+  .voterPrivacyActions { align-items: flex-start; flex-direction: column; }
   .pointsHeader { align-items: flex-start; flex-direction: column; gap: 18px; }
   .pointsRelease { justify-items: start; }
   .xpPoolStrip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
