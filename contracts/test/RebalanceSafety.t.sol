@@ -169,7 +169,8 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
         vault.executeRebalanceTrades(lossy);
 
-        (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps) = vault.navLossBudgetState();
+        (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps) =
+            vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
         assertEq(maximumLossBps, 2);
         assertGt(recoveryAt, block.timestamp);
@@ -230,7 +231,8 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.warp(recoveryAt - 1);
         _refreshPrices();
-        (uint64 remainingRecoveryAt, uint16 remainingUsedLossBps,) = vault.navLossBudgetState();
+        (uint64 remainingRecoveryAt, uint16 remainingUsedLossBps,) =
+            vault.navLossBudgetState();
         assertEq(remainingRecoveryAt, recoveryAt);
         assertEq(remainingUsedLossBps, 1);
 

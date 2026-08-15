@@ -114,16 +114,6 @@ An entry adapter MAY use a multi-hop venue path. A rebalance adapter MAY similar
 USDG internally, but the vault-visible rebalance endpoints MUST remain active constituents and the
 final output MUST return to the vault through `RebalanceExecutor`.
 
-A 0x Swap API adapter MUST use the v2 AllowanceHolder flow and MUST fix its execution target,
-allowance target, and settlement token at deployment. User- or manager-provided adapter data MUST
-NOT select a target, spender, taker, or recipient. Offchain firm quotes MUST set the adapter as both
-`taker` and `recipient`, set `txOrigin` to the submitting EOA, use `sellAmount` for exact input or
-`buyAmount` for exact output, and reject a `transaction.to` or allowance spender that differs from
-deployment configuration. The adapter MUST grant only an exact temporary allowance to the
-configured AllowanceHolder and MUST never approve Settler. It MUST bubble execution reverts,
-enforce input and output using observed balance deltas, refund exact-output surplus settlement,
-and retain neither traded-token balances nor allowances after success.
-
 ## 3. Delegatecall requirements
 
 The strategy delegation boundary MUST satisfy all of the following:

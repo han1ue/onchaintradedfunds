@@ -120,7 +120,10 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
         oracleRegistry.setOracleConfig(
-            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
@@ -149,7 +152,10 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
         oracleRegistry.setOracleConfig(
-            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
@@ -289,7 +295,10 @@ contract VaultHardeningTest is ProtocolTestBase {
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.setAssetApproved(address(reentrantToken), true);
         oracleRegistry.setOracleConfig(
-            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
+            address(reentrantToken),
+            reentrantFeed,
+            25 hours,
+            OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);

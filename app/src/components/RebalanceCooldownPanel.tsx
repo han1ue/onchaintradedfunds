@@ -2,7 +2,6 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
-import { useQueries } from "@tanstack/react-query";
 import {
   managedOtfVaultAbi,
   otfEntryRouterAbi,
@@ -84,14 +83,8 @@ import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
   robinhoodTestnetV3Venue,
-  robinhoodZeroXVenue,
   SUPPORTED_PROTOCOL_VERSION,
 } from "@/lib/deployment";
-import {
-  fetchZeroXFirmQuote,
-  type ZeroXFirmQuote,
-  type ZeroXQuoteRequest,
-} from "@/lib/zeroXQuote";
 import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
   formatCooldown,
@@ -124,36 +117,6 @@ type PositionTradeReceipt = {
 };
 export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits" | "rwas";
 type DataMode = "live" | "empty" | "unavailable";
-
-function useZeroXQuoteBatch(requests: ZeroXQuoteRequest[]) {
-  return useQueries({
-    queries: requests.map((request) => ({
-      queryKey: [
-        "zerox-firm-quote",
-        request.sellToken,
-        request.buyToken,
-        request.sellAmount?.toString(),
-        request.buyAmount?.toString(),
-        request.txOrigin,
-        request.slippageBps,
-      ],
-      queryFn: ({ signal }: { signal: AbortSignal }) => fetchZeroXFirmQuote(request, signal),
-      retry: false,
-      staleTime: 5_000,
-      refetchInterval: 8_000,
-      refetchOnWindowFocus: true,
-    })),
-  });
-}
-
-function entryVenueSummary(legs: readonly { venue: string }[]) {
-  const venues = [...new Set(
-    legs.map((leg) => leg.venue).filter((venue) => venue !== "No swap"),
-  )];
-  if (venues.length === 0) return "direct settlement transfer";
-  if (venues.length === 1) return venues[0];
-  return `${venues.slice(0, -1).join(", ")} and ${venues[venues.length - 1]}`;
-}
 
 const MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
@@ -2770,19 +2733,10 @@ function UserActions({
   const isLive = vault.dataMode === "live";
   const entryRouterAddress = configuredEntryRouterAddress();
   const entryAdapterAddress = configuredEntryAdapterAddress();
-  const zeroXAdapterAddress = robinhoodTestnetAddresses.zeroXSwapAdapter;
   const v3MarketRegistryAddress = configuredV3MarketRegistryAddress();
   const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress();
-  const zeroXConfigured = Boolean(
-    zeroXAdapterAddress && robinhoodZeroXVenue.apiVersion === "v2"
-      && robinhoodZeroXVenue.approvalFlow === "allowance-holder"
-      && robinhoodZeroXVenue.swapTarget && robinhoodZeroXVenue.allowanceTarget
-      && robinhoodZeroXVenue.settlementToken && configuredSettlementToken
-      && robinhoodZeroXVenue.settlementToken.toLowerCase()
-        === configuredSettlementToken.toLowerCase(),
-  );
   const constituentFee = configuredConstituentFee();
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
@@ -2935,14 +2889,6 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: entryContractsConfigured && isLive },
   });
-  const { data: zeroXEntryAdapterApproved } = useReadContract({
-    address: entryRouterAddress,
-    abi: otfEntryRouterAbi,
-    functionName: "isEntryAdapterApproved",
-    args: zeroXAdapterAddress ? [zeroXAdapterAddress] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(entryRouterAddress && zeroXAdapterAddress && isLive) },
-  });
   const canQuoteEntry = Boolean(
     isLive &&
     !vaultDepositsBlocked &&
@@ -2966,27 +2912,6 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteEntry },
   });
-  function zeroXExactOutputRequests(previewAmounts: readonly bigint[] | undefined) {
-    if (
-      !zeroXConfigured || zeroXEntryAdapterApproved !== true || !connectedAddress
-        || !settlementToken || !previewAmounts || !entrySlippageValid
-    ) return [];
-    return vault.allocations.flatMap((asset, index): ZeroXQuoteRequest[] => {
-      if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-      const amountOut = previewAmounts[index];
-      if (amountOut === undefined || amountOut === 0n) return [];
-      return [{
-        sellToken: settlementToken,
-        buyToken: asset.address as `0x${string}`,
-        buyAmount: amountOut,
-        txOrigin: connectedAddress,
-        slippageBps: entrySlippageBps,
-      }];
-    });
-  }
-  const initialZeroXEntryQuotes = useZeroXQuoteBatch(
-    zeroXExactOutputRequests(previewEntryAmounts),
-  );
   const entryQuoteContracts = canQuoteEntry && constituentPoolsReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
@@ -3018,7 +2943,6 @@ function UserActions({
   function deriveEntryLegs(
     previewAmounts: readonly bigint[] | undefined,
     quoteResults: typeof entryQuoteResults,
-    zeroXQuoteResults: readonly { data?: ZeroXFirmQuote; error?: Error | null }[],
   ) {
     let quoteIndex = 0;
     return vault.allocations.map((asset, index) => {
@@ -3033,47 +2957,11 @@ function UserActions({
         quotedSettlement = requiredAmount;
       } else if (requiredAmount !== undefined && requiredAmount > 0n) {
         const result = quoteResults?.[quoteIndex];
-        const zeroXResult = zeroXQuoteResults[quoteIndex];
         quoteIndex += 1;
         const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
-        const uniswapQuotedSettlement = quote?.[0];
-        const uniswapMaximum = uniswapQuotedSettlement !== undefined
-          ? (uniswapQuotedSettlement * BigInt(10_000 + entrySlippageBps) + 9_999n) / 10_000n
-          : undefined;
-        const zeroXMaximum = zeroXResult?.data?.maxSellAmount;
-        const useZeroX = Boolean(
-          zeroXResult?.data && zeroXMaximum !== undefined
-            && (uniswapMaximum === undefined || zeroXMaximum < uniswapMaximum),
-        );
-        quotedSettlement = useZeroX
-          ? zeroXResult?.data?.sellAmount
-          : uniswapQuotedSettlement;
-        quoteFailed = quotedSettlement === undefined
-          && (result?.status === "failure" || Boolean(zeroXResult?.error));
-        quoteError = quoteFailed
-          ? [
-              result?.status === "failure" ? errorMessage(result.error) : undefined,
-              zeroXResult?.error ? `0x: ${errorMessage(zeroXResult.error)}` : undefined,
-            ].filter(Boolean).join(" ")
-          : undefined;
-        const maximumSettlement = useZeroX ? zeroXMaximum : uniswapMaximum;
-        return {
-          ...asset,
-          requiredAmount,
-          isSettlement,
-          quotedSettlement,
-          maximumSettlement,
-          adapter: useZeroX ? zeroXResult?.data?.adapter : entryAdapterAddress,
-          adapterData: useZeroX
-            ? zeroXResult?.data?.transactionData
-            : encodeAbiParameters(
-              [{ type: "address[]" }],
-              [[settlementToken as `0x${string}`, asset.address as `0x${string}`]],
-            ),
-          venue: useZeroX ? "0x AllowanceHolder" : "Synthra V3",
-          quoteFailed,
-          quoteError,
-        };
+        quotedSettlement = quote?.[0];
+        quoteFailed = result?.status === "failure";
+        quoteError = quoteFailed ? errorMessage(result?.error) : undefined;
       }
       const maximumSettlement = quotedSettlement !== undefined && !isSettlement
         ? (quotedSettlement * BigInt(10_000 + entrySlippageBps) + 9_999n) / 10_000n
@@ -3084,20 +2972,13 @@ function UserActions({
         isSettlement,
         quotedSettlement,
         maximumSettlement,
-        adapter: zeroAddress,
-        adapterData: "0x" as `0x${string}`,
-        venue: "No swap",
         quoteFailed,
         quoteError,
       };
     });
   }
 
-  const initialEntryLegs = deriveEntryLegs(
-    previewEntryAmounts,
-    entryQuoteResults,
-    initialZeroXEntryQuotes,
-  );
+  const initialEntryLegs = deriveEntryLegs(previewEntryAmounts, entryQuoteResults);
   const initialEntryQuoteReady = Boolean(
     navRequestedEntryShares &&
     previewEntryAmounts?.length === vault.allocations.length &&
@@ -3163,14 +3044,7 @@ function UserActions({
     contracts: adjustedEntryQuoteContracts,
     query: { enabled: adjustedEntryQuoteContracts.length > 0 },
   });
-  const adjustedZeroXEntryQuotes = useZeroXQuoteBatch(
-    zeroXExactOutputRequests(adjustedPreviewEntryAmounts),
-  );
-  const adjustedEntryLegs = deriveEntryLegs(
-    adjustedPreviewEntryAmounts,
-    adjustedEntryQuoteResults,
-    adjustedZeroXEntryQuotes,
-  );
+  const adjustedEntryLegs = deriveEntryLegs(adjustedPreviewEntryAmounts, adjustedEntryQuoteResults);
   const adjustedEntryQuoteReady = Boolean(
     adjustedEntryShares &&
     adjustedPreviewEntryAmounts?.length === vault.allocations.length &&
@@ -3250,9 +3124,6 @@ function UserActions({
     contracts: refinedEntryQuoteContracts,
     query: { enabled: refinedEntryQuoteContracts.length > 0 },
   });
-  const refinedZeroXEntryQuotes = useZeroXQuoteBatch(
-    zeroXExactOutputRequests(refinedPreviewEntryAmounts),
-  );
   const requestedEntryShares = refinedEntryShares ?? adjustedEntryShares ?? navRequestedEntryShares;
   const finalPreviewEntryAmounts = refinedEntryShares
     ? refinedPreviewEntryAmounts
@@ -3264,11 +3135,6 @@ function UserActions({
     : adjustedEntryShares
       ? adjustedEntryQuoteResults
       : entryQuoteResults;
-  const finalZeroXEntryQuoteResults = refinedEntryShares
-    ? refinedZeroXEntryQuotes
-    : adjustedEntryShares
-      ? adjustedZeroXEntryQuotes
-      : initialZeroXEntryQuotes;
   const finalPreviewEntryLoading = refinedEntryShares
     ? refinedPreviewEntryLoading
     : adjustedEntryShares
@@ -3279,9 +3145,6 @@ function UserActions({
     : adjustedEntryShares
       ? adjustedEntryQuotesLoading
       : entryQuotesLoading;
-  const finalZeroXEntryQuotesLoading = finalZeroXEntryQuoteResults.some(
-    (result) => result.isLoading,
-  );
   const finalPreviewEntryError = refinedEntryShares
     ? refinedPreviewEntryError
     : adjustedEntryShares
@@ -3364,23 +3227,6 @@ function UserActions({
     contracts: redeemQuoteContracts,
     query: { enabled: redeemQuoteContracts.length > 0 },
   });
-  const zeroXRedeemRequests =
-    zeroXConfigured && zeroXEntryAdapterApproved === true && connectedAddress
-      && previewRedeemAmounts && settlementToken && redeemSlippageValid
-      ? vault.allocations.flatMap((asset, index): ZeroXQuoteRequest[] => {
-          if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-          const amountIn = previewRedeemAmounts[index];
-          if (amountIn === undefined || amountIn === 0n) return [];
-          return [{
-            sellToken: asset.address as `0x${string}`,
-            buyToken: settlementToken,
-            sellAmount: amountIn,
-            txOrigin: connectedAddress,
-            slippageBps: redeemSlippageBps,
-          }];
-        })
-      : [];
-  const zeroXRedeemQuoteResults = useZeroXQuoteBatch(zeroXRedeemRequests);
   const redeemAuthorizationContracts = ([
     {
       address: vault.address ?? zeroAddress,
@@ -3514,11 +3360,7 @@ function UserActions({
   const directBasketAllowanceSufficient = directBasketReady && directBasketLegs.every(
     (leg) => leg.allowance !== undefined && leg.maximumAmount !== undefined && leg.allowance >= leg.maximumAmount,
   );
-  const entryLegs = deriveEntryLegs(
-    finalPreviewEntryAmounts,
-    finalEntryQuoteResults,
-    finalZeroXEntryQuoteResults,
-  );
+  const entryLegs = deriveEntryLegs(finalPreviewEntryAmounts, finalEntryQuoteResults);
   const entrySizingQuoteReady = Boolean(
     requestedEntryShares &&
     finalPreviewEntryAmounts?.length === vault.allocations.length &&
@@ -3528,10 +3370,167 @@ function UserActions({
       leg.maximumSettlement !== undefined,
     ),
   );
-  const estimatedEntryShares = entrySizingQuoteReady ? requestedEntryShares : undefined;
-  const minimumEntryShares = entrySizingQuoteReady ? requestedEntryShares : undefined;
+  const quotedSettlementTotal = entrySizingQuoteReady
+    ? entryLegs.reduce((sum, leg) => sum + (leg.quotedSettlement ?? 0n), 0n)
+    : undefined;
+  const entrySettlementInputs = (() => {
+    const inputs = new Array<bigint | undefined>(entryLegs.length).fill(undefined);
+    if (
+      !entrySizingQuoteReady || requestedUsdgAmount === undefined ||
+      quotedSettlementTotal === undefined || quotedSettlementTotal === 0n
+    ) return inputs;
+
+    let remainingInput = requestedUsdgAmount;
+    let remainingQuote = quotedSettlementTotal;
+    for (let index = 0; index < entryLegs.length; index += 1) {
+      const quoted = entryLegs[index]?.quotedSettlement ?? 0n;
+      const allocation = remainingQuote === quoted
+        ? remainingInput
+        : remainingInput * quoted / remainingQuote;
+      inputs[index] = allocation;
+      remainingInput -= allocation;
+      remainingQuote -= quoted;
+    }
+    return inputs;
+  })();
+  const exactInputEntryQuoteContracts = entrySizingQuoteReady && settlementToken && uniswapV3QuoterAddress
+    ? entryLegs.flatMap((leg, index) => {
+        const settlementIn = entrySettlementInputs[index];
+        if (leg.isSettlement || settlementIn === undefined || settlementIn === 0n) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle" as const,
+          args: [{
+            tokenIn: settlementToken,
+            tokenOut: leg.address as `0x${string}`,
+            amountIn: settlementIn,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: exactInputEntryQuoteResults,
+    isLoading: exactInputEntryQuotesLoading,
+    refetch: refetchExactInputEntryQuotes,
+  } = useReadContracts({
+    contracts: exactInputEntryQuoteContracts,
+    query: { enabled: exactInputEntryQuoteContracts.length > 0 },
+  });
+  let exactInputEntryQuoteIndex = 0;
+  const exactInputEntryLegs = entryLegs.map((leg, index) => {
+    const settlementIn = entrySettlementInputs[index];
+    let quotedAssetOut: bigint | undefined;
+    let quoteFailed = false;
+    let quoteError: string | undefined;
+    if (leg.isSettlement) {
+      quotedAssetOut = settlementIn;
+    } else if (settlementIn !== undefined && settlementIn > 0n) {
+      const result = exactInputEntryQuoteResults?.[exactInputEntryQuoteIndex];
+      exactInputEntryQuoteIndex += 1;
+      const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+      quotedAssetOut = quote?.[0];
+      quoteFailed = result?.status === "failure";
+      quoteError = quoteFailed ? errorMessage(result?.error) : undefined;
+    } else if (settlementIn === 0n) {
+      quotedAssetOut = 0n;
+    }
+    const minimumAssetOut = quotedAssetOut === undefined
+      ? undefined
+      : leg.isSettlement
+        ? quotedAssetOut
+        : quotedAssetOut * BigInt(10_000 - entrySlippageBps) / 10_000n;
+    return {
+      ...leg,
+      settlementIn,
+      quotedAssetOut,
+      minimumAssetOut,
+      quoteFailed,
+      quoteError,
+    };
+  });
+  const entryRefundRateQuoteContracts = settlementToken && uniswapV3QuoterAddress
+    ? exactInputEntryLegs.flatMap((leg) => {
+        if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle" as const,
+          args: [{
+            tokenIn: leg.address as `0x${string}`,
+            tokenOut: settlementToken,
+            amountIn: leg.quotedAssetOut,
+            fee: constituentFee,
+            sqrtPriceLimitX96: 0n,
+          }],
+          chainId: robinhoodChainTestnet.id,
+        }];
+      })
+    : [];
+  const {
+    data: entryRefundRateQuoteResults,
+    isLoading: entryRefundRateQuotesLoading,
+    refetch: refetchEntryRefundRateQuotes,
+  } = useReadContracts({
+    contracts: entryRefundRateQuoteContracts,
+    query: { enabled: entryRefundRateQuoteContracts.length > 0 },
+  });
+  let entryRefundRateQuoteIndex = 0;
+  const protectedExactInputEntryLegs = exactInputEntryLegs.map((leg) => {
+    if (leg.isSettlement) return { ...leg, minimumRefundSettlementRate: 0n };
+    const result = entryRefundRateQuoteResults?.[entryRefundRateQuoteIndex];
+    entryRefundRateQuoteIndex += 1;
+    const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
+    const quotedRefundSettlement = quote?.[0];
+    const refundRateQuoteFailed = result?.status === "failure";
+    const minimumRefundSettlementRate = quotedRefundSettlement !== undefined && leg.quotedAssetOut
+      ? quotedRefundSettlement * BigInt(10_000 - entrySlippageBps) / 10_000n
+        * 10n ** 18n / leg.quotedAssetOut
+      : undefined;
+    return {
+      ...leg,
+      minimumRefundSettlementRate,
+      quoteFailed: leg.quoteFailed || refundRateQuoteFailed,
+      quoteError: leg.quoteError ?? (refundRateQuoteFailed ? errorMessage(result?.error) : undefined),
+    };
+  });
+  const entryAssetQuotesReady = Boolean(
+    entrySizingQuoteReady &&
+    protectedExactInputEntryLegs.every((leg) =>
+      leg.settlementIn !== undefined &&
+      leg.quotedAssetOut !== undefined &&
+      leg.minimumAssetOut !== undefined &&
+      leg.minimumRefundSettlementRate !== undefined &&
+      (leg.isSettlement || leg.minimumRefundSettlementRate > 0n) &&
+      !leg.quoteFailed,
+    ),
+  );
+  const estimatedEntryAssetAmounts = entryAssetQuotesReady
+    ? protectedExactInputEntryLegs.map((leg) => leg.quotedAssetOut as bigint)
+    : undefined;
+  const minimumEntryAssetAmounts = entryAssetQuotesReady
+    ? protectedExactInputEntryLegs.map((leg) => leg.minimumAssetOut as bigint)
+    : undefined;
+  function deriveEntrySharesFromAmounts(amounts: readonly bigint[] | undefined) {
+    if (!amounts || !requestedEntryShares || finalPreviewEntryAmounts?.length !== amounts.length) {
+      return undefined;
+    }
+    let shares: bigint | undefined;
+    for (let index = 0; index < amounts.length; index += 1) {
+      const requiredAmount = finalPreviewEntryAmounts[index];
+      if (requiredAmount === undefined || requiredAmount === 0n) continue;
+      const candidate = requestedEntryShares * amounts[index] / requiredAmount;
+      shares = shares === undefined || candidate < shares ? candidate : shares;
+    }
+    return shares;
+  }
+  const estimatedEntryShares = deriveEntrySharesFromAmounts(estimatedEntryAssetAmounts);
+  const minimumEntryShares = deriveEntrySharesFromAmounts(minimumEntryAssetAmounts);
   const entryQuoteReady = Boolean(
-    entrySizingQuoteReady && estimatedEntryShares && estimatedEntryShares > 0n &&
+    entryAssetQuotesReady && estimatedEntryShares && estimatedEntryShares > 0n &&
     minimumEntryShares && minimumEntryShares > 0n,
   );
   const entrySettlementInput = entryQuoteReady ? requestedUsdgAmount : undefined;
@@ -3656,45 +3655,11 @@ function UserActions({
       quotedSettlement = amountIn;
     } else if (amountIn !== undefined && amountIn > 0n) {
       const result = redeemQuoteResults?.[redeemQuoteIndex];
-      const zeroXResult = zeroXRedeemQuoteResults[redeemQuoteIndex];
       redeemQuoteIndex += 1;
       const quote = result?.result as readonly [bigint, bigint, number, bigint] | undefined;
-      const uniswapQuotedSettlement = quote?.[0];
-      const uniswapMinimum = uniswapQuotedSettlement !== undefined
-        ? uniswapQuotedSettlement * BigInt(10_000 - redeemSlippageBps) / 10_000n
-        : undefined;
-      const zeroXMinimum = zeroXResult?.data?.minBuyAmount;
-      const useZeroX = Boolean(
-        zeroXResult?.data && zeroXMinimum !== undefined
-          && (uniswapMinimum === undefined || zeroXMinimum > uniswapMinimum),
-      );
-      quotedSettlement = useZeroX ? zeroXResult?.data?.buyAmount : uniswapQuotedSettlement;
-      const minimumSettlement = useZeroX ? zeroXMinimum : uniswapMinimum;
-      quoteFailed = quotedSettlement === undefined
-        && (result?.status === "failure" || Boolean(zeroXResult?.error));
-      quoteError = quoteFailed
-        ? [
-            result?.status === "failure" ? errorMessage(result.error) : undefined,
-            zeroXResult?.error ? `0x: ${errorMessage(zeroXResult.error)}` : undefined,
-          ].filter(Boolean).join(" ")
-        : undefined;
-      return {
-        ...asset,
-        amountIn,
-        isSettlement,
-        quotedSettlement,
-        minimumSettlement,
-        adapter: useZeroX ? zeroXResult?.data?.adapter : entryAdapterAddress,
-        adapterData: useZeroX
-          ? zeroXResult?.data?.transactionData
-          : encodeAbiParameters(
-            [{ type: "address[]" }],
-            [[asset.address as `0x${string}`, settlementToken as `0x${string}`]],
-          ),
-        venue: useZeroX ? "0x AllowanceHolder" : "Synthra V3",
-        quoteFailed,
-        quoteError,
-      };
+      quotedSettlement = quote?.[0];
+      quoteFailed = result?.status === "failure";
+      quoteError = quoteFailed ? errorMessage(result?.error) : undefined;
     } else if (amountIn === 0n) {
       quotedSettlement = 0n;
     }
@@ -3707,9 +3672,6 @@ function UserActions({
       isSettlement,
       quotedSettlement,
       minimumSettlement,
-      adapter: zeroAddress,
-      adapterData: "0x" as `0x${string}`,
-      venue: "No swap",
       quoteFailed,
       quoteError,
     };
@@ -3786,10 +3748,9 @@ function UserActions({
     ? entryQuoteReady
     : redeemQuoteReady;
   const underlyingQuoteLoading = activeAction === "deposit"
-    ? constituentLiquidityLoading || finalPreviewEntryLoading || finalEntryQuotesLoading
-      || finalZeroXEntryQuotesLoading
-    : constituentLiquidityLoading || previewRedeemLoading || redeemQuotesLoading
-      || zeroXRedeemQuoteResults.some((result) => result.isLoading);
+    ? constituentLiquidityLoading || finalPreviewEntryLoading || finalEntryQuotesLoading ||
+      exactInputEntryQuotesLoading || entryRefundRateQuotesLoading
+    : constituentLiquidityLoading || previewRedeemLoading || redeemQuotesLoading;
   const underlyingQuotedOutput = activeAction === "deposit"
     ? estimatedEntryShares
     : quotedRedeemSettlement;
@@ -3804,7 +3765,7 @@ function UserActions({
           detail: "The OTF / USDG pool did not return a usable output for this amount. Try a smaller amount or confirm that the pool has active liquidity.",
         }
     : undefined;
-  const failedUnderlyingLegs = (activeAction === "deposit" ? entryLegs : redeemLegs)
+  const failedUnderlyingLegs = (activeAction === "deposit" ? protectedExactInputEntryLegs : redeemLegs)
     .filter((leg) => leg.quoteFailed);
   const underlyingQuoteProblem = routeInputsReady && underlyingRouteAvailable && !underlyingQuoteLoading && !underlyingQuoteReady
     ? activeAction === "deposit" && finalPreviewEntryError
@@ -3918,21 +3879,33 @@ function UserActions({
       !entryAdapterAddress ||
       !settlementToken ||
       requestedUsdgAmount === undefined ||
-      !requestedEntryShares ||
+      !minimumEntryShares ||
       !entryQuoteReady ||
       !entryBalanceSufficient ||
       !entryAllowanceSufficient
     ) return;
-    const swaps = entryLegs.map((leg) => leg.isSettlement
+    const swaps = protectedExactInputEntryLegs.map((leg) => leg.isSettlement
       ? {
           adapter: zeroAddress,
-          maxSettlementIn: 0n,
+          settlementIn: leg.settlementIn as bigint,
+          minAssetOut: leg.settlementIn as bigint,
+          minRefundSettlementRate: 0n,
           adapterData: "0x" as `0x${string}`,
+          refundAdapterData: "0x" as `0x${string}`,
         }
       : {
-          adapter: leg.adapter as `0x${string}`,
-          maxSettlementIn: leg.maximumSettlement as bigint,
-          adapterData: leg.adapterData as `0x${string}`,
+          adapter: entryAdapterAddress,
+          settlementIn: leg.settlementIn as bigint,
+          minAssetOut: leg.minimumAssetOut as bigint,
+          minRefundSettlementRate: leg.minimumRefundSettlementRate as bigint,
+          adapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[settlementToken, leg.address as `0x${string}`]],
+          ),
+          refundAdapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[leg.address as `0x${string}`, settlementToken]],
+          ),
         });
     setEntryError(undefined);
     try {
@@ -3940,12 +3913,12 @@ function UserActions({
       const hash = await writeContractAsync({
         address: entryRouterAddress,
         abi: otfEntryRouterAbi,
-        functionName: "enterWithSettlement",
+        functionName: "enterWithExactSettlement",
         args: [
           vault.address,
-          requestedEntryShares,
-          connectedAddress,
           requestedUsdgAmount,
+          minimumEntryShares,
+          connectedAddress,
           BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
           swaps,
         ],
@@ -3956,20 +3929,22 @@ function UserActions({
       if (receipt.status !== "success") throw new Error("The USDG entry transaction reverted.");
       const entryEvents = parseEventLogs({
         abi: otfEntryRouterAbi,
-        eventName: "EnteredWithSettlement",
+        eventName: "EnteredWithExactSettlement",
         logs: receipt.logs,
       });
-      const mintedShares = entryEvents[0]?.args.shares ?? requestedEntryShares;
+      const mintedShares = entryEvents[0]?.args.shares;
       const settlementRefunded = entryEvents[0]?.args.settlementRefunded ?? 0n;
       await Promise.all([
         refetchEntryAuthorization(),
         refetchEntryPreview(),
         refetchEntryQuotes(),
+        refetchExactInputEntryQuotes(),
+        refetchEntryRefundRateQuotes(),
       ]);
       setEntryState("confirmed");
       setTradeReceipt({
         action: "deposit",
-        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through ${entryVenueSummary(entryLegs)}.${settlementRefunded > 0n ? ` ${formatWalletTokenBalance(settlementRefunded, settlementDecimals)} USDG refunded.` : ""}`,
+        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through the underlying RWA pools.${settlementRefunded > 0n ? ` ${formatWalletTokenBalance(settlementRefunded, settlementDecimals)} USDG refunded.` : ""}`,
         transactionHash: hash,
       });
       setTradeAmount("");
@@ -4147,9 +4122,12 @@ function UserActions({
     const swaps = redeemLegs.map((leg) => leg.isSettlement
       ? { adapter: zeroAddress, minSettlementOut: 0n, adapterData: "0x" as `0x${string}` }
       : {
-          adapter: leg.adapter as `0x${string}`,
+          adapter: entryAdapterAddress,
           minSettlementOut: leg.minimumSettlement as bigint,
-          adapterData: leg.adapterData as `0x${string}`,
+          adapterData: encodeAbiParameters(
+            [{ type: "address[]" }],
+            [[leg.address as `0x${string}`, settlementToken]],
+          ),
         });
     setRedeemError(undefined);
     try {
@@ -4174,7 +4152,7 @@ function UserActions({
       await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
       setTradeReceipt({
         action: "redeem",
-        detail: `${formatWalletTokenBalance(requestedRedeemShares, 18)} ${vault.symbol} redeemed through ${entryVenueSummary(redeemLegs)}.`,
+        detail: `${formatWalletTokenBalance(requestedRedeemShares, 18)} ${vault.symbol} redeemed through the underlying RWA pools.`,
         transactionHash: hash,
       });
       setTradeAmount("");
@@ -4564,7 +4542,7 @@ function UserActions({
                 onClick={() => setSelectedRoute("underlying")}
               >
                 <span className="positionRouteIcon"><Landmark size={18} /></span>
-                <span className="positionRouteName">Underlying basket route</span>
+                <span className="positionRouteName">Underlying RWA pools</span>
                 <strong className="positionRouteQuote">
                   {underlyingRouteChecking
                     ? <Loader2 className="spin" size={18} />
@@ -4603,8 +4581,8 @@ function UserActions({
                     : underlyingQuoteProblem
                       ? underlyingQuoteProblem.title
                     : activeAction === "deposit"
-                      ? `${vault.symbol} via ${entryVenueSummary(entryLegs)}`
-                      : `USDG via ${entryVenueSummary(redeemLegs)}`}
+                      ? `${vault.symbol} shares minted`
+                      : "USDG received"}
                 </small>
               </button>
             </div>
@@ -4772,7 +4750,7 @@ function UserActions({
             </div>
             <div className="routeExecutionNote">
               <Info size={14} />
-              <span>Liquidity path: wallet RWA basket ↔ OTF vault. No swap venue is used.</span>
+              <span>No swaps are used. Amounts come directly from or go directly into the OTF vault.</span>
             </div>
           </div>
         ) : null}
@@ -4856,7 +4834,7 @@ function UserActions({
             </div>
             <div className="routeExecutionNote">
               <Info size={14} />
-              <span>Liquidity path: wallet → Synthra V3 OTF / USDG pool → wallet. The open-market price can differ from portfolio value.</span>
+              <span>The open-market price comes from the direct OTF / USDG pool and can differ from portfolio value.</span>
             </div>
           </div>
         ) : null}
@@ -4867,7 +4845,7 @@ function UserActions({
               <div>
                 <span className="positionRouteIcon"><Landmark size={16} /></span>
                 <div>
-                  <strong>Underlying basket route</strong>
+                  <strong>Underlying RWA pools</strong>
                   <span>
                     {activeAction === "deposit"
                       ? "Spend USDG across the portfolio pools and mint a proportional basket."
@@ -4966,8 +4944,8 @@ function UserActions({
               <Info size={14} />
               <span>
                 {activeAction === "deposit"
-                  ? `Liquidity path: USDG → ${entryVenueSummary(entryLegs)} → proportional RWA basket → OTF shares. Unused USDG is refunded to your wallet.`
-                  : `Liquidity path: OTF shares → proportional RWA basket → ${entryVenueSummary(redeemLegs)} → USDG. Each leg uses the best executable approved quote.`}
+                  ? "The OTF receives only a proportional basket. Surplus RWA tokens are sold back under your slippage limit and refunded to your wallet as USDG."
+                  : "Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact."}
               </span>
             </div>
           </div>
@@ -5572,16 +5550,8 @@ function RebalanceTradesPanel({
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const adapterAddress = configuredEntryAdapterAddress();
-  const zeroXAdapterAddress = robinhoodTestnetAddresses.zeroXSwapAdapter;
   const quoterAddress = configuredUniswapV3QuoterAddress();
   const settlementToken = configuredSettlementTokenAddress();
-  const zeroXConfigured = Boolean(
-    zeroXAdapterAddress && robinhoodZeroXVenue.apiVersion === "v2"
-      && robinhoodZeroXVenue.approvalFlow === "allowance-holder"
-      && robinhoodZeroXVenue.swapTarget && robinhoodZeroXVenue.allowanceTarget
-      && robinhoodZeroXVenue.settlementToken && settlementToken
-      && robinhoodZeroXVenue.settlementToken.toLowerCase() === settlementToken.toLowerCase(),
-  );
   const constituentFee = configuredConstituentFee();
   const hasAllowedTrade = recommendedTrades.length > 0;
 
@@ -5701,48 +5671,9 @@ function RebalanceTradesPanel({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: quoteEnabled },
   });
-  const uniswapQuotedAmountOut =
-    (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
-  const uniswapMinimumAmountOut = uniswapQuotedAmountOut && slippageValid
-    ? uniswapQuotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
-    : undefined;
-  const zeroXRebalanceRequests =
-    zeroXConfigured && connectedAddress && amountIn && amountIn > 0n && slippageValid
-      && isAddress(tokenIn) && isAddress(tokenOut)
-      ? [{
-          sellToken: tokenIn,
-          buyToken: tokenOut,
-          sellAmount: amountIn,
-          txOrigin: connectedAddress,
-          slippageBps,
-        } satisfies ZeroXQuoteRequest]
-      : [];
-  const zeroXRebalanceQuoteResults = useZeroXQuoteBatch(zeroXRebalanceRequests);
-  const zeroXRebalanceQuote = zeroXRebalanceQuoteResults[0]?.data;
-  const useZeroX = Boolean(
-    zeroXRebalanceQuote?.minBuyAmount !== undefined
-      && (
-        uniswapMinimumAmountOut === undefined
-          || zeroXRebalanceQuote.minBuyAmount > uniswapMinimumAmountOut
-      ),
-  );
-  const quotedAmountOut = useZeroX ? zeroXRebalanceQuote?.buyAmount : uniswapQuotedAmountOut;
-  const poolMinimumAmountOut = useZeroX
-    ? zeroXRebalanceQuote?.minBuyAmount
-    : uniswapMinimumAmountOut;
-  const selectedAdapterAddress = useZeroX ? zeroXRebalanceQuote?.adapter : adapterAddress;
-  const selectedAdapterData = useZeroX
-    ? zeroXRebalanceQuote?.transactionData
-    : routeValid
-      ? encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]])
-      : undefined;
-  const selectedVenue = useZeroX ? "0x AllowanceHolder" : "Synthra V3";
-  const venueQuoteLoading = quoteLoading || zeroXRebalanceQuoteResults.some(
-    (result) => result.isLoading,
-  );
-  const selectedLiquidityReady = useZeroX || rebalanceLiquidityReady;
-  const selectedQuoteError = quotedAmountOut === undefined
-    ? quoteError ?? zeroXRebalanceQuoteResults[0]?.error
+  const quotedAmountOut = (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
+  const poolMinimumAmountOut = quotedAmountOut && slippageValid
+    ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
     : undefined;
   const outputAsset = vault.allocations.find((asset) => asset.address === tokenOut);
   const inputAsset = vault.allocations.find((asset) => asset.address === tokenIn);
@@ -5906,15 +5837,12 @@ function RebalanceTradesPanel({
     resetTradeState();
   }, [recommendedTradeAmount, resetTradeState, tokenInDecimals, tradeSize]);
 
-  const contractsConfigured = Boolean(
-    (adapterAddress && quoterAddress && settlementToken) || zeroXConfigured,
-  );
+  const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
-    selectedAdapterAddress && selectedAdapterData && selectedLiquidityReady &&
-    !venueQuoteLoading && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
+    rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
     !oracleValueLossTooHigh && !navLossBudgetTooHigh,
   );
 
@@ -5924,20 +5852,17 @@ function RebalanceTradesPanel({
   }
 
   async function executeTrade() {
-    if (
-      !canSubmit || !vault.address || !selectedAdapterAddress || !selectedAdapterData
-        || !connectedAddress || !publicClient || !amountIn || !minAmountOut
-    ) return;
+    if (!canSubmit || !vault.address || !adapterAddress || !connectedAddress || !publicClient || !amountIn || !minAmountOut) return;
     setTxError(undefined);
     try {
       setTxState("simulating");
       const trade = {
-        adapter: selectedAdapterAddress,
+        adapter: adapterAddress,
         tokenIn: tokenIn as `0x${string}`,
         tokenOut: tokenOut as `0x${string}`,
         amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
         minAmountOut,
-        adapterData: selectedAdapterData,
+        adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
       };
       await publicClient.simulateContract({
         account: connectedAddress,
@@ -5963,7 +5888,6 @@ function RebalanceTradesPanel({
         refetchTokenOutVaultBalance(),
       ]);
       await refetchQuote();
-      await zeroXRebalanceQuoteResults[0]?.refetch();
       setTxState("confirmed");
       setAmountInText("");
     } catch (error) {
@@ -6074,31 +5998,27 @@ function RebalanceTradesPanel({
           </label>
         </div>
 
-        <div className={`routeToggle ${!selectedAdapterAddress ? "disabled" : ""}`}>
+        <div className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
           <span>
-            <strong>Selected liquidity path</strong>
-            <small>
-              {useZeroX
-                ? `${inputAsset?.symbol ?? "Asset"} → 0x AllowanceHolder → ${outputAsset?.symbol ?? "Asset"}`
-                : `${inputAsset?.symbol ?? "Asset"} → USDG → ${outputAsset?.symbol ?? "Asset"} through Synthra V3`}
-            </small>
+            <strong>Routes through USDG</strong>
+            <small>USDG is an internal Uniswap hop and never becomes an OTF constituent or recipient.</small>
           </span>
         </div>
 
         <div className="tradeExecutionQuote">
-          <span>{selectedVenue} quote</span>
+          <span>Uniswap quote</span>
           <strong>
-            {venueQuoteLoading ? "Loading" : quotedAmountOut
+            {quoteLoading ? "Loading" : quotedAmountOut
               ? `${formatWalletTokenBalance(quotedAmountOut, tokenOutDecimals)} ${outputAsset?.symbol ?? "tokens"}`
               : "Enter an amount"}
           </strong>
-          <small>Best executable approved quote</small>
+          <small>{`${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}`}</small>
         </div>
 
         <div className="previewBlock tradeWeightPreview">
           <div className="subHeader">
             <span>Weight preview</span>
-            <small>Based on the selected executable quote</small>
+            <small>Based on the current pool quote</small>
           </div>
           <div className="weightPreviewList">
             {tradeWeightPreview.map(({ asset, predicted }) => {
@@ -6132,12 +6052,12 @@ function RebalanceTradesPanel({
         </div>
 
         {!contractsConfigured ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and approve at least one supported trading adapter before submitting rebalance trades.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
-        {hasAllowedTrade && contractsConfigured && !useZeroX && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
+        {hasAllowedTrade && contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Both selected assets need recorded USDG pools before this rebalance route can be quoted.</span></div></div>
         ) : null}
-        {hasAllowedTrade && contractsConfigured && !useZeroX && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
+        {hasAllowedTrade && contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>Both USDG pools exist, but this route stays disabled until they have active liquidity.</span></div></div>
         ) : null}
         {hasAllowedTrade && tokenIn === tokenOut ? (
@@ -6152,8 +6072,8 @@ function RebalanceTradesPanel({
         {navLossBudgetTooHigh ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Seven-day NAV-loss budget is exhausted</strong><span>This quote would consume about {bpsToPercent(quotedPortfolioLossBps)} of portfolio NAV, but only {bpsToPercent(remainingNavLossBps)} currently remains. Reduce the trade loss or wait for capacity to replenish continuously.</span></div></div>
         ) : null}
-        {selectedQuoteError ? (
-          <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable venue quote</strong><span>{errorMessage(selectedQuoteError)}</span></div></div>
+        {quoteError ? (
+          <div className="validationSummary danger"><XCircle size={15} /><div><strong>No usable pool quote</strong><span>{errorMessage(quoteError)}</span></div></div>
         ) : null}
         {txError ? (
           <div className="validationSummary danger"><XCircle size={15} /><div><strong>Trade failed</strong><span>{txError}</span></div></div>

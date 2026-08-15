@@ -32,8 +32,9 @@ contract UniswapV3AdapterTest is TestBase {
         path[0] = address(rwaA);
         path[1] = address(usdg);
 
-        uint256 received =
-            adapter.executeSwap(address(rwaA), address(usdg), 10e6, 9e6, abi.encode(path));
+        uint256 received = adapter.executeSwap(
+            address(rwaA), address(usdg), 10e6, 9e6, abi.encode(path)
+        );
 
         assertEq(received, 10e6);
         assertEq(usdg.balanceOf(address(this)), 10e6);
@@ -62,8 +63,9 @@ contract UniswapV3AdapterTest is TestBase {
         path[0] = address(usdg);
         path[1] = address(rwaA);
 
-        uint256 spent =
-            adapter.buyExactOutput(address(usdg), address(rwaA), 8e6, 20e6, abi.encode(path));
+        uint256 spent = adapter.buyExactOutput(
+            address(usdg), address(rwaA), 8e6, 20e6, abi.encode(path)
+        );
 
         assertEq(spent, 8e6);
         assertEq(usdg.balanceOf(address(this)), 12e6);
@@ -87,7 +89,9 @@ contract UniswapV3AdapterTest is TestBase {
         wrongMiddle[1] = address(rwaB);
         wrongMiddle[2] = address(usdg);
         vm.expectRevert(UniswapV3Adapter.InvalidPath.selector);
-        adapter.executeSwap(address(rwaA), address(usdg), 1 ether, 1 ether, abi.encode(wrongMiddle));
+        adapter.executeSwap(
+            address(rwaA), address(usdg), 1 ether, 1 ether, abi.encode(wrongMiddle)
+        );
 
         adapter.setCallerApproved(address(this), false);
         vm.expectPartialRevert(UniswapV3Adapter.UnauthorizedCaller.selector);

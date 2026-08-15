@@ -84,7 +84,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
     error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
-    error NavLossBudgetExceeded(uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps);
+    error NavLossBudgetExceeded(
+        uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
+    );
     error OracleSlippageTooHigh(
         address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
     );

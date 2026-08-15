@@ -38,14 +38,16 @@ contract PortfolioCalculator {
     error InvalidTargetWeightSum(uint256 sum);
     error InvalidFeeRate(uint16 feeBps);
     error FeeExponentOverflow(uint256 exponentWad);
-    error NavLossBudgetExceeded(uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps);
+    error NavLossBudgetExceeded(
+        uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
+    );
 
     /// @dev Packs used BPS in bits 0..15 and the recovery timestamp in bits 16..79.
-    function navLossBudgetState(uint64 recoveryAt, uint16 maximumLossBps, uint256 batchLossBps)
-        external
-        view
-        returns (uint256 packedState)
-    {
+    function navLossBudgetState(
+        uint64 recoveryAt,
+        uint16 maximumLossBps,
+        uint256 batchLossBps
+    ) external view returns (uint256 packedState) {
         uint256 recoveryPeriod = 7 days;
         // Replenishment is necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
@@ -60,7 +62,8 @@ contract PortfolioCalculator {
             if (maximumLossBps == 0) {
                 revert NavLossBudgetExceeded(0, batchLossBps, 0);
             }
-            nextRecoveryAt += MathEx.mulDivUp(batchLossBps, recoveryPeriod, maximumLossBps);
+            nextRecoveryAt +=
+                MathEx.mulDivUp(batchLossBps, recoveryPeriod, maximumLossBps);
             if (nextRecoveryAt > timestamp + recoveryPeriod) {
                 revert NavLossBudgetExceeded(usedBefore, batchLossBps, maximumLossBps);
             }

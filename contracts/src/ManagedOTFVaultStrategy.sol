@@ -822,9 +822,13 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return _effectiveTargetWeights();
     }
 
-    function _consumeNavLossBudget(uint256 batchLossBps) private returns (uint16 usedLossBps) {
-        uint256 packedState =
-            _calculator.navLossBudgetState(_navLossBucketRecoveryAt, maxNavLossBps, batchLossBps);
+    function _consumeNavLossBudget(uint256 batchLossBps)
+        private
+        returns (uint16 usedLossBps)
+    {
+        uint256 packedState = _calculator.navLossBudgetState(
+            _navLossBucketRecoveryAt, maxNavLossBps, batchLossBps
+        );
         // Every packed value is bounded by the calculator before encoding.
         // forge-lint: disable-next-line(unsafe-typecast)
         usedLossBps = uint16(packedState);

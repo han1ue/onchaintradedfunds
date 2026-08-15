@@ -84,9 +84,7 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         address settlementToken_,
         uint24 poolFee_
     ) {
-        if (initialOwner == address(0) || settlementToken_ == address(0)) {
-            revert ZeroAddress();
-        }
+        if (initialOwner == address(0) || settlementToken_ == address(0)) revert ZeroAddress();
         if (uniswapRouter_ == address(0) || uniswapRouter_.code.length == 0) {
             revert InvalidRouter(uniswapRouter_);
         }
@@ -147,9 +145,8 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
 
         uint256 reportedOutput;
         if (path.length == 2) {
-            reportedOutput = IUniswapV3SwapRouter(uniswapRouter)
-                .exactInputSingle(
-                    IUniswapV3SwapRouter.ExactInputSingleParams({
+            reportedOutput = IUniswapV3SwapRouter(uniswapRouter).exactInputSingle(
+                IUniswapV3SwapRouter.ExactInputSingleParams({
                     tokenIn: tokenIn,
                     tokenOut: tokenOut,
                     fee: poolFee,
@@ -158,17 +155,16 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
                     amountOutMinimum: minAmountOut,
                     sqrtPriceLimitX96: 0
                 })
-                );
+            );
         } else {
-            reportedOutput = IUniswapV3SwapRouter(uniswapRouter)
-                .exactInput(
-                    IUniswapV3SwapRouter.ExactInputParams({
+            reportedOutput = IUniswapV3SwapRouter(uniswapRouter).exactInput(
+                IUniswapV3SwapRouter.ExactInputParams({
                     path: _encodePath(path),
                     recipient: msg.sender,
                     amountIn: amountIn,
                     amountOutMinimum: minAmountOut
                 })
-                );
+            );
         }
         tokenIn.safeApprove(uniswapRouter, 0);
 
@@ -202,9 +198,8 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
 
         settlementToken_.safeApprove(uniswapRouter, 0);
         settlementToken_.safeApprove(uniswapRouter, maxAmountIn);
-        amountIn = IUniswapV3SwapRouter(uniswapRouter)
-            .exactOutputSingle(
-                IUniswapV3SwapRouter.ExactOutputSingleParams({
+        amountIn = IUniswapV3SwapRouter(uniswapRouter).exactOutputSingle(
+            IUniswapV3SwapRouter.ExactOutputSingleParams({
                 tokenIn: settlementToken_,
                 tokenOut: tokenOut,
                 fee: poolFee,
@@ -213,7 +208,7 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
                 amountInMaximum: maxAmountIn,
                 sqrtPriceLimitX96: 0
             })
-            );
+        );
         settlementToken_.safeApprove(uniswapRouter, 0);
 
         uint256 observedOutput = IERC20(tokenOut).balanceOf(msg.sender) - callerOutputBefore;
@@ -229,7 +224,10 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         }
     }
 
-    function _validatePath(address[] memory path, address tokenIn, address tokenOut) private view {
+    function _validatePath(address[] memory path, address tokenIn, address tokenOut)
+        private
+        view
+    {
         if (
             (path.length != 2 && path.length != 3) || path[0] != tokenIn
                 || path[path.length - 1] != tokenOut || tokenIn == address(0)
@@ -239,7 +237,8 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         if (path.length == 2) {
             if (path[0] != settlementToken && path[1] != settlementToken) revert InvalidPath();
         } else if (
-            path[1] != settlementToken || path[0] == settlementToken || path[2] == settlementToken
+            path[1] != settlementToken || path[0] == settlementToken
+                || path[2] == settlementToken
         ) {
             revert InvalidPath();
         }

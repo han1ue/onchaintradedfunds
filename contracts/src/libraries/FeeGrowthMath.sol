@@ -43,7 +43,9 @@ library FeeGrowthMath {
             }
             assembly ("memory-safe") {
                 // The rational approximation is positive in the exp domain, and `k <= 195`.
-                r := shr(sub(195, k), mul(r, 3822833074963236453042738258902158003155416615667))
+                r := shr(
+                    sub(195, k), mul(r, 3822833074963236453042738258902158003155416615667)
+                )
             }
         }
     }
