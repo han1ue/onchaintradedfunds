@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Clock3, FileCheck2, History, Layers3 } from "lucide-react";
+import { ArrowRight, FileCheck2, History, Layers3 } from "lucide-react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { CompetitionTimeline } from "@/components/CompetitionTimeline";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
@@ -23,7 +23,7 @@ export default async function HomePage() {
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
       <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={status.tone}>{status.label}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
-      <div className="heroDeadline"><Clock3 size={17} /><span>{status.deadlineLabel}</span><strong>{status.deadlineAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(status.deadlineAt.toISOString())} days remaining</small></div>
+      <div className="heroDeadline"><span>{status.deadlineLabel}</span><strong>{status.deadlineAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(status.deadlineAt.toISOString())} days remaining</small></div>
     </section>
     <div className="metricsGrid">
       <MetricCard label="Votes cast" value={competition.voteCount.toLocaleString()} />
