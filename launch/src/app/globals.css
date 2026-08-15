@@ -98,12 +98,15 @@ button { color: inherit; }
 .heroDeadline strong { font-size: .94rem; }
 .heroSummaryDivider { width: 1px; min-height: 54px; background: var(--border-strong); }
 .heroStats { min-width: 0; display: grid; margin: 0; }
-.heroStat { min-height: 27px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+.heroStat { position: relative; min-height: 27px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; }
 .heroStat + .heroStat { border-top: 1px solid var(--border); }
 .heroStat dt { color: var(--text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
 .heroStat dd { margin: 0; color: var(--text); font-size: .76rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.heroStat a { display: inline-flex; align-items: center; gap: 4px; transition: color .15s ease; }
-.heroStat a:hover { color: var(--teal); }
+.heroStatInteractive { margin-inline: -6px; padding-inline: 6px; border-radius: 4px; transition: background .15s ease, color .15s ease; }
+.heroStatInteractive:hover { background: color-mix(in srgb, var(--teal) 8%, transparent); }
+.heroStatInteractive:hover dd { color: var(--teal); }
+.heroStatHitArea { position: absolute; inset: 0; border-radius: inherit; }
+.heroStatHitArea:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .compactHero { align-items: center; margin-bottom: 18px; }
 .compactHero h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
 .competitionStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 17px; color: var(--text-muted); font-size: .72rem; }
@@ -394,9 +397,9 @@ button { color: inherit; }
 .postAssurance { margin: 0; color: var(--text-muted); font-size: .66rem; line-height: 1.4; text-align: center; }
 .wizardFooterAction { display: grid; justify-items: stretch; gap: 6px; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
-.turnstile { width: 100%; min-height: 65px; display: grid; align-items: center; overflow: hidden; }
+.turnstile { width: 100%; max-width: 100%; min-width: 0; min-height: 65px; display: grid; align-items: center; overflow: clip; contain: inline-size; }
 .turnstile > div,
-.turnstile iframe { width: 100% !important; max-width: 100%; }
+.turnstile iframe { width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
 .turnstileComplete { height: 0; min-height: 0; visibility: hidden; }
 
 .proposalHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
@@ -453,12 +456,13 @@ button { color: inherit; }
 .ballotRail { position: sticky; top: 68px; display: grid; gap: 12px; }
 .ballotActionArea { grid-column: 1 / -1; display: grid; gap: 10px; }
 .ballotSummary { padding: 18px; }
-.ballotSummary > div { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.ballotSummaryStatus { display: grid; gap: 8px; }
+.ballotSummaryCount { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .ballotSummary span { color: var(--text-muted); font-size: .7rem; }
 .ballotSummary strong { color: var(--gold); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .ballotSummary strong.complete { color: var(--green); }
 .ballotSummary strong.over { color: var(--danger); }
-.ballotSummary p { margin: 10px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
+.ballotSummary p { margin: 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
 .voteUnlockTrack { height: 5px; margin-top: 14px; overflow: hidden; border-radius: 4px; background: var(--muted); }
 .voteUnlockTrack > span { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
 .ballotSummary > small { display: block; margin-top: 7px; color: var(--text-muted); font-size: .63rem; text-align: right; }
@@ -469,6 +473,7 @@ button { color: inherit; }
 .ballotActionIntro > p { max-width: 75ch; margin: 0; color: var(--text-muted); font-size: .74rem; line-height: 1.55; }
 .ballotActionIntro .inlineLink { margin-top: 2px; }
 .ballotActionFields, .ballotActionPublish { min-width: 0; display: grid; align-content: start; gap: 14px; }
+.ballotActionFields > .formField:first-child { padding-top: 9px; }
 .ballotAction .button { width: 100%; }
 .ballotAction .inlineLink { display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; }
 .privacyChoice { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); cursor: pointer; }
@@ -592,6 +597,7 @@ button { color: inherit; }
   .ballotRail { position: static; }
   .ballotActionWide { grid-template-columns: 1fr; gap: 16px; padding: 18px; }
   .ballotActionIntro { grid-column: auto; }
+  .ballotActionFields > .formField:first-child { padding-top: 0; }
   .ballotToolbar { align-items: flex-start; }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }

@@ -269,7 +269,7 @@ The signature comparison component aligns rank, OTF identity and thesis, portfol
 
 ### Earned-Vote Ledger
 
-The ballot is a single competition-wide ledger, not a set of independent proposal actions. Voting follows a 7-day submission-only phase and lasts 30 days; submissions remain open throughout. Three votes unlock when voting opens, followed by one every three voting days up to 12. Each proposal receives compact plus/minus controls, including the voter’s own proposal. Minus can only remove an uncast draft choice: cast votes are permanent and form the floor for every proposal. The sticky rail shows unlocked, cast, unassigned, and next-unlock state. Every voting transaction requires a fresh public X post, while one transaction may batch several unlocked votes. Each post hides its batch’s OTF picks by default; a labelled disclosure control must be enabled to name tickers and vote counts.
+The ballot is a single competition-wide ledger, not a set of independent proposal actions. Voting follows a 7-day submission-only phase and lasts 30 days; submissions remain open throughout. Three votes unlock when voting opens, followed by one every three voting days up to 12. Each proposal receives compact plus/minus controls, including the voter’s own proposal. Minus can only remove an uncast draft choice: cast votes are permanent and form the floor for every proposal. The sticky rail shows remaining votes and next-unlock state. Every voting action requires a fresh public X post, while one action may batch several unlocked votes. Each post hides its batch’s OTF picks by default; a labelled disclosure control must be enabled to name tickers and vote counts.
 
 ### Wizard Progress
 

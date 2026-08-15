@@ -29,7 +29,7 @@ export default async function HomePage() {
         <dl className="heroStats">
           <div className="heroStat"><dt>Votes cast</dt><dd>{competition.voteCount.toLocaleString()}</dd></div>
           <div className="heroStat"><dt>OTF proposals</dt><dd>{competition.proposalCount.toLocaleString()}</dd></div>
-          <div className="heroStat"><dt>Supported RWAs</dt><dd><Link href="/rwas" aria-label={`${assets.length.toLocaleString()} supported RWAs`}>{assets.length.toLocaleString()} <ArrowRight size={12} /></Link></dd></div>
+          <div className="heroStat heroStatInteractive"><dt>Supported RWAs</dt><dd>{assets.length.toLocaleString()}</dd><Link className="heroStatHitArea" href="/rwas" aria-label={`View ${assets.length.toLocaleString()} supported RWAs`} /></div>
         </dl>
       </div>
     </section>
@@ -42,7 +42,7 @@ export default async function HomePage() {
       <HowItWorks eligibility={eligibility} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Include at least two eligible assets totaling exactly 100%.</li><li>Voting starts after the 7-day submission week with {COMPETITION_RULES.initialVotes} unlocked votes.</li><li>One vote unlocks every {COMPETITION_RULES.voteUnlockIntervalDays} voting days, up to {COMPETITION_RULES.totalVotes}; cast votes are final.</li><li>Creators may vote for their own proposal; final rank determines launch order.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Submit one OTF proposal per X account; proposals cannot be edited after submission.</li><li>Voting starts after the 7-day submission week with {COMPETITION_RULES.initialVotes} unlocked votes.</li><li>One vote unlocks every {COMPETITION_RULES.voteUnlockIntervalDays} voting days, up to {COMPETITION_RULES.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
       <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><History size={18} /></div><div className="participationActivity">{recentProposals.length ? recentProposals.map((proposal) => <div key={proposal.id}><Layers3 size={16} /><span className="activitySentence"><a href={`https://x.com/${encodeURIComponent(proposal.creator.username)}`} target="_blank" rel="noreferrer">@{proposal.creator.username}</a><span>proposed</span><Link href={`/otfs/${proposal.slug}`}>{proposal.name}</Link></span></div>) : <div><Layers3 size={16} /><span>No recent proposals yet.</span></div>}</div></SectionCard>
     </div>
   </div>;

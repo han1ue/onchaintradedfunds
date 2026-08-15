@@ -14,7 +14,7 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
     { title: "Submission week", timing: "Days 1–7", detail: "Submit OTF proposals." },
-    { title: "Voting month", timing: "Days 8–37", detail: `Voting opens with ${COMPETITION_RULES.initialVotes} votes. One more unlocks every ${COMPETITION_RULES.voteUnlockIntervalDays} days; submissions stay open.` },
+    { title: "Voting month", timing: "Days 8–37", detail: `Voting opens with ${COMPETITION_RULES.initialVotes} votes. One more unlocks every ${COMPETITION_RULES.voteUnlockIntervalDays} days; OTF submissions stay open.` },
     { title: "Final results", timing: "After voting", detail: "Votes are reviewed and the final ranking becomes launch order." },
   ];
   const stageCopy = status.stage === "submissions"
