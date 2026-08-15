@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -99,6 +100,16 @@ export const eligibleAssets = pgTable("eligible_assets", {
 }, (table) => [
   uniqueIndex("eligible_asset_symbol_uq").on(sql`upper(${table.symbol})`),
   uniqueIndex("eligible_asset_contract_address_uq").on(sql`lower(${table.contractAddress})`)
+]);
+
+export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
+  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
+  sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+  quoteGeneratedAt: timestamp("quote_generated_at", { withTimezone: true }).notNull(),
+  bidUsd: numeric("bid_usd", { precision: 24, scale: 8 }).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.assetId, table.sampledAt] }),
+  index("asset_price_snapshots_sampled_at_idx").on(table.sampledAt)
 ]);
 
 export const proposals = pgTable("proposals", {

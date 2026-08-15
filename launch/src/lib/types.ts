@@ -62,3 +62,14 @@ export type BallotSummary = {
   proofUrl?: string | null;
   allocations: VoteAllocation[];
 };
+
+export type PortfolioReturnPoint = {
+  timestamp: string;
+  returnPct: number;
+};
+
+export type PortfolioReturns = {
+  proposedAt: string;
+  trackingStartedAt: string | null;
+  points: PortfolioReturnPoint[];
+};

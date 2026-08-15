@@ -1,7 +1,7 @@
 "use client";
 
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import { ArrowDown, CalendarClock, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote, X } from "lucide-react";
+import { ArrowDown, CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { COMPETITION_RULES } from "@/lib/competition";
@@ -35,7 +35,7 @@ function sumVotes(votes: Record<string, number>) {
   return Object.values(votes).reduce((sum, value) => sum + value, 0);
 }
 
-function VotePostDialog({ challenge, open, postUrl, busy, newVotes, onPostUrlChange, onVerify, onClose, onStartOver }: {
+function VotePostDialog({ challenge, open, postUrl, busy, newVotes, onPostUrlChange, onVerify, onClose }: {
   challenge: Challenge;
   open: boolean;
   postUrl: string;
@@ -44,7 +44,6 @@ function VotePostDialog({ challenge, open, postUrl, busy, newVotes, onPostUrlCha
   onPostUrlChange(value: string): void;
   onVerify(): void;
   onClose(): void;
-  onStartOver(): void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -64,7 +63,6 @@ function VotePostDialog({ challenge, open, postUrl, busy, newVotes, onPostUrlCha
       <div className="votePostStepHeading"><span>2</span><div><h3>Verify your post</h3><p>Paste the URL of your published X post to cast your votes.</p></div></div>
       <label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => onPostUrlChange(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" /></label>
       <Button onClick={onVerify} disabled={busy || !postUrl.trim()}>{busy ? "Verifying…" : `Verify and cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}`}</Button>
-      <Button variant="ghost" onClick={onStartOver}>Start again</Button>
     </div>
   </dialog>;
 }
@@ -112,7 +110,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   const total = sumVotes(votes);
   const castTotal = sumVotes(committedVotes);
   const newVotes = total - castTotal;
-  const unlockedRemaining = Math.max(0, availability.unlockedVotes - total);
+  const unlockedRemaining = Math.max(0, availability.unlockedVotes - castTotal);
   const allocations = Object.entries(votes).map(([proposalId, value]) => ({ proposalId, votes: value })).filter(({ votes: value }) => value > 0);
   const addedChoices = allocations.map((allocation) => ({
     ticker: proposals.find((proposal) => proposal.id === allocation.proposalId)?.ticker ?? "OTF",
@@ -184,8 +182,8 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {COMPETITION_RULES.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
-    <div className="ballotActionIntro"><strong>{active ? "Post and cast new votes" : "Post and cast your first votes"}</strong><p>{newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p>{ballot?.proofUrl && <a className="inlineLink" href={ballot.proofUrl} target="_blank" rel="noreferrer">View first vote post <ExternalLink size={13} /></a>}{message && <div className={`ballotInlineMessage ${messageTone}`} role="status">{message}</div>}</div>
-    {!challenge ? <><div className="ballotActionFields"><label className="formField"><span>Why are you voting? <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Share why you’re helping choose the next OTFs…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters</small></label><label className="privacyChoice"><input type="checkbox" checked={revealVotes} onChange={(event) => setRevealVotes(event.target.checked)} /><span><strong>Reveal my picks in this post</strong><small>{revealVotes ? addedChoices.length > 0 ? "The post will name the OTFs and vote counts in this batch." : "Your selected OTFs will appear after you add votes." : "Off by default. The OTFs receiving these votes will stay private."}</small></span></label></div>
+    <div className="ballotActionIntro"><strong>{active ? "Post and cast new votes" : "Post and cast your first votes"}</strong><p>{newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p>{ballot?.proofUrl && <a className="inlineLink" href={ballot.proofUrl} target="_blank" rel="noreferrer">View first vote post <ExternalLink size={13} /></a>}</div>
+    {message ? <div className={`ballotActionResult ${messageTone}`} role="status">{messageTone === "success" ? <CheckCircle2 size={24} /> : <CircleAlert size={24} />}<div><strong>{messageTone === "success" ? "Votes cast" : "Couldn’t cast your votes"}</strong><p>{message}</p></div>{messageTone === "success" && unlockedRemaining > 0 && <div className="ballotActionResultActions"><Button onClick={() => setMessage(null)}>Cast more votes</Button></div>}{messageTone === "error" && <div className="ballotActionResultActions"><Button onClick={() => challenge ? setPostDialogOpen(true) : setMessage(null)}>{challenge ? "Try verification again" : "Try again"}</Button>{challenge && <Button variant="ghost" onClick={startAgain}>Start again</Button>}</div>}</div> : !challenge ? <><div className="ballotActionFields"><label className="formField"><span>Why are you voting? <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Share why you’re helping choose the next OTFs…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters</small></label><label className="privacyChoice"><input type="checkbox" checked={revealVotes} onChange={(event) => setRevealVotes(event.target.checked)} /><span><strong>Reveal my picks in this post</strong><small>{revealVotes ? addedChoices.length > 0 ? "The post will name the OTFs and vote counts in this batch." : "Your selected OTFs will appear after you add votes." : "Off by default. The OTFs receiving these votes will stay private."}</small></span></label></div>
     <div className="ballotActionPublish"><div className="xPostPreview compact"><div><span>Post preview · {disclosurePreviewLabel}</span><Send size={13} /></div><p>{previewText}</p></div><Turnstile siteKey={turnstileSiteKey} action="vote_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} />{(!turnstileSiteKey || turnstileToken) && <div className="postAction"><Button onClick={() => request("prepare")} disabled={busy || newVotes < 1}>{busy ? "Preparing…" : "Post to X"}</Button><p className="postAssurance">We never post anything on your behalf.</p></div>}</div></> : <div className="ballotPendingAction"><div><strong>Your voting post is ready</strong><p>Continue to publish it on X, then verify the post to cast your votes.</p></div><Button onClick={() => setPostDialogOpen(true)}>Continue verification</Button><Button variant="ghost" onClick={startAgain}>Start again</Button></div>}
   </SectionCard>;
 
@@ -206,6 +204,6 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     })}</div>
   </SectionCard><aside className="ballotRail"><SectionCard className="ballotSummary"><div className="ballotSummaryStatus"><div className="ballotSummaryCount"><span>Remaining votes</span><strong className={unlockedRemaining === 0 ? "complete" : ""}>{unlockedRemaining}</strong></div><p>{availability.nextVoteUnlockAt ? `Next vote unlocks ${formatDateTime(availability.nextVoteUnlockAt)}.` : `All ${COMPETITION_RULES.totalVotes} votes are unlocked. No vote is added on voting day 30.`}</p></div><div className="voteUnlockTrack" role="progressbar" aria-label="Votes unlocked" aria-valuemin={0} aria-valuemax={COMPETITION_RULES.totalVotes} aria-valuenow={availability.unlockedVotes}><span style={{ width: `${availability.unlockedVotes / COMPETITION_RULES.totalVotes * 100}%` }} /></div><small>{availability.unlockedVotes} of {COMPETITION_RULES.totalVotes} unlocked</small></SectionCard></aside>
     <div className="ballotActionArea">{actionPanel}</div>
-    {challenge && <VotePostDialog challenge={challenge} open={postDialogOpen} postUrl={postUrl} busy={busy} newVotes={newVotes} onPostUrlChange={setPostUrl} onVerify={() => request("verify")} onClose={() => setPostDialogOpen(false)} onStartOver={startAgain} />}
+    {challenge && <VotePostDialog challenge={challenge} open={postDialogOpen} postUrl={postUrl} busy={busy} newVotes={newVotes} onPostUrlChange={setPostUrl} onVerify={() => request("verify")} onClose={() => setPostDialogOpen(false)} />}
   </div>;
 }

@@ -33,7 +33,7 @@ The initial Supported RWA records use one-time token contract data from the Robi
 - Finalization rechecks evidence before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. On Vercel Hobby, public X evidence is rechecked and expired raw post text is cleaned once daily at 02:42 UTC.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. Robinhood bid snapshots are retained hourly at minute 17 to power proposal return history. Public X evidence is rechecked and expired raw post text is cleaned once daily at 02:42 UTC. The hourly price schedule requires a Vercel plan that supports hourly cron jobs; on Hobby, trigger `/api/jobs/prices` from an external scheduler with the same bearer token.
 
 ## Vercel
 

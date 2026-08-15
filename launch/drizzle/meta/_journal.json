@@ -36,6 +36,13 @@
       "when": 1786759651938,
       "tag": "0004_fix_progressive_ballots",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786761381470,
+      "tag": "0005_overjoyed_nomad",
+      "breakpoints": true
     }
   ]
 }

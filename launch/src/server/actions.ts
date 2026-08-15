@@ -10,6 +10,7 @@ import {
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
+import { captureAssetPrices } from "./prices";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -93,7 +94,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
   const acceptedAt = new Date();
-  return database.transaction(async (transaction) => {
+  const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
     const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
@@ -110,4 +111,6 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
+  await captureAssetPrices(acceptedAt, false).catch(() => undefined);
+  return result;
 }
