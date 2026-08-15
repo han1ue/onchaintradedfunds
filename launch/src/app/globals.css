@@ -387,6 +387,7 @@ button { color: inherit; }
 .wizardFooterAction { display: grid; justify-items: stretch; gap: 6px; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
 .turnstile { min-height: 65px; display: grid; align-items: center; overflow: hidden; }
+.turnstileComplete { height: 0; min-height: 0; visibility: hidden; }
 
 .proposalHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .proposalTitle { display: flex; align-items: center; gap: 16px; }

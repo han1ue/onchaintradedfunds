@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -13,6 +13,7 @@ export function Turnstile({ siteKey, action, resetKey, onToken }: { siteKey?: st
   const container = useRef<HTMLDivElement>(null);
   const rendered = useRef(false);
   const widgetId = useRef<string | null>(null);
+  const [complete, setComplete] = useState(false);
   const render = useCallback(() => {
     if (!siteKey || !container.current || !window.turnstile || rendered.current) return;
     rendered.current = true;
@@ -20,16 +21,17 @@ export function Turnstile({ siteKey, action, resetKey, onToken }: { siteKey?: st
       sitekey: siteKey,
       action,
       theme: "auto",
-      callback: onToken,
-      "expired-callback": () => onToken(""),
-      "error-callback": () => onToken("")
+      callback: (token) => { setComplete(true); onToken(token); },
+      "expired-callback": () => { setComplete(false); onToken(""); },
+      "error-callback": () => { setComplete(false); onToken(""); }
     });
   }, [action, siteKey, onToken]);
   useEffect(() => {
     if (!resetKey || !widgetId.current || !window.turnstile) return;
     window.turnstile.reset(widgetId.current);
+    setComplete(false);
     onToken("");
   }, [onToken, resetKey]);
   if (!siteKey) return null;
-  return <><Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" onReady={render} /><div className="turnstile" ref={container} /></>;
+  return <><Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" onReady={render} /><div className={`turnstile${complete ? " turnstileComplete" : ""}`} aria-hidden={complete} ref={container} /></>;
 }
