@@ -3,7 +3,7 @@ import { ArrowRight, FileCheck2, History, Layers3 } from "lucide-react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { CompetitionTimeline } from "@/components/CompetitionTimeline";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
-import { MetricCard, SectionCard, StatusBadge } from "@/components/ui";
+import { SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
@@ -23,13 +23,16 @@ export default async function HomePage() {
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
       <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={status.tone}>{status.label}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>
-      <div className="heroDeadline"><span>{status.deadlineLabel}</span><strong>{status.deadlineAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(status.deadlineAt.toISOString())} days remaining</small></div>
+      <div className="heroSummaryCard">
+        <div className="heroDeadline"><span>{status.deadlineLabel}</span><strong>{status.deadlineAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{daysRemaining(status.deadlineAt.toISOString())} days remaining</small></div>
+        <span className="heroSummaryDivider" aria-hidden="true" />
+        <dl className="heroStats">
+          <div className="heroStat"><dt>Votes cast</dt><dd>{competition.voteCount.toLocaleString()}</dd></div>
+          <div className="heroStat"><dt>OTF proposals</dt><dd>{competition.proposalCount.toLocaleString()}</dd></div>
+          <div className="heroStat"><dt>Supported RWAs</dt><dd><Link href="/rwas" aria-label={`${assets.length.toLocaleString()} supported RWAs`}>{assets.length.toLocaleString()} <ArrowRight size={12} /></Link></dd></div>
+        </dl>
+      </div>
     </section>
-    <div className="metricsGrid">
-      <MetricCard label="Votes cast" value={competition.voteCount.toLocaleString()} />
-      <MetricCard label="OTF proposals" value={competition.proposalCount.toString()} />
-      <MetricCard label="Supported RWAs" value={assets.length.toLocaleString()} href="/rwas" />
-    </div>
     <CompetitionTimeline competition={competition} />
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><span>Live leaderboard</span><Link className="button buttonPrimary leaderboardSubmitButton" href="/submit">Submit OTF</Link></div>

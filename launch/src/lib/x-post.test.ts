@@ -7,6 +7,9 @@ describe("X post templates", () => {
   it("uses one deterministic canonical submission URL", () => {
     expect(buildSubmissionPost("A durable long-term infrastructure thesis.", proposal, "https://launch.example/", "OTF-ABC123")).toBe("A durable long-term infrastructure thesis.\n\nI submitted AI Infrastructure OTF as an OTF proposal to OTF Launch · OTF-ABC123\nhttps://launch.example/otfs/ai-infrastructure-otf");
   });
+  it("does not invent submission context when none is provided", () => {
+    expect(buildSubmissionPost("", proposal, "https://launch.example/", "OTF-ABC123")).toBe("I submitted AI Infrastructure OTF as an OTF proposal to OTF Launch · OTF-ABC123\nhttps://launch.example/otfs/ai-infrastructure-otf");
+  });
   it("builds a fresh proof post for a voting transaction", () => {
     expect(buildVotePost("I want to help choose the strongest proposals.", "https://launch.example", "OTF-ABC123")).toBe("I want to help choose the strongest proposals.\n\nI cast unlocked votes in OTF Launch\nOTF-ABC123\nhttps://launch.example/vote");
   });

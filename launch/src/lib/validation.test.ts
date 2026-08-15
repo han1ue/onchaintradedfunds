@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema } from "./validation";
+import { ballotActivationSchema, earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
@@ -24,6 +24,9 @@ describe("proposal validation", () => {
 });
 
 describe("proof links", () => {
+  it("allows an empty optional X post reason", () => {
+    expect(xPostReasonSchema.parse("")).toBe("");
+  });
   it("extracts an immutable post id from X and Twitter URLs", () => {
     expect(parseXPostId("https://x.com/otf/status/1234567890")).toBe("1234567890");
     expect(parseXPostId("https://twitter.com/otf/status/987654321")).toBe("987654321");

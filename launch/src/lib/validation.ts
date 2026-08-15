@@ -16,7 +16,7 @@ export const proposalInputSchema = z.object({
   })
 });
 
-export const xPostReasonSchema = z.string().trim().min(20, "Add at least 20 characters of your own context").max(120, "Keep your context to 120 characters or fewer");
+export const xPostReasonSchema = z.string().trim().max(120, "Keep your context to 120 characters or fewer");
 
 export const xPostActionSchema = z.object({
   reason: xPostReasonSchema,
