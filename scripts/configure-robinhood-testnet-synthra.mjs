@@ -296,9 +296,9 @@ async function requireCode(label, address) {
   if (!code || code === "0x") throw new Error(`${label} has no bytecode at ${address}.`);
 }
 
-async function ensureDeployment(name, compiled, args, { force = false } = {}) {
+async function ensureDeployment(name, compiled, args) {
   const existing = contracts[name];
-  if (!force && existing?.address) {
+  if (existing?.address) {
     const address = getAddress(existing.address);
     const code = await publicClient.getCode({ address });
     if (code && code !== "0x") return { ...existing, address };
@@ -382,16 +382,10 @@ const v3Adapter = await ensureDeployment(
   v3AdapterArtifact,
   [account.address, swapRouter, settlementToken, poolFee],
 );
-const forceEntryRouterRedeploy =
-  process.env.FORCE_ENTRY_ROUTER_REDEPLOY?.trim().toLowerCase() === "true";
-const replacedEntryRouter = forceEntryRouterRedeploy && contracts.entryRouter?.address
-  ? getAddress(contracts.entryRouter.address)
-  : undefined;
 const entryRouter = await ensureDeployment(
   "entryRouter",
   entryRouterArtifact,
   [account.address, factory, settlementToken],
-  { force: forceEntryRouterRedeploy },
 );
 
 const [adapterOwner, adapterRouter, adapterSettlement, adapterFee, entryOwner, entryFactory, entrySettlement] =
@@ -469,36 +463,6 @@ for (const [action, caller] of [
         args: [caller, true],
       });
   upsertByAction(deployment.setupTransactions.settlementEntry, action, evidence);
-}
-if (replacedEntryRouter && !isAddressEqual(replacedEntryRouter, entryRouter.address)) {
-  const oldEntryApproval = await publicClient.readContract({
-    address: replacedEntryRouter,
-    abi: entryRouterArtifact.abi,
-    functionName: "isEntryAdapterApproved",
-    args: [v3Adapter.address],
-  });
-  if (oldEntryApproval) {
-    await confirmedWrite({
-      address: replacedEntryRouter,
-      abi: entryRouterArtifact.abi,
-      functionName: "setEntryAdapterApproved",
-      args: [v3Adapter.address, false],
-    });
-  }
-  const oldCallerApproval = await publicClient.readContract({
-    address: v3Adapter.address,
-    abi: v3AdapterArtifact.abi,
-    functionName: "isCallerApproved",
-    args: [replacedEntryRouter],
-  });
-  if (oldCallerApproval) {
-    await confirmedWrite({
-      address: v3Adapter.address,
-      abi: v3AdapterArtifact.abi,
-      functionName: "setCallerApproved",
-      args: [replacedEntryRouter, false],
-    });
-  }
 }
 saveDeployment(deployment);
 
