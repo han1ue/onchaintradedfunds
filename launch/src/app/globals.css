@@ -419,9 +419,9 @@ button { color: inherit; }
 .allocationTable > div > div { display: flex; align-items: center; gap: 8px; }
 .allocationTable small { color: var(--text-muted); }
 .assetDot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
-.portfolioReturns { margin-top: 24px; padding-top: 19px; border-top: 1px solid var(--border); }
+.portfolioReturns { min-width: 0; }
 .returnsHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
-.returnsHeading h3 { margin: 0; font-size: .88rem; letter-spacing: -.01em; }
+.returnsHeading h2 { margin: 0; font-size: 1rem; letter-spacing: -.015em; }
 .returnsHeading p { margin: 5px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
 .returnsCurrent { flex: 0 0 auto; display: grid; justify-items: end; gap: 3px; }
 .returnsCurrent span { color: var(--text-muted); font-size: .61rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
