@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PublicApiError } from "@/lib/errors";
 
 export function apiOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json({ data }, init);
@@ -6,8 +7,8 @@ export function apiOk<T>(data: T, init?: ResponseInit) {
 
 export function apiError(error: unknown, fallback = "INTERNAL_ERROR") {
   const code = error instanceof Error ? error.message : fallback;
-  const status = code === "UNAUTHENTICATED" ? 401 : code === "FORBIDDEN" ? 403 : code.includes("NOT_FOUND") ? 404 : code === "DATABASE_NOT_CONFIGURED" || code === "X_UNAVAILABLE" || code === "RATE_LIMIT_UNAVAILABLE" ? 503 : code === "RATE_LIMITED" ? 429 : 400;
-  return NextResponse.json({ error: { code } }, { status });
+  const status = code === "UNAUTHENTICATED" ? 401 : code === "FORBIDDEN" ? 403 : code.includes("NOT_FOUND") ? 404 : code === "DATABASE_NOT_CONFIGURED" || code === "X_UNAVAILABLE" || code === "RATE_LIMIT_UNAVAILABLE" || code === "PROPOSAL_PRICE_UNAVAILABLE" || code === "FINAL_PRICE_CHECKPOINT_UNAVAILABLE" ? 503 : code === "RATE_LIMITED" ? 429 : 400;
+  return NextResponse.json({ error: { code, ...(error instanceof PublicApiError ? { metadata: error.metadata } : {}) } }, { status });
 }
 
 export function assertSameOrigin(request: Request) {

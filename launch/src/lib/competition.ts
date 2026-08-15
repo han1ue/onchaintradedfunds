@@ -15,7 +15,7 @@ export const COMPETITION_RULES = {
   initialVotes: 3,
   voteUnlockIntervalDays: 3,
   totalVotes: 12,
-  ruleVersion: "v3",
+  ruleVersion: "v4",
   rankingPolicyVersion: "earned-votes-v3",
 } as const;
 

@@ -31,7 +31,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   if (!sqlClient) return demoLeaderboard;
   const rows = await sqlClient<LeaderboardEntry[]>`
     with ranked as (
-      select p.id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
+      select p.id, p.creator_user_id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, u.display_name as creator_name,
         u.profile_image_url as creator_profile_image_url,
         coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
@@ -45,6 +45,11 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
     )
     select o.id::text, o.slug, o.rank, o.name, o.ticker, o.thesis, o.votes,
       o.accepted_at as "acceptedAt",
+      (select count(distinct vt.voter_user_id)::int from vote_tranches vt
+        join ballots vb on vb.id = vt.ballot_id and vb.status = 'valid'
+        join tweet_evidence ve on ve.id = vt.evidence_id and ve.status = 'valid'
+        where vt.proposal_id = o.id and vt.voter_user_id <> o.creator_user_id) as "uniqueSupporterCount",
+      (o.accepted_at < (select starts_at from competitions limit 1) + interval '7 days') as "submissionBoost",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
       json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
       coalesce((select json_agg(json_build_object(

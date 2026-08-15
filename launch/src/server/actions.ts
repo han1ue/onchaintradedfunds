@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
+import { PublicApiError } from "@/lib/errors";
 import { requireDb } from "./db";
 import {
   activityEvents, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
@@ -10,7 +11,8 @@ import {
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
-import { captureAssetPrices } from "./prices";
+import { assertCompleteProposalPriceCapture, captureAssetPrices } from "./prices";
+import { recomputeLiveXp } from "./xp";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -93,7 +95,19 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof(proposalId, input);
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
+  const proposalAssetRows = await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
+    .from(proposalAssets)
+    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
+    .where(eq(proposalAssets.proposalId, proposal.id));
   const acceptedAt = new Date();
+  let priceCapture: Awaited<ReturnType<typeof captureAssetPrices>>;
+  try {
+    priceCapture = await captureAssetPrices({ assetIds: proposalAssetRows.map((asset) => asset.id), sampledAt: acceptedAt });
+  } catch (error) {
+    console.error("Proposal price validation failed", { proposalId: proposal.id, missingSymbols: proposalAssetRows.map((asset) => asset.symbol), error: error instanceof Error ? error.message : "UNKNOWN" });
+    throw new PublicApiError("PROPOSAL_PRICE_UNAVAILABLE", { missingSymbols: proposalAssetRows.map((asset) => asset.symbol) });
+  }
+  const initialPriceCaptureRunId = assertCompleteProposalPriceCapture(priceCapture, proposalAssetRows);
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
@@ -106,11 +120,11 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
-    const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, initialPriceCaptureRunId, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
     if (!accepted) throw new Error("PROPOSAL_NOT_FOUND");
     await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
-  await captureAssetPrices(acceptedAt, false).catch(() => undefined);
+  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after proposal acceptance failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
   return result;
 }

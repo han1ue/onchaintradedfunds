@@ -8,9 +8,10 @@ import { requireDb } from "./db";
 import {
   activityEvents, adminActions, ballotAllocations, ballots, competitions, evidenceChecks,
   finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposals,
-  tweetEvidence
+  tweetEvidence, xpCalculationRuns, xpSnapshotRows
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
+import { calculateXpSnapshot, recomputeLiveXp } from "./xp";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -26,6 +27,7 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   const [after] = await database.update(proposals).set({ status, moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
   await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: COMPETITION_RULES.ruleVersion, metadata: { reason } });
+  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after moderation failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
   return after;
 }
 
@@ -57,6 +59,7 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
     }
     if (runId) await database.update(finalizationRuns).set({ cursor: evidence.id }).where(eq(finalizationRuns.id, runId));
   }
+  if (!runId) await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after evidence audit failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
 }
 
 export async function finalizeCompetition() {
@@ -64,7 +67,13 @@ export async function finalizeCompetition() {
   const [state] = await database.select().from(competitions).limit(1);
   const competition = state ? { ...state, ...COMPETITION_RULES } : null;
   if (!competition || Date.now() < competition.endsAt.getTime()) throw new Error("COMPETITION_NOT_ENDED");
-  if (competition.finalizedAt) throw new Error("ALREADY_FINALIZED");
+  if (competition.finalizedAt) {
+    const [leaderboard, xp] = await Promise.all([
+      database.select({ canonicalHash: leaderboardSnapshots.canonicalHash }).from(leaderboardSnapshots).where(eq(leaderboardSnapshots.competitionId, competition.id)).limit(1),
+      database.select({ canonicalHash: xpCalculationRuns.canonicalHash }).from(xpCalculationRuns).where(and(eq(xpCalculationRuns.competitionId, competition.id), eq(xpCalculationRuns.status, "final"))).limit(1),
+    ]);
+    return { alreadyFinalized: true, canonicalHash: leaderboard[0]?.canonicalHash, xpCanonicalHash: xp[0]?.canonicalHash };
+  }
   const competitionId = competition.id;
   const [run] = await database.insert(finalizationRuns).values({ competitionId, status: "auditing" }).returning();
   await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
@@ -76,6 +85,8 @@ export async function finalizeCompetition() {
     const ranked = rankEntries(scored.map((item) => ({ id: item.id, acceptedAt: item.acceptedAt!, votes: item.votes })));
     const canonical = { competitionId, ruleVersion: competition.ruleVersion, rankingPolicyVersion: competition.rankingPolicyVersion, rows: ranked.map(({ id, rank, votes }) => ({ rank, proposalId: id, votes })) };
     const canonicalHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+    const xpSnapshot = await calculateXpSnapshot({ final: true });
+    if (!xpSnapshot) throw new Error("XP_SNAPSHOT_UNAVAILABLE");
     const launchStartAt = competition.launchStartAt ?? new Date(Date.now() + 86_400_000);
     await database.transaction(async (transaction) => {
       const [snapshot] = await transaction.insert(leaderboardSnapshots).values({ competitionId, canonicalHash, canonicalJson: canonical }).returning();
@@ -83,10 +94,26 @@ export async function finalizeCompetition() {
         await transaction.insert(leaderboardRows).values(ranked.map((row) => ({ snapshotId: snapshot.id, proposalId: row.id, rank: row.rank, votes: row.votes })));
         await transaction.insert(launchQueue).values(ranked.map((row) => ({ competitionId, proposalId: row.id, rank: row.rank, earliestLaunchAt: earliestLaunchAt(launchStartAt, row.rank, competition.launchIntervalDays) })));
       }
+      const [xpRun] = await transaction.insert(xpCalculationRuns).values({
+        competitionId,
+        status: "final",
+        calculatedAt: xpSnapshot.calculatedAt,
+        priceCheckpointAt: xpSnapshot.priceCheckpointAt,
+        performanceReleased: xpSnapshot.released.performance,
+        performanceAllocated: xpSnapshot.allocated.performance,
+        participationReleased: xpSnapshot.released.participation,
+        participationAllocated: xpSnapshot.allocated.participation,
+        creatorReleased: xpSnapshot.released.creator,
+        creatorAllocated: xpSnapshot.allocated.creator,
+        policyVersion: xpSnapshot.policyVersion,
+        canonicalHash: xpSnapshot.canonicalHash,
+        canonicalJson: xpSnapshot.canonical,
+      }).returning({ id: xpCalculationRuns.id });
+      if (xpSnapshot.users.length) await transaction.insert(xpSnapshotRows).values(xpSnapshot.users.map((user) => ({ runId: xpRun.id, ...user })));
       await transaction.update(competitions).set({ phase: "final", launchStartAt, finalizedAt: new Date(), updatedAt: new Date() }).where(eq(competitions.id, competitionId));
-      await transaction.update(finalizationRuns).set({ status: "complete", completedAt: new Date(), metadata: { canonicalHash, rows: ranked.length } }).where(eq(finalizationRuns.id, run.id));
+      await transaction.update(finalizationRuns).set({ status: "complete", completedAt: new Date(), metadata: { canonicalHash, xpCanonicalHash: xpSnapshot.canonicalHash, rows: ranked.length } }).where(eq(finalizationRuns.id, run.id));
     });
-    return { runId: run.id, canonicalHash, rows: ranked.length };
+    return { runId: run.id, canonicalHash, xpCanonicalHash: xpSnapshot.canonicalHash, rows: ranked.length };
   } catch (error) {
     await database.update(finalizationRuns).set({ status: "failed", error: error instanceof Error ? error.message : "UNKNOWN" }).where(eq(finalizationRuns.id, run.id));
     throw error;

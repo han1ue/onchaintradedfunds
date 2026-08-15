@@ -16,6 +16,8 @@ export type LeaderboardEntry = {
   creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null };
   votes: number;
   acceptedAt: string;
+  uniqueSupporterCount?: number;
+  submissionBoost?: boolean;
   allocations: Allocation[];
   proofUrl?: string;
 };
@@ -72,4 +74,28 @@ export type PortfolioReturns = {
   proposedAt: string;
   trackingStartedAt: string | null;
   points: PortfolioReturnPoint[];
+};
+
+export type XpLeaderboardRow = {
+  userId: string;
+  username: string;
+  displayName: string;
+  profileImageUrl?: string | null;
+  performanceXp: number;
+  participationXp: number;
+  creatorXp: number;
+  totalXp: number;
+  uniqueSupporterCount: number;
+  submissionBoost: boolean;
+  pendingTrancheCount: number;
+};
+
+export type XpLeaderboard = {
+  status: "live" | "final";
+  calculatedAt: string;
+  priceCheckpointAt: string | null;
+  released: { performance: number; participation: number; creator: number; total: number };
+  allocated: { performance: number; participation: number; creator: number; total: number };
+  policyVersion: string;
+  rows: XpLeaderboardRow[];
 };

@@ -21,5 +21,14 @@ export const errorMessages: Record<string, string> = {
   VOTES_ARE_FINAL: "Votes already cast cannot be moved or removed. Add only newly unlocked votes.",
   NO_NEW_VOTES: "Add at least one newly unlocked vote before continuing.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
-  COMPETITION_NOT_OPEN: "The competition is not currently open."
+  COMPETITION_NOT_OPEN: "The competition is not currently open.",
+  PROPOSAL_PRICE_UNAVAILABLE: "One or more portfolio assets could not be priced. Please try verification again shortly.",
+  FINAL_PRICE_CHECKPOINT_UNAVAILABLE: "The first complete post-deadline price checkpoint is not available yet. Please retry finalization after the next price capture."
 };
+
+export class PublicApiError extends Error {
+  constructor(code: string, readonly metadata: Record<string, unknown> = {}) {
+    super(code);
+    this.name = "PublicApiError";
+  }
+}

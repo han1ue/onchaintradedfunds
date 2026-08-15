@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, BadgeCheck, CircleX, Layers3, LogIn, LogOut, ShieldAlert, Users, Vote } from "lucide-react";
+import { Activity, BadgeCheck, CircleX, Gauge, Layers3, LogIn, LogOut, ShieldAlert, Users, Vote } from "lucide-react";
 import { desc, eq } from "drizzle-orm";
 import { EligibilityAction } from "@/components/EligibilityGate";
 import { Button, SectionCard } from "@/components/ui";
@@ -10,6 +10,7 @@ import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
 import { activityEvents, ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
 import { getParticipationEligibility } from "@/server/participation";
+import { getUserXp } from "@/server/xp";
 export const metadata = { title: "My profile" };
 
 type AccountActivity = {
@@ -50,7 +51,8 @@ export default async function MePage() {
     }).from(activityEvents).leftJoin(proposals, eq(activityEvents.proposalId, proposals.id)).where(eq(activityEvents.actorUserId, session.user.id)).orderBy(desc(activityEvents.occurredAt)).limit(30)
   ]) : [[], [], [], []];
   const identity = identityRows[0];
-  const competition = await getCompetition();
+  const [competition, xp] = await Promise.all([getCompetition(), getUserXp(session.user.id)]);
+  const ownXp = xp.rows[0];
   const eligibility = await getParticipationEligibility(session.user, competition);
   const meetsFollowerRequirement = identity ? identity.followersCount >= eligibility.minFollowers : false;
   const verificationLabel = identity ? (identity.verified ? "X verified" : "Not verified") : "Status unavailable";
@@ -75,6 +77,7 @@ export default async function MePage() {
       <SectionCard><Activity size={19} /><span>Running</span><strong>{runningOtfCount}</strong></SectionCard>
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
+    <SectionCard className="accountXpSummary"><div><Gauge size={21} aria-hidden="true" /><span>Your {xp.status === "final" ? "Final" : "Live"} XP</span><strong>{(ownXp?.totalXp ?? 0).toLocaleString()} XP</strong></div><dl><div><dt>Performance</dt><dd>{(ownXp?.performanceXp ?? 0).toLocaleString()}</dd></div><div><dt>Participation</dt><dd>{(ownXp?.participationXp ?? 0).toLocaleString()}</dd></div><div><dt>Creator</dt><dd>{(ownXp?.creatorXp ?? 0).toLocaleString()}</dd></div></dl><div className="accountXpActions">{ownXp?.pendingTrancheCount ? <span>Awaiting price checkpoint · {ownXp.pendingTrancheCount}</span> : <span>Latest canonical calculation</span>}<Link className="inlineLink" href="/points">View XP leaderboard</Link></div></SectionCard>
     <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => {
       const details = activityDetails(event);
       return <div className="activityRow" key={event.id}><span className={`activityIcon ${details.kind}`} aria-hidden="true">{details.kind === "vote" ? <Vote size={16} /> : details.kind === "proposal" ? <Layers3 size={16} /> : <Activity size={16} />}</span><div className="activityCopy"><strong>{details.title}</strong><small>{details.detail}</small></div><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>;

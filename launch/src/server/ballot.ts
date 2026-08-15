@@ -7,11 +7,12 @@ import { ballotActivationSchema, voteDistributionSchema, xPostProofSchema } from
 import { db, requireDb } from "./db";
 import {
   activityEvents, ballotAllocations, ballots, competitions, evidenceChecks, proposals,
-  tweetEvidence, xActionChallenges
+  tweetEvidence, voteTranches, xActionChallenges
 } from "./db/schema";
 import { env } from "./env";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
+import { recomputeLiveXp } from "./xp";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -141,7 +142,7 @@ export async function verifyBallotProof(input: unknown) {
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
 
   const activatedAt = new Date();
-  return database.transaction(async (transaction) => {
+  const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: activatedAt }).where(and(
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)
     )).returning({ id: xActionChallenges.id });
@@ -194,6 +195,16 @@ export async function verifyBallotProof(input: unknown) {
       : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, evidenceId: evidence.id, followerCount: user.followersCount, status: "valid", activatedAt }).returning();
     await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
     await transaction.insert(ballotAllocations).values(allocations.map((allocation) => ({ ballotId: ballot.id, ...allocation, updatedAt: activatedAt })));
+    const tranches = addedVotes(previousAllocations, allocations);
+    if (tranches.length) await transaction.insert(voteTranches).values(tranches.map((tranche) => ({
+      competitionId: competition.id,
+      ballotId: ballot.id,
+      voterUserId: session.user.id,
+      proposalId: tranche.proposalId,
+      evidenceId: evidence.id,
+      quantity: tranche.votes,
+      acceptedAt: activatedAt,
+    })));
     await transaction.insert(activityEvents).values({
       competitionId: competition.id,
       actorUserId: session.user.id,
@@ -213,4 +224,6 @@ export async function verifyBallotProof(input: unknown) {
       updatedAt: activatedAt.toISOString(),
     };
   });
+  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after vote failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
+  return result;
 }
