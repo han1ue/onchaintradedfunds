@@ -475,13 +475,29 @@ button { color: inherit; }
 .ballotActionFields, .ballotActionPublish { min-width: 0; display: grid; align-content: start; gap: 14px; }
 .ballotAction .button { width: 100%; }
 .ballotAction .inlineLink { display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; }
+.ballotInlineMessage { width: 100%; margin-top: 3px; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 6px; font-size: .72rem; line-height: 1.5; }
+.ballotInlineMessage.success { border-color: color-mix(in srgb, var(--green) 42%, var(--border)); background: color-mix(in srgb, var(--green) 6%, var(--card-raised)); color: var(--green); }
+.ballotInlineMessage.error { border-color: color-mix(in srgb, var(--danger) 42%, var(--border)); background: color-mix(in srgb, var(--danger) 6%, var(--card-raised)); color: var(--danger); }
+.ballotPendingAction { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 13px 14px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); }
+.ballotPendingAction > div { display: grid; gap: 4px; }
+.ballotPendingAction strong { font-size: .78rem; }
+.ballotPendingAction p { margin: 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
+.ballotPendingAction .button { width: auto; }
+.votePostDialog { width: min(560px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); padding: 0; overflow: auto; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--card); color: var(--text); box-shadow: 0 22px 70px rgb(0 0 0 / 42%); }
+.votePostDialog::backdrop { background: rgb(4 8 13 / 76%); backdrop-filter: blur(3px); }
+.votePostDialogBody { position: relative; display: grid; gap: 14px; padding: 22px; }
+.votePostDialogBody > .button { width: 100%; }
+.votePostStepHeading { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; padding-right: 36px; }
+.votePostStepHeading > span { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border)); border-radius: 50%; background: color-mix(in srgb, var(--teal) 8%, var(--card-raised)); color: var(--teal); font-size: .7rem; font-weight: 750; }
+.votePostStepHeading h2, .votePostStepHeading h3 { margin: 0; font-size: .94rem; letter-spacing: -.015em; }
+.votePostStepHeading p { margin: 4px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
+.votePostFlowArrow { height: 24px; display: grid; place-items: center; color: var(--teal); }
 .privacyChoice { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); cursor: pointer; }
 .privacyChoice:focus-within { border-color: var(--teal); box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 12%); }
 .privacyChoice input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--teal); }
 .privacyChoice > span { display: grid; gap: 3px; }
 .privacyChoice strong { font-size: .72rem; }
 .privacyChoice small { color: var(--text-muted); font-size: .65rem; line-height: 1.45; }
-.ballotMessage { margin: 0; padding: 0 4px; line-height: 1.5; }
 .proofFlow { display: grid; gap: 14px; }
 .proofFlow .button { width: 100%; }
 .proofLink { margin: 12px 4px; color: var(--text-muted); }
@@ -596,6 +612,8 @@ button { color: inherit; }
   .ballotRail { position: static; }
   .ballotActionWide { grid-template-columns: 1fr; gap: 16px; padding: 18px; }
   .ballotActionIntro { grid-column: auto; }
+  .ballotPendingAction { grid-template-columns: 1fr; }
+  .ballotPendingAction .button { width: 100%; }
   .ballotToolbar { align-items: flex-start; }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }
