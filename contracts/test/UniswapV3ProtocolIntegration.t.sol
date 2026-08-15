@@ -110,11 +110,7 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         assertEq(tokenB.allowance(address(v3Adapter), address(venue)), 0);
     }
 
-    function _path(address tokenIn, address tokenOut)
-        private
-        pure
-        returns (address[] memory path)
-    {
+    function _path(address tokenIn, address tokenOut) private pure returns (address[] memory path) {
         path = new address[](2);
         path[0] = tokenIn;
         path[1] = tokenOut;

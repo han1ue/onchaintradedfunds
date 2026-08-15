@@ -137,6 +137,13 @@ flowchart LR
 - Uses one immutable settlement token and fee tier, validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
 - Routes RWA-to-RWA rebalances through USDG as the only permitted intermediate token while the vault-visible input and output remain active constituents.
 
+`ZeroXSwapAdapter`
+
+- Adds 0x Swap API v2 firm quotes through the AllowanceHolder flow without replacing the Uniswap V3 adapter.
+- Fixes the 0x execution entry point, AllowanceHolder spender, and settlement token in constructor immutables; `adapterData` contains only the quote response's raw `transaction.data`.
+- Requires the adapter to be the quote `taker` and `recipient`, grants an exact temporary allowance only to AllowanceHolder, bubbles 0x revert data, and verifies actual input/output balance deltas before returning tokens to an approved protocol caller.
+- Exact-input calls must spend the full supplied amount. Exact-output calls must receive the exact requested output, cannot exceed the caller's settlement ceiling, refund every unused settlement token, and leave no traded-token balance or allowance behind.
+
 `AssetRegistry`
 
 - Onchain allowlist for approved assets in local development.
@@ -308,10 +315,22 @@ received, and reverts unless that basket mints at least the user's minimum share
 proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
 using protected minimum USDG rates and the resulting USDG is returned to the payer.
 
-The cost shown by a Uniswap pool is not the OTF's accounting NAV. OTF NAV uses approved Chainlink
-feeds, while entry cost depends on available AMM liquidity and price impact. The frontend displays
-both values and the difference; users protect execution with per-leg maximum inputs, an aggregate
-maximum USDG amount, and a deadline. This route does not subsidize entry from existing OTF assets.
+An executable venue quote is not the OTF's accounting NAV. OTF NAV uses approved Chainlink feeds,
+while entry cost depends on available liquidity and price impact. When 0x is configured, the
+frontend compares each approved 0x firm quote with the Synthra/Uniswap quote under the same
+slippage limit and submits the better executable bound. Exact-output entry compares maximum input;
+exact-input redemption and rebalance compare minimum output. The selected venue is shown in the
+deposit, redemption, and rebalance liquidity path before submission. Users remain protected by
+per-leg bounds, an aggregate maximum USDG amount, and a deadline. This route does not subsidize
+entry from existing OTF assets.
+
+The server-side 0x quote endpoint requests Swap API v2 firm quotes with the configured adapter as
+both `taker` and `recipient` and the connected submitting EOA as `txOrigin`. It sends `sellAmount`
+for exact-input legs and `buyAmount` for exact-output legs, rejects nonzero native value, and
+accepts calldata only when `transaction.to`, `allowanceTarget`, and any reported allowance spender
+match deployment configuration. API keys never enter the browser. 0x currently documents
+Robinhood Chain mainnet (chain ID 4663), not this repository's Robinhood testnet chain ID 46630, so
+testnet continues to disclose and use its configured Synthra V3 path.
 
 The router and adapter are separate contracts so future RFQ, proprietary AMM, or order-book
 liquidity can be integrated behind additional typed adapters without adding an arbitrary-call path
@@ -695,6 +714,25 @@ OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fix
 initializes a new pool from NAV per share, and records it as the immutable official pool. No
 liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
 Uniswap position it creates; the pool association cannot be removed or replaced.
+
+For a deployment on a 0x-supported chain, configure the additional adapter without embedding live
+addresses in source:
+
+```bash
+PROTOCOL_DEPLOYMENT_PATH=path/to/deployment.json \
+ZEROX_SWAP_TARGET=0x... \
+ZEROX_ALLOWANCE_TARGET=0x... \
+ZEROX_SETTLEMENT_TOKEN=0x... \
+RPC_URL=https://... \
+corepack pnpm contracts:configure:zerox
+```
+
+The targets must be taken from the current official 0x Swap API v2 AllowanceHolder response and
+documentation. The command validates deployed bytecode and ownership, deploys or verifies
+`ZeroXSwapAdapter`, approves it in both the factory and entry router, authorizes the rebalance
+executor and entry router as callers, and records transaction evidence in the selected deployment
+JSON. It never supplies a default live Robinhood address. The web quote service additionally needs
+`ZEROX_API_KEY` in its server environment.
 
 Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
 development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current

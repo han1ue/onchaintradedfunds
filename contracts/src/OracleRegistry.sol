@@ -79,14 +79,14 @@ contract OracleRegistry is IOracleRegistry {
         uint32 maxStaleness,
         OracleValidationMode validationMode
     ) external onlyOwner {
-        if (asset == address(0) || address(feed) == address(0)) revert ZeroAddress();
+        if (asset == address(0) || address(feed) == address(0)) {
+            revert ZeroAddress();
+        }
         if (asset.code.length == 0) revert AssetNotContract(asset);
         if (address(feed).code.length == 0) revert FeedNotContract(address(feed));
         if (maxStaleness == 0) revert InvalidMaxStaleness();
         _oracleConfigFor[asset] = OracleConfig({
-            feed: feed,
-            maxStaleness: maxStaleness,
-            validationMode: validationMode
+            feed: feed, maxStaleness: maxStaleness, validationMode: validationMode
         });
         emit OracleConfigSet(asset, address(feed), maxStaleness, validationMode);
     }

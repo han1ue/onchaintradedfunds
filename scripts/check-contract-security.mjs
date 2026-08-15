@@ -134,6 +134,7 @@ const productionContracts = [
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RebalanceExecutor.sol", "RebalanceExecutor"],
   ["UniswapV3Adapter.sol", "UniswapV3Adapter"],
+  ["ZeroXSwapAdapter.sol", "ZeroXSwapAdapter"],
 ];
 
 for (const [source, name] of productionContracts) {

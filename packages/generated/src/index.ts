@@ -630,6 +630,19 @@ export const otfEntryRouterAbi = [
   },
   {
     type: "event",
+    name: "EnteredWithSettlement",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "payer", type: "address" },
+      { indexed: true, name: "receiver", type: "address" },
+      { indexed: true, name: "vault", type: "address" },
+      { indexed: false, name: "shares", type: "uint256" },
+      { indexed: false, name: "settlementSpent", type: "uint256" },
+      { indexed: false, name: "settlementRefunded", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
     name: "EnteredWithExactSettlement",
     anonymous: false,
     inputs: [

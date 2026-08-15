@@ -310,10 +310,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function recentRebalanceRecord(uint256 index)
-        external
-        returns (RebalanceRecord memory record)
-    {
+    function recentRebalanceRecord(uint256 index) external returns (RebalanceRecord memory record) {
         index;
         record;
         _delegateView();
@@ -708,9 +705,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
         if (challengeActive) {
             // Challenge fee checkpoints intentionally use the onchain deadline.
-            // forge-lint: disable-next-line(block-timestamp)
-            uint256 checkpoint = block.timestamp < challengeDeadline
-                ? block.timestamp
+            uint256 currentTimestamp = block.timestamp;
+            uint256 checkpoint = currentTimestamp < challengeDeadline
+                ? currentTimestamp
                 : uint256(challengeDeadline);
             if (_feeState != FeeState.Suspended && checkpoint > previousTimestamp) {
                 feeShares = _escrowChallengeFees(checkpoint - previousTimestamp);
@@ -768,13 +765,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _escrowChallengeFees(uint256 elapsed) private returns (uint256 feeShares) {
         if (totalSupply == 0 || creatorFeeBpsPerYear == 0 || elapsed == 0) return 0;
-        (feeShares, _challengeFeeAccrualRemainderWad) =
-            _portfolioCalculator.feeSharesAfterElapsed(
-                totalSupply,
-                _challengeFeeAccrualRemainderWad,
-                creatorFeeBpsPerYear,
-                elapsed
-            );
+        (feeShares, _challengeFeeAccrualRemainderWad) = _portfolioCalculator.feeSharesAfterElapsed(
+            totalSupply, _challengeFeeAccrualRemainderWad, creatorFeeBpsPerYear, elapsed
+        );
         if (feeShares != 0) {
             _mint(address(this), feeShares);
             escrowedManagerFeeShares += feeShares;
@@ -784,8 +777,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _releaseChallengeFees() private returns (uint256 feeShares) {
         feeShares = escrowedManagerFeeShares;
-        uint256 combinedRemainder =
-            _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
+        uint256 combinedRemainder = _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
         if (combinedRemainder >= 1e18) {
             combinedRemainder -= 1e18;
             feeShares++;
@@ -828,8 +820,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         // forge-lint: disable-next-line(block-timestamp)
         if (challengeActive && block.timestamp > challengeDeadline) {
             uint256 forfeitedShares = escrowedManagerFeeShares + feeShares;
-            uint256 rewardShares =
-                MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
+            uint256 rewardShares = MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
             return supply - escrowedManagerFeeShares + rewardShares;
         }
         supply += feeShares;

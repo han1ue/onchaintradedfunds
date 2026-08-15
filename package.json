@@ -7,6 +7,7 @@
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
     "contracts:configure:robinhood-testnet-mocks": "node scripts/configure-robinhood-testnet-mocks.mjs",
     "contracts:configure:robinhood-testnet-synthra": "node scripts/configure-robinhood-testnet-synthra.mjs",
+    "contracts:configure:zerox": "node scripts/configure-zerox-adapter.mjs",
     "contracts:walk:robinhood-testnet-mocks": "node scripts/walk-robinhood-testnet-mock-prices.mjs",
     "assets:update-robinhood-logos": "node scripts/update-robinhood-asset-logos.mjs",
     "launch:dev": "corepack pnpm --filter @onchaintradedfunds/launch dev",

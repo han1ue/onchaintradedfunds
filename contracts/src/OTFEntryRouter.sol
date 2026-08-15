@@ -366,13 +366,10 @@ contract OTFEntryRouter {
                 MathEx.mulDiv(refund, swap.minRefundSettlementRate, REFUND_RATE_SCALE);
             _pushExact(assets[i], swap.adapter, refund);
             uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
-            uint256 reportedOutput = ITradeAdapter(swap.adapter).executeSwap(
-                assets[i],
-                settlementToken,
-                refund,
-                minSettlementOut,
-                swap.refundAdapterData
-            );
+            uint256 reportedOutput = ITradeAdapter(swap.adapter)
+                .executeSwap(
+                    assets[i], settlementToken, refund, minSettlementOut, swap.refundAdapterData
+                );
             uint256 observedOutput =
                 IERC20(settlementToken).balanceOf(address(this)) - settlementBefore;
             if (reportedOutput != observedOutput) {

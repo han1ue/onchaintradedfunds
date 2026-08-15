@@ -85,7 +85,9 @@ contract StrategyHistoryTest is ProtocolTestBase {
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         vm.warp(START + 14 days);
         _refreshPrices();
-        vault.proposeStrategy(assets, _uint256Weights(weights), "Increase token A to sixty percent.");
+        vault.proposeStrategy(
+            assets, _uint256Weights(weights), "Increase token A to sixty percent."
+        );
 
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
@@ -133,11 +135,7 @@ contract StrategyHistoryTest is ProtocolTestBase {
         assertEq(vault.challengeStartedAt(), START + 16 days);
     }
 
-    function _history(ManagedOTFVault vault)
-        private
-        pure
-        returns (IManagedOTFStrategyHistory)
-    {
+    function _history(ManagedOTFVault vault) private pure returns (IManagedOTFStrategyHistory) {
         return IManagedOTFStrategyHistory(address(vault));
     }
 }

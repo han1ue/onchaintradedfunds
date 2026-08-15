@@ -121,9 +121,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
     ) public {
         VaultInitParams memory params = _defaultParams();
         uint256 minimum = factory.MINIMUM_LIQUIDITY_SHARES();
-        params.initialShareSupply = bound(
-            rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE
-        );
+        params.initialShareSupply =
+            bound(rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE);
         uint256 initialAmount = bound(rawInitialAmount, 1, 1_000 * ONE);
         params.initialAmounts[0] = initialAmount;
         params.initialAmounts[1] = initialAmount;
@@ -180,10 +179,9 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(ALICE), expected[1]);
     }
 
-    function testFuzzFeeAccrualMatchesCadenceIndependentGrowth(
-        uint16 rawFeeBps,
-        uint32 rawElapsed
-    ) public {
+    function testFuzzFeeAccrualMatchesCadenceIndependentGrowth(uint16 rawFeeBps, uint32 rawElapsed)
+        public
+    {
         uint16 feeBps = uint16(bound(rawFeeBps, 0, 1_000));
         uint256 elapsed = bound(rawElapsed, 1, 365 days);
         VaultInitParams memory params = _defaultParams();
@@ -193,9 +191,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         vm.warp(START + elapsed);
         feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
-        uint256 annualGrowthWad = feeBps == 0
-            ? ONE
-            : MathEx.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
+        uint256 annualGrowthWad =
+            feeBps == 0 ? ONE : MathEx.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
         uint256 exponentWad = MathEx.mulDiv(elapsed, ONE, 365 days);
         uint256 growthWad = elapsed == 365 days
             ? annualGrowthWad
