@@ -458,6 +458,7 @@ button { color: inherit; }
 .ballotSummary { padding: 18px; }
 .ballotSummaryStatus { display: grid; gap: 8px; }
 .ballotSummaryCount { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.ballotSummary .ballotSummaryCount > span { color: var(--text); font-size: .98rem; font-weight: 750; letter-spacing: -.015em; }
 .ballotSummary span { color: var(--text-muted); font-size: .7rem; }
 .ballotSummary strong { color: var(--gold); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .ballotSummary strong.complete { color: var(--green); }
@@ -473,7 +474,6 @@ button { color: inherit; }
 .ballotActionIntro > p { max-width: 75ch; margin: 0; color: var(--text-muted); font-size: .74rem; line-height: 1.55; }
 .ballotActionIntro .inlineLink { margin-top: 2px; }
 .ballotActionFields, .ballotActionPublish { min-width: 0; display: grid; align-content: start; gap: 14px; }
-.ballotActionFields > .formField:first-child { padding-top: 9px; }
 .ballotAction .button { width: 100%; }
 .ballotAction .inlineLink { display: inline-flex; align-items: center; gap: 5px; font-size: .7rem; }
 .privacyChoice { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); cursor: pointer; }
@@ -597,7 +597,6 @@ button { color: inherit; }
   .ballotRail { position: static; }
   .ballotActionWide { grid-template-columns: 1fr; gap: 16px; padding: 18px; }
   .ballotActionIntro { grid-column: auto; }
-  .ballotActionFields > .formField:first-child { padding-top: 0; }
   .ballotToolbar { align-items: flex-start; }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }
