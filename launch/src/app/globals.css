@@ -405,7 +405,7 @@ button { color: inherit; }
 .proposalHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .proposalTitle { display: flex; align-items: center; gap: 16px; }
 .proposalTitle h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.045em; }
-.proposalMeta { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-muted); font-size: .72rem; }
+.proposalMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-muted); font-size: .72rem; }
 .creatorBlock { display: grid; justify-items: end; gap: 5px; }
 .creatorBlock > span { color: var(--text-muted); font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; }
 .creatorBlock strong { display: flex; align-items: center; gap: 7px; font-size: .8rem; }
