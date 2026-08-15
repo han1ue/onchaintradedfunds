@@ -5,9 +5,15 @@ import { SectionCard } from "./ui";
 
 export function CompetitionTimeline({ competition }: { competition: CompetitionSummary }) {
   const status = getCompetitionStatus(competition);
+  const totalDays = COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays;
+  const elapsedDays = status.stage === "upcoming"
+    ? 0
+    : status.stage === "review" || status.stage === "final"
+      ? totalDays
+      : status.competitionDay;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
-    { title: "Submission week", timing: "Days 1–7", detail: "Submit OTF proposals before voting begins." },
+    { title: "Submission week", timing: "Days 1–7", detail: "Submit OTF proposals." },
     { title: "Voting month", timing: "Days 8–37", detail: `Voting opens with ${COMPETITION_RULES.initialVotes} votes. One more unlocks every ${COMPETITION_RULES.voteUnlockIntervalDays} days; submissions stay open.` },
     { title: "Final results", timing: "After voting", detail: "Votes are reviewed and the final ranking becomes launch order." },
   ];
@@ -23,7 +29,8 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
             ? "This competition has been cancelled."
             : "The submission week begins when the competition opens.";
 
-  return <SectionCard className="competitionTimeline"><div className="timelineHeader"><div><strong>Competition timeline</strong><p>{stageCopy}</p></div><span>Competition day {status.competitionDay} of {COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays}</span></div>
+  return <SectionCard className="competitionTimeline"><div className="timelineHeader"><div><strong>Competition timeline</strong><p>{stageCopy}</p></div><span>Competition day {status.competitionDay} of {totalDays}</span></div>
+    <div className="timelineProgress" role="progressbar" aria-label="Competition progress" aria-valuemin={0} aria-valuemax={totalDays} aria-valuenow={elapsedDays}><span style={{ width: `${elapsedDays / totalDays * 100}%` }} /></div>
     <ol>{phases.map((phase, index) => {
       const state = index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";
       const Icon = state === "complete" ? Check : state === "current" ? Clock3 : Circle;

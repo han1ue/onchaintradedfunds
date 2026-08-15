@@ -18,7 +18,8 @@ function voteChoicesLine(choices: VotePostChoice[]) {
 }
 
 export function buildVotePost(reason: string, siteUrl: string, challenge?: string, choices: VotePostChoice[] = []) {
-  return `${reason}\n\nI cast unlocked votes in OTF Launch${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
+  const context = reason.trim();
+  return `${context ? `${context}\n\n` : ""}I cast unlocked votes in OTF Launch${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
 }
 
 export function buildXIntentUrl(text: string) {

@@ -10,6 +10,9 @@ describe("X post templates", () => {
   it("builds a fresh proof post for a voting transaction", () => {
     expect(buildVotePost("I want to help choose the strongest proposals.", "https://launch.example", "OTF-ABC123")).toBe("I want to help choose the strongest proposals.\n\nI cast unlocked votes in OTF Launch\nOTF-ABC123\nhttps://launch.example/vote");
   });
+  it("does not invent context before the voter writes it", () => {
+    expect(buildVotePost("", "https://launch.example", "OTF-ABC123")).toBe("I cast unlocked votes in OTF Launch\nOTF-ABC123\nhttps://launch.example/vote");
+  });
   it("only reveals OTF picks when choices are supplied", () => {
     const choices = [{ ticker: "AIX", votes: 2 }, { ticker: "MAG7", votes: 1 }];
     expect(buildVotePost("I want to help choose the strongest proposals.", "https://launch.example", "OTF-ABC123", choices)).toContain("My picks: 2× $AIX, 1× $MAG7");
