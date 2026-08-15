@@ -721,6 +721,17 @@ function bpsToPercent(value?: number): string {
   return `${(value / 100).toFixed(value % 100 === 0 ? 0 : 2)}%`;
 }
 
+function quotedSlippageBps(quotedValue?: bigint, referenceValue?: bigint): number | undefined {
+  if (quotedValue === undefined || referenceValue === undefined || referenceValue <= 0n) return undefined;
+  return Number((referenceValue - quotedValue) * 10_000n / referenceValue);
+}
+
+function formatQuotedSlippage(value?: number): string {
+  if (value === undefined) return "—";
+  if (value < 0) return `${(Math.abs(value) / 100).toFixed(2)}% better`;
+  return `${(value / 100).toFixed(2)}%`;
+}
+
 function bpsToAllocationPercent(value: number): string {
   return `${(value / 100).toFixed(1)}%`;
 }
@@ -3529,6 +3540,13 @@ function UserActions({
   const marketMinimumOutput = marketQuotedOutput === undefined || !slippageValid
     ? undefined
     : marketQuotedOutput * BigInt(10_000 - slippageBps) / 10_000n;
+  const navRedeemValue = requestedRedeemShares && vault.navPerShareValue
+    ? requestedRedeemShares * vault.navPerShareValue / 10n ** 18n
+    : undefined;
+  const marketQuotedSlippageBps = quotedSlippageBps(
+    marketQuotedOutput,
+    activeAction === "deposit" ? navEstimatedShares : navRedeemValue,
+  );
   const marketRequiredInput = marketInputAmount;
   const marketAuthorizationContracts = ([
     {
@@ -3690,6 +3708,10 @@ function UserActions({
   const underlyingQuotedOutput = activeAction === "deposit"
     ? estimatedEntryShares
     : quotedRedeemSettlement;
+  const underlyingQuotedSlippageBps = quotedSlippageBps(
+    underlyingQuotedOutput,
+    activeAction === "deposit" ? navEstimatedShares : navRedeemValue,
+  );
   const marketQuoteProblem = routeInputsReady && marketRouteAvailable && !marketQuoteLoading && !marketQuoteReady
     ? marketQuoteError
       ? {
@@ -4703,7 +4725,7 @@ function UserActions({
               </div>
               <span className="stateBadge success">Selected</span>
             </div>
-            <div className="positionExecutionQuote">
+            <div className="positionExecutionQuote positionExecutionQuoteFour">
               <div>
                 <span>{activeAction === "deposit" ? "USDG spent" : "Shares sold"}</span>
                 <strong>
@@ -4733,6 +4755,10 @@ function UserActions({
                       )
                     : "—"} {activeAction === "deposit" ? vault.symbol : "USDG"}
                 </strong>
+              </div>
+              <div>
+                <span>Quoted slippage vs NAV</span>
+                <strong>{formatQuotedSlippage(marketQuotedSlippageBps)}</strong>
               </div>
             </div>
             {marketRequiredInput && !marketBalanceSufficient ? (
@@ -4794,10 +4820,11 @@ function UserActions({
 
             {activeAction === "deposit" ? (
               <>
-                <div className="positionExecutionQuote">
+                <div className="positionExecutionQuote positionExecutionQuoteFour">
                   <div><span>USDG supplied</span><strong>{requestedUsdgAmount !== undefined ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong></div>
                   <div><span>Estimated shares</span><strong>{estimatedEntryShares ? formatWalletTokenBalance(estimatedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                   <div><span>Minimum shares</span><strong>{minimumEntryShares ? formatWalletTokenBalance(minimumEntryShares, 18) : "—"} {vault.symbol}</strong></div>
+                  <div><span>Quoted slippage vs NAV</span><strong>{formatQuotedSlippage(underlyingQuotedSlippageBps)}</strong></div>
                 </div>
                 {entryQuoteReady && !entryBalanceSufficient ? (
                   <div className="validationSummary danger">
@@ -4835,10 +4862,11 @@ function UserActions({
               </>
             ) : (
               <>
-                <div className="positionExecutionQuote">
+                <div className="positionExecutionQuote positionExecutionQuoteFour">
                   <div><span>Shares redeemed</span><strong>{requestedRedeemShares ? formatWalletTokenBalance(requestedRedeemShares, 18) : "—"} {vault.symbol}</strong></div>
                   <div><span>Expected proceeds</span><strong>{quotedRedeemSettlement !== undefined ? formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
                   <div><span>Minimum received</span><strong>{minimumRedeemSettlement !== undefined ? formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Quoted slippage vs NAV</span><strong>{formatQuotedSlippage(underlyingQuotedSlippageBps)}</strong></div>
                 </div>
                 {requestedRedeemShares && !redeemBalanceSufficient ? (
                   <div className="validationSummary danger">
@@ -5624,6 +5652,7 @@ function RebalanceTradesPanel({
   const outputBalanceValue = oracleTokenValue(tokenOutVaultBalance, tokenOutDecimals, outputOraclePrice);
   const inputTradeValue = oracleTokenValue(amountIn, tokenInDecimals, inputOraclePrice);
   const quotedOutputValue = oracleTokenValue(quotedAmountOut, tokenOutDecimals, outputOraclePrice);
+  const quotedOracleSlippageBps = quotedSlippageBps(quotedOutputValue, inputTradeValue);
   const minimumOracleOutputValue = inputTradeValue !== undefined
     ? inputTradeValue * BigInt(10_000 - vault.maxNavLossBps) / 10_000n
     : undefined;
@@ -5948,6 +5977,8 @@ function RebalanceTradesPanel({
               ? `${formatWalletTokenBalance(quotedAmountOut, tokenOutDecimals)} ${outputAsset?.symbol ?? "tokens"}`
               : "Enter an amount"}
           </strong>
+          <span>Quoted slippage vs oracle</span>
+          <strong>{formatQuotedSlippage(quotedOracleSlippageBps)}</strong>
           <small>{`${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}`}</small>
         </div>
 
