@@ -2,8 +2,11 @@ import Link from "next/link";
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import { BadgeCheck, Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/lib/types";
+import { truncateText } from "@/lib/truncate-text";
 import { AllocationStrip } from "./AllocationStrip";
 import { XProfileImage } from "./XProfileImage";
+
+const LEADERBOARD_THESIS_LIMIT = 120;
 
 function RankEmblem({ rank }: { rank: number }) {
   const podium = rank <= 3;
@@ -28,7 +31,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
         <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
-        <div><span className="otfName">{entry.name}</span><p>{entry.thesis}</p></div>
+        <div><span className="otfName">{entry.name}</span><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
       </div>
       <AllocationStrip allocations={entry.allocations} showPercentages />
       <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
