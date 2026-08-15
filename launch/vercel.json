@@ -1,6 +1,0 @@
-{
-  "crons": [
-    { "path": "/api/jobs/prices", "schedule": "17 * * * *" },
-    { "path": "/api/jobs/evidence", "schedule": "42 2 * * *" }
-  ]
-}

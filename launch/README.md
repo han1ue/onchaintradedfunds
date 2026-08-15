@@ -33,13 +33,13 @@ The initial Supported RWA records use one-time token contract data from the Robi
 - Finalization rechecks evidence before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. Robinhood bid snapshots are retained hourly at minute 17 to power proposal return history. Public X evidence is rechecked and expired raw post text is cleaned once daily at 02:42 UTC. The hourly price schedule requires a Vercel plan that supports hourly cron jobs; on Hobby, trigger `/api/jobs/prices` from an external scheduler with the same bearer token.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` retains Robinhood bid snapshots hourly at minute 17 and rechecks public X evidence once daily at 02:42 UTC. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
 
 ## Vercel
 
 Create a second Vercel project from this repository with Root Directory `launch`. Keep source files outside the Root Directory enabled so Vercel can read the workspace manifest and root lockfile. Configure the launch environment variables only on that project, enable unaffected-project skipping, and use `https://onchaintradedfunds-launch.vercel.app` as the initial production URL.
 
-The configured daily cron schedule is compatible with Vercel Hobby. Set `NEXT_PUBLIC_SITE_URL=https://onchaintradedfunds-launch.vercel.app`, `TURNSTILE_HOSTNAMES=onchaintradedfunds-launch.vercel.app`, and the X callback to `https://onchaintradedfunds-launch.vercel.app/api/auth/x/callback`. Preview deployments use the production callback hostname from `VERCEL_PROJECT_PRODUCTION_URL`, then return to the equivalent path on the production site. Update these values together if a custom hostname is added later.
+No Vercel Cron Jobs are configured; scheduled work runs through GitHub Actions so the launch project remains compatible with Vercel Hobby. Set `NEXT_PUBLIC_SITE_URL=https://onchaintradedfunds-launch.vercel.app`, `TURNSTILE_HOSTNAMES=onchaintradedfunds-launch.vercel.app`, and the X callback to `https://onchaintradedfunds-launch.vercel.app/api/auth/x/callback`. Preview deployments use the production callback hostname from `VERCEL_PROJECT_PRODUCTION_URL`, then return to the equivalent path on the production site. Update these values and the GitHub Actions `LAUNCH_SITE_URL` variable together if a custom hostname is added later.
 
 Do not share the main app’s database, Auth.js secret, X application, Redis instance, analytics property, or environment variables with this project.
 
