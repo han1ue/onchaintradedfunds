@@ -438,7 +438,6 @@ button { color: inherit; }
 .ballotTotal { display: flex; align-items: baseline; gap: 5px; color: var(--danger); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ballotTotal.valid { color: var(--green); }
 .ballotTotal strong { font-size: 1.3rem; letter-spacing: -.03em; }
-.ballotTotal span { color: var(--text-muted); font-size: .67rem; }
 .ballotRows { display: grid; }
 .ballotRow { min-height: 70px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 122px; gap: 12px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .ballotRow:last-child { border-bottom: 0; }
@@ -460,7 +459,7 @@ button { color: inherit; }
 .ballotSummaryCount { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ballotSummary .ballotSummaryCount > span { color: var(--text); font-size: .98rem; font-weight: 750; letter-spacing: -.015em; }
 .ballotSummary span { color: var(--text-muted); font-size: .7rem; }
-.ballotSummary strong { color: var(--gold); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.ballotSummary strong { color: var(--text); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .ballotSummary strong.complete { color: var(--green); }
 .ballotSummary strong.over { color: var(--danger); }
 .ballotSummary p { margin: 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }

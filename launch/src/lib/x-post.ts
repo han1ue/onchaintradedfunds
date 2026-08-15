@@ -11,7 +11,7 @@ function proposalUrl(siteUrl: string, slug: string) {
 
 export function buildSubmissionPost(reason: string, proposal: XPostProposal, siteUrl: string, challenge?: string) {
   const context = reason.trim();
-  return `${context ? `${context}\n\n` : ""}I submitted ${proposal.name} as an OTF proposal to OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
+  return `${context ? `${context}\n\n` : ""}I submitted ${proposal.name} as an OTF proposal to OTF Launch\n${proposalUrl(siteUrl, proposal.slug)}${challenge ? `\n${challenge}` : ""}`;
 }
 
 function voteChoicesLine(choices: VotePostChoice[]) {
@@ -20,7 +20,7 @@ function voteChoicesLine(choices: VotePostChoice[]) {
 
 export function buildVotePost(reason: string, siteUrl: string, challenge?: string, choices: VotePostChoice[] = []) {
   const context = reason.trim();
-  return `${context ? `${context}\n\n` : ""}I just voted in the OTF Launch competition.${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
+  return `${context ? `${context}\n\n` : ""}I just voted in the OTF Launch competition.${voteChoicesLine(choices)}\n${siteUrl.replace(/\/$/, "")}/vote${challenge ? `\n${challenge}` : ""}`;
 }
 
 export function buildXIntentUrl(text: string) {

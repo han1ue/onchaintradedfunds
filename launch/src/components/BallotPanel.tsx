@@ -143,7 +143,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     <div className="ballotActionFields"><label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" /></label><Button onClick={() => request("verify")} disabled={busy || !postUrl.trim()}>{busy ? "Verifying…" : `Verify post and cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}`}</Button><Button variant="ghost" onClick={() => { setChallenge(null); setPostUrl(""); }}>Start again</Button></div>
   </SectionCard>;
 
-  return <div className="ballotLayout"><SectionCard className="ballotCard"><div className="ballotToolbar"><div><span>Your vote ledger</span><small>Cast votes are permanent. Add newly unlocked votes at any time.</small></div><div className={`ballotTotal${newVotes > 0 ? " valid" : ""}`}><strong>{castTotal}</strong><span>cast · {availability.unlockedVotes} unlocked</span></div></div>
+  return <div className="ballotLayout"><SectionCard className="ballotCard"><div className="ballotToolbar"><div><span>Your vote ledger</span><small>Cast votes are permanent. Add newly unlocked votes at any time.</small></div><div className={`ballotTotal${newVotes > 0 ? " valid" : ""}`} aria-label={`${total} of ${availability.unlockedVotes} votes selected`}><strong>{total} / {availability.unlockedVotes}</strong></div></div>
     <div className="ballotRows">{proposals.map((proposal) => {
       const value = votes[proposal.id] ?? 0;
       const committed = committedVotes[proposal.id] ?? 0;
