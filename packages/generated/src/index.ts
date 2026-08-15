@@ -562,28 +562,6 @@ export const otfEntryRouterAbi = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "vault", type: "address" },
-      { name: "shares", type: "uint256" },
-      { name: "receiver", type: "address" },
-      { name: "maxSettlementIn", type: "uint256" },
-      { name: "deadline", type: "uint256" },
-      {
-        name: "swaps",
-        type: "tuple[]",
-        components: [
-          { name: "adapter", type: "address" },
-          { name: "maxSettlementIn", type: "uint256" },
-          { name: "adapterData", type: "bytes" },
-        ],
-      },
-    ],
-    outputs: [{ name: "settlementSpent", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "enterWithExactSettlement",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "vault", type: "address" },
       { name: "settlementIn", type: "uint256" },
       { name: "minShares", type: "uint256" },
       { name: "receiver", type: "address" },
@@ -630,7 +608,7 @@ export const otfEntryRouterAbi = [
   },
   {
     type: "event",
-    name: "EnteredWithExactSettlement",
+    name: "EnteredWithSettlement",
     anonymous: false,
     inputs: [
       { indexed: true, name: "payer", type: "address" },
@@ -661,13 +639,6 @@ export const otfV3MarketRegistryAbi = [
 ] as const;
 
 export const otfFactoryAbi = [
-  {
-    type: "function",
-    name: "PROTOCOL_VERSION",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
   {
     type: "function",
     name: "otfTokenURI",

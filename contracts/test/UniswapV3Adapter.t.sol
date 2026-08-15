@@ -32,9 +32,8 @@ contract UniswapV3AdapterTest is TestBase {
         path[0] = address(rwaA);
         path[1] = address(usdg);
 
-        uint256 received = adapter.executeSwap(
-            address(rwaA), address(usdg), 10e6, 9e6, abi.encode(path)
-        );
+        uint256 received =
+            adapter.executeSwap(address(rwaA), address(usdg), 10e6, 9e6, abi.encode(path));
 
         assertEq(received, 10e6);
         assertEq(usdg.balanceOf(address(this)), 10e6);
@@ -56,24 +55,6 @@ contract UniswapV3AdapterTest is TestBase {
         assertEq(rwaA.allowance(address(adapter), address(venue)), 0);
     }
 
-    function testExactOutputEntryRefundsUnusedMaximum() public {
-        usdg.mint(address(this), 20e6);
-        usdg.approve(address(adapter), 20e6);
-        address[] memory path = new address[](2);
-        path[0] = address(usdg);
-        path[1] = address(rwaA);
-
-        uint256 spent = adapter.buyExactOutput(
-            address(usdg), address(rwaA), 8e6, 20e6, abi.encode(path)
-        );
-
-        assertEq(spent, 8e6);
-        assertEq(usdg.balanceOf(address(this)), 12e6);
-        assertEq(rwaA.balanceOf(address(this)), 8e6);
-        assertEq(usdg.balanceOf(address(adapter)), 0);
-        assertEq(usdg.allowance(address(adapter), address(venue)), 0);
-    }
-
     function testInvalidRoutesAndUnauthorizedCallerRevert() public {
         address[] memory missingSettlement = new address[](2);
         missingSettlement[0] = address(rwaA);
@@ -89,28 +70,13 @@ contract UniswapV3AdapterTest is TestBase {
         wrongMiddle[1] = address(rwaB);
         wrongMiddle[2] = address(usdg);
         vm.expectRevert(UniswapV3Adapter.InvalidPath.selector);
-        adapter.executeSwap(
-            address(rwaA), address(usdg), 1 ether, 1 ether, abi.encode(wrongMiddle)
-        );
+        adapter.executeSwap(address(rwaA), address(usdg), 1 ether, 1 ether, abi.encode(wrongMiddle));
 
         adapter.setCallerApproved(address(this), false);
         vm.expectPartialRevert(UniswapV3Adapter.UnauthorizedCaller.selector);
         adapter.executeSwap(
             address(rwaA), address(usdg), 1 ether, 1 ether, abi.encode(missingSettlement)
         );
-    }
-
-    function testExactOutputRejectsWrongSettlementAndMultihop() public {
-        address[] memory path = new address[](3);
-        path[0] = address(usdg);
-        path[1] = address(rwaB);
-        path[2] = address(rwaA);
-
-        vm.expectRevert(UniswapV3Adapter.InvalidPath.selector);
-        adapter.buyExactOutput(address(usdg), address(rwaA), 1 ether, 2 ether, abi.encode(path));
-
-        vm.expectRevert(UniswapV3Adapter.InvalidAmount.selector);
-        adapter.buyExactOutput(address(rwaB), address(rwaA), 1 ether, 2 ether, abi.encode(path));
     }
 
     function testSlippageRevertsAtomicallyAndLeavesAllowanceCleared() public {
@@ -137,22 +103,5 @@ contract UniswapV3AdapterTest is TestBase {
         assertEq(rwaA.balanceOf(address(adapter)), 100 ether);
         assertEq(usdg.balanceOf(address(this)), 0);
         assertEq(rwaA.allowance(address(adapter), address(venue)), 0);
-    }
-
-    function testObservedExactOutputMismatchRevertsAtomically() public {
-        venue.setOutputShortfall(1);
-        usdg.mint(address(this), 20e6);
-        usdg.approve(address(adapter), 20e6);
-        address[] memory path = new address[](2);
-        path[0] = address(usdg);
-        path[1] = address(rwaA);
-
-        vm.expectPartialRevert(UniswapV3Adapter.OutputMismatch.selector);
-        adapter.buyExactOutput(address(usdg), address(rwaA), 8e6, 20e6, abi.encode(path));
-
-        assertEq(usdg.balanceOf(address(this)), 20e6);
-        assertEq(rwaA.balanceOf(address(this)), 0);
-        assertEq(usdg.balanceOf(address(adapter)), 0);
-        assertEq(usdg.allowance(address(adapter), address(venue)), 0);
     }
 }

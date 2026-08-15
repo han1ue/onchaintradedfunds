@@ -2,15 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import {
-    EntrySwap,
-    ExactInputEntrySwap,
-    ExitSwap,
-    OTFEntryRouter
-} from "../src/OTFEntryRouter.sol";
+import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
-import { MockEntryAdapter } from "../src/mocks/MockEntryAdapter.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -28,89 +22,31 @@ contract MinimumIgnoringTradeAdapter is ITradeAdapter {
 
 contract OTFEntryRouterTest is ProtocolTestBase {
     OTFEntryRouter private entryRouter;
-    MockEntryAdapter private entryAdapter;
     MockTradeAdapter private exitAdapter;
 
     function setUp() public override {
         super.setUp();
         entryRouter = new OTFEntryRouter(address(this), address(factory), address(tokenC));
-        entryAdapter = new MockEntryAdapter();
         exitAdapter = new MockTradeAdapter();
-        entryRouter.setEntryAdapterApproved(address(entryAdapter), true);
         entryRouter.setEntryAdapterApproved(address(exitAdapter), true);
-        entryAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
-        entryAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
-        tokenA.mint(address(entryAdapter), 10_000 * ONE);
-        tokenB.mint(address(entryAdapter), 10_000 * ONE);
         tokenC.mint(ALICE, 10_000 * ONE);
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
+        exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         exitAdapter.setRate(address(tokenA), address(tokenC), 1, 1);
         exitAdapter.setRate(address(tokenB), address(tokenC), 1, 1);
+        tokenA.mint(address(exitAdapter), 10_000 * ONE);
+        tokenB.mint(address(exitAdapter), 10_000 * ONE);
         tokenC.mint(address(exitAdapter), 10_000 * ONE);
     }
 
-    function testUserCanEnterWithOnlySettlementTokenAndReceiveExactShares() public {
-        ManagedOTFVault vault = _createVault();
-        uint256 shares = 10 * ONE;
-        uint256[] memory required = vault.previewMint(shares);
-        EntrySwap[] memory swaps = _swaps(required[0] + 10 * ONE, required[1] + 10 * ONE);
-        uint256 maximum = swaps[0].maxSettlementIn + swaps[1].maxSettlementIn;
-        uint256 expectedSpend = required[0] + required[1];
-
-        vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), maximum);
-        uint256 spent = entryRouter.enterWithSettlement(
-            address(vault), shares, ALICE, maximum, block.timestamp + 1 hours, swaps
-        );
-        vm.stopPrank();
-
-        assertEq(spent, expectedSpend);
-        assertEq(vault.balanceOf(ALICE), shares);
-        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE - expectedSpend);
-        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
-        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
-        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
-        assertEq(tokenC.allowance(address(entryRouter), address(entryAdapter)), 0);
-        assertEq(tokenA.allowance(address(entryRouter), address(vault)), 0);
-        assertEq(tokenB.allowance(address(entryRouter), address(vault)), 0);
-    }
-
-    function testEntryCanMixApprovedAdaptersAcrossConstituentLegs() public {
-        ManagedOTFVault vault = _createVault();
-        MockEntryAdapter secondAdapter = new MockEntryAdapter();
-        entryRouter.setEntryAdapterApproved(address(secondAdapter), true);
-        secondAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
-        tokenB.mint(address(secondAdapter), 10_000 * ONE);
-
-        uint256 shares = 10 * ONE;
-        uint256[] memory required = vault.previewMint(shares);
-        EntrySwap[] memory swaps = _swaps(required[0], required[1]);
-        swaps[1].adapter = address(secondAdapter);
-        uint256 maximum = required[0] + required[1];
-
-        vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), maximum);
-        uint256 spent = entryRouter.enterWithSettlement(
-            address(vault), shares, ALICE, maximum, block.timestamp + 1 hours, swaps
-        );
-        vm.stopPrank();
-
-        assertEq(spent, maximum);
-        assertEq(vault.balanceOf(ALICE), shares);
-        assertEq(tokenC.allowance(address(entryRouter), address(entryAdapter)), 0);
-        assertEq(tokenC.allowance(address(entryRouter), address(secondAdapter)), 0);
-    }
-
-    function testUserCanSpendExactSettlementAndMintLargestProportionalBasket() public {
+    function testUserCanSpendFixedSettlementAndMintLargestProportionalBasket() public {
         ManagedOTFVault vault = _createVault();
         exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
         exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         tokenA.mint(address(exitAdapter), 100 * ONE);
         tokenB.mint(address(exitAdapter), 100 * ONE);
 
-        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
-        uint256[] memory available = new uint256[](2);
-        available[0] = 60 * ONE;
-        available[1] = 40 * ONE;
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
         uint256 expectedShares = 8 * ONE;
         uint256[] memory required = vault.previewMint(expectedShares);
         assertEq(expectedShares, 8 * ONE);
@@ -119,7 +55,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 100 * ONE);
-        (uint256 shares, uint256 settlementRefunded) = entryRouter.enterWithExactSettlement(
+        (uint256 shares, uint256 settlementRefunded) = entryRouter.enterWithSettlement(
             address(vault), 100 * ONE, expectedShares, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
@@ -136,21 +72,21 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
     }
 
-    function testExactSettlementEntryRefundSwapEnforcesMinimumRateAtomically() public {
+    function testFixedSettlementEntryRefundSwapEnforcesMinimumRateAtomically() public {
         ManagedOTFVault vault = _createVault();
         exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
         exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         exitAdapter.setRate(address(tokenA), address(tokenC), 1, 2);
         tokenA.mint(address(exitAdapter), 100 * ONE);
         tokenB.mint(address(exitAdapter), 100 * ONE);
-        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 100 * ONE);
         vm.expectRevert(
             abi.encodeWithSelector(MockTradeAdapter.Slippage.selector, 10 * ONE, 20 * ONE)
         );
-        entryRouter.enterWithExactSettlement(
+        entryRouter.enterWithSettlement(
             address(vault), 100 * ONE, 8 * ONE, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
@@ -162,20 +98,20 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
     }
 
-    function testExactSettlementEntryRevertsBelowMinimumSharesAtomically() public {
+    function testFixedSettlementEntryRevertsBelowMinimumSharesAtomically() public {
         ManagedOTFVault vault = _createVault();
         exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
         exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         tokenA.mint(address(exitAdapter), 100 * ONE);
         tokenB.mint(address(exitAdapter), 100 * ONE);
-        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(60 * ONE, 40 * ONE);
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 100 * ONE);
         vm.expectRevert(
             abi.encodeWithSelector(OTFEntryRouter.MinimumOutputNotMet.selector, 9 * ONE, 8 * ONE)
         );
-        entryRouter.enterWithExactSettlement(
+        entryRouter.enterWithSettlement(
             address(vault), 100 * ONE, 9 * ONE, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
@@ -187,18 +123,18 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
     }
 
-    function testExactSettlementEntryUsesFeeAdjustedProportionalSupply() public {
+    function testFixedSettlementEntryUsesFeeAdjustedProportionalSupply() public {
         ManagedOTFVault vault = _createVault();
         exitAdapter.setRate(address(tokenC), address(tokenA), 1, 1);
         exitAdapter.setRate(address(tokenC), address(tokenB), 1, 1);
         tokenA.mint(address(exitAdapter), 100 * ONE);
         tokenB.mint(address(exitAdapter), 100 * ONE);
-        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(50 * ONE, 50 * ONE);
+        EntrySwap[] memory swaps = _entrySwaps(50 * ONE, 50 * ONE);
         vm.warp(START + 365 days);
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), 100 * ONE);
-        (uint256 shares,) = entryRouter.enterWithExactSettlement(
+        (uint256 shares,) = entryRouter.enterWithSettlement(
             address(vault), 100 * ONE, 10 * ONE, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
@@ -209,9 +145,9 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(vault)), 550 * ONE);
     }
 
-    function testExactSettlementEntryRequiresFullyAllocatedInput() public {
+    function testFixedSettlementEntryRequiresFullyAllocatedInput() public {
         ManagedOTFVault vault = _createVault();
-        ExactInputEntrySwap[] memory swaps = _exactInputSwaps(50 * ONE, 40 * ONE);
+        EntrySwap[] memory swaps = _entrySwaps(50 * ONE, 40 * ONE);
 
         vm.prank(ALICE);
         vm.expectRevert(
@@ -219,21 +155,21 @@ contract OTFEntryRouterTest is ProtocolTestBase {
                 OTFEntryRouter.SettlementInputMismatch.selector, 100 * ONE, 90 * ONE
             )
         );
-        entryRouter.enterWithExactSettlement(
+        entryRouter.enterWithSettlement(
             address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
         );
     }
 
     function testUnapprovedAdapterRevertsBeforePullingSettlement() public {
         ManagedOTFVault vault = _createVault();
-        EntrySwap[] memory swaps = _swaps(60 * ONE, 60 * ONE);
-        entryRouter.setEntryAdapterApproved(address(entryAdapter), false);
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
 
         vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), 120 * ONE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
         vm.expectPartialRevert(OTFEntryRouter.UnapprovedEntryAdapter.selector);
         entryRouter.enterWithSettlement(
-            address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
 
@@ -241,16 +177,19 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(vault.balanceOf(ALICE), 0);
     }
 
-    function testInsufficientPerAssetMaximumRevertsAtomically() public {
+    function testSettlementEntryEnforcesPerAssetMinimumAtomically() public {
         ManagedOTFVault vault = _createVault();
-        entryAdapter.setRate(address(tokenC), address(tokenA), 2, 1);
-        EntrySwap[] memory swaps = _swaps(60 * ONE, 60 * ONE);
+        exitAdapter.setRate(address(tokenC), address(tokenA), 1, 2);
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
+        swaps[0].minAssetOut = 60 * ONE;
 
         vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), 120 * ONE);
-        vm.expectPartialRevert(MockEntryAdapter.MaximumInputExceeded.selector);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MockTradeAdapter.Slippage.selector, 30 * ONE, 60 * ONE)
+        );
         entryRouter.enterWithSettlement(
-            address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
         );
         vm.stopPrank();
 
@@ -261,29 +200,29 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
     function testExpiredEntryAndUnknownVaultRevert() public {
         ManagedOTFVault vault = _createVault();
-        EntrySwap[] memory swaps = _swaps(60 * ONE, 60 * ONE);
+        EntrySwap[] memory swaps = _entrySwaps(60 * ONE, 40 * ONE);
 
         vm.prank(ALICE);
         vm.expectPartialRevert(OTFEntryRouter.DeadlineExpired.selector);
         entryRouter.enterWithSettlement(
-            address(vault), 10 * ONE, ALICE, 120 * ONE, block.timestamp - 1, swaps
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp - 1, swaps
         );
 
         vm.prank(ALICE);
         vm.expectPartialRevert(OTFEntryRouter.InvalidVault.selector);
         entryRouter.enterWithSettlement(
-            address(entryAdapter), 10 * ONE, ALICE, 120 * ONE, block.timestamp + 1 hours, swaps
+            address(exitAdapter), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
         );
     }
 
     function testOnlyOwnerCanApproveEntryAdapters() public {
         vm.prank(ATTACKER);
         vm.expectRevert(OTFEntryRouter.NotOwner.selector);
-        entryRouter.setEntryAdapterApproved(address(entryAdapter), false);
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
     }
 
     function testEntryAdapterCanBeRevokedAfterItsCodeDisappears() public {
-        address retiredAdapter = address(entryAdapter);
+        address retiredAdapter = address(exitAdapter);
         assertTrue(entryRouter.isEntryAdapterApproved(retiredAdapter));
 
         vm.etch(retiredAdapter, bytes(""));
@@ -295,7 +234,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         );
         entryRouter.setEntryAdapterApproved(retiredAdapter, true);
 
-        MockEntryAdapter replacement = new MockEntryAdapter();
+        MockTradeAdapter replacement = new MockTradeAdapter();
         entryRouter.setEntryAdapterApproved(address(replacement), true);
         assertTrue(entryRouter.isEntryAdapterApproved(address(replacement)));
     }
@@ -394,14 +333,6 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
     }
 
-    function _swaps(uint256 maxA, uint256 maxB) private view returns (EntrySwap[] memory swaps) {
-        swaps = new EntrySwap[](2);
-        swaps[0] =
-            EntrySwap({ adapter: address(entryAdapter), maxSettlementIn: maxA, adapterData: "" });
-        swaps[1] =
-            EntrySwap({ adapter: address(entryAdapter), maxSettlementIn: maxB, adapterData: "" });
-    }
-
     function _exitSwaps(uint256 minA, uint256 minB) private view returns (ExitSwap[] memory swaps) {
         swaps = new ExitSwap[](2);
         swaps[0] =
@@ -410,13 +341,13 @@ contract OTFEntryRouterTest is ProtocolTestBase {
             ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minB, adapterData: "" });
     }
 
-    function _exactInputSwaps(uint256 settlementA, uint256 settlementB)
+    function _entrySwaps(uint256 settlementA, uint256 settlementB)
         private
         view
-        returns (ExactInputEntrySwap[] memory swaps)
+        returns (EntrySwap[] memory swaps)
     {
-        swaps = new ExactInputEntrySwap[](2);
-        swaps[0] = ExactInputEntrySwap({
+        swaps = new EntrySwap[](2);
+        swaps[0] = EntrySwap({
             adapter: address(exitAdapter),
             settlementIn: settlementA,
             minAssetOut: 0,
@@ -424,7 +355,7 @@ contract OTFEntryRouterTest is ProtocolTestBase {
             adapterData: "",
             refundAdapterData: ""
         });
-        swaps[1] = ExactInputEntrySwap({
+        swaps[1] = EntrySwap({
             adapter: address(exitAdapter),
             settlementIn: settlementB,
             minAssetOut: 0,

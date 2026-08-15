@@ -8,14 +8,9 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
     using SafeTransferLib for address;
 
     uint256 public reportedOutputBonus;
-    uint256 public outputShortfall;
 
     function setReportedOutputBonus(uint256 bonus) external {
         reportedOutputBonus = bonus;
-    }
-
-    function setOutputShortfall(uint256 shortfall) external {
-        outputShortfall = shortfall;
     }
 
     function exactInputSingle(ExactInputSingleParams calldata params)
@@ -25,9 +20,8 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
     {
         require(params.amountIn >= params.amountOutMinimum, "SLIPPAGE");
         params.tokenIn.safeTransferFrom(msg.sender, address(this), params.amountIn);
-        uint256 delivered = params.amountIn - outputShortfall;
-        params.tokenOut.safeTransfer(params.recipient, delivered);
-        return delivered + reportedOutputBonus;
+        params.tokenOut.safeTransfer(params.recipient, params.amountIn);
+        return params.amountIn + reportedOutputBonus;
     }
 
     function exactInput(ExactInputParams calldata params)
@@ -39,20 +33,8 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
         address tokenOut = _lastToken(params.path);
         require(params.amountIn >= params.amountOutMinimum, "SLIPPAGE");
         tokenIn.safeTransferFrom(msg.sender, address(this), params.amountIn);
-        uint256 delivered = params.amountIn - outputShortfall;
-        tokenOut.safeTransfer(params.recipient, delivered);
-        return delivered + reportedOutputBonus;
-    }
-
-    function exactOutputSingle(ExactOutputSingleParams calldata params)
-        external
-        payable
-        returns (uint256 amountIn)
-    {
-        require(params.amountOut <= params.amountInMaximum, "MAX_INPUT");
-        params.tokenIn.safeTransferFrom(msg.sender, address(this), params.amountOut);
-        params.tokenOut.safeTransfer(params.recipient, params.amountOut - outputShortfall);
-        return params.amountOut;
+        tokenOut.safeTransfer(params.recipient, params.amountIn);
+        return params.amountIn + reportedOutputBonus;
     }
 
     function _firstToken(bytes calldata path) private pure returns (address token) {

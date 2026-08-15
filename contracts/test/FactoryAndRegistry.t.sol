@@ -18,10 +18,6 @@ import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryAndRegistryTest is ProtocolTestBase {
-    function testFactoryReportsSupportedProtocolVersion() public view {
-        assertEq(factory.PROTOCOL_VERSION(), 1);
-    }
-
     function testFactoryRejectsZeroDeploymentSalt() public {
         VaultInitParams memory params = _defaultParams();
         params.deploymentSalt = bytes32(0);

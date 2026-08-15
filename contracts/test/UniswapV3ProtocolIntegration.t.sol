@@ -37,20 +37,26 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         EntrySwap[] memory entrySwaps = new EntrySwap[](2);
         entrySwaps[0] = EntrySwap({
             adapter: address(v3Adapter),
-            maxSettlementIn: required[0] + ONE,
-            adapterData: abi.encode(_path(address(tokenC), address(tokenA)))
+            settlementIn: required[0],
+            minAssetOut: required[0],
+            minRefundSettlementRate: ONE,
+            adapterData: abi.encode(_path(address(tokenC), address(tokenA))),
+            refundAdapterData: abi.encode(_path(address(tokenA), address(tokenC)))
         });
         entrySwaps[1] = EntrySwap({
             adapter: address(v3Adapter),
-            maxSettlementIn: required[1] + ONE,
-            adapterData: abi.encode(_path(address(tokenC), address(tokenB)))
+            settlementIn: required[1],
+            minAssetOut: required[1],
+            minRefundSettlementRate: ONE,
+            adapterData: abi.encode(_path(address(tokenC), address(tokenB))),
+            refundAdapterData: abi.encode(_path(address(tokenB), address(tokenC)))
         });
-        uint256 maximum = entrySwaps[0].maxSettlementIn + entrySwaps[1].maxSettlementIn;
+        uint256 settlementIn = required[0] + required[1];
 
         vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), maximum);
-        uint256 spent = entryRouter.enterWithSettlement(
-            address(vault), shares, ALICE, maximum, block.timestamp + 1 hours, entrySwaps
+        tokenC.approve(address(entryRouter), settlementIn);
+        (uint256 mintedShares, uint256 settlementRefunded) = entryRouter.enterWithSettlement(
+            address(vault), settlementIn, shares, ALICE, block.timestamp + 1 hours, entrySwaps
         );
         vault.approve(address(entryRouter), shares);
         uint256[] memory redeemAmounts = vault.previewRedeem(shares);
@@ -75,7 +81,8 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         );
         vm.stopPrank();
 
-        assertEq(spent, required[0] + required[1]);
+        assertEq(mintedShares, shares);
+        assertEq(settlementRefunded, 0);
         assertEq(received, redeemAmounts[0] + redeemAmounts[1]);
         assertEq(vault.balanceOf(ALICE), 0);
         assertEq(tokenC.balanceOf(address(entryRouter)), 0);
@@ -110,11 +117,7 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         assertEq(tokenB.allowance(address(v3Adapter), address(venue)), 0);
     }
 
-    function _path(address tokenIn, address tokenOut)
-        private
-        pure
-        returns (address[] memory path)
-    {
+    function _path(address tokenIn, address tokenOut) private pure returns (address[] memory path) {
         path = new address[](2);
         path[0] = tokenIn;
         path[1] = tokenOut;

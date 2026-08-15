@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { IEntryAdapter } from "./interfaces/IEntryAdapter.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
@@ -24,16 +23,6 @@ interface IUniswapV3SwapRouter {
         uint256 amountOutMinimum;
     }
 
-    struct ExactOutputSingleParams {
-        address tokenIn;
-        address tokenOut;
-        uint24 fee;
-        address recipient;
-        uint256 amountOut;
-        uint256 amountInMaximum;
-        uint160 sqrtPriceLimitX96;
-    }
-
     function exactInputSingle(ExactInputSingleParams calldata params)
         external
         payable
@@ -43,16 +32,11 @@ interface IUniswapV3SwapRouter {
         external
         payable
         returns (uint256 amountOut);
-
-    function exactOutputSingle(ExactOutputSingleParams calldata params)
-        external
-        payable
-        returns (uint256 amountIn);
 }
 
 /// @notice Uniswap V3-compatible adapter restricted to a fixed settlement token and fee tier.
 /// @dev Supports constituent/settlement swaps and constituent/settlement/constituent rebalances.
-contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
+contract UniswapV3Adapter is ITradeAdapter {
     using SafeTransferLib for address;
 
     error NotOwner();
@@ -84,7 +68,9 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         address settlementToken_,
         uint24 poolFee_
     ) {
-        if (initialOwner == address(0) || settlementToken_ == address(0)) revert ZeroAddress();
+        if (initialOwner == address(0) || settlementToken_ == address(0)) {
+            revert ZeroAddress();
+        }
         if (uniswapRouter_ == address(0) || uniswapRouter_.code.length == 0) {
             revert InvalidRouter(uniswapRouter_);
         }
@@ -145,8 +131,9 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
 
         uint256 reportedOutput;
         if (path.length == 2) {
-            reportedOutput = IUniswapV3SwapRouter(uniswapRouter).exactInputSingle(
-                IUniswapV3SwapRouter.ExactInputSingleParams({
+            reportedOutput = IUniswapV3SwapRouter(uniswapRouter)
+                .exactInputSingle(
+                    IUniswapV3SwapRouter.ExactInputSingleParams({
                     tokenIn: tokenIn,
                     tokenOut: tokenOut,
                     fee: poolFee,
@@ -155,16 +142,17 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
                     amountOutMinimum: minAmountOut,
                     sqrtPriceLimitX96: 0
                 })
-            );
+                );
         } else {
-            reportedOutput = IUniswapV3SwapRouter(uniswapRouter).exactInput(
-                IUniswapV3SwapRouter.ExactInputParams({
+            reportedOutput = IUniswapV3SwapRouter(uniswapRouter)
+                .exactInput(
+                    IUniswapV3SwapRouter.ExactInputParams({
                     path: _encodePath(path),
                     recipient: msg.sender,
                     amountIn: amountIn,
                     amountOutMinimum: minAmountOut
                 })
-            );
+                );
         }
         tokenIn.safeApprove(uniswapRouter, 0);
 
@@ -175,59 +163,7 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         if (amountOut < minAmountOut) revert Slippage(amountOut, minAmountOut);
     }
 
-    function buyExactOutput(
-        address settlementToken_,
-        address tokenOut,
-        uint256 amountOut,
-        uint256 maxAmountIn,
-        bytes calldata data
-    ) external onlyApprovedCaller nonReentrant returns (uint256 amountIn) {
-        if (
-            amountOut == 0 || maxAmountIn == 0 || settlementToken_ != settlementToken
-                || settlementToken_ == tokenOut
-        ) revert InvalidAmount();
-        address[] memory path = abi.decode(data, (address[]));
-        if (path.length != 2) revert InvalidPath();
-        _validatePath(path, settlementToken_, tokenOut);
-
-        uint256 adapterInputBefore = IERC20(settlementToken_).balanceOf(address(this));
-        uint256 callerOutputBefore = IERC20(tokenOut).balanceOf(msg.sender);
-        settlementToken_.safeTransferFrom(msg.sender, address(this), maxAmountIn);
-        uint256 pulled = IERC20(settlementToken_).balanceOf(address(this)) - adapterInputBefore;
-        if (pulled != maxAmountIn) revert InputMismatch(maxAmountIn, pulled);
-
-        settlementToken_.safeApprove(uniswapRouter, 0);
-        settlementToken_.safeApprove(uniswapRouter, maxAmountIn);
-        amountIn = IUniswapV3SwapRouter(uniswapRouter).exactOutputSingle(
-            IUniswapV3SwapRouter.ExactOutputSingleParams({
-                tokenIn: settlementToken_,
-                tokenOut: tokenOut,
-                fee: poolFee,
-                recipient: msg.sender,
-                amountOut: amountOut,
-                amountInMaximum: maxAmountIn,
-                sqrtPriceLimitX96: 0
-            })
-        );
-        settlementToken_.safeApprove(uniswapRouter, 0);
-
-        uint256 observedOutput = IERC20(tokenOut).balanceOf(msg.sender) - callerOutputBefore;
-        if (observedOutput != amountOut) revert OutputMismatch(amountOut, observedOutput);
-        uint256 adapterInputAfterSwap = IERC20(settlementToken_).balanceOf(address(this));
-        uint256 observedInput = adapterInputBefore + maxAmountIn - adapterInputAfterSwap;
-        if (observedInput != amountIn) revert InputMismatch(amountIn, observedInput);
-        uint256 refund = maxAmountIn - amountIn;
-        if (refund != 0) settlementToken_.safeTransfer(msg.sender, refund);
-        uint256 adapterInputAfter = IERC20(settlementToken_).balanceOf(address(this));
-        if (adapterInputAfter != adapterInputBefore) {
-            revert InputMismatch(amountIn, adapterInputBefore + maxAmountIn - adapterInputAfter);
-        }
-    }
-
-    function _validatePath(address[] memory path, address tokenIn, address tokenOut)
-        private
-        view
-    {
+    function _validatePath(address[] memory path, address tokenIn, address tokenOut) private view {
         if (
             (path.length != 2 && path.length != 3) || path[0] != tokenIn
                 || path[path.length - 1] != tokenOut || tokenIn == address(0)
@@ -237,8 +173,7 @@ contract UniswapV3Adapter is ITradeAdapter, IEntryAdapter {
         if (path.length == 2) {
             if (path[0] != settlementToken && path[1] != settlementToken) revert InvalidPath();
         } else if (
-            path[1] != settlementToken || path[0] == settlementToken
-                || path[2] == settlementToken
+            path[1] != settlementToken || path[0] == settlementToken || path[2] == settlementToken
         ) {
             revert InvalidPath();
         }

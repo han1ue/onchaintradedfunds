@@ -95,17 +95,18 @@ It MUST NOT accept a caller-selected output recipient.
 
 ### `OTFEntryRouter` and entry adapters
 
-The optional entry router converts a configured settlement token into the exact proportional
-basket required to mint a requested number of OTF shares. It is outside the vault's custody and
-strategy authority boundaries. It MUST:
+The optional entry router spends a fixed amount of the configured settlement token and mints the
+largest proportional OTF basket supported by the assets actually received. It is outside the
+vault's custody and strategy authority boundaries. It MUST:
 
 - Accept only vaults registered by the configured factory.
-- Preview and acquire the exact live basket in one atomic transaction.
+- Allocate the complete fixed settlement input across the live basket in one atomic transaction.
 - Use only entry adapters approved in the router's independent allowlist.
-- Limit each adapter to an explicit maximum settlement input and clear approvals afterward.
-- Verify adapter-reported input, observed input, and exact output balance deltas.
+- Give each adapter an explicit exact input and minimum output.
+- Verify adapter-reported and observed output balance deltas.
 - Mint through the vault's proportional `mintWithBasket` function and verify returned amounts.
-- Refund unused settlement tokens and retain no user-funded balance after successful entry.
+- Enforce the user's minimum shares, convert surplus constituents under protected refund rates,
+  and return the settlement proceeds to the payer.
 - Redeem an exact approved share amount through the vault's proportional exit before performing any settlement swaps.
 - Enforce per-leg and aggregate minimum settlement outputs for atomic settlement-token exits.
 - Never change targets, fees, roles, challenge state, or rebalance state.
@@ -263,20 +264,20 @@ stores the rounded `navLossBudgetUsedBps` observed after that batch.
 
 For every successful settlement-token entry:
 
-1. The requested share amount and aggregate maximum input are nonzero.
+1. The fixed settlement input and minimum share output are nonzero.
 2. The deadline has not expired.
 3. The OTF is registered by the configured factory.
 4. The swap array exactly matches the live constituent array.
 5. Every non-settlement leg uses an independently approved entry adapter.
-6. The sum of per-leg maximum inputs and direct settlement requirements does not exceed the user's aggregate maximum.
-7. Every acquired constituent amount exactly equals the current `previewMint` requirement.
-8. The deposited basket and minted share amount are atomic.
-9. Temporary adapter and vault approvals are cleared after successful execution.
-10. Unused settlement tokens are refunded to the payer.
+6. The sum of per-leg settlement inputs exactly equals the user's fixed input.
+7. Every acquired constituent satisfies its minimum output.
+8. The largest supported proportional basket is deposited atomically and mints at least the user's minimum shares.
+9. Temporary vault approvals are cleared after successful execution.
+10. Surplus constituents satisfy their minimum refund rates and the resulting settlement tokens are returned to the payer.
 
-AMM price and oracle NAV equality is intentionally NOT an invariant. The entrant selects maximum
-pool execution cost; the vault protects existing holders by accepting only the exact proportional
-basket.
+AMM price and oracle NAV equality is intentionally NOT an invariant. The entrant selects a fixed
+settlement input and minimum share output; the vault protects existing holders by accepting only
+the proportional basket.
 
 For every successful settlement-token exit, the router MUST verify the OTF is factory-registered,
 validate all adapters before burning shares, receive exactly the basket amounts reported by the

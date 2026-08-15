@@ -21,7 +21,7 @@ This repository currently implements the first MVP slice:
 - Fixed minimum rebalance cooldown model.
 - Direct basket vault creation through the factory.
 - Proportional mint and redeem logic.
-- Optional atomic USDG-only entry through a separately allowlisted router and adapter.
+- Atomic fixed-USDG entry through a separately allowlisted router and adapter.
 - Lazy share-based management fee accrual.
 - Onchain strategy history binding rationales to target snapshots.
 - Oracle-valued NAV and weight checks.
@@ -125,15 +125,14 @@ flowchart LR
 
 `OTFEntryRouter`
 
-- Lets a user request an exact number of OTF shares while supplying only the configured settlement token, initially USDG.
-- Buys the exact proportional basket through independently approved entry adapters, deposits it atomically, and refunds unused settlement tokens.
-- Also supports exact-USDG entry: it allocates the fixed input across constituent pools, mints the largest strictly proportional basket supported by the received assets, enforces minimum shares, and sells surplus constituents back to USDG under user-defined minimum refund rates.
+- Allocates a fixed USDG input across constituent pools, mints the largest strictly proportional basket supported by the received assets, and enforces the user's minimum shares.
+- Sells surplus constituents back to USDG under user-defined minimum refund rates and returns the proceeds to the payer.
 - Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
 `UniswapV3Adapter`
 
-- Implements exact-input rebalance and redemption swaps plus exact-output settlement entry against a configurable Uniswap V3-compatible router.
+- Implements exact-input entry, redemption, and rebalance swaps against a configurable Uniswap V3-compatible router.
 - Uses one immutable settlement token and fee tier, validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
 - Routes RWA-to-RWA rebalances through USDG as the only permitted intermediate token while the vault-visible input and output remain active constituents.
 
@@ -293,16 +292,11 @@ Minting:
 - Is blocked across every factory-created OTF while the factory owner has the reversible
   protocol deposit pause enabled.
 
-### USDG-only entry
+### Entry paths
 
-Direct proportional basket deposits remain the base minting primitive. An optional
-`OTFEntryRouter` convenience path lets a user request an exact amount of OTF shares and set a
-maximum USDG spend. The router previews the exact constituent amounts, buys each amount through
-approved exact-output adapters, calls `mintWithBasket`, and refunds unspent USDG in the same
-transaction. Any failed swap, stale quote protection, insufficient output, deposit mismatch, or
-share mint failure reverts the entire operation.
-
-The router also exposes an exact-USDG path used by the investor interface. It spends the entered
+Investors have exactly three entry paths: provide the proportional RWA basket directly, buy
+existing OTF shares from the official OTF/USDG pool, or provide a fixed USDG amount through
+`OTFEntryRouter`. The router spends the entered
 USDG across the constituent pools, derives the largest proportional basket from the assets actually
 received, and reverts unless that basket mints at least the user's minimum shares. Only the strict
 proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
@@ -310,15 +304,16 @@ using protected minimum USDG rates and the resulting USDG is returned to the pay
 
 The cost shown by a Uniswap pool is not the OTF's accounting NAV. OTF NAV uses approved Chainlink
 feeds, while entry cost depends on available AMM liquidity and price impact. The frontend displays
-both values and the difference; users protect execution with per-leg maximum inputs, an aggregate
-maximum USDG amount, and a deadline. This route does not subsidize entry from existing OTF assets.
+both values and the difference; users protect execution with per-leg minimum outputs, a minimum
+share amount derived from their slippage setting, and a deadline. This route does not subsidize
+entry from existing OTF assets.
 
 The router and adapter are separate contracts so future RFQ, proprietary AMM, or order-book
 liquidity can be integrated behind additional typed adapters without adding an arbitrary-call path
 to the vault. See Robinhood's documented
 [liquidity-source categories](https://docs.robinhood.com/chain/building-with-stock-tokens/#liquidity-sources).
 
-### Redemption
+### Exit paths
 
 Share holders redeem proportionally for the tracked underlying basket:
 
@@ -337,7 +332,9 @@ Redemption:
 - Does not use oracles.
 - Remains available when oracle-dependent actions fail.
 
-An optional settlement exit lets a holder redeem to USDG in one transaction. The holder approves
+Investors likewise have exactly three exit paths: receive the proportional RWA basket directly,
+sell OTF shares into the official OTF/USDG pool, or redeem through `OTFEntryRouter` for USDG. For
+the routed settlement exit, the holder approves
 the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
 proportional `redeem` path, sells each received constituent through an approved adapter, enforces
 per-leg and aggregate minimum USDG outputs plus a deadline, and transfers the resulting USDG to the
@@ -805,9 +802,9 @@ Deterministic coverage includes:
   fee resumption, and deposits and withdrawals during challenge states.
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
-- Atomic USDG-only entry, exact-input minimum-share protection, proportional-only deposits,
-  slippage-protected USDG surplus refunds, unused-input refunds, entry-adapter authorization, exact-output
-  bounds, expired entry rejection, and Uniswap-compatible direct and USDG-hop adapter behavior.
+- Atomic fixed-USDG entry, exact-input minimum-share protection, proportional-only deposits,
+  slippage-protected USDG surplus refunds, entry-adapter authorization, expired entry rejection,
+  and Uniswap-compatible direct and USDG-hop adapter behavior.
 - Atomic USDG redemption, exact share approval, per-leg and aggregate minimum outputs, deadline
   enforcement, and complete rollback when an exit adapter or quote is invalid.
 - Canonical vault/module storage, immutable module identity, runtime code-hash integrity,

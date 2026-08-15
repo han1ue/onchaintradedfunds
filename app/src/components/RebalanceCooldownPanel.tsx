@@ -83,7 +83,6 @@ import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
   robinhoodTestnetV3Venue,
-  SUPPORTED_PROTOCOL_VERSION,
 } from "@/lib/deployment";
 import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
@@ -816,6 +815,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ZeroShares()", "Enter a share amount greater than zero."],
+    ["ZeroSettlementInput()", "Enter a USDG amount greater than zero."],
     ["ZeroAmount()", "Enter an amount greater than zero."],
     ["AmountTooHigh(address,uint256,uint256)", "The required token amount exceeds the maximum allowed for this transaction."],
     ["AmountTooLow(address,uint256,uint256)", "The token amount received is below the minimum allowed for this transaction."],
@@ -828,7 +828,6 @@ const protocolErrorMessages = new Map<string, string>(
     ["InsufficientShares(uint256,uint256)", "The share output is below your selected minimum."],
     ["InsufficientAmount(uint256,uint256,uint256)", "One token output is below your selected minimum."],
     ["DeadlineExpired(uint256)", "This quote expired before it could be executed. Request a fresh quote and try again."],
-    ["MaximumInputTooLow(uint256,uint256)", "The trade needs more input than your selected maximum. Request a fresh quote or increase the limit."],
     ["SettlementInputMismatch(uint256,uint256)", "The constituent allocations no longer match the USDG amount. Request a fresh quote and try again."],
     ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
@@ -977,49 +976,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       refetchInterval: 12_000,
     },
   });
-  const {
-    data: factoryProtocolVersionData,
-    error: factoryProtocolVersionError,
-    isFetched: factoryProtocolVersionFetched,
-    isLoading: factoryProtocolVersionLoading,
-  } = useReadContract({
-    address: factoryAddress,
-    abi: otfFactoryAbi,
-    functionName: "PROTOCOL_VERSION",
-    chainId: robinhoodChainTestnet.id,
-    query: {
-      enabled: Boolean(factoryAddress) && isTestnet,
-      retry: false,
-      staleTime: Infinity,
-      refetchInterval: false,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
-      refetchOnWindowFocus: false,
-    },
-  });
-  const factoryProtocolVersion = factoryProtocolVersionData === undefined
-    ? undefined
-    : Number(factoryProtocolVersionData);
-  const shouldCheckFactoryProtocolVersion =
-    Boolean(factoryAddress) && isTestnet;
-  const factoryProtocolVersionUnavailable =
-    shouldCheckFactoryProtocolVersion
-    && factoryProtocolVersionFetched
-    && (Boolean(factoryProtocolVersionError) || factoryProtocolVersion === undefined);
-  const factoryProtocolVersionMismatch =
-    factoryProtocolVersion !== undefined
-    && factoryProtocolVersion !== SUPPORTED_PROTOCOL_VERSION;
-  const protocolCompatible = factoryProtocolVersion === SUPPORTED_PROTOCOL_VERSION;
-  const protocolCompatibilityBlocker = !factoryAddress
-    ? "Factory is not configured"
-    : factoryProtocolVersionLoading || !factoryProtocolVersionFetched
-      ? "Checking factory protocol version"
-      : factoryProtocolVersionUnavailable
-        ? "Factory protocol version is unavailable"
-        : factoryProtocolVersionMismatch
-          ? "Factory protocol version is unsupported"
-          : undefined;
-
   const { data: catalogOracleRegistryAddress } = useReadContract({
     address: factoryAddress,
     abi: factoryDependencyAbi,
@@ -1094,12 +1050,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   ), [catalogPriceResults]);
 
   const factoryVaultAddresses = useMemo(
-    () => isTestnet && protocolCompatible
+    () => isTestnet
       ? (factoryVaultData ?? []).filter(
           (address): address is `0x${string}` => isAddress(address),
         )
       : [],
-    [factoryVaultData, isTestnet, protocolCompatible],
+    [factoryVaultData, isTestnet],
   );
   const selectedIsFactoryVault = Boolean(
     selectedVaultAddress &&
@@ -1113,7 +1069,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     : selectedIsFactoryVault
       ? selectedVaultAddress
       : factoryVaultAddresses[0];
-  const enabled = Boolean(vaultAddress) && isTestnet && protocolCompatible;
+  const enabled = Boolean(vaultAddress) && isTestnet;
 
   const { data: blockNumber } = useBlockNumber({
     chainId: robinhoodChainTestnet.id,
@@ -1447,24 +1403,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             </div>
           </div>
         ) : null}
-        {isTestnet && factoryAddress && factoryProtocolVersionUnavailable ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div>
-              <strong>Factory protocol version unavailable</strong>
-              <span>The app could not read PROTOCOL_VERSION from the configured factory. Verify the factory address and RPC connection before enabling contract writes.</span>
-            </div>
-          </div>
-        ) : null}
-        {isTestnet && factoryAddress && factoryProtocolVersionMismatch ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div>
-              <strong>Factory protocol version mismatch</strong>
-              <span>This frontend supports protocol version {SUPPORTED_PROTOCOL_VERSION}, but the configured factory reports version {factoryProtocolVersion}. Contract writes are disabled until a supported factory is configured.</span>
-            </div>
-          </div>
-        ) : null}
         {view === "detail" && isTestnet && vault.dataMode === "live" ? (
           <>
             <VaultHeader
@@ -1519,8 +1457,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           <CreateVaultView
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
-            protocolCompatible={protocolCompatible}
-            protocolCompatibilityBlocker={protocolCompatibilityBlocker}
             oraclePrices={catalogOraclePrices}
             onBack={() => openView("vaults")}
             onCreated={openCreatedVault}
@@ -3869,7 +3805,7 @@ function UserActions({
     }
   }
 
-  async function enterWithExactSettlement() {
+  async function enterWithSettlement() {
     if (
       vaultDepositsBlocked ||
       !vault.address ||
@@ -3913,7 +3849,7 @@ function UserActions({
       const hash = await writeContractAsync({
         address: entryRouterAddress,
         abi: otfEntryRouterAbi,
-        functionName: "enterWithExactSettlement",
+        functionName: "enterWithSettlement",
         args: [
           vault.address,
           requestedUsdgAmount,
@@ -3929,7 +3865,7 @@ function UserActions({
       if (receipt.status !== "success") throw new Error("The USDG entry transaction reverted.");
       const entryEvents = parseEventLogs({
         abi: otfEntryRouterAbi,
-        eventName: "EnteredWithExactSettlement",
+        eventName: "EnteredWithSettlement",
         logs: receipt.logs,
       });
       const mintedShares = entryEvents[0]?.args.shares;
@@ -4890,7 +4826,7 @@ function UserActions({
                     className="primaryAction"
                     type="button"
                     disabled={entryBusy || !underlyingQuoteReady || !entryBalanceSufficient || !entryAllowanceSufficient}
-                    onClick={enterWithExactSettlement}
+                    onClick={enterWithSettlement}
                   >
                     {entryBusy ? <Loader2 className="spin" size={14} /> : <ArrowDownToLine size={14} />}
                     Mint {vault.symbol}
@@ -6595,16 +6531,12 @@ function VaultsDirectory({
 function CreateVaultView({
   connectedAddress,
   isTestnet,
-  protocolCompatible,
-  protocolCompatibilityBlocker,
   oraclePrices,
   onBack,
   onCreated,
 }: {
   connectedAddress?: string;
   isTestnet: boolean;
-  protocolCompatible: boolean;
-  protocolCompatibilityBlocker?: string;
   oraclePrices: CatalogOraclePrices;
   onBack: () => void;
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
@@ -6926,7 +6858,6 @@ function CreateVaultView({
   const canSubmitDeployment =
     stepValid &&
     Boolean(factoryAddress) &&
-    protocolCompatible &&
     Boolean(connectedAddress) &&
     !protocolDepositsPaused &&
     seedBalancesSufficient &&
@@ -6941,7 +6872,6 @@ function CreateVaultView({
   const deploymentBlockers: string[] = [];
   if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
   if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
-  if (!protocolCompatible) deploymentBlockers.push(protocolCompatibilityBlocker ?? "Protocol compatibility check failed");
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
   if (protocolDepositsPaused) deploymentBlockers.push("Protocol deposits are paused");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
@@ -9034,4 +8964,3 @@ function ManageVaultsView({
     </div>
   );
 }
-

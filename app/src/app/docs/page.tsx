@@ -70,7 +70,7 @@ const contractRows = [
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
-  ["Uniswap V3 adapter", "Provides settlement-confined exact-input rebalance and redemption swaps plus exact-output entry through configured liquidity."],
+  ["Uniswap V3 adapter", "Provides settlement-confined exact-input entry, redemption, and rebalance swaps through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
   ["OracleRegistry", "Maps approved assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
@@ -300,17 +300,15 @@ export default function DocsPage() {
             <div className="docsNotice">
               <Landmark size={17} />
               <div>
-                <strong>Two USDG entry routes</strong>
+                <strong>Three ways to enter</strong>
                 <span>
-                  The app can buy existing shares from an optional OTF/USDG market, or use the
-                  settlement router to spend a fixed USDG amount across constituent pools and mint
-                  the largest proportional basket. Both routes show estimated and minimum shares.
-                  The manager creates and seeds the direct share market from their own wallet.
-                  Either route can price above or below the Chainlink-priced OTF value.
+                  Supply the proportional RWA basket, buy existing shares from the OTF/USDG pool,
+                  or supply a fixed USDG amount through the settlement router. Routed USDG entry
+                  shows estimated shares and a slippage-protected minimum before signing.
                 </span>
               </div>
             </div>
-            <pre><code>{`enterWithExactSettlement(
+            <pre><code>{`enterWithSettlement(
   vault,
   settlementIn,
   minShares,
@@ -333,12 +331,11 @@ export default function DocsPage() {
             <div className="docsNotice">
               <Landmark size={17} />
               <div>
-                <strong>Two USDG exit routes</strong>
+                <strong>Three ways to exit</strong>
                 <span>
-                  The app can sell existing shares into the optional OTF/USDG market, or use the
-                  settlement router to redeem and sell every constituent through approved adapters.
-                  The latter path enforces per-leg and aggregate minimums and reverts the share burn
-                  and all swaps atomically if any leg fails.
+                  Receive the proportional RWA basket, sell shares into the OTF/USDG pool, or redeem
+                  through the settlement router for USDG. Routed redemption enforces per-leg and
+                  aggregate slippage minimums and reverts every action if a leg fails.
                 </span>
               </div>
             </div>

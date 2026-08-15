@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
-import { IEntryAdapter } from "./interfaces/IEntryAdapter.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -29,12 +28,6 @@ interface IEntryVault {
 
 struct EntrySwap {
     address adapter;
-    uint256 maxSettlementIn;
-    bytes adapterData;
-}
-
-struct ExactInputEntrySwap {
-    address adapter;
     uint256 settlementIn;
     uint256 minAssetOut;
     uint256 minRefundSettlementRate;
@@ -58,14 +51,12 @@ contract OTFEntryRouter {
     error InvalidReceiver(address receiver);
     error InvalidArrayLength();
     error ZeroShares();
-    error ZeroMaximumInput();
+    error ZeroSettlementInput();
     error ZeroMinimumOutput();
     error DeadlineExpired(uint256 deadline);
     error UnapprovedEntryAdapter(address adapter);
     error InvalidSettlementLeg(uint256 index);
     error SettlementInputMismatch(uint256 expected, uint256 actual);
-    error MaximumInputTooLow(uint256 requiredMaximum, uint256 suppliedMaximum);
-    error AdapterInputMismatch(uint256 index, uint256 reported, uint256 observed);
     error AdapterOutputMismatch(uint256 index, uint256 expected, uint256 observed);
     error VaultInputMismatch(uint256 index, uint256 expected, uint256 actual);
     error VaultOutputMismatch(uint256 index, uint256 reported, uint256 observed);
@@ -78,14 +69,6 @@ contract OTFEntryRouter {
     event EntryAdapterApprovalChanged(address indexed adapter, bool approved);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event EnteredWithSettlement(
-        address indexed payer,
-        address indexed receiver,
-        address indexed vault,
-        uint256 shares,
-        uint256 settlementSpent,
-        uint256 settlementRefunded
-    );
-    event EnteredWithExactSettlement(
         address indexed payer,
         address indexed receiver,
         address indexed vault,
@@ -148,117 +131,20 @@ contract OTFEntryRouter {
         emit OwnershipTransferred(oldOwner, newOwner);
     }
 
-    function enterWithSettlement(
-        address vault,
-        uint256 shares,
-        address receiver,
-        uint256 maxSettlementIn,
-        uint256 deadline,
-        EntrySwap[] calldata swaps
-    ) external nonReentrant returns (uint256 settlementSpent) {
-        // User-supplied swap deadlines intentionally use chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > deadline) revert DeadlineExpired(deadline);
-        if (shares == 0) revert ZeroShares();
-        if (maxSettlementIn == 0) revert ZeroMaximumInput();
-        if (receiver == address(0) || receiver == address(this) || receiver == vault) {
-            revert InvalidReceiver(receiver);
-        }
-        if (!IAdapterAllowlist(factory).isVault(vault)) revert InvalidVault(vault);
-
-        address[] memory assets = IEntryVault(vault).assets();
-        if (swaps.length != assets.length) revert InvalidArrayLength();
-        uint256[] memory requiredAmounts = IEntryVault(vault).previewMint(shares);
-        if (requiredAmounts.length != assets.length) revert InvalidArrayLength();
-
-        uint256 requiredMaximum;
-        for (uint256 i = 0; i < assets.length; i++) {
-            if (assets[i] == settlementToken) {
-                if (
-                    swaps[i].adapter != address(0) || swaps[i].maxSettlementIn != 0
-                        || swaps[i].adapterData.length != 0
-                ) {
-                    revert InvalidSettlementLeg(i);
-                }
-                requiredMaximum += requiredAmounts[i];
-            } else {
-                if (!isEntryAdapterApproved[swaps[i].adapter]) {
-                    revert UnapprovedEntryAdapter(swaps[i].adapter);
-                }
-                requiredMaximum += swaps[i].maxSettlementIn;
-            }
-        }
-        if (requiredMaximum > maxSettlementIn) {
-            revert MaximumInputTooLow(requiredMaximum, maxSettlementIn);
-        }
-
-        _pullExact(settlementToken, msg.sender, address(this), maxSettlementIn);
-
-        for (uint256 i = 0; i < assets.length; i++) {
-            address asset = assets[i];
-            uint256 required = requiredAmounts[i];
-            if (asset == settlementToken) {
-                settlementSpent += required;
-                continue;
-            }
-
-            EntrySwap calldata swap = swaps[i];
-            uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
-            uint256 assetBefore = IERC20(asset).balanceOf(address(this));
-            settlementToken.safeApprove(swap.adapter, 0);
-            settlementToken.safeApprove(swap.adapter, swap.maxSettlementIn);
-            uint256 reportedInput = IEntryAdapter(swap.adapter)
-                .buyExactOutput(
-                    settlementToken, asset, required, swap.maxSettlementIn, swap.adapterData
-                );
-            settlementToken.safeApprove(swap.adapter, 0);
-
-            uint256 settlementAfter = IERC20(settlementToken).balanceOf(address(this));
-            uint256 assetAfter = IERC20(asset).balanceOf(address(this));
-            uint256 observedInput = settlementBefore - settlementAfter;
-            uint256 observedOutput = assetAfter - assetBefore;
-            if (reportedInput != observedInput) {
-                revert AdapterInputMismatch(i, reportedInput, observedInput);
-            }
-            if (observedOutput != required) {
-                revert AdapterOutputMismatch(i, required, observedOutput);
-            }
-            settlementSpent += observedInput;
-        }
-
-        for (uint256 i = 0; i < assets.length; i++) {
-            assets[i].safeApprove(vault, 0);
-            assets[i].safeApprove(vault, requiredAmounts[i]);
-        }
-        uint256[] memory deposited =
-            IEntryVault(vault).mintWithBasket(shares, receiver, requiredAmounts);
-        if (deposited.length != requiredAmounts.length) revert InvalidArrayLength();
-        for (uint256 i = 0; i < assets.length; i++) {
-            assets[i].safeApprove(vault, 0);
-            if (deposited[i] != requiredAmounts[i]) {
-                revert VaultInputMismatch(i, requiredAmounts[i], deposited[i]);
-            }
-        }
-
-        uint256 refund = maxSettlementIn - settlementSpent;
-        if (refund != 0) _pushExact(settlementToken, msg.sender, refund);
-        emit EnteredWithSettlement(msg.sender, receiver, vault, shares, settlementSpent, refund);
-    }
-
     /// @notice Spends a fixed settlement amount and mints the largest proportional OTF basket.
     /// @dev Any constituent amounts above the limiting basket ratio are sold back to settlement.
-    function enterWithExactSettlement(
+    function enterWithSettlement(
         address vault,
         uint256 settlementIn,
         uint256 minShares,
         address receiver,
         uint256 deadline,
-        ExactInputEntrySwap[] calldata swaps
+        EntrySwap[] calldata swaps
     ) external nonReentrant returns (uint256 shares, uint256 settlementRefunded) {
         // User-supplied swap deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlineExpired(deadline);
-        if (settlementIn == 0) revert ZeroMaximumInput();
+        if (settlementIn == 0) revert ZeroSettlementInput();
         if (minShares == 0) revert ZeroMinimumOutput();
         if (receiver == address(0) || receiver == address(this) || receiver == vault) {
             revert InvalidReceiver(receiver);
@@ -269,7 +155,7 @@ contract OTFEntryRouter {
         if (swaps.length != assets.length) revert InvalidArrayLength();
         uint256 allocatedSettlement;
         for (uint256 i = 0; i < assets.length; i++) {
-            ExactInputEntrySwap calldata swap = swaps[i];
+            EntrySwap calldata swap = swaps[i];
             allocatedSettlement += swap.settlementIn;
             if (assets[i] == settlementToken) {
                 if (
@@ -292,7 +178,7 @@ contract OTFEntryRouter {
         _pullExact(settlementToken, msg.sender, address(this), settlementIn);
         uint256[] memory availableAmounts = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            ExactInputEntrySwap calldata swap = swaps[i];
+            EntrySwap calldata swap = swaps[i];
             if (assets[i] == settlementToken) {
                 availableAmounts[i] = swap.settlementIn;
                 continue;
@@ -343,7 +229,7 @@ contract OTFEntryRouter {
         if (settlementRefunded != 0) {
             _pushExact(settlementToken, msg.sender, settlementRefunded);
         }
-        emit EnteredWithExactSettlement(
+        emit EnteredWithSettlement(
             msg.sender, receiver, vault, settlementIn, shares, settlementRefunded
         );
     }
@@ -351,7 +237,7 @@ contract OTFEntryRouter {
     function _convertRefundsToSettlement(
         address[] memory assets,
         uint256[] memory refunds,
-        ExactInputEntrySwap[] calldata swaps
+        EntrySwap[] calldata swaps
     ) private returns (uint256 settlementRefunded) {
         for (uint256 i = 0; i < assets.length; i++) {
             uint256 refund = refunds[i];
@@ -361,18 +247,15 @@ contract OTFEntryRouter {
                 continue;
             }
 
-            ExactInputEntrySwap calldata swap = swaps[i];
+            EntrySwap calldata swap = swaps[i];
             uint256 minSettlementOut =
                 MathEx.mulDiv(refund, swap.minRefundSettlementRate, REFUND_RATE_SCALE);
             _pushExact(assets[i], swap.adapter, refund);
             uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
-            uint256 reportedOutput = ITradeAdapter(swap.adapter).executeSwap(
-                assets[i],
-                settlementToken,
-                refund,
-                minSettlementOut,
-                swap.refundAdapterData
-            );
+            uint256 reportedOutput = ITradeAdapter(swap.adapter)
+                .executeSwap(
+                    assets[i], settlementToken, refund, minSettlementOut, swap.refundAdapterData
+                );
             uint256 observedOutput =
                 IERC20(settlementToken).balanceOf(address(this)) - settlementBefore;
             if (reportedOutput != observedOutput) {

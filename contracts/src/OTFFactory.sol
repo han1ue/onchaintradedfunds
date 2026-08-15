@@ -39,7 +39,6 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 100;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
-    uint256 public constant PROTOCOL_VERSION = 1;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
     error NotOwner();

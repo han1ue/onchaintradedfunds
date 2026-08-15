@@ -33,7 +33,8 @@ Investors use the web application with an EVM wallet to:
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
 - Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, strategy history, safety limits, cooldown state, and return history.
 - Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
-- Acquire or sell OTF shares with USDG either through a direct OTF/USDG market or through atomic constituent-pool routing.
+- Enter by supplying the exact proportional RWA basket, buying shares from the OTF/USDG market, or routing a fixed USDG amount through constituent pools with minimum-share protection.
+- Exit by receiving the proportional RWA basket, selling shares into the OTF/USDG market, or routing a redemption through constituent pools with minimum-USDG protection.
 - Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
 
 Creators and managers use the application to:
@@ -51,7 +52,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
 - OTF creation is permissionless within factory-level validation and registry constraints.
-- The investor frontend exposes USDG entry and exit through either the official direct share market or atomic constituent-pool routing; direct basket controls remain contract-level primitives.
+- The investor frontend exposes exactly three entry paths—direct RWA basket, official OTF/USDG market, and fixed-USDG constituent routing—and exactly three corresponding exit paths.
 - Every OTF factory transaction creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
 - The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
