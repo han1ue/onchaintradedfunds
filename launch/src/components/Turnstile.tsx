@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
-    turnstile?: { render(container: HTMLElement, options: { sitekey: string; action: string; theme: "auto"; callback(token: string): void; "expired-callback"(): void; "error-callback"(): void }): string; reset(widgetId: string): void };
+    turnstile?: { render(container: HTMLElement, options: { sitekey: string; action: string; theme: "auto"; size: "normal" | "flexible" | "compact"; callback(token: string): void; "expired-callback"(): void; "error-callback"(): void }): string; reset(widgetId: string): void };
   }
 }
 
@@ -21,6 +21,7 @@ export function Turnstile({ siteKey, action, resetKey, onToken }: { siteKey?: st
       sitekey: siteKey,
       action,
       theme: "auto",
+      size: "flexible",
       callback: (token) => { setComplete(true); onToken(token); },
       "expired-callback": () => { setComplete(false); onToken(""); },
       "error-callback": () => { setComplete(false); onToken(""); }

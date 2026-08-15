@@ -386,7 +386,9 @@ button { color: inherit; }
 .postAssurance { margin: 0; color: var(--text-muted); font-size: .66rem; line-height: 1.4; text-align: center; }
 .wizardFooterAction { display: grid; justify-items: stretch; gap: 6px; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
-.turnstile { min-height: 65px; display: grid; align-items: center; overflow: hidden; }
+.turnstile { width: 100%; min-height: 65px; display: grid; align-items: center; overflow: hidden; }
+.turnstile > div,
+.turnstile iframe { width: 100% !important; max-width: 100%; }
 .turnstileComplete { height: 0; min-height: 0; visibility: hidden; }
 
 .proposalHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
