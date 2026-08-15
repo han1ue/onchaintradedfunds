@@ -220,7 +220,7 @@ button { color: inherit; }
 .leaderboardSummary { display: grid; justify-items: end; gap: 9px; color: var(--text-muted); font-size: .7rem; }
 .leaderboardSummary > span { display: flex; align-items: center; gap: 6px; }
 .leaderboardSummary svg { color: var(--teal); }
-.leaderboardViewTabs { width: fit-content; max-width: 100%; display: flex; gap: 3px; margin: 0 auto 12px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); }
+.leaderboardViewTabs { width: fit-content; max-width: 100%; display: flex; gap: 3px; margin: 0 0 12px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); justify-content: flex-start; }
 .leaderboardViewTabs a { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 5px; color: var(--text-muted); font-size: .7rem; font-weight: 700; }
 .leaderboardViewTabs a:hover { color: var(--text); background: var(--card-raised); }
 .leaderboardViewTabs a[aria-current="page"] { background: color-mix(in srgb, var(--teal) 11%, var(--surface)); color: var(--teal-readable); }

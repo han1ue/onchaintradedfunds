@@ -25,8 +25,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       </div>
     </section>
     <nav className="leaderboardViewTabs" aria-label="Leaderboard view">
-      <Link href="/leaderboard" aria-current={view === "otfs" ? "page" : undefined}>OTF leaderboard</Link>
-      <Link href="/leaderboard?view=voters" aria-current={view === "voters" ? "page" : undefined}>Voters &amp; XP</Link>
+      <Link href="/leaderboard" aria-current={view === "otfs" ? "page" : undefined}>OTFs</Link>
+      <Link href="/leaderboard?view=voters" aria-current={view === "voters" ? "page" : undefined}>Voters</Link>
     </nav>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
       {view === "otfs" ? <><div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div><Link className="button buttonPrimary leaderboardSubmitButton" href="/submit">Submit OTF</Link></div><ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} /><div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div></>
