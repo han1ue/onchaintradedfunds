@@ -111,7 +111,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     if (!response.ok) {
       if (action === "prepare") setTurnstileResetKey((current) => current + 1);
       const code = typeof json.error?.code === "string" ? json.error.code : undefined;
-      setMessage(code ? errorMessages[code] ?? code : "Your votes could not be cast.");
+      setMessage(code ? errorMessages[code] ?? "Your votes could not be cast. Please try again." : "Your votes could not be cast.");
       return;
     }
     if (action === "prepare") setChallenge(json.data);

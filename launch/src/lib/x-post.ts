@@ -20,7 +20,7 @@ function voteChoicesLine(choices: VotePostChoice[]) {
 
 export function buildVotePost(reason: string, siteUrl: string, challenge?: string, choices: VotePostChoice[] = []) {
   const context = reason.trim();
-  return `${context ? `${context}\n\n` : ""}I cast unlocked votes in OTF Launch${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
+  return `${context ? `${context}\n\n` : ""}I just voted in the OTF Launch competition.${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
 }
 
 export function buildXIntentUrl(text: string) {

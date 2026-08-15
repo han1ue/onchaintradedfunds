@@ -457,7 +457,7 @@ button { color: inherit; }
 .ballotActionArea { grid-column: 1 / -1; display: grid; gap: 10px; }
 .ballotSummary { padding: 18px; }
 .ballotSummaryStatus { display: grid; gap: 8px; }
-.ballotSummaryCount { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.ballotSummaryCount { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ballotSummary .ballotSummaryCount > span { color: var(--text); font-size: .98rem; font-weight: 750; letter-spacing: -.015em; }
 .ballotSummary span { color: var(--text-muted); font-size: .7rem; }
 .ballotSummary strong { color: var(--gold); font-size: 1.8rem; line-height: 1; font-variant-numeric: tabular-nums; }
