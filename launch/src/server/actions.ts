@@ -17,7 +17,6 @@ export async function saveProposalDraft(input: unknown) {
   const parsed = proposalInputSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
-  if (parsed.competitionId !== competition.id) throw new Error("COMPETITION_NOT_OPEN");
 
   const selectedAssets = await database.select().from(eligibleAssets).where(inArray(eligibleAssets.id, parsed.allocations.map((item) => item.assetId)));
   if (selectedAssets.length !== parsed.allocations.length) throw new Error("ASSET_INELIGIBLE");

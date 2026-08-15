@@ -337,7 +337,7 @@ INSERT INTO "competitions" (
 	"slug", "name", "phase", "starts_at", "ends_at", "min_followers", "min_account_age_days", "rules_frozen_at"
 ) VALUES (
 	'genesis', 'Genesis Competition', 'open', CURRENT_TIMESTAMP,
-	date_trunc('day', CURRENT_TIMESTAMP + interval '60 days'), 100, 30, CURRENT_TIMESTAMP
+	date_trunc('day', CURRENT_TIMESTAMP + interval '37 days'), 100, 30, CURRENT_TIMESTAMP
 ) ON CONFLICT ("slug") DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "eligible_assets" ("symbol", "name", "contract_address") VALUES

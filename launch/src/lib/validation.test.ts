@@ -1,27 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema } from "./validation";
+import { ballotActivationSchema, earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
 const assetB = "22222222-2222-4222-8222-222222222222";
-const competitionId = "33333333-3333-4333-8333-333333333333";
-
 describe("proposal validation", () => {
   it("normalizes ticker input before submission", () => {
     expect(normalizeTickerInput(" aix  ")).toBe("AIX");
     expect(normalizeTickerInput("ai/x-longer-than-sixteen-characters")).toBe("AIX-LONGER-THAN-");
   });
   it("accepts exactly 10,000 basis points across distinct assets", () => {
-    expect(proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).allocations).toHaveLength(2);
+    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).allocations).toHaveLength(2);
   });
   it("accepts a thesis of any non-empty length", () => {
-    expect(proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).thesis).toBe("A");
+    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).thesis).toBe("A");
   });
   it("rejects allocations that do not total 100%", () => {
-    expect(() => proposalInputSchema.parse({ competitionId, name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 3000 }] })).toThrow(/100%/);
+    expect(() => proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 3000 }] })).toThrow(/100%/);
   });
   it("rejects duplicate assets and names without the OTF suffix", () => {
-    expect(() => proposalInputSchema.parse({ competitionId, name: "Compute", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 5000 }, { assetId: assetA, weightBps: 5000 }] })).toThrow();
+    expect(() => proposalInputSchema.parse({ name: "Compute", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 5000 }, { assetId: assetA, weightBps: 5000 }] })).toThrow();
   });
 });
 
@@ -33,15 +31,19 @@ describe("proof links", () => {
   it("rejects lookalike hosts", () => expect(() => parseXPostId("https://x.com.evil.test/a/status/1")).toThrow("PROOF_MISMATCH"));
 });
 
-describe("100-vote ballot validation", () => {
-  it("accepts exactly 100 votes across distinct proposals", () => {
-    expect(voteDistributionSchema.parse([{ proposalId: assetA, votes: 65 }, { proposalId: assetB, votes: 35 }])).toHaveLength(2);
+describe("earned-vote ballot validation", () => {
+  it("accepts a partial set of earned votes across distinct proposals", () => {
+    expect(voteDistributionSchema.parse([{ proposalId: assetA, votes: 3 }, { proposalId: assetB, votes: 2 }])).toHaveLength(2);
   });
-  it("rejects distributions that do not total 100 votes", () => {
-    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 60 }, { proposalId: assetB, votes: 30 }])).toThrow(/100/);
+  it("rejects distributions above the 12-vote maximum", () => {
+    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 7 }, { proposalId: assetB, votes: 6 }])).toThrow(/12/);
   });
   it("rejects duplicate proposals", () => {
-    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 50 }, { proposalId: assetA, votes: 50 }])).toThrow(/unique/);
+    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 1 }, { proposalId: assetA, votes: 1 }])).toThrow(/unique/);
+  });
+  it("keeps vote disclosure off unless the voter enables it", () => {
+    const ballot = ballotActivationSchema.parse({ reason: "I want to support strong OTF proposals.", allocations: [{ proposalId: assetA, votes: 1 }] });
+    expect(ballot.revealVotes).toBe(false);
   });
 });
 

@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { earliestLaunchAt, rankEntries } from "@/lib/validation";
+import { COMPETITION_RULES } from "@/lib/competition";
 import { requireSession } from "./guards";
 import { adminXIds } from "./env";
 import { requireDb } from "./db";
@@ -17,23 +18,6 @@ export async function requireAdmin() {
   return session;
 }
 
-function defaultCompetitionEnd(date: Date) {
-  const result = new Date(date);
-  result.setUTCDate(result.getUTCDate() + 60);
-  result.setUTCHours(0, 0, 0, 0);
-  return result;
-}
-
-export async function createCompetition(input: { slug: string; name: string; startsAt?: string; endsAt?: string; minFollowers?: number; minAccountAgeDays?: number }) {
-  const database = requireDb(); const session = await requireAdmin();
-  const startsAt = input.startsAt ? new Date(input.startsAt) : new Date();
-  const endsAt = input.endsAt ? new Date(input.endsAt) : defaultCompetitionEnd(startsAt);
-  if (!/^[a-z0-9-]{2,40}$/.test(input.slug) || input.name.trim().length < 3 || !Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) throw new Error("INVALID_COMPETITION");
-  const [competition] = await database.insert(competitions).values({ slug: input.slug, name: input.name.trim(), startsAt, endsAt, minFollowers: input.minFollowers ?? 100, minAccountAgeDays: input.minAccountAgeDays ?? 30, phase: startsAt <= new Date() ? "open" : "scheduled", rulesFrozenAt: startsAt <= new Date() ? new Date() : undefined }).returning();
-  await database.insert(adminActions).values({ adminUserId: session.user.id, action: "competition.create", targetType: "competition", targetId: competition.id, reason: "Create competition with frozen 100-vote ballot defaults", after: competition });
-  return competition;
-}
-
 export async function moderateProposal(proposalId: string, status: "hidden" | "disqualified", reason: string) {
   const database = requireDb(); const session = await requireAdmin();
   if (reason.trim().length < 8) throw new Error("REASON_REQUIRED");
@@ -41,7 +25,7 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   if (!before) throw new Error("PROPOSAL_NOT_FOUND");
   const [after] = await database.update(proposals).set({ status, moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
-  await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: "v2", metadata: { reason } });
+  await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: COMPETITION_RULES.ruleVersion, metadata: { reason } });
   return after;
 }
 
@@ -63,7 +47,11 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
       await database.transaction(async (transaction) => {
         await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
         await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
-        await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.evidenceId, evidence.id));
+        if (evidence.action === "vote") {
+          const [voteActivity] = await transaction.select({ ballotId: activityEvents.ballotId }).from(activityEvents)
+            .where(eq(activityEvents.evidenceId, evidence.id)).limit(1);
+          if (voteActivity?.ballotId) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, voteActivity.ballotId));
+        }
         if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
       });
     }
@@ -71,11 +59,13 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
   }
 }
 
-export async function finalizeCompetition(competitionId: string) {
+export async function finalizeCompetition() {
   const database = requireDb(); await requireAdmin();
-  const [competition] = await database.select().from(competitions).where(eq(competitions.id, competitionId)).limit(1);
+  const [state] = await database.select().from(competitions).limit(1);
+  const competition = state ? { ...state, ...COMPETITION_RULES } : null;
   if (!competition || Date.now() < competition.endsAt.getTime()) throw new Error("COMPETITION_NOT_ENDED");
   if (competition.finalizedAt) throw new Error("ALREADY_FINALIZED");
+  const competitionId = competition.id;
   const [run] = await database.insert(finalizationRuns).values({ competitionId, status: "auditing" }).returning();
   await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
   try {
@@ -103,8 +93,11 @@ export async function finalizeCompetition(competitionId: string) {
   }
 }
 
-export async function exportLaunchOrder(competitionId: string) {
+export async function exportLaunchOrder() {
   const database = requireDb(); await requireAdmin();
+  const [competition] = await database.select({ id: competitions.id }).from(competitions).limit(1);
+  if (!competition) throw new Error("COMPETITION_NOT_FOUND");
+  const competitionId = competition.id;
   const [snapshot] = await database.select().from(leaderboardSnapshots).where(eq(leaderboardSnapshots.competitionId, competitionId)).limit(1);
   if (!snapshot) throw new Error("FINALIZATION_NOT_FOUND");
   const rows = await database.select({ rank: launchQueue.rank, proposalId: launchQueue.proposalId, earliestLaunchAt: launchQueue.earliestLaunchAt, status: launchQueue.status, name: proposals.name, ticker: proposals.ticker, slug: proposals.slug })

@@ -1,18 +1,18 @@
 import { z } from "zod";
+import { COMPETITION_RULES } from "./competition";
 
 export const allocationSchema = z.object({
   assetId: z.string().uuid(),
-  weightBps: z.number().int().min(100).max(10_000)
+  weightBps: z.number().int().min(COMPETITION_RULES.minAssetWeightBps).max(COMPETITION_RULES.portfolioWeightBps)
 });
 
 export const proposalInputSchema = z.object({
-  competitionId: z.string().uuid(),
   name: z.string().trim().min(5).max(80).refine((value) => value.endsWith(" OTF"), "Name must end in OTF"),
   ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9-]{0,15}$/),
   thesis: z.string().trim().min(1, "Thesis is required").refine((value) => Buffer.byteLength(value, "utf8") <= 2048, "Thesis must be at most 2,048 bytes"),
-  allocations: z.array(allocationSchema).min(2).superRefine((items, context) => {
+  allocations: z.array(allocationSchema).min(COMPETITION_RULES.minAssets).superRefine((items, context) => {
     if (new Set(items.map((item) => item.assetId)).size !== items.length) context.addIssue({ code: "custom", message: "Assets must be unique" });
-    if (items.reduce((sum, item) => sum + item.weightBps, 0) !== 10_000) context.addIssue({ code: "custom", message: "Weights must total 100%" });
+    if (items.reduce((sum, item) => sum + item.weightBps, 0) !== COMPETITION_RULES.portfolioWeightBps) context.addIssue({ code: "custom", message: "Weights must total 100%" });
   })
 });
 
@@ -30,21 +30,20 @@ export const xPostProofSchema = z.object({
 
 export const voteAllocationSchema = z.object({
   proposalId: z.string().uuid(),
-  votes: z.number().int().min(1).max(100)
+  votes: z.number().int().min(1).max(COMPETITION_RULES.totalVotes)
 });
 
 export const voteDistributionSchema = z.array(voteAllocationSchema).min(1).superRefine((items, context) => {
   if (new Set(items.map((item) => item.proposalId)).size !== items.length) context.addIssue({ code: "custom", message: "OTF proposals must be unique" });
-  if (items.reduce((sum, item) => sum + item.votes, 0) !== 100) context.addIssue({ code: "custom", message: "Votes must total 100" });
+  if (items.reduce((sum, item) => sum + item.votes, 0) > COMPETITION_RULES.totalVotes) context.addIssue({ code: "custom", message: `Votes cannot exceed ${COMPETITION_RULES.totalVotes}` });
 });
 
 export const ballotActivationSchema = z.object({
   reason: xPostReasonSchema,
   allocations: voteDistributionSchema,
+  revealVotes: z.boolean().default(false),
   turnstileToken: z.string().optional()
 });
-
-export const ballotUpdateSchema = z.object({ allocations: voteDistributionSchema });
 
 export function parseXPostId(value: string) {
   const url = new URL(value);
@@ -62,7 +61,7 @@ export function rankEntries<T extends Rankable>(entries: T[]) {
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
 
-export function earliestLaunchAt(start: Date, rank: number, intervalDays = 4) {
+export function earliestLaunchAt(start: Date, rank: number, intervalDays = COMPETITION_RULES.launchIntervalDays) {
   if (!Number.isInteger(rank) || rank < 1) throw new Error("INVALID_RANK");
   return new Date(start.getTime() + (rank - 1) * intervalDays * 86_400_000);
 }

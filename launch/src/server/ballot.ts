@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
-import { canUpdateBallot, getBallotUpdateAvailableAt } from "@/lib/ballot-cooldown";
+import { getUnlockedVoteCount, getVotingStartsAt } from "@/lib/competition";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
-import { ballotActivationSchema, ballotUpdateSchema, voteDistributionSchema, xPostProofSchema } from "@/lib/validation";
+import { ballotActivationSchema, voteDistributionSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
 import {
   activityEvents, ballotAllocations, ballots, competitions, evidenceChecks, proposals,
@@ -25,13 +25,38 @@ async function assertValidDistribution(
   allocations: VoteAllocation[]
 ) {
   const proposalIds = allocations.map((allocation) => allocation.proposalId);
-  const selected = await database.select({ id: proposals.id })
+  const selected = await database.select({ id: proposals.id, ticker: proposals.ticker })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
       eq(proposals.status, "accepted"),
       inArray(proposals.id, proposalIds)
   ));
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
+  return selected;
+}
+
+function totalVotes(allocations: VoteAllocation[]) {
+  return allocations.reduce((sum, allocation) => sum + allocation.votes, 0);
+}
+
+function assertVotesUnlocked(startsAt: Date | string, allocations: VoteAllocation[], now: Date = new Date()) {
+  if (totalVotes(allocations) > getUnlockedVoteCount(startsAt, now)) throw new Error("VOTES_NOT_UNLOCKED");
+}
+
+function assertOnlyAddsVotes(previous: VoteAllocation[], next: VoteAllocation[]) {
+  const nextVotes = new Map(next.map((allocation) => [allocation.proposalId, allocation.votes]));
+  for (const allocation of previous) {
+    if ((nextVotes.get(allocation.proposalId) ?? 0) < allocation.votes) throw new Error("VOTES_ARE_FINAL");
+  }
+  if (totalVotes(next) <= totalVotes(previous)) throw new Error("NO_NEW_VOTES");
+}
+
+function addedVotes(previous: VoteAllocation[], next: VoteAllocation[]) {
+  const previousVotes = new Map(previous.map((allocation) => [allocation.proposalId, allocation.votes]));
+  return next.map((allocation) => ({
+    proposalId: allocation.proposalId,
+    votes: allocation.votes - (previousVotes.get(allocation.proposalId) ?? 0),
+  })).filter((allocation) => allocation.votes > 0);
 }
 
 export async function getBallotSummary(competitionId: string, voterUserId: string): Promise<BallotSummary | null> {
@@ -54,8 +79,6 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
     status: ballot.status,
     activatedAt: ballot.activatedAt?.toISOString() ?? null,
     updatedAt: ballot.updatedAt.toISOString(),
-    updateAvailableAt: getBallotUpdateAvailableAt(ballot.updatedAt).toISOString(),
-    canUpdate: canUpdateBallot(ballot.updatedAt),
     proofUrl: ballot.proofUrl,
     allocations,
   };
@@ -64,15 +87,25 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
 export async function prepareBallotProof(input: unknown) {
   const parsed = ballotActivationSchema.parse(input);
   const database = requireDb();
-  const { session, competition } = await requireEligibleActor();
-  await assertValidDistribution(database, competition.id, parsed.allocations);
-  const [existing] = await database.select({ status: ballots.status }).from(ballots).where(and(
+  const { session, competition } = await requireEligibleActor({ votingRequired: true });
+  const selectedProposals = await assertValidDistribution(database, competition.id, parsed.allocations);
+  assertVotesUnlocked(competition.startsAt, parsed.allocations);
+  const [existing] = await database.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
     eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id)
   )).limit(1);
-  if (existing?.status === "valid") throw new Error("BALLOT_ALREADY_ACTIVE");
+  const previousAllocations = existing?.status === "valid"
+    ? await database.select({ proposalId: ballotAllocations.proposalId, votes: ballotAllocations.votes })
+      .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
+    : [];
+  if (existing?.status === "valid") assertOnlyAddsVotes(previousAllocations, parsed.allocations);
+  const additions = addedVotes(previousAllocations, parsed.allocations);
 
   const token = newChallengeToken();
-  const postText = buildVotePost(parsed.reason, env.NEXT_PUBLIC_SITE_URL, token);
+  const tickers = new Map(selectedProposals.map((proposal) => [proposal.id, proposal.ticker]));
+  const disclosedChoices = parsed.revealVotes
+    ? additions.map((allocation) => ({ ticker: tickers.get(allocation.proposalId) ?? "OTF", votes: allocation.votes }))
+    : [];
+  const postText = buildVotePost(parsed.reason, env.NEXT_PUBLIC_SITE_URL, token, disclosedChoices);
   if (approximateXPostLength(postText) > 280) throw new Error("POST_TOO_LONG");
   const [challenge] = await database.insert(xActionChallenges).values({
     action: "vote",
@@ -82,7 +115,7 @@ export async function prepareBallotProof(input: unknown) {
     token,
     reason: parsed.reason,
     postText,
-    payload: { allocations: parsed.allocations },
+    payload: { allocations: parsed.allocations, revealVotes: parsed.revealVotes },
     expiresAt: new Date(Date.now() + challengeLifetimeMs),
   }).returning({ id: xActionChallenges.id, expiresAt: xActionChallenges.expiresAt });
   return { challengeId: challenge.id, expiresAt: challenge.expiresAt.toISOString(), postText, intentUrl: buildXIntentUrl(postText) };
@@ -91,7 +124,7 @@ export async function prepareBallotProof(input: unknown) {
 export async function verifyBallotProof(input: unknown) {
   const parsed = xPostProofSchema.parse(input);
   const database = requireDb();
-  const { session, user, competition } = await requireEligibleActor();
+  const { session, user, competition } = await requireEligibleActor({ votingRequired: true });
   const [challenge] = await database.select().from(xActionChallenges).where(and(
     eq(xActionChallenges.id, parsed.challengeId),
     eq(xActionChallenges.action, "vote"),
@@ -113,15 +146,23 @@ export async function verifyBallotProof(input: unknown) {
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)
     )).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
-    const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(
+    const [openCompetition] = await transaction.select({ id: competitions.id, startsAt: competitions.startsAt }).from(competitions).where(and(
       eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`
     )).limit(1);
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
+    if (activatedAt < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
+    assertVotesUnlocked(openCompetition.startsAt, allocations, activatedAt);
 
-    const [existing] = await transaction.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
+    await transaction.execute(sql`select id from ballots where competition_id = ${competition.id} and voter_user_id = ${session.user.id} for update`);
+    const [existing] = await transaction.select({ id: ballots.id, status: ballots.status, activatedAt: ballots.activatedAt }).from(ballots).where(and(
       eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id)
     )).limit(1);
-    if (existing?.status === "valid") throw new Error("BALLOT_ALREADY_ACTIVE");
+    const previousAllocations = existing?.status === "valid"
+      ? await transaction.select({ proposalId: ballotAllocations.proposalId, votes: ballotAllocations.votes })
+        .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
+      : [];
+    if (existing?.status === "valid") assertOnlyAddsVotes(previousAllocations, allocations);
+    const votesAdded = totalVotes(allocations) - totalVotes(previousAllocations);
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "vote",
       competitionId: competition.id,
@@ -141,8 +182,15 @@ export async function verifyBallotProof(input: unknown) {
       rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000),
     }).returning();
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
+    const isUpdate = existing?.status === "valid";
     const [ballot] = existing
-      ? await transaction.update(ballots).set({ evidenceId: evidence.id, followerCount: user.followersCount, status: "valid", activatedAt, invalidatedAt: null, updatedAt: activatedAt }).where(eq(ballots.id, existing.id)).returning()
+      ? await transaction.update(ballots).set({
+        ...(isUpdate ? {} : { evidenceId: evidence.id, activatedAt }),
+        followerCount: user.followersCount,
+        status: "valid",
+        invalidatedAt: null,
+        updatedAt: activatedAt,
+      }).where(eq(ballots.id, existing.id)).returning()
       : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, evidenceId: evidence.id, followerCount: user.followersCount, status: "valid", activatedAt }).returning();
     await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
     await transaction.insert(ballotAllocations).values(allocations.map((allocation) => ({ ballotId: ballot.id, ...allocation, updatedAt: activatedAt })));
@@ -151,10 +199,10 @@ export async function verifyBallotProof(input: unknown) {
       actorUserId: session.user.id,
       ballotId: ballot.id,
       evidenceId: evidence.id,
-      eventType: "ballot.activated",
+      eventType: isUpdate ? "ballot.updated" : "ballot.activated",
       occurredAt: activatedAt,
       ruleVersion: competition.ruleVersion,
-      metadata: { votes: 100, proposals: allocations.length, xPostId: post.id, verifiedBy: "oembed-challenge" },
+      metadata: { votesAdded, votes: totalVotes(allocations), proposals: allocations.length, xPostId: post.id, verifiedBy: "oembed-challenge" },
     });
     return {
       action: "ballot" as const,
@@ -163,41 +211,6 @@ export async function verifyBallotProof(input: unknown) {
       embedHtml: post.embedHtml,
       allocations,
       updatedAt: activatedAt.toISOString(),
-      updateAvailableAt: getBallotUpdateAvailableAt(activatedAt).toISOString(),
-    };
-  });
-}
-
-export async function updateBallotDistribution(input: unknown) {
-  const parsed = ballotUpdateSchema.parse(input);
-  const database = requireDb();
-  const { session, competition } = await requireEligibleActor();
-  await assertValidDistribution(database, competition.id, parsed.allocations);
-  const updatedAt = new Date();
-  return database.transaction(async (transaction) => {
-    await transaction.execute(sql`select id from ballots where competition_id = ${competition.id} and voter_user_id = ${session.user.id} for update`);
-    const [ballot] = await transaction.select({ id: ballots.id, updatedAt: ballots.updatedAt }).from(ballots).where(and(
-      eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id), eq(ballots.status, "valid")
-    )).limit(1);
-    if (!ballot) throw new Error("BALLOT_NOT_ACTIVE");
-    if (!canUpdateBallot(ballot.updatedAt, updatedAt)) throw new Error("BALLOT_COOLDOWN");
-    await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
-    await transaction.insert(ballotAllocations).values(parsed.allocations.map((allocation) => ({ ballotId: ballot.id, ...allocation, updatedAt })));
-    await transaction.update(ballots).set({ updatedAt }).where(eq(ballots.id, ballot.id));
-    await transaction.insert(activityEvents).values({
-      competitionId: competition.id,
-      actorUserId: session.user.id,
-      ballotId: ballot.id,
-      eventType: "ballot.updated",
-      occurredAt: updatedAt,
-      ruleVersion: competition.ruleVersion,
-      metadata: { votes: 100, proposals: parsed.allocations.length },
-    });
-    return {
-      ballotId: ballot.id,
-      allocations: parsed.allocations,
-      updatedAt: updatedAt.toISOString(),
-      updateAvailableAt: getBallotUpdateAvailableAt(updatedAt).toISOString(),
     };
   });
 }

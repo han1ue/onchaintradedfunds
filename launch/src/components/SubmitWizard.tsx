@@ -68,7 +68,6 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        competitionId: competition.id,
         name,
         ticker: normalizeTickerInput(ticker),
         thesis,

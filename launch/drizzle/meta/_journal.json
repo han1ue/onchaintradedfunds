@@ -15,6 +15,20 @@
       "when": 1786676361480,
       "tag": "0001_allow_self_votes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786750600624,
+      "tag": "0002_sour_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786752480745,
+      "tag": "0003_sturdy_winter_soldier",
+      "breakpoints": true
     }
   ]
 }

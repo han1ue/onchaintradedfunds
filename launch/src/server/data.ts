@@ -1,18 +1,20 @@
 import { demoAssets, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
+import { COMPETITION_IDENTITY, COMPETITION_RULES } from "@/lib/competition";
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "@/lib/types";
 import { sqlClient } from "./db";
 
 export async function getCompetition(): Promise<CompetitionSummary> {
   if (!sqlClient) return demoCompetition;
   const rows = await sqlClient<CompetitionSummary[]>`
-    select c.id::text, c.slug, c.name, c.phase, c.starts_at as "startsAt", c.ends_at as "endsAt",
-      c.min_followers as "minFollowers", c.min_account_age_days as "minAccountAgeDays",
+    select c.id::text, ${COMPETITION_IDENTITY.slug}::text as slug, ${COMPETITION_IDENTITY.name}::text as name,
+      c.phase, c.starts_at as "startsAt", c.ends_at as "endsAt",
+      ${COMPETITION_RULES.minFollowers}::int as "minFollowers",
+      ${COMPETITION_RULES.minAccountAgeDays}::int as "minAccountAgeDays",
       (select count(*)::int from proposals p where p.competition_id = c.id and p.status in ('accepted','hidden')) as "proposalCount",
       (select coalesce(sum(ba.votes), 0)::int from ballots b join ballot_allocations ba on ba.ballot_id = b.id where b.competition_id = c.id and b.status = 'valid') as "voteCount",
       (select count(*)::int from ballots b where b.competition_id = c.id and b.status = 'valid') as "uniqueVoterCount"
     from competitions c
-    where c.phase in ('open','auditing','final')
-    order by c.starts_at desc limit 1`;
+    limit 1`;
   if (!rows[0]) throw new Error("COMPETITION_NOT_FOUND");
   return rows[0];
 }
@@ -36,7 +38,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       from proposals p join users u on u.id = p.creator_user_id
       left join ballot_allocations ba on ba.proposal_id = p.id
       left join ballots b on b.id = ba.ballot_id
-      where p.status = 'accepted'
+      where p.status = 'accepted' and p.competition_id = (select id from competitions limit 1)
       group by p.id, u.id
     ), ordered as (
       select *, row_number() over (order by votes desc, accepted_at asc, id asc)::int as rank from ranked

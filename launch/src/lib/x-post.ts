@@ -1,4 +1,5 @@
 export type XPostProposal = { name: string; ticker: string; slug: string };
+export type VotePostChoice = { ticker: string; votes: number };
 
 export function slugifyProposalName(value: string) {
   return value.toLowerCase().replace(/\s+otf$/i, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-otf";
@@ -12,8 +13,12 @@ export function buildSubmissionPost(reason: string, proposal: XPostProposal, sit
   return `${reason}\n\nI submitted ${proposal.name} as an OTF proposal to OTF Launch${challenge ? ` · ${challenge}` : ""}\n${proposalUrl(siteUrl, proposal.slug)}`;
 }
 
-export function buildVotePost(reason: string, siteUrl: string, challenge?: string) {
-  return `${reason}\n\nI activated my 100 votes in OTF Launch${challenge ? ` · ${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
+function voteChoicesLine(choices: VotePostChoice[]) {
+  return choices.length ? `\nMy picks: ${choices.map((choice) => `${choice.votes}× $${choice.ticker}`).join(", ")}` : "";
+}
+
+export function buildVotePost(reason: string, siteUrl: string, challenge?: string, choices: VotePostChoice[] = []) {
+  return `${reason}\n\nI cast unlocked votes in OTF Launch${voteChoicesLine(choices)}${challenge ? `\n${challenge}` : ""}\n${siteUrl.replace(/\/$/, "")}/vote`;
 }
 
 export function buildXIntentUrl(text: string) {

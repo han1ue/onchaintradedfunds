@@ -59,8 +59,6 @@ export type BallotSummary = {
   status: "posting" | "valid" | "invalid";
   activatedAt: string | null;
   updatedAt: string;
-  updateAvailableAt: string;
-  canUpdate: boolean;
   proofUrl?: string | null;
   allocations: VoteAllocation[];
 };

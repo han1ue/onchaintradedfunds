@@ -77,24 +77,16 @@ export const verificationTokens = pgTable("verification_tokens", {
 
 export const competitions = pgTable("competitions", {
   id: uuid("id").defaultRandom().primaryKey(),
-  slug: text("slug").notNull().unique(),
-  name: text("name").notNull(),
+  singleton: boolean("singleton").default(true).notNull().unique(),
   phase: competitionPhase("phase").default("draft").notNull(),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   launchStartAt: timestamp("launch_start_at", { withTimezone: true }),
-  launchIntervalDays: integer("launch_interval_days").default(4).notNull(),
-  minFollowers: integer("min_followers").default(100).notNull(),
-  minAccountAgeDays: integer("min_account_age_days").default(30).notNull(),
-  minAssets: integer("min_assets").default(2).notNull(),
-  minAssetWeightBps: integer("min_asset_weight_bps").default(100).notNull(),
-  ruleVersion: text("rule_version").default("v2").notNull(),
-  rankingPolicyVersion: text("ranking_policy_version").default("allocated-votes-v2").notNull(),
   rulesFrozenAt: timestamp("rules_frozen_at", { withTimezone: true }),
   finalizedAt: timestamp("finalized_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [
-  check("competition_positive_thresholds", sql`${table.minFollowers} >= 0 and ${table.minAccountAgeDays} >= 0 and ${table.launchIntervalDays} > 0`),
+  check("competition_singleton", sql`${table.singleton} = true`),
   check("competition_time_order", sql`${table.endsAt} > ${table.startsAt}`)
 ]);
 
@@ -213,7 +205,7 @@ export const ballotAllocations = pgTable("ballot_allocations", {
 }, (table) => [
   primaryKey({ columns: [table.ballotId, table.proposalId] }),
   index("ballot_allocations_proposal_idx").on(table.proposalId),
-  check("ballot_allocation_votes_range", sql`${table.votes} between 1 and 100`)
+  check("ballot_allocation_votes_range", sql`${table.votes} between 1 and 12`)
 ]);
 
 export const activityEvents = pgTable("activity_events", {

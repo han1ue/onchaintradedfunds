@@ -8,15 +8,19 @@ export function VotePanel({
   proposal,
   eligibility,
   allocatedVotes,
+  availability,
 }: {
   proposal: { name: string; slug: string };
   eligibility: ParticipationEligibility;
   allocatedVotes: number;
+  availability: { votingOpen: boolean; unlockedVotes: number; votingStartsAt: string };
 }) {
-  return <SectionCard className="votePanel"><div className="cardHeading"><div><span>Your 100 votes</span><small>Distribute them across OTF proposals</small></div><Vote size={19} /></div><div className="panelBody ballotCta">
-    <div><strong>{allocatedVotes > 0 ? `${allocatedVotes} votes allocated here` : `Allocate votes to ${proposal.name}`}</strong><p>Choose how many of your 100 votes this OTF should receive. You can change your distribution once every 24 hours.</p></div>
-    {!eligibility.eligible
-      ? <EligibilityAction eligibility={eligibility} action="vote" callbackUrl={`/vote?focus=${proposal.slug}`}>{eligibility.connected ? "Use another X account" : "Sign in to distribute votes"}</EligibilityAction>
-      : <Link className="button buttonPrimary" href={`/vote?focus=${proposal.slug}`}>{allocatedVotes > 0 ? "Manage your votes" : "Distribute your votes"}</Link>}
+  return <SectionCard className="votePanel"><div className="cardHeading"><div><span>Your votes</span><small>{availability.votingOpen ? `${availability.unlockedVotes} unlocked now · 12 maximum` : "Voting begins after the submission week"}</small></div><Vote size={19} /></div><div className="panelBody ballotCta">
+    <div><strong>{!availability.votingOpen ? "Voting opens on competition day 8" : allocatedVotes > 0 ? `${allocatedVotes} ${allocatedVotes === 1 ? "vote" : "votes"} cast here` : `Vote for ${proposal.name}`}</strong><p>{availability.votingOpen ? "Cast any newly unlocked votes you want this OTF to receive. Once cast, a vote cannot be moved or removed." : `Three votes unlock at ${new Date(availability.votingStartsAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. You can keep submitting OTFs after voting opens.`}</p></div>
+    {!availability.votingOpen
+      ? <Link className="button buttonSecondary" href="/vote">See voting schedule</Link>
+      : !eligibility.eligible
+      ? <EligibilityAction eligibility={eligibility} action="vote" callbackUrl={`/vote?focus=${proposal.slug}`}>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction>
+      : <Link className="button buttonPrimary" href={`/vote?focus=${proposal.slug}`}>{allocatedVotes > 0 ? "Cast more votes" : "Cast a vote"}</Link>}
   </div></SectionCard>;
 }

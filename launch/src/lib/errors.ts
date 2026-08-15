@@ -14,9 +14,12 @@ export const errorMessages: Record<string, string> = {
   RATE_LIMIT_UNAVAILABLE: "Request protection is temporarily unavailable. Please try again shortly.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
-  BALLOT_ALREADY_ACTIVE: "Your 100-vote ballot is already active. Update its distribution instead.",
-  BALLOT_NOT_ACTIVE: "Activate your 100-vote ballot before changing its distribution.",
-  BALLOT_COOLDOWN: "Vote distributions can only change once every 24 hours. Return after the current cooldown ends.",
+  BALLOT_ALREADY_ACTIVE: "Your ballot is already active. Cast newly unlocked votes from your existing ballot.",
+  BALLOT_NOT_ACTIVE: "Activate your ballot before casting newly unlocked votes.",
+  VOTING_NOT_OPEN: "Voting opens on competition day 8. OTF submissions are open now.",
+  VOTES_NOT_UNLOCKED: "You tried to cast more votes than are currently unlocked. Wait for the next vote to unlock.",
+  VOTES_ARE_FINAL: "Votes already cast cannot be moved or removed. Add only newly unlocked votes.",
+  NO_NEW_VOTES: "Add at least one newly unlocked vote before continuing.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
   COMPETITION_NOT_OPEN: "The competition is not currently open."
 };
