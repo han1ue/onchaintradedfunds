@@ -80,7 +80,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
     </div>
     {points.length < 2 || !layout || !active ? <div className="returnsEmpty">
       <ChartNoAxesCombined size={22} aria-hidden="true" />
-      <div><strong>{points.length === 1 ? "First observation recorded" : "Return history is starting"}</strong><p>{points.length === 1 ? "The line appears after the next hourly price sample." : "The first complete price observation will establish the baseline."}</p></div>
+      <div><strong>{points.length === 1 ? "First observation recorded" : "Return history is starting"}</strong><p>{points.length === 1 ? "The returns chart appears after the next hourly price sample." : "The first complete price observation will establish the baseline."}</p></div>
     </div> : <>
       <div
         className="returnsPlot"
