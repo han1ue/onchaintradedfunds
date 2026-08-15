@@ -5,57 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786674663670,
-      "tag": "0000_unusual_dust",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1786676361480,
-      "tag": "0001_allow_self_votes",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786750600624,
-      "tag": "0002_sour_blade",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786752480745,
-      "tag": "0003_sturdy_winter_soldier",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1786759651938,
-      "tag": "0004_fix_progressive_ballots",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1786761381470,
-      "tag": "0005_overjoyed_nomad",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1786805402977,
-      "tag": "0006_mute_colleen_wing",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1786807468419,
-      "tag": "0007_powerful_prowler",
+      "when": 1786825385403,
+      "tag": "0000_melodic_omega_red",
       "breakpoints": true
     }
   ]

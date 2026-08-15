@@ -1,1 +1,0 @@
-ALTER TABLE "users" ADD COLUMN "show_real_username_on_voter_leaderboard" boolean DEFAULT false NOT NULL;

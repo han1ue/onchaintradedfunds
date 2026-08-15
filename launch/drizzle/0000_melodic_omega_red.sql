@@ -4,6 +4,7 @@ CREATE TYPE "public"."evidence_status" AS ENUM('pending', 'valid', 'invalid', 'u
 CREATE TYPE "public"."launch_status" AS ENUM('waiting', 'eligible', 'launched', 'void');--> statement-breakpoint
 CREATE TYPE "public"."proposal_status" AS ENUM('draft', 'posting', 'accepted', 'hidden', 'disqualified', 'withdrawn');--> statement-breakpoint
 CREATE TYPE "public"."vote_status" AS ENUM('posting', 'valid', 'invalid');--> statement-breakpoint
+CREATE TYPE "public"."xp_run_status" AS ENUM('live', 'final');--> statement-breakpoint
 CREATE TABLE "activity_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"competition_id" uuid,
@@ -31,13 +32,22 @@ CREATE TABLE "admin_actions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "asset_price_snapshots" (
+	"asset_id" uuid NOT NULL,
+	"sampled_at" timestamp with time zone NOT NULL,
+	"capture_run_id" uuid,
+	"quote_generated_at" timestamp with time zone NOT NULL,
+	"bid_usd" numeric(24, 8) NOT NULL,
+	CONSTRAINT "asset_price_snapshots_asset_id_sampled_at_pk" PRIMARY KEY("asset_id","sampled_at")
+);
+--> statement-breakpoint
 CREATE TABLE "ballot_allocations" (
 	"ballot_id" uuid NOT NULL,
 	"proposal_id" uuid NOT NULL,
 	"votes" integer NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ballot_allocations_ballot_id_proposal_id_pk" PRIMARY KEY("ballot_id","proposal_id"),
-	CONSTRAINT "ballot_allocation_votes_range" CHECK ("ballot_allocations"."votes" between 1 and 100)
+	CONSTRAINT "ballot_allocation_votes_range" CHECK ("ballot_allocations"."votes" between 1 and 12)
 );
 --> statement-breakpoint
 CREATE TABLE "ballots" (
@@ -56,25 +66,17 @@ CREATE TABLE "ballots" (
 --> statement-breakpoint
 CREATE TABLE "competitions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"slug" text NOT NULL,
-	"name" text NOT NULL,
+	"singleton" boolean DEFAULT true NOT NULL,
 	"phase" "competition_phase" DEFAULT 'draft' NOT NULL,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"launch_start_at" timestamp with time zone,
-	"launch_interval_days" integer DEFAULT 4 NOT NULL,
-	"min_followers" integer DEFAULT 100 NOT NULL,
-	"min_account_age_days" integer DEFAULT 30 NOT NULL,
-	"min_assets" integer DEFAULT 2 NOT NULL,
-	"min_asset_weight_bps" integer DEFAULT 100 NOT NULL,
-	"rule_version" text DEFAULT 'v2' NOT NULL,
-	"ranking_policy_version" text DEFAULT 'allocated-votes-v2' NOT NULL,
 	"rules_frozen_at" timestamp with time zone,
 	"finalized_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "competitions_slug_unique" UNIQUE("slug"),
-	CONSTRAINT "competition_positive_thresholds" CHECK ("competitions"."min_followers" >= 0 and "competitions"."min_account_age_days" >= 0 and "competitions"."launch_interval_days" > 0),
+	CONSTRAINT "competitions_singleton_unique" UNIQUE("singleton"),
+	CONSTRAINT "competition_singleton" CHECK ("competitions"."singleton" = true),
 	CONSTRAINT "competition_time_order" CHECK ("competitions"."ends_at" > "competitions"."starts_at")
 );
 --> statement-breakpoint
@@ -138,6 +140,17 @@ CREATE TABLE "leaderboard_snapshots" (
 	CONSTRAINT "leaderboard_snapshots_competition_id_unique" UNIQUE("competition_id")
 );
 --> statement-breakpoint
+CREATE TABLE "price_capture_runs" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"sampled_at" timestamp with time zone NOT NULL,
+	"status" text NOT NULL,
+	"requested_asset_ids" uuid[] NOT NULL,
+	"missing_symbols" text[] DEFAULT ARRAY[]::text[] NOT NULL,
+	"provider" text DEFAULT 'robinhood-bid' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "price_capture_run_status" CHECK ("price_capture_runs"."status" in ('complete', 'partial'))
+);
+--> statement-breakpoint
 CREATE TABLE "proposal_assets" (
 	"proposal_id" uuid NOT NULL,
 	"asset_id" uuid NOT NULL,
@@ -157,6 +170,7 @@ CREATE TABLE "proposals" (
 	"thesis" text NOT NULL,
 	"status" "proposal_status" DEFAULT 'draft' NOT NULL,
 	"accepted_at" timestamp with time zone,
+	"initial_price_capture_run_id" uuid,
 	"moderated_reason" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -225,6 +239,7 @@ CREATE TABLE "users" (
 	"unavailable" boolean,
 	"provider_message" text,
 	"unavailable_reason" text,
+	"show_real_username_on_voter_leaderboard" boolean DEFAULT false NOT NULL,
 	"profile_bio" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"profile_fetched_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -237,6 +252,20 @@ CREATE TABLE "verification_tokens" (
 	"token" text NOT NULL,
 	"expires" timestamp NOT NULL,
 	CONSTRAINT "verification_tokens_identifier_token_pk" PRIMARY KEY("identifier","token")
+);
+--> statement-breakpoint
+CREATE TABLE "vote_tranches" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"competition_id" uuid NOT NULL,
+	"ballot_id" uuid NOT NULL,
+	"voter_user_id" text NOT NULL,
+	"proposal_id" uuid NOT NULL,
+	"evidence_id" uuid NOT NULL,
+	"quantity" integer NOT NULL,
+	"accepted_at" timestamp with time zone NOT NULL,
+	"effective_entry_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "vote_tranche_quantity_positive" CHECK ("vote_tranches"."quantity" > 0)
 );
 --> statement-breakpoint
 CREATE TABLE "x_action_challenges" (
@@ -255,12 +284,45 @@ CREATE TABLE "x_action_challenges" (
 	CONSTRAINT "x_action_challenges_token_unique" UNIQUE("token")
 );
 --> statement-breakpoint
+CREATE TABLE "xp_calculation_runs" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"competition_id" uuid NOT NULL,
+	"status" "xp_run_status" NOT NULL,
+	"calculated_at" timestamp with time zone NOT NULL,
+	"price_checkpoint_at" timestamp with time zone,
+	"performance_released" integer NOT NULL,
+	"performance_allocated" integer NOT NULL,
+	"participation_released" integer NOT NULL,
+	"participation_allocated" integer NOT NULL,
+	"creator_released" integer NOT NULL,
+	"creator_allocated" integer NOT NULL,
+	"policy_version" text NOT NULL,
+	"canonical_hash" text NOT NULL,
+	"canonical_json" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "xp_snapshot_rows" (
+	"run_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
+	"performance_xp" integer NOT NULL,
+	"participation_xp" integer NOT NULL,
+	"creator_xp" integer NOT NULL,
+	"total_xp" integer NOT NULL,
+	"unique_supporter_count" integer DEFAULT 0 NOT NULL,
+	"submission_boost" boolean DEFAULT false NOT NULL,
+	"pending_tranche_count" integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "xp_snapshot_rows_run_id_user_id_pk" PRIMARY KEY("run_id","user_id")
+);
+--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_ballot_id_ballots_id_fk" FOREIGN KEY ("ballot_id") REFERENCES "public"."ballots"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_evidence_id_tweet_evidence_id_fk" FOREIGN KEY ("evidence_id") REFERENCES "public"."tweet_evidence"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "admin_actions" ADD CONSTRAINT "admin_actions_admin_user_id_users_id_fk" FOREIGN KEY ("admin_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "asset_price_snapshots" ADD CONSTRAINT "asset_price_snapshots_asset_id_eligible_assets_id_fk" FOREIGN KEY ("asset_id") REFERENCES "public"."eligible_assets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "asset_price_snapshots" ADD CONSTRAINT "asset_price_snapshots_capture_run_id_price_capture_runs_id_fk" FOREIGN KEY ("capture_run_id") REFERENCES "public"."price_capture_runs"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ballot_allocations" ADD CONSTRAINT "ballot_allocations_ballot_id_ballots_id_fk" FOREIGN KEY ("ballot_id") REFERENCES "public"."ballots"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ballot_allocations" ADD CONSTRAINT "ballot_allocations_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ballots" ADD CONSTRAINT "ballots_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -277,14 +339,24 @@ ALTER TABLE "proposal_assets" ADD CONSTRAINT "proposal_assets_proposal_id_propos
 ALTER TABLE "proposal_assets" ADD CONSTRAINT "proposal_assets_asset_id_eligible_assets_id_fk" FOREIGN KEY ("asset_id") REFERENCES "public"."eligible_assets"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "proposals" ADD CONSTRAINT "proposals_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "proposals" ADD CONSTRAINT "proposals_creator_user_id_users_id_fk" FOREIGN KEY ("creator_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "proposals" ADD CONSTRAINT "proposals_initial_price_capture_run_id_price_capture_runs_id_fk" FOREIGN KEY ("initial_price_capture_run_id") REFERENCES "public"."price_capture_runs"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tweet_evidence" ADD CONSTRAINT "tweet_evidence_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vote_tranches" ADD CONSTRAINT "vote_tranches_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vote_tranches" ADD CONSTRAINT "vote_tranches_ballot_id_ballots_id_fk" FOREIGN KEY ("ballot_id") REFERENCES "public"."ballots"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vote_tranches" ADD CONSTRAINT "vote_tranches_voter_user_id_users_id_fk" FOREIGN KEY ("voter_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vote_tranches" ADD CONSTRAINT "vote_tranches_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vote_tranches" ADD CONSTRAINT "vote_tranches_evidence_id_tweet_evidence_id_fk" FOREIGN KEY ("evidence_id") REFERENCES "public"."tweet_evidence"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "x_action_challenges" ADD CONSTRAINT "x_action_challenges_proposal_id_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."proposals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "xp_calculation_runs" ADD CONSTRAINT "xp_calculation_runs_competition_id_competitions_id_fk" FOREIGN KEY ("competition_id") REFERENCES "public"."competitions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "xp_snapshot_rows" ADD CONSTRAINT "xp_snapshot_rows_run_id_xp_calculation_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."xp_calculation_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "xp_snapshot_rows" ADD CONSTRAINT "xp_snapshot_rows_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "activity_actor_time_idx" ON "activity_events" USING btree ("actor_user_id","occurred_at");--> statement-breakpoint
+CREATE INDEX "asset_price_snapshots_sampled_at_idx" ON "asset_price_snapshots" USING btree ("sampled_at");--> statement-breakpoint
 CREATE INDEX "ballot_allocations_proposal_idx" ON "ballot_allocations" USING btree ("proposal_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "ballot_once_per_competition_uq" ON "ballots" USING btree ("competition_id","voter_user_id");--> statement-breakpoint
 CREATE INDEX "valid_ballots_idx" ON "ballots" USING btree ("competition_id","status");--> statement-breakpoint
@@ -293,6 +365,7 @@ CREATE UNIQUE INDEX "eligible_asset_contract_address_uq" ON "eligible_assets" US
 CREATE INDEX "evidence_check_history_idx" ON "evidence_checks" USING btree ("evidence_id","checked_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "launch_queue_rank_uq" ON "launch_queue" USING btree ("competition_id","rank");--> statement-breakpoint
 CREATE UNIQUE INDEX "leaderboard_rank_uq" ON "leaderboard_rows" USING btree ("snapshot_id","rank");--> statement-breakpoint
+CREATE INDEX "price_capture_runs_sampled_at_idx" ON "price_capture_runs" USING btree ("sampled_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "proposal_asset_position_uq" ON "proposal_assets" USING btree ("proposal_id","position");--> statement-breakpoint
 CREATE UNIQUE INDEX "proposal_competition_slug_uq" ON "proposals" USING btree ("competition_id","slug");--> statement-breakpoint
 CREATE UNIQUE INDEX "proposal_competition_name_uq" ON "proposals" USING btree ("competition_id",lower("name"));--> statement-breakpoint
@@ -300,20 +373,23 @@ CREATE UNIQUE INDEX "proposal_competition_ticker_uq" ON "proposals" USING btree 
 CREATE UNIQUE INDEX "proposal_one_creator_uq" ON "proposals" USING btree ("competition_id","creator_user_id");--> statement-breakpoint
 CREATE INDEX "tweet_evidence_competition_status_idx" ON "tweet_evidence" USING btree ("competition_id","status");--> statement-breakpoint
 CREATE UNIQUE INDEX "submission_evidence_once_uq" ON "tweet_evidence" USING btree ("proposal_id") WHERE "tweet_evidence"."action" = 'submission';--> statement-breakpoint
-CREATE INDEX "x_action_challenge_lookup_idx" ON "x_action_challenges" USING btree ("user_id","proposal_id","expires_at");
---> statement-breakpoint
+CREATE INDEX "vote_tranches_competition_idx" ON "vote_tranches" USING btree ("competition_id","accepted_at");--> statement-breakpoint
+CREATE INDEX "vote_tranches_voter_idx" ON "vote_tranches" USING btree ("voter_user_id");--> statement-breakpoint
+CREATE INDEX "vote_tranches_proposal_idx" ON "vote_tranches" USING btree ("proposal_id");--> statement-breakpoint
+CREATE INDEX "x_action_challenge_lookup_idx" ON "x_action_challenges" USING btree ("user_id","proposal_id","expires_at");--> statement-breakpoint
+CREATE INDEX "xp_runs_competition_time_idx" ON "xp_calculation_runs" USING btree ("competition_id","calculated_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "xp_final_once_uq" ON "xp_calculation_runs" USING btree ("competition_id") WHERE "xp_calculation_runs"."status" = 'final';--> statement-breakpoint
+ALTER TABLE "proposals" ADD CONSTRAINT "proposal_acceptance_has_initial_checkpoint" CHECK (
+	"proposals"."status" NOT IN ('accepted', 'hidden')
+	OR ("proposals"."accepted_at" IS NOT NULL AND "proposals"."initial_price_capture_run_id" IS NOT NULL)
+);--> statement-breakpoint
 CREATE FUNCTION "enforce_ballot_distribution"() RETURNS trigger AS $$
 DECLARE
   target_ballot_id uuid;
-  total_votes integer;
 BEGIN
   target_ballot_id := COALESCE(NEW.ballot_id, OLD.ballot_id);
   IF NOT EXISTS (SELECT 1 FROM ballots WHERE id = target_ballot_id) THEN
     RETURN NULL;
-  END IF;
-  SELECT COALESCE(SUM(votes), 0) INTO total_votes FROM ballot_allocations WHERE ballot_id = target_ballot_id;
-  IF total_votes <> 100 THEN
-    RAISE EXCEPTION 'BALLOT_VOTES_NOT_100';
   END IF;
   IF EXISTS (
     SELECT 1 FROM ballot_allocations ba
@@ -326,20 +402,52 @@ BEGIN
   END IF;
   RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
---> statement-breakpoint
+$$ LANGUAGE plpgsql;--> statement-breakpoint
 CREATE CONSTRAINT TRIGGER "ballot_distribution_valid"
 AFTER INSERT OR UPDATE OR DELETE ON "ballot_allocations"
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION "enforce_ballot_distribution"();
---> statement-breakpoint
+FOR EACH ROW EXECUTE FUNCTION "enforce_ballot_distribution"();--> statement-breakpoint
+CREATE FUNCTION "protect_competition_singleton"() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'The singleton competition cannot be deleted';
+  END IF;
+  IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."singleton" IS DISTINCT FROM OLD."singleton" THEN
+    RAISE EXCEPTION 'The singleton competition identity is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;--> statement-breakpoint
+CREATE TRIGGER "competition_singleton_immutable"
+BEFORE UPDATE OR DELETE ON "competitions"
+FOR EACH ROW EXECUTE FUNCTION "protect_competition_singleton"();--> statement-breakpoint
+CREATE FUNCTION "protect_vote_tranche_immutability"() RETURNS trigger AS $$
+BEGIN
+  IF OLD.id <> NEW.id
+    OR OLD.competition_id <> NEW.competition_id
+    OR OLD.ballot_id <> NEW.ballot_id
+    OR OLD.voter_user_id <> NEW.voter_user_id
+    OR OLD.proposal_id <> NEW.proposal_id
+    OR OLD.evidence_id <> NEW.evidence_id
+    OR OLD.quantity <> NEW.quantity
+    OR OLD.accepted_at <> NEW.accepted_at
+    OR OLD.created_at <> NEW.created_at
+    OR (OLD.effective_entry_at IS NOT NULL AND OLD.effective_entry_at IS DISTINCT FROM NEW.effective_entry_at)
+  THEN
+    RAISE EXCEPTION 'vote tranches are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;--> statement-breakpoint
+CREATE TRIGGER "vote_tranches_immutable"
+BEFORE UPDATE ON "vote_tranches"
+FOR EACH ROW EXECUTE FUNCTION "protect_vote_tranche_immutability"();--> statement-breakpoint
 INSERT INTO "competitions" (
-	"slug", "name", "phase", "starts_at", "ends_at", "min_followers", "min_account_age_days", "rules_frozen_at"
+	"phase", "starts_at", "ends_at", "rules_frozen_at"
 ) VALUES (
-	'genesis', 'Genesis Competition', 'open', CURRENT_TIMESTAMP,
-	date_trunc('day', CURRENT_TIMESTAMP + interval '37 days'), 100, 30, CURRENT_TIMESTAMP
-) ON CONFLICT ("slug") DO NOTHING;
---> statement-breakpoint
+	'open', CURRENT_TIMESTAMP - interval '7 days',
+	date_trunc('day', CURRENT_TIMESTAMP + interval '30 days'), CURRENT_TIMESTAMP
+);--> statement-breakpoint
 INSERT INTO "eligible_assets" ("symbol", "name", "contract_address") VALUES
   ('AAPL', 'Apple', '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9'),
   ('AMD', 'Advanced Micro Devices', '0x86923f96303D656E4aa86D9d42D1e57ad2023fdC'),
@@ -372,5 +480,4 @@ INSERT INTO "eligible_assets" ("symbol", "name", "contract_address") VALUES
   ('TSLA', 'Tesla', '0x322F0929c4625eD5bAd873c95208D54E1c003b2d'),
   ('TSM', 'Taiwan Semiconductor Manufacturing', '0x58FfE4a942d3885bAa22D7520691F611EF09e7AA'),
   ('TTWO', 'Take-Two Interactive', '0x5e81213613b6B86EaB4c6c50d718d34359459786'),
-  ('USO', 'United States Oil Fund', '0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344')
-ON CONFLICT DO NOTHING;
+  ('USO', 'United States Oil Fund', '0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344');
