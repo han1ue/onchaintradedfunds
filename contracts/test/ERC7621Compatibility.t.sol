@@ -149,19 +149,18 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         assertEq(vault.totalConstituents(), 1);
     }
 
-    function testRevokedAssetRemainsInStandardRedemptionOrderUntilPruned() public {
+    function testDiscoveryRegistryDoesNotChangeStandardRedemptionOrder() public {
         ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
 
         address[] memory tracked = vault.assets();
         (address[] memory constituents, uint256[] memory weights) = vault.getConstituents();
         assertEq(constituents.length, tracked.length);
         assertEq(constituents[0], tracked[0]);
         assertEq(constituents[1], tracked[1]);
-        assertEq(weights[0], 0);
-        assertEq(weights[1], 10_000);
+        assertEq(weights[0], 5_000);
+        assertEq(weights[1], 5_000);
         assertTrue(vault.isConstituent(address(tokenA)));
-        assertEq(vault.getWeight(address(tokenA)), 0);
+        assertEq(vault.getWeight(address(tokenA)), 5_000);
 
         uint256[] memory minimums = vault.previewWithdraw(10 * ONE);
         assertEq(minimums.length, constituents.length);

@@ -22,10 +22,14 @@ An OTF MUST:
 6. Keep strategic target changes, partial trade execution, and rebalance completion as distinct
    state transitions.
 7. Preserve deposits and proportional withdrawals during challenge and fee-suspension states,
-   except that deposits MUST stop after vault sunset or while the factory emergency deposit pause
-   is active.
+   except that deposits MUST stop after vault sunset or while either the factory-global or that
+   vault's factory-local emergency deposit pause is active.
 8. Make the configured strategy module immutable for the lifetime of the vault implementation.
 9. Keep the vault and strategy storage layouts identical by construction.
+10. Apply the same mechanical asset rules to every caller without an administrator approval,
+    blocking, revocation, removal, or quality-tier authority.
+11. Pin each constituent's concrete pricing source and provide no automatic fallback or
+    registry-driven replacement.
 
 ## 2. Contract architecture
 
@@ -57,7 +61,7 @@ The strategy module contains:
 - Strategic target proposals.
 - Constrained partial trade execution.
 - Rebalance completion.
-- Exact-zero retired-asset pruning.
+- Exact-zero manager-directed removal pruning.
 - Challenge creation, resolution, and deadline synchronization.
 
 The module executes using `delegatecall`, so it operates on the calling vault's storage and
@@ -78,8 +82,22 @@ strategy module.
 
 ### `PortfolioCalculator`
 
-The calculator is stateless. It MAY read token balances, token decimals, registries, and oracle
-feeds. It MUST NOT transfer assets, approve spenders, or mutate vault state.
+The calculator is stateless. Every security-sensitive vault valuation MUST identify the vault and
+read the concrete normalized feed and parameters pinned in that vault's state. Unbound compatibility
+preview helpers MAY read a trusted registry, but no vault transition may use that live mapping. The
+calculator MUST NOT transfer assets, approve spenders, or mutate vault state.
+
+### Pricing validation contracts
+
+`AssetPricingResolver` validates a caller-supplied `AssetPricingConfig` when an asset first enters an
+OTF. It MUST support exactly direct Chainlink, composed asset/WETH × WETH/USD Chainlink, and
+Uniswap V3 TWAP. `OracleRegistry` is a trusted base/quote relationship map used only during a new
+Chainlink selection. `AssetMarketRegistry` validates and records canonical V3 pools used during a
+new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
+
+The resolver MUST return a concrete normalized feed or V3 wrapper that the OTF pins. Later oracle
+mapping changes and V3 market deprecation MUST NOT redirect or disable an existing pin. None of
+these registries MAY determine asset eligibility, execution paths, or execution fee tiers.
 
 ### `RebalanceExecutor`
 
@@ -156,12 +174,18 @@ No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent se
 
 The protocol owner MAY:
 
-- Approve or remove supported assets.
-- Configure price-feed mappings.
 - Approve or remove trade adapters.
 - Set the protocol-wide minimum target weight within its hard bounds.
 - Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
+- Reversibly pause creation and all direct or routed primary deposits globally.
+- Reversibly pause direct or routed primary deposits for one factory-created OTF. The setter MUST
+  reject a non-factory target.
 - Transfer registry or factory ownership using their defined controls.
+
+The trusted-oracle-route owner MAY configure an exact `(base, quote) -> feed`, protocol staleness
+bound, and validation mode for future Chainlink selections. The V3 market-registry owner MAY
+deprecate a pool for future selections. Such updates MUST NOT replace or disable an existing OTF's
+pinned source. No protocol role MAY approve, qualify, block, revoke, or remove an asset.
 
 The protocol owner MUST NOT:
 
@@ -169,18 +193,14 @@ The protocol owner MUST NOT:
 - bypass OTF share-holder redemption rules.
 - shorten an existing OTF cooldown.
 - replace an OTF's strategy module.
+- force an OTF target, disable proportional withdrawal, or suspend fee accrual using a deposit
+  pause.
 
 ### Protocol treasury
 
 `FeeCollector` is the sole source of truth for the protocol treasury. The factory MAY expose
 collector-backed treasury views but MUST NOT maintain independent treasury-transfer state.
 Treasury transfer MUST use the collector's two-step acceptance flow.
-
-The treasury MAY allocate a bounded percentage of subsequent protocol-fee claims to a buyback
-recipient. The allocation MUST NOT let any caller other than the treasury redirect fee assets.
-Buyback trades MUST output the permanently configured OTF token, use an owner-approved typed
-adapter, enforce a transaction-level minimum output, and retain an immutable purchased-token
-recipient.
 
 ### Manager
 
@@ -192,6 +212,7 @@ Each OTF has exactly one manager. The manager MAY:
 - Receive execution permission automatically, remove or restore their own permission, and execute
   constrained trades while authorized.
 - Propose target changes with an inseparable strategy rationale.
+- Supply a valid pricing configuration when proposing a previously unpriced asset.
 - Start manager and fee-recipient transfers.
 
 The manager MUST NOT:
@@ -199,7 +220,8 @@ The manager MUST NOT:
 - Make arbitrary external calls from the OTF.
 - Transfer constituent assets to an arbitrary recipient.
 - approve arbitrary spenders.
-- use unsupported assets or adapters.
+- use mechanically invalid assets or unapproved trade adapters.
+- replace the source already pinned for an existing asset.
 - bypass oracle, slippage, NAV-loss, or target-improvement checks.
 - shorten the immutable target-change cooldown.
 
@@ -234,18 +256,19 @@ A share holder MAY:
 - Withdraw the proportional live basket.
 
 Contributions and withdrawals MUST remain enabled during active or overdue challenges. A vault
-sunset or the factory emergency deposit pause MAY disable contributions, but MUST NOT disable
-withdrawals or standard share transfers.
+sunset or either factory deposit pause MAY disable contributions, but MUST NOT disable withdrawals,
+standard share transfers, strategy operations, challenges, or fee accrual.
 
 ## 5. Portfolio and trade invariants
 
 For every successful constrained trade batch:
 
 1. Every `tokenIn` and `tokenOut` is a current constituent.
-2. Every output asset remains approved; an input asset is approved or is already retiring.
+2. Every output has a positive target; an input has a positive target or is already at a
+   manager-directed zero target.
 3. Every adapter is approved by the factory.
 4. The input amount is nonzero and input differs from output. A full-balance sentinel is valid only
-   for a retiring input asset with a nonzero live balance.
+   for a zero-target input asset with a nonzero live balance.
 5. Required oracle prices are valid and fresh.
 6. Explicit adapter output is at least `minAmountOut`.
 7. Every leg's oracle-valued output loss is included in the batch execution loss.
@@ -257,6 +280,10 @@ For every successful constrained trade batch:
 13. Output returns to the OTF.
 14. Temporary input approval is exact and is cleared after execution.
 15. The executor and adapter retain no unintended portfolio balance.
+16. Adapter data describes an explicit execution route and MUST NOT be decoded as a pricing market
+    ID. The route's pools, intermediates, and fee tiers MAY differ from the pinned price source.
+17. A V3 adapter validates the exact path endpoints, requires its immutable settlement token exactly
+    once, reconciles router-reported and observed deltas, and clears its allowance.
 
 If any final check fails, the complete transaction MUST revert, including token transfers and
 approvals.
@@ -296,10 +323,13 @@ revert the share burn, basket transfers, swaps, and approvals atomically.
 
 ### Target proposal
 
-`proposeStrategy(newTokens, newWeights, rationale)` records a pending target and rationale in one
-call. Draft ERC-7621 callers MAY instead stage the rationale with `setNextStrategyRationale` and
-consume it through `rebalance(newTokens, newWeights)`. Neither path changes the active target,
-implies that trades ran, or implies that reserves match the proposed target.
+`proposeStrategy(newTokens, newWeights, rationale)` records a pending target and rationale using
+already-pinned asset pricing. `proposeStrategyWithPricing(newTokens, newWeights, pricingConfigs,
+rationale)` MUST be used when the proposal introduces a previously unpriced asset. Existing assets
+MUST repeat their pinned configuration exactly. Draft ERC-7621 callers MAY instead stage the
+rationale with `setNextStrategyRationale` and consume it through `rebalance(newTokens, newWeights)`,
+but that two-argument selector MUST NOT introduce a previously unpriced asset. No proposal changes
+the active target, implies that trades ran, or implies that reserves match the proposed target.
 
 A proposal requires:
 
@@ -310,13 +340,18 @@ A proposal requires:
 - No active challenge.
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
-- Valid portfolio shape, constituent status, and pinned market requirements.
+- Valid portfolio shape, deployed exactly-18-decimal assets, no duplicates, caps, and one aligned
+  pricing configuration per proposed asset.
+- A new direct or composed Chainlink configuration that matches every exact trusted pair, or a new
+  V3 configuration that passes canonical-factory, exact pair/fee, initialization, observation
+  capacity, and full-history validation.
 - At least one constituent, with every included target at or above the factory's live protocol-wide
   minimum target weight. That minimum has a permanent floor of 100 basis points (1%); the factory
   owner MAY raise it up to 10,000 basis points or reduce it back to the floor. Changes apply only when
   an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger
   a challenge retroactively.
-- The union of positive-target and zero-target retiring assets MUST NOT exceed 100 tracked assets.
+- The union of positive-target and zero-target assets awaiting manager-directed removal MUST NOT
+  exceed 100 tracked assets.
 - Any constituent omitted from the proposal remains tracked at a zero target until its reserve is
   liquidated exactly to zero after activation.
 - Proposed turnover is calculated for the eventual strategy-history record but does not block the proposal.
@@ -329,7 +364,7 @@ unchanged. The standard `Rebalanced` event MUST NOT be emitted until the target 
 The active constituents and target weights MUST remain unchanged for at least 48 hours after a
 proposal. Deposits and proportional redemptions MUST remain available during this notice period.
 After the deadline, only the manager MAY call `activatePendingStrategy()`. Activation MUST
-revalidate asset approval, oracle freshness, portfolio shape, challenge state, fee state,
+revalidate mechanical asset requirements, pinned-source freshness, portfolio shape, challenge state, fee state,
 and completion bands before changing the active target. It emits the standard `Rebalanced` event
 and `TargetWeightsActivated`, appends the canonical strategy version and target snapshot, but
 performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
@@ -340,45 +375,32 @@ cancel any proposal authored under the previous authority without appending hist
 The manager or an authorized executor MAY submit multiple constrained partial trade batches toward
 the current target.
 
-### Asset-revocation retirement
+### Manager-directed constituent removal
 
-A registry revocation is a global, immediate signal and MUST NOT enter the manager's 48-hour
-proposal delay. Every affected vault MUST treat the revoked asset's effective target as exactly
-zero, renormalize the remaining approved positive targets proportionally to exactly 10,000 basis
-points, and block all contribution and basket-mint paths, including previews. If no approved
-positive-target constituent remains, every effective target is zero and the vault MUST enter
-irreversible terminal shutdown instead of creating or continuing a normal weight-band challenge.
-Because registry revocation has no per-vault callback, anyone MAY finalize this transition, and
-challenge flagging or pruning that observes the condition MUST perform it directly. Proportional
-in-kind redemption MUST remain available; buy-side trades into the
-revoked asset MUST remain forbidden. While at least one active constituent remains, a retiring raw
-balance above `MAX_RETIRING_DUST` remains challengeable regardless of percentage-band rounding.
-Once the balance is at or below that limit, the asset MAY be pruned, the exact written-off balance MUST be emitted, and primary deposits MAY
-resume if every remaining constituent is approved and has a positive target, unless the vault has
-already entered terminal shutdown.
+There is no registry revocation, administrator renormalization, or administrator-driven shutdown.
+A constituent leaves only through the normal delayed strategy process: the manager proposes a new
+10,000-bps target set, the omitted asset remains tracked at zero target after activation, constrained
+trades sell it down, and it is pruned after its balance reaches the permitted bound. ERC-7621
+discovery, contribution previews, and withdrawal previews MUST preserve the complete live redemption
+basket and ordering until pruning.
 
-During this staged retirement, ERC-7621 discovery MUST return the complete live redemption basket in
-the same order used by mint and withdrawal previews. Retiring assets remain discoverable with a zero
-effective target until pruning. This deliberate zero-weight retirement extension is not a claim of
-strict conformance with the draft's positive-weight constituent rule.
-
-To make a final retirement sale atomic with pruning, the manager or an authorized executor MAY set
-`TradeInstruction.amountIn` to `type(uint256).max` only for a retiring input asset. The vault MUST
+To make a final sale atomic with pruning, the manager or an authorized executor MAY set
+`TradeInstruction.amountIn` to `type(uint256).max` only for a zero-target input asset. The vault MUST
 resolve the full live balance inside that transaction and use the resolved amount consistently for
 approval, adapter execution, emitted amounts, oracle and NAV-loss checks, and post-trade pruning. The
-sentinel MUST revert for an active asset or an empty retiring balance.
+sentinel MUST revert for a positive-target asset or an empty balance.
 
-`MAX_RETIRING_DUST` is fixed at `1e9` raw units per retired asset. Because the asset registry
+`MAX_RETIRING_DUST` is fixed at `1e9` raw units per removed asset. Because mechanical validation
 accepts only 18-decimal constituents, this writes off at most `1e-9` whole tokens: $0.001 at a
 $1,000,000 unit price and $0.01 at a $10,000,000 unit price. This per-asset bound is an explicit
-protocol risk acceptance; changing the supported token decimals requires reassessing the limit.
+protocol risk acceptance.
 
 ### Completion
 
 `StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
 inside every completion band and every zero-target constituent has a raw balance no greater than
 `MAX_RETIRING_DUST`. A successful strategic trade batch that reaches those conditions MUST prune
-retired constituents and complete atomically after all final trade safety checks. Permissionless
+zero-target constituents and complete atomically after all final trade safety checks. Permissionless
 explicit completion remains available when no trade is required or natural price movement restores
 the portfolio. Completion marks the activated strategy version complete and is the only point that
 updates `lastCompletedStrategyTimestamp`;
@@ -415,7 +437,7 @@ During a challenge:
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 
-### Terminal sunset state
+### Manager sunset state
 
 The manager MAY permanently sunset an operational OTF. Manager sunset MUST revert until the current strategy
 cooldown has ended and while a challenge, pending strategy proposal, or strategic rebalance is
@@ -430,18 +452,16 @@ fee interval before recording its timestamp. After sunset:
 - The sunset flag and timestamp MUST remain publicly readable and the transition MUST be
   irreversible.
 
-Separately, when no approved positive-target constituent remains, anyone MAY trigger the same
-irreversible terminal state without waiting for the cooldown. This path MUST NOT open a challenge:
-it checkpoints fees, applies ordinary challenge-deadline economics to any challenge already in
-progress, clears all challenge and strategy-transition state, sets every stored target to zero, and
-disables portfolio management. Reapproving an asset later MUST NOT revive the vault. Retiring assets
-MAY still be pruned at or below `MAX_RETIRING_DUST` during the wind-down.
+The factory owner MAY call `setDepositsPaused(bool)` to set or clear one protocol-wide deposit
+pause. New OTF creation and every direct or routed primary deposit MUST revert while it is active.
+The owner MAY also call `setVaultDepositsPaused(vault, bool)` to set or clear one local pause; the
+factory MUST reject targets it did not create. Every vault and entry router MUST observe both live
+flags at deposit execution, and deposits are enabled only when both are clear.
 
-The factory owner MAY additionally call `setDepositsPaused(bool)` to set or clear one
-protocol-wide deposit pause. New OTF creation MUST revert while the pause is active, and every
-existing vault MUST read that live factory flag at deposit execution so entry routers cannot bypass
-it. This pause MUST not affect withdrawals,
-redemptions, transfers, or secondary-market share trades.
+The factory MUST expose `vaultDepositsPaused(vault)` and emit
+`VaultDepositsPauseChanged(vault, paused)` for local changes. Neither pause MUST affect withdrawals,
+redemptions, transfers, secondary-market share trades, strategy operations, challenges, or fee
+accrual. No asset status or registry change MAY trigger manager sunset or either pause.
 
 Starting a challenge MUST first crystallize the entire valid fee interval through the challenge
 start timestamp. This applies whether `flagOutOfBand()` or a manager fee-withdrawal attempt detects
@@ -502,26 +522,54 @@ the OTF from the manager's own assets or fee revenue.
 
 ## 9. Oracle requirements
 
-Every security-sensitive valuation MUST reject:
+`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetWeth`, and
+`UniswapV3Twap`. A zero/default enum value is not sufficient validation: every required address and
+relationship MUST be checked. Uniswap V4 and every other source type MUST be rejected.
 
-- Missing feeds.
-- Nonpositive answers.
-- Zero or future timestamps.
-- Incomplete rounds.
-- Answers older than the asset's registry-configured `maxStaleness`.
-- An enabled asset-level `oraclePaused()` flag.
-- Failure to read `oraclePaused()` when the registry requires that check.
-- Unsupported token or feed decimals.
+For direct Chainlink pricing:
 
-Every oracle-registry entry MUST pair an `AggregatorV3Interface` feed with a nonzero `maxStaleness`
-and an explicit validation mode. Robinhood equity feeds publish 24/5; their entries use 25 hours for
-the 24-hour heartbeat plus a one-hour delivery buffer and `RobinhoodStockToken` validation, which
-requires the asset's `oraclePaused()` check.
-The deadline is measured from each feed's latest update, so oracle-priced actions may remain available
-into a weekend before pausing until fresh prices arrive. Other feed types MAY use different policies.
-Managers cannot select or override these values.
+- `primarySource` MUST be the trusted feed for the exact `(asset, USD)` pair.
+- `secondarySource` MUST be zero.
+- Pair identity MUST come from a trusted onchain base/quote mapping, never `description()`.
 
-The frontend MUST NOT substitute cached or offchain prices for onchain enforcement.
+For composed Chainlink pricing:
+
+- `primarySource` MUST be the trusted feed for exact `(asset, WETH)`.
+- `secondarySource` MUST be the trusted feed for exact `(WETH, USD)`.
+- Reversed legs and a correct feed under the wrong pair key MUST revert.
+- Both feeds, staleness bounds, and validation modes MUST be pinned in the normalized wrapper.
+- Every read MUST validate both legs independently and MUST expose the older leg's timestamp.
+- The multiplication and decimal normalization MUST be overflow-safe and return a nonzero USD price.
+
+Every Chainlink leg MUST reject missing code, nonpositive answers, zero or future timestamps,
+incomplete rounds, answers beyond its protocol-defined staleness bound, and unsupported decimals.
+When a leg uses `RobinhoodStockToken` validation, the base token's `oraclePaused()` call MUST be
+available and false. Robinhood equity feeds publish 24/5 and already include the token
+`uiMultiplier()`; the protocol MUST NOT apply it again.
+
+Chainlink's Robinhood [Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry)
+proves only whether a proxy is currently official and active. It does not prove pair orientation,
+and no Robinhood deployment of the older pair-addressed Feed Registry is documented. Production
+MUST therefore independently verify Flags status where available and maintain the exact trusted
+onchain pair map, or reject Chainlink selection. The current contracts do not consume Flags or an
+L2 sequencer-uptime feed at runtime; both limitations MUST be resolved or explicitly accepted by a
+fresh production review. See [Robinhood's oracle guidance](https://docs.robinhood.com/chain/oracles-and-price-feeds).
+
+For V3 TWAP pricing:
+
+- `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
+  exact asset/quote pair and exact onchain fee.
+- The quote MUST be WETH or USDG. If WETH is used, the configured canonical WETH/USDG pool supplies
+  the USD bridge.
+- `secondarySource` MUST be zero.
+- The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
+  capacity, and answer the full protocol TWAP-window observation before selection.
+- The concrete pool and normalized wrapper MUST be pinned. Later market deprecation MAY block only
+  future selection and MUST NOT affect an existing OTF.
+
+Every source is fail-closed and has no automatic fallback. Pricing registries are consulted only
+when a source is first selected. The frontend MUST NOT substitute cached/offchain prices for onchain
+enforcement, and database catalog entries or prefills MUST NOT count as validation.
 
 ## 10. ERC-7621 status
 
@@ -579,13 +627,22 @@ forge test --match-contract ProtocolInvariantTest -vv
 - Every production runtime is at most 24,576 bytes.
 - Every production initcode is at most 49,152 bytes.
 - The vault ABI has no generic `execute`.
+- The asset-discovery ABI has no owner, status, approval, block, revocation, or removal method.
+- The vault ABI has no registry-driven terminal-shutdown or market-config proposal method.
+- The generic V3 adapter has no `marketIdFromData` or pricing-registry dependency.
+- The factory ABI exposes global and local deposit-pause controls and the local pause event.
+- The factory `createVault` tuple contains `initialPricingConfigs` and not `initialMarketIds`.
+- The pricing source enum and production contract set include the direct/composed/V3 resolver and
+  wrappers and expose no V4 source.
 - The strategy ABI has no initializer or upgrade surface.
 - The local ERC-7621 function selectors, interface ID, events, and errors match the pinned official
   draft, and the vault ABI contains every required item.
 - Module identity and code-hash views remain exposed.
 
 The full suite MUST include deterministic, fuzz, invariant, malicious-token, executor-boundary,
-delegatecall-context, oracle, challenge, fee-state, and ERC-7621 event tests.
+delegatecall-context, direct/composed/spoofed/reversed/no-fallback oracle, canonical V3
+factory/history, price-versus-execution separation, local/global pause, challenge, fee-state, and
+ERC-7621 event tests.
 
 ## 12. Deployment and change control
 
@@ -595,14 +652,27 @@ Every deployment record SHOULD include:
 - Solidity compiler version.
 - Optimizer and IR settings.
 - Chain ID.
-- Factory, implementation, strategy module, calculator, executor, registry, and treasury addresses.
+- Factory, implementation, strategy module, calculator, executor, discovery registry, trusted oracle
+  route registry, V3 market registry, pricing resolver, adapter, and treasury addresses.
+- Canonical V3 factory, WETH, USDG, WETH/USDG pool, supported fees, TWAP window, observation
+  capacity, and verified history evidence.
+- Every trusted Chainlink base/quote/feed relationship, staleness bound, validation mode, official
+  Flags status where available, and the source used for that evidence.
+- Every initial per-asset pricing configuration and the concrete normalized feed or pool pinned by
+  each created OTF.
 - Runtime code hashes.
 - Test and security-command results.
 - Independent audit report references.
 
-For production, factory, registry, and treasury authority MUST be assigned to reviewed multisig or
-timelocked governance contracts rather than EOAs. Operational and treasury signers SHOULD be
-separated, and all pending administrative changes MUST be monitored.
+For production, factory, trusted-oracle-route, V3-market, and treasury authority MUST be assigned to
+reviewed multisig or timelocked governance contracts rather than EOAs. Operational and treasury
+signers SHOULD be separated, and all pending administrative changes MUST be monitored.
+
+This architecture requires a fresh deployment. Existing non-upgradeable vault clones and their
+factory cannot acquire pinned pricing storage, `initialPricingConfigs`, generic adapter data, or
+per-vault pause semantics. Deployment tooling MUST archive the legacy address record and MUST NOT
+present an old factory as migrated. The `VaultInitParams` tuple and deterministic clone salt have
+changed, so predicted addresses from the legacy architecture are invalid.
 
 Any change to storage, delegation, authorization, token movement, fee math, oracle validation,
 adapter execution, or challenge logic requires a fresh security review.

@@ -6,13 +6,14 @@ import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-
 import { ballotActivationSchema, voteDistributionSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
 import {
-  activityEvents, ballotAllocations, ballots, competitions, evidenceChecks, proposals,
-  tweetEvidence, voteTranches, xActionChallenges
+  activityEvents, ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks,
+  proposalAssets, proposals, tweetEvidence, voteTranches, xActionChallenges
 } from "./db/schema";
 import { env } from "./env";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { recomputeLiveXp } from "./xp";
+import { captureAssetPrices } from "./prices";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -142,6 +143,20 @@ export async function verifyBallotProof(input: unknown) {
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
 
   const activatedAt = new Date();
+  const entryAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
+    .from(proposalAssets)
+    .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
+    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
+    .where(and(
+      eq(proposals.competitionId, competition.id),
+      eq(proposals.status, "accepted"),
+      sql`${proposals.acceptedAt} <= ${activatedAt}`,
+    ));
+  const entryCapture = await captureAssetPrices({
+    assetIds: entryAssets.map((asset) => asset.id),
+    sampledAt: activatedAt,
+    purpose: "entry",
+  });
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: activatedAt }).where(and(
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)
@@ -204,6 +219,7 @@ export async function verifyBallotProof(input: unknown) {
       evidenceId: evidence.id,
       quantity: tranche.votes,
       acceptedAt: activatedAt,
+      entryPriceCaptureRunId: entryCapture.runId,
     })));
     await transaction.insert(activityEvents).values({
       competitionId: competition.id,

@@ -17,9 +17,7 @@ const schema = z.object({
   IP_HASH_SECRET: z.string().min(16).optional(),
   ADMIN_X_IDS: z.string().optional(),
   COINGECKO_PRO_API_KEY: z.string().optional(),
-  COINGECKO_NETWORK_ID: z.string().optional(),
-  MARKET_EVIDENCE_URL: optionalUrl,
-  MARKET_EVIDENCE_SECRET: z.string().optional()
+  COINGECKO_NETWORK_ID: z.string().optional()
 });
 
 export const env = schema.parse(process.env);

@@ -9,10 +9,9 @@ import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract ProtocolFuzzTest is ProtocolTestBase {
-    function testFuzzRevokedWeightNormalizationPreservesExactAccounting(
-        uint16 rawWeightA,
-        uint16 rawWeightB
-    ) public {
+    function testFuzzInitialWeightsPreserveExactAccounting(uint16 rawWeightA, uint16 rawWeightB)
+        public
+    {
         uint16 weightA = uint16(bound(rawWeightA, 100, 9_800));
         uint16 weightB = uint16(bound(rawWeightB, 100, 9_900 - weightA));
         uint16 weightC = uint16(10_000 - weightA - weightB);
@@ -21,6 +20,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         params.initialAssets[0] = address(tokenA);
         params.initialAssets[1] = address(tokenB);
         params.initialAssets[2] = address(tokenC);
+        params.initialPricingConfigs = _pricingConfigsFor(params.initialAssets);
         params.initialTargetWeightsBps = new uint16[](3);
         params.initialTargetWeightsBps[0] = weightA;
         params.initialTargetWeightsBps[1] = weightB;
@@ -31,17 +31,12 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         params.initialAmounts[2] = uint256(weightC) * ONE;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assetRegistry.setAssetApproved(address(tokenA), false);
         uint16[] memory effectiveTargets = vault.targetWeightsBps();
-        uint256 activeTotal = uint256(weightB) + weightC;
-        uint256 expectedB = uint256(weightB) * 10_000 / activeTotal;
-        uint256 expectedC = uint256(weightC) * 10_000 / activeTotal;
-        if (expectedB + expectedC != 10_000) expectedB++;
 
-        assertEq(effectiveTargets[0], 0);
-        assertEq(effectiveTargets[1], expectedB);
-        assertEq(effectiveTargets[2], expectedC);
-        assertEq(uint256(effectiveTargets[1]) + effectiveTargets[2], 10_000);
+        assertEq(effectiveTargets[0], weightA);
+        assertEq(effectiveTargets[1], weightB);
+        assertEq(effectiveTargets[2], weightC);
+        assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
     }
 
     function testFactoryAcceptsFixedProtocolCooldown() public {
@@ -121,9 +116,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
     ) public {
         VaultInitParams memory params = _defaultParams();
         uint256 minimum = factory.MINIMUM_LIQUIDITY_SHARES();
-        params.initialShareSupply = bound(
-            rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE
-        );
+        params.initialShareSupply =
+            bound(rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE);
         uint256 initialAmount = bound(rawInitialAmount, 1, 1_000 * ONE);
         params.initialAmounts[0] = initialAmount;
         params.initialAmounts[1] = initialAmount;
@@ -180,10 +174,9 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(ALICE), expected[1]);
     }
 
-    function testFuzzFeeAccrualMatchesCadenceIndependentGrowth(
-        uint16 rawFeeBps,
-        uint32 rawElapsed
-    ) public {
+    function testFuzzFeeAccrualMatchesCadenceIndependentGrowth(uint16 rawFeeBps, uint32 rawElapsed)
+        public
+    {
         uint16 feeBps = uint16(bound(rawFeeBps, 0, 1_000));
         uint256 elapsed = bound(rawElapsed, 1, 365 days);
         VaultInitParams memory params = _defaultParams();
@@ -193,9 +186,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         vm.warp(START + elapsed);
         feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
-        uint256 annualGrowthWad = feeBps == 0
-            ? ONE
-            : MathEx.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
+        uint256 annualGrowthWad =
+            feeBps == 0 ? ONE : MathEx.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
         uint256 exponentWad = MathEx.mulDiv(elapsed, ONE, 365 days);
         uint256 growthWad = elapsed == 365 days
             ? annualGrowthWad

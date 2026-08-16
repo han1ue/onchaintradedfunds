@@ -62,13 +62,11 @@ import {
   encodePacked,
   formatUnits,
   isAddress,
-  keccak256,
   maxUint256,
   parseEventLogs,
   parseUnits,
   toFunctionSelector,
   zeroAddress,
-  zeroHash,
 } from "viem";
 import {
   useAccount,
@@ -86,9 +84,16 @@ import {
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
+  robinhoodTestnetKnownPricingConfigs,
   robinhoodTestnetV3Venue,
   robinhoodTestnetWethV3Venue,
 } from "@/lib/deployment";
+import {
+  deriveOtfQuality,
+  normalizeAssetQuality,
+  primaryDepositsBlocked,
+  type AssetQuality,
+} from "@/lib/protocol-ui";
 import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
   formatCooldown,
@@ -111,7 +116,7 @@ type ContractValue =
   | readonly [bigint, number, number]
   | undefined;
 
-type ReadResult = readonly { result?: ContractValue }[];
+type ReadResult = readonly { result?: ContractValue; status?: "success" | "failure" }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
 type AppearancePreference = "default" | "light" | "dark";
 type RoutedSettlementMode = "usdg" | "weth";
@@ -139,12 +144,18 @@ type TargetAsset = {
   ticker: string;
   name?: string;
   address: string;
-  marketId?: `0x${string}`;
   poolAddress?: `0x${string}`;
-  qualityStatus?: "qualified" | "open" | "blocked";
-  priceFeed?: `0x${string}`;
+  quality: AssetQuality;
+  pricingConfig: AssetPricingConfig;
   targetWeight: string | number;
   initialAmount: string;
+};
+
+type PricingSource = 0 | 1 | 2;
+type AssetPricingConfig = {
+  source: PricingSource;
+  primarySource: `0x${string}`;
+  secondarySource: `0x${string}`;
 };
 
 type StrategyTargetAsset = Omit<TargetAsset, "targetWeight"> & {
@@ -209,6 +220,7 @@ type VaultSummary = {
   navPerShare?: string;
   navPerShareValue?: bigint;
   sunset: boolean;
+  quality: AssetQuality;
 };
 
 type VaultView = {
@@ -265,7 +277,9 @@ type VaultView = {
   factoryReadFailed: boolean;
   sunset: boolean;
   sunsetAt?: number;
-  depositsPaused: boolean;
+  protocolDepositsPaused: boolean;
+  vaultDepositsPaused: boolean;
+  depositPauseStatusUnavailable: boolean;
 };
 
 const navTabs = ["OTFs", "RWAs", "Liquidity"];
@@ -277,6 +291,7 @@ const testnetCreateAssets = supportedAssetCatalog.assets.flatMap((asset) => {
     name: asset.name,
     address: deployment.contractAddress,
     logoUrl: asset.logoUrl,
+    quality: asset.quality === "high" ? "high" as const : "normal" as const,
   }] : [];
 });
 
@@ -384,13 +399,6 @@ const vaultFeeAbi = [
 const factoryDependencyAbi = [
   {
     type: "function",
-    name: "assetRegistry",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
-    type: "function",
     name: "oracleRegistry",
     stateMutability: "view",
     inputs: [],
@@ -419,49 +427,26 @@ const protocolAssetReadAbi = [
   },
 ] as const;
 
-const assetStatusReadAbi = [
+const assetPricingResolverAbi = [
   {
     type: "function",
-    name: "statusOf",
-    stateMutability: "view",
-    inputs: [{ name: "asset", type: "address" }],
-    outputs: [{ name: "status", type: "uint8" }],
-  },
-] as const;
-
-const permissionlessAssetRegistryAbi = [
-  ...assetStatusReadAbi,
-  {
-    type: "function",
-    name: "registerOpenAsset",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "asset", type: "address" }],
-    outputs: [],
-  },
-] as const;
-
-const assetMarketRegistryAbi = [
-  {
-    type: "function",
-    name: "registerV3Market",
+    name: "validateAndQuotePrice",
     stateMutability: "nonpayable",
     inputs: [
       { name: "asset", type: "address" },
-      { name: "pool", type: "address" },
+      {
+        name: "config",
+        type: "tuple",
+        components: [
+          { name: "source", type: "uint8" },
+          { name: "primarySource", type: "address" },
+          { name: "secondarySource", type: "address" },
+        ],
+      },
     ],
-    outputs: [{ name: "marketId", type: "bytes32" }],
-  },
-  {
-    type: "function",
-    name: "marketFor",
-    stateMutability: "view",
-    inputs: [{ name: "marketId", type: "bytes32" }],
     outputs: [
-      { name: "asset", type: "address" },
-      { name: "pool", type: "address" },
-      { name: "priceFeed", type: "address" },
-      { name: "fee", type: "uint24" },
-      { name: "active", type: "bool" },
+      { name: "price", type: "uint256" },
+      { name: "priceDecimals", type: "uint8" },
     ],
   },
 ] as const;
@@ -658,11 +643,67 @@ function configuredConstituentPool(asset: string, mode: RoutedSettlementMode = "
   )?.pool;
 }
 
-function configuredConstituentMarketId(asset: string, mode: RoutedSettlementMode): `0x${string}` | undefined {
+type ExecutionRoute = {
+  asset: string;
+  pool: `0x${string}`;
+  fee: number;
+  quoteToken: `0x${string}`;
+};
+
+function configuredExecutionRoute(
+  asset: string,
+  mode: RoutedSettlementMode = "usdg",
+): ExecutionRoute | undefined {
   const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
-  return venue.constituentPools.find(
+  const record = venue.constituentPools
+    .find((candidate) => candidate.asset.toLowerCase() === asset.toLowerCase());
+  return record ? {
+    asset: record.asset,
+    pool: record.pool,
+    fee: record.fee,
+    quoteToken: record.quoteToken,
+  } : undefined;
+}
+
+function useVaultExecutionRoutes(
+  vault: VaultView,
+  enabled: boolean,
+  mode: RoutedSettlementMode = "usdg",
+) {
+  return useMemo(() => {
+    const routes = new Map<string, ExecutionRoute>();
+    if (!enabled) return routes;
+    vault.allocations.forEach((asset) => {
+      const route = configuredExecutionRoute(asset.address, mode);
+      if (route) routes.set(asset.address.toLowerCase(), route);
+    });
+    return routes;
+  }, [enabled, mode, vault.allocations]);
+}
+
+function configuredPricingConfig(asset: string): AssetPricingConfig | undefined {
+  const known = robinhoodTestnetKnownPricingConfigs.find(
     (record) => record.asset.toLowerCase() === asset.toLowerCase(),
-  )?.marketId;
+  );
+  return known?.config as AssetPricingConfig | undefined;
+}
+
+function emptyPricingConfig(): AssetPricingConfig {
+  return { source: 0, primarySource: zeroAddress, secondarySource: zeroAddress };
+}
+
+function pricingConfigIsComplete(config: AssetPricingConfig): boolean {
+  if (!isAddress(config.primarySource) || config.primarySource === zeroAddress) return false;
+  if (config.source === 1) {
+    return isAddress(config.secondarySource) && config.secondarySource !== zeroAddress;
+  }
+  return config.secondarySource === zeroAddress;
+}
+
+function pricingSourceLabel(source: PricingSource): string {
+  if (source === 0) return "Chainlink ASSET/USD";
+  if (source === 1) return "Chainlink via WETH";
+  return "Uniswap V3 TWAP";
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -729,6 +770,76 @@ function catalogAssetForAddress(address: string) {
   return testnetCreateAssets.find(
     (asset) => asset.address.toLowerCase() === address.toLowerCase(),
   );
+}
+
+function assetQualityForAddress(address: string): AssetQuality {
+  return normalizeAssetQuality(catalogAssetForAddress(address)?.quality);
+}
+
+function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): CatalogOraclePrices {
+  const { data: feedResults } = useReadContracts({
+    contracts: enabled && vault.address
+      ? vault.allocations.map((asset) => ({
+          address: vault.address as `0x${string}`,
+          abi: managedOtfVaultAbi,
+          functionName: "priceFeedForAsset" as const,
+          args: [asset.address as `0x${string}`] as const,
+          chainId: robinhoodChainTestnet.id,
+        }))
+      : [],
+    query: { enabled: enabled && Boolean(vault.address && vault.allocations.length) },
+  });
+  const feeds = vault.allocations.map((asset, index) => {
+    const result = feedResults?.[index];
+    const feed = result?.status === "success" ? result.result as `0x${string}` : undefined;
+    return { asset: asset.address, feed: feed && feed !== zeroAddress ? feed : undefined };
+  });
+  const { data: priceResults } = useReadContracts({
+    contracts: feeds.flatMap(({ feed }) => feed ? [
+      {
+        address: feed,
+        abi: aggregatorV3ReadAbi,
+        functionName: "latestRoundData" as const,
+        chainId: robinhoodChainTestnet.id,
+      },
+      {
+        address: feed,
+        abi: aggregatorV3ReadAbi,
+        functionName: "decimals" as const,
+        chainId: robinhoodChainTestnet.id,
+      },
+    ] : []),
+    query: { enabled: enabled && feeds.some(({ feed }) => Boolean(feed)) },
+  });
+  return useMemo(() => {
+    const prices: CatalogOraclePrices = {};
+    let cursor = 0;
+    feeds.forEach(({ asset, feed }) => {
+      if (!feed) {
+        prices[asset.toLowerCase()] = { display: "Pinned feed unavailable" };
+        return;
+      }
+      const roundResult = priceResults?.[cursor * 2];
+      const decimalsResult = priceResults?.[cursor * 2 + 1];
+      cursor += 1;
+      const round = roundResult?.status === "success"
+        ? roundResult.result as readonly [bigint, bigint, bigint, bigint, bigint]
+        : undefined;
+      const decimals = decimalsResult?.status === "success" ? Number(decimalsResult.result) : undefined;
+      const answer = round?.[1];
+      const value = answer !== undefined && answer > 0n && decimals !== undefined
+        ? Number(formatUnits(answer, decimals))
+        : undefined;
+      prices[asset.toLowerCase()] = {
+        answer,
+        decimals,
+        updatedAt: round?.[3],
+        value,
+        display: formatOraclePrice(value),
+      };
+    });
+    return prices;
+  }, [feeds, priceResults]);
 }
 
 function AssetLogo({ logoUrl, symbol, compact = false }: {
@@ -889,9 +1000,8 @@ const protocolErrorMessages = new Map<string, string>(
     ["ERC20InvalidReceiver(address)", "The receiving address cannot accept this token transfer."],
     ["ERC20InvalidSender(address)", "The sending address is not valid for this token transfer."],
     ["ERC20NonZeroAllowance(address,address,uint256)", "This token requires its existing approval to be reset before a new approval is set."],
-    ["UnapprovedAsset(address)", "A selected token is not enabled in the protocol asset registry."],
     ["AssetNotContract(address)", "A selected asset address is not a deployed token contract."],
-    ["OracleFeedMissing(address)", "A selected token does not have a configured protocol price feed."],
+    ["OracleFeedMissing(address)", "A selected token does not have a valid price feed pinned by this OTF."],
     ["InvalidOraclePrice(address,int256)", "A selected token's oracle returned an invalid price."],
     ["InvalidOracleTimestamp(address,uint256)", "A selected token's oracle returned an invalid update time."],
     ["IncompleteOracleRound(address,uint80,uint80)", "A selected token's latest oracle round is incomplete. Try again after the next price update."],
@@ -1222,6 +1332,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "sunsetAt" },
         { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "depositsPaused" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navLossBudgetState" },
+        {
+          address: factoryAddress ?? zeroAddress,
+          abi: otfFactoryAbi,
+          functionName: "vaultDepositsPaused",
+          args: [vaultAddress],
+        },
       ] as const)
     : undefined;
 
@@ -1279,6 +1395,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         creator: creatorValue && isAddress(creatorValue) ? creatorValue : undefined,
         creatorFeeBps: creatorFee,
         assetCount: vaultAssets?.length ?? 0,
+        quality: deriveOtfQuality((vaultAssets ?? []).map((asset) => assetQualityForAddress(asset))),
         navValue: totalValue,
         nav: formatUsd18(totalValue),
         navPerShare: formatUsd18(shareValue),
@@ -1342,8 +1459,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const sunsetAt = resultAt<bigint>(results, 37)
     ? Number(resultAt<bigint>(results, 37))
     : undefined;
-  const depositsPaused = Boolean(resultAt<boolean>(results, 38));
+  const protocolDepositsPaused = Boolean(resultAt<boolean>(results, 38));
   const navLossBudget = resultAt<readonly [bigint, number, number]>(results, 39);
+  const vaultDepositsPaused = Boolean(resultAt<boolean>(results, 40));
+  const depositPauseStatusUnavailable = Boolean(enabled) && (
+    results?.[38]?.status !== "success" || results?.[40]?.status !== "success"
+  );
   const navLossBudgetRecoveryAt = navLossBudget?.[0] ? Number(navLossBudget[0]) : undefined;
   const navLossBudgetUsedBps = Number(navLossBudget?.[1] ?? 0);
   const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
@@ -1419,8 +1540,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     factoryReadFailed: Boolean(factoryError),
     sunset,
     sunsetAt,
-    depositsPaused,
+    protocolDepositsPaused,
+    vaultDepositsPaused,
+    depositPauseStatusUnavailable,
   };
+  const vaultOraclePrices = useVaultPinnedOraclePrices(vault, isTestnet && dataMode === "live");
   const activeTab = view === "rwas" ? "RWAs" : "OTFs";
 
   useEffect(() => {
@@ -1521,7 +1645,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={catalogOraclePrices} onRefresh={refetchVaultData} />
+                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={vaultOraclePrices} onRefresh={refetchVaultData} />
                 <UserActions vault={vault} />
               </div>
 
@@ -1561,7 +1685,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           <CreateVaultView
             connectedAddress={connectedAddress}
             isTestnet={isTestnet}
-            oraclePrices={catalogOraclePrices}
             onBack={() => openView("vaults")}
             onCreated={openCreatedVault}
           />
@@ -1580,7 +1703,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         {view === "manage" && isTestnet && vault.dataMode === "live" ? (
           <ManageVaultsView
             vault={vault}
-            oraclePrices={catalogOraclePrices}
+            oraclePrices={vaultOraclePrices}
             onBack={() => openView("vaults")}
             onOpenVault={() => openView("detail")}
             onRefresh={refetchVaultData}
@@ -1953,6 +2076,9 @@ function VaultHeader({
   onManage: () => void;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const quality = deriveOtfQuality(
+    vault.allocations.map((asset) => assetQualityForAddress(asset.address)),
+  );
 
   async function copy(value: string | undefined, key: string) {
     if (!value) return;
@@ -1984,6 +2110,9 @@ function VaultHeader({
               <div className="titleLine">
                 <h1>{vault.name}</h1>
                 {vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}
+                <span className={`stateBadge ${quality === "high" ? "success" : "muted"}`}>
+                  {quality === "high" ? "High quality" : "Normal quality"}
+                </span>
               </div>
               <div className="addressLine">
                 <AddressPill label="OTF" address={vault.address} copied={copied === "vault"} onCopy={() => copy(vault.address, "vault")} />
@@ -2524,7 +2653,7 @@ function PortfolioAllocation({
       <div className="cardFooterAction">
         <span className="mutedInline oracleFreshnessNotice">
           <Info size={20} strokeWidth={2.25} />
-          Robinhood equity feeds publish 24/5. Oracle-priced actions require every constituent feed to remain fresh; with the current equity settings, each feed expires 25 hours after its own latest update. Those actions may therefore remain available into the weekend before pausing until all required feeds update. Transfers and proportional basket deposits or redemptions remain available.
+          Each OTF reads only its pinned price feeds. Every Chainlink leg must satisfy its own protocol-defined freshness and pause checks, while V3 routes use the fixed protocol TWAP window. Invalid pricing has no fallback and makes oracle-dependent actions unavailable; share transfers and proportional basket deposits or redemptions remain available.
         </span>
       </div>
 
@@ -2805,64 +2934,78 @@ function UserActions({
       entryAdapterAddress.toLowerCase() === robinhoodTestnetAddresses.registeredUniswapV3AdapterWeth?.toLowerCase()
     ),
   );
-  const usesTwoHopRegisteredRoute = isRegisteredEntryAdapter && routedSettlementMode === "usdg";
-  const registeredMarketIdFor = (asset: string) =>
-    configuredConstituentMarketId(asset, routedSettlementMode) ?? configuredConstituentMarketId(asset, "weth");
-  const routeFeeFor = (asset: string) => configuredConstituentFee(
-    asset,
-    usesTwoHopRegisteredRoute ? "weth" : routedSettlementMode,
-  );
+  const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredEntryAdapter, routedSettlementMode);
+  const executionRouteFor = (asset: string) =>
+    vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset, routedSettlementMode);
+  const isBaseAsset = (asset: string) =>
+    asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase() ||
+    asset.toLowerCase() === robinhoodTestnetAddresses.usdg?.toLowerCase();
+  const routeFeeFor = (asset: string) => isBaseAsset(asset)
+    ? 100
+    : executionRouteFor(asset)?.fee ?? configuredConstituentFee(asset, routedSettlementMode);
+  const executionPoolFor = (asset: string) => isBaseAsset(asset)
+    ? robinhoodTestnetAddresses.wethUsdgPool
+    : executionRouteFor(asset)?.pool;
+  const routePoolFor = (asset: string) => isRegisteredEntryAdapter
+    ? executionPoolFor(asset)
+    : configuredConstituentPool(asset, routedSettlementMode);
   const exactInputRouteFor = (asset: string, assetToSettlement = false) => {
-    if (!usesTwoHopRegisteredRoute || !configuredSettlementToken || !robinhoodTestnetAddresses.weth) {
-      return undefined;
+    if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
+    if (isBaseAsset(asset)) return assetToSettlement
+      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, configuredSettlementToken])
+      : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, 100, asset as `0x${string}`]);
+    const route = executionRouteFor(asset);
+    if (!route) return undefined;
+    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
+      return assetToSettlement
+        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, configuredSettlementToken])
+        : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, route.fee, asset as `0x${string}`]);
     }
     return assetToSettlement
       ? encodePacked(
           ["address", "uint24", "address", "uint24", "address"],
-          [asset as `0x${string}`, routeFeeFor(asset), robinhoodTestnetAddresses.weth, 100, configuredSettlementToken as `0x${string}`],
+          [asset as `0x${string}`, route.fee, route.quoteToken, 100, configuredSettlementToken],
         )
       : encodePacked(
           ["address", "uint24", "address", "uint24", "address"],
-          [configuredSettlementToken as `0x${string}`, 100, robinhoodTestnetAddresses.weth, routeFeeFor(asset), asset as `0x${string}`],
+          [configuredSettlementToken, 100, route.quoteToken, route.fee, asset as `0x${string}`],
         );
   };
   const exactOutputRouteFor = (asset: string) => {
-    if (!usesTwoHopRegisteredRoute || !configuredSettlementToken || !robinhoodTestnetAddresses.weth) return undefined;
+    if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
+    if (isBaseAsset(asset)) {
+      return encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, configuredSettlementToken]);
+    }
+    const route = executionRouteFor(asset);
+    if (!route) return undefined;
+    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
+      return encodePacked(
+        ["address", "uint24", "address"],
+        [asset as `0x${string}`, route.fee, configuredSettlementToken],
+      );
+    }
     return encodePacked(
       ["address", "uint24", "address", "uint24", "address"],
-      [asset as `0x${string}`, routeFeeFor(asset), robinhoodTestnetAddresses.weth, 100, configuredSettlementToken],
+      [asset as `0x${string}`, route.fee, route.quoteToken, 100, configuredSettlementToken],
     );
   };
-  const registeredMarketsConfigured = !isRegisteredEntryAdapter || vault.allocations.every(
+  const executionRoutesConfigured = !isRegisteredEntryAdapter || vault.allocations.every(
     (asset) => asset.address.toLowerCase() === configuredSettlementToken?.toLowerCase() ||
-      Boolean(registeredMarketIdFor(asset.address)),
+      Boolean(exactInputRouteFor(asset.address)),
   );
-  const routePoolMode: RoutedSettlementMode = usesTwoHopRegisteredRoute ? "weth" : routedSettlementMode;
-  const tieredAssetRegistryConfigured = Boolean(
-    robinhoodTestnetAddresses.assetMarketRegistry && robinhoodTestnetAddresses.assetRegistry,
-  );
-  const { data: constituentStatusResults } = useReadContracts({
-    contracts: vault.allocations.map((asset) => ({
-      address: robinhoodTestnetAddresses.assetRegistry ?? zeroAddress,
-      abi: assetStatusReadAbi,
-      functionName: "statusOf" as const,
-      args: [asset.address as `0x${string}`] as const,
-      chainId: robinhoodChainTestnet.id,
-    })),
-    query: { enabled: tieredAssetRegistryConfigured && vault.allocations.length > 0 },
-  });
-  const constituentStatuses = constituentStatusResults?.map((result) =>
-    result.status === "success" ? Number(result.result) : undefined,
-  );
-  const vaultExperimental = Boolean(tieredAssetRegistryConfigured && constituentStatuses?.some((status) => status === 1));
-  const vaultContainsBlockedAsset = Boolean(tieredAssetRegistryConfigured && constituentStatuses?.some((status) => status === 3));
-  const vaultQualityPending = Boolean(
-    tieredAssetRegistryConfigured && (!constituentStatuses || constituentStatuses.some((status) => status === undefined)),
+  const vaultQuality = deriveOtfQuality(
+    vault.allocations.map((asset) => assetQualityForAddress(asset.address)),
   );
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
   );
-  const vaultDepositsBlocked = vault.sunset || vault.depositsPaused || depositsPausedForAssetRemoval || vaultContainsBlockedAsset;
+  const vaultDepositsBlocked = primaryDepositsBlocked({
+    sunset: vault.sunset,
+    globalPause: vault.protocolDepositsPaused,
+    localPause: vault.vaultDepositsPaused,
+    pauseStatusAvailable: !vault.depositPauseStatusUnavailable,
+    retiringAsset: depositsPausedForAssetRemoval,
+  });
 
   useEffect(() => {
     if (!vault.sunset || activeAction !== "deposit") return;
@@ -2878,7 +3021,7 @@ function UserActions({
     setMarketError(undefined);
   }, [activeAction, vault.sunset]);
   const entryContractsConfigured = Boolean(
-    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress && registeredMarketsConfigured,
+    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress && executionRoutesConfigured,
   );
   const parsedSlippage = Number(maxSlippage);
   const slippageBps = Number.isFinite(parsedSlippage)
@@ -2915,8 +3058,52 @@ function UserActions({
   const settlementToken = typeof settlementTokenAddress === "string" && isAddress(settlementTokenAddress)
     ? settlementTokenAddress
     : configuredSettlementToken;
+  const exactOutputQuoteContract = (asset: string, amountOut: bigint) => {
+    const path = exactOutputRouteFor(asset);
+    return path ? {
+      address: uniswapV3QuoterAddress as `0x${string}`,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactOutput" as const,
+      args: [path, amountOut] as const,
+      chainId: robinhoodChainTestnet.id,
+    } : {
+      address: uniswapV3QuoterAddress as `0x${string}`,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactOutputSingle" as const,
+      args: [{
+        tokenIn: settlementToken as `0x${string}`,
+        tokenOut: asset as `0x${string}`,
+        amountOut,
+        fee: routeFeeFor(asset),
+        sqrtPriceLimitX96: 0n,
+      }] as const,
+      chainId: robinhoodChainTestnet.id,
+    };
+  };
+  const exactInputQuoteContract = (asset: string, amountIn: bigint, assetToSettlement = false) => {
+    const path = exactInputRouteFor(asset, assetToSettlement);
+    return path ? {
+      address: uniswapV3QuoterAddress as `0x${string}`,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactInput" as const,
+      args: [path, amountIn] as const,
+      chainId: robinhoodChainTestnet.id,
+    } : {
+      address: uniswapV3QuoterAddress as `0x${string}`,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactInputSingle" as const,
+      args: [{
+        tokenIn: (assetToSettlement ? asset : settlementToken) as `0x${string}`,
+        tokenOut: (assetToSettlement ? settlementToken : asset) as `0x${string}`,
+        amountIn,
+        fee: routeFeeFor(asset),
+        sqrtPriceLimitX96: 0n,
+      }] as const,
+      chainId: robinhoodChainTestnet.id,
+    };
+  };
   const constituentLiquidityContracts = vault.allocations.flatMap((asset) => {
-    const pool = configuredConstituentPool(asset.address, routePoolMode);
+    const pool = routePoolFor(asset.address);
     return pool ? [{
       address: pool,
       abi: uniswapV3PoolAbi,
@@ -2936,7 +3123,7 @@ function UserActions({
   });
   let constituentLiquidityIndex = 0;
   const constituentPoolStates = vault.allocations.map((asset) => {
-    const pool = configuredConstituentPool(asset.address, routePoolMode);
+    const pool = routePoolFor(asset.address);
     const result = pool ? constituentLiquidityResults?.[constituentLiquidityIndex++] : undefined;
     return {
       asset: asset.address,
@@ -2948,7 +3135,7 @@ function UserActions({
   const constituentPoolsConfigured = Boolean(
     settlementToken && vault.allocations.every((asset) =>
       asset.address.toLowerCase() === settlementToken.toLowerCase()
-        || Boolean(configuredConstituentPool(asset.address, routePoolMode)),
+        || Boolean(routePoolFor(asset.address)),
     ),
   );
   const constituentPoolsReady = Boolean(
@@ -3057,36 +3244,11 @@ function UserActions({
     query: { enabled: canQuoteEntry },
   });
   const entryQuoteContracts = canQuoteEntry && constituentPoolsReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+    ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = previewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
-        const multiHopPath = exactOutputRouteFor(asset.address);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutput" as const,
-          args: [multiHopPath, amountOut] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : vault.allocations.flatMap((asset, index) => {
-        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-        const amountOut = previewEntryAmounts[index];
-        if (amountOut === undefined || amountOut === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutputSingle" as const,
-          args: [{
-            tokenIn: settlementToken,
-            tokenOut: asset.address as `0x${string}`,
-            amountOut,
-            fee: routeFeeFor(asset.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactOutputQuoteContract(asset.address, amountOut)];
       })
     : [];
   const {
@@ -3175,36 +3337,11 @@ function UserActions({
     query: { enabled: canQuoteAdjustedEntry },
   });
   const adjustedEntryQuoteContracts = canQuoteAdjustedEntry && constituentPoolsReady && adjustedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+    ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = adjustedPreviewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
-        const multiHopPath = exactOutputRouteFor(asset.address);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutput" as const,
-          args: [multiHopPath, amountOut] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : vault.allocations.flatMap((asset, index) => {
-        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-        const amountOut = adjustedPreviewEntryAmounts[index];
-        if (amountOut === undefined || amountOut === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutputSingle" as const,
-          args: [{
-            tokenIn: settlementToken,
-            tokenOut: asset.address as `0x${string}`,
-            amountOut,
-            fee: routeFeeFor(asset.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactOutputQuoteContract(asset.address, amountOut)];
       })
     : [];
   const {
@@ -3268,36 +3405,11 @@ function UserActions({
     query: { enabled: canQuoteRefinedEntry },
   });
   const refinedEntryQuoteContracts = canQuoteRefinedEntry && constituentPoolsReady && refinedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+    ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = refinedPreviewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
-        const multiHopPath = exactOutputRouteFor(asset.address);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutput" as const,
-          args: [multiHopPath, amountOut] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : vault.allocations.flatMap((asset, index) => {
-        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-        const amountOut = refinedPreviewEntryAmounts[index];
-        if (amountOut === undefined || amountOut === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactOutputSingle" as const,
-          args: [{
-            tokenIn: settlementToken,
-            tokenOut: asset.address as `0x${string}`,
-            amountOut,
-            fee: routeFeeFor(asset.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactOutputQuoteContract(asset.address, amountOut)];
       })
     : [];
   const {
@@ -3383,36 +3495,11 @@ function UserActions({
     query: { enabled: canPreviewRedeem },
   });
   const redeemQuoteContracts = previewRedeemAmounts && settlementToken && constituentPoolsReady && uniswapV3QuoterAddress && redeemSlippageValid
-    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+    ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountIn = previewRedeemAmounts[index];
         if (amountIn === undefined || amountIn === 0n) return [];
-        const multiHopPath = exactInputRouteFor(asset.address, true);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInput" as const,
-          args: [multiHopPath, amountIn] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : vault.allocations.flatMap((asset, index) => {
-        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
-        const amountIn = previewRedeemAmounts[index];
-        if (amountIn === undefined || amountIn === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInputSingle" as const,
-          args: [{
-            tokenIn: asset.address as `0x${string}`,
-            tokenOut: settlementToken,
-            amountIn,
-            fee: routeFeeFor(asset.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactInputQuoteContract(asset.address, amountIn, true)];
       })
     : [];
   const {
@@ -3590,34 +3677,10 @@ function UserActions({
     return inputs;
   })();
   const exactInputEntryQuoteContracts = entrySizingQuoteReady && settlementToken && uniswapV3QuoterAddress
-    ? usesTwoHopRegisteredRoute ? entryLegs.flatMap((leg, index) => {
+    ? entryLegs.flatMap((leg, index) => {
         const settlementIn = entrySettlementInputs[index];
         if (leg.isSettlement || settlementIn === undefined || settlementIn === 0n) return [];
-        const multiHopPath = exactInputRouteFor(leg.address);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInput" as const,
-          args: [multiHopPath, settlementIn] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : entryLegs.flatMap((leg, index) => {
-        const settlementIn = entrySettlementInputs[index];
-        if (leg.isSettlement || settlementIn === undefined || settlementIn === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInputSingle" as const,
-          args: [{
-            tokenIn: settlementToken,
-            tokenOut: leg.address as `0x${string}`,
-            amountIn: settlementIn,
-            fee: routeFeeFor(leg.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactInputQuoteContract(leg.address, settlementIn)];
       })
     : [];
   const {
@@ -3661,32 +3724,9 @@ function UserActions({
     };
   });
   const entryRefundRateQuoteContracts = settlementToken && uniswapV3QuoterAddress
-    ? usesTwoHopRegisteredRoute ? exactInputEntryLegs.flatMap((leg) => {
+    ? exactInputEntryLegs.flatMap((leg) => {
         if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
-        const multiHopPath = exactInputRouteFor(leg.address, true);
-        if (!multiHopPath) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInput" as const,
-          args: [multiHopPath, leg.quotedAssetOut] as const,
-          chainId: robinhoodChainTestnet.id,
-        }];
-      }) : exactInputEntryLegs.flatMap((leg) => {
-        if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
-        return [{
-          address: uniswapV3QuoterAddress,
-          abi: uniswapV3QuoterAbi,
-          functionName: "quoteExactInputSingle" as const,
-          args: [{
-            tokenIn: leg.address as `0x${string}`,
-            tokenOut: settlementToken,
-            amountIn: leg.quotedAssetOut,
-            fee: routeFeeFor(leg.address),
-            sqrtPriceLimitX96: 0n,
-          }],
-          chainId: robinhoodChainTestnet.id,
-        }];
+        return [exactInputQuoteContract(leg.address, leg.quotedAssetOut, true)];
       })
     : [];
   const {
@@ -3992,7 +4032,6 @@ function UserActions({
   const underlyingRouteAvailable = entryContractsConfigured &&
     entryAdapterApproved !== false &&
     constituentPoolsReady &&
-    !vaultContainsBlockedAsset &&
     (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
     entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
@@ -4156,19 +4195,13 @@ function UserActions({
           minAssetOut: leg.minimumAssetOut as bigint,
           minRefundSettlementRate: leg.minimumRefundSettlementRate as bigint,
           adapterData: isRegisteredEntryAdapter
-            ? encodeAbiParameters(
-                [{ type: "bytes32" }],
-                [registeredMarketIdFor(leg.address) as `0x${string}`],
-              )
+            ? exactInputRouteFor(leg.address) ?? "0x"
             : encodeAbiParameters(
                 [{ type: "address[]" }],
                 [[settlementToken, leg.address as `0x${string}`]],
               ),
           refundAdapterData: isRegisteredEntryAdapter
-            ? encodeAbiParameters(
-                [{ type: "bytes32" }],
-                [registeredMarketIdFor(leg.address) as `0x${string}`],
-              )
+            ? exactInputRouteFor(leg.address, true) ?? "0x"
             : encodeAbiParameters(
                 [{ type: "address[]" }],
                 [[leg.address as `0x${string}`, settlementToken]],
@@ -4392,10 +4425,7 @@ function UserActions({
           adapter: entryAdapterAddress,
           minSettlementOut: leg.minimumSettlement as bigint,
           adapterData: isRegisteredEntryAdapter
-            ? encodeAbiParameters(
-                [{ type: "bytes32" }],
-                [registeredMarketIdFor(leg.address) as `0x${string}`],
-              )
+            ? exactInputRouteFor(leg.address, true) ?? "0x"
             : encodeAbiParameters(
                 [{ type: "address[]" }],
                 [[leg.address as `0x${string}`, settlementToken]],
@@ -4677,39 +4707,40 @@ function UserActions({
           </div>
         </div>
 
-        {tieredAssetRegistryConfigured ? (
-          <div className={`validationSummary ${vaultContainsBlockedAsset ? "danger" : vaultExperimental ? "warning" : "success"}`} role="status">
-            {vaultContainsBlockedAsset || vaultExperimental ? <AlertTriangle size={15} /> : <ShieldCheck size={15} />}
+        <div className={`validationSummary ${vaultQuality === "high" ? "success" : "warning"}`} role="status">
+            {vaultQuality === "high" ? <ShieldCheck size={15} /> : <Info size={15} />}
             <div>
-              <strong>
-                {vaultQualityPending
-                  ? "Checking constituent quality"
-                  : vaultContainsBlockedAsset
-                    ? "Blocked constituent — deposits and management disabled"
-                    : vaultExperimental
-                      ? "Experimental OTF"
-                      : "Protocol-qualified assets"}
-              </strong>
-              <span>
-                {vaultContainsBlockedAsset
-                  ? "New deposits are unavailable, but proportional redemption remains open."
-                  : vaultExperimental
-                    ? "Pool-derived prices and liquidity can be manipulated. Malicious or upgradable token transfers and routed redemptions can fail, and performance XP depends on continuing eligibility."
-                    : "Every current constituent is governance-qualified. This tier is derived live and updates automatically after qualification, demotion, or blocking."}
-              </span>
+              <strong>{vaultQuality === "high" ? "High-quality OTF" : "Normal-quality OTF"}</strong>
+              <span>{vaultQuality === "high"
+                ? "Every current constituent is marked high quality in the live asset catalog. This informational label does not change contract permissions or pricing."
+                : "At least one current constituent is normal or unknown. Quality is informational and never blocks deposits, strategy changes, trading, or fees."}</span>
             </div>
           </div>
-        ) : null}
 
         {vault.sunset ? (
           <div className="validationSummary danger" role="status">
             <Sun size={15} />
             <div><strong>New positions are closed</strong><span>This OTF is in permanent wind-down mode. Proportional redemptions remain available.</span></div>
           </div>
-        ) : vault.depositsPaused && activeAction === "deposit" ? (
+        ) : vault.depositPauseStatusUnavailable && activeAction === "deposit" ? (
+          <div className="validationSummary warning" role="status">
+            <RefreshCw size={15} />
+            <div>
+              <strong>Deposit-pause status unavailable</strong>
+              <span>Primary contribution routes stay disabled until both the global and per-OTF pause states can be verified. Redemptions remain available.</span>
+            </div>
+          </div>
+        ) : (vault.protocolDepositsPaused || vault.vaultDepositsPaused) && activeAction === "deposit" ? (
           <div className="validationSummary warning" role="status">
             <ShieldCheck size={15} />
-            <div><strong>Primary deposits are paused protocol-wide</strong><span>Minting new OTF shares is temporarily disabled. Existing shares may still be bought from the liquidity pool, and redemptions remain available.</span></div>
+            <div>
+              <strong>{vault.protocolDepositsPaused && vault.vaultDepositsPaused
+                ? "Deposits paused protocol-wide and for this OTF"
+                : vault.protocolDepositsPaused
+                  ? "Deposits paused protocol-wide"
+                  : "Deposits paused for this OTF"}</strong>
+              <span>Primary contribution and mint routes are temporarily disabled. Redemptions, transfers, strategy operations, challenges, and fee accrual remain available.</span>
+            </div>
           </div>
         ) : null}
 
@@ -4871,8 +4902,12 @@ function UserActions({
                     ? "Settlement route not configured"
                     : activeAction === "deposit" && vault.sunset
                       ? "OTF sunset — new positions closed"
-                    : activeAction === "deposit" && vault.depositsPaused
-                      ? "Primary deposits paused by protocol"
+                    : activeAction === "deposit" && vault.depositPauseStatusUnavailable
+                      ? "Checking deposit-pause status"
+                    : activeAction === "deposit" && vault.protocolDepositsPaused
+                      ? "Deposits paused protocol-wide"
+                    : activeAction === "deposit" && vault.vaultDepositsPaused
+                      ? "Deposits paused for this OTF"
                     : activeAction === "deposit" && depositsPausedForAssetRemoval
                       ? "Paused while an asset is removed"
                     : !constituentPoolsConfigured
@@ -5389,15 +5424,16 @@ function PortfolioBandStatus({
 }
 
 function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
-  const activeTargetsKey = vault.allocations
+  const activeTargetsKey = `${vault.address ?? "unconfigured"}|${vault.allocations
     .map((asset) => `${asset.address.toLowerCase()}:${asset.symbol}:${asset.targetWeightBps}`)
-    .join("|");
+    .join("|")}`;
   const [targets, setTargets] = useState<StrategyTargetAsset[]>(() =>
     vault.allocations.map((asset) => ({
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      qualityStatus: "qualified",
+      quality: assetQualityForAddress(asset.address),
+      pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
     })),
@@ -5407,7 +5443,9 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
   const [manualTargetAsset, setManualTargetAsset] = useState("");
-  const [manualTargetPool, setManualTargetPool] = useState("");
+  const [manualTargetPricingSource, setManualTargetPricingSource] = useState<PricingSource>(0);
+  const [manualTargetPrimarySource, setManualTargetPrimarySource] = useState("");
+  const [manualTargetSecondarySource, setManualTargetSecondarySource] = useState("");
   const [manualTargetState, setManualTargetState] = useState<TxState>("idle");
   const [manualTargetError, setManualTargetError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
@@ -5421,29 +5459,27 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(vault.address && vault.strategyProposalPending), refetchInterval: 12_000 },
   });
-  const usesPermissionlessMarkets = Boolean(
-    robinhoodTestnetAddresses.assetRegistry && robinhoodTestnetAddresses.assetMarketRegistry,
-  );
-  const { data: activeTargetMarketResults } = useReadContracts({
-    contracts: usesPermissionlessMarkets && vault.address
-      ? vault.allocations.flatMap((asset) => [
-          {
-            address: robinhoodTestnetAddresses.assetRegistry as `0x${string}`,
-            abi: assetStatusReadAbi,
-            functionName: "statusOf" as const,
-            args: [asset.address as `0x${string}`] as const,
-            chainId: robinhoodChainTestnet.id,
-          },
-          {
-            address: vault.address as `0x${string}`,
-            abi: managedOtfVaultAbi,
-            functionName: "marketIdForAsset" as const,
-            args: [asset.address as `0x${string}`] as const,
-            chainId: robinhoodChainTestnet.id,
-          },
-        ])
+  const { data: factoryPricingResolver, isError: factoryPricingResolverReadFailed } = useReadContract({
+    address: vault.factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "pricingResolver",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.factoryAddress) },
+  });
+  const pricingResolverAddress = isAddress(factoryPricingResolver ?? "")
+    ? factoryPricingResolver as `0x${string}`
+    : undefined;
+  const { data: activeTargetPricingResults } = useReadContracts({
+    contracts: vault.address
+      ? vault.allocations.map((asset) => ({
+          address: vault.address as `0x${string}`,
+          abi: managedOtfVaultAbi,
+          functionName: "pricingConfigForAsset" as const,
+          args: [asset.address as `0x${string}`] as const,
+          chainId: robinhoodChainTestnet.id,
+        }))
       : [],
-    query: { enabled: usesPermissionlessMarkets && Boolean(vault.address) },
+    query: { enabled: Boolean(vault.address && vault.allocations.length) },
   });
 
   useEffect(() => {
@@ -5453,32 +5489,44 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      qualityStatus: "qualified",
+      quality: assetQualityForAddress(asset.address),
+      pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
     })));
   }, [activeTargetsKey, vault.allocations]);
 
   useEffect(() => {
-    if (!activeTargetMarketResults || activeTargetMarketResults.length !== vault.allocations.length * 2) return;
+    if (!activeTargetPricingResults || activeTargetPricingResults.length !== vault.allocations.length) return;
     setTargets((current) => current.map((target) => {
       const allocationIndex = vault.allocations.findIndex(
         (asset) => asset.address.toLowerCase() === target.address.toLowerCase(),
       );
       if (allocationIndex < 0) return target;
-      const statusResult = activeTargetMarketResults[allocationIndex * 2];
-      const marketResult = activeTargetMarketResults[allocationIndex * 2 + 1];
-      const status = statusResult?.status === "success" ? Number(statusResult.result) : undefined;
-      const marketId = marketResult?.status === "success"
-        ? marketResult.result as `0x${string}`
-        : undefined;
+      const pricingResult = activeTargetPricingResults[allocationIndex];
+      if (pricingResult?.status !== "success") return target;
+      const [configured, source, primarySource, secondarySource] = pricingResult.result;
+      if (!configured || (source !== 0 && source !== 1 && source !== 2)) return target;
       return {
         ...target,
-        qualityStatus: status === 1 ? "open" : status === 3 ? "blocked" : "qualified",
-        marketId: marketId && marketId !== zeroHash ? marketId : undefined,
+        quality: assetQualityForAddress(target.address),
+        pricingConfig: { source, primarySource, secondarySource },
       };
     }));
-  }, [activeTargetMarketResults, vault.allocations]);
+  }, [activeTargetPricingResults, vault.allocations]);
+
+  const incumbentPricingReadsReady = vault.allocations.length === 0 || Boolean(
+    activeTargetPricingResults &&
+    activeTargetPricingResults.length === vault.allocations.length &&
+    activeTargetPricingResults.every((result) =>
+      result.status === "success" && Boolean(result.result[0]),
+    ),
+  );
+  const incumbentPricingReadFailed = factoryPricingResolverReadFailed || Boolean(
+    activeTargetPricingResults?.some((result) =>
+      result.status === "failure" || (result.status === "success" && !result.result[0]),
+    ),
+  );
 
   const totalWeight = targets.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
   const targetChanges = targets.map((asset) => {
@@ -5504,10 +5552,9 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const weightsValid = weightSumValid && targetMinimumValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
-  const experimentalTargets = targets.filter((asset) => asset.qualityStatus === "open");
-  const blockedTargets = targets.filter((asset) => asset.qualityStatus === "blocked");
-  const targetMarketsValid = !usesPermissionlessMarkets || targets.every(
-    (asset) => asset.qualityStatus !== "open" || Boolean(asset.marketId && asset.marketId !== zeroHash),
+  const normalQualityTargets = targets.filter((asset) => asset.quality === "normal");
+  const targetPricingValid = incumbentPricingReadsReady && targets.every(
+    (asset) => pricingConfigIsComplete(asset.pricingConfig),
   );
   const targetsChanged = targets.length !== vault.allocations.length || targets.some((target) => {
     const current = vault.allocations.find(
@@ -5612,25 +5659,38 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     const selectedAddresses = new Set(targets.map((target) => target.address.toLowerCase()));
     const nextAsset = testnetCreateAssets.find((asset) => !selectedAddresses.has(asset.address.toLowerCase()));
     if (!nextAsset) return;
+    const pricingConfig = configuredPricingConfig(nextAsset.address) ?? emptyPricingConfig();
     setTargets((current) => [...current, {
       ticker: nextAsset.symbol,
       name: nextAsset.name,
       address: nextAsset.address,
-      qualityStatus: "qualified",
+      poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+      quality: nextAsset.quality,
+      pricingConfig,
       targetWeight: "",
       initialAmount: "",
     }]);
     setTxState("idle");
   }
 
-  async function registerAndAddOpenTarget() {
+  async function validateAndAddTarget() {
     if (
-      !publicClient || !vault.connectedIsManager || !robinhoodTestnetAddresses.assetRegistry ||
-      !robinhoodTestnetAddresses.assetMarketRegistry || !isAddress(manualTargetAsset) ||
-      !isAddress(manualTargetPool) || protocolMinimumTargetWeightBps === undefined
+      !publicClient || !vault.connectedIsManager || !pricingResolverAddress ||
+      !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
+      protocolMinimumTargetWeightBps === undefined
     ) return;
     const assetAddress = manualTargetAsset as `0x${string}`;
-    const poolAddress = manualTargetPool as `0x${string}`;
+    const pricingConfig: AssetPricingConfig = {
+      source: manualTargetPricingSource,
+      primarySource: manualTargetPrimarySource as `0x${string}`,
+      secondarySource: manualTargetPricingSource === 1 && isAddress(manualTargetSecondarySource)
+        ? manualTargetSecondarySource as `0x${string}`
+        : zeroAddress,
+    };
+    if (!pricingConfigIsComplete(pricingConfig)) {
+      setManualTargetError("Complete the selected pricing route before validating it.");
+      return;
+    }
     if (targets.some((target) => target.address.toLowerCase() === assetAddress.toLowerCase())) {
       setManualTargetError("This token contract is already in the proposal.");
       return;
@@ -5638,72 +5698,19 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     setManualTargetError(undefined);
     setManualTargetState("pending");
     try {
-      const [decimals, tokenName, tokenSymbol, currentStatus] = await Promise.all([
+      const [decimals, tokenName, tokenSymbol] = await Promise.all([
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "decimals" }),
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "name" }).catch(() => "Unindexed token"),
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
-        publicClient.readContract({
-          address: robinhoodTestnetAddresses.assetRegistry,
-          abi: permissionlessAssetRegistryAbi,
-          functionName: "statusOf",
-          args: [assetAddress],
-        }),
       ]);
       if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
-      if (Number(currentStatus) === 3) throw new Error("This token is blocked by protocol governance.");
-      let qualityStatus: "qualified" | "open" = Number(currentStatus) === 2 ? "qualified" : "open";
-      if (Number(currentStatus) === 0) {
-        const registrationHash = await writeContractAsync({
-          address: robinhoodTestnetAddresses.assetRegistry,
-          abi: permissionlessAssetRegistryAbi,
-          functionName: "registerOpenAsset",
-          args: [assetAddress],
-          chainId: robinhoodChainTestnet.id,
-        });
-        setManualTargetState("submitted");
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: registrationHash });
-        if (receipt.status !== "success") throw new Error("Open-asset registration reverted.");
-        qualityStatus = "open";
-      }
-
-      let marketId: `0x${string}` | undefined;
-      if (qualityStatus === "open") {
-        setManualTargetState("pending");
-        const marketHash = await writeContractAsync({
-          address: robinhoodTestnetAddresses.assetMarketRegistry,
-          abi: assetMarketRegistryAbi,
-          functionName: "registerV3Market",
-          args: [assetAddress, poolAddress],
-          chainId: robinhoodChainTestnet.id,
-        });
-        setManualTargetState("submitted");
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: marketHash });
-        if (receipt.status !== "success") throw new Error("V3 market registration reverted.");
-        marketId = keccak256(encodeAbiParameters(
-          [{ type: "uint256" }, { type: "address" }, { type: "address" }],
-          [BigInt(robinhoodChainTestnet.id), assetAddress, poolAddress],
-        ));
-        const market = await publicClient.readContract({
-          address: robinhoodTestnetAddresses.assetMarketRegistry,
-          abi: assetMarketRegistryAbi,
-          functionName: "marketFor",
-          args: [marketId],
-        });
-        const [marketAsset, registeredPool, priceFeed, , active] = market;
-        if (
-          !active || marketAsset.toLowerCase() !== assetAddress.toLowerCase() ||
-          registeredPool.toLowerCase() !== poolAddress.toLowerCase()
-        ) throw new Error("The registered market does not match the requested token and pool.");
-        try {
-          await publicClient.readContract({
-            address: priceFeed,
-            abi: aggregatorV3ReadAbi,
-            functionName: "latestRoundData",
-          });
-        } catch {
-          throw new Error("The V3 route needs a complete one-hour observation history before proposal.");
-        }
-      }
+      await publicClient.simulateContract({
+        account: vault.manager as `0x${string}`,
+        address: pricingResolverAddress,
+        abi: assetPricingResolverAbi,
+        functionName: "validateAndQuotePrice",
+        args: [assetAddress, pricingConfig],
+      });
 
       const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
       setTargets((current) => {
@@ -5720,16 +5727,17 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             ticker: symbol,
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
-            marketId,
-            poolAddress: qualityStatus === "open" ? poolAddress : undefined,
-            qualityStatus,
+            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+            quality: "normal",
+            pricingConfig,
             targetWeight: formatDraftWeight(protocolMinimumTargetWeightBps),
             initialAmount: "",
           },
         ];
       });
       setManualTargetAsset("");
-      setManualTargetPool("");
+      setManualTargetPrimarySource("");
+      setManualTargetSecondarySource("");
       setManualTargetState("confirmed");
       setTxState("idle");
     } catch (error) {
@@ -5742,54 +5750,34 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     if (
       !vault.address || !vault.connectedIsManager || !publicClient || !weightsValid ||
       !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid ||
-      !targetMarketsValid || blockedTargets.length > 0
+      !targetPricingValid || !incumbentPricingReadsReady
     ) return;
     setTxError(undefined);
     try {
       setTxState("simulating");
       const addresses = targets.map((target) => target.address as `0x${string}`);
       const weights = targetWeightBps.map(BigInt);
-      let hash: `0x${string}`;
-      if (usesPermissionlessMarkets) {
-        const args = [
-          addresses,
-          weights,
-          targets.map((target) => target.marketId ?? zeroHash),
-          normalizedRationale,
-        ] as const;
-        await publicClient.simulateContract({
-          account: vault.manager as `0x${string}`,
-          address: vault.address,
-          abi: managedOtfVaultAbi,
-          functionName: "proposeStrategyWithMarkets",
-          args,
-        });
-        setTxState("pending");
-        hash = await writeContractAsync({
-          address: vault.address,
-          abi: managedOtfVaultAbi,
-          functionName: "proposeStrategyWithMarkets",
-          args,
-          chainId: robinhoodChainTestnet.id,
-        });
-      } else {
-        const args = [addresses, weights, normalizedRationale] as const;
-        await publicClient.simulateContract({
-          account: vault.manager as `0x${string}`,
-          address: vault.address,
-          abi: managedOtfVaultAbi,
-          functionName: "proposeStrategy",
-          args,
-        });
-        setTxState("pending");
-        hash = await writeContractAsync({
-          address: vault.address,
-          abi: managedOtfVaultAbi,
-          functionName: "proposeStrategy",
-          args,
-          chainId: robinhoodChainTestnet.id,
-        });
-      }
+      const args = [
+        addresses,
+        weights,
+        targets.map((target) => target.pricingConfig),
+        normalizedRationale,
+      ] as const;
+      await publicClient.simulateContract({
+        account: vault.manager as `0x${string}`,
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "proposeStrategyWithPricing",
+        args,
+      });
+      setTxState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "proposeStrategyWithPricing",
+        args,
+        chainId: robinhoodChainTestnet.id,
+      });
       setTxState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The target update reverted.");
@@ -5860,14 +5848,17 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                     disabled={targetEditorLocked}
                     onChange={(event) => {
                       const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
-                      if (selected) updateTarget(index, {
-                        ticker: selected.symbol,
-                        name: selected.name,
-                        address: selected.address,
-                        marketId: undefined,
-                        poolAddress: undefined,
-                        qualityStatus: "qualified",
-                      });
+                      if (selected) {
+                        const pricingConfig = configuredPricingConfig(selected.address) ?? emptyPricingConfig();
+                        updateTarget(index, {
+                          ticker: selected.symbol,
+                          name: selected.name,
+                          address: selected.address,
+                          poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                          quality: selected.quality,
+                          pricingConfig,
+                        });
+                      }
                     }}
                   >
                     {testnetCreateAssets.map((asset) => (
@@ -5902,13 +5893,65 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 </div>
               </label>
               <small>Active target {targetChanges[index]?.activeTarget.toFixed(1) ?? "0.0"}% · Live holding {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
-              <span className={`stateBadge ${
-                target.qualityStatus === "open" ? "warning" : target.qualityStatus === "blocked" ? "danger" : "success"
-              }`}>
-                {target.qualityStatus === "open"
-                  ? "Experimental"
-                  : target.qualityStatus === "blocked" ? "Blocked" : "Protocol-qualified assets"}
+              <span className={`stateBadge ${target.quality === "high" ? "success" : "muted"}`}>
+                {target.quality === "high" ? "High quality" : "Normal quality"} · {pricingSourceLabel(target.pricingConfig.source)}
               </span>
+              <label>
+                <span>Pricing source</span>
+                <select
+                  value={target.pricingConfig.source}
+                  disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
+                  onChange={(event) => {
+                    const source = Number(event.target.value) as PricingSource;
+                    const known = configuredPricingConfig(target.address);
+                    const pricingConfig = known?.source === source
+                      ? known
+                      : { source, primarySource: zeroAddress, secondarySource: zeroAddress };
+                    updateTarget(index, {
+                      pricingConfig,
+                      poolAddress: source === 2 ? pricingConfig.primarySource : undefined,
+                    });
+                  }}
+                >
+                  <option value={0}>Chainlink ASSET/USD</option>
+                  <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
+                  <option value={2}>Uniswap V3 TWAP</option>
+                </select>
+              </label>
+              <label>
+                <span>{target.pricingConfig.source === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
+                <input
+                  value={target.pricingConfig.primarySource === zeroAddress ? "" : target.pricingConfig.primarySource}
+                  disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
+                  onChange={(event) => {
+                    const primarySource = event.target.value.trim() as `0x${string}`;
+                    updateTarget(index, {
+                      pricingConfig: { ...target.pricingConfig, primarySource },
+                      poolAddress: target.pricingConfig.source === 2 ? primarySource : undefined,
+                    });
+                  }}
+                  placeholder="0x exact source address"
+                />
+              </label>
+              {target.pricingConfig.source === 1 ? (
+                <label>
+                  <span>WETH/USD Chainlink feed</span>
+                  <input
+                    value={target.pricingConfig.secondarySource === zeroAddress ? "" : target.pricingConfig.secondarySource}
+                    disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
+                    onChange={(event) => updateTarget(index, {
+                      pricingConfig: {
+                        ...target.pricingConfig,
+                        secondarySource: event.target.value.trim() as `0x${string}`,
+                      },
+                    })}
+                    placeholder="0x WETH/USD feed"
+                  />
+                </label>
+              ) : null}
+              {vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase()) ? (
+                <small>Pricing is already pinned for this constituent and cannot be replaced.</small>
+              ) : null}
             </div>
           ))}
         </div>
@@ -5916,14 +5959,13 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <Plus size={13} />
           Add asset
         </button>
-        {usesPermissionlessMarkets ? (
-          <div className="manualAssetRegistration strategyManualAsset">
+        <div className="manualAssetRegistration strategyManualAsset">
             <div className="manualAssetRegistrationIntro">
               <div>
                 <strong>Add an unindexed token</strong>
-                <span>Register the 18-decimal token and pin its Uniswap V3 asset/WETH market into this proposal.</span>
+              <span>Submit the 18-decimal token with its exact Chainlink or Uniswap V3 pricing configuration.</span>
               </div>
-              <span className="stateBadge warning">Experimental</span>
+              <span className="stateBadge muted">Normal quality</span>
             </div>
             <div className="manualAssetRegistrationFields">
               <label>
@@ -5936,39 +5978,62 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 />
               </label>
               <label>
-                <span>V3 asset/WETH pool</span>
+                <span>Pricing source</span>
+                <select
+                  value={manualTargetPricingSource}
+                  onChange={(event) => setManualTargetPricingSource(Number(event.target.value) as PricingSource)}
+                  disabled={targetEditorLocked}
+                >
+                  <option value={0}>Chainlink ASSET/USD</option>
+                  <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
+                  <option value={2}>Uniswap V3 TWAP</option>
+                </select>
+              </label>
+              <label>
+                <span>{manualTargetPricingSource === 2 ? "V3 pricing pool" : manualTargetPricingSource === 1 ? "ASSET/WETH feed" : "ASSET/USD feed"}</span>
                 <input
-                  value={manualTargetPool}
-                  onChange={(event) => setManualTargetPool(event.target.value.trim())}
-                  placeholder="0x Uniswap V3 pool"
+                  value={manualTargetPrimarySource}
+                  onChange={(event) => setManualTargetPrimarySource(event.target.value.trim())}
+                  placeholder="0x source address"
                   disabled={targetEditorLocked}
                 />
               </label>
+              {manualTargetPricingSource === 1 ? (
+                <label>
+                  <span>WETH/USD feed</span>
+                  <input
+                    value={manualTargetSecondarySource}
+                    onChange={(event) => setManualTargetSecondarySource(event.target.value.trim())}
+                    placeholder="0x WETH/USD feed"
+                    disabled={targetEditorLocked}
+                  />
+                </label>
+              ) : null}
               <button
                 type="button"
                 className="secondaryAction"
-                onClick={registerAndAddOpenTarget}
+                onClick={validateAndAddTarget}
                 disabled={
                   targetEditorLocked || !vault.connectedIsManager ||
                   manualTargetState === "pending" || manualTargetState === "submitted" ||
-                  !isAddress(manualTargetAsset) || !isAddress(manualTargetPool) ||
+                  !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
+                  (manualTargetPricingSource === 1 && !isAddress(manualTargetSecondarySource)) ||
                   protocolMinimumTargetWeightBps === undefined
                 }
               >
                 {manualTargetState === "pending" || manualTargetState === "submitted"
                   ? <Loader2 className="spin" size={14} />
                   : <Plus size={14} />}
-                Register and add
+                Validate and add
               </button>
             </div>
             <div className="manualAssetRiskNotice" role="note">
               <AlertTriangle size={15} />
-              <span>Pool prices and liquidity can be manipulated. Malicious or upgradable tokens can block transfers, and experimental performance XP depends on continuing eligibility.</span>
+              <span>The contract validates feed orientation, freshness, pause behavior, or canonical V3 history. No fallback source is installed if the selected source later fails.</span>
             </div>
             {manualTargetError ? <span className="fieldError">{manualTargetError}</span> : null}
             <TxStatus state={manualTargetState} persistent />
           </div>
-        ) : null}
       </div>
 
       <div className="builderBlock strategyRationaleComposer">
@@ -6032,22 +6097,20 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
         ) : null}
-        {blockedTargets.length > 0 ? (
+        {!targetPricingValid ? (
           <div className="riskCallout danger"><XCircle size={15} /><div>
-            <strong>Blocked constituents cannot be managed</strong>
-            <span>Remove {blockedTargets.map((target) => target.ticker).join(", ")} from the proposal. Existing holders retain proportional redemption.</span>
+            <strong>{incumbentPricingReadFailed ? "Pinned pricing could not be loaded" : incumbentPricingReadsReady ? "Every constituent needs a complete pricing configuration" : "Loading pinned pricing"}</strong>
+            <span>{incumbentPricingReadFailed
+              ? "Refresh the OTF before proposing targets. Existing source addresses are never replaced with frontend defaults."
+              : incumbentPricingReadsReady
+                ? "Choose direct Chainlink, Chainlink via WETH, or an initialized canonical V3 TWAP pool. Trading routes are configured independently."
+                : "The exact onchain tuples for every incumbent constituent must load before this proposal can be signed."}</span>
           </div></div>
         ) : null}
-        {!targetMarketsValid ? (
-          <div className="riskCallout danger"><XCircle size={15} /><div>
-            <strong>Every experimental constituent needs a pinned market</strong>
-            <span>Register an active V3 asset/WETH route with a complete one-hour TWAP before proposal.</span>
-          </div></div>
-        ) : null}
-        {experimentalTargets.length > 0 ? (
-          <div className="riskCallout warning"><AlertTriangle size={15} /><div>
-            <strong>This proposal makes the OTF Experimental</strong>
-            <span>Pool-derived prices can be manipulated, token behavior can block transfers, and performance XP depends on continuing eligibility.</span>
+        {normalQualityTargets.length > 0 ? (
+          <div className="riskCallout"><Info size={15} /><div>
+            <strong>Normal-quality constituents</strong>
+            <span>{normalQualityTargets.map((target) => target.ticker).join(", ")} will make the live OTF quality label normal. This metadata never changes proposal eligibility or contract behavior.</span>
           </div></div>
         ) : null}
         {!targetsChanged ? (
@@ -6084,7 +6147,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || !targetMarketsValid || blockedTargets.length > 0 || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || !targetPricingValid || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -6153,6 +6216,46 @@ function RebalanceTradesPanel({
   const quoterAddress = configuredUniswapV3QuoterAddress();
   const settlementToken = configuredSettlementTokenAddress();
   const constituentFee = configuredConstituentFee();
+  const isRegisteredRebalanceAdapter = Boolean(
+    adapterAddress && adapterAddress.toLowerCase() ===
+      robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg?.toLowerCase(),
+  );
+  const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredRebalanceAdapter);
+  const executionRouteFor = (asset: string) =>
+    vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset);
+  const rebalancePoolFor = (asset: string) => {
+    if (asset.toLowerCase() === settlementToken?.toLowerCase()) return undefined;
+    if (asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase()) {
+      return robinhoodTestnetAddresses.wethUsdgPool;
+    }
+    return isRegisteredRebalanceAdapter
+      ? executionRouteFor(asset)?.pool
+      : configuredConstituentPool(asset);
+  };
+  const registeredRebalancePathFor = (asset: string, assetToSettlement: boolean) => {
+    if (!settlementToken || !isRegisteredRebalanceAdapter) return undefined;
+    if (asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase()) {
+      return assetToSettlement
+        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, settlementToken])
+        : encodePacked(["address", "uint24", "address"], [settlementToken, 100, asset as `0x${string}`]);
+    }
+    const route = executionRouteFor(asset);
+    if (!route) return undefined;
+    if (route.quoteToken.toLowerCase() === settlementToken.toLowerCase()) {
+      return assetToSettlement
+        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, settlementToken])
+        : encodePacked(["address", "uint24", "address"], [settlementToken, route.fee, asset as `0x${string}`]);
+    }
+    return assetToSettlement
+      ? encodePacked(
+          ["address", "uint24", "address", "uint24", "address"],
+          [asset as `0x${string}`, route.fee, route.quoteToken, 100, settlementToken],
+        )
+      : encodePacked(
+          ["address", "uint24", "address", "uint24", "address"],
+          [settlementToken, 100, route.quoteToken, route.fee, asset as `0x${string}`],
+        );
+  };
   const hasAllowedTrade = recommendedTrades.length > 0;
 
   useEffect(() => {
@@ -6220,9 +6323,20 @@ function RebalanceTradesPanel({
   const slippageBps = Math.round(Number(slippageText) * 100);
   const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
   const path = settlementToken ? [tokenIn, settlementToken, tokenOut] : [tokenIn, tokenOut];
-  const routeValid = path.every((address) => isAddress(address)) && tokenIn !== tokenOut;
-  const inputPool = configuredConstituentPool(tokenIn);
-  const outputPool = configuredConstituentPool(tokenOut);
+  const registeredSellPath = tokenIn && tokenIn.toLowerCase() !== settlementToken?.toLowerCase()
+    ? registeredRebalancePathFor(tokenIn, true)
+    : undefined;
+  const registeredBuyPath = tokenOut && tokenOut.toLowerCase() !== settlementToken?.toLowerCase()
+    ? registeredRebalancePathFor(tokenOut, false)
+    : undefined;
+  const routeValid = path.every((address) => isAddress(address)) && tokenIn !== tokenOut && (
+    !isRegisteredRebalanceAdapter || Boolean(
+      (tokenIn.toLowerCase() === settlementToken?.toLowerCase() || registeredSellPath) &&
+      (tokenOut.toLowerCase() === settlementToken?.toLowerCase() || registeredBuyPath)
+    )
+  );
+  const inputPool = rebalancePoolFor(tokenIn);
+  const outputPool = rebalancePoolFor(tokenOut);
   const rebalanceLiquidityContracts = [inputPool, outputPool].flatMap((pool) => pool ? [{
     address: pool,
     abi: uniswapV3PoolAbi,
@@ -6234,11 +6348,14 @@ function RebalanceTradesPanel({
     isLoading: rebalanceLiquidityLoading,
   } = useReadContracts({
     contracts: rebalanceLiquidityContracts,
-    query: { enabled: rebalanceLiquidityContracts.length === 2 },
+    query: { enabled: rebalanceLiquidityContracts.length > 0 },
   });
-  const rebalancePoolsConfigured = Boolean(inputPool && outputPool);
+  const requiredPoolCount = [tokenIn, tokenOut].filter(
+    (token) => token && token.toLowerCase() !== settlementToken?.toLowerCase(),
+  ).length;
+  const rebalancePoolsConfigured = requiredPoolCount > 0 && rebalanceLiquidityContracts.length === requiredPoolCount;
   const rebalanceLiquidityReady = Boolean(
-    rebalancePoolsConfigured && rebalanceLiquidityResults?.length === 2
+    rebalancePoolsConfigured && rebalanceLiquidityResults?.length === requiredPoolCount
       && rebalanceLiquidityResults.every(
         (result) => result.status === "success" && typeof result.result === "bigint" && result.result > 0n,
       ),
@@ -6255,23 +6372,72 @@ function RebalanceTradesPanel({
         ],
       )
     : undefined;
-  const quoteEnabled = Boolean(
-    quoterAddress && packedPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
+  const legacyQuoteEnabled = Boolean(
+    !isRegisteredRebalanceAdapter && quoterAddress && packedPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
   );
   const {
-    data: quoteResult,
-    error: quoteError,
-    isLoading: quoteLoading,
-    refetch: refetchQuote,
+    data: legacyQuoteResult,
+    error: legacyQuoteError,
+    isLoading: legacyQuoteLoading,
+    refetch: refetchLegacyQuote,
   } = useReadContract({
     address: quoterAddress,
     abi: uniswapV3QuoterAbi,
     functionName: "quoteExactInput",
     args: amountIn && packedPath ? [packedPath, amountIn] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: quoteEnabled },
+    query: { enabled: legacyQuoteEnabled },
   });
-  const quotedAmountOut = (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
+  const registeredSellQuoteEnabled = Boolean(
+    isRegisteredRebalanceAdapter && quoterAddress && registeredSellPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
+  );
+  const {
+    data: registeredSellQuoteResult,
+    error: registeredSellQuoteError,
+    isLoading: registeredSellQuoteLoading,
+    refetch: refetchRegisteredSellQuote,
+  } = useReadContract({
+    address: quoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInput",
+    args: amountIn && registeredSellPath ? [registeredSellPath, amountIn] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: registeredSellQuoteEnabled },
+  });
+  const expectedSettlementOut = tokenIn.toLowerCase() === settlementToken?.toLowerCase()
+    ? amountIn
+    : (registeredSellQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
+  const minimumSettlementOut = expectedSettlementOut && slippageValid
+    ? expectedSettlementOut * BigInt(10_000 - slippageBps) / 10_000n
+    : undefined;
+  const registeredBuyQuoteEnabled = Boolean(
+    isRegisteredRebalanceAdapter && quoterAddress && registeredBuyPath && minimumSettlementOut && minimumSettlementOut > 0n && rebalanceLiquidityReady,
+  );
+  const {
+    data: registeredBuyQuoteResult,
+    error: registeredBuyQuoteError,
+    isLoading: registeredBuyQuoteLoading,
+    refetch: refetchRegisteredBuyQuote,
+  } = useReadContract({
+    address: quoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInput",
+    args: minimumSettlementOut && registeredBuyPath ? [registeredBuyPath, minimumSettlementOut] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: registeredBuyQuoteEnabled },
+  });
+  const legacyQuotedAmountOut = (legacyQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
+  const quotedAmountOut = isRegisteredRebalanceAdapter
+    ? tokenOut.toLowerCase() === settlementToken?.toLowerCase()
+      ? expectedSettlementOut
+      : (registeredBuyQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0]
+    : legacyQuotedAmountOut;
+  const quoteError = isRegisteredRebalanceAdapter
+    ? registeredSellQuoteError ?? registeredBuyQuoteError
+    : legacyQuoteError;
+  const quoteLoading = isRegisteredRebalanceAdapter
+    ? registeredSellQuoteLoading || registeredBuyQuoteLoading
+    : legacyQuoteLoading;
   const poolMinimumAmountOut = quotedAmountOut && slippageValid
     ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
     : undefined;
@@ -6449,7 +6615,8 @@ function RebalanceTradesPanel({
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
     rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
-    !oracleValueLossTooHigh && !navLossBudgetTooHigh,
+    !oracleValueLossTooHigh && !navLossBudgetTooHigh &&
+    (!isRegisteredRebalanceAdapter || minimumSettlementOut),
   );
 
   async function executeTrade() {
@@ -6457,27 +6624,50 @@ function RebalanceTradesPanel({
     setTxError(undefined);
     try {
       setTxState("simulating");
-      const trade = {
-        adapter: adapterAddress,
-        tokenIn: tokenIn as `0x${string}`,
-        tokenOut: tokenOut as `0x${string}`,
-        amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
-        minAmountOut,
-        adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
-      };
+      const trades = isRegisteredRebalanceAdapter
+        ? [
+            ...(tokenIn.toLowerCase() === settlementToken?.toLowerCase() ? [] : [{
+              adapter: adapterAddress,
+              tokenIn: tokenIn as `0x${string}`,
+              tokenOut: settlementToken as `0x${string}`,
+              amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
+              minAmountOut: tokenOut.toLowerCase() === settlementToken?.toLowerCase()
+                ? minAmountOut
+                : minimumSettlementOut as bigint,
+              adapterData: registeredSellPath as `0x${string}`,
+            }]),
+            ...(tokenOut.toLowerCase() === settlementToken?.toLowerCase() ? [] : [{
+              adapter: adapterAddress,
+              tokenIn: settlementToken as `0x${string}`,
+              tokenOut: tokenOut as `0x${string}`,
+              amountIn: tokenIn.toLowerCase() === settlementToken?.toLowerCase()
+                ? amountIn
+                : minimumSettlementOut as bigint,
+              minAmountOut,
+              adapterData: registeredBuyPath as `0x${string}`,
+            }]),
+          ]
+        : [{
+            adapter: adapterAddress,
+            tokenIn: tokenIn as `0x${string}`,
+            tokenOut: tokenOut as `0x${string}`,
+            amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
+            minAmountOut,
+            adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
+          }];
       await publicClient.simulateContract({
         account: connectedAddress,
         address: vault.address,
         abi: managedOtfVaultAbi,
         functionName: "executeRebalanceTrades",
-        args: [[trade]],
+        args: [trades],
       });
       setTxState("pending");
       const hash = await writeContractAsync({
         address: vault.address,
         abi: managedOtfVaultAbi,
         functionName: "executeRebalanceTrades",
-        args: [[trade]],
+        args: [trades],
         chainId: robinhoodChainTestnet.id,
       });
       setTxState("submitted");
@@ -6488,7 +6678,11 @@ function RebalanceTradesPanel({
         refetchTokenInVaultBalance(),
         refetchTokenOutVaultBalance(),
       ]);
-      await refetchQuote();
+      await Promise.all([
+        refetchLegacyQuote(),
+        refetchRegisteredSellQuote(),
+        refetchRegisteredBuyQuote(),
+      ]);
       setTxState("confirmed");
       setAmountInText("");
     } catch (error) {
@@ -6602,7 +6796,7 @@ function RebalanceTradesPanel({
         <div className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
           <span>
             <strong>Routes through USDG</strong>
-            <small>USDG is an internal Uniswap hop and never becomes an OTF constituent or recipient.</small>
+            <small>Mixed markets execute atomically as a sell-to-USDG leg followed by a USDG-to-buy-asset leg.</small>
           </span>
         </div>
 
@@ -6658,10 +6852,10 @@ function RebalanceTradesPanel({
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
         {hasAllowedTrade && contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Both selected assets need recorded USDG pools before this rebalance route can be quoted.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Each selected asset needs its pinned asset/USDG or asset/WETH pool before this rebalance route can be quoted.</span></div></div>
         ) : null}
         {hasAllowedTrade && contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>Both USDG pools exist, but this route stays disabled until they have active liquidity.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>The pinned pools exist, but this route stays disabled until each required pool has active liquidity.</span></div></div>
         ) : null}
         {hasAllowedTrade && tokenIn === tokenOut ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
@@ -7068,7 +7262,7 @@ function VaultsDirectory({
       <div className="directoryMetrics">
         <MetricCard label="Total AUM" value={totalAum} icon={null} />
         <MetricCard label="OTFs" value={String(vaults.length)} icon={null} />
-        <MetricCard label="Supported RWA Assets" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
+        <MetricCard label="RWA metadata records" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
       </div>
 
       {managedVaults.length ? (
@@ -7111,6 +7305,9 @@ function VaultsDirectory({
                         <div>
                           <strong>{row.name}</strong>
                           <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
+                          <span className={`stateBadge ${row.quality === "high" ? "success" : "muted"}`}>
+                            {row.quality === "high" ? "High quality" : "Normal quality"}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -7169,8 +7366,11 @@ function VaultsDirectory({
                     <div className="directoryVault">
                       <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
                       <div>
-                          <strong>{row.name}</strong>
+                        <strong>{row.name}</strong>
                         <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
+                        <span className={`stateBadge ${row.quality === "high" ? "success" : "muted"}`}>
+                          {row.quality === "high" ? "High quality" : "Normal quality"}
+                        </span>
                       </div>
                     </div>
                   </td>
@@ -7198,13 +7398,11 @@ function VaultsDirectory({
 function CreateVaultView({
   connectedAddress,
   isTestnet,
-  oraclePrices,
   onBack,
   onCreated,
 }: {
   connectedAddress?: string;
   isTestnet: boolean;
-  oraclePrices: CatalogOraclePrices;
   onBack: () => void;
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
 }) {
@@ -7219,7 +7417,11 @@ function CreateVaultView({
   const protocolMinimumTargetWeightBps = protocolMinimumTargetWeightResult === undefined
     ? undefined
     : Number(protocolMinimumTargetWeightResult);
-  const { data: protocolDepositsPausedResult } = useReadContract({
+  const {
+    data: protocolDepositsPausedResult,
+    isLoading: protocolDepositsPauseLoading,
+    isError: protocolDepositsPauseReadFailed,
+  } = useReadContract({
     address: factoryAddress,
     abi: otfFactoryAbi,
     functionName: "depositsPaused",
@@ -7227,6 +7429,19 @@ function CreateVaultView({
     query: { enabled: Boolean(isTestnet && factoryAddress) },
   });
   const protocolDepositsPaused = Boolean(protocolDepositsPausedResult);
+  const protocolDepositsPauseUnavailable = Boolean(isTestnet && factoryAddress) && (
+    protocolDepositsPauseLoading || protocolDepositsPauseReadFailed || protocolDepositsPausedResult === undefined
+  );
+  const { data: factoryPricingResolver } = useReadContract({
+    address: factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "pricingResolver",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isTestnet && factoryAddress) },
+  });
+  const pricingResolverAddress = isAddress(factoryPricingResolver ?? "")
+    ? factoryPricingResolver as `0x${string}`
+    : undefined;
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
@@ -7247,7 +7462,6 @@ function CreateVaultView({
   const { writeContractAsync } = useWriteContract();
   const { writeContractAsync: writeApprovalContractAsync } = useWriteContract();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
-  const [currentTimestamp, setCurrentTimestamp] = useState(() => BigInt(Math.floor(Date.now() / 1_000)));
   const [draft, setDraft] = useState({
     name: "",
     symbol: "",
@@ -7262,20 +7476,29 @@ function CreateVaultView({
     challengeDeviation: "5",
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
-    testnetCreateAssets.map((asset) => ({
-      ticker: asset.symbol,
-      name: asset.name,
-      address: asset.address,
-      qualityStatus: "qualified",
-      targetWeight: 100 / testnetCreateAssets.length,
-      initialAmount: "",
-    })),
+    testnetCreateAssets.map((asset) => {
+      const pricingConfig = configuredPricingConfig(asset.address) ?? emptyPricingConfig();
+      return {
+        ticker: asset.symbol,
+        name: asset.name,
+        address: asset.address,
+        poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+        quality: asset.quality,
+        pricingConfig,
+        targetWeight: 100 / testnetCreateAssets.length,
+        initialAmount: "",
+      };
+    }),
   );
   const [manualAssetAddress, setManualAssetAddress] = useState("");
-  const [manualPoolAddress, setManualPoolAddress] = useState("");
+  const [manualPricingSource, setManualPricingSource] = useState<PricingSource>(0);
+  const [manualPrimarySource, setManualPrimarySource] = useState("");
+  const [manualSecondarySource, setManualSecondarySource] = useState("");
   const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
+  const [pricingQuotesPending, setPricingQuotesPending] = useState(false);
+  const [pricingQuoteError, setPricingQuoteError] = useState<string>();
   const canReadSeedAuthorizations = Boolean(
     isTestnet && factoryAddress && connectedAddress && isAddress(connectedAddress),
   );
@@ -7310,43 +7533,49 @@ function CreateVaultView({
       refetchOnWindowFocus: true,
     },
   });
-  const { data: oracleRegistryAddress, isError: oracleRegistryReadFailed } = useReadContract({
-    address: factoryAddress,
-    abi: factoryDependencyAbi,
-    functionName: "oracleRegistry",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isTestnet && factoryAddress) },
-  });
-  const canReadProtocolAssets = Boolean(oracleRegistryAddress);
-  const protocolAssetContracts = canReadProtocolAssets
-    ? portfolio.flatMap((asset) => asset.qualityStatus === "open" ? [] : [{
-        address: oracleRegistryAddress as `0x${string}`,
-        abi: protocolAssetReadAbi,
-        functionName: "oracleConfigFor" as const,
-        args: [asset.address as `0x${string}`],
-        chainId: robinhoodChainTestnet.id,
-      }])
-    : [];
-  const {
-    data: protocolAssetResults,
-    isLoading: protocolAssetsLoading,
-    isError: protocolAssetsReadFailed,
-  } = useReadContracts({
-    contracts: protocolAssetContracts,
-    query: { enabled: canReadProtocolAssets },
-  });
-  const protocolAssetReadFailed = Boolean(protocolAssetResults?.some((result) => result?.error !== undefined));
-  const protocolAssetResultReady = Boolean(
-    canReadProtocolAssets &&
-    !protocolAssetsLoading &&
-    !protocolAssetReadFailed &&
-    !oracleRegistryReadFailed &&
-    (protocolAssetContracts.length === 0 || (
-      protocolAssetResults &&
-      protocolAssetResults.length === protocolAssetContracts.length &&
-      protocolAssetResults.every((result) => result?.error === undefined && result?.status === "success")
-    )),
-  );
+  const pricingDraftKey = portfolio.map((asset) => (
+    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}`
+  )).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    if (!publicClient || !pricingResolverAddress || portfolio.length === 0) {
+      setManualOraclePrices({});
+      return;
+    }
+    setPricingQuotesPending(true);
+    setPricingQuoteError(undefined);
+    void Promise.all(portfolio.map(async (asset) => {
+      if (!pricingConfigIsComplete(asset.pricingConfig)) {
+        throw new Error(`${asset.ticker} needs a complete pricing configuration.`);
+      }
+      const simulation = await publicClient.simulateContract({
+        address: pricingResolverAddress,
+        abi: assetPricingResolverAbi,
+        functionName: "validateAndQuotePrice",
+        args: [asset.address as `0x${string}`, asset.pricingConfig],
+      });
+      const [answer, decimals] = simulation.result;
+      return [asset.address.toLowerCase(), {
+        answer,
+        decimals: Number(decimals),
+        updatedAt: BigInt(Math.floor(Date.now() / 1_000)),
+        value: Number(formatUnits(answer, Number(decimals))),
+        display: formatOraclePrice(Number(formatUnits(answer, Number(decimals)))),
+      }] as const;
+    })).then((entries) => {
+      if (!cancelled) setManualOraclePrices(Object.fromEntries(entries));
+    }).catch((error) => {
+      if (!cancelled) {
+        setManualOraclePrices({});
+        setPricingQuoteError(errorMessage(error));
+      }
+    }).finally(() => {
+      if (!cancelled) setPricingQuotesPending(false);
+    });
+    return () => { cancelled = true; };
+  // pricingDraftKey intentionally snapshots the exact user-selected addresses.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingDraftKey, pricingResolverAddress, publicClient]);
   const steps = [
     { label: "Basics", description: "Identity and roles" },
     { label: "Portfolio", description: "Assets and weights" },
@@ -7367,7 +7596,7 @@ function CreateVaultView({
     initialPortfolioValue = undefined;
   }
   const derivedSeedAmounts = portfolio.map((asset, index) => {
-    const price = manualOraclePrices[asset.address.toLowerCase()] ?? oraclePrices[asset.address.toLowerCase()];
+    const price = manualOraclePrices[asset.address.toLowerCase()];
     const targetValue = initialPortfolioValue !== undefined
       ? (initialPortfolioValue * BigInt(targetWeightBps[index] ?? 0)) / 10_000n
       : undefined;
@@ -7384,38 +7613,8 @@ function CreateVaultView({
       price,
     };
   });
-  let qualifiedOracleIndex = 0;
-  const protocolOracleConfigs = portfolio.map((asset) => {
-    if (asset.qualityStatus === "open") {
-      return { feed: asset.priceFeed, maxStaleness: 2 * 60 * 60, validationMode: 0 };
-    }
-    const config = protocolAssetResultReady
-      ? resultAt<readonly [string, number, number]>(
-          protocolAssetResults as ReadResult | undefined,
-          qualifiedOracleIndex,
-        )
-      : undefined;
-    qualifiedOracleIndex += 1;
-    return {
-      feed: config?.[0],
-      maxStaleness: Number(config?.[1] ?? 0),
-      validationMode: Number(config?.[2] ?? 0),
-    };
-  });
-  const staleSeedAssets = portfolio.filter((asset, index) => {
-    const updatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
-    const maxStaleness = BigInt(protocolOracleConfigs[index]?.maxStaleness ?? 0);
-    return updatedAt !== undefined && updatedAt > 0n && maxStaleness > 0n
-      ? currentTimestamp > updatedAt + maxStaleness
-      : false;
-  });
-  const seedOracleFreshnessReady = derivedSeedAmounts.every((seed, index) => {
-    const updatedAt = seed.price?.updatedAt;
-    const maxStaleness = BigInt(protocolOracleConfigs[index]?.maxStaleness ?? 0);
-    return updatedAt !== undefined && updatedAt > 0n && maxStaleness > 0n
-      ? currentTimestamp <= updatedAt + maxStaleness
-      : false;
-  });
+  const pricingConfigsReady = portfolio.every((asset) => pricingConfigIsComplete(asset.pricingConfig));
+  const seedOracleFreshnessReady = pricingConfigsReady && !pricingQuotesPending && !pricingQuoteError;
   const allSeedAmountsReady = derivedSeedAmounts.every(
     (seed) => seed.requiredAmount !== undefined && seed.requiredAmount > 0n,
   );
@@ -7426,10 +7625,6 @@ function CreateVaultView({
       : (requiredAmount * 10_200n + 9_999n) / 10_000n;
     const balance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2);
     const allowance = resultAt<bigint>(seedAuthorizationResults as ReadResult | undefined, index * 2 + 1);
-    const priceFeed = protocolOracleConfigs[index]?.feed;
-    const oracleMaxStaleness = protocolOracleConfigs[index]?.maxStaleness ?? 0;
-    const hasPriceFeed = Boolean(priceFeed && priceFeed !== "0x0000000000000000000000000000000000000000");
-    const oracleUpdatedAt = derivedSeedAmounts[index]?.price?.updatedAt;
     return {
       ...asset,
       initialAmount: derivedSeedAmounts[index]?.displayAmount ?? "",
@@ -7437,14 +7632,7 @@ function CreateVaultView({
       approvalAmount,
       balance,
       allowance,
-      priceFeed,
-      hasPriceFeed,
-      oracleMaxStaleness,
-      oracleUpdatedAt,
-      oracleFresh: oracleUpdatedAt !== undefined
-        && oracleUpdatedAt > 0n
-        && oracleMaxStaleness > 0
-        && currentTimestamp <= oracleUpdatedAt + BigInt(oracleMaxStaleness),
+      pricingValidated: derivedSeedAmounts[index]?.price?.answer !== undefined,
       balanceSufficient: requiredAmount !== undefined && balance !== undefined && balance >= requiredAmount,
       allowanceSufficient: requiredAmount !== undefined && allowance !== undefined && allowance >= requiredAmount,
     };
@@ -7456,9 +7644,7 @@ function CreateVaultView({
     seedAuthorizations.every(
       (asset) => asset.requiredAmount !== undefined && asset.balance !== undefined && asset.allowance !== undefined,
     );
-  const protocolAssetReadsReady =
-    protocolAssetResultReady &&
-    seedAuthorizations.every((asset) => asset.hasPriceFeed && asset.oracleMaxStaleness > 0);
+  const protocolAssetReadsReady = seedOracleFreshnessReady && allSeedAmountsReady;
   const seedBalancesSufficient =
     seedAuthorizationReadsReady && seedAuthorizations.every((asset) => asset.balanceSufficient);
   const seedAllowancesSufficient =
@@ -7477,7 +7663,7 @@ function CreateVaultView({
     initialRationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES;
   const normalizedOtfName = draft.name.trim();
   const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
-  const hasExperimentalConstituent = portfolio.some((asset) => asset.qualityStatus === "open");
+  const hasNormalQualityConstituent = portfolio.some((asset) => asset.quality === "normal");
   const basicsValid =
     otfNameValid &&
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -7492,6 +7678,7 @@ function CreateVaultView({
       (asset) =>
         asset.ticker.trim() &&
         isAddress(asset.address) &&
+        pricingConfigIsComplete(asset.pricingConfig) &&
         percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps,
     ) &&
     totalWeightValid &&
@@ -7527,6 +7714,9 @@ function CreateVaultView({
       : `Every asset needs a target weight of at least ${bpsToPercent(protocolMinimumTargetWeightBps)}.`,
     initialPortfolioValue !== undefined ? null : "Enter a positive initial portfolio value.",
     allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
+    pricingConfigsReady
+      ? null
+      : "Every constituent needs a complete direct Chainlink, composed Chainlink, or V3 TWAP pricing configuration.",
     portfolio.length === 0 || totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
@@ -7546,8 +7736,10 @@ function CreateVaultView({
   const canSubmitDeployment =
     stepValid &&
     Boolean(factoryAddress) &&
+    Boolean(pricingResolverAddress) &&
     Boolean(connectedAddress) &&
     !protocolDepositsPaused &&
+    !protocolDepositsPauseUnavailable &&
     seedBalancesSufficient &&
     seedAllowancesSufficient &&
     protocolAssetReadsReady &&
@@ -7560,12 +7752,14 @@ function CreateVaultView({
   const deploymentBlockers: string[] = [];
   if (!stepValid) deploymentBlockers.push("Complete the required setup fields");
   if (!factoryAddress) deploymentBlockers.push("Factory is not configured");
+  if (!pricingResolverAddress) deploymentBlockers.push("Pricing resolver is not configured");
   if (!connectedAddress) deploymentBlockers.push("Connect wallet");
   if (protocolDepositsPaused) deploymentBlockers.push("Protocol deposits are paused");
+  if (protocolDepositsPauseUnavailable) deploymentBlockers.push("Protocol deposit-pause status is unavailable");
   if (!seedBalancesSufficient) deploymentBlockers.push("Fund seed assets");
   if (!seedAllowancesSufficient) deploymentBlockers.push("Approve seed assets");
-  if (!protocolAssetReadsReady) deploymentBlockers.push("Oracle feeds must be configured for seed assets");
-  if (!seedOracleFreshnessReady) deploymentBlockers.push("Oracle prices are stale");
+  if (!protocolAssetReadsReady) deploymentBlockers.push("Validate every selected pricing configuration");
+  if (!seedOracleFreshnessReady) deploymentBlockers.push("Selected pricing is unavailable or invalid");
   if (approvalState === "pending" || approvalState === "submitted") deploymentBlockers.push("Wait for the approval transaction");
   if (deployState === "pending" || deployState === "submitted") deploymentBlockers.push("Wait for the creation transaction");
 
@@ -7578,13 +7772,6 @@ function CreateVaultView({
         : connectedAddress ?? "",
     }));
   }, [connectedAddress, customFeeRecipient, customManager]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setCurrentTimestamp(BigInt(Math.floor(Date.now() / 1_000)));
-    }, 15_000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   if (!isTestnet) {
     return (
@@ -7607,18 +7794,18 @@ function CreateVaultView({
     );
   }
 
-  if (!robinhoodTestnetAddresses.assetMarketRegistry) {
+  if (!pricingResolverAddress) {
     return (
       <div className="appView">
         <AppPageHeader
           title="Create OTF"
-          description="Permissionless creation uses the versioned V3 market stack."
+          description="Creation pins a user-selected, validated price source per constituent."
           icon={<FilePlus2 size={18} />}
         />
         <section className="sectionCard depositsEmpty">
           <span><Clock3 size={22} /></span>
-          <h2>The permissionless creation stack is not deployed yet</h2>
-          <p>Existing testnet OTFs remain readable. New creation will open after the asset-market registry, canonical WETH/USDG bridge, registered adapters, and both settlement routers are deployed and verified.</p>
+          <h2>The pinned-pricing stack is not deployed yet</h2>
+          <p>Existing testnet OTFs remain readable. New creation will open after the trusted pair map, pricing resolver, canonical V3 infrastructure, and updated factory are deployed and verified.</p>
           <button className="secondaryAction" type="button" onClick={onBack}>
             <ArrowLeft size={14} />
             View existing OTFs
@@ -7673,13 +7860,16 @@ function CreateVaultView({
 
   function addPortfolioAsset() {
     if (!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined) return;
+    const pricingConfig = configuredPricingConfig(nextAvailableAsset.address) ?? emptyPricingConfig();
     setPortfolio((current) => {
       if (current.length === 0) {
         return [{
           ticker: nextAvailableAsset.symbol,
           name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
-          qualityStatus: "qualified",
+          poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+          quality: nextAvailableAsset.quality,
+          pricingConfig,
           targetWeight: 100,
           initialAmount: "",
         }];
@@ -7691,7 +7881,9 @@ function CreateVaultView({
           ticker: nextAvailableAsset.symbol,
           name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
-          qualityStatus: "qualified",
+          poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+          quality: nextAvailableAsset.quality,
+          pricingConfig,
           targetWeight: (protocolMinimumTargetWeightBps / 100).toString(),
           initialAmount: "",
         },
@@ -7699,14 +7891,23 @@ function CreateVaultView({
     });
   }
 
-  async function registerAndAddOpenAsset() {
+  async function validateAndAddAsset() {
     if (
-      !publicClient || !connectedAddress || !robinhoodTestnetAddresses.assetRegistry ||
-      !robinhoodTestnetAddresses.assetMarketRegistry || !isAddress(manualAssetAddress) ||
-      !isAddress(manualPoolAddress)
+      !publicClient || !connectedAddress || !pricingResolverAddress ||
+      !isAddress(manualAssetAddress) || !isAddress(manualPrimarySource)
     ) return;
     const assetAddress = manualAssetAddress as `0x${string}`;
-    const poolAddress = manualPoolAddress as `0x${string}`;
+    const pricingConfig: AssetPricingConfig = {
+      source: manualPricingSource,
+      primarySource: manualPrimarySource as `0x${string}`,
+      secondarySource: manualPricingSource === 1 && isAddress(manualSecondarySource)
+        ? manualSecondarySource as `0x${string}`
+        : zeroAddress,
+    };
+    if (!pricingConfigIsComplete(pricingConfig)) {
+      setManualRegistrationError("Complete the selected pricing route before validating it.");
+      return;
+    }
     if (portfolio.some((item) => item.address.toLowerCase() === assetAddress.toLowerCase())) {
       setManualRegistrationError("This token contract is already in the portfolio.");
       return;
@@ -7714,103 +7915,27 @@ function CreateVaultView({
     setManualRegistrationError(undefined);
     setManualRegistrationState("pending");
     try {
-      const [decimals, tokenName, tokenSymbol, currentStatus] = await Promise.all([
+      const [decimals, tokenName, tokenSymbol] = await Promise.all([
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "decimals" }),
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "name" }).catch(() => "Unindexed token"),
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
-        publicClient.readContract({
-          address: robinhoodTestnetAddresses.assetRegistry,
-          abi: permissionlessAssetRegistryAbi,
-          functionName: "statusOf",
-          args: [assetAddress],
-        }),
       ]);
       if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
-      if (Number(currentStatus) === 3) throw new Error("This token is blocked by protocol governance.");
-      let qualityStatus: "qualified" | "open" = Number(currentStatus) === 2 ? "qualified" : "open";
-      if (Number(currentStatus) === 0) {
-        const registrationHash = await writeContractAsync({
-          address: robinhoodTestnetAddresses.assetRegistry,
-          abi: permissionlessAssetRegistryAbi,
-          functionName: "registerOpenAsset",
-          args: [assetAddress],
-          chainId: robinhoodChainTestnet.id,
-        });
-        setManualRegistrationState("submitted");
-        const registrationReceipt = await publicClient.waitForTransactionReceipt({ hash: registrationHash });
-        if (registrationReceipt.status !== "success") throw new Error("Open-asset registration reverted.");
-        qualityStatus = "open";
-      }
-      let marketId: `0x${string}` | undefined;
-      let priceFeed: `0x${string}`;
-      if (qualityStatus === "open") {
-        setManualRegistrationState("pending");
-        const marketHash = await writeContractAsync({
-          address: robinhoodTestnetAddresses.assetMarketRegistry,
-          abi: assetMarketRegistryAbi,
-          functionName: "registerV3Market",
-          args: [assetAddress, poolAddress],
-          chainId: robinhoodChainTestnet.id,
-        });
-        setManualRegistrationState("submitted");
-        const marketReceipt = await publicClient.waitForTransactionReceipt({ hash: marketHash });
-        if (marketReceipt.status !== "success") throw new Error("V3 market registration reverted.");
-        marketId = keccak256(encodeAbiParameters(
-          [{ type: "uint256" }, { type: "address" }, { type: "address" }],
-          [BigInt(robinhoodChainTestnet.id), assetAddress, poolAddress],
-        ));
-        const market = await publicClient.readContract({
-          address: robinhoodTestnetAddresses.assetMarketRegistry,
-          abi: assetMarketRegistryAbi,
-          functionName: "marketFor",
-          args: [marketId],
-        });
-        const [marketAsset, registeredPool, routeFeed, , active] = market;
-        if (!active || marketAsset.toLowerCase() !== assetAddress.toLowerCase() || registeredPool.toLowerCase() !== poolAddress.toLowerCase()) {
-          throw new Error("The registered market does not match the requested token and pool.");
-        }
-        priceFeed = routeFeed;
-      } else {
-        if (!oracleRegistryAddress || !isAddress(oracleRegistryAddress)) {
-          throw new Error("The protocol oracle registry is unavailable for this qualified asset.");
-        }
-        const config = await publicClient.readContract({
-          address: oracleRegistryAddress,
-          abi: protocolAssetReadAbi,
-          functionName: "oracleConfigFor",
-          args: [assetAddress],
-        });
-        priceFeed = config[0];
-        if (priceFeed === zeroAddress) throw new Error("This qualified asset has no protocol oracle feed.");
-      }
-      let round: readonly [bigint, bigint, bigint, bigint, bigint];
-      try {
-        round = await publicClient.readContract({
-          address: priceFeed,
-          abi: aggregatorV3ReadAbi,
-          functionName: "latestRoundData",
-        });
-      } catch {
-        throw new Error(qualityStatus === "open"
-          ? "The V3 route needs a complete one-hour observation history before creation."
-          : "The protocol oracle is unavailable for creation.");
-      }
-      const feedDecimals = await publicClient.readContract({
-        address: priceFeed,
-        abi: aggregatorV3ReadAbi,
-        functionName: "decimals",
+      const simulation = await publicClient.simulateContract({
+        account: connectedAddress as `0x${string}`,
+        address: pricingResolverAddress,
+        abi: assetPricingResolverAbi,
+        functionName: "validateAndQuotePrice",
+        args: [assetAddress, pricingConfig],
       });
-      const answer = round[1];
-      if (answer <= 0n) throw new Error(qualityStatus === "open"
-        ? "The pinned V3 route returned an invalid TWAP."
-        : "The protocol oracle returned an invalid price.");
+      const [answer, feedDecimals] = simulation.result;
       const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
       setManualOraclePrices((current) => ({
         ...current,
         [assetAddress.toLowerCase()]: {
           answer,
           decimals: Number(feedDecimals),
-          updatedAt: round[3],
+          updatedAt: BigInt(Math.floor(Date.now() / 1_000)),
           display: formatOraclePrice(Number(formatUnits(answer, Number(feedDecimals)))),
         },
       }));
@@ -7823,17 +7948,17 @@ function CreateVaultView({
             ticker: symbol,
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
-            marketId,
-            poolAddress: qualityStatus === "open" ? poolAddress : undefined,
-            qualityStatus,
-            priceFeed,
+            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+            quality: "normal",
+            pricingConfig,
             targetWeight: (minimum / 100).toString(),
             initialAmount: "",
           },
         ];
       });
       setManualAssetAddress("");
-      setManualPoolAddress("");
+      setManualPrimarySource("");
+      setManualSecondarySource("");
       setManualRegistrationState("confirmed");
     } catch (error) {
       setManualRegistrationError(errorMessage(error));
@@ -7857,7 +7982,7 @@ function CreateVaultView({
       manager: draft.manager,
       feeRecipient: draft.feeRecipient,
       initialAssets,
-      initialMarketIds: portfolio.map((asset) => asset.marketId ?? zeroHash),
+      initialPricingConfigs: portfolio.map((asset) => asset.pricingConfig),
       initialTargetWeightsBps: targetWeightBps,
       initialAmounts: derivedSeedAmounts.map((seed, index) => {
         if (seed.requiredAmount === undefined || seed.requiredAmount <= 0n) {
@@ -8220,7 +8345,7 @@ function CreateVaultView({
                 <div className="createAssetList">
                   {portfolio.map((asset, index) => (
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
-                      <label className="assetSelectField">
+                      <div className="assetSelectField">
                         <span>Asset</span>
                         <div className="createAssetSearchControl">
                           <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
@@ -8239,12 +8364,14 @@ function CreateVaultView({
                                 candidate.name.toLowerCase() === query,
                               );
                               if (selected) {
+                                const pricingConfig = configuredPricingConfig(selected.address) ?? emptyPricingConfig();
                                 updatePortfolio(index, {
                                   ticker: selected.symbol,
                                   name: selected.name,
                                   address: selected.address,
-                                  qualityStatus: "qualified",
-                                  priceFeed: undefined,
+                                  poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                                  quality: selected.quality,
+                                  pricingConfig,
                                 });
                               }
                             }}
@@ -8254,15 +8381,62 @@ function CreateVaultView({
                         <small className="assetAddressLabel" title={asset.address}>
                           Robinhood Testnet · {asset.ticker} · {shortAssetAddress(asset.address)}
                         </small>
-                        {asset.poolAddress ? (
-                          <small className="assetAddressLabel" title={asset.poolAddress}>
-                            Pinned V3 market · {shortAssetAddress(asset.poolAddress)}
-                          </small>
-                        ) : null}
-                        <span className={`stateBadge ${asset.qualityStatus === "open" ? "warning" : "success"}`}>
-                          {asset.qualityStatus === "open" ? "Experimental asset" : "Protocol-qualified assets"}
+                        <span className={`stateBadge ${asset.quality === "normal" ? "warning" : "success"}`}>
+                          {asset.quality === "high" ? "High quality" : "Normal quality"}
                         </span>
-                      </label>
+                        <label>
+                          <span>Pricing source</span>
+                          <select
+                            value={asset.pricingConfig.source}
+                            onChange={(event) => {
+                              const source = Number(event.target.value) as PricingSource;
+                              const known = configuredPricingConfig(asset.address);
+                              const pricingConfig = known?.source === source
+                                ? known
+                                : { source, primarySource: zeroAddress, secondarySource: zeroAddress };
+                              updatePortfolio(index, {
+                                pricingConfig,
+                                poolAddress: source === 2 ? pricingConfig.primarySource : undefined,
+                              });
+                            }}
+                          >
+                            <option value={0}>Chainlink ASSET/USD</option>
+                            <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
+                            <option value={2}>Uniswap V3 TWAP</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>{asset.pricingConfig.source === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
+                          <input
+                            className={asset.pricingConfig.primarySource !== zeroAddress && !isAddress(asset.pricingConfig.primarySource) ? "invalid" : undefined}
+                            value={asset.pricingConfig.primarySource === zeroAddress ? "" : asset.pricingConfig.primarySource}
+                            onChange={(event) => {
+                              const primarySource = event.target.value.trim() as `0x${string}`;
+                              updatePortfolio(index, {
+                                pricingConfig: { ...asset.pricingConfig, primarySource },
+                                poolAddress: asset.pricingConfig.source === 2 ? primarySource : undefined,
+                              });
+                            }}
+                            placeholder="0x exact source address"
+                          />
+                        </label>
+                        {asset.pricingConfig.source === 1 ? (
+                          <label>
+                            <span>WETH/USD Chainlink feed</span>
+                            <input
+                              className={asset.pricingConfig.secondarySource !== zeroAddress && !isAddress(asset.pricingConfig.secondarySource) ? "invalid" : undefined}
+                              value={asset.pricingConfig.secondarySource === zeroAddress ? "" : asset.pricingConfig.secondarySource}
+                              onChange={(event) => updatePortfolio(index, {
+                                pricingConfig: {
+                                  ...asset.pricingConfig,
+                                  secondarySource: event.target.value.trim() as `0x${string}`,
+                                },
+                              })}
+                              placeholder="0x WETH/USD feed"
+                            />
+                          </label>
+                        ) : null}
+                      </div>
                       <label className="assetWeightField">
                         <span>Target weight</span>
                         <div className="inputWithSuffix">
@@ -8311,9 +8485,9 @@ function CreateVaultView({
                   <div className="manualAssetRegistrationIntro">
                     <div>
                       <strong>Add an unindexed token</strong>
-                      <span>Register an exact-transfer, 18-decimal ERC-20 and pin its initialized Uniswap V3 asset/WETH market.</span>
+                      <span>Choose the exact per-OTF pricing route for any exact-transfer, 18-decimal ERC-20. The resolver validates it before the token is added.</span>
                     </div>
-                    <span className="stateBadge warning">Experimental</span>
+                    <span className="stateBadge warning">Normal quality</span>
                   </div>
                   <div className="manualAssetRegistrationFields">
                     <label>
@@ -8326,35 +8500,62 @@ function CreateVaultView({
                       />
                     </label>
                     <label>
-                      <span>V3 asset/WETH pool</span>
+                      <span>Pricing source</span>
+                      <select
+                        value={manualPricingSource}
+                        onChange={(event) => {
+                          setManualPricingSource(Number(event.target.value) as PricingSource);
+                          setManualPrimarySource("");
+                          setManualSecondarySource("");
+                        }}
+                      >
+                        <option value={0}>Chainlink ASSET/USD</option>
+                        <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
+                        <option value={2}>Uniswap V3 TWAP</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>{manualPricingSource === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
                       <input
-                        className={manualPoolAddress && !isAddress(manualPoolAddress) ? "invalid" : undefined}
-                        value={manualPoolAddress}
-                        onChange={(event) => setManualPoolAddress(event.target.value.trim())}
-                        placeholder="0x Uniswap V3 pool"
+                        className={manualPrimarySource && !isAddress(manualPrimarySource) ? "invalid" : undefined}
+                        value={manualPrimarySource}
+                        onChange={(event) => setManualPrimarySource(event.target.value.trim())}
+                        placeholder="0x exact source address"
                       />
                     </label>
+                    {manualPricingSource === 1 ? (
+                      <label>
+                        <span>WETH/USD Chainlink feed</span>
+                        <input
+                          className={manualSecondarySource && !isAddress(manualSecondarySource) ? "invalid" : undefined}
+                          value={manualSecondarySource}
+                          onChange={(event) => setManualSecondarySource(event.target.value.trim())}
+                          placeholder="0x WETH/USD feed"
+                        />
+                      </label>
+                    ) : null}
                     <button
                       type="button"
                       className="secondaryAction"
-                      onClick={registerAndAddOpenAsset}
+                      onClick={validateAndAddAsset}
                       disabled={
                         manualRegistrationState === "pending" ||
                         manualRegistrationState === "submitted" ||
                         !connectedAddress ||
                         !isAddress(manualAssetAddress) ||
-                        !isAddress(manualPoolAddress)
+                        !isAddress(manualPrimarySource) ||
+                        (manualPricingSource === 1 && !isAddress(manualSecondarySource))
                       }
                     >
                       {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
                         ? <Loader2 className="spin" size={14} />
                         : <Plus size={14} />}
-                      Register and add
+                      Validate and add
                     </button>
                   </div>
                   <div className="manualAssetRiskNotice" role="note">
                     <AlertTriangle size={15} />
-                    <span>Pool-derived prices and liquidity can be manipulated. Malicious or upgradable tokens may block transfers or redemption. Performance XP depends on seven continuous days of eligibility.</span>
+                    <span>Quality is informational, not an eligibility gate. Always review source ownership, token upgradeability, liquidity, and transfer behavior before creating an OTF.</span>
                   </div>
                   {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
                   <TxStatus state={manualRegistrationState} persistent />
@@ -8384,7 +8585,7 @@ function CreateVaultView({
                   <ShieldCheck size={14} />
                   <div>
                     <strong>Trade execution remains constrained</strong>
-                    <span>Strategy changes unlock 14 days after the previous rebalance completes. Robinhood equity feeds publish 24/5. Oracle-priced actions require every constituent feed to remain within its freshness window, currently 25 hours after that feed&apos;s latest update, and resume after all required feeds update. Each trade must move the basket closer to target.</span>
+                    <span>Strategy changes unlock 14 days after the previous rebalance completes. Every pinned Chainlink leg must satisfy its protocol-defined freshness and pause checks; V3 pricing uses the fixed protocol TWAP window. No fallback source is used. Each trade must move the basket closer to target.</span>
                   </div>
                 </div>
                 {safetyIssues.length ? (
@@ -8406,17 +8607,17 @@ function CreateVaultView({
                   <div>
                     <h2>{normalizedOtfName}</h2>
                     <span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span>
-                    <span className={`stateBadge ${hasExperimentalConstituent ? "warning" : "success"}`}>
-                      {hasExperimentalConstituent ? "Experimental OTF" : "Protocol-qualified assets"}
+                    <span className={`stateBadge ${hasNormalQualityConstituent ? "warning" : "success"}`}>
+                      {hasNormalQualityConstituent ? "Normal quality" : "High quality"}
                     </span>
                   </div>
                 </div>
-                {hasExperimentalConstituent ? (
+                {hasNormalQualityConstituent ? (
                   <div className="validationSummary warning" role="note">
                     <AlertTriangle size={15} />
                     <div>
-                      <strong>Experimental OTF</strong>
-                      <span>At least one constituent uses a pinned pool-derived price. Liquidity can be manipulated, malicious or upgradable tokens may block transfers, and performance XP requires continuing eligibility.</span>
+                      <strong>Normal-quality OTF</strong>
+                      <span>At least one constituent is not currently marked high quality in the frontend metadata. This label is informational and does not change onchain eligibility or rewards.</span>
                     </div>
                   </div>
                 ) : null}
@@ -8436,11 +8637,11 @@ function CreateVaultView({
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
                     {portfolio.map((asset, index) => (
-                      <span key={asset.address} title={`${asset.address}${asset.poolAddress ? ` · V3 ${asset.poolAddress}` : ""}`}>
+                      <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source === 1 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
                         <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
                         {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed
-                        <small>{asset.qualityStatus === "open" ? "Experimental" : "Qualified"} · {shortAssetAddress(asset.address)}</small>
+                        <small>{asset.quality === "high" ? "High" : "Normal"} quality · {pricingSourceLabel(asset.pricingConfig.source)} · {shortAssetAddress(asset.address)}</small>
                       </span>
                     ))}
                   </div>
@@ -8499,19 +8700,17 @@ function CreateVaultView({
                                     : asset.balanceSufficient ? "Balance ready" : "Insufficient balance"}
                             </span>
                             <span className={`stateBadge ${
-                              oracleRegistryReadFailed || protocolAssetReadFailed
+                              pricingQuoteError
                                 ? "danger"
-                                : asset.priceFeed === undefined
+                                : pricingQuotesPending || !asset.pricingValidated
                                   ? "muted"
-                                  : asset.hasPriceFeed && asset.oracleFresh ? "success" : "danger"
+                                  : "success"
                             }`}>
-                              {oracleRegistryReadFailed || protocolAssetReadFailed
-                                ? "Feed read failed"
-                                : asset.priceFeed === undefined
-                                  ? "Checking feed"
-                                  : !asset.hasPriceFeed
-                                    ? "Price feed missing"
-                                    : asset.oracleFresh ? "Oracle price fresh" : "Oracle price stale"}
+                              {pricingQuoteError
+                                ? "Pricing invalid"
+                                : pricingQuotesPending || !asset.pricingValidated
+                                  ? "Validating pricing"
+                                  : "Pricing validated"}
                             </span>
                           </div>
                           {asset.allowanceSufficient ? (
@@ -8549,30 +8748,19 @@ function CreateVaultView({
                       <div><strong>Approval failed</strong><span>{approvalError}</span></div>
                     </div>
                   ) : null}
-                  {connectedAddress && seedAuthorizations.some(
-                    (asset) => protocolAssetResultReady && asset.priceFeed !== undefined && !asset.hasPriceFeed,
-                  ) ? (
+                  {connectedAddress && pricingQuoteError ? (
                     <div className="validationSummary danger" role="alert">
                       <AlertTriangle size={15} />
                       <div>
-                        <strong>Oracle feed is incomplete</strong>
-                        <span>Selected assets must have configured oracle feeds before this OTF can be deployed.</span>
+                        <strong>Pricing validation failed</strong>
+                        <span>{pricingQuoteError}</span>
                       </div>
                     </div>
                   ) : null}
-                  {connectedAddress && staleSeedAssets.length ? (
-                    <div className="validationSummary danger" role="alert">
-                      <Clock3 size={15} />
-                      <div>
-                        <strong>{staleSeedAssets.map((asset) => asset.ticker).join(", ")} oracle prices are stale</strong>
-                        <span>Self-updating testnet feeds should remain current. This deployment may still reference a legacy feed; reconfigure the testnet catalog before creating this OTF.</span>
-                      </div>
-                    </div>
-                  ) : null}
-                  {connectedAddress && (seedAuthorizationsFailed || oracleRegistryReadFailed || protocolAssetsReadFailed || protocolAssetReadFailed) ? (
+                  {connectedAddress && seedAuthorizationsFailed ? (
                     <div className="validationSummary danger" role="alert">
                       <RefreshCw size={15} />
-                      <div><strong>Preflight checks could not be loaded</strong><span>Check the testnet connection, then reload these contract reads before approving or deploying.</span></div>
+                      <div><strong>Token authorization checks could not be loaded</strong><span>Check the testnet connection, then reload balances and allowances before approving or deploying.</span></div>
                     </div>
                   ) : null}
                 </div>
@@ -8580,6 +8768,12 @@ function CreateVaultView({
                   <div className="validationSummary warning" role="status">
                     <ShieldCheck size={15} />
                     <div><strong>New OTF creation is temporarily paused</strong><span>The protocol-wide deposit precaution is active. Your draft is preserved; return after the factory owner resumes deposits.</span></div>
+                  </div>
+                ) : null}
+                {protocolDepositsPauseUnavailable ? (
+                  <div className="validationSummary warning" role="status">
+                    <RefreshCw size={15} />
+                    <div><strong>Deposit-pause status unavailable</strong><span>Creation stays disabled until the factory&apos;s global pause state can be verified.</span></div>
                   </div>
                 ) : null}
                 {allIssues.length ? (
@@ -8963,8 +9157,8 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
   return (
     <div className="appView">
       <AppPageHeader
-        title="Supported RWAs"
-        description="Tokenized assets available to OTF strategies on Robinhood Chain."
+        title="RWA metadata"
+        description="Convenient token, quality, execution, and pricing references. This catalog does not authorize OTF constituents."
         icon={<Landmark size={18} />}
         actions={isTestnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined}
       />
@@ -8972,15 +9166,16 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
         <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet assets are not supported yet</h2><p>Switch on Testnet mode in Settings to inspect the current RWA catalog.</p></section>
       ) : (
         <section className="sectionCard walletAssets">
-          <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Token contracts and live oracle prices.</p></div><span className="stateBadge success">{testnetCreateAssets.length} supported</span></div>
+          <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Frontend metadata, execution liquidity, and reference prices.</p></div><span className="stateBadge muted">{testnetCreateAssets.length} records</span></div>
           <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable">
-            <thead><tr><th>Asset</th><th>Token address</th><th>Liquidity pool</th><th>Oracle price</th></tr></thead>
+            <thead><tr><th>Asset</th><th>Quality</th><th>Token address</th><th>Execution pool</th><th>Reference price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
               const pool = configuredConstituentPool(asset.address);
               const oraclePrice = oraclePrices[asset.address.toLowerCase()];
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
+                  <td data-label="Quality"><span className={`stateBadge ${asset.quality === "high" ? "success" : "muted"}`}>{asset.quality === "high" ? "High" : "Normal"}</span></td>
                   <td data-label="Token address" className="monoValue">
                     <a
                       className="tableAddressLink"

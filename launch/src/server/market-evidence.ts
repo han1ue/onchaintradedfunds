@@ -1,9 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
-  evaluateExperimentalEvidence,
-  type ExperimentalEligibilityEvidence,
-} from "@/lib/experimental-eligibility";
+  evaluateMarketEvidence,
+  type MarketEvidenceInput,
+} from "@/lib/market-evidence-policy";
 import { requireDb } from "./db";
 import { assetEligibilitySnapshots, assetMarkets, competitions, eligibleAssets } from "./db/schema";
 import { env } from "./env";
@@ -25,16 +25,6 @@ const poolDataSchema = z.object({
     pool_created_at: z.string().datetime({ offset: true }).nullable(),
   }).passthrough() }),
 });
-const onchainEvidenceSchema = z.object({
-  oneHourTwapUsd: z.number().positive().nullable(),
-  twentyFourHourTwapUsd: z.number().positive().nullable(),
-  observationsReadyOneHour: z.boolean().nullable(),
-  observationsReadyTwentyFourHours: z.boolean().nullable(),
-  buyImpactPct: z.number().nonnegative().nullable(),
-  sellImpactPct: z.number().nonnegative().nullable(),
-  criticalSellOrTaxFlag: z.boolean().nullable(),
-});
-
 type MarketRow = {
   id: string;
   marketId: string;
@@ -67,7 +57,6 @@ async function fetchProviderEvidence(market: MarketRow) {
   let tokenData: z.infer<typeof tokenDataSchema> | null = null;
   let tokenInfo: z.infer<typeof tokenInfoSchema> | null = null;
   let poolData: z.infer<typeof poolDataSchema> | null = null;
-  let onchain: z.infer<typeof onchainEvidenceSchema> | null = null;
   const safeLoad = async <T>(label: string, load: () => Promise<T>) => {
     try { return await load(); }
     catch (error) {
@@ -79,32 +68,7 @@ async function fetchProviderEvidence(market: MarketRow) {
   tokenData = await safeLoad("token-data", async () => tokenDataSchema.parse(await coinGecko(`tokens/${market.assetAddress}`)));
   tokenInfo = await safeLoad("token-info", async () => tokenInfoSchema.parse(await coinGecko(`tokens/${market.assetAddress}/info`)));
   poolData = await safeLoad("pool-data", async () => poolDataSchema.parse(await coinGecko(`pools/${market.poolAddress}`)));
-  if (env.MARKET_EVIDENCE_URL) {
-    onchain = await safeLoad("onchain-evidence", async () => {
-      const response = await fetch(env.MARKET_EVIDENCE_URL!, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(env.MARKET_EVIDENCE_SECRET ? { authorization: `Bearer ${env.MARKET_EVIDENCE_SECRET}` } : {}),
-        },
-        body: JSON.stringify({
-          marketId: market.marketId,
-          asset: market.assetAddress,
-          pool: market.poolAddress,
-          factory: market.factoryAddress,
-          quoteToken: market.quoteTokenAddress,
-          feeTier: market.feeTier,
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!response.ok) throw new Error(`MARKET_EVIDENCE_${response.status}`);
-      return onchainEvidenceSchema.parse(await response.json());
-    });
-  } else {
-    providerErrors.push("onchain-evidence:NOT_CONFIGURED");
-  }
-  return { tokenData, tokenInfo, poolData, onchain, providerErrors };
+  return { tokenData, tokenInfo, poolData, providerErrors };
 }
 
 export async function captureMarketEvidence(sampledAt = new Date()) {
@@ -121,7 +85,7 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
   }).from(assetMarkets).innerJoin(
     eligibleAssets,
     eq(eligibleAssets.id, assetMarkets.assetId),
-  ).where(and(eq(assetMarkets.active, true), eq(eligibleAssets.qualityStatus, "open")));
+  ).where(eq(assetMarkets.active, true));
 
   const results = [];
   for (const market of markets) {
@@ -130,7 +94,7 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
     const poolCreatedAt = provider.poolData?.data.attributes.pool_created_at
       ? new Date(provider.poolData.data.attributes.pool_created_at)
       : null;
-    const evidence: ExperimentalEligibilityEvidence = {
+    const evidence: MarketEvidenceInput = {
       sampledAt,
       competitionStartsAt: competition?.startsAt ?? null,
       liquidityUsd: finiteNumber(provider.poolData?.data.attributes.reserve_in_usd),
@@ -138,16 +102,12 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
       // CoinGecko documents null market_cap_usd for unverified values. FDV is intentionally ignored.
       marketCapVerified: provider.tokenData ? marketCap !== null : null,
       poolCreatedAt,
-      observationsReady24h: provider.onchain?.observationsReadyTwentyFourHours ?? null,
       gtVerified: provider.tokenInfo?.data.attributes.gt_verified ?? null,
       gtScore: provider.tokenInfo?.data.attributes.gt_score ?? null,
       isHoneypot: provider.tokenInfo?.data.attributes.is_honeypot ?? null,
-      criticalSellOrTaxFlag: provider.onchain?.criticalSellOrTaxFlag ?? null,
       lockedLiquidityPct: finiteNumber(provider.poolData?.data.attributes.locked_liquidity_percentage),
-      buyImpactPct: provider.onchain?.buyImpactPct ?? null,
-      sellImpactPct: provider.onchain?.sellImpactPct ?? null,
     };
-    const evaluated = evaluateExperimentalEvidence(evidence);
+    const evaluated = evaluateMarketEvidence(evidence);
     await database.transaction(async (transaction) => {
       await transaction.insert(assetEligibilitySnapshots).values({
         marketId: market.id,
@@ -159,19 +119,11 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
         gtVerified: evidence.gtVerified,
         gtScore: evidence.gtScore?.toString(),
         isHoneypot: evidence.isHoneypot,
-        criticalSellOrTaxFlag: evidence.criticalSellOrTaxFlag,
         lockedLiquidityPct: evidence.lockedLiquidityPct?.toString(),
-        buyImpactPct: evidence.buyImpactPct?.toString(),
-        sellImpactPct: evidence.sellImpactPct?.toString(),
-        twapPriceUsd: provider.onchain?.twentyFourHourTwapUsd?.toString(),
         reasons: evaluated.reasons,
         providerMetadata: { errors: provider.providerErrors },
       }).onConflictDoNothing();
       await transaction.update(assetMarkets).set({
-        twapOneHourReady: provider.onchain?.observationsReadyOneHour ?? false,
-        twapTwentyFourHourReady: provider.onchain?.observationsReadyTwentyFourHours ?? false,
-        twapOneHourPriceUsd: provider.onchain?.oneHourTwapUsd?.toString() ?? null,
-        twapOneHourPriceAt: provider.onchain?.oneHourTwapUsd ? sampledAt : null,
         poolCreatedAt,
         updatedAt: sampledAt,
       }).where(eq(assetMarkets.id, market.id));

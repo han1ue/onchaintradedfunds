@@ -66,7 +66,10 @@ contract OTFFactory is IAdapterAllowlist {
     error OfficialMarketRegistryNotConfigured();
     error OfficialMarketRegistryLocked();
     error AssetMarketRegistryLocked();
+    error PricingResolverLocked();
+    error PricingResolverNotConfigured();
     error DepositsPaused();
+    error InvalidVault(address vault);
     error ProtocolTokenAlreadyConfigured();
     error ProtocolTokenNotConfigured();
     error InvalidProtocolTokenThreshold(uint16 thresholdBps);
@@ -82,7 +85,9 @@ contract OTFFactory is IAdapterAllowlist {
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
     event OfficialMarketRegistryConfigured(address indexed registry);
     event AssetMarketRegistryConfigured(address indexed registry);
+    event PricingResolverConfigured(address indexed resolver);
     event DepositsPauseChanged(bool paused);
+    event VaultDepositsPauseChanged(address indexed vault, bool paused);
     event ProtocolTokenConfigured(address indexed token, uint16 fullRebateBps);
     event ProtocolTokenFullRebateThresholdChanged(
         uint16 previousThresholdBps, uint16 newThresholdBps
@@ -99,6 +104,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public minTargetWeightBps = MIN_TARGET_WEIGHT_BPS;
     address public officialMarketRegistry;
     address public assetMarketRegistry;
+    address public pricingResolver;
     address public protocolToken;
     uint16 public protocolTokenFullRebateBps;
     bool public depositsPaused;
@@ -108,6 +114,7 @@ contract OTFFactory is IAdapterAllowlist {
     mapping(address => uint256) public creatorNonce;
     mapping(address => bool) public isVault;
     mapping(address => bool) public isTradeAdapterApproved;
+    mapping(address => bool) public vaultDepositsPaused;
     bool private _creating;
 
     constructor(
@@ -184,6 +191,7 @@ contract OTFFactory is IAdapterAllowlist {
         returns (address vault)
     {
         if (depositsPaused) revert DepositsPaused();
+        if (pricingResolver == address(0)) revert PricingResolverNotConfigured();
         address marketRegistry = officialMarketRegistry;
         if (marketRegistry == address(0)) revert OfficialMarketRegistryNotConfigured();
         _validateFactoryBounds(params);
@@ -255,6 +263,14 @@ contract OTFFactory is IAdapterAllowlist {
         emit DepositsPauseChanged(paused);
     }
 
+    /// @notice Reversibly pauses primary deposits into one factory-created OTF.
+    /// @dev Withdrawals, transfers, strategy operations, challenges, and fees are unaffected.
+    function setVaultDepositsPaused(address vault, bool paused) external onlyOwner {
+        if (!isVault[vault]) revert InvalidVault(vault);
+        vaultDepositsPaused[vault] = paused;
+        emit VaultDepositsPauseChanged(vault, paused);
+    }
+
     /// @notice Permanently identifies the OTF protocol token used by the fee incentive.
     /// @dev A zero threshold configures the token while leaving the incentive disabled.
     function configureProtocolToken(address token, uint16 fullRebateBps) external onlyOwner {
@@ -324,8 +340,8 @@ contract OTFFactory is IAdapterAllowlist {
         emit OfficialMarketRegistryConfigured(registry);
     }
 
-    /// @notice Configures the permissionless V3 market registry before the first OTF is created.
-    /// @dev A zero value is accepted only by the legacy qualified-only stack. New deployments set it.
+    /// @notice Configures the canonical V3 pricing registry before the first OTF is created.
+    /// @dev Direct-Chainlink-only deployments may leave this dependency unset.
     function setAssetMarketRegistry(address registry) external onlyOwner {
         if (_vaults.length != 0) revert AssetMarketRegistryLocked();
         if (registry == address(0) || registry.code.length == 0) {
@@ -333,6 +349,16 @@ contract OTFFactory is IAdapterAllowlist {
         }
         assetMarketRegistry = registry;
         emit AssetMarketRegistryConfigured(registry);
+    }
+
+    /// @notice Configures the immutable-stack pricing resolver before the first OTF is created.
+    function setPricingResolver(address resolver) external onlyOwner {
+        if (_vaults.length != 0) revert PricingResolverLocked();
+        if (resolver == address(0) || resolver.code.length == 0) {
+            revert InvalidDependency(resolver);
+        }
+        pricingResolver = resolver;
+        emit PricingResolverConfigured(resolver);
     }
 
     function beginOwnershipTransfer(address newOwner) external onlyOwner {
@@ -378,16 +404,7 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.initialAssets.length != params.initialAmounts.length) {
             revert InvalidArrayLength();
         }
-        if (
-            params.initialMarketIds.length != 0
-                && params.initialAssets.length != params.initialMarketIds.length
-        ) {
-            revert InvalidArrayLength();
-        }
-        if (
-            assetMarketRegistry != address(0)
-                && params.initialAssets.length != params.initialMarketIds.length
-        ) {
+        if (params.initialAssets.length != params.initialPricingConfigs.length) {
             revert InvalidArrayLength();
         }
         if (params.creatorFeeBpsPerYear > MAX_CREATOR_FEE_BPS_PER_YEAR) {

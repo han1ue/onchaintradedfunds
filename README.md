@@ -2,7 +2,10 @@
 
 Repository/package folder: `onchaintradedfunds`.
 
-Onchain Traded Funds, abbreviated OTF, is an experimental MVP for permissionless onchain investment vaults backed by qualified or open exact-transfer ERC-20 assets. Each vault is an ERC-20 share token and a custodian of its own underlying basket. Managers can rebalance, but only through a narrow, safety-checked execution path.
+Onchain Traded Funds, abbreviated OTF, is an experimental MVP for permissionless onchain investment
+vaults backed by mechanically valid, exactly-18-decimal, exact-transfer ERC-20 assets. Each vault is
+an ERC-20 share token and a custodian of its own underlying basket. Managers can rebalance, but only
+through a narrow, safety-checked execution path.
 
 This code is not audited, not production ready, and must not be deployed to mainnet.
 
@@ -23,7 +26,7 @@ This repository currently implements the first MVP slice:
 - Proportional mint and redeem logic.
 - Atomic USDG or WETH entry through separately configured allowlisted routers and registered V3 adapters.
 - Lazy share-based management fee accrual.
-- Optional OTF-token holding rebates and treasury-funded protocol-token buybacks.
+- Optional OTF-token holding rebates and a fixed-supply protocol token.
 - Onchain strategy history binding rationales to target snapshots.
 - Oracle-valued NAV and weight checks.
 - Approved-adapter rebalance execution.
@@ -45,6 +48,8 @@ This repository currently implements the first MVP slice:
 |   |   |-- RebalanceExecutor.sol
 |   |   |-- AssetRegistry.sol
 |   |   |-- OracleRegistry.sol
+|   |   |-- AssetPricingResolver.sol
+|   |   |-- ChainlinkRoutePriceFeed.sol
 |   |   |-- FeeCollector.sol
 |   |   `-- VaultTypes.sol
 |   |-- test/
@@ -65,9 +70,14 @@ This repository currently implements the first MVP slice:
 flowchart LR
   Creator[Creator / Manager] --> Factory[OTFFactory]
   Factory --> Clone[ManagedOTFVault clone]
-  Clone --> Registry[AssetRegistry]
-  Clone --> OracleRegistry[OracleRegistry]
+  Creator --> Config[Per-asset pricing configuration]
+  Config --> Resolver[AssetPricingResolver]
+  Resolver --> OracleRegistry[Trusted Chainlink pair routes]
+  Resolver --> V3Registry[Canonical V3 market registry]
   OracleRegistry --> Feeds[Chainlink-compatible feeds]
+  Resolver --> Pinned[Pinned normalized feed or V3 TWAP]
+  Clone --> Pinned
+  Registry[AssetRegistry discovery index] --> App[Frontend]
   Clone --> Executor[RebalanceExecutor]
   Executor --> Adapter[Approved trade adapter]
   Adapter --> Tokens[Underlying ERC-20 assets]
@@ -77,7 +87,7 @@ flowchart LR
   EntryRouter --> EntryAdapter[Approved entry adapter]
   EntryAdapter --> Liquidity[Uniswap-compatible liquidity]
   EntryRouter --> Clone
-  App[Next.js app] --> Factory
+  App --> Factory
   App --> Clone
 ```
 
@@ -131,43 +141,48 @@ flowchart LR
 - Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
-`UniswapV3Adapter`
+`RegisteredUniswapV3Adapter`
 
-- Implements exact-input entry, redemption, and rebalance swaps against a configurable Uniswap V3-compatible router.
-- Uses one immutable settlement token and fee tier, validates route endpoints, limits callers, returns output to the protocol caller, and clears temporary router approvals.
-- Routes RWA-to-RWA rebalances through USDG as the only permitted intermediate token while the vault-visible input and output remain active constituents.
+- Implements exact-input entry, redemption, and rebalance swaps through an explicit fee-bearing V3
+  path supplied for that transaction.
+- Uses one immutable settlement token, validates path endpoints and settlement-token occurrence,
+  limits callers, reconciles reported and observed deltas, and clears temporary router approvals.
+- Is independent from the pool, feed, and fee tier pinned for portfolio pricing.
 
 `AssetRegistry`
 
-- Onchain `Open`, `Qualified`, and `Blocked` asset statuses with permissionless open registration.
-- Production integration point for an official Robinhood Chain stock-token registry.
-- A revoked constituent immediately receives a 0% effective target; remaining approved targets
-  are renormalized proportionally to exactly 10,000 bps whenever at least one remains.
-- If no approved positive-target constituent remains, the vault enters permissionless,
-  irreversible terminal shutdown instead of opening a normal challenge.
+- Optional permissionless discovery index for deployed, exactly-18-decimal token contracts.
+- Has no owner, quality tier, approval, blocking, revocation, or constituent-eligibility authority.
+- Is never consulted by a vault for pricing, deposits, strategy changes, or redemptions.
 
 `OracleRegistry`
 
-- Maps protocol-qualified assets to `AggregatorV3Interface` feeds, per-feed freshness thresholds, and an
-  explicit validation mode.
-- Lets vaults evaluate NAV, turnover, and post-trade weight deviation.
+- Stores governance-trusted `(base, quote) -> feed` relationships, freshness bounds, and validation
+  modes used only when a user selects a new Chainlink configuration.
+- Cannot replace a feed already pinned by an OTF. Pair orientation is never inferred from
+  `description()`.
+
+`AssetPricingResolver`
+
+- Accepts a user-supplied direct Chainlink, composed asset/WETH × WETH/USD, or Uniswap V3 TWAP
+  configuration when an asset first enters an OTF.
+- Validates trusted Chainlink pair relationships or canonical V3 factory, pair, fee, initialization,
+  observation capacity, and history requirements.
+- Returns a normalized feed that the OTF pins without a fallback source.
 
 `FeeCollector`
 
 - Receives the protocol portion of manager-selected fee shares.
-- Allows only the configured treasury to claim those shares and configure an optional percentage
-  allocation to the buyback contract.
+- Allows only the configured treasury to claim those shares.
 - Uses a two-step treasury transfer.
 
-`OTFToken` and `OTFBuyback`
+`OTFToken` and the holding rebate
 
 - Provide a fixed-supply, no-privileged-minter OTF protocol token contract.
 - Scale each vault's protocol fee share linearly using its live oracle-valued OTF holding, up to an
   admin-configured full-rebate threshold.
-- Redeem allocated protocol fee shares and buy only OTF through explicitly approved adapters with
-  transaction-level minimum outputs.
-- Send purchased OTF only to the immutable treasury, timelock, or burn-vault recipient selected at
-  buyback deployment.
+- Leave protocol fee shares claimable by the treasury, which can redeem them and conduct manual
+  buybacks without a dedicated protocol contract.
 - Are specified in [`docs/OTF_TOKEN_AND_FEE_INCENTIVES.md`](./docs/OTF_TOKEN_AND_FEE_INCENTIVES.md).
 
 ### Basket Share Safety
@@ -183,7 +198,7 @@ been redeemed. Initial share supply must be greater than the locked amount.
 Factory seeding, basket minting, redemption, and rebalance execution verify exact token balance
 deltas for both sender and receiver. Fee-on-transfer, sender-taxed, and unexpectedly rebasing
 assets therefore revert atomically. Assets with nonstandard transfer accounting must not be
-approved.
+used. There is no administrator quality gate that makes such behavior safe.
 
 Direct donations of tracked assets become backing for every share. A donation can change NAV,
 weights, and required mint amounts, but `maxAmountsIn` and `minAmountsOut` protect users from stale
@@ -204,12 +219,11 @@ standard events. Target proposal, trade execution, and completion are separate t
 
 The implementation is ERC-7621 interface-compatible with documented restrictions; it does not
 claim full or unconditional compliance. It intentionally accepts only exact proportional basket
-contributions, prevents ownership renunciation, and stages constituent removal until its reserve is
-zero. During staged retirement, `getConstituents()` continues to return every asset in the live
-redemption basket and reports a zero effective target for each retiring asset; this keeps previews,
-withdrawals, and discovery in the same order until atomic liquidation and pruning. The draft rejects
-zero constituent weights, so this retirement behavior and the proportional-only contribution model
-remain documented extensions rather than a claim of unconditional conformance.
+contributions, prevents ownership renunciation, and stages manager-directed constituent removal
+until its reserve is zero. `getConstituents()` continues to return each zero-target asset in the live
+redemption basket until atomic liquidation and pruning. The draft rejects zero constituent weights,
+so staged removal and the proportional-only contribution model remain documented extensions rather
+than a claim of unconditional conformance.
 
 ## Portfolio And Strategy Timing
 
@@ -261,7 +275,8 @@ The cooldown is fixed at 14 days and has no manager setter.
 
 ### Creation
 
-The creator approves initial underlying assets to the factory. The factory:
+The creator grants the factory exact transfer allowances for the initial basket and supplies one
+`AssetPricingConfig` for each initial asset. The factory:
 
 1. Validates factory-level hard caps.
 2. Computes a deterministic clone salt from creator, nonce, and initialization parameters.
@@ -274,7 +289,11 @@ The vault initializer:
 
 - Validates manager and fee recipient.
 - Validates initial thesis byte length.
-- Validates constituent status, pinned V3 markets, and no duplicates.
+- Validates that every asset is a deployed contract with exactly 18 decimals, that arrays align,
+  and that there are no duplicate assets.
+- Resolves and pins each submitted Chainlink route or V3 TWAP configuration. A direct Chainlink
+  route must match the trusted asset/USD pair; a composed route must match both asset/WETH and
+  WETH/USD; a V3 source must be the canonical factory pool for the exact pair and fee.
 - Validates weight totals equal 10,000 bps.
 - Validates min, max, and count constraints.
 - Validates exact initial balances arrived.
@@ -304,6 +323,9 @@ Minting:
 - Is blocked permanently after that OTF is sunset.
 - Is blocked across every factory-created OTF while the factory owner has the reversible
   protocol deposit pause enabled.
+- Is blocked for one OTF while the factory owner has that factory-created vault's reversible local
+  pause enabled. The local pause rejects non-factory targets and affects direct and routed deposits
+  only; fee accrual and every non-deposit operation continue.
 
 ### Entry paths
 
@@ -315,8 +337,9 @@ received, and reverts unless that basket mints at least the user's minimum share
 proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
 using protected minimum USDG rates and the resulting USDG is returned to the payer.
 
-The cost shown by a Uniswap pool is not the OTF's accounting NAV. OTF NAV uses approved Chainlink
-feeds, while entry cost depends on available AMM liquidity and price impact. The frontend displays
+The cost shown by an execution pool is not the OTF's accounting NAV. OTF NAV uses the source pinned
+for each constituent—direct Chainlink, composed Chainlink, or V3 TWAP—while entry cost depends on
+the independently supplied execution path, available liquidity, and price impact. The frontend displays
 both values and the difference; users protect execution with per-leg minimum outputs, a minimum
 share amount derived from their slippage setting, and a deadline. This route does not subsidize
 entry from existing OTF assets.
@@ -351,13 +374,13 @@ the routed settlement exit, the holder approves
 the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
 proportional `redeem` path, sells each received constituent through an approved adapter, enforces
 per-leg and aggregate minimum USDG outputs plus a deadline, and transfers the resulting USDG to the
-chosen receiver. Pool proceeds may differ from the Chainlink-priced basket value, and the frontend
+chosen receiver. Pool proceeds may differ from the pinned-price basket value, and the frontend
 shows that difference before signing. A failed leg or insufficient aggregate output reverts the
 share burn and every swap atomically.
 
 ## Strategic Rebalancing
 
-The manager normally changes constituents and targets atomically with a rationale:
+The manager changes targets using already-pinned pricing configurations with:
 
 ```solidity
 function proposeStrategy(
@@ -366,6 +389,21 @@ function proposeStrategy(
     string calldata rationale
 ) external;
 ```
+
+Adding an asset that has never been priced by that OTF requires the explicit configuration form:
+
+```solidity
+function proposeStrategyWithPricing(
+    address[] calldata newTokens,
+    uint256[] calldata newWeights,
+    AssetPricingConfig[] calldata pricingConfigs,
+    string calldata rationale
+) external;
+```
+
+An existing constituent must repeat its pinned configuration exactly; a manager cannot use a
+strategy proposal to replace that asset's price source. A new constituent is mechanically validated
+and its submitted source is resolved before the proposal is accepted.
 
 Draft ERC-7621 compatibility remains available by staging the rationale before its standard
 two-argument function:
@@ -376,6 +414,9 @@ function rebalance(
     uint256[] calldata newWeights
 ) external;
 ```
+
+Because the draft selector has no pricing-config argument, it can change targets only among assets
+whose pricing is already pinned. It cannot introduce a previously unpriced constituent.
 
 Every path requires a non-empty rationale, rejects identical or reorder-only targets, records a
 pending strategic target, and emits `TargetWeightsProposed`. The
@@ -412,10 +453,11 @@ struct TradeInstruction {
 The vault grants exact temporary approvals to `RebalanceExecutor`, clears them after each trade,
 and receives output directly. There is no generic target/calldata execution function.
 
-For a final sale of a retiring asset, `amountIn = type(uint256).max` means "sell the vault's full
+For a final sale of a manager-directed zero-target asset, `amountIn = type(uint256).max` means
+"sell the vault's full
 live balance." The vault resolves that balance inside the transaction and uses the resolved amount
 for approval, execution, events, oracle-loss accounting, and same-transaction pruning. The sentinel
-is rejected for active assets and for an empty retiring balance.
+is rejected for a positive-target asset and for an empty balance.
 
 Every partial batch must use current constituents and approved adapters, satisfy explicit and
 oracle-valued slippage, stay within the NAV-loss bound, avoid worsening any constituent,
@@ -430,7 +472,7 @@ natural price movement reaches the bands.
 
 Retained rebalance protections:
 
-- Approved output assets; retiring inputs may only be sold down.
+- Current and proposed constituents only; zero-target inputs may only be sold down.
 - Approved trading adapters only.
 - Onchain strategy-turnover disclosure.
 - Linearly replenishing NAV-loss budget; a full charge recovers over seven days and gains do not
@@ -438,7 +480,7 @@ Retained rebalance protections:
 - Narrow completion bands and wider challenge bands.
 - Protocol-wide minimum target weight with a permanent 1% floor; the factory owner may raise it or
   reduce it back to, but never below, that floor.
-- At most 100 tracked assets, including zero-target assets awaiting retirement.
+- At most 100 tracked assets, including zero-target assets awaiting manager-directed removal.
 - Fresh onchain prices.
 - Atomicity of each partial trade transaction.
 - No arbitrary manager calls.
@@ -456,7 +498,7 @@ All executor authorizations are cleared on manager transfer, then the new manage
 sole authorized executor. Executors receive no bounty or
 reimbursement from vault assets.
 
-### OTF Sunset And Emergency Deposit Pause
+### OTF Sunset And Emergency Deposit Pauses
 
 The manager may permanently sunset an operational OTF only after its strategy cooldown has ended
 and when no challenge, pending proposal, or strategic rebalance is active. Sunset checkpoints the final valid fee interval and then
@@ -464,22 +506,21 @@ permanently disables new deposits, future fee accrual, challenges, target change
 trades. Standard share transfers and proportional redemptions remain available so holders can wind
 down without depending on the manager, oracle freshness, or a separate protocol action.
 
-If registry revocations leave no approved positive-target constituent, anyone may call
-`finalizeTerminalShutdown()`. `flagOutOfBand()` detects the same condition and terminalizes
-instead of opening a normal challenge. This bypasses the manager cooldown, closes any existing
-challenge according to its deadline economics, and is irreversible even if an asset is later
-reapproved. Redemptions and bounded retiring-dust pruning remain available.
-
-Separately, the factory owner may call `setDepositsPaused(bool)` to reversibly pause new OTF
+The factory owner may call `setDepositsPaused(bool)` to reversibly pause new OTF
 creation and deposits across all OTFs
 created by the factory. This emergency control is enforced inside each vault, including deposits
 routed through `OTFEntryRouter`; it does not pause redemptions, transfers, or ordinary
 secondary-market trading.
 
+The owner may also call `setVaultDepositsPaused(vault, bool)` for one factory-created OTF. The call
+rejects non-factory addresses and composes with the global switch: deposits are allowed only when
+both are clear. Neither pause stops withdrawals, transfers, strategy operations, challenges, or fee
+accrual. There is no administrator asset revocation or registry-driven shutdown path.
+
 ### Weight Bands And Challenges
 
 Each target has a wider challenge band and a narrower completion band. Anyone may call
-`flagOutOfBand()`, but fresh approved prices must prove a real challenge-band breach.
+`flagOutOfBand()`, but fresh pinned prices must prove a real challenge-band breach.
 
 A valid challenge locks target changes and manager-fee withdrawals while the fixed seven-day grace
 period runs. This spans scheduled market weekends and typical holiday closures without making the
@@ -514,11 +555,20 @@ The vault rejects:
 - An enabled `oraclePaused()` flag or an unavailable required pause check.
 - Unsupported token or oracle decimals.
 
-`OracleRegistry` stores a feed, maximum staleness, and validation mode for each asset. Robinhood
-equity feeds publish 24/5; their configurations use 25 hours for the 24-hour heartbeat plus a one-hour
-delivery buffer and use `RobinhoodStockToken` mode, which requires the asset's `oraclePaused()` check. The freshness deadline is measured
-from each feed's latest update, so oracle-priced actions may continue into a weekend before pausing until
-fresh prices arrive. Future feeds can use different policies without manager-controlled oracle settings.
+Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts only the trusted
+asset/USD feed. `ChainlinkAssetWeth` accepts only the trusted asset/WETH and WETH/USD legs, checks
+both independently, multiplies them into an 8-decimal USD result, and exposes the older leg's
+timestamp. `UniswapV3Twap` accepts an asset/WETH or asset/USDG pool only after canonical-factory,
+exact pair and fee, initialization, observation-capacity, and full-history checks. V4 is not a
+pricing source.
+
+The trusted Chainlink mapping is consulted only when a source is selected. Later mapping changes
+cannot redirect an existing OTF, and no source automatically falls back to another. Every read
+checks positive answers, round completeness, timestamps, protocol staleness bounds, and supported
+decimals. A `RobinhoodStockToken` leg additionally requires the base token's `oraclePaused()` call
+to be available and false. Robinhood equity feeds are 24/5; deployment policy currently allows the
+documented heartbeat plus delivery buffer, after which oracle-dependent operations pause until a
+fresh round arrives. Redemption remains price-independent.
 
 Current weights:
 
@@ -632,6 +682,11 @@ The current dashboard shows:
 - Immutable safety limits.
 - Manager action readiness.
 
+Asset quality is intentionally frontend-only. `High quality` and `Normal` are live-derived labels
+from metadata and market evidence; they are not stored onchain and cannot authorize, block, or
+grandfather an asset. Catalog pricing configurations are transaction prefills only and are fully
+revalidated by the contracts.
+
 The UI deliberately follows common DeFi product patterns:
 
 - Wallet connection is in the top-right operational area.
@@ -669,22 +724,43 @@ DEPLOYER_PRIVATE_KEY=
 ```
 
 Keep that value in the ignored `.env.deploy.local` file. Never add it to the address JSON. The
-deployment script reads its chain, treasury, approved assets, price feeds, and external protocol
-addresses from `app/src/config/robinhood-testnet.json`. It rejects an empty protocol catalog unless
-`ALLOW_EMPTY_PROTOCOL_CONFIG=true` is set explicitly.
+deployment script reads its chain, treasury, optional trusted Chainlink pair routes, WETH, USDG,
+canonical WETH/USDG pool, and V3 infrastructure from
+`app/src/config/robinhood-testnet.json`. A V3-only deployment does not require a Chainlink route.
 
 Deploying always recompiles source-only artifacts before broadcasting, targets the Shanghai EVM
-supported by Robinhood Chain Testnet, and updates the shared address configuration only after the
-entire suite and registry setup succeed:
+supported by Robinhood Chain Testnet, deploys the pricing resolver and generic settlement adapters,
+and updates the shared address configuration only after setup succeeds. Before writing schema
+version 3 it archives the prior JSON; legacy factories and vaults are not upgraded in place:
 
 ```bash
 corepack pnpm contracts:deploy:robinhood-testnet
 ```
 
-`USDG_ADDRESS` and all four Uniswap V3-compatible addresses are required because every new OTF
-receives an official OTF/USDG pool during its factory transaction. Robinhood testnet currently
-points these fields at Synthra; Robinhood mainnet can use official Uniswap without changing vault
-interfaces.
+The schema-version-3 manifest exposes `contracts.pricingResolver`, root
+`trustedOracleRoutes[]` records (`base`, `quote`, `quoteKind`, `feed`, `source`, `maxStaleness`, and
+`validationMode`), and root `executionRoutes[]` records (`settlementToken`, generic adapter, entry
+router, and path encoding). `v3Venue.constituentPools` describes execution liquidity only;
+`pricingConfiguration.suggestedInitialPricingConfigs` and `suggestedV3PricingConfigs` are separate,
+non-authoritative transaction prefills. Execution records never contain a pricing market ID.
+
+This is a deployment migration, not an in-place upgrade:
+
+- Existing factory-created clones retain the legacy storage and behavior. A fresh factory,
+  implementation, strategy module, view module, resolver, registries, and adapters are required.
+- `VaultInitParams.initialMarketIds` became `initialPricingConfigs`; create/predict calldata, tuple
+  encoders, clone salts, and predicted addresses therefore change.
+- Pending strategy storage and callers must use `proposeStrategyWithPricing` for a newly introduced
+  asset. The draft two-argument ERC-7621 function is limited to already-pinned assets.
+- Adapter data is now an explicit packed V3 path rather than a pricing market ID.
+- Legacy address JSON is archived and schema-version-3 configurators reject old factories instead
+  of presenting them as migrated.
+
+WETH, USDG, the canonical WETH/USDG pool, and all four V3-compatible addresses are required. Every
+new OTF receives an official OTF/USDG pool during its factory transaction, while constituent pricing
+may independently use direct Chainlink, composed Chainlink, or a canonical asset/WETH or asset/USDG
+TWAP. Robinhood testnet currently points these V3 fields at Synthra; production addresses must be
+verified independently.
 
 After the base protocol and mock oracle catalog are configured, deploy the V3 adapter and entry
 router and create the five RWA/USDG pools with:
@@ -693,11 +769,12 @@ router and create the five RWA/USDG pools with:
 corepack pnpm contracts:configure:robinhood-testnet-synthra
 ```
 
-The command is idempotent. It verifies the configured contracts, approvals, assets, fee tier, and
-fresh oracle rounds; deploys or reuses the adapter and entry router; creates or adopts each 0.3%
-RWA/USDG pool; and records the verified addresses and transaction evidence in the shared JSON. It
-does not add liquidity. Entry, USDG redemption, and manager rebalance routes remain disabled until
-someone funds every required constituent pool through Synthra.
+The command is idempotent for a schema-version-3 deployment. It mechanically checks 18-decimal
+assets, uses a trusted direct USD route only to seed a pool price, verifies the canonical factory,
+pair, fee, and initialization, expands observation capacity toward 64, and tests one hour of TWAP
+history. It records `twapReady` and `twapReadyAt`; a pool remains ineligible for pricing until the
+required observations and full history actually exist. Execution-pool metadata is stored separately
+from suggested `UniswapV3Twap` configurations. The command does not add liquidity.
 
 The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
 OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
@@ -706,8 +783,8 @@ initializes a new pool from NAV per share, and records it as the immutable offic
 liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
 Uniswap position it creates; the pool association cannot be removed or replaced.
 
-Robinhood Chain Testnet does not currently publish official Chainlink equity-feed proxies. For
-development, deploy the protocol with `ALLOW_EMPTY_PROTOCOL_CONFIG=true`, compile the current
+Robinhood Chain Testnet does not currently have an official Chainlink equity-feed list in the
+Chainlink documentation. For development, deploy the fresh architecture, compile the current
 artifacts, then configure the five UI catalog assets with self-updating synthetic USD feeds:
 
 ```bash
@@ -722,18 +799,36 @@ an owner, keeper, cron job, or manual refresh transaction. The answer remains st
 timestamp, and the owner-only `setAnswer` function is retained solely as an optional baseline
 reset.
 
-The configurator records every deployment and registry transaction in
-`app/src/config/robinhood-testnet.json`. It automatically replaces legacy version-1 manually updated
-feeds and retains version-2 self-updating feeds on later runs. The synthetic path is intentionally
-predictable from public chain data; these feeds are UI and integration fixtures, not Chainlink,
-market data, or suitable adversarial-test price sources.
+The configurator permissionlessly records each mechanically valid asset for discovery and seeds a
+test-only trusted `(asset, USD) -> synthetic feed` route. It records a suggested
+`initialPricingConfigs` entry, but neither discovery nor the suggestion authorizes the asset. The
+synthetic path is intentionally predictable from public chain data; these feeds are integration
+fixtures, not Chainlink, canonical infrastructure, market data, or suitable adversarial-test price
+sources.
 
-Robinhood Chain Mainnet uses the official Chainlink proxy directory instead. Its tokenized-equity
-answers already include the Stock Token `uiMultiplier()` for dividends, splits, and other
-corporate actions; consumers must not multiply by `uiMultiplier()` again. See the
-[Chainlink Robinhood tokenized-equity documentation](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood).
+On Robinhood Chain Mainnet, Chainlink's onchain
+[Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry) is deployed at
+`0xbb601D8e5e568e6464D6D34feE489AA61b8d035A`. `getFlag(proxy)` can prove that a proxy is currently
+official and active; it does not prove base/quote orientation. No Robinhood deployment of the older
+pair-addressed Chainlink Feed Registry is documented, so production must maintain a separately
+trusted onchain pair mapping or reject the route. Feed `description()` is never identity evidence.
+The current [official Robinhood feed directory](https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json)
+predominantly exposes direct tokenized-equity/USD feeds; composed asset/WETH routes remain supported
+only when both exact legs are trusted.
 
-No production Robinhood Chain addresses are hardcoded. Any production address must be verified against official Robinhood Chain documentation before use.
+Tokenized-equity answers already include the Stock Token `uiMultiplier()` for dividends, splits,
+and other corporate actions; consumers must not multiply by it again. A feed can keep returning a
+value while its Stock Token has `oraclePaused() == true`, so the configured validation mode must
+check that token flag explicitly. See the
+[Chainlink tokenized-equity documentation](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+and [Robinhood oracle guidance](https://docs.robinhood.com/chain/oracles-and-price-feeds). Robinhood
+also recommends an L2 sequencer-uptime check; the current contracts do not implement one, so this is
+a production blocker or must be accepted as an explicit reviewed limitation.
+
+No production Robinhood Chain addresses are hardcoded. WETH, USDG, venue infrastructure, and stock
+tokens must be verified against the [official Robinhood contract directory](https://docs.robinhood.com/chain/contracts)
+and live onchain code before use; stock-token addresses are sourced dynamically rather than copied
+from a stale document.
 
 ## Local Development
 
@@ -781,10 +876,9 @@ forge coverage --report summary
 security lint, canonical vault/module storage, deployable bytecode sizes, and restricted
 delegation surfaces.
 
-The current permissionless v2 implementation intentionally fails the deployable-size gate:
-`ManagedOTFVault` is 25,692 bytes and `ManagedOTFVaultStrategy` is 28,297 bytes under the pinned
-build settings. Mainnet deployment remains blocked until both implementations are split below the
-24,576-byte EIP-170 runtime limit and the complete gate passes.
+The security gate recalculates every production runtime and initcode size from fresh artifacts.
+Deployment remains blocked whenever any implementation exceeds the EIP-170 or EIP-3860 limit; do
+not rely on byte counts copied from an earlier architecture.
 
 ## Tests
 
@@ -806,13 +900,17 @@ Deterministic coverage includes:
 - Active challenges and out-of-band portfolios block proposals.
 - Manager-only sunset is permanent, requires a completed cooldown and a challenge-free strategy state, stops future
   fees, deposits, challenges, and strategy actions, and preserves proportional redemptions.
-- The factory-owner deposit pause blocks OTF creation and deposits across multiple
-  OTFs, is reversible, and does not block redemptions.
+- The factory-owner global pause blocks creation and all primary deposits, while a local pause
+  affects direct and routed deposits for exactly one factory vault. Both are reversible and neither
+  blocks redemptions, other operations, or fee accrual.
 - Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
   atomic creation rollback.
 - Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,
   role transfers, and strategy history.
-- Oracle price validity, timestamps, round completeness, staleness, and missing feeds.
+- Direct and composed Chainlink pair validation, spoofed and reversed-route rejection, per-leg
+  timestamps, round completeness, staleness, Robinhood pause state, and no-fallback behavior.
+- Canonical V3 factory/pair/fee, initialization, observation-capacity and full-history checks,
+  source pinning, future-selection-only deprecation, and explicit V4 rejection.
 - Asset, weight, count, turnover, NAV-loss, target-deviation, adapter, trade, approval-clearing,
   and atomic rollback protections.
 - Draft ERC-7621 views, previews, actions, interface detection, ownership, and exact events.
@@ -840,9 +938,16 @@ history, and immutable factory provenance.
 ## Known Limitations
 
 - No production Robinhood Chain addresses are verified or configured.
-- Registered asset/WETH pools are initialized separately from liquidity provisioning; routed entry, redemption, and rebalances remain unavailable while any required pool lacks active liquidity or TWAP history.
+- Asset/WETH or asset/USDG pools are initialized separately from liquidity provisioning. Routed
+  entry, redemption, and rebalances require active liquidity; a V3 pricing selection additionally
+  requires the protocol observation capacity and full TWAP history.
 - RFQ, proprietary AMM, and order-book adapters are not implemented.
-- V1 routes are registry-derived Uniswap V3 paths: asset/WETH for WETH settlement and asset/WETH/USDG for USDG settlement. V4 is intentionally unsupported.
+- V3 execution paths and fee tiers are transaction inputs checked by a typed adapter; they are not
+  derived from the pricing pool. V4 pricing and V4 execution are intentionally unsupported.
+- Robinhood mainnet has an official Chainlink proxy Flags registry but no documented onchain
+  base/quote Feed Registry. The owner-managed trusted pair map is therefore a security dependency
+  for future Chainlink selections, although it cannot redirect existing pinned sources.
+- Robinhood testnet synthetic feeds are noncanonical integration fixtures.
 - The generated ABI package is currently a hand-maintained MVP subset.
 - The contracts are intentionally compact for MVP exploration and have not been gas optimized.
 - ERC-7621 remains a draft and its interface may change.
@@ -851,4 +956,5 @@ history, and immutable factory provenance.
 
 The next safest milestone is an independent smart-contract audit, followed by a testnet
 deployment rehearsal with verified Robinhood Chain addresses, live oracle feeds, and an
-approved adapter integration.
+approved generic adapter integration. Production also requires a reviewed Robinhood sequencer-uptime
+policy and an independent verification of every trusted Chainlink pair and canonical V3 dependency.

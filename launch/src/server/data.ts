@@ -25,9 +25,12 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
   const query = search.trim().toLowerCase();
   return sqlClient<EligibleAsset[]>`
     select ea.id::text, ea.symbol, ea.name, ea.contract_address as "contractAddress",
-      ea.network, ea.chain_id as "chainId", ea.decimals, ea.quality_status as "qualityStatus",
+      ea.network, ea.chain_id as "chainId", ea.decimals,
+      case when ea.quality = 'high' then 'high' else 'normal' end as quality,
       ea.price_source as "priceSource", latest.bid_usd::float8 as "latestPriceUsd",
-      latest.sampled_at::text as "latestPriceAt", coalesce(markets.items, '[]'::json) as markets
+      latest.sampled_at::text as "latestPriceAt",
+      coalesce(configs.items, '[]'::json) as "pricingConfigs",
+      coalesce(markets.items, '[]'::json) as markets
     from eligible_assets ea
     left join lateral (
       select aps.bid_usd, aps.sampled_at
@@ -37,14 +40,30 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
       limit 1
     ) latest on true
     left join lateral (
+      select json_agg(case pc.source
+        when 'chainlink-direct' then json_build_object(
+          'id', pc.id::text, 'active', pc.active, 'source', pc.source, 'feedAddress', pc.primary_address
+        )
+        when 'chainlink-weth' then json_build_object(
+          'id', pc.id::text, 'active', pc.active, 'source', pc.source,
+          'assetWethFeedAddress', pc.primary_address, 'wethUsdFeedAddress', pc.secondary_address
+        )
+        else json_build_object(
+          'id', pc.id::text, 'active', pc.active, 'source', pc.source, 'poolAddress', pc.primary_address
+        ) end order by
+          case pc.source when 'chainlink-direct' then 0 when 'chainlink-weth' then 1 else 2 end,
+          pc.created_at) as items
+      from asset_pricing_configs pc
+      where pc.asset_id = ea.id
+    ) configs on true
+    left join lateral (
       select json_agg(json_build_object(
         'id', am.id::text, 'marketId', am.market_id, 'poolAddress', am.pool_address,
         'feeTier', am.fee_tier, 'active', am.active,
         'poolCreatedAt', am.pool_created_at,
-        'twapOneHourReady', am.twap_one_hour_ready,
-        'twapTwentyFourHourReady', am.twap_twenty_four_hour_ready,
-        'eligibilityStatus', evidence.status,
-        'eligibilityReasons', coalesce(evidence.reasons, ARRAY[]::text[])
+        'quoteTokenAddress', am.quote_token_address,
+        'evidenceStatus', evidence.status,
+        'evidenceReasons', coalesce(evidence.reasons, ARRAY[]::text[])
       ) order by am.registered_at) as items
       from asset_markets am
       left join lateral (
@@ -56,7 +75,7 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
     where ${query} = '' or lower(ea.name) like ${`%${query}%`}
       or lower(ea.symbol) like ${`%${query}%`}
       or lower(ea.contract_address) = ${query}
-    order by case ea.quality_status when 'qualified' then 0 when 'open' then 1 else 2 end, ea.symbol
+    order by case when ea.quality = 'high' then 0 else 1 end, ea.symbol
     limit 100`;
 }
 
@@ -86,16 +105,20 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
       json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
       case when exists (
-        select 1 from proposal_assets blocked_pa join eligible_assets blocked_a on blocked_a.id = blocked_pa.asset_id
-        where blocked_pa.proposal_id = o.id and blocked_a.quality_status = 'blocked'
-      ) then 'blocked' when exists (
-        select 1 from proposal_assets tier_pa join eligible_assets tier_a on tier_a.id = tier_pa.asset_id
-        where tier_pa.proposal_id = o.id and tier_a.quality_status <> 'qualified'
-      ) then 'experimental' else 'qualified' end as "qualityTier",
+        select 1 from proposal_assets quality_pa join eligible_assets quality_a on quality_a.id = quality_pa.asset_id
+        where quality_pa.proposal_id = o.id and quality_a.quality <> 'high'
+      ) then 'normal' else 'high' end as quality,
       coalesce((select json_agg(json_build_object(
         'assetId', pa.asset_id::text, 'symbol', a.symbol, 'name', a.name,
-        'contractAddress', a.contract_address, 'qualityStatus', a.quality_status,
-        'marketId', am.market_id, 'poolAddress', am.pool_address, 'weightBps', pa.weight_bps
+        'contractAddress', a.contract_address,
+        'quality', case when a.quality = 'high' then 'high' else 'normal' end,
+        'pricingConfig', case pa.pricing_source
+          when 'chainlink-direct' then json_build_object('source', pa.pricing_source, 'feedAddress', pa.primary_address)
+          when 'chainlink-weth' then json_build_object('source', pa.pricing_source, 'assetWethFeedAddress', pa.primary_address, 'wethUsdFeedAddress', pa.secondary_address)
+          when 'uniswap-v3' then json_build_object('source', pa.pricing_source, 'poolAddress', pa.primary_address)
+          else null end,
+        'poolAddress', coalesce(case when pa.pricing_source = 'uniswap-v3' then pa.primary_address end, am.pool_address),
+        'weightBps', pa.weight_bps
       ) order by pa.position) from proposal_assets pa join eligible_assets a on a.id = pa.asset_id
         left join asset_markets am on am.id = pa.market_id where pa.proposal_id = o.id), '[]') as allocations
     from ordered o order by o.rank`;

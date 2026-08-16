@@ -17,9 +17,17 @@ contract OracleRegistry is IOracleRegistry {
     error AssetNotContract(address asset);
     error FeedNotContract(address feed);
     error InvalidMaxStaleness();
+    error MaxStalenessTooHigh(uint32 supplied, uint32 maximum);
 
     event OracleConfigSet(
         address indexed asset,
+        address indexed feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    );
+    event OracleRouteSet(
+        address indexed base,
+        address indexed quote,
         address indexed feed,
         uint32 maxStaleness,
         OracleValidationMode validationMode
@@ -29,7 +37,10 @@ contract OracleRegistry is IOracleRegistry {
 
     address public owner;
     address public pendingOwner;
-    mapping(address => OracleConfig) private _oracleConfigFor;
+    /// @notice ISO-4217 USD sentinel used as the quote key for direct USD feeds.
+    address public constant USD_QUOTE = address(840);
+    uint32 public constant MAX_ORACLE_STALENESS = 7 days;
+    mapping(address => mapping(address => OracleConfig)) private _oracleConfigForPair;
 
     constructor(address initialOwner) {
         if (initialOwner == address(0)) revert ZeroAddress();
@@ -57,7 +68,11 @@ contract OracleRegistry is IOracleRegistry {
     }
 
     function priceFeedFor(address asset) external view returns (address) {
-        return address(_oracleConfigFor[asset].feed);
+        return address(_oracleConfigForPair[asset][USD_QUOTE].feed);
+    }
+
+    function usdQuote() external pure returns (address) {
+        return USD_QUOTE;
     }
 
     function oracleConfigFor(address asset)
@@ -69,7 +84,20 @@ contract OracleRegistry is IOracleRegistry {
             OracleValidationMode validationMode
         )
     {
-        OracleConfig storage config = _oracleConfigFor[asset];
+        OracleConfig storage config = _oracleConfigForPair[asset][USD_QUOTE];
+        return (config.feed, config.maxStaleness, config.validationMode);
+    }
+
+    function oracleConfigForPair(address base, address quote)
+        external
+        view
+        returns (
+            AggregatorV3Interface feed,
+            uint32 maxStaleness,
+            OracleValidationMode validationMode
+        )
+    {
+        OracleConfig storage config = _oracleConfigForPair[base][quote];
         return (config.feed, config.maxStaleness, config.validationMode);
     }
 
@@ -79,15 +107,40 @@ contract OracleRegistry is IOracleRegistry {
         uint32 maxStaleness,
         OracleValidationMode validationMode
     ) external onlyOwner {
-        if (asset == address(0) || address(feed) == address(0)) revert ZeroAddress();
-        if (asset.code.length == 0) revert AssetNotContract(asset);
+        _setOracleRoute(asset, USD_QUOTE, feed, maxStaleness, validationMode);
+        emit OracleConfigSet(asset, address(feed), maxStaleness, validationMode);
+    }
+
+    function setOracleRoute(
+        address base,
+        address quote,
+        AggregatorV3Interface feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    ) external onlyOwner {
+        _setOracleRoute(base, quote, feed, maxStaleness, validationMode);
+    }
+
+    function _setOracleRoute(
+        address base,
+        address quote,
+        AggregatorV3Interface feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    ) private {
+        if (base == address(0) || quote == address(0) || address(feed) == address(0)) {
+            revert ZeroAddress();
+        }
+        if (base.code.length == 0) revert AssetNotContract(base);
+        if (quote != USD_QUOTE && quote.code.length == 0) revert AssetNotContract(quote);
         if (address(feed).code.length == 0) revert FeedNotContract(address(feed));
         if (maxStaleness == 0) revert InvalidMaxStaleness();
-        _oracleConfigFor[asset] = OracleConfig({
-            feed: feed,
-            maxStaleness: maxStaleness,
-            validationMode: validationMode
+        if (maxStaleness > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
+        }
+        _oracleConfigForPair[base][quote] = OracleConfig({
+            feed: feed, maxStaleness: maxStaleness, validationMode: validationMode
         });
-        emit OracleConfigSet(asset, address(feed), maxStaleness, validationMode);
+        emit OracleRouteSet(base, quote, address(feed), maxStaleness, validationMode);
     }
 }

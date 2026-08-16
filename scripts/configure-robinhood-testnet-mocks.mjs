@@ -25,7 +25,7 @@ const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
-const standardChainlinkValidationMode = 0;
+const syntheticFeedValidationMode = 0;
 const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
 const catalog = supportedAssets.assets.flatMap((asset) => {
   const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
@@ -64,7 +64,22 @@ function saveDeployment(deployment) {
 }
 
 function upsertByAsset(items, record) {
-  const index = items.findIndex((item) => isAddressEqual(item.asset, record.asset));
+  const index = items.findIndex((item) => {
+    const itemAsset = item.asset ?? item.base;
+    const recordAsset = record.asset ?? record.base;
+    return itemAsset && recordAsset && isAddressEqual(itemAsset, recordAsset);
+  });
+  if (index === -1) items.push(record);
+  else items[index] = { ...items[index], ...record };
+}
+
+function upsertOracleRoute(items, record) {
+  const index = items.findIndex((item) => {
+    const itemBase = item.base ?? item.asset;
+    return itemBase && item.quote
+      && isAddressEqual(itemBase, record.base)
+      && isAddressEqual(item.quote, record.quote);
+  });
   if (index === -1) items.push(record);
   else items[index] = { ...items[index], ...record };
 }
@@ -75,6 +90,11 @@ const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 
 if (deployment.chainId !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
+}
+if (Number(deployment.schemaVersion) < 3 || deployment.migration?.architecture !== "pinned-pricing-v3") {
+  throw new Error(
+    "This configurator requires a fresh pinned-pricing-v3 deployment; legacy factory deployments cannot be migrated in place.",
+  );
 }
 
 const assetRegistry = getAddress(deployment.contracts.assetRegistry.address);
@@ -151,14 +171,15 @@ async function deployMockFeed(symbol) {
 const actualChainId = await publicClient.getChainId();
 if (actualChainId !== chainId) throw new Error(`RPC returned chain ID ${actualChainId}.`);
 
-const [assetRegistryOwner, oracleRegistryOwner, balance] = await Promise.all([
-  publicClient.readContract({ address: assetRegistry, abi: registryOwnerAbi, functionName: "owner" }),
+const [oracleRegistryOwner, usdQuote, balance] = await Promise.all([
   publicClient.readContract({ address: oracleRegistry, abi: registryOwnerAbi, functionName: "owner" }),
+  publicClient.readContract({
+    address: oracleRegistry,
+    abi: oracleRegistryArtifact.abi,
+    functionName: "usdQuote",
+  }),
   publicClient.getBalance({ address: account.address }),
 ]);
-if (!isAddressEqual(assetRegistryOwner, account.address)) {
-  throw new Error(`Signer ${account.address} does not own AssetRegistry ${assetRegistry}.`);
-}
 if (!isAddressEqual(oracleRegistryOwner, account.address)) {
   throw new Error(`Signer ${account.address} does not own OracleRegistry ${oracleRegistry}.`);
 }
@@ -169,11 +190,12 @@ console.log(`Balance: ${formatEther(balance)} ETH`);
 
 deployment.oracleMode = "self-updating-testnet-synthetic";
 deployment.oracleDisclaimer =
-  "Time-derived synthetic USD drift and bounded pseudo-random movement for Robinhood testnet development; predictable and not Chainlink or market data.";
+  "Time-derived synthetic USD drift and bounded pseudo-random movement for Robinhood testnet development; predictable, not Chainlink, not canonical, and not market data.";
 deployment.setupTransactions ??= {};
-deployment.setupTransactions.approvedAssets ??= [];
-deployment.setupTransactions.priceFeeds ??= [];
+deployment.setupTransactions.discoveredAssets ??= [];
+deployment.setupTransactions.trustedOracleRoutes ??= [];
 deployment.setupTransactions.mockPriceFeeds ??= [];
+deployment.trustedOracleRoutes ??= [];
 
 for (const item of catalog) {
   const asset = getAddress(item.asset);
@@ -205,40 +227,41 @@ for (const item of catalog) {
     console.log(`${item.symbol} self-updating synthetic feed retained: ${feed}`);
   }
 
-  const approved = await publicClient.readContract({
+  const registered = await publicClient.readContract({
     address: assetRegistry,
     abi: assetRegistryArtifact.abi,
-    functionName: "isApprovedAsset",
+    functionName: "isRegisteredAsset",
     args: [asset],
   });
-  const assetApproval = approved
+  const assetDiscovery = registered
     ? { alreadyConfigured: true }
     : await confirmedWrite({
         address: assetRegistry,
         abi: assetRegistryArtifact.abi,
-        functionName: "setAssetApproved",
-        args: [asset, true],
+        functionName: "registerAsset",
+        args: [asset],
       });
 
   const [configuredFeed, configuredMaxStaleness, configuredValidationMode] = await publicClient.readContract({
     address: oracleRegistry,
     abi: oracleRegistryArtifact.abi,
-    functionName: "oracleConfigFor",
-    args: [asset],
+    functionName: "oracleConfigForPair",
+    args: [asset, usdQuote],
   });
-  const priceFeed = isAddressEqual(configuredFeed, feed)
+  const trustedRoute = isAddressEqual(configuredFeed, feed)
       && Number(configuredMaxStaleness) === robinhoodEquityMaxStalenessSeconds
-      && Number(configuredValidationMode) === standardChainlinkValidationMode
+      && Number(configuredValidationMode) === syntheticFeedValidationMode
     ? { alreadyConfigured: true }
     : await confirmedWrite({
         address: oracleRegistry,
         abi: oracleRegistryArtifact.abi,
-        functionName: "setOracleConfig",
+        functionName: "setOracleRoute",
         args: [
           asset,
+          usdQuote,
           feed,
           robinhoodEquityMaxStalenessSeconds,
-          standardChainlinkValidationMode,
+          syntheticFeedValidationMode,
         ],
       });
 
@@ -252,12 +275,46 @@ for (const item of catalog) {
     driftBpsPerDay: 5,
     volatilityBps: 50,
     feedDeployment,
-    assetApproval,
-    priceFeed,
+    assetDiscovery,
+    trustedRoute,
   };
   upsertByAsset(deployment.setupTransactions.mockPriceFeeds, record);
-  upsertByAsset(deployment.setupTransactions.approvedAssets, { asset, ...assetApproval });
-  upsertByAsset(deployment.setupTransactions.priceFeeds, { asset, feed, ...priceFeed });
+  upsertByAsset(deployment.setupTransactions.discoveredAssets, {
+    asset,
+    ...assetDiscovery,
+  });
+  upsertOracleRoute(deployment.setupTransactions.trustedOracleRoutes, {
+    base: asset,
+    asset,
+    quote: usdQuote,
+    feed,
+    maxStaleness: robinhoodEquityMaxStalenessSeconds,
+    validationMode: syntheticFeedValidationMode,
+    source: "direct",
+    quoteKind: "USD",
+    synthetic: true,
+    ...trustedRoute,
+  });
+  upsertOracleRoute(deployment.trustedOracleRoutes, {
+    base: asset,
+    asset,
+    quote: usdQuote,
+    quoteKind: "USD",
+    feed,
+    source: "direct",
+    maxStaleness: robinhoodEquityMaxStalenessSeconds,
+    validationMode: syntheticFeedValidationMode,
+    synthetic: true,
+  });
+  deployment.pricingConfiguration ??= {};
+  deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
+  upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {
+    asset,
+    source: "ChainlinkDirect",
+    primarySource: feed,
+    secondarySource: "0x0000000000000000000000000000000000000000",
+    synthetic: true,
+  });
   deployment.mockCatalogConfiguredAt = new Date().toISOString();
   saveDeployment(deployment);
 }

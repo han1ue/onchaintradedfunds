@@ -35,17 +35,25 @@ Treat the following as untrusted:
 - OTF share holders
 - OTF managers and authorized executors
 - Challenge callers and trade calldata
+- User-supplied `AssetPricingConfig` values and explicit V3 execution paths/fee tiers
 - Constituent-token callbacks and donated tokens
 - Predictable clone addresses
 - The frontend and indexer
 
 Treat these as explicitly trusted dependencies whose compromise remains a protocol risk:
 
-- Asset-registry owner
-- Oracle-registry owner and configured feeds
+- Trusted Chainlink pair-map owner and configured base/quote/feed relationships
+- Chainlink proxy implementations and Robinhood Stock Token `oraclePaused()` behavior
+- Canonical V3 factory, WETH, USDG, WETH/USDG bridge pool, and selected pricing pools
 - Factory owner and approved adapter governance
 - Fee collector treasury
-- Supported token and approved adapter implementations
+- Constituent-token and approved adapter implementations
+
+`AssetRegistry` is not trusted: it is an optional ownerless discovery index and no vault may consult
+it for authorization. Oracle and V3 registries validate a new selection only. Their later updates
+must not redirect or disable a concrete source already pinned by an OTF. Chainlink's Robinhood Flags
+registry can prove proxy authenticity/activity but not pair orientation; review the separate trusted
+pair mapping accordingly.
 
 For production, administrative roles should be separate multisigs or timelocked governance
 contracts. An EOA-controlled registry, adapter allowlist, or treasury is not an acceptable
@@ -80,8 +88,18 @@ Attempt to falsify each property:
 13. `FeeCollector` is the sole treasury authority; factory views cannot diverge from it.
 14. OTF holding rebates scale the protocol portion only, use live oracle-valued weight, reach zero
     protocol share at the configured threshold, and fail closed to the base share on lookup failure.
-15. Buyback allocation is treasury-only; buyback operators can use only approved adapters, can buy
-    only OTF, and cannot redirect purchased tokens away from the immutable recipient.
+15. The same mechanical asset rules apply without an administrator approval, quality, block,
+    revocation, or removal state.
+16. A direct Chainlink route matches exact asset/USD; a composed route matches both exact legs;
+    spoofed and reversed relationships fail without consulting `description()`.
+17. Every constituent pins its concrete normalized feed or canonical V3 wrapper, registry changes
+    cannot redirect it, and no source falls back automatically.
+18. V3 pricing accepts only the canonical factory's exact asset/WETH or asset/USDG pool and fee after
+    initialization, observation-capacity, and full-history checks; V4 is absent.
+19. Pricing and execution are independent: adapter data is an explicit path, not a market ID, and
+    may use different pools and fees while preserving endpoints, settlement, deltas, and allowances.
+20. Global and local deposit pauses compose correctly, reject non-factory local targets, affect
+    direct and routed deposits only, and do not stop withdrawals, strategy operations, or fees.
 
 ## Delegatecall review
 
@@ -106,10 +124,16 @@ Analyze more than Solidity control flow:
 - Price manipulation within configured staleness
 - Donation-driven weight changes and challenge griefing
 - Repeated partial trades near the NAV-loss limit
-- Asset or adapter delisting while an OTF is active
+- Adapter delisting while an OTF is active
 - Inability to remove a constituent while any reserve remains
 - Manager changes while fees are accrued or escrowed
-- Registry, oracle, and adapter governance compromise
+- Trusted-pair-map compromise before a new selection, Chainlink Flags inactivity, and the fact that
+  existing pins must not silently change
+- Composed-route precision/staleness, Robinhood `oraclePaused()` handling, and missing sequencer
+  uptime enforcement
+- V3 observation-history readiness and manipulation within the TWAP window
+- Divergence between pinned pricing venues and independently chosen execution routes
+- Local-pause censorship and event/monitoring failure
 
 ## Required commands
 
@@ -140,11 +164,14 @@ areas, not as proof of safety.
 - The contracts are unaudited and must not be represented as production safe.
 - ERC-7621 remains a draft; the project documents intentional compatibility deviations.
 - Governance timelocks and multisigs are deployment requirements, not contracts in this repository.
-- Constituents are restricted to exact-transfer, 18-decimal ERC-20 balance semantics; qualification does not relax this requirement.
+- Constituents are restricted to mechanically checked, exact-transfer, exactly-18-decimal ERC-20
+  balance semantics. Frontend quality labels do not relax or enforce this requirement.
 - Oracle correctness and corporate-action handling remain external dependencies.
-- The current permissionless v2 vault (25,692 bytes) and strategy module (28,297 bytes) exceed the
-  24,576-byte EIP-170 runtime limit under the pinned optimizer settings. The security gate blocks
-  deployment until both are split below the limit and re-audited.
+- Runtime and initcode sizes must be recalculated from the reviewed commit. The security gate blocks
+  deployment whenever a production artifact exceeds the EIP-170 or EIP-3860 limit.
+- Robinhood has no documented pair-addressed Chainlink Feed Registry; trusted pair-map governance is
+  required for new Chainlink selections. Runtime Flags and sequencer checks are not implemented.
+- Robinhood testnet synthetic feeds are noncanonical integration fixtures.
 - Unsupported tokens sent to an OTF are intentionally not manager-recoverable.
 - A funded constituent cannot currently be removed until its tracked reserve is exactly zero.
 

@@ -71,18 +71,20 @@ const contractRows = [
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input entry, redemption, and rebalance swaps through configured liquidity."],
-  ["AssetRegistry", "Defines the asset universe a vault may hold."],
-  ["OracleRegistry", "Maps protocol-qualified assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
+  ["AssetRegistry", "Optional permissionless discovery index; vault eligibility never depends on it."],
+  ["OracleRegistry", "Validates trusted Chainlink base/quote pairs and their independent freshness and pause rules."],
+  ["Pricing resolver", "Validates a creator-supplied direct Chainlink, composed Chainlink, or canonical V3 route and resolves the normalized feed pinned by one OTF."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
 ] as const;
 
 const safetyRows = [
-  ["Asset tiers", "Qualified assets use protocol feeds; open assets pin an immutable registered V3 asset/WETH market."],
+  ["Asset quality", "High and normal are frontend-only metadata labels. They never gate onchain inclusion, submissions, or rewards."],
+  ["Pinned pricing", "Each OTF pins exactly one validated direct Chainlink, composed Chainlink, or Uniswap V3 TWAP route per constituent, with no fallback."],
   ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
   ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
   ["Target weights", "Every included asset must meet the live protocol-wide minimum, initialized at 1% and adjustable by the factory owner; there is no maximum target weight."],
-  ["Oracle freshness", "Every valuation must satisfy the asset feed's protocol-configured staleness bound."],
+  ["Oracle freshness", "Every Chainlink leg must satisfy its own enforced staleness and pause rules; V3 pricing uses the fixed protocol TWAP window."],
   ["Execution", "Every partial batch is atomic, uses approved adapters, clears exact approvals, and must reduce target distance."],
 ] as const;
 
@@ -120,7 +122,7 @@ export default function DocsPage() {
             <h1>Onchain funds with legible portfolios and bounded management.</h1>
             <p>
               Onchain Traded Funds is an experimental protocol for managed multi-asset basket
-              vaults. An OTF owns approved tokenized assets, issues transferable proportional
+              vaults. An OTF owns mechanically valid tokenized assets with per-OTF pinned pricing, issues transferable proportional
               shares, and allows its manager to update the portfolio only through a narrow,
               safety-checked strategic and execution paths. OTFs are not ERC-4626 vaults. They
               expose the current draft ERC-7621 basket interface and exact standard events, with
@@ -160,8 +162,8 @@ export default function DocsPage() {
               <h2>Architecture</h2>
             </div>
             <p>
-              The factory creates minimal-proxy vaults. Each vault reads asset eligibility and
-              oracle prices from registries, routes typed trades through a dedicated executor, and
+              The factory creates minimal-proxy vaults. Each vault values its constituents through
+              immutable per-OTF pinned feeds, routes typed trades independently through a dedicated executor, and
               sends the protocol share of accrued fees to the fee collector. The factory and
               registries never custody a vault&apos;s portfolio.
             </p>
@@ -267,14 +269,14 @@ export default function DocsPage() {
               <h2>OTF creation</h2>
             </div>
             <p>
-              The creator selects a manager, fee recipient, qualified or open assets, pinned markets, target weights, fee,
+              The creator selects a manager, fee recipient, constituent assets, an exact supported pricing configuration for each asset, target weights, fee,
               challenge and completion bands, and safety
               limits. The factory validates these
               parameters, deploys a deterministic clone, transfers the exact initial basket, and
               initializes the vault. Target weights must total <code>10,000 bps</code>.
             </p>
             <ol className="docsSteps">
-              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, constituent status, pinned V3 markets, weight bounds, and cooldown are checked.</p></div></li>
+              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, exact 18-decimal constituents, trusted Chainlink pairs or canonical V3 history, weight bounds, and cooldown are checked.</p></div></li>
               <li><span>02</span><div><strong>Fund</strong><p>The exact initial constituent balances move into the new vault.</p></div></li>
               <li><span>03</span><div><strong>Initialize</strong><p>Rules, completed strategy version zero, its target snapshot, and the creation-time cooldown baseline are stored.</p></div></li>
               <li><span>04</span><div><strong>Issue</strong><p>Initial vault shares are minted to the manager.</p></div></li>
@@ -293,7 +295,7 @@ export default function DocsPage() {
             </p>
             <p>
               Direct deposits stop permanently when a manager sunsets an OTF. The factory owner
-              can also pause new OTF creation and deposits across every OTF as a reversible precaution. Neither
+              can pause new OTF creation and deposits across every OTF as a reversible precaution, while a separate factory-controlled local pause can stop deposits into one OTF. Neither
               control blocks proportional redemptions or standard share transfers; buying existing
               shares from an independent liquidity pool is secondary-market trading, not a vault deposit.
             </p>
@@ -361,11 +363,11 @@ export default function DocsPage() {
             <p>
               NAV is the sum of every constituent&apos;s oracle-valued balance. NAV per share divides
               that value by the fee-adjusted share supply. Valuation-dependent actions require a
-              positive answer from an approved feed within the asset&apos;s freshness bound. For
-              Robinhood equities, feeds publish 24/5 and the current 25-hour limit is measured from
-              each asset&apos;s latest update—not from a fixed weekend cutoff. Oracle-priced actions may
-              therefore remain available into the weekend, then pause until fresh prices arrive.
-              Corporate-action pauses also make the affected asset&apos;s price temporarily unavailable.
+              positive answer from that OTF&apos;s pinned feed within its enforced freshness bound. For
+              Chainlink routes validate every leg independently against its trusted pair mapping,
+              staleness limit, and required pause behavior. V3 routes use the immutable protocol TWAP
+              window. A stale or invalid source makes oracle-dependent actions revert; the vault never
+              substitutes another feed or pool.
             </p>
             <pre><code>{`asset value = token balance x oracle price
 portfolio NAV = sum(asset values)
@@ -418,7 +420,7 @@ completeStrategicRebalance()`}</code></pre>
             </div>
             <p>
               Each constituent has a wider challenge band and a narrower completion band around
-              its active target. Anyone may call <code>flagOutOfBand()</code>, but fresh approved
+              its active target. Anyone may call <code>flagOutOfBand()</code>, but fresh pinned
               prices must prove a real challenge-band breach. Invalid challenges revert.
             </p>
             <figure className="challengeLifecycle" aria-labelledby="challenge-lifecycle-caption">
@@ -457,10 +459,10 @@ completeStrategicRebalance()`}</code></pre>
             </div>
             <p>
               Deposits and proportional withdrawals stay enabled during ordinary weight
-              challenges. If a globally revoked or zero-target asset is being retired, primary
+              challenges. If a zero-target asset is being retired, primary
               deposits pause until its exact balance reaches zero and it is removed. Its former
               weight is redistributed proportionally across the remaining targets, with integer
-              rounding assigned deterministically so eligible targets still total exactly 100%.
+              rounding assigned deterministically so the remaining targets still total exactly 100%.
               Withdrawals remain available. Natural price recovery and constrained manager or executor trades
               can restore the basket. Target redefinition, ownership transfer, or delayed fee
               crystallization cannot recover forfeited fees.
@@ -582,7 +584,7 @@ canProposeStrategy =
             </p>
             <p>
               During rebalance execution, the vault grants exact temporary token approvals to the
-              approved executor path and clears them after the call.
+              configured executor path and clears them after the call.
             </p>
           </section>
 

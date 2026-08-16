@@ -3,41 +3,53 @@
 import { Check, ExternalLink, Plus, Send, ShieldAlert, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { CompetitionSummary, EligibleAsset, ParticipationEligibility } from "@/lib/types";
+import { deriveOtfQuality } from "@/lib/asset-quality";
 import { errorMessages } from "@/lib/errors";
-import { buildSubmissionPost, slugifyProposalName } from "@/lib/x-post";
 import { normalizeWholeNumberInput } from "@/lib/numeric-input";
+import {
+  emptyPricingConfig,
+  preferredPricingConfig,
+  pricingConfigComplete,
+  pricingConfigSummary,
+} from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
-import { Button, Callout, SectionCard } from "./ui";
+import type { CompetitionSummary, EligibleAsset, ParticipationEligibility, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
+import { buildSubmissionPost, slugifyProposalName } from "@/lib/x-post";
+import { AssetMarketPicker } from "./AssetMarketPicker";
 import { EligibilityAction } from "./EligibilityGate";
 import { Turnstile } from "./Turnstile";
-import { AssetMarketPicker } from "./AssetMarketPicker";
-import { evaluateCompetitionPoolAge } from "@/lib/experimental-eligibility";
+import { Button, Callout, SectionCard } from "./ui";
 
-type Row = { assetId: string; marketId: string | null; weight: string };
+type Row = { assetId: string; assetMetadata: ProposalAssetMetadata | null; pricingConfig: PricingConfig | null; weight: string };
 type Challenge = { challengeId: string; intentUrl: string; postText: string; expiresAt: string };
 
 function friendlyError(code: string | undefined, fallback: string) {
   return code ? errorMessages[code] ?? code : fallback;
 }
 
-export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey, siteUrl }: { competition: CompetitionSummary; assets: EligibleAsset[]; eligibility: ParticipationEligibility; turnstileSiteKey?: string; siteUrl: string }) {
+function initialRow(asset: EligibleAsset | undefined, weight: string): Row {
+  return {
+    assetId: asset?.id ?? "",
+    assetMetadata: null,
+    pricingConfig: asset
+      ? preferredPricingConfig(asset.pricingConfigs) ?? emptyPricingConfig("uniswap-v3")
+      : null,
+    weight,
+  };
+}
+
+export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey, siteUrl }: {
+  competition: CompetitionSummary;
+  assets: EligibleAsset[];
+  eligibility: ParticipationEligibility;
+  turnstileSiteKey?: string;
+  siteUrl: string;
+}) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [thesis, setThesis] = useState("");
   const [reason, setReason] = useState("");
-  const marketWasOldEnoughAtLaunch = (market: EligibleAsset["markets"][number]) => evaluateCompetitionPoolAge(
-    market.poolCreatedAt ? new Date(market.poolCreatedAt) : null,
-    new Date(competition.startsAt),
-  ).status === "Pass";
-  const initialRow = (asset: EligibleAsset | undefined, weight: string): Row => ({
-    assetId: asset?.id ?? "",
-    marketId: asset?.markets.find((market) => market.active && market.twapOneHourReady && marketWasOldEnoughAtLaunch(market))?.id
-      ?? asset?.markets.find((market) => market.active)?.id
-      ?? null,
-    weight,
-  });
   const [rows, setRows] = useState<Row[]>([initialRow(assets[0], "50"), initialRow(assets[1], "50")]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -49,17 +61,25 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   const total = useMemo(() => rows.reduce((sum, row) => sum + Number(row.weight || 0), 0), [rows]);
   const thesisBytes = new TextEncoder().encode(thesis).length;
   const thesisValid = thesis.trim().length > 0 && thesisBytes <= 2048;
-  const hasEnoughAssets = assets.length >= 2;
   const selectedAssets = rows.map((row) => assets.find((asset) => asset.id === row.assetId));
-  const experimental = selectedAssets.some((asset) => asset?.qualityStatus === "open");
-  const allMarketsReady = rows.every((row) => {
-    const asset = assets.find((candidate) => candidate.id === row.assetId);
-    if (!asset || asset.qualityStatus === "blocked") return false;
-    if (asset.qualityStatus === "qualified") return true;
-    return Boolean(asset.markets.find((market) => market.id === row.marketId && market.active && market.twapOneHourReady && marketWasOldEnoughAtLaunch(market)));
+  const quality = deriveOtfQuality(rows.map((row, index) => selectedAssets[index]?.quality ?? (row.assetMetadata ? "normal" : undefined)));
+  const rowIdentities = rows.map((row, index) => {
+    const selected = selectedAssets[index];
+    if (selected) return `${selected.network}:${selected.contractAddress.toLowerCase()}`;
+    if (row.assetMetadata) return `${row.assetMetadata.network}:${row.assetMetadata.contractAddress.toLowerCase()}`;
+    return "";
   });
+  const allAssetsSelected = rowIdentities.every(Boolean);
+  const assetsUnique = new Set(rowIdentities).size === rows.length;
+  const allPricingReady = rows.every((row) => Boolean(
+    (assets.some((asset) => asset.id === row.assetId) || row.assetMetadata) && pricingConfigComplete(row.pricingConfig),
+  ));
   const preview = competition.id.startsWith("preview");
-  const postText = buildSubmissionPost(reason, { name: name || "Your OTF", ticker: ticker || "TICKER", slug: slugifyProposalName(name || "Your OTF") }, siteUrl, "[verification code]");
+  const postText = buildSubmissionPost(reason, {
+    name: name || "Your OTF",
+    ticker: ticker || "TICKER",
+    slug: slugifyProposalName(name || "Your OTF"),
+  }, siteUrl, "[verification code]");
 
   if (!eligibility.eligible) return <div className="wizardLayout"><SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Submitting an OTF proposal requires a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers. Please connect an eligible account.</p><EligibilityAction eligibility={eligibility} action="submit" callbackUrl="/submit" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in with an eligible account"}</EligibilityAction></SectionCard><aside><SectionCard className="sideNote"><strong>Proposal requirements</strong><ul><li>Use a verified, public X account.</li><li>Have at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>Use an account that is at least {eligibility.minAccountAgeDays} days old.</li></ul></SectionCard></aside></div>;
 
@@ -74,7 +94,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       const verifyResponse = await fetch(`/api/v1/submissions/${draftId}/publish`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ challengeId: challenge.challengeId, postUrl })
+        body: JSON.stringify({ challengeId: challenge.challengeId, postUrl }),
       });
       const verifyJson = await verifyResponse.json();
       setBusy(false);
@@ -92,8 +112,12 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
         name,
         ticker: normalizeTickerInput(ticker),
         thesis,
-        allocations: rows.map((row) => ({ assetId: row.assetId, marketId: row.marketId, weightBps: Math.round(Number(row.weight || 0) * 100) }))
-      })
+        allocations: rows.map((row) => ({
+          ...(row.assetId ? { assetId: row.assetId } : { assetMetadata: row.assetMetadata }),
+          pricingConfig: row.pricingConfig,
+          weightBps: Math.round(Number(row.weight || 0) * 100),
+        })),
+      }),
     });
     const draftJson = await draftResponse.json();
     if (!draftResponse.ok) {
@@ -105,7 +129,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
     const publishResponse = await fetch(`/api/v1/submissions/${draftJson.data.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason, turnstileToken })
+      body: JSON.stringify({ reason, turnstileToken }),
     });
     const publishJson = await publishResponse.json();
     setBusy(false);
@@ -122,12 +146,12 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
     <div className="wizardBody">
       {preview && <Callout tone="warning">Preview data is active because the launch database is not configured. The complete interface is available, but proposals will not be saved.</Callout>}
       {step === 1 && <div className="formStack"><label className="formField"><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="AI Infrastructure OTF" maxLength={80} /><small>Must end in “OTF”.</small></label><label className="formField"><span>Ticker</span><input value={ticker} onChange={(event) => setTicker(normalizeTickerInput(event.target.value))} placeholder="AIX" maxLength={16} /></label><label className="formField"><span>Investment thesis</span><textarea value={thesis} onChange={(event) => setThesis(event.target.value)} placeholder="Explain what this portfolio owns, why it belongs together, and the long-term case…" rows={7} /><small className={`thesisCounter${thesisBytes > 2048 ? " invalid" : ""}`} aria-live="polite">{thesisBytes.toLocaleString()} / 2,048 bytes maximum</small></label></div>}
-      {step === 2 && <div className="formStack">{!hasEnoughAssets ? <Callout tone="danger">No portfolio assets are available. At least two assets must be added before proposals can be submitted. <Link className="inlineLink" href="/rwas">View the asset directory</Link>.</Callout> : <><div><div className="allocationTotal"><span>Portfolio allocation</span><strong className={total === 100 ? "valid" : ""}>{total}%</strong></div><p className="assetDirectoryPrompt">Search by token name, symbol, or exact contract. Duplicate symbols are identified by network and address. Open-asset pools must already have been at least seven days old when this competition started. <Link className="inlineLink" href="/rwas">Inspect markets and evidence</Link>.</p></div>{rows.map((row, index) => <div className="allocationInput" key={index}><AssetMarketPicker assets={assets} assetId={row.assetId} marketId={row.marketId} label={`Asset ${index + 1}`} competitionStartsAt={competition.startsAt} onChange={(assetId, marketId) => updateRow(index, { assetId, marketId })} /><label className="formField weightField"><span>Weight</span><div><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={row.weight} onChange={(event) => updateRow(index, { weight: normalizeWholeNumberInput(event.target.value, 99) })} /><span>%</span></div></label>{rows.length > 2 && <button className="removeButton" type="button" onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove asset ${index + 1}`}><Trash2 size={16} /></button>}</div>)}{experimental && <Callout tone="warning"><strong>This OTF will be Experimental.</strong> Pool-derived prices and liquidity can be manipulated; malicious or upgradable token transfers can make deposits or redemptions fail; performance XP requires seven continuous days of eligibility.</Callout>}<Button variant="secondary" onClick={() => setRows((current) => { const asset = assets.find((candidate) => !current.some((row) => row.assetId === candidate.id)) ?? assets[0]; return [...current, initialRow(asset, "1")]; })} disabled={rows.length >= assets.length}><Plus size={15} /> Add asset</Button></>}</div>}
-      {step === 3 && <div className="reviewBlock"><div><span>Current quality tier</span><strong>{experimental ? "Experimental" : "Protocol-qualified assets"}</strong><small>Derived from the constituents&apos; live registry statuses; it is not permanently stored on the OTF.</small></div><div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row) => { const asset = assets.find((candidate) => candidate.id === row.assetId); const market = asset?.markets.find((candidate) => candidate.id === row.marketId); return <li key={row.assetId}><span>{asset?.symbol} · {asset ? asset.contractAddress : ""}{market ? ` · pool ${market.poolAddress}` : ""}</span><strong>{row.weight}%</strong></li>; })}</ul></div>{experimental && <Callout tone="warning">This Experimental label applies to the whole OTF right now. It updates automatically if governance qualifies, demotes, or blocks a constituent. Performance XP remains pending unless every constituent continuously passes the published market, safety, and depth thresholds.</Callout>}<Callout>Submitting locks the token contracts and pinned markets. The final step shows the exact X post for your approval.</Callout></div>}
+      {step === 2 && <div className="formStack">{assets.length === 0 && <Callout>No saved metadata is available yet. Search for any address, then use the unlisted-token path to enter its 18-decimal metadata directly.</Callout>}<div><div className="allocationTotal"><span>Portfolio allocation</span><strong className={total === 100 ? "valid" : ""}>{total}%</strong></div><p className="assetDirectoryPrompt">Choose saved metadata or enter any 18-decimal token directly, then supply its exact Chainlink direct, Chainlink-through-WETH, or Uniswap V3 TWAP configuration. Known configurations are optional, editable prefills. <Link className="inlineLink" href="/rwas">Inspect saved metadata</Link>.</p></div>{rows.map((row, index) => <div className="allocationInput" key={index}><AssetMarketPicker assets={assets} assetId={row.assetId} assetMetadata={row.assetMetadata} pricingConfig={row.pricingConfig} label={`Asset ${index + 1}`} onChange={(assetId, assetMetadata, pricingConfig) => updateRow(index, { assetId, assetMetadata, pricingConfig })} /><label className="formField weightField"><span>Weight</span><div><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={row.weight} onChange={(event) => updateRow(index, { weight: normalizeWholeNumberInput(event.target.value, 99) })} /><span>%</span></div></label>{rows.length > 2 && <button className="removeButton" type="button" onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove asset ${index + 1}`}><Trash2 size={16} /></button>}</div>)}<Callout><strong>Quality is informational.</strong> High or normal metadata never changes eligibility, pricing, fees, permissions, votes, or XP. New metadata starts as normal quality.</Callout><Button variant="secondary" onClick={() => setRows((current) => { const asset = assets.find((candidate) => !current.some((row) => row.assetId === candidate.id)); return [...current, initialRow(asset, "1")]; })}><Plus size={15} /> Add asset</Button></div>}
+      {step === 3 && <div className="reviewBlock"><div><span>Live quality tag</span><strong>{quality === "high" ? "High quality" : "Normal quality"}</strong><small>Derived now from every constituent&apos;s current metadata; it is not stored on the OTF and has no protocol effect.</small></div><div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row, index) => { const asset = assets.find((candidate) => candidate.id === row.assetId); const metadata = asset ?? row.assetMetadata; return <li key={`${rowIdentities[index]}:${index}`}><span>{metadata?.symbol} · {metadata?.contractAddress}{row.pricingConfig ? ` · ${pricingConfigSummary(row.pricingConfig)}` : ""}</span><strong>{row.weight}%</strong></li>; })}</ul></div><Callout>Submitting creates or reuses metadata by network and token address, then locks the exact pricing configuration for each constituent. Onchain validation is authoritative, and no source automatically falls back to another.</Callout></div>}
       {step === 4 && !challenge && <div className="formStack"><label className="formField"><span>Your context <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this OTF deserves to launch…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters</small></label><div className="xPostPreview"><div><span>Post preview</span><Send size={14} /></div><p>{postText}</p></div><Callout>We’ll prepare this post with a one-time verification code. You publish it from X, then paste its URL here.</Callout><Turnstile siteKey={turnstileSiteKey} action="submit_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} /></div>}
       {step === 4 && challenge && <div className="proofFlow"><div className="xPostPreview"><div><span>Ready to publish</span><Send size={14} /></div><p>{challenge.postText}</p></div><div className="postAction"><a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a><p className="postAssurance">We never post anything on your behalf.</p></div><label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" /><small>Paste the URL of the public post containing the verification code.</small></label></div>}
       {message && <p className="formMessage" role="status">{message}</p>}
     </div>
-    <div className="wizardFooter"><Button variant="secondary" onClick={() => challenge ? setChallenge(null) : setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}>{challenge ? "Start again" : "Back"}</Button>{step < 4 ? <Button onClick={() => setStep((current) => current + 1)} disabled={step === 1 ? !name.endsWith(" OTF") || ticker.length < 1 || !thesisValid : step === 2 ? !hasEnoughAssets || !allMarketsReady || total !== 100 || new Set(rows.map((row) => row.assetId)).size !== rows.length : false}>Continue</Button> : <div className="wizardFooterAction"><Button onClick={postSubmission} disabled={busy || preview || (challenge ? !postUrl.trim() : Boolean(turnstileSiteKey && !turnstileToken))}>{busy ? (challenge ? "Verifying…" : "Preparing…") : challenge ? "Verify post and submit proposal" : "Prepare X post"}</Button>{!challenge && <p className="postAssurance">We never post anything on your behalf.</p>}</div>}</div>
-  </SectionCard><aside><SectionCard className="sideNote"><strong>Before you submit a proposal</strong><ul><li>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>One OTF proposal per X account.</li><li>At least two registered assets with ready price sources.</li><li>Weights must total exactly 100%.</li><li>Submitted proposals cannot be edited.</li></ul></SectionCard></aside></div>;
+    <div className="wizardFooter"><Button variant="secondary" onClick={() => challenge ? setChallenge(null) : setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}>{challenge ? "Start again" : "Back"}</Button>{step < 4 ? <Button onClick={() => setStep((current) => current + 1)} disabled={step === 1 ? !name.endsWith(" OTF") || ticker.length < 1 || !thesisValid : step === 2 ? !allAssetsSelected || !allPricingReady || total !== 100 || !assetsUnique : false}>Continue</Button> : <div className="wizardFooterAction"><Button onClick={postSubmission} disabled={busy || preview || (challenge ? !postUrl.trim() : Boolean(turnstileSiteKey && !turnstileToken))}>{busy ? (challenge ? "Verifying…" : "Preparing…") : challenge ? "Verify post and submit proposal" : "Prepare X post"}</Button>{!challenge && <p className="postAssurance">We never post anything on your behalf.</p>}</div>}</div>
+  </SectionCard><aside><SectionCard className="sideNote"><strong>Before you submit a proposal</strong><ul><li>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>One OTF proposal per X account.</li><li>At least two 18-decimal assets.</li><li>Pin Chainlink or Uniswap V3 pricing; Uniswap V4 is not supported.</li><li>Weights must total exactly 100%.</li><li>Submitted proposals cannot be edited.</li></ul></SectionCard></aside></div>;
 }

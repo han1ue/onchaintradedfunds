@@ -1,12 +1,33 @@
+export type AssetQuality = "high" | "normal";
+
+export type PricingConfig =
+  | { source: "chainlink-direct"; feedAddress: string }
+  | { source: "chainlink-weth"; assetWethFeedAddress: string; wethUsdFeedAddress: string }
+  | { source: "uniswap-v3"; poolAddress: string };
+
+export type KnownPricingConfig = PricingConfig & {
+  id: string;
+  active: boolean;
+};
+
+export type ProposalAssetMetadata = {
+  network: "robinhood-mainnet";
+  chainId: 4663;
+  contractAddress: string;
+  decimals: 18;
+  symbol: string;
+  name: string;
+};
+
 export type Allocation = {
   assetId: string;
   symbol: string;
   name: string;
   weightBps: number;
   contractAddress?: string;
-  marketId?: string | null;
   poolAddress?: string | null;
-  qualityStatus?: "open" | "qualified" | "blocked";
+  pricingConfig?: PricingConfig | null;
+  quality?: AssetQuality;
   color?: string;
 };
 
@@ -22,7 +43,7 @@ export type LeaderboardEntry = {
   acceptedAt: string;
   uniqueSupporterCount?: number;
   submissionBoost?: boolean;
-  qualityTier?: "qualified" | "experimental" | "blocked";
+  quality?: AssetQuality;
   allocations: Allocation[];
   proofUrl?: string;
 };
@@ -58,10 +79,11 @@ export type EligibleAsset = {
   network: string;
   chainId: number | null;
   decimals: 18;
-  qualityStatus: "open" | "qualified" | "blocked";
-  priceSource: "robinhood-bid" | "coinbase-eth-usd-bid" | "uniswap-v3-twap";
+  quality: AssetQuality;
+  priceSource: "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
   latestPriceUsd: number | null;
   latestPriceAt: string | null;
+  pricingConfigs: KnownPricingConfig[];
   markets: {
     id: string;
     marketId: string;
@@ -69,10 +91,9 @@ export type EligibleAsset = {
     feeTier: number;
     active: boolean;
     poolCreatedAt: string | null;
-    twapOneHourReady: boolean;
-    twapTwentyFourHourReady: boolean;
-    eligibilityStatus: "Pass" | "Pending" | "Fail" | null;
-    eligibilityReasons: string[];
+    quoteTokenAddress: string;
+    evidenceStatus: "Pass" | "Pending" | "Fail" | null;
+    evidenceReasons: string[];
   }[];
 };
 
@@ -98,24 +119,11 @@ export type BallotSummary = {
   allocations: VoteAllocation[];
 };
 
-export type PortfolioReturnPoint = {
-  timestamp: string;
-  returnPct: number;
-};
-
-export type PortfolioReturns = {
-  proposedAt: string;
-  trackingStartedAt: string | null;
-  points: PortfolioReturnPoint[];
-};
-
 export type XpLeaderboardRow = {
   userId?: string;
   publicName: string;
   usesRealUsername: boolean;
   performanceXp: number;
-  qualifiedPerformanceXp?: number;
-  experimentalPerformanceXp?: number;
   participationXp: number;
   creatorXp: number;
   creatorSupportXp?: number;

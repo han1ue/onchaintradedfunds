@@ -2,8 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
-import { AssetStatus, IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IOracleRegistry, OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
@@ -19,8 +17,11 @@ interface IOraclePauseStatus {
 
 interface IVaultAssetPriceSources {
     function priceFeedForAsset(address asset) external view returns (address);
-    function assetMarketRegistry() external view returns (address);
-    function assetRegistry() external view returns (address);
+    function maxStalenessForAsset(address asset) external view returns (uint32);
+    function oracleValidationModeForAsset(address asset)
+        external
+        view
+        returns (OracleValidationMode);
 }
 
 contract PortfolioCalculator {
@@ -45,16 +46,14 @@ contract PortfolioCalculator {
     error InvalidTargetWeightSum(uint256 sum);
     error InvalidFeeRate(uint16 feeBps);
     error FeeExponentOverflow(uint256 exponentWad);
-    error NavLossBudgetExceeded(
-        uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
-    );
+    error NavLossBudgetExceeded(uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps);
 
     /// @dev Packs used BPS in bits 0..15 and the recovery timestamp in bits 16..79.
-    function navLossBudgetState(
-        uint64 recoveryAt,
-        uint16 maximumLossBps,
-        uint256 batchLossBps
-    ) external view returns (uint256 packedState) {
+    function navLossBudgetState(uint64 recoveryAt, uint16 maximumLossBps, uint256 batchLossBps)
+        external
+        view
+        returns (uint256 packedState)
+    {
         uint256 recoveryPeriod = 7 days;
         // Replenishment is necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
@@ -69,8 +68,7 @@ contract PortfolioCalculator {
             if (maximumLossBps == 0) {
                 revert NavLossBudgetExceeded(0, batchLossBps, 0);
             }
-            nextRecoveryAt +=
-                MathEx.mulDivUp(batchLossBps, recoveryPeriod, maximumLossBps);
+            nextRecoveryAt += MathEx.mulDivUp(batchLossBps, recoveryPeriod, maximumLossBps);
             if (nextRecoveryAt > timestamp + recoveryPeriod) {
                 revert NavLossBudgetExceeded(usedBefore, batchLossBps, maximumLossBps);
             }
@@ -113,43 +111,22 @@ contract PortfolioCalculator {
         return MathEx.mulDivUp(sumDiff, 1, 2 * weightScale);
     }
 
-    function effectiveTargetWeights(address vault, address[] calldata assets, address assetRegistry)
+    function effectiveTargetWeights(address vault, address[] calldata assets, address)
         external
         view
         returns (uint256[] memory weights)
     {
         uint256 storedWeightTotal;
-        uint256 activeWeightTotal;
         weights = new uint256[](assets.length);
 
         for (uint256 i = 0; i < assets.length; i++) {
             uint256 storedWeight = ITargetWeightVault(vault).targetWeightBps(assets[i]);
             storedWeightTotal += storedWeight;
-            if (storedWeight != 0 && IAssetRegistry(assetRegistry).isApprovedAsset(assets[i])) {
-                weights[i] = storedWeight;
-                activeWeightTotal += storedWeight;
-            }
+            weights[i] = storedWeight;
         }
         if (storedWeightTotal != 0 && storedWeightTotal != BPS) {
             revert InvalidTargetWeightSum(storedWeightTotal);
         }
-        if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
-
-        uint256 assignedWeight;
-        for (uint256 i = 0; i < assets.length; i++) {
-            if (weights[i] == 0) continue;
-            weights[i] = MathEx.mulDiv(weights[i], BPS, activeWeightTotal);
-            assignedWeight += weights[i];
-        }
-
-        uint256 remainder = BPS - assignedWeight;
-        for (uint256 i = 0; i < assets.length && remainder != 0; i++) {
-            if (weights[i] != 0) {
-                weights[i]++;
-                remainder--;
-            }
-        }
-        if (remainder != 0) revert InvalidTargetWeightSum(BPS - remainder);
     }
 
     function feeSharesAfterElapsed(
@@ -266,12 +243,17 @@ contract PortfolioCalculator {
         external
         view
     {
-        if (_isVaultUsdg(vault, asset)) {
-            _settlementDecimals(asset);
-            return;
-        }
         _tokenDecimals(asset);
         _validPrice(vault, asset, oracleRegistry);
+    }
+
+    function validatePriceFeed(
+        address base,
+        AggregatorV3Interface feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    ) external view returns (uint256 price, uint8 priceDecimals) {
+        return _readValidPrice(base, feed, maxStaleness, validationMode);
     }
 
     function isWithinBands(
@@ -343,10 +325,6 @@ contract PortfolioCalculator {
         returns (uint256)
     {
         if (rawBalance == 0) return 0;
-        if (_isVaultUsdg(vault, asset)) {
-            uint8 settlementDecimals = _settlementDecimals(asset);
-            return MathEx.mulDiv(rawBalance, WAD, 10 ** uint256(settlementDecimals));
-        }
         (uint256 price, uint8 priceDecimals) = _validPrice(vault, asset, oracleRegistry);
         _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
@@ -363,38 +341,24 @@ contract PortfolioCalculator {
         uint32 maxStaleness;
         OracleValidationMode validationMode;
         if (vault != address(0)) {
-            AssetStatus status;
-            try IVaultAssetPriceSources(vault).assetRegistry() returns (address registry) {
-                status = IAssetRegistry(registry).statusOf(asset);
-            } catch { }
-            if (status == AssetStatus.Open) {
-                try IVaultAssetPriceSources(vault).priceFeedForAsset(asset) returns (
-                    address vaultFeed
-                ) {
-                    if (vaultFeed != address(0)) {
-                        feed = AggregatorV3Interface(vaultFeed);
-                        maxStaleness = 2 hours;
-                        validationMode = OracleValidationMode.StandardChainlink;
-                    }
-                } catch { }
-                // Open constituents never inherit a protocol oracle implicitly: their immutable
-                // vault-pinned V3 route is the only valid NAV source.
-                if (address(feed) == address(0)) revert OracleFeedMissing(asset);
-            } else if (status != AssetStatus.Qualified) {
-                revert OracleFeedMissing(asset);
-            }
-            if (status == AssetStatus.Qualified) {
-                (feed, maxStaleness, validationMode) =
-                    IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
-            } else {
-                // Open feeds were resolved above.
-                if (address(feed) == address(0)) revert OracleFeedMissing(asset);
-            }
+            feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
+            maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
+            validationMode = IVaultAssetPriceSources(vault).oracleValidationModeForAsset(asset);
         } else {
             (feed, maxStaleness, validationMode) =
                 IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
         }
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+        return _readValidPrice(asset, feed, maxStaleness, validationMode);
+    }
+
+    function _readValidPrice(
+        address asset,
+        AggregatorV3Interface feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    ) private view returns (uint256 price, uint8 priceDecimals) {
+        if (address(feed) == address(0) || maxStaleness == 0) revert OracleFeedMissing(asset);
         if (validationMode == OracleValidationMode.RobinhoodStockToken) {
             bool paused;
             try IOraclePauseStatus(asset).oraclePaused() returns (bool isPaused) {
@@ -404,20 +368,27 @@ contract PortfolioCalculator {
             }
             if (paused) revert OraclePaused(asset);
         }
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            feed.latestRoundData();
+        (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        ) = feed.latestRoundData();
         if (answer <= 0) revert InvalidOraclePrice(asset, answer);
         // Oracle validity and freshness are necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
-        if (updatedAt == 0 || updatedAt > block.timestamp) {
+        uint256 currentTimestamp = block.timestamp;
+        if (
+            roundId == 0 || startedAt == 0 || updatedAt == 0 || startedAt > updatedAt
+                || updatedAt > currentTimestamp
+        ) {
             revert InvalidOracleTimestamp(asset, updatedAt);
         }
         if (answeredInRound < roundId) {
             revert IncompleteOracleRound(asset, roundId, answeredInRound);
         }
-        // Oracle validity and freshness are necessarily measured against chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > updatedAt + maxStaleness) {
+        if (currentTimestamp > updatedAt + maxStaleness) {
             revert StaleOraclePrice(asset, updatedAt, maxStaleness);
         }
         priceDecimals = feed.decimals();
@@ -433,24 +404,6 @@ contract PortfolioCalculator {
             return decimals_;
         } catch {
             revert TokenDecimalsUnavailable(token);
-        }
-    }
-
-    function _settlementDecimals(address token) private view returns (uint8 tokenDecimals) {
-        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
-            if (decimals_ > 18) revert UnsupportedDecimals(token, decimals_);
-            return decimals_;
-        } catch {
-            revert TokenDecimalsUnavailable(token);
-        }
-    }
-
-    function _isVaultUsdg(address vault, address asset) private view returns (bool) {
-        if (vault == address(0)) return false;
-        try IVaultAssetPriceSources(vault).assetMarketRegistry() returns (address registry) {
-            return registry != address(0) && IAssetMarketRegistry(registry).usdg() == asset;
-        } catch {
-            return false;
         }
     }
 

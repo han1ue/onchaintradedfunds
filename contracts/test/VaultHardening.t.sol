@@ -118,18 +118,16 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testConstituentCannotReenterPredictedCloneBeforeInitialization() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.setAssetApproved(address(reentrantToken), true);
+        assetRegistry.registerAsset(address(reentrantToken));
         oracleRegistry.setOracleConfig(
-            address(reentrantToken),
-            reentrantFeed,
-            25 hours,
-            OracleValidationMode.StandardChainlink
+            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
+        params.initialPricingConfigs[0] = _directPricing(address(reentrantFeed));
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         uint256[] memory emptyMaximums = new uint256[](0);
@@ -150,18 +148,16 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testConstituentCannotInitializePredictedCloneDuringSeedTransfer() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.setAssetApproved(address(reentrantToken), true);
+        assetRegistry.registerAsset(address(reentrantToken));
         oracleRegistry.setOracleConfig(
-            address(reentrantToken),
-            reentrantFeed,
-            25 hours,
-            OracleValidationMode.StandardChainlink
+            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
+        params.initialPricingConfigs[0] = _directPricing(address(reentrantFeed));
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         reentrantToken.configureCallback(
@@ -294,18 +290,16 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testMaliciousConstituentCannotReenterMintOrRedeem() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.setAssetApproved(address(reentrantToken), true);
+        assetRegistry.registerAsset(address(reentrantToken));
         oracleRegistry.setOracleConfig(
-            address(reentrantToken),
-            reentrantFeed,
-            25 hours,
-            OracleValidationMode.StandardChainlink
+            address(reentrantToken), reentrantFeed, 25 hours, OracleValidationMode.StandardChainlink
         );
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
+        params.initialPricingConfigs[0] = _directPricing(address(reentrantFeed));
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         uint256[] memory amounts = vault.previewMint(ONE);
         reentrantToken.mint(ALICE, amounts[0]);
@@ -370,7 +364,7 @@ contract VaultHardeningTest is ProtocolTestBase {
     {
         taxedToken = new MockFeeOnTransferToken("Taxed Stock", "TAX", 18);
         taxedFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.setAssetApproved(address(taxedToken), true);
+        assetRegistry.registerAsset(address(taxedToken));
         oracleRegistry.setOracleConfig(
             address(taxedToken), taxedFeed, 25 hours, OracleValidationMode.StandardChainlink
         );
@@ -385,5 +379,7 @@ contract VaultHardeningTest is ProtocolTestBase {
     {
         params = _defaultParams();
         params.initialAssets[0] = address(taxedToken);
+        params.initialPricingConfigs[0] =
+            _directPricing(oracleRegistry.priceFeedFor(address(taxedToken)));
     }
 }

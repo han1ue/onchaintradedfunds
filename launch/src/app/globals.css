@@ -417,7 +417,8 @@ button { color: inherit; }
 .assetPickerEmpty p { max-width: 58ch; margin: 5px 0 12px; color: var(--text-muted); font-size: .69rem; line-height: 1.5; }
 .manualMarketRequest { display: grid; gap: 10px; padding: 12px; border-top: 1px solid var(--border); }
 .manualMarketRequest label { display: grid; gap: 5px; color: var(--text-soft); font-size: .66rem; }
-.manualMarketRequest input { min-height: 36px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: var(--background); color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: .68rem; }
+.manualMarketRequest input, .manualMarketRequest select { min-height: 36px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; background: var(--background); color: var(--text); font-size: .68rem; }
+.manualMarketRequest input { font-family: "SFMono-Regular", Consolas, monospace; }
 .manualMarketState { margin: 0; font-size: .67rem; line-height: 1.45; }
 .manualMarketState.positive { color: var(--green); }
 .manualMarketState.danger { color: var(--danger); }
@@ -429,6 +430,10 @@ button { color: inherit; }
 .selectedMarketEvidence select, .selectedMarketEvidence code { grid-column: 2; min-width: 0; }
 .selectedMarketEvidence select { min-height: 32px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--background); color: var(--text); font-size: .64rem; }
 .selectedMarketEvidence code { overflow: hidden; color: var(--text-muted); font-size: .61rem; text-overflow: ellipsis; white-space: nowrap; }
+.selectedMarketEvidence .pricingConfigFields { grid-column: 2; display: grid; gap: 8px; }
+.pricingConfigFields label { display: grid; gap: 4px; color: var(--text-soft); font-size: .64rem; }
+.pricingConfigFields input, .pricingConfigFields select { grid-column: auto; width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 5px; outline: 0; background: var(--background); color: var(--text); font-size: .64rem; }
+.pricingConfigFields input { font-family: "SFMono-Regular", Consolas, monospace; }
 .weightField > div { position: relative; }
 .weightField input { padding-right: 30px; }
 .weightField > div > span { position: absolute; top: 10px; right: 11px; color: var(--text-muted); font-size: .76rem; }

@@ -33,6 +33,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address asset;
         address pool;
         address priceFeed;
+        address quoteToken;
         uint24 fee;
         bool active;
     }
@@ -43,11 +44,14 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     error InvalidDependency(address dependency);
     error AssetNotContract(address asset);
     error UnsupportedAssetDecimals(address asset, uint8 decimals_);
+    error UnsupportedQuoteDecimals(address token, uint8 decimals_, uint8 required);
     error TokenDecimalsUnavailable(address asset);
     error InvalidPool(address pool);
     error InvalidPoolPair(address pool, address asset);
     error UnsupportedFeeTier(uint24 fee);
     error PoolNotInitialized(address pool);
+    error InsufficientObservationCapacity(address pool, uint16 current, uint16 required);
+    error InsufficientTwapHistory(address pool, uint32 requiredWindow);
     error MarketNotFound(bytes32 marketId);
 
     event MarketRegistered(
@@ -55,6 +59,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address indexed asset,
         address indexed pool,
         address priceFeed,
+        address quoteToken,
         uint24 fee,
         address registrar
     );
@@ -63,6 +68,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
     uint16 public constant TARGET_OBSERVATION_CARDINALITY = 64;
+    uint32 public constant TWAP_WINDOW = 1 hours;
 
     address public owner;
     address public pendingOwner;
@@ -92,6 +98,8 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         weth = weth_;
         usdg = usdg_;
         wethUsdgPool = wethUsdgPool_;
+        _requireDecimals(weth_, 18);
+        _requireDecimals(usdg_, 6);
         _validatePool(wethUsdgPool_, weth_, usdg_);
         owner = initialOwner;
         emit OwnershipTransferred(address(0), initialOwner);
@@ -104,29 +112,26 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
 
     function registerV3Market(address asset, address pool) external returns (bytes32 marketId) {
         _validateAsset(asset);
-        uint24 fee = _validatePool(pool, asset, weth);
+        address quoteToken = _quoteToken(pool, asset);
+        uint24 fee = _validatePool(pool, asset, quoteToken);
         marketId = keccak256(abi.encode(block.chainid, asset, pool));
         Market storage existing = _marketFor[marketId];
         if (existing.asset != address(0)) return marketId;
 
-        IUniswapV3MarketPool(pool).increaseObservationCardinalityNext(
-            TARGET_OBSERVATION_CARDINALITY
-        );
         UniswapV3RoutePriceFeed priceFeed = new UniswapV3RoutePriceFeed(
-            asset,
-            weth,
-            usdg,
-            IUniswapV3OraclePool(pool),
-            IUniswapV3OraclePool(wethUsdgPool)
+            asset, weth, usdg, IUniswapV3OraclePool(pool), IUniswapV3OraclePool(wethUsdgPool)
         );
         _marketFor[marketId] = Market({
             asset: asset,
             pool: pool,
             priceFeed: address(priceFeed),
+            quoteToken: quoteToken,
             fee: fee,
             active: true
         });
-        emit MarketRegistered(marketId, asset, pool, address(priceFeed), fee, msg.sender);
+        emit MarketRegistered(
+            marketId, asset, pool, address(priceFeed), quoteToken, fee, msg.sender
+        );
     }
 
     function setMarketActive(bytes32 marketId, bool active) external onlyOwner {
@@ -145,13 +150,13 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         return (market.asset, market.pool, market.priceFeed, market.fee, market.active);
     }
 
-    function isActiveMarketForAsset(bytes32 marketId, address asset)
-        external
-        view
-        returns (bool)
-    {
+    function isActiveMarketForAsset(bytes32 marketId, address asset) external view returns (bool) {
         Market storage market = _marketFor[marketId];
         return market.active && market.asset == asset;
+    }
+
+    function quoteTokenFor(bytes32 marketId) external view returns (address) {
+        return _marketFor[marketId].quoteToken;
     }
 
     function beginOwnershipTransfer(address newOwner) external onlyOwner {
@@ -180,6 +185,18 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         if (tokenDecimals != 18) revert UnsupportedAssetDecimals(asset, tokenDecimals);
     }
 
+    function _requireDecimals(address token, uint8 required) private view {
+        uint8 tokenDecimals;
+        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
+            tokenDecimals = decimals_;
+        } catch {
+            revert TokenDecimalsUnavailable(token);
+        }
+        if (tokenDecimals != required) {
+            revert UnsupportedQuoteDecimals(token, tokenDecimals, required);
+        }
+    }
+
     function _validatePool(address pool, address first, address second)
         private
         view
@@ -200,7 +217,35 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         if (IUniswapV3MarketFactory(uniswapV3Factory).getPool(first, second, fee) != pool) {
             revert InvalidPool(pool);
         }
-        (uint160 sqrtPriceX96,,,,,,) = candidate.slot0();
+        (uint160 sqrtPriceX96,,, uint16 observationCardinality,,,) = candidate.slot0();
         if (sqrtPriceX96 == 0) revert PoolNotInitialized(pool);
+        if (observationCardinality < TARGET_OBSERVATION_CARDINALITY) {
+            revert InsufficientObservationCapacity(
+                pool, observationCardinality, TARGET_OBSERVATION_CARDINALITY
+            );
+        }
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = TWAP_WINDOW;
+        secondsAgos[1] = 0;
+        try candidate.observe(secondsAgos) returns (int56[] memory ticks, uint160[] memory) {
+            if (ticks.length != 2) {
+                revert InsufficientTwapHistory(pool, TWAP_WINDOW);
+            }
+        } catch {
+            revert InsufficientTwapHistory(pool, TWAP_WINDOW);
+        }
+    }
+
+    function _quoteToken(address pool, address asset) private view returns (address quoteToken) {
+        if (pool == address(0) || pool.code.length == 0) revert InvalidPool(pool);
+        IUniswapV3MarketPool candidate = IUniswapV3MarketPool(pool);
+        address token0 = candidate.token0();
+        address token1 = candidate.token1();
+        address other;
+        if (token0 == asset) other = token1;
+        else if (token1 == asset) other = token0;
+        else revert InvalidPoolPair(pool, asset);
+        if (other != weth && other != usdg) revert InvalidPoolPair(pool, asset);
+        return other;
     }
 }

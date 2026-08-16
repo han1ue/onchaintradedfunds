@@ -8,6 +8,7 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
     using SafeTransferLib for address;
 
     uint256 public reportedOutputBonus;
+    bytes public lastPath;
 
     function setReportedOutputBonus(uint256 bonus) external {
         reportedOutputBonus = bonus;
@@ -29,6 +30,7 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
         payable
         returns (uint256 amountOut)
     {
+        lastPath = params.path;
         address tokenIn = _firstToken(params.path);
         address tokenOut = _lastToken(params.path);
         require(params.amountIn >= params.amountOutMinimum, "SLIPPAGE");

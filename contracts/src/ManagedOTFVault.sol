@@ -6,13 +6,15 @@ import {
     IProtocolTokenFeePolicy,
     ManagedOTFVaultStorage
 } from "./ManagedOTFVaultStorage.sol";
-import { AssetStatus, IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
+import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
+import { OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
+    AssetPricingConfig,
+    PricingSource,
     RebalanceRecord,
     StrategyVersion,
     TradeExecutionRecord,
@@ -29,6 +31,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     bytes32 private immutable _strategyModuleCodehash;
     address private immutable _viewModule;
     bytes32 private immutable _viewModuleCodehash;
+
+    event AssetPricingPinned(
+        address indexed asset,
+        PricingSource indexed source,
+        address indexed priceFeed,
+        address primarySource,
+        address secondarySource,
+        bytes32 marketId
+    );
 
     constructor(
         PortfolioCalculator portfolioCalculator_,
@@ -94,7 +105,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         challengeWeightDeviationBps = params.challengeWeightDeviationBps;
         _feeState = FeeState.Accruing;
 
-        _configureInitialMarkets(params.initialAssets, params.initialMarketIds);
+        _configureInitialPricing(params.initialAssets, params.initialPricingConfigs);
         _validateInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
         _storeInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
         _validateInitialBalances(params.initialAssets, params.initialAmounts);
@@ -163,9 +174,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function getReserve(address token) public view returns (uint256 balance) {
-        if (!_containsCurrentAsset(token)) return 0;
-        return IERC20(token).balanceOf(address(this));
+    function getReserve(address token) public returns (uint256 balance) {
+        token;
+        balance;
+        _delegateView();
     }
 
     function getWeight(address token) external returns (uint256 weight) {
@@ -180,8 +192,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function totalBasketValue() public view returns (uint256 value) {
-        return _portfolioCalculator.totalBasketValue(address(this), _assets);
+    function totalBasketValue() public returns (uint256 value) {
+        value;
+        _delegateView();
     }
 
     // Protocol views
@@ -190,24 +203,74 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _assets;
     }
 
-    function assetMarketRegistry() external view returns (address) {
-        return _assetMarketRegistry;
+    function assetMarketRegistry() external returns (address registry) {
+        registry;
+        _delegateView();
     }
 
-    function marketIdForAsset(address asset) external view returns (bytes32) {
-        return _marketIdForAsset[asset];
+    function marketIdForAsset(address asset) external returns (bytes32 marketId) {
+        asset;
+        marketId;
+        _delegateView();
     }
 
-    function priceFeedForAsset(address asset) external view returns (address) {
-        return _priceFeedForAsset[asset];
+    function priceFeedForAsset(address asset) external returns (address feed) {
+        asset;
+        feed;
+        _delegateView();
     }
 
-    function assetCount() external view returns (uint256) {
-        return _assets.length;
+    function pricingConfigForAsset(address asset)
+        external
+        returns (
+            bool configured,
+            PricingSource source,
+            address primarySource,
+            address secondarySource,
+            address normalizedPriceFeed,
+            uint32 primaryMaxStaleness,
+            uint32 secondaryMaxStaleness,
+            OracleValidationMode primaryValidationMode,
+            OracleValidationMode secondaryValidationMode
+        )
+    {
+        asset;
+        configured;
+        source;
+        primarySource;
+        secondarySource;
+        normalizedPriceFeed;
+        primaryMaxStaleness;
+        secondaryMaxStaleness;
+        primaryValidationMode;
+        secondaryValidationMode;
+        _delegateView();
     }
 
-    function assetAt(uint256 index) external view returns (address) {
-        return _assets[index];
+    function maxStalenessForAsset(address asset) external returns (uint32 maxStaleness) {
+        asset;
+        maxStaleness;
+        _delegateView();
+    }
+
+    function oracleValidationModeForAsset(address asset)
+        external
+        returns (OracleValidationMode mode)
+    {
+        asset;
+        mode;
+        _delegateView();
+    }
+
+    function assetCount() external returns (uint256 count) {
+        count;
+        _delegateView();
+    }
+
+    function assetAt(uint256 index) external returns (address asset) {
+        index;
+        asset;
+        _delegateView();
     }
 
     function pruneRetiredAssets() external returns (uint256 removed) {
@@ -215,43 +278,34 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function targetWeightsBps() external view returns (uint16[] memory weights) {
-        uint256[] memory effectiveWeights =
-            _portfolioCalculator.effectiveTargetWeights(address(this), _assets, assetRegistry);
-        weights = new uint16[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = uint16(effectiveWeights[i]);
-        }
+    function targetWeightsBps() external returns (uint16[] memory weights) {
+        weights;
+        _delegateView();
     }
 
-    function totalAssetsValue() public view returns (uint256 nav) {
-        return _portfolioValue();
+    function totalAssetsValue() public returns (uint256 nav) {
+        nav;
+        _delegateView();
     }
 
-    function navPerShare() external view returns (uint256) {
-        uint256 supply = _previewSupplyAfterAccrual();
-        if (supply == 0) return 0;
-        return MathEx.mulDiv(totalAssetsValue(), 1e18, supply);
+    function navPerShare() external returns (uint256 nav) {
+        nav;
+        _delegateView();
     }
 
-    function currentWeightsBps() public view returns (uint16[] memory weights) {
-        (uint256[] memory current,) = _currentWeightsAndNav();
-        weights = new uint16[](current.length);
-        for (uint256 i = 0; i < current.length; i++) {
-            weights[i] = uint16(current[i]);
-        }
+    function currentWeightsBps() public returns (uint16[] memory weights) {
+        weights;
+        _delegateView();
     }
 
-    function currentWeight(address token) public view returns (uint256 weight) {
-        if (!_containsCurrentAsset(token)) revert NotConstituent(token);
-        uint256 nav = _portfolioValue();
-        if (nav == 0) revert ZeroNav();
-        return MathEx.mulDiv(_assetValue(token, IERC20(token).balanceOf(address(this))), BPS, nav);
+    function currentWeight(address token) public returns (uint256 weight) {
+        token;
+        weight;
+        _delegateView();
     }
 
     function getWeightBands(address token)
         external
-        view
         returns (
             uint256 challengeLower,
             uint256 challengeUpper,
@@ -259,66 +313,57 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             uint256 completionUpper
         )
     {
-        if (!_containsCurrentAsset(token)) {
-            revert NotConstituent(token);
-        }
-        if (_isRetiringAsset(token)) return (0, 0, 0, 0);
-        uint256 target = targetWeightBps[token];
-        (challengeLower, challengeUpper) = _band(target, challengeWeightDeviationBps);
-        (completionLower, completionUpper) = _band(target, maxWeightDeviationBps);
+        token;
+        challengeLower;
+        challengeUpper;
+        completionLower;
+        completionUpper;
+        _delegateView();
     }
 
-    function isWithinTargetBands() public view returns (bool) {
-        return _isWithinBands(maxWeightDeviationBps);
+    function isWithinTargetBands() public returns (bool withinBands) {
+        withinBands;
+        _delegateView();
     }
 
-    function isWithinChallengeBands() public view returns (bool) {
-        return _isWithinBands(challengeWeightDeviationBps);
+    function isWithinChallengeBands() public returns (bool withinBands) {
+        withinBands;
+        _delegateView();
     }
 
-    function canProposeStrategy() public view returns (bool) {
-        if (sunset) return false;
-        // Validator timestamp drift is immaterial to the fixed multi-day strategy delay.
-        // forge-lint: disable-next-line(block-timestamp)
-        bool cooldownActive = block.timestamp < nextStrategyChangeTime();
-        if (
-            challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
-        ) {
-            return false;
-        }
-        return _isWithinBands(maxWeightDeviationBps);
+    function canProposeStrategy() public returns (bool allowed) {
+        allowed;
+        _delegateView();
     }
 
-    function challengeTimeRemaining() external view returns (uint256) {
-        // Challenge deadlines intentionally use chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (!challengeActive || block.timestamp >= challengeDeadline) return 0;
-        return uint256(challengeDeadline) - block.timestamp;
+    function challengeTimeRemaining() external returns (uint256 remaining) {
+        remaining;
+        _delegateView();
     }
 
-    function nextStrategyChangeTime() public view returns (uint256) {
-        return uint256(lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
+    function nextStrategyChangeTime() public returns (uint256 timestamp) {
+        timestamp;
+        _delegateView();
     }
 
-    function feeState() public view returns (FeeState) {
-        if (sunset) return FeeState.Sunset;
-        if (!challengeActive) return FeeState.Accruing;
-        // Challenge deadlines intentionally use chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        return block.timestamp > challengeDeadline ? FeeState.Suspended : FeeState.Escrowed;
+    function feeState() public returns (FeeState state) {
+        state;
+        _delegateView();
     }
 
-    function feesAccruing() external view returns (bool) {
-        return feeState() == FeeState.Accruing;
+    function feesAccruing() external returns (bool accruing) {
+        accruing;
+        _delegateView();
     }
 
-    function feesEscrowed() external view returns (bool) {
-        return feeState() == FeeState.Escrowed;
+    function feesEscrowed() external returns (bool escrowed) {
+        escrowed;
+        _delegateView();
     }
 
-    function feesSuspended() external view returns (bool) {
-        FeeState state = feeState();
-        return state == FeeState.Suspended || state == FeeState.Sunset;
+    function feesSuspended() external returns (bool suspended) {
+        suspended;
+        _delegateView();
     }
 
     /// @notice Protocol fee share after the live OTF-token holding incentive is applied.
@@ -335,8 +380,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function authorizedExecutors() external view returns (address[] memory) {
-        return _authorizedExecutors;
+    function authorizedExecutors() external returns (address[] memory executors) {
+        executors;
+        _delegateView();
     }
 
     function recentRebalanceCount() external returns (uint256 count) {
@@ -344,10 +390,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function recentRebalanceRecord(uint256 index)
-        external
-        returns (RebalanceRecord memory record)
-    {
+    function recentRebalanceRecord(uint256 index) external returns (RebalanceRecord memory record) {
         index;
         record;
         _delegateView();
@@ -379,42 +422,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     // ERC-7621 entry and exit
 
-    function previewContribute(uint256[] calldata amounts) public view returns (uint256 lpAmount) {
-        if (amounts.length != _assets.length) {
-            revert LengthMismatch(_assets.length, amounts.length);
-        }
-        _requireCurrentAssetsApproved();
-        bool anyAmount;
-        for (uint256 i = 0; i < amounts.length; i++) {
-            if (amounts[i] != 0) {
-                anyAmount = true;
-                break;
-            }
-        }
-        if (!anyAmount) return 0;
-
-        uint256 supply = _previewSupplyAfterAccrual();
-        lpAmount = type(uint256).max;
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            if (reserve == 0) {
-                if (amounts[i] != 0) {
-                    revert NonProportionalContribution(_assets[i], amounts[i], 0);
-                }
-                continue;
-            }
-            uint256 candidate = MathEx.mulDiv(amounts[i], supply, reserve);
-            if (candidate < lpAmount) lpAmount = candidate;
-        }
-        if (lpAmount == type(uint256).max) return 0;
-
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            uint256 required = MathEx.mulDivUp(lpAmount, reserve, supply);
-            if (amounts[i] != required) {
-                revert NonProportionalContribution(_assets[i], amounts[i], required);
-            }
-        }
+    function previewContribute(uint256[] calldata amounts) public returns (uint256 lpAmount) {
+        amounts;
+        lpAmount;
+        _delegateView();
     }
 
     function contribute(uint256[] calldata amounts, address receiver, uint256 minShares)
@@ -437,7 +448,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         if (!anyAmount) revert ZeroAmount();
 
-        _requireCurrentAssetsApproved();
+        _requireDepositsOpen();
         _accrueFees();
         lpAmount = _previewContributeCurrentSupply(amounts);
         if (lpAmount < minShares) revert InsufficientShares(minShares, lpAmount);
@@ -450,14 +461,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         emit Contributed(msg.sender, receiver, lpAmount, amounts);
     }
 
-    function previewWithdraw(uint256 lpAmount) public view returns (uint256[] memory amounts) {
-        amounts = new uint256[](_assets.length);
-        if (lpAmount == 0) return amounts;
-        uint256 supply = _previewSupplyAfterAccrual();
-        for (uint256 i = 0; i < _assets.length; i++) {
-            amounts[i] =
-                MathEx.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), lpAmount, supply);
-        }
+    function previewWithdraw(uint256 lpAmount) public returns (uint256[] memory amounts) {
+        lpAmount;
+        amounts;
+        _delegateView();
     }
 
     function withdraw(uint256 lpAmount, address receiver, uint256[] calldata minAmounts)
@@ -479,20 +486,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     // Existing explicit-share convenience entry and delegated exit
 
-    function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
-        if (shares == 0) revert ZeroShares();
-        _requireCurrentAssetsApproved();
-        uint256 supply = _previewSupplyAfterAccrual();
-        amountsIn = new uint256[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            amountsIn[i] =
-                MathEx.mulDivUp(shares, IERC20(_assets[i]).balanceOf(address(this)), supply);
-        }
+    function previewMint(uint256 shares) public returns (uint256[] memory amountsIn) {
+        shares;
+        amountsIn;
+        _delegateView();
     }
 
-    function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
-        if (shares == 0) revert ZeroShares();
-        return previewWithdraw(shares);
+    function previewRedeem(uint256 shares) public returns (uint256[] memory amountsOut) {
+        shares;
+        amountsOut;
+        _delegateView();
     }
 
     function mintWithBasket(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
@@ -506,7 +509,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (shares == 0) revert ZeroShares();
         if (maxAmountsIn.length != _assets.length) revert InvalidArrayLength();
 
-        _requireCurrentAssetsApproved();
+        _requireDepositsOpen();
         _accrueFees();
         uint256 supply = totalSupply;
         amountsIn = new uint256[](_assets.length);
@@ -569,10 +572,32 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function setExecutor(address executor, bool authorized) external {
-        executor;
-        authorized;
-        _delegateStrategy();
+    function setExecutor(address executor, bool authorized) external onlyManager {
+        if (executor == address(0) || executor == address(this)) {
+            revert InvalidRoleAddress(executor);
+        }
+        if (authorized) {
+            if (authorizedExecutor[executor]) revert ExecutorAlreadyAuthorized(executor);
+            if (_authorizedExecutors.length >= MAX_AUTHORIZED_EXECUTORS) {
+                revert ExecutorLimitReached();
+            }
+            authorizedExecutor[executor] = true;
+            _authorizedExecutors.push(executor);
+            _executorIndexPlusOne[executor] = _authorizedExecutors.length;
+        } else {
+            if (!authorizedExecutor[executor]) revert ExecutorNotAuthorized(executor);
+            uint256 index = _executorIndexPlusOne[executor] - 1;
+            uint256 lastIndex = _authorizedExecutors.length - 1;
+            if (index != lastIndex) {
+                address moved = _authorizedExecutors[lastIndex];
+                _authorizedExecutors[index] = moved;
+                _executorIndexPlusOne[moved] = index + 1;
+            }
+            _authorizedExecutors.pop();
+            delete _executorIndexPlusOne[executor];
+            authorizedExecutor[executor] = false;
+        }
+        emit ExecutorAuthorizationChanged(executor, authorized);
     }
 
     function setFeeRecipient(address newFeeRecipient) external {
@@ -583,12 +608,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     /// @notice Permanently ends deposits, fee accrual, challenges, and portfolio management.
     /// @dev Redemptions and ordinary ERC-20 share transfers remain available for an orderly wind-down.
     function sunsetOtf() external {
-        _delegateStrategy();
-    }
-
-    /// @notice Permanently shuts down a vault once it has no approved, positive-target constituent.
-    /// @dev Permissionless because registry revocation can make recovery impossible for the manager.
-    function finalizeTerminalShutdown() external {
         _delegateStrategy();
     }
 
@@ -611,15 +630,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function proposeStrategyWithMarkets(
+    function proposeStrategyWithPricing(
         address[] calldata newTokens,
         uint256[] calldata newWeights,
-        bytes32[] calldata marketIds,
+        AssetPricingConfig[] calldata pricingConfigs,
         string calldata rationale
     ) external {
         newTokens;
         newWeights;
-        marketIds;
+        pricingConfigs;
         rationale;
         _delegateStrategy();
     }
@@ -756,8 +775,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (challengeActive) {
             // Challenge fee checkpoints intentionally use the onchain deadline.
             // forge-lint: disable-next-line(block-timestamp)
-            uint256 checkpoint = block.timestamp < challengeDeadline
-                ? block.timestamp
+            uint256 currentTimestamp = block.timestamp;
+            uint256 checkpoint = currentTimestamp < challengeDeadline
+                ? currentTimestamp
                 : uint256(challengeDeadline);
             if (_feeState != FeeState.Suspended && checkpoint > previousTimestamp) {
                 feeShares = _escrowChallengeFees(checkpoint - previousTimestamp);
@@ -766,8 +786,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 lastFeeAccrualTimestamp = uint64(checkpoint);
             }
             // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
-            // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp > challengeDeadline) _forfeitChallengeFees();
+            if (currentTimestamp > challengeDeadline) _forfeitChallengeFees();
             return feeShares;
         }
         if (elapsed == 0) return 0;
@@ -816,13 +835,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _escrowChallengeFees(uint256 elapsed) private returns (uint256 feeShares) {
         if (totalSupply == 0 || creatorFeeBpsPerYear == 0 || elapsed == 0) return 0;
-        (feeShares, _challengeFeeAccrualRemainderWad) =
-            _portfolioCalculator.feeSharesAfterElapsed(
-                totalSupply,
-                _challengeFeeAccrualRemainderWad,
-                creatorFeeBpsPerYear,
-                elapsed
-            );
+        (feeShares, _challengeFeeAccrualRemainderWad) = _portfolioCalculator.feeSharesAfterElapsed(
+            totalSupply, _challengeFeeAccrualRemainderWad, creatorFeeBpsPerYear, elapsed
+        );
         if (feeShares != 0) {
             _mint(address(this), feeShares);
             escrowedManagerFeeShares += feeShares;
@@ -832,8 +847,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _releaseChallengeFees() private returns (uint256 feeShares) {
         feeShares = escrowedManagerFeeShares;
-        uint256 combinedRemainder =
-            _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
+        uint256 combinedRemainder = _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
         if (combinedRemainder >= 1e18) {
             combinedRemainder -= 1e18;
             feeShares++;
@@ -849,38 +863,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (managerShares != 0) _transfer(address(this), feeRecipient, managerShares);
         emit FeesAccrued(feeShares, managerShares, protocolShares);
         emit ManagerFeesReleased(feeRecipient, managerShares);
-    }
-
-    function _previewSupplyAfterAccrual() internal view returns (uint256 supply) {
-        supply = totalSupply;
-        if (sunset) return supply;
-        uint256 previousTimestamp = lastFeeAccrualTimestamp;
-        // Fee previews must use the same chain-time boundary as state-changing accrual.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp <= previousTimestamp) return supply;
-
-        // Challenge fee previews intentionally use the onchain deadline.
-        // forge-lint: disable-next-line(block-timestamp)
-        uint256 end = challengeActive && block.timestamp > challengeDeadline
-            ? uint256(challengeDeadline)
-            : block.timestamp;
-        if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
-
-        (uint256 feeShares,) = _portfolioCalculator.feeSharesAfterElapsed(
-            totalSupply,
-            challengeActive ? _challengeFeeAccrualRemainderWad : _feeAccrualRemainderWad,
-            creatorFeeBpsPerYear,
-            end - previousTimestamp
-        );
-        // The missed-deadline preview intentionally follows chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (challengeActive && block.timestamp > challengeDeadline) {
-            uint256 forfeitedShares = escrowedManagerFeeShares + feeShares;
-            uint256 rewardShares =
-                MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
-            return supply - escrowedManagerFeeShares + rewardShares;
-        }
-        supply += feeShares;
     }
 
     function _forfeitChallengeFees() internal {
@@ -935,7 +917,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address asset = assets_[index];
         if (asset == address(0)) revert ZeroAddress();
         if (asset.code.length == 0) revert AssetNotContract(asset);
-        if (!IAssetRegistry(assetRegistry).canBeConstituent(asset)) revert UnapprovedAsset(asset);
         if (weight < minimumTargetWeightBps) {
             revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
         }
@@ -961,57 +942,19 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function _requireCurrentAssetsApproved() internal view {
+    function _requireDepositsOpen() internal view {
         if (sunset) revert VaultSunset();
         if (_assets.length == 0) revert EmptyPortfolio();
         if (IProtocolPortfolioLimits(factory).depositsPaused()) {
             revert ProtocolDepositsPaused();
         }
+        if (IProtocolPortfolioLimits(factory).vaultDepositsPaused(address(this))) {
+            revert VaultDepositsPaused();
+        }
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (!IAssetRegistry(assetRegistry).canBeConstituent(asset)) {
-                revert UnapprovedAsset(asset);
-            }
-            if (targetWeightBps[asset] == 0) revert DepositsPausedForAssetRemoval(asset);
+            if (targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
         }
-    }
-
-    function _currentWeightsAndNav() internal view returns (uint256[] memory weights, uint256 nav) {
-        return _portfolioCalculator.portfolioState(address(this), _assets, oracleRegistry);
-    }
-
-    function _isWithinBands(uint16 deviationBps) internal view returns (bool) {
-        if (!_retiringBalancesAreWithinDust()) return false;
-        return _portfolioCalculator.isWithinBands(
-            address(this), _assets, _weightsAsUint256(), oracleRegistry, deviationBps
-        );
-    }
-
-    function _breachedAssets(uint16 deviationBps) internal view returns (address[] memory) {
-        address[] memory retiring = _retiringBreaches();
-        if (retiring.length != 0) return retiring;
-        return _portfolioCalculator.breachedAssets(
-            address(this), _assets, _weightsAsUint256(), oracleRegistry, deviationBps
-        );
-    }
-
-    function _band(uint256 target, uint256 deviation)
-        internal
-        pure
-        returns (uint256 lower, uint256 upper)
-    {
-        lower = target > deviation ? target - deviation : 0;
-        upper = target + deviation > BPS ? BPS : target + deviation;
-    }
-
-    function _portfolioValue() internal view returns (uint256 nav) {
-        return _portfolioCalculator.portfolioValue(address(this), _assets, oracleRegistry);
-    }
-
-    function _assetValue(address asset, uint256 rawBalance) internal view returns (uint256) {
-        return _portfolioCalculator.assetValueForVault(
-            address(this), asset, rawBalance, oracleRegistry
-        );
     }
 
     // Storage and transfer helpers
@@ -1025,40 +968,84 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function _configureInitialMarkets(
+    function _configureInitialPricing(
         address[] calldata assets_,
-        bytes32[] calldata marketIds_
+        AssetPricingConfig[] calldata pricingConfigs_
     ) internal {
-        if (marketIds_.length != 0 && marketIds_.length != assets_.length) {
-            revert LengthMismatch(assets_.length, marketIds_.length);
+        if (pricingConfigs_.length != assets_.length) {
+            revert LengthMismatch(assets_.length, pricingConfigs_.length);
         }
         for (uint256 i = 0; i < assets_.length; i++) {
-            bytes32 marketId = marketIds_.length == 0 ? bytes32(0) : marketIds_[i];
-            _pinAssetMarket(assets_[i], marketId);
+            _pinAssetPricing(assets_[i], pricingConfigs_[i]);
         }
     }
 
-    function _pinAssetMarket(address asset, bytes32 marketId) internal {
-        AssetStatus status = IAssetRegistry(assetRegistry).statusOf(asset);
-        if (status == AssetStatus.Qualified && marketId == bytes32(0)) return;
-        if (status != AssetStatus.Open && status != AssetStatus.Qualified) {
-            revert UnapprovedAsset(asset);
+    function _pinAssetPricing(address asset, AssetPricingConfig calldata config) internal {
+        if (_pricingConfiguredForAsset[asset]) {
+            if (config.primarySource == address(0)) return;
+            if (
+                _pricingSourceForAsset[asset] != uint8(config.source)
+                    || _primaryPriceSourceForAsset[asset] != config.primarySource
+                    || _secondaryPriceSourceForAsset[asset] != config.secondarySource
+            ) revert AssetPricingAlreadyPinned(asset);
+            return;
         }
-        if (marketId == bytes32(0)) revert InvalidAssetMarket(asset, marketId);
-        address registry = _assetMarketRegistry;
-        if (registry == address(0)) revert AssetMarketRegistryNotConfigured();
 
-        bytes32 currentMarketId = _marketIdForAsset[asset];
-        if (currentMarketId != bytes32(0) && currentMarketId != marketId) {
-            revert AssetMarketAlreadyPinned(asset, currentMarketId, marketId);
-        }
-        (address marketAsset,, address priceFeed,, bool active) =
-            IAssetMarketRegistry(registry).marketFor(marketId);
-        if (!active || marketAsset != asset || priceFeed.code.length == 0) {
-            revert InvalidAssetMarket(asset, marketId);
-        }
+        (
+            address normalizedFeed,
+            bytes32 marketId,
+            uint32 primaryStaleness,
+            uint32 secondaryStaleness,
+            OracleValidationMode primaryMode,
+            OracleValidationMode secondaryMode
+        ) = _pricingResolver().resolvePricing(asset, config);
+
+        _pricingSourceForAsset[asset] = uint8(config.source);
+        _primaryPriceSourceForAsset[asset] = config.primarySource;
+        _secondaryPriceSourceForAsset[asset] = config.secondarySource;
+        _priceFeedForAsset[asset] = normalizedFeed;
         _marketIdForAsset[asset] = marketId;
-        _priceFeedForAsset[asset] = priceFeed;
+        _maxStalenessForAsset[asset] = config.source == PricingSource.ChainlinkAssetWeth
+            ? (primaryStaleness > secondaryStaleness ? primaryStaleness : secondaryStaleness)
+            : primaryStaleness;
+        _oracleValidationModeForAsset[asset] = uint8(
+            config.source == PricingSource.ChainlinkDirect
+                ? primaryMode
+                : OracleValidationMode.StandardChainlink
+        );
+        _primaryMaxStalenessForAsset[asset] = primaryStaleness;
+        _primaryOracleValidationModeForAsset[asset] = uint8(primaryMode);
+        _secondaryMaxStalenessForAsset[asset] = secondaryStaleness;
+        _secondaryOracleValidationModeForAsset[asset] = uint8(secondaryMode);
+        _pricingConfiguredForAsset[asset] = true;
+
+        _portfolioCalculator.validateAssetForVault(address(this), asset, oracleRegistry);
+        emit AssetPricingPinned(
+            asset,
+            config.source,
+            normalizedFeed,
+            config.primarySource,
+            config.secondarySource,
+            marketId
+        );
+    }
+
+    function _pricingResolver() internal view returns (IAssetPricingResolver resolver) {
+        address resolverAddress = IProtocolPortfolioLimits(factory).pricingResolver();
+        if (resolverAddress == address(0)) revert PricingResolverNotConfigured();
+        resolver = IAssetPricingResolver(resolverAddress);
+    }
+
+    /// @dev Strategy module callback. It validates pending sources without mutating vault pricing.
+    function modulePrepareAssetPricing(address asset, AssetPricingConfig calldata config) external {
+        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
+        _pricingResolver().validatePricing(asset, config);
+    }
+
+    /// @dev Strategy module callback. Activation pins the source atomically with strategy state.
+    function modulePinAssetPricing(address asset, AssetPricingConfig calldata config) external {
+        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
+        _pinAssetPricing(asset, config);
     }
 
     function _pullExact(address asset, address from, uint256 amount) internal {

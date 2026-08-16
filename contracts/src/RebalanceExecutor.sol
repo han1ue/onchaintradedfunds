@@ -20,6 +20,7 @@ contract RebalanceExecutor {
     error BadTradeAmount();
     error BadTradeTokens();
     error Slippage(uint256 received, uint256 minimum);
+    error AdapterOutputMismatch(uint256 reported, uint256 observed);
     error TokenTransferMismatch(
         address token, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
@@ -67,7 +68,7 @@ contract RebalanceExecutor {
         _pullExact(instruction.tokenIn, msg.sender, instruction.adapter, amountIn);
 
         uint256 balanceBefore = IERC20(instruction.tokenOut).balanceOf(address(this));
-        ITradeAdapter(instruction.adapter)
+        uint256 reportedOutput = ITradeAdapter(instruction.adapter)
             .executeSwap(
                 instruction.tokenIn,
                 instruction.tokenOut,
@@ -79,6 +80,9 @@ contract RebalanceExecutor {
         uint256 balanceAfter = IERC20(instruction.tokenOut).balanceOf(address(this));
         uint256 received = balanceAfter - balanceBefore;
         amountOut = received;
+        if (reportedOutput != amountOut) {
+            revert AdapterOutputMismatch(reportedOutput, amountOut);
+        }
         if (amountOut == 0 || amountOut < instruction.minAmountOut) {
             revert Slippage(amountOut, instruction.minAmountOut);
         }

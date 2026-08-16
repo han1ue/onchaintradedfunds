@@ -3,14 +3,14 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
-import { AssetStatus, IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
-import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
+    AssetPricingConfig,
+    PricingSource,
     RebalanceRecord,
     StrategyVersion,
     TradeExecutionRecord,
@@ -21,10 +21,8 @@ interface IManagedOTFVaultModuleCallbacks {
     function moduleAccrueFees() external returns (uint256);
     function moduleMintFees(uint256 elapsed) external returns (uint256);
     function moduleReleaseChallengeFees() external returns (uint256);
-}
-
-interface IRegisteredRouteAdapter {
-    function marketIdFromData(bytes calldata data) external pure returns (bytes32 marketId);
+    function modulePrepareAssetPricing(address asset, AssetPricingConfig calldata config) external;
+    function modulePinAssetPricing(address asset, AssetPricingConfig calldata config) external;
 }
 
 contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
@@ -161,34 +159,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         emit ManagerFeeRateChanged(oldFeeBps, newFeeBps);
     }
 
-    function setExecutor(address executor, bool authorized) external onlyDelegateCall onlyManager {
-        if (executor == address(0) || executor == address(this)) {
-            revert InvalidRoleAddress(executor);
-        }
-        if (authorized) {
-            if (authorizedExecutor[executor]) revert ExecutorAlreadyAuthorized(executor);
-            if (_authorizedExecutors.length >= MAX_AUTHORIZED_EXECUTORS) {
-                revert ExecutorLimitReached();
-            }
-            authorizedExecutor[executor] = true;
-            _authorizedExecutors.push(executor);
-            _executorIndexPlusOne[executor] = _authorizedExecutors.length;
-        } else {
-            if (!authorizedExecutor[executor]) revert ExecutorNotAuthorized(executor);
-            uint256 index = _executorIndexPlusOne[executor] - 1;
-            uint256 lastIndex = _authorizedExecutors.length - 1;
-            if (index != lastIndex) {
-                address moved = _authorizedExecutors[lastIndex];
-                _authorizedExecutors[index] = moved;
-                _executorIndexPlusOne[moved] = index + 1;
-            }
-            _authorizedExecutors.pop();
-            delete _executorIndexPlusOne[executor];
-            authorizedExecutor[executor] = false;
-        }
-        emit ExecutorAuthorizationChanged(executor, authorized);
-    }
-
     function setWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
         external
         onlyDelegateCall
@@ -221,7 +191,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         string memory rationale = _nextStrategyRationale;
         if (bytes(rationale).length == 0) revert StrategyRationaleRequired();
         delete _nextStrategyRationale;
-        _proposeStrategy(newTokens, newWeights, _marketIdsFor(newTokens), rationale);
+        _proposeStrategy(newTokens, newWeights, _pricingConfigsFor(newTokens), rationale);
     }
 
     function proposeStrategy(
@@ -230,23 +200,23 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         string calldata rationale
     ) external onlyDelegateCall onlyManager nonReentrant {
         delete _nextStrategyRationale;
-        _proposeStrategy(newTokens, newWeights, _marketIdsFor(newTokens), rationale);
+        _proposeStrategy(newTokens, newWeights, _pricingConfigsFor(newTokens), rationale);
     }
 
-    function proposeStrategyWithMarkets(
+    function proposeStrategyWithPricing(
         address[] calldata newTokens,
         uint256[] calldata newWeights,
-        bytes32[] calldata marketIds,
+        AssetPricingConfig[] calldata pricingConfigs,
         string calldata rationale
     ) external onlyDelegateCall onlyManager nonReentrant {
         delete _nextStrategyRationale;
-        _proposeStrategy(newTokens, newWeights, marketIds, rationale);
+        _proposeStrategy(newTokens, newWeights, pricingConfigs, rationale);
     }
 
     function _proposeStrategy(
         address[] memory newTokens,
         uint256[] memory newWeights,
-        bytes32[] memory marketIds,
+        AssetPricingConfig[] memory pricingConfigs,
         string memory rationale
     ) private {
         if (sunset) revert VaultSunset();
@@ -258,7 +228,17 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (block.timestamp < nextAllowed) revert StrategyChangeCooldownActive(nextAllowed);
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
 
-        _validateAndPinMarkets(newTokens, marketIds);
+        if (newTokens.length != pricingConfigs.length) {
+            revert LengthMismatch(newTokens.length, pricingConfigs.length);
+        }
+        for (uint256 i = 0; i < newTokens.length; i++) {
+            if (_pricingConfiguredForAsset[newTokens[i]]) {
+                _requireMatchingPinnedPricing(newTokens[i], pricingConfigs[i]);
+            } else {
+                IManagedOTFVaultModuleCallbacks(address(this))
+                    .modulePrepareAssetPricing(newTokens[i], pricingConfigs[i]);
+            }
+        }
         _validatePortfolio(newTokens, newWeights);
         _validateRationale(rationale);
         if (!_targetsChanged(newTokens, newWeights)) revert StrategyTargetsUnchanged();
@@ -272,7 +252,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < newTokens.length; i++) {
             _pendingAssets.push(newTokens[i]);
             _pendingTargetWeightsBps.push(uint16(newWeights[i]));
-            _pendingMarketIds.push(marketIds[i]);
+            _pendingPricingConfigs.push(pricingConfigs[i]);
         }
         _pendingStrategyRationale = rationale;
 
@@ -300,6 +280,11 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             revert StrategyStateLocked();
         }
         if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+
+        for (uint256 i = 0; i < _pendingAssets.length; i++) {
+            IManagedOTFVaultModuleCallbacks(address(this))
+                .modulePinAssetPricing(_pendingAssets[i], _pendingPricingConfigs[i]);
+        }
 
         _validatePendingPortfolio();
         _accrueViaVault();
@@ -361,7 +346,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         returns (uint256 removed)
     {
         removed = _pruneRetiringAssetsWithinDust();
-        if (!sunset && !_hasActiveConstituent()) _enterTerminalShutdown();
     }
 
     function executeRebalanceTrades(TradeInstruction[] calldata trades)
@@ -374,17 +358,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (trades.length == 0 || trades.length > MAX_TRADE_COUNT) {
             revert TooManyTrades(trades.length, MAX_TRADE_COUNT);
         }
-        _requireManagedAssetsAllowed();
         _accrueViaVault();
 
         (uint256[] memory weightsBefore, uint256 navBefore) = _currentPreciseWeightsAndNav();
         uint256[] memory balancesBefore = _trackedAssetBalances();
-        address settlementAsset;
-        uint256 settlementBalanceBefore;
-        if (_assetMarketRegistry != address(0)) {
-            settlementAsset = IAssetMarketRegistry(_assetMarketRegistry).usdg();
-            settlementBalanceBefore = IERC20(settlementAsset).balanceOf(address(this));
-        }
         uint256 distanceBefore = _distanceFromTarget(weightsBefore, WEIGHT_PRECISION_SCALE);
         uint256 grossLossValue;
 
@@ -416,15 +393,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             emit MaintenanceTradeExecuted(
                 msg.sender, trade.adapter, trade.tokenIn, trade.tokenOut, amountIn, amountOut
             );
-        }
-
-        if (settlementAsset != address(0)) {
-            uint256 settlementBalanceAfter = IERC20(settlementAsset).balanceOf(address(this));
-            if (settlementBalanceAfter < settlementBalanceBefore) {
-                revert SettlementBalanceConsumed(
-                    settlementAsset, settlementBalanceBefore, settlementBalanceAfter
-                );
-            }
         }
 
         (uint256[] memory weightsAfter, uint256 navAfter) = _currentPreciseWeightsAndNav();
@@ -516,11 +484,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function flagOutOfBand() external onlyDelegateCall nonReentrant {
         if (sunset) revert VaultSunset();
-        _requireManagedAssetsAllowed();
-        if (!_hasActiveConstituent()) {
-            _enterTerminalShutdown();
-            return;
-        }
         if (challengeActive) revert ChallengeAlreadyActive();
         _accrueViaVault();
         address[] memory breached = _breachedAssets(challengeWeightDeviationBps);
@@ -538,12 +501,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         _resolveOutOfBandChallenge();
     }
 
-    function finalizeTerminalShutdown() external onlyDelegateCall nonReentrant {
-        if (sunset) revert VaultAlreadySunset();
-        if (_hasActiveConstituent()) revert ActiveConstituentsRemain();
-        _enterTerminalShutdown();
-    }
-
     function sunsetOtf() external onlyDelegateCall onlyManager nonReentrant {
         if (sunset) revert VaultAlreadySunset();
         if (challengeActive || strategicRebalanceActive || strategyProposalPending) {
@@ -558,42 +515,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
         _accrueViaVault();
         delete _nextStrategyRationale;
-        uint64 timestamp = uint64(block.timestamp);
-        sunset = true;
-        sunsetAt = timestamp;
-        _feeState = FeeState.Sunset;
-        emit OtfSunset(msg.sender, timestamp);
-    }
-
-    function _enterTerminalShutdown() private {
-        // Challenge deadlines intentionally use chain time.
-        // forge-lint: disable-next-line(block-timestamp)
-        bool beforeDeadline = challengeActive && block.timestamp <= challengeDeadline;
-
-        _accrueViaVault();
-        if (beforeDeadline) {
-            IManagedOTFVaultModuleCallbacks(address(this)).moduleReleaseChallengeFees();
-        }
-
-        if (strategyProposalPending) {
-            _clearPendingStrategy();
-            emit TargetWeightsProposalCancelled(rebalanceCount, manager);
-        }
-        delete _nextStrategyRationale;
-
-        // Freeze the terminal mandate at zero even if the registry later reapproves an asset.
-        for (uint256 i = 0; i < _assets.length; i++) {
-            delete targetWeightBps[_assets[i]];
-        }
-
-        challengeActive = false;
-        challengeCaller = address(0);
-        challengeStartedAt = 0;
-        challengeDeadline = 0;
-        strategicRebalanceActive = false;
-        strategicRebalanceStartedAt = 0;
-        _strategicExecutionLossBps = 0;
-
         uint64 timestamp = uint64(block.timestamp);
         sunset = true;
         sunsetAt = timestamp;
@@ -722,21 +643,24 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             uint256 weight = weights_[i];
             if (asset == address(0)) revert ZeroAddress();
             if (asset.code.length == 0) revert AssetNotContract(asset);
+            uint8 assetDecimals;
+            try IERC20Metadata(asset).decimals() returns (uint8 decimals_) {
+                assetDecimals = decimals_;
+            } catch {
+                revert TokenDecimalsUnavailable(asset);
+            }
+            if (assetDecimals != 18) revert UnsupportedDecimals(asset, assetDecimals);
             bool alreadyTracked = _containsCurrentAsset(asset);
             if (!alreadyTracked) {
                 trackedCount += 1;
                 if (trackedCount > MAX_TRACKED_ASSETS) revert TrackedAssetLimitExceeded();
             }
-            if (!IAssetRegistry(assetRegistry).canBeConstituent(asset)) {
-                if (!alreadyTracked || weight > targetWeightBps[asset]) {
-                    revert UnapprovedAsset(asset);
-                }
-            }
             if (weight < minimumTargetWeightBps) {
                 revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
             }
-            _requirePinnedMarketActive(asset);
-            _calculator.validateAssetForVault(address(this), asset, oracleRegistry);
+            if (_pricingConfiguredForAsset[asset]) {
+                _calculator.validateAssetForVault(address(this), asset, oracleRegistry);
+            }
             for (uint256 j = i + 1; j < assets_.length; j++) {
                 if (assets_[j] == asset) revert DuplicateConstituent(asset);
             }
@@ -754,61 +678,15 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (trade.tokenIn == trade.tokenOut || trade.amountIn == 0) {
             revert BadTrade(trade.tokenIn, trade.tokenOut, trade.amountIn);
         }
-        address registry = _assetMarketRegistry;
-        address routeAsset;
-        if (registry != address(0)) {
-            address settlement = IAssetMarketRegistry(registry).usdg();
-            bool inputIsSettlement = trade.tokenIn == settlement;
-            bool outputIsSettlement = trade.tokenOut == settlement;
-            if (inputIsSettlement == outputIsSettlement) {
-                revert BadTrade(trade.tokenIn, trade.tokenOut, trade.amountIn);
-            }
-            routeAsset = inputIsSettlement ? trade.tokenOut : trade.tokenIn;
-            if (!_containsCurrentAsset(routeAsset)) revert TradeAssetNotTracked(routeAsset);
-            if (
-                inputIsSettlement
-                    && !IAssetRegistry(assetRegistry).canBeConstituent(routeAsset)
-            ) revert UnapprovedAsset(routeAsset);
-        } else {
-            if (!_containsCurrentAsset(trade.tokenIn)) {
-                revert TradeAssetNotTracked(trade.tokenIn);
-            }
-            if (!_containsCurrentAsset(trade.tokenOut)) {
-                revert TradeAssetNotTracked(trade.tokenOut);
-            }
-            if (!IAssetRegistry(assetRegistry).canBeConstituent(trade.tokenIn)) {
-                revert UnapprovedAsset(trade.tokenIn);
-            }
-            if (!IAssetRegistry(assetRegistry).canBeConstituent(trade.tokenOut)) {
-                revert UnapprovedAsset(trade.tokenOut);
-            }
+        if (!_containsCurrentAsset(trade.tokenIn)) {
+            revert TradeAssetNotTracked(trade.tokenIn);
+        }
+        if (!_containsCurrentAsset(trade.tokenOut)) {
+            revert TradeAssetNotTracked(trade.tokenOut);
         }
         if (!IAdapterAllowlist(factory).isTradeAdapterApproved(trade.adapter)) {
             revert UnapprovedAdapter(trade.adapter);
         }
-        address pinnedAsset = routeAsset;
-        if (pinnedAsset == address(0)) {
-            pinnedAsset = _marketIdForAsset[trade.tokenIn] != bytes32(0)
-                ? trade.tokenIn
-                : trade.tokenOut;
-        }
-        bytes32 pinnedMarketId = _marketIdForAsset[pinnedAsset];
-        if (pinnedMarketId != bytes32(0)) {
-            bytes32 suppliedMarketId;
-            try IRegisteredRouteAdapter(trade.adapter).marketIdFromData(trade.adapterData) returns (
-                bytes32 decodedMarketId
-            ) {
-                suppliedMarketId = decodedMarketId;
-            } catch {
-                revert InvalidAssetMarket(
-                    pinnedAsset, bytes32(0)
-                );
-            }
-            if (suppliedMarketId != pinnedMarketId) {
-                revert AssetMarketAlreadyPinned(pinnedAsset, pinnedMarketId, suppliedMarketId);
-            }
-        }
-        _requirePinnedMarketActive(pinnedAsset);
         _calculator.validateAssetForVault(address(this), trade.tokenIn, oracleRegistry);
         _calculator.validateAssetForVault(address(this), trade.tokenOut, oracleRegistry);
     }
@@ -883,75 +761,41 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         delete _pendingAssets;
         delete _pendingTargetWeightsBps;
         delete _pendingMarketIds;
+        delete _pendingPricingConfigs;
         delete _pendingStrategyRationale;
         strategyProposalPending = false;
         pendingStrategyProposedAt = 0;
         pendingStrategyActivationTime = 0;
     }
 
-    function _marketIdsFor(address[] memory assets_) private view returns (bytes32[] memory ids) {
-        ids = new bytes32[](assets_.length);
-        for (uint256 i = 0; i < assets_.length; i++) {
-            ids[i] = _marketIdForAsset[assets_[i]];
-        }
-    }
-
-    function _validateAndPinMarkets(address[] memory assets_, bytes32[] memory marketIds_)
+    function _pricingConfigsFor(address[] memory assets_)
         private
+        view
+        returns (AssetPricingConfig[] memory configs)
     {
-        if (assets_.length != marketIds_.length) {
-            revert LengthMismatch(assets_.length, marketIds_.length);
-        }
+        configs = new AssetPricingConfig[](assets_.length);
         for (uint256 i = 0; i < assets_.length; i++) {
             address asset = assets_[i];
-            bytes32 marketId = marketIds_[i];
-            AssetStatus status = IAssetRegistry(assetRegistry).statusOf(asset);
-            if (status == AssetStatus.Qualified && marketId == bytes32(0)) continue;
-            if (status != AssetStatus.Open && status != AssetStatus.Qualified) {
-                revert UnapprovedAsset(asset);
-            }
-            if (marketId == bytes32(0)) revert InvalidAssetMarket(asset, marketId);
-            address registry = _assetMarketRegistry;
-            if (registry == address(0)) revert AssetMarketRegistryNotConfigured();
-            bytes32 currentMarketId = _marketIdForAsset[asset];
-            if (currentMarketId != bytes32(0) && currentMarketId != marketId) {
-                revert AssetMarketAlreadyPinned(asset, currentMarketId, marketId);
-            }
-            (address marketAsset,, address priceFeed,, bool active) =
-                IAssetMarketRegistry(registry).marketFor(marketId);
-            if (!active || marketAsset != asset || priceFeed.code.length == 0) {
-                revert InvalidAssetMarket(asset, marketId);
-            }
-            _marketIdForAsset[asset] = marketId;
-            _priceFeedForAsset[asset] = priceFeed;
+            if (!_pricingConfiguredForAsset[asset]) continue;
+            configs[i] = AssetPricingConfig({
+                source: PricingSource(_pricingSourceForAsset[asset]),
+                primarySource: _primaryPriceSourceForAsset[asset],
+                secondarySource: _secondaryPriceSourceForAsset[asset]
+            });
         }
     }
 
-    function _requirePinnedMarketActive(address asset) private view {
-        if (!IAssetRegistry(assetRegistry).canBeConstituent(asset)) {
-            revert UnapprovedAsset(asset);
-        }
-        bytes32 marketId = _marketIdForAsset[asset];
-        if (marketId == bytes32(0)) {
-            if (IAssetRegistry(assetRegistry).statusOf(asset) == AssetStatus.Open) {
-                revert InvalidAssetMarket(asset, marketId);
-            }
-            return;
-        }
-        address registry = _assetMarketRegistry;
+    function _requireMatchingPinnedPricing(address asset, AssetPricingConfig memory config)
+        private
+        view
+    {
         if (
-            registry == address(0)
-                || !IAssetMarketRegistry(registry).isActiveMarketForAsset(marketId, asset)
+            config.primarySource != address(0)
+                && (uint8(config.source) != _pricingSourceForAsset[asset]
+                    || config.primarySource != _primaryPriceSourceForAsset[asset]
+                    || config.secondarySource != _secondaryPriceSourceForAsset[asset])
         ) {
-            revert InvalidAssetMarket(asset, marketId);
-        }
-    }
-
-    function _requireManagedAssetsAllowed() private view {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            if (!IAssetRegistry(assetRegistry).canBeConstituent(_assets[i])) {
-                revert UnapprovedAsset(_assets[i]);
-            }
+            revert AssetPricingAlreadyPinned(asset);
         }
     }
 
@@ -968,13 +812,9 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         return _effectiveTargetWeights();
     }
 
-    function _consumeNavLossBudget(uint256 batchLossBps)
-        private
-        returns (uint16 usedLossBps)
-    {
-        uint256 packedState = _calculator.navLossBudgetState(
-            _navLossBucketRecoveryAt, maxNavLossBps, batchLossBps
-        );
+    function _consumeNavLossBudget(uint256 batchLossBps) private returns (uint16 usedLossBps) {
+        uint256 packedState =
+            _calculator.navLossBudgetState(_navLossBucketRecoveryAt, maxNavLossBps, batchLossBps);
         // Every packed value is bounded by the calculator before encoding.
         // forge-lint: disable-next-line(unsafe-typecast)
         usedLossBps = uint16(packedState);

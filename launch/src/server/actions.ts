@@ -1,19 +1,17 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { pricingConfigAddresses } from "@/lib/pricing-config";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
-import { PublicApiError } from "@/lib/errors";
 import { requireDb } from "./db";
 import {
-  activityEvents, assetMarkets, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  activityEvents, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   tweetEvidence, users, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
-import { assertCompleteProposalPriceCapture, captureAssetPrices } from "./prices";
 import { recomputeLiveXp } from "./xp";
-import { evaluateCompetitionPoolAge } from "@/lib/experimental-eligibility";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -22,30 +20,51 @@ export async function saveProposalDraft(input: unknown) {
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
 
-  const selectedAssets = await database.select().from(eligibleAssets).where(and(
-    inArray(eligibleAssets.id, parsed.allocations.map((item) => item.assetId)),
-    or(eq(eligibleAssets.qualityStatus, "open"), eq(eligibleAssets.qualityStatus, "qualified")),
-  ));
-  if (selectedAssets.length !== parsed.allocations.length) throw new Error("ASSET_INELIGIBLE");
-  const requestedMarketIds = parsed.allocations.map((item) => item.marketId).filter((id): id is string => Boolean(id));
-  const selectedMarkets = requestedMarketIds.length === 0 ? [] : await database.select().from(assetMarkets)
-    .where(and(inArray(assetMarkets.id, requestedMarketIds), eq(assetMarkets.active, true), eq(assetMarkets.twapOneHourReady, true)));
-  const marketById = new Map(selectedMarkets.map((market) => [market.id, market]));
-  for (const allocation of parsed.allocations) {
-    const asset = selectedAssets.find((candidate) => candidate.id === allocation.assetId);
-    const market = allocation.marketId ? marketById.get(allocation.marketId) : undefined;
-    if (asset?.qualityStatus === "open" && (!market || market.assetId !== asset.id)) {
-      throw new Error("ASSET_MARKET_NOT_READY");
-    }
-    if (asset?.qualityStatus === "open" && market) {
-      const poolAge = evaluateCompetitionPoolAge(market.poolCreatedAt, competition.startsAt);
-      if (poolAge.status === "Pending") throw new Error("ASSET_MARKET_POOL_AGE_UNKNOWN");
-      if (poolAge.status === "Fail") throw new Error("ASSET_MARKET_POOL_TOO_NEW");
-    }
-    if (market && market.assetId !== asset?.id) throw new Error("ASSET_MARKET_MISMATCH");
-  }
-
   return database.transaction(async (transaction) => {
+    const selectedAssetIds = parsed.allocations.flatMap((allocation) => (
+      "assetId" in allocation ? [allocation.assetId] : []
+    ));
+    const selectedAssets = selectedAssetIds.length
+      ? await transaction.select({ id: eligibleAssets.id }).from(eligibleAssets)
+        .where(inArray(eligibleAssets.id, selectedAssetIds))
+      : [];
+    if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
+
+    const resolvedAllocations = [];
+    for (const allocation of parsed.allocations) {
+      if ("assetId" in allocation) {
+        resolvedAllocations.push({ ...allocation, assetId: allocation.assetId });
+        continue;
+      }
+
+      const metadata = allocation.assetMetadata;
+      const findMetadataRow = () => transaction.select({ id: eligibleAssets.id }).from(eligibleAssets)
+        .where(and(
+          eq(eligibleAssets.network, metadata.network),
+          sql`lower(${eligibleAssets.contractAddress}) = ${metadata.contractAddress}`,
+        ))
+        .limit(1);
+      let [asset] = await findMetadataRow();
+      if (!asset) {
+        [asset] = await transaction.insert(eligibleAssets).values({
+          symbol: metadata.symbol,
+          name: metadata.name,
+          contractAddress: metadata.contractAddress,
+          network: metadata.network,
+          chainId: metadata.chainId,
+          decimals: metadata.decimals,
+          quality: "normal",
+          priceSource: "robinhood-bid",
+        }).onConflictDoNothing().returning({ id: eligibleAssets.id });
+        if (!asset) [asset] = await findMetadataRow();
+      }
+      if (!asset) throw new Error("ASSET_NOT_FOUND");
+      resolvedAllocations.push({ ...allocation, assetId: asset.id });
+    }
+    if (new Set(resolvedAllocations.map((allocation) => allocation.assetId)).size !== resolvedAllocations.length) {
+      throw new Error("ASSETS_NOT_UNIQUE");
+    }
+
     const [existing] = await transaction.select().from(proposals)
       .where(and(eq(proposals.competitionId, competition.id), eq(proposals.creatorUserId, session.user.id))).limit(1);
     if (existing && existing.status !== "draft") throw new Error("PROPOSAL_IMMUTABLE");
@@ -54,10 +73,19 @@ export async function saveProposalDraft(input: unknown) {
       ? await transaction.update(proposals).set(values).where(eq(proposals.id, existing.id)).returning()
       : await transaction.insert(proposals).values(values).returning();
     await transaction.delete(proposalAssets).where(eq(proposalAssets.proposalId, proposal.id));
-    await transaction.insert(proposalAssets).values(parsed.allocations.map((allocation, position) => ({
-      proposalId: proposal.id, assetId: allocation.assetId, marketId: allocation.marketId ?? null,
-      weightBps: allocation.weightBps, position
-    })));
+    await transaction.insert(proposalAssets).values(resolvedAllocations.map((allocation, position) => {
+      const addresses = pricingConfigAddresses(allocation.pricingConfig);
+      return {
+        proposalId: proposal.id,
+        assetId: allocation.assetId,
+        marketId: null,
+        pricingSource: allocation.pricingConfig.source,
+        primaryAddress: addresses.primaryAddress,
+        secondaryAddress: addresses.secondaryAddress,
+        weightBps: allocation.weightBps,
+        position,
+      };
+    }));
     return proposal;
   });
 }
@@ -117,23 +145,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof(proposalId, input);
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
-  const proposalAssetRows = await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
-    .from(proposalAssets)
-    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
-    .where(eq(proposalAssets.proposalId, proposal.id));
   const acceptedAt = new Date();
-  let priceCapture: Awaited<ReturnType<typeof captureAssetPrices>>;
-  try {
-    priceCapture = await captureAssetPrices({
-      assetIds: proposalAssetRows.map((asset) => asset.id),
-      sampledAt: acceptedAt,
-      purpose: "submission",
-    });
-  } catch (error) {
-    console.error("Proposal price validation failed", { proposalId: proposal.id, missingSymbols: proposalAssetRows.map((asset) => asset.symbol), error: error instanceof Error ? error.message : "UNKNOWN" });
-    throw new PublicApiError("PROPOSAL_PRICE_UNAVAILABLE", { missingSymbols: proposalAssetRows.map((asset) => asset.symbol) });
-  }
-  const initialPriceCaptureRunId = assertCompleteProposalPriceCapture(priceCapture, proposalAssetRows);
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
@@ -146,7 +158,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
-    const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, initialPriceCaptureRunId, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
     if (!accepted) throw new Error("PROPOSAL_NOT_FOUND");
     await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };

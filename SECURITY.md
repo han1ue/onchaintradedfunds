@@ -32,8 +32,10 @@ Primary security goals:
 - Reverted target proposals do not reset cooldowns.
 - Anyone can prove an out-of-band portfolio and lock manager-fee withdrawals.
 - Missed challenge deadlines forfeit challenge-window manager fees, credit 50% to the caller, and leave the rest unminted.
-- Revoking any retained constituent places the vault in a fail-closed inflow quarantine until
-  registry governance explicitly reapproves it, even after its target and balance reach zero.
+- Asset eligibility is mechanical rather than administrator-approved: deployed contract, exactly
+  18 decimals, no duplicates, exact-transfer accounting, caps, and a valid submitted price source.
+- Every OTF pins its concrete price source; registry changes cannot redirect it and there is no
+  automatic fallback.
 - Redemption does not depend on oracle health.
 - The frontend is never a security boundary.
 
@@ -44,17 +46,20 @@ The factory owner can:
 - Approve or remove trade adapters for vault rebalances.
 - Change the protocol-wide minimum target weight for future portfolio proposals; the default is 1%.
 - Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
+- Reversibly pause creation and all primary deposits globally.
+- Reversibly pause direct and routed deposits for one factory-created OTF; non-factory targets are
+  rejected.
 - Start and complete ownership transfer.
+
+The trusted-oracle-route owner can set a `(base, quote) -> feed`, protocol staleness bound, and
+validation mode for future Chainlink selections. The V3 market-registry owner can deprecate a pool
+for future selection. Neither action changes a source already pinned by an OTF, and neither owner
+can approve, block, revoke, or remove an asset.
 
 The fee collector treasury can:
 
 - Claim protocol fee shares held by `FeeCollector`.
-- Allocate a configurable percentage of subsequent claims to a buyback recipient.
 - Start a two-step treasury transfer that the new treasury must accept.
-
-The buyback owner can approve or remove buyback operators and typed trade adapters. Operators can
-redeem allocated protocol fee shares and execute slippage-bounded trades whose output must be OTF.
-They cannot change the immutable recipient of purchased OTF.
 
 The factory owner cannot:
 
@@ -64,13 +69,15 @@ The factory owner cannot:
 - Bypass vault rebalance safety limits.
 - Block proportional in-kind redemption.
 - Change the fee collector treasury.
+- Force a manager's target or stop earned fee accrual with either deposit pause.
 
 ## Manager Powers
 
 A vault manager can:
 
 - Stage a rationale for the next draft ERC-7621 proposal.
-- Propose constituents and target weights with a required rationale while strategy is unlocked.
+- Propose constituents and target weights with a required rationale while strategy is unlocked,
+  supplying a valid pricing configuration for each newly introduced asset.
 - Change weight bands while strategy is unlocked.
 - Execute constrained partial rebalance trades.
 - Add and remove authorized trade executors.
@@ -88,6 +95,9 @@ A vault manager cannot:
 - Cancel a challenge or recover forfeited fees.
 - Append, edit, or delete historical strategy rationales independently of target activation.
 - Rescue unsupported tokens from the vault.
+- Replace the source already pinned for an existing asset.
+- Introduce a previously unpriced asset through the two-argument ERC-7621 `rebalance` selector,
+  which has no pricing-config argument.
 
 The manager is automatically recorded as an authorized executor and can remove or restore that
 permission. Additional authorized executors use the same constrained partial-trade path. They
@@ -156,22 +166,44 @@ The cooldown is not a market-risk guarantee. It only limits rebalance frequency.
 
 ## Oracle Risks
 
-Oracle-dependent views and actions may revert when data is invalid or stale. This is intentional. Failing closed is safer than allowing stale-price rebalances.
+Oracle-dependent views and actions may revert when data is invalid or stale. This is intentional.
+Failing closed is safer than allowing stale-price rebalances. Redemption remains independent from
+all price sources.
 
 Risk cases:
 
-- Stale price feed.
-- Nonpositive price.
-- Incomplete round.
-- Incorrect feed mapping.
-- Oracle decimals not handled as expected.
-- Corporate-action handling mismatch in the upstream feed.
+- A direct feed mapped to the wrong base or quote, including a reversed pair.
+- One spoofed, stale, nonpositive, incomplete, future-dated, or unsupported-decimal leg in a
+  composed asset/WETH × WETH/USD route.
+- An asset/WETH feed being treated as WETH/asset, or any reliance on mutable `description()` text.
+- A V3 pool from the wrong factory, pair, fee tier, or quote token; an uninitialized pool; inadequate
+  observation capacity or history; and manipulation within the configured TWAP window.
+- An owner changing the trusted mapping before a malicious configuration is selected. Mapping
+  changes cannot redirect feeds already pinned in existing OTFs.
+- Source unavailability. There is no Chainlink-to-TWAP or TWAP-to-Chainlink fallback.
+- Corporate-action handling mismatch or a Robinhood Stock Token reporting `oraclePaused()`.
+- Sequencer downtime. Robinhood recommends an L2 sequencer-uptime check, which is not yet
+  implemented and is a production limitation.
 
-Robinhood Stock Token price feeds are expected to include corporate-action multipliers. The vault must not multiply by a separate UI multiplier.
+Direct and composed Chainlink routes must prove their exact relationships through a trusted onchain
+pair mapping. Chainlink's Robinhood
+[Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry) can prove that a
+proxy is official and active but cannot prove pair orientation; no Robinhood deployment of the
+older pair-addressed Feed Registry is documented. A composed wrapper validates both pinned legs on
+every read and exposes the older timestamp. Every feed check covers answer, round, timestamp,
+protocol staleness bound, and decimals.
+
+Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
+multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token
+is paused, so `RobinhoodStockToken` validation must require the base token's `oraclePaused()` call
+to be available and false. See the [official Chainlink guidance](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+and [Robinhood oracle documentation](https://docs.robinhood.com/chain/oracles-and-price-feeds).
 
 ## Token Risks
 
-The MVP assumes plain ERC-20 behavior for approved assets.
+The MVP assumes plain ERC-20 behavior for every mechanically valid constituent. Mechanical
+selection proves only deployed code, exactly 18 decimals, no duplicates, caps, a valid pricing
+configuration, and exact balance changes when transfers are exercised. It is not a quality review.
 
 Unsupported or dangerous token behaviors include:
 
@@ -179,9 +211,12 @@ Unsupported or dangerous token behaviors include:
 - Rebasing tokens.
 - Tokens with blacklist or pause mechanics.
 - Tokens with callbacks that enable reentrancy.
-- Tokens with nonstandard decimals or metadata behavior.
+- Tokens with decimals other than exactly 18 or unavailable metadata.
 
-Approved asset registries should exclude tokens with behavior that violates vault accounting assumptions.
+There is no administrator asset allowlist to exclude these tokens. Exact-transfer checks make a
+violating transfer revert atomically, but behavior that changes later or is not exercised during
+creation remains an integration risk. The frontend's high-quality/normal label is informational
+only and cannot authorize or block a contract interaction.
 
 ## Adapter Risks
 
@@ -195,6 +230,14 @@ Adapter review should verify:
 - It has no hidden privileged behavior.
 - It handles token approvals safely.
 - It does not depend on centralized offchain promises for correctness.
+- It treats `adapterData` as an explicit fee-bearing V3 path, validates exact token endpoints,
+  requires the immutable settlement token exactly once, and never derives execution from a pricing
+  market ID.
+- It reconciles the router-reported output with observed input/output deltas and clears allowances.
+
+Pricing and trading are separate trust surfaces. An OTF may price from one V3 pool or Chainlink
+route and execute through different pools, intermediate tokens, and fee tiers. A pricing-market
+deprecation must not disable an existing OTF's pinned reads or its otherwise-valid execution path.
 
 ### Settlement entry adapters
 
@@ -210,7 +253,7 @@ the whole entry reverts if any purchase, mint, or refund sale violates its bound
 
 The entry path still inherits liquidity and integration risks:
 
-- AMM execution prices may differ materially from Chainlink-priced OTF NAV.
+- AMM execution prices may differ materially from the OTF's pinned-price NAV.
 - Thin or manipulated pools may produce poor quotes even when the vault's oracle value is sound.
 - A compromised approved entry adapter could spend its per-leg allowance incorrectly or attempt to retain funds.
 - Router, adapter, settlement-token, and venue addresses are deployment-critical configuration.
@@ -234,7 +277,10 @@ as a new untracked portfolio position through the typed trade call.
 
 ## Frontend Risks
 
-The frontend is a convenience layer only. It must not be trusted for authorization, asset validation, cooldown enforcement, fee math, or rebalance safety.
+The frontend is a convenience layer only. It must not be trusted for authorization, asset
+validation, price-source validation, cooldown enforcement, fee math, or rebalance safety.
+High-quality/normal asset classifications, catalog membership, and prefilled pricing configurations
+are derived metadata only. They have no onchain counterpart and must be recomputed from live data.
 
 Frontend-specific risks:
 
@@ -288,7 +334,7 @@ The protocol share is a percentage of manager-selected fee shares. It is not a s
 When enabled, a vault's live oracle-valued OTF holding reduces that protocol share linearly up to
 the factory-set full-rebate threshold. Missing constituents or failed rebate pricing grant no
 discount. Protocol shares held by `FeeCollector` can only be claimed by its configured treasury,
-which can earmark a percentage for the configured buyback recipient.
+which can redeem those shares and perform any approved buybacks manually.
 
 Missed challenge-window fees are not minted to the manager. The challenge caller can claim 50% as
 OTF shares; the remaining 50% is skipped rather than minted and burned.
@@ -304,9 +350,10 @@ The project claims interface compatibility with documented restrictions, not ful
 ERC-7621 compliance. Contributions are intentionally restricted to the exact proportional live
 basket, so arbitrary contribution vectors do not follow the draft's generalized monotonic
 contribution and valuation behavior. Ownership renunciation is prevented, and constituents must be
-at or below the documented raw-unit retiring-dust bound before removal. If no approved
-positive-target constituent remains, the vault enters irreversible terminal shutdown rather than a
-normal challenge. ERC-7621 is a draft and may change.
+at or below the documented raw-unit removal-dust bound before manager-directed pruning. Because the
+draft `rebalance(address[],uint256[])` selector cannot carry pricing configuration, it cannot add a
+previously unpriced asset; the explicit OTF extension must be used instead. ERC-7621 is a draft and
+may change.
 
 ## Unsupported Token Donations
 
@@ -326,7 +373,12 @@ Before any production deployment:
 - Run Foundry unit, fuzz, and invariant tests.
 - Add integration tests with real token and adapter behavior.
 - Verify all Robinhood Chain addresses from official documentation.
-- Verify oracle feed behavior and staleness expectations.
+- Verify every trusted Chainlink base/quote/feed relationship, Flags-registry status where
+  available, validation mode, `oraclePaused()` behavior, and staleness expectation.
+- Verify the canonical V3 factory, WETH, USDG, WETH/USDG pool, exact constituent pools and fees,
+  observation cardinality, full TWAP history, and pricing/execution separation.
+- Decide and test the Robinhood sequencer-uptime policy.
+- Test direct/composed/no-fallback pricing and local/global deposit-pause composition.
 - Verify frontend network switching and transaction simulation.
 - Review every admin and manager permission.
 - Publish deployed source and contract verification artifacts.

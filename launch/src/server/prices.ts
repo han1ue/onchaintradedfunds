@@ -1,16 +1,8 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { z } from "zod";
-import type { PortfolioReturns } from "@/lib/types";
-import { PublicApiError } from "@/lib/errors";
-import { calculatePortfolioReturns } from "@/lib/returns";
-import { requireDb, sqlClient } from "./db";
-import {
-  assetEligibilitySnapshots,
-  assetMarkets,
-  assetPriceSnapshots,
-  eligibleAssets,
-  priceCaptureRuns,
-} from "./db/schema";
+import { requireDb } from "./db";
+import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
+import { env } from "./env";
 
 const pricesResponseSchema = z.object({
   quotes: z.array(z.object({
@@ -25,11 +17,19 @@ const coinbaseTickerSchema = z.object({
   time: z.string().datetime({ offset: true }),
 });
 
-export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid" | "uniswap-v3-twap";
+const coinGeckoOnchainPriceSchema = z.object({
+  data: z.object({ attributes: z.object({
+    token_prices: z.record(z.string().nullable()),
+    last_trade_timestamp: z.record(z.number().int().nullable()).optional(),
+  }) }),
+});
+
+export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
 
 type PriceAsset = {
   id: string;
   symbol: string;
+  contractAddress: string;
   priceSource: AssetPriceSource;
 };
 
@@ -46,7 +46,7 @@ type PriceFetchResult = {
 export type PriceCaptureOptions = {
   assetIds?: string[];
   sampledAt?: Date;
-  purpose?: "submission" | "scoring";
+  purpose: "entry" | "final";
 };
 
 export type PriceCaptureResult = {
@@ -56,13 +56,6 @@ export type PriceCaptureResult = {
   complete: boolean;
   missing: string[];
 };
-
-export function assertCompleteProposalPriceCapture(result: PriceCaptureResult, assets: { symbol: string }[]) {
-  if (!result.complete || !result.runId || result.stored !== assets.length) {
-    throw new PublicApiError("PROPOSAL_PRICE_UNAVAILABLE", { missingSymbols: result.missing });
-  }
-  return result.runId;
-}
 
 async function fetchRobinhoodBids(): Promise<Map<string, SourceQuote>> {
   const response = await fetch("https://api.robinhood.com/rhj/prices", {
@@ -89,11 +82,46 @@ async function fetchCoinbaseEthBid(): Promise<Map<string, SourceQuote>> {
   return new Map([["ETH", { bid: payload.bid, generatedAt: new Date(payload.time) }]]);
 }
 
+async function fetchCoinGeckoOnchainPrices(assets: PriceAsset[]): Promise<Map<string, SourceQuote>> {
+  if (!env.COINGECKO_NETWORK_ID) throw new Error("COINGECKO_NETWORK_NOT_CONFIGURED");
+  const addresses = [...new Set(assets.map((asset) => asset.contractAddress.toLowerCase()))];
+  if (addresses.length === 0) return new Map();
+  const apiRoot = env.COINGECKO_PRO_API_KEY
+    ? "https://pro-api.coingecko.com/api/v3/onchain"
+    : "https://api.geckoterminal.com/api/v2";
+  const response = await fetch(
+    `${apiRoot}/simple/networks/${encodeURIComponent(env.COINGECKO_NETWORK_ID)}/token_price/${addresses.map(encodeURIComponent).join(",")}`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        ...(env.COINGECKO_PRO_API_KEY ? { "x-cg-pro-api-key": env.COINGECKO_PRO_API_KEY } : {}),
+      },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!response.ok) throw new Error(`COINGECKO_PRICES_${response.status}`);
+  const attributes = coinGeckoOnchainPriceSchema.parse(await response.json()).data.attributes;
+  const fallbackTimestamp = new Date();
+  return new Map(Object.entries(attributes.token_prices).flatMap(([address, bid]) => {
+    if (!bid) return [];
+    const tradedAt = attributes.last_trade_timestamp?.[address];
+    return [[address.toLowerCase(), {
+      bid,
+      generatedAt: tradedAt ? new Date(tradedAt * 1_000) : fallbackTimestamp,
+    }]];
+  }));
+}
+
 export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<PriceFetchResult> {
   const requestedSources = new Set(assets.map((asset) => asset.priceSource));
   const requests: { source: AssetPriceSource; load: () => Promise<Map<string, SourceQuote>> }[] = [];
   if (requestedSources.has("robinhood-bid")) requests.push({ source: "robinhood-bid", load: fetchRobinhoodBids });
   if (requestedSources.has("coinbase-eth-usd-bid")) requests.push({ source: "coinbase-eth-usd-bid", load: fetchCoinbaseEthBid });
+  if (requestedSources.has("coingecko-usd")) requests.push({
+    source: "coingecko-usd",
+    load: () => fetchCoinGeckoOnchainPrices(assets.filter((asset) => asset.priceSource === "coingecko-usd")),
+  });
 
   const settled = await Promise.all(requests.map(async ({ source, load }) => {
     try {
@@ -109,52 +137,29 @@ export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<Price
       errors.push({ source: result.source, message: result.error });
       continue;
     }
-    for (const [symbol, quote] of result.quotes ?? []) quotes.set(`${result.source}:${symbol}`, quote);
+    for (const [identity, quote] of result.quotes ?? []) quotes.set(`${result.source}:${identity}`, quote);
   }
   return { quotes, errors };
 }
 
-export async function captureAssetPrices(options: PriceCaptureOptions = {}): Promise<PriceCaptureResult> {
+export async function captureAssetPrices(options: PriceCaptureOptions): Promise<PriceCaptureResult> {
   const database = requireDb();
   const sampledAt = options.sampledAt ?? new Date();
-  const purpose = options.purpose ?? "scoring";
+  const purpose = options.purpose;
   const assets = options.assetIds
-    ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
-    : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
+    ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
+    : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
   if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
 
   const typedAssets = assets as PriceAsset[];
   const priceFetch = await fetchAssetPriceQuotes(typedAssets);
   if (priceFetch.errors.length) console.error("Price source capture failed", { errors: priceFetch.errors });
-  const onchainAssetIds = typedAssets.filter((asset) => asset.priceSource === "uniswap-v3-twap").map((asset) => asset.id);
-  const onchainRows = onchainAssetIds.length === 0 ? [] : await database.select({
-    assetId: assetMarkets.assetId,
-    oneHourPrice: assetMarkets.twapOneHourPriceUsd,
-    oneHourPriceAt: assetMarkets.twapOneHourPriceAt,
-    twentyFourHourPrice: assetEligibilitySnapshots.twapPriceUsd,
-    twentyFourHourPriceAt: assetEligibilitySnapshots.sampledAt,
-  }).from(assetMarkets).leftJoin(
-    assetEligibilitySnapshots,
-    eq(assetEligibilitySnapshots.marketId, assetMarkets.id),
-  ).where(and(
-    inArray(assetMarkets.assetId, onchainAssetIds),
-    eq(assetMarkets.active, true),
-    purpose === "submission"
-      ? eq(assetMarkets.twapOneHourReady, true)
-      : eq(assetMarkets.twapTwentyFourHourReady, true),
-  )).orderBy(desc(assetEligibilitySnapshots.sampledAt), desc(assetMarkets.registeredAt));
-  const onchainQuotes = new Map<string, SourceQuote>();
-  for (const row of onchainRows) {
-    if (onchainQuotes.has(row.assetId)) continue;
-    const bid = purpose === "submission" ? row.oneHourPrice : row.twentyFourHourPrice;
-    const generatedAt = purpose === "submission" ? row.oneHourPriceAt : row.twentyFourHourPriceAt;
-    if (bid && generatedAt) onchainQuotes.set(row.assetId, { bid, generatedAt });
-  }
   const missing: string[] = [];
   const values = typedAssets.flatMap((asset) => {
-    const quote = asset.priceSource === "uniswap-v3-twap"
-      ? onchainQuotes.get(asset.id)
-      : priceFetch.quotes.get(`${asset.priceSource}:${asset.symbol.toUpperCase()}`);
+    const identity = asset.priceSource === "coingecko-usd"
+      ? asset.contractAddress.toLowerCase()
+      : asset.symbol.toUpperCase();
+    const quote = priceFetch.quotes.get(`${asset.priceSource}:${identity}`);
     const bid = quote ? Number(quote.bid) : Number.NaN;
     if (!quote || !Number.isFinite(bid) || bid <= 0) {
       missing.push(asset.symbol);
@@ -165,9 +170,7 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
       sampledAt,
       quoteGeneratedAt: quote.generatedAt,
       bidUsd: quote.bid,
-      twapWindowSeconds: asset.priceSource === "uniswap-v3-twap"
-        ? (purpose === "submission" ? 3_600 : 86_400)
-        : 0,
+      twapWindowSeconds: 0,
     }];
   });
 
@@ -189,42 +192,4 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
   });
   if (missing.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing, provider });
   return { runId: run.id, sampledAt, stored: stored.length, complete: missing.length === 0, missing };
-}
-
-export async function getProposalReturns(
-  proposalId: string,
-  proposedAt: string,
-  allocations: { assetId: string; symbol: string; name: string; weightBps: number }[]
-): Promise<PortfolioReturns> {
-  if (!sqlClient) {
-    const start = new Date(proposedAt).getTime();
-    const shape = [0, 0.42, 0.18, 0.86, 0.61, 1.24, 1.08, 1.73, 1.51, 2.06, 1.88, 2.34];
-    const direction = proposalId.length % 2 === 0 ? 1 : -1;
-    const points = shape.map((returnPct, index) => ({
-      timestamp: new Date(start + index * 12 * 60 * 60_000).toISOString(),
-      returnPct: returnPct * direction,
-    }));
-    return { proposedAt, trackingStartedAt: points[0].timestamp, points };
-  }
-  const assetIds = allocations.map((allocation) => allocation.assetId);
-  if (assetIds.length === 0) return { proposedAt, trackingStartedAt: null, points: [] };
-
-  const [initial] = await sqlClient<{ sampledAt: string }[]>`
-    select pcr.sampled_at as "sampledAt"
-    from proposals p
-    join price_capture_runs pcr on pcr.id = p.initial_price_capture_run_id
-    where p.id = ${proposalId}::uuid and pcr.status = 'complete'
-    limit 1`;
-  const trackingFloor = initial?.sampledAt ?? proposedAt;
-
-  const rows = await sqlClient<{ assetId: string; sampledAt: string; bidUsd: number }[]>`
-    select aps.asset_id::text as "assetId", aps.sampled_at as "sampledAt", aps.bid_usd::float8 as "bidUsd"
-    from asset_price_snapshots aps
-    join proposal_assets pa on pa.asset_id = aps.asset_id
-    where pa.proposal_id = ${proposalId}::uuid
-      and aps.asset_id in ${sqlClient(assetIds)}
-      and aps.sampled_at >= ${trackingFloor}::timestamptz
-    order by aps.sampled_at asc, aps.asset_id asc`;
-  const points = calculatePortfolioReturns(allocations, rows);
-  return { proposedAt, trackingStartedAt: points[0]?.timestamp ?? null, points };
 }

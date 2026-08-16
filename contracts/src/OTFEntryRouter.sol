@@ -48,6 +48,8 @@ contract OTFEntryRouter {
     error ZeroAddress();
     error InvalidDependency(address dependency);
     error InvalidVault(address vault);
+    error ProtocolDepositsPaused();
+    error VaultDepositsPaused(address vault);
     error InvalidReceiver(address receiver);
     error InvalidArrayLength();
     error ZeroShares();
@@ -150,6 +152,10 @@ contract OTFEntryRouter {
             revert InvalidReceiver(receiver);
         }
         if (!IAdapterAllowlist(factory).isVault(vault)) revert InvalidVault(vault);
+        if (IAdapterAllowlist(factory).depositsPaused()) revert ProtocolDepositsPaused();
+        if (IAdapterAllowlist(factory).vaultDepositsPaused(vault)) {
+            revert VaultDepositsPaused(vault);
+        }
 
         address[] memory assets = IEntryVault(vault).assets();
         if (swaps.length != assets.length) revert InvalidArrayLength();

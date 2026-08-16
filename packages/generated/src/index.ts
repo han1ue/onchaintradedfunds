@@ -50,13 +50,6 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "finalizeTerminalShutdown",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [],
-  },
-  {
-    type: "function",
     name: "feeRecipient",
     stateMutability: "view",
     inputs: [],
@@ -205,12 +198,20 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "proposeStrategyWithMarkets",
+    name: "proposeStrategyWithPricing",
     stateMutability: "nonpayable",
     inputs: [
       { name: "newTokens", type: "address[]" },
       { name: "newWeights", type: "uint256[]" },
-      { name: "marketIds", type: "bytes32[]" },
+      {
+        name: "pricingConfigs",
+        type: "tuple[]",
+        components: [
+          { name: "source", type: "uint8" },
+          { name: "primarySource", type: "address" },
+          { name: "secondarySource", type: "address" },
+        ],
+      },
       { name: "rationale", type: "string" },
     ],
     outputs: [],
@@ -235,6 +236,23 @@ export const managedOtfVaultAbi = [
     stateMutability: "view",
     inputs: [{ name: "asset", type: "address" }],
     outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "pricingConfigForAsset",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [
+      { name: "configured", type: "bool" },
+      { name: "source", type: "uint8" },
+      { name: "primarySource", type: "address" },
+      { name: "secondarySource", type: "address" },
+      { name: "normalizedPriceFeed", type: "address" },
+      { name: "primaryMaxStaleness", type: "uint32" },
+      { name: "secondaryMaxStaleness", type: "uint32" },
+      { name: "primaryValidationMode", type: "uint8" },
+      { name: "secondaryValidationMode", type: "uint8" },
+    ],
   },
   {
     type: "function",
@@ -695,6 +713,31 @@ export const otfFactoryAbi = [
   },
   {
     type: "function",
+    name: "vaultDepositsPaused",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setVaultDepositsPaused",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "paused", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "VaultDepositsPauseChanged",
+    inputs: [
+      { indexed: true, name: "vault", type: "address" },
+      { indexed: false, name: "paused", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
     name: "setDepositsPaused",
     stateMutability: "nonpayable",
     inputs: [{ name: "paused", type: "bool" }],
@@ -717,6 +760,13 @@ export const otfFactoryAbi = [
   {
     type: "function",
     name: "assetMarketRegistry",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "pricingResolver",
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "address" }],
@@ -771,7 +821,15 @@ export const otfFactoryAbi = [
           { name: "manager", type: "address" },
           { name: "feeRecipient", type: "address" },
           { name: "initialAssets", type: "address[]" },
-          { name: "initialMarketIds", type: "bytes32[]" },
+          {
+            name: "initialPricingConfigs",
+            type: "tuple[]",
+            components: [
+              { name: "source", type: "uint8" },
+              { name: "primarySource", type: "address" },
+              { name: "secondarySource", type: "address" },
+            ],
+          },
           { name: "initialTargetWeightsBps", type: "uint16[]" },
           { name: "initialAmounts", type: "uint256[]" },
           { name: "initialShareSupply", type: "uint256" },

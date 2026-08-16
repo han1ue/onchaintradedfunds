@@ -2,9 +2,8 @@
 
 Status: implementation-ready, not approved for production deployment.
 
-This design adds a fixed-supply `OTF` protocol token, a linear protocol-fee incentive for OTFs
-that hold it, and an auditable path for allocating a percentage of protocol AUM-fee revenue to
-token buybacks. Token distribution, launch valuation, liquidity provisioning, and governance are
+This design adds a fixed-supply `OTF` protocol token and a linear protocol-fee incentive for OTFs
+that hold it. Token distribution, launch valuation, liquidity provisioning, and governance are
 intentionally outside the contract defaults and must be decided before deployment.
 
 ## Contracts
@@ -12,8 +11,16 @@ intentionally outside the contract defaults and must be decided before deploymen
 ### `OTFToken`
 
 - Standard 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`.
-- Mints the entire chosen genesis supply once to the constructor-supplied distribution address.
+- Mints the fixed 1 billion OTF supply once to the constructor-supplied treasury or distribution
+  address.
 - Has no privileged minter, inflation switch, transfer tax, blacklist, or upgrade hook.
+- Exposes ERC-1046 `tokenURI()` metadata containing the onchain OTF SVG.
+
+The initial holder can retain undistributed supply in a treasury or timelock and fund distribution
+contracts later. A Merkle distributor does not need to exist when OTF is deployed: once an airdrop
+snapshot and allocation are approved, the treasury can deploy the distributor and transfer only
+that allocation into it. Team or contributor allocations should similarly be transferred into
+vesting contracts rather than being held by recipients without restrictions.
 
 ### `OTFFactory` policy
 
@@ -43,34 +50,21 @@ normal protocol share. The rebate lookup therefore grants no rebate and introduc
 when pricing is unavailable. Other vault workflows may independently require fresh oracles for
 their existing portfolio-band checks; the incentive does not weaken or bypass those checks.
 
-### `FeeCollector` allocation
+### Treasury fee claims and manual buybacks
 
-The treasury can configure `buybackAllocationBps` and a buyback recipient. On each treasury claim,
-the collector transfers that percentage of the claimed protocol fee asset to the buyback recipient
-and the remainder to the treasury. A zero allocation preserves the original collector behavior.
+Protocol fees continue to arrive in `FeeCollector` as shares of many different OTF vaults, not as
+one cash token. The existing contracts support a treasury-controlled manual buyback flow:
 
-Protocol fees arrive as shares of many different OTF vaults, not as one cash token. The allocation
-therefore earmarks fee assets; it does not pretend those assets have already been sold.
+1. The treasury calls `FeeCollector.claim` or `claimAll` for a vault share token.
+2. The treasury redeems those shares into the corresponding basket assets.
+3. The treasury performs any approved OTF purchases through its normal multisig execution process.
 
-### `OTFBuyback`
-
-The buyback contract completes the conversion in explicit, auditable steps:
-
-1. An approved operator redeems allocated OTF vault fee shares into the corresponding basket.
-2. The operator swaps each resulting asset for OTF through an owner-approved typed trade adapter,
-   with a nonzero minimum output chosen for that transaction.
-3. Anyone can release purchased OTF to the immutable recipient configured at deployment, such as a
-   treasury timelock, emissions vault, or irrecoverable burn vault.
-
-The buyback has no arbitrary call function. A trade must use an approved adapter and must output the
-configured OTF token. Operators cannot choose a different recipient for purchased tokens.
+No dedicated buyback contract or automatic fee allocation is required.
 
 ## Admin and operating model
 
 - Factory owner: identifies OTF once and controls the full-rebate threshold.
-- Protocol treasury: controls the percentage of claimed AUM-fee assets allocated to buybacks.
-- Buyback owner: approves operators and narrowly scoped trade adapters.
-- Buyback operators: redeem allocated vault shares and execute slippage-bounded OTF purchases.
+- Protocol treasury: claims protocol fee shares and controls any manual redemption or buyback.
 
 Threshold changes affect the next lazy fee accrual using the weight observed at that accrual. Before
 changing a live threshold, operations should checkpoint affected vaults so an unaccrued historical
@@ -83,8 +77,8 @@ Before mainnet deployment, the protocol should complete all of the following:
 - Publish token supply, distribution, vesting, liquidity, and treasury-recipient decisions.
 - Decide whether purchased tokens are held, streamed, or sent to an irrecoverable burn vault.
 - Establish liquid, manipulation-resistant OTF price markets and oracle configuration.
-- Put factory, collector, and buyback ownership behind an appropriate timelock or multisig.
-- Define keeper cadence and transaction-level slippage policy for redemptions and buys.
+- Put factory and collector ownership behind an appropriate timelock or multisig.
+- Define treasury procedures and transaction-level slippage policy for redemptions and buys.
 - Model whether the rebate creates circular demand, concentration, or manager gaming risks.
 - Obtain an independent security and economic review of the final configuration.
 

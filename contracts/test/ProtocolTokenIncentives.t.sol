@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { OTFBuyback } from "../src/OTFBuyback.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
-import { VaultInitParams } from "../src/VaultTypes.sol";
+import { AssetPricingConfig, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract ProtocolTokenIncentivesTest is ProtocolTestBase {
@@ -20,9 +16,9 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
     function setUp() public override {
         super.setUp();
 
-        otfToken = new OTFToken(address(this), 100_000_000 * ONE);
+        otfToken = new OTFToken(address(this));
         otfFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.setAssetApproved(address(otfToken), true);
+        assetRegistry.registerAsset(address(otfToken));
         oracleRegistry.setOracleConfig(
             address(otfToken), otfFeed, 25 hours, OracleValidationMode.StandardChainlink
         );
@@ -34,16 +30,15 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertEq(otfToken.name(), "Onchain Traded Funds");
         assertEq(otfToken.symbol(), "OTF");
         assertEq(otfToken.decimals(), 18);
-        assertEq(otfToken.totalSupply(), 100_000_000 * ONE);
-        assertEq(otfToken.balanceOf(address(this)), 100_000_000 * ONE);
+        assertEq(otfToken.MAX_SUPPLY(), 1_000_000_000 * ONE);
+        assertEq(otfToken.totalSupply(), 1_000_000_000 * ONE);
+        assertEq(otfToken.balanceOf(address(this)), 1_000_000_000 * ONE);
+        assertGt(bytes(otfToken.tokenURI()).length, 900);
     }
 
     function testOTFTokenRejectsInvalidGenesis() public {
         vm.expectRevert(OTFToken.ZeroAddress.selector);
-        new OTFToken(address(0), ONE);
-
-        vm.expectRevert(OTFToken.ZeroInitialSupply.selector);
-        new OTFToken(address(this), 0);
+        new OTFToken(address(0));
     }
 
     function testFullThresholdRedirectsAllProtocolFeesToManager() public {
@@ -112,84 +107,25 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertGt(vault.balanceOf(address(collector)), 0);
     }
 
-    function testFeeCollectorAllocatesConfiguredPercentageToBuybacks() public {
-        MockStockToken feeAsset = new MockStockToken("Fee asset", "FEEA", 18);
-        feeAsset.mint(address(collector), 1_000 * ONE);
-
-        vm.prank(TREASURY);
-        collector.setBuybackConfig(BOB, 2_500);
-
-        vm.prank(TREASURY);
-        uint256 claimed = collector.claimAll(address(feeAsset));
-
-        assertEq(claimed, 1_000 * ONE);
-        assertEq(feeAsset.balanceOf(BOB), 250 * ONE);
-        assertEq(feeAsset.balanceOf(TREASURY), 750 * ONE);
-    }
-
-    function testOnlyTreasuryCanConfigureBuybackAllocation() public {
-        vm.prank(ALICE);
-        vm.expectRevert(FeeCollector.NotTreasury.selector);
-        collector.setBuybackConfig(BOB, 2_500);
-
-        vm.prank(TREASURY);
-        vm.expectPartialRevert(FeeCollector.InvalidBuybackAllocation.selector);
-        collector.setBuybackConfig(BOB, 10_001);
-
-        vm.prank(TREASURY);
-        vm.expectRevert(FeeCollector.BuybackRecipientRequired.selector);
-        collector.setBuybackConfig(address(0), 1);
-    }
-
-    function testBuybackTradesOnlyThroughApprovedAdaptersAndReleasesToFixedRecipient() public {
-        OTFBuyback buyback = new OTFBuyback(address(this), address(otfToken), TREASURY);
-        MockStockToken feeAsset = new MockStockToken("Fee asset", "FEEA", 18);
-        MockTradeAdapter buybackAdapter = new MockTradeAdapter();
-        feeAsset.mint(address(buyback), 100 * ONE);
-        otfToken.transfer(address(buybackAdapter), 1_000 * ONE);
-        buybackAdapter.setRate(address(feeAsset), address(otfToken), 2, 1);
-
-        vm.expectPartialRevert(OTFBuyback.UnapprovedAdapter.selector);
-        buyback.executeBuyback(address(buybackAdapter), address(feeAsset), 40 * ONE, 80 * ONE, "");
-
-        buyback.setTradeAdapterApproved(address(buybackAdapter), true);
-        uint256 amountOut = buyback.executeBuyback(
-            address(buybackAdapter), address(feeAsset), 40 * ONE, 80 * ONE, ""
-        );
-        assertEq(amountOut, 80 * ONE);
-        assertEq(otfToken.balanceOf(address(buyback)), 80 * ONE);
-
-        vm.prank(ALICE);
-        uint256 released = buyback.releaseAllPurchasedTokens();
-        assertEq(released, 80 * ONE);
-        assertEq(otfToken.balanceOf(TREASURY), 80 * ONE);
-
-        vm.prank(ALICE);
-        vm.expectRevert(OTFBuyback.NotOperator.selector);
-        buyback.executeBuyback(address(buybackAdapter), address(feeAsset), 10 * ONE, 20 * ONE, "");
-    }
-
-    function testAllocatedProtocolFeeSharesCanBeRedeemedByBuyback() public {
-        OTFBuyback buyback = new OTFBuyback(address(this), address(otfToken), TREASURY);
-        vm.prank(TREASURY);
-        collector.setBuybackConfig(address(buyback), 2_000);
-
+    function testTreasuryCanClaimAndRedeemProtocolFeesForManualBuybacks() public {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 30 days);
         _refreshAllPrices();
         vault.accrueFees();
 
         vm.prank(TREASURY);
-        collector.claimAll(address(vault));
-        uint256 allocatedFeeShares = vault.balanceOf(address(buyback));
-        assertGt(allocatedFeeShares, 0);
+        uint256 claimedShares = collector.claimAll(address(vault));
+        assertGt(claimedShares, 0);
 
+        uint256 tokenABefore = tokenA.balanceOf(TREASURY);
+        uint256 tokenBBefore = tokenB.balanceOf(TREASURY);
         uint256[] memory minimums = new uint256[](vault.assetCount());
-        buyback.redeemFeeShares(address(vault), allocatedFeeShares, minimums);
+        vm.prank(TREASURY);
+        vault.redeem(claimedShares, TREASURY, TREASURY, minimums);
 
-        assertEq(vault.balanceOf(address(buyback)), 0);
-        assertGt(tokenA.balanceOf(address(buyback)), 0);
-        assertGt(tokenB.balanceOf(address(buyback)), 0);
+        assertEq(vault.balanceOf(TREASURY), 0);
+        assertGt(tokenA.balanceOf(TREASURY), tokenABefore);
+        assertGt(tokenB.balanceOf(TREASURY), tokenBBefore);
     }
 
     function _createProtocolTokenVault(uint16 otfWeightBps)
@@ -201,6 +137,10 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.initialAssets[0] = address(tokenA);
         params.initialAssets[1] = address(tokenB);
         params.initialAssets[2] = address(otfToken);
+        params.initialPricingConfigs = new AssetPricingConfig[](3);
+        params.initialPricingConfigs[0] = _directPricing(address(feedA));
+        params.initialPricingConfigs[1] = _directPricing(address(feedB));
+        params.initialPricingConfigs[2] = _directPricing(address(otfFeed));
 
         uint16 remainingWeight = uint16(10_000 - otfWeightBps);
         params.initialTargetWeightsBps = new uint16[](3);

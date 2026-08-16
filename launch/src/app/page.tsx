@@ -29,7 +29,7 @@ export default async function HomePage() {
         <dl className="heroStats">
           <div className="heroStat"><dt>Votes cast</dt><dd>{competition.voteCount.toLocaleString()}</dd></div>
           <div className="heroStat"><dt>OTF proposals</dt><dd>{competition.proposalCount.toLocaleString()}</dd></div>
-          <div className="heroStat heroStatInteractive"><dt>Registered assets</dt><dd>{assets.length.toLocaleString()}</dd><Link className="heroStatHitArea" href="/rwas" aria-label={`View ${assets.length.toLocaleString()} registered assets`} /></div>
+          <div className="heroStat heroStatInteractive"><dt>Asset directory</dt><dd>{assets.length.toLocaleString()}</dd><Link className="heroStatHitArea" href="/rwas" aria-label={`View ${assets.length.toLocaleString()} asset metadata records`} /></div>
         </dl>
       </div>
     </section>

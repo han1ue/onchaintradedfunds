@@ -34,6 +34,8 @@ const { privateKeyToAccount } = accounts;
 const chainId = 46630;
 const poolFee = 3000;
 const oracleMaxAgeSeconds = 3_600n;
+const pricingTwapWindowSeconds = 3_600;
+const targetObservationCardinality = 64;
 const q192 = 1n << 192n;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets.json");
@@ -118,9 +120,20 @@ function upsertApprovedAdapter(items, adapter, evidence) {
   else items[index] = record;
 }
 
+function upsertExecutionRoute(items, record) {
+  const index = items.findIndex((item) => item.settlement === record.settlement);
+  if (index === -1) items.push(record);
+  else items[index] = { ...items[index], ...record };
+}
+
 const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (Number(deployment.chainId) !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
+}
+if (Number(deployment.schemaVersion) < 3 || deployment.migration?.architecture !== "pinned-pricing-v3") {
+  throw new Error(
+    "This configurator requires a fresh pinned-pricing-v3 deployment; legacy factory deployments cannot be migrated in place.",
+  );
 }
 
 const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
@@ -129,8 +142,8 @@ const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim() || deployment.rpcUrl;
 const contracts = deployment.contracts ?? {};
 const externalContracts = deployment.externalContracts ?? {};
 const factory = getAddress(contracts.factory.address);
-const assetRegistry = getAddress(contracts.assetRegistry.address);
 const oracleRegistry = getAddress(contracts.oracleRegistry.address);
+const assetMarketRegistry = getAddress(contracts.assetMarketRegistry.address);
 const rebalanceExecutor = getAddress(contracts.rebalanceExecutor.address);
 const settlementToken = getAddress(externalContracts.usdg);
 const v3Factory = getAddress(externalContracts.uniswapV3Factory);
@@ -157,6 +170,9 @@ const ownerAbi = [{
 const erc20MetadataAbi = [
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
 ];
+const robinhoodPauseAbi = [
+  { type: "function", name: "oraclePaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+];
 const feedAbi = [
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
   {
@@ -173,20 +189,26 @@ const feedAbi = [
     ],
   },
 ];
-const assetRegistryAbi = [{
-  type: "function",
-  name: "isApprovedAsset",
-  stateMutability: "view",
-  inputs: [{ type: "address", name: "asset" }],
-  outputs: [{ type: "bool" }],
-}];
-const oracleRegistryAbi = [{
-  type: "function",
-  name: "priceFeedFor",
-  stateMutability: "view",
-  inputs: [{ type: "address", name: "asset" }],
-  outputs: [{ type: "address" }],
-}];
+const oracleRegistryAbi = [
+  {
+    type: "function",
+    name: "usdQuote",
+    stateMutability: "pure",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
+    name: "oracleConfigForPair",
+    stateMutability: "view",
+    inputs: [{ type: "address", name: "base" }, { type: "address", name: "quote" }],
+    outputs: [
+      { type: "address", name: "feed" },
+      { type: "uint32", name: "maxStaleness" },
+      { type: "uint8", name: "validationMode" },
+    ],
+  },
+];
 const factoryAbi = [
   ...ownerAbi,
   {
@@ -233,6 +255,7 @@ const positionManagerAbi = [{
   outputs: [{ type: "address", name: "pool" }],
 }];
 const poolAbi = [
+  { type: "function", name: "factory", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "token0", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "token1", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "fee", stateMutability: "view", inputs: [], outputs: [{ type: "uint24" }] },
@@ -252,9 +275,26 @@ const poolAbi = [
       { type: "bool", name: "unlocked" },
     ],
   },
+  {
+    type: "function",
+    name: "increaseObservationCardinalityNext",
+    stateMutability: "nonpayable",
+    inputs: [{ type: "uint16", name: "observationCardinalityNext" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "observe",
+    stateMutability: "view",
+    inputs: [{ type: "uint32[]", name: "secondsAgos" }],
+    outputs: [{ type: "int56[]", name: "tickCumulatives" }, { type: "uint160[]", name: "secondsPerLiquidityCumulativeX128s" }],
+  },
 ];
 
-const v3AdapterArtifact = artifact("UniswapV3Adapter.sol", "UniswapV3Adapter");
+const v3AdapterArtifact = artifact(
+  "RegisteredUniswapV3Adapter.sol",
+  "RegisteredUniswapV3Adapter",
+);
 const entryRouterArtifact = artifact("OTFEntryRouter.sol", "OTFEntryRouter");
 
 async function confirmedWrite({ address, abi, functionName, args = [] }) {
@@ -314,8 +354,8 @@ const actualChainId = await publicClient.getChainId();
 if (actualChainId !== chainId) throw new Error(`RPC returned chain ID ${actualChainId}.`);
 await Promise.all([
   requireCode("Factory", factory),
-  requireCode("AssetRegistry", assetRegistry),
-  requireCode("OracleRegistry", oracleRegistry),
+  requireCode("Trusted oracle route registry", oracleRegistry),
+  requireCode("Asset pricing market registry", assetMarketRegistry),
   requireCode("RebalanceExecutor", rebalanceExecutor),
   requireCode("USDG", settlementToken),
   requireCode("Synthra V3 factory", v3Factory),
@@ -324,8 +364,9 @@ await Promise.all([
   requireCode("Synthra quoter", quoter),
 ]);
 
-const [factoryOwner, balance, settlementDecimals, tickSpacing] = await Promise.all([
+const [factoryOwner, usdQuote, balance, settlementDecimals, tickSpacing] = await Promise.all([
   publicClient.readContract({ address: factory, abi: ownerAbi, functionName: "owner" }),
+  publicClient.readContract({ address: oracleRegistry, abi: oracleRegistryAbi, functionName: "usdQuote" }),
   publicClient.getBalance({ address: account.address }),
   publicClient.readContract({ address: settlementToken, abi: erc20MetadataAbi, functionName: "decimals" }),
   publicClient.readContract({ address: v3Factory, abi: v3FactoryAbi, functionName: "feeAmountTickSpacing", args: [poolFee] }),
@@ -344,22 +385,51 @@ console.log(`Balance: ${formatEther(balance)} ETH`);
 const constituentMarkets = [];
 for (const item of catalog) {
   const asset = getAddress(item.asset);
-  const [approvedAsset, configuredFeed, assetDecimals] = await Promise.all([
-    publicClient.readContract({ address: assetRegistry, abi: assetRegistryAbi, functionName: "isApprovedAsset", args: [asset] }),
-    publicClient.readContract({ address: oracleRegistry, abi: oracleRegistryAbi, functionName: "priceFeedFor", args: [asset] }),
+  const [[configuredFeed, configuredMaxStaleness, configuredValidationMode], assetDecimals] = await Promise.all([
+    publicClient.readContract({
+      address: oracleRegistry,
+      abi: oracleRegistryAbi,
+      functionName: "oracleConfigForPair",
+      args: [asset, usdQuote],
+    }),
     publicClient.readContract({ address: asset, abi: erc20MetadataAbi, functionName: "decimals" }),
   ]);
-  if (!approvedAsset) throw new Error(`${item.symbol} is not approved in AssetRegistry.`);
-  if (isAddressEqual(configuredFeed, zeroAddress)) throw new Error(`${item.symbol} has no configured price feed.`);
+  if (assetDecimals !== 18) {
+    throw new Error(`${item.symbol} has ${assetDecimals} decimals; mechanically valid OTF assets require exactly 18.`);
+  }
+  if (isAddressEqual(configuredFeed, zeroAddress)) {
+    throw new Error(
+      `${item.symbol} has no trusted direct USD route for pool initialization. This is an operational seed-price requirement, not asset approval.`,
+    );
+  }
   await requireCode(`${item.symbol} price feed`, configuredFeed);
+
+  if (Number(configuredValidationMode) === 1) {
+    let oraclePaused;
+    try {
+      oraclePaused = await publicClient.readContract({
+        address: asset,
+        abi: robinhoodPauseAbi,
+        functionName: "oraclePaused",
+      });
+    } catch {
+      throw new Error(
+        `${item.symbol} requires RobinhoodStockToken validation but oraclePaused() is unavailable.`,
+      );
+    }
+    if (oraclePaused) throw new Error(`${item.symbol} reports oraclePaused() == true.`);
+  }
 
   const [feedDecimals, round] = await Promise.all([
     publicClient.readContract({ address: configuredFeed, abi: feedAbi, functionName: "decimals" }),
     publicClient.readContract({ address: configuredFeed, abi: feedAbi, functionName: "latestRoundData" }),
   ]);
   const oracleBlock = await publicClient.getBlock();
-  const [roundId, answer, , updatedAt, answeredInRound] = round;
-  if (answer <= 0n || updatedAt === 0n || answeredInRound < roundId) {
+  const [roundId, answer, startedAt, updatedAt, answeredInRound] = round;
+  if (
+    roundId === 0n || answer <= 0n || startedAt === 0n || updatedAt === 0n
+      || startedAt > updatedAt || answeredInRound < roundId || feedDecimals > 36
+  ) {
     throw new Error(`${item.symbol} returned invalid oracle round data.`);
   }
   if (oracleBlock.timestamp < updatedAt || oracleBlock.timestamp - updatedAt > oracleMaxAgeSeconds) {
@@ -370,6 +440,10 @@ for (const item of catalog) {
     asset,
     assetDecimals,
     configuredFeed,
+    configuredMaxStaleness,
+    configuredValidationMode,
+    configuredMaxStaleness,
+    configuredValidationMode,
     feedDecimals,
     answer,
     updatedAt,
@@ -378,9 +452,9 @@ for (const item of catalog) {
 }
 
 const v3Adapter = await ensureDeployment(
-  "uniswapV3Adapter",
+  "registeredUniswapV3AdapterUsdg",
   v3AdapterArtifact,
-  [account.address, swapRouter, settlementToken, poolFee],
+  [account.address, swapRouter, settlementToken],
 );
 const entryRouter = await ensureDeployment(
   "entryRouter",
@@ -388,12 +462,11 @@ const entryRouter = await ensureDeployment(
   [account.address, factory, settlementToken],
 );
 
-const [adapterOwner, adapterRouter, adapterSettlement, adapterFee, entryOwner, entryFactory, entrySettlement] =
+const [adapterOwner, adapterRouter, adapterSettlement, entryOwner, entryFactory, entrySettlement] =
   await Promise.all([
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "uniswapRouter" }),
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "settlementToken" }),
-    publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "poolFee" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "factory" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "settlementToken" }),
@@ -403,13 +476,22 @@ if (!isAddressEqual(adapterOwner, account.address) || !isAddressEqual(entryOwner
 }
 if (
   !isAddressEqual(adapterRouter, swapRouter) || !isAddressEqual(adapterSettlement, settlementToken)
-    || adapterFee !== poolFee || !isAddressEqual(entryFactory, factory)
+    || !isAddressEqual(entryFactory, factory)
     || !isAddressEqual(entrySettlement, settlementToken)
 ) throw new Error("Configured adapter or entry router dependencies do not match the deployment JSON.");
 
 deployment.setupTransactions ??= {};
 deployment.setupTransactions.approvedAdapters ??= [];
 deployment.setupTransactions.settlementEntry ??= [];
+deployment.executionRoutes ??= [];
+upsertExecutionRoute(deployment.executionRoutes, {
+  settlement: "USDG",
+  settlementToken,
+  adapter: v3Adapter.address,
+  entryRouter: entryRouter.address,
+  pathEncoding: "uniswap-v3-packed",
+  pricingIndependent: true,
+});
 
 let tradeApproved = await publicClient.readContract({
   address: factory,
@@ -533,7 +615,8 @@ for (const item of constituentMarkets) {
   }
   if (isAddressEqual(pool, zeroAddress)) throw new Error(`${item.symbol}/USDG pool was not created.`);
 
-  const [resolvedToken0, resolvedToken1, resolvedFee, slot0, liquidity] = await Promise.all([
+  const [resolvedFactory, resolvedToken0, resolvedToken1, resolvedFee, slot0, liquidity] = await Promise.all([
+    publicClient.readContract({ address: pool, abi: poolAbi, functionName: "factory" }),
     publicClient.readContract({ address: pool, abi: poolAbi, functionName: "token0" }),
     publicClient.readContract({ address: pool, abi: poolAbi, functionName: "token1" }),
     publicClient.readContract({ address: pool, abi: poolAbi, functionName: "fee" }),
@@ -541,21 +624,68 @@ for (const item of constituentMarkets) {
     publicClient.readContract({ address: pool, abi: poolAbi, functionName: "liquidity" }),
   ]);
   if (
-    !isAddressEqual(resolvedToken0, token0) || !isAddressEqual(resolvedToken1, token1)
+    !isAddressEqual(resolvedFactory, v3Factory)
+      || !isAddressEqual(resolvedToken0, token0) || !isAddressEqual(resolvedToken1, token1)
       || resolvedFee !== poolFee || slot0[0] === 0n
   ) throw new Error(`${item.symbol}/USDG pool failed post-creation verification.`);
+
+  let cardinalityExpansion = { alreadyConfigured: true };
+  if (Number(slot0[4]) < targetObservationCardinality) {
+    cardinalityExpansion = await confirmedWrite({
+      address: pool,
+      abi: poolAbi,
+      functionName: "increaseObservationCardinalityNext",
+      args: [targetObservationCardinality],
+    });
+  }
+  const verifiedSlot0 = await publicClient.readContract({
+    address: pool,
+    abi: poolAbi,
+    functionName: "slot0",
+  });
+  if (Number(verifiedSlot0[4]) < targetObservationCardinality) {
+    throw new Error(`${item.symbol}/USDG pool did not accept the required observation capacity.`);
+  }
+  let twapReady = false;
+  try {
+    const [tickCumulatives] = await publicClient.readContract({
+      address: pool,
+      abi: poolAbi,
+      functionName: "observe",
+      args: [[pricingTwapWindowSeconds, 0]],
+    });
+    twapReady = tickCumulatives.length === 2
+      && Number(verifiedSlot0[3]) >= targetObservationCardinality;
+  } catch {
+    twapReady = false;
+  }
+  const poolBlock = await publicClient.getBlock();
+  const twapReadyAt = twapReady
+    ? poolBlock.timestamp
+    : poolBlock.timestamp + BigInt(pricingTwapWindowSeconds);
 
   poolRecords.push({
     symbol: item.symbol,
     asset,
     pool: getAddress(pool),
     fee: poolFee,
-    initializedSqrtPriceX96: slot0[0],
+    initializedSqrtPriceX96: verifiedSlot0[0],
     activeLiquidity: liquidity,
+    canonicalFactory: getAddress(resolvedFactory),
+    observationCardinality: verifiedSlot0[3],
+    observationCardinalityNext: verifiedSlot0[4],
+    requiredObservationCardinality: targetObservationCardinality,
+    pricingTwapWindowSeconds,
+    twapReady,
+    twapReadyAt,
+    twapReadyAtIsEstimate: !twapReady,
+    cardinalityExpansion,
     oracleFeed: getAddress(configuredFeed),
     oracleAnswer: answer,
     oracleDecimals: feedDecimals,
     oracleUpdatedAt: updatedAt,
+    oracleMaxStaleness: configuredMaxStaleness,
+    oracleValidationMode: configuredValidationMode,
     ...evidence,
   });
   console.log(`${item.symbol}/USDG: ${pool} (${liquidity === 0n ? "awaiting liquidity" : "active"})`);
@@ -563,6 +693,7 @@ for (const item of constituentMarkets) {
 
 deployment.v3Venue = {
   provider: "synthra",
+  purpose: "execution-liquidity",
   liquidityUrl: synthraLiquidityUrl,
   settlementToken,
   constituentFee: poolFee,
@@ -570,5 +701,17 @@ deployment.v3Venue = {
   constituentPools: poolRecords,
   configuredAt: new Date().toISOString(),
 };
+deployment.pricingConfiguration ??= {};
+deployment.pricingConfiguration.suggestedV3PricingConfigs = poolRecords.map((record) => ({
+  asset: record.asset,
+  source: "UniswapV3Twap",
+  primarySource: record.pool,
+  secondarySource: zeroAddress,
+  quoteToken: settlementToken,
+  fee: record.fee,
+  twapReady: record.twapReady,
+  twapReadyAt: record.twapReadyAt,
+  note: "Suggestion only. Vault creation revalidates the canonical factory, pair, fee, observation cardinality, and full TWAP history before pinning.",
+}));
 saveDeployment(deployment);
 console.log(`Synthra configuration written to ${deploymentPath}`);

@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+enum PricingSource {
+    ChainlinkDirect,
+    ChainlinkAssetWeth,
+    UniswapV3Twap
+}
+
+/// @notice User-supplied pricing configuration pinned when an asset first enters an OTF.
+/// @dev `primarySource` is the direct feed, asset/WETH feed, or V3 asset/quote pool.
+///      `secondarySource` is only used for the WETH/USD leg of a composed Chainlink route.
+struct AssetPricingConfig {
+    PricingSource source;
+    address primarySource;
+    address secondarySource;
+}
+
 struct VaultInitParams {
     string name;
     string symbol;
@@ -8,7 +23,7 @@ struct VaultInitParams {
     address manager;
     address feeRecipient;
     address[] initialAssets;
-    bytes32[] initialMarketIds;
+    AssetPricingConfig[] initialPricingConfigs;
     uint16[] initialTargetWeightsBps;
     uint256[] initialAmounts;
     uint256 initialShareSupply;

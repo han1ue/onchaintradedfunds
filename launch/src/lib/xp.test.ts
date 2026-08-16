@@ -6,7 +6,6 @@ import {
   calculateXp,
   creatorScore,
   eligibleProposalIdsAt,
-  firstCompleteCheckpointAtOrAfter,
   largestRemainderAllocate,
   maturityFactor,
   performanceScore,
@@ -49,23 +48,14 @@ describe("Live XP policy", () => {
     expect(result.users.find((user) => user.userId === "creator")?.uniqueSupporterCount).toBe(1);
   });
 
-  it("never selects an entry checkpoint before a vote and requires completeness", () => {
-    const voteAt = new Date("2026-08-10T10:30:00Z");
-    const checkpoints = [
-      { id: "before", sampledAt: "2026-08-10T10:00:00Z", complete: true },
-      { id: "partial", sampledAt: "2026-08-10T11:00:00Z", complete: false },
-      { id: "entry", sampledAt: "2026-08-10T12:00:00Z", complete: true },
-    ];
-    expect(firstCompleteCheckpointAtOrAfter(checkpoints, voteAt, (checkpoint) => checkpoint.complete)?.id).toBe("entry");
-  });
-
   it("leaves missing-price performance pending while keeping participation and creator support", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"),
       creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: new Date("2026-08-02T00:00:00Z") }],
       tranches: [{ id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 4 }],
     });
-    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 4_000_000, pendingTrancheCount: 1 });
+    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 1_750_000, pendingTrancheCount: 1 });
+    expect(result.released.performance).toBe(0);
     expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 750_000, uniqueSupporterCount: 1, submissionBoost: true });
   });
 
@@ -115,40 +105,31 @@ describe("Live XP policy", () => {
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"), creators: [],
       tranches: [{ id: "valid", voterUserId: "valid-voter", proposalId: "eligible", proposalCreatorUserId: "creator", quantity: 2 }],
     });
-    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(4_000_000);
+    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(1_750_000);
     expect(validOnly.users.some((user) => user.userId === "invalid-voter")).toBe(false);
   });
 
-  it("uses the first complete checkpoint at or after the final deadline", () => {
-    const checkpoints = [
-      { id: "pre", sampledAt: "2026-09-06T23:00:00Z", complete: true },
-      { id: "partial", sampledAt: "2026-09-07T00:00:00Z", complete: false },
-      { id: "final", sampledAt: "2026-09-07T01:00:00Z", complete: true },
-    ];
-    expect(firstCompleteCheckpointAtOrAfter(checkpoints, votingEndsAt, (checkpoint) => checkpoint.complete)?.id).toBe("final");
-  });
-
-  it("isolates qualified and experimental performance cohorts", () => {
+  it("scores every tranche in one quality-independent performance pool", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true, creators: [],
       tranches: [
-        { id: "q", voterUserId: "qualified-voter", proposalId: "q1", proposalCreatorUserId: "c1", quantity: 1, cohort: "qualified", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "q1", returnValue: 1n }] },
-        { id: "e", voterUserId: "experimental-voter", proposalId: "e1", proposalCreatorUserId: "c2", quantity: 1, cohort: "experimental", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "e1", returnValue: 1n }] },
+        { id: "best", voterUserId: "best-voter", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1, effectiveEntryAt: votingStartsAt, selectedReturn: 2n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
+        { id: "worst", voterUserId: "worst-voter", proposalId: "p2", proposalCreatorUserId: "c2", quantity: 1, effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
       ],
     });
-    expect(result.users.find((row) => row.userId === "qualified-voter")).toMatchObject({ qualifiedPerformanceXp: 3_500_000, experimentalPerformanceXp: 0 });
-    expect(result.users.find((row) => row.userId === "experimental-voter")).toMatchObject({ qualifiedPerformanceXp: 0, experimentalPerformanceXp: 1_000_000 });
+    expect(result.users.find((row) => row.userId === "best-voter")?.performanceXp).toBe(4_500_000);
+    expect(result.users.find((row) => row.userId === "worst-voter")?.performanceXp).toBe(0);
   });
 
-  it("preserves exact issuance when only experimental performance is awardable", () => {
+  it("rolls the unified performance pool to participation when no performance is awardable", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
-      creators: [{ proposalId: "e1", creatorUserId: "creator", acceptedAt: votingStartsAt }],
+      creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: votingStartsAt }],
       tranches: [
-        { id: "e", voterUserId: "experimental-voter", proposalId: "e1", proposalCreatorUserId: "creator", quantity: 1, cohort: "experimental", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "e1", returnValue: 1n }] },
+        { id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1 },
       ],
     });
-    expect(result.rollovers.qualifiedToParticipation).toBe(3_500_000);
+    expect(result.rollovers.performanceToParticipation).toBe(4_500_000);
     expect(result.users.reduce((sum, user) => sum + user.totalXp, 0)).toBe(10_000_000);
   });
 

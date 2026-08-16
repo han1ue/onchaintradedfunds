@@ -11,6 +11,8 @@ import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import {
+    AssetPricingConfig,
+    PricingSource,
     RebalanceRecord,
     TradeExecutionRecord,
     TradeInstruction,
@@ -26,40 +28,51 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrices();
 
         address[] memory additions = new address[](99);
+        AssetPricingConfig[] memory additionConfigs = new AssetPricingConfig[](99);
         for (uint256 i = 0; i < additions.length; i++) {
             MockStockToken asset = new MockStockToken("Additional Stock", "ADD", 18);
             MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
             additions[i] = address(asset);
-            assetRegistry.setAssetApproved(address(asset), true);
+            assetRegistry.registerAsset(address(asset));
             oracleRegistry.setOracleConfig(
                 address(asset), feed, 25 hours, OracleValidationMode.RobinhoodStockToken
             );
+            additionConfigs[i] = _directPricing(address(feed));
         }
 
         address[] memory acceptedTargets = new address[](99);
         uint256[] memory acceptedWeights = new uint256[](99);
+        AssetPricingConfig[] memory acceptedConfigs = new AssetPricingConfig[](99);
         acceptedTargets[0] = address(tokenA);
         acceptedWeights[0] = 200;
+        acceptedConfigs[0] = _directPricing(address(feedA));
         for (uint256 i = 1; i < acceptedTargets.length; i++) {
             acceptedTargets[i] = additions[i - 1];
             acceptedWeights[i] = 100;
+            acceptedConfigs[i] = additionConfigs[i - 1];
         }
-        acceptedVault.proposeStrategy(
-            acceptedTargets, acceptedWeights, "Exercise the 100 tracked-asset boundary."
+        acceptedVault.proposeStrategyWithPricing(
+            acceptedTargets,
+            acceptedWeights,
+            acceptedConfigs,
+            "Exercise the 100 tracked-asset boundary."
         );
         assertTrue(acceptedVault.strategyProposalPending());
 
         address[] memory rejectedTargets = new address[](100);
         uint256[] memory rejectedWeights = new uint256[](100);
+        AssetPricingConfig[] memory rejectedConfigs = new AssetPricingConfig[](100);
         rejectedTargets[0] = address(tokenA);
         rejectedWeights[0] = 100;
+        rejectedConfigs[0] = _directPricing(address(feedA));
         for (uint256 i = 1; i < rejectedTargets.length; i++) {
             rejectedTargets[i] = additions[i - 1];
             rejectedWeights[i] = 100;
+            rejectedConfigs[i] = additionConfigs[i - 1];
         }
         vm.expectRevert(ManagedOTFVaultStorage.TrackedAssetLimitExceeded.selector);
-        rejectedVault.proposeStrategy(
-            rejectedTargets, rejectedWeights, "Reject a 101-asset tracked union."
+        rejectedVault.proposeStrategyWithPricing(
+            rejectedTargets, rejectedWeights, rejectedConfigs, "Reject a 101-asset tracked union."
         );
     }
 
@@ -169,8 +182,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             _singleTrade(address(tokenB), address(tokenA), amountIn, amountIn * 9_998 / 10_000);
         vault.executeRebalanceTrades(lossy);
 
-        (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps) =
-            vault.navLossBudgetState();
+        (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps) = vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
         assertEq(maximumLossBps, 2);
         assertGt(recoveryAt, block.timestamp);
@@ -231,8 +243,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vm.warp(recoveryAt - 1);
         _refreshPrices();
-        (uint64 remainingRecoveryAt, uint16 remainingUsedLossBps,) =
-            vault.navLossBudgetState();
+        (uint64 remainingRecoveryAt, uint16 remainingUsedLossBps,) = vault.navLossBudgetState();
         assertEq(remainingRecoveryAt, recoveryAt);
         assertEq(remainingUsedLossBps, 1);
 
@@ -338,7 +349,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertTrue(vault.isConstituent(address(tokenB)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.assetCount(), 2);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForRetiringAsset.selector);
         vault.previewMint(ONE);
 
         TradeInstruction[] memory trades =
@@ -377,28 +388,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.assetCount(), 1);
         assertFalse(vault.isConstituent(address(tokenB)));
         assertFalse(vault.strategicRebalanceActive());
-    }
-
-    function testBlockedAssetRejectsManagementButKeepsProportionalRedemption() public {
-        ManagedOTFVault vault = _createVault();
-        uint256 retiringBalance = tokenA.balanceOf(address(vault));
-        assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
-        assetRegistry.setAssetApproved(address(tokenA), false);
-
-        TradeInstruction[] memory trades =
-            _singleTrade(address(tokenA), address(tokenB), type(uint256).max, retiringBalance);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.executeRebalanceTrades(trades);
-
-        uint256 receiverBalanceBefore = tokenA.balanceOf(address(this));
-        uint256[] memory minimums = new uint256[](2);
-        vault.redeem(ONE, address(this), address(this), minimums);
-
-        assertGt(tokenA.balanceOf(address(this)), receiverBalanceBefore);
-        assertLt(tokenA.balanceOf(address(vault)), retiringBalance);
-        assertEq(tokenA.allowance(address(vault), address(executor)), 0);
-        assertTrue(vault.isConstituent(address(tokenA)));
-        assertEq(vault.assetCount(), 2);
     }
 
     function testFullBalanceSentinelRejectsActiveOrEmptyRetiringAsset() public {
@@ -457,8 +446,11 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vm.warp(START + 14 days);
         _refreshPrices();
 
-        vault.proposeStrategy(
-            assets, weights, "Replace Stock B with Stock C while preserving equal target weights."
+        vault.proposeStrategyWithPricing(
+            assets,
+            weights,
+            _pricingConfigsFor(assets),
+            "Replace Stock B with Stock C while preserving equal target weights."
         );
 
         assertTrue(vault.strategyProposalPending());
@@ -475,7 +467,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.targetWeightBps(address(tokenC)), 5_000);
         assertEq(vault.assetCount(), 3);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForAssetRemoval.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForRetiringAsset.selector);
         vault.previewMint(ONE);
 
         TradeInstruction[] memory trades =
@@ -499,219 +491,56 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(record.turnoverBps, 5_000);
     }
 
-    function testBlockedConstituentCannotStartManagementChallenge() public {
+    function testNewAssetPricingPinsOnlyWhenProposalActivates() public {
         ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenC);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 5_000;
+        weights[1] = 5_000;
+        AssetPricingConfig[] memory pricingConfigs = _pricingConfigsFor(assets);
+        vm.warp(START + 14 days);
+        _refreshPrices();
 
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = 50 * ONE;
-        amounts[1] = 50 * ONE;
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.previewContribute(amounts);
+        vault.proposeStrategyWithPricing(
+            assets, weights, pricingConfigs, "Stage a new asset without pinning before activation."
+        );
+        (bool configuredBefore,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
+        assertFalse(configuredBefore);
 
-        tokenA.mint(ALICE, amounts[0]);
-        tokenB.mint(ALICE, amounts[1]);
-        vm.startPrank(ALICE);
-        tokenA.approve(address(vault), type(uint256).max);
-        tokenB.approve(address(vault), type(uint256).max);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.contribute(amounts, ALICE, 1);
-        vm.stopPrank();
+        vault.cancelPendingStrategy();
+        (bool configuredAfterCancellation,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
+        assertFalse(configuredAfterCancellation);
 
-        uint16[] memory effectiveTargets = vault.targetWeightsBps();
-        assertEq(effectiveTargets[0], 0);
-        assertEq(effectiveTargets[1], 10_000);
+        vault.proposeStrategyWithPricing(
+            assets, weights, pricingConfigs, "Activate the new asset and pin its pricing identity."
+        );
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        vault.activatePendingStrategy();
 
-        vm.prank(ATTACKER);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.flagOutOfBand();
-        assertFalse(vault.challengeActive());
-
-        TradeInstruction[] memory trades =
-            _singleTrade(address(tokenA), address(tokenB), 500 * ONE, 500 * ONE);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.executeRebalanceTrades(trades);
-
-        uint256 tokenABefore = tokenA.balanceOf(address(this));
-        uint256[] memory minimums = new uint256[](2);
-        vault.redeem(ONE, address(this), address(this), minimums);
-        assertGt(tokenA.balanceOf(address(this)), tokenABefore);
-        assertFalse(vault.challengeActive());
-        assertTrue(vault.isConstituent(address(tokenA)));
-        assertEq(vault.assetCount(), 2);
-    }
-
-    function testBlockedWeightRedistributesButTradesRemainDisabled() public {
-        VaultInitParams memory params = _defaultParams();
-        params.initialAssets = new address[](3);
-        params.initialAssets[0] = address(tokenA);
-        params.initialAssets[1] = address(tokenB);
-        params.initialAssets[2] = address(tokenC);
-        params.initialTargetWeightsBps = new uint16[](3);
-        params.initialTargetWeightsBps[0] = 6_000;
-        params.initialTargetWeightsBps[1] = 3_000;
-        params.initialTargetWeightsBps[2] = 1_000;
-        params.initialAmounts = new uint256[](3);
-        params.initialAmounts[0] = 600 * ONE;
-        params.initialAmounts[1] = 300 * ONE;
-        params.initialAmounts[2] = 100 * ONE;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
-
-        assetRegistry.setAssetApproved(address(tokenC), false);
-
-        uint16[] memory effectiveTargets = vault.targetWeightsBps();
-        assertEq(effectiveTargets[0], 6_667);
-        assertEq(effectiveTargets[1], 3_333);
-        assertEq(effectiveTargets[2], 0);
-        assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
-
-        TradeInstruction[] memory trades = new TradeInstruction[](2);
-        trades[0] = TradeInstruction({
-            adapter: address(adapter),
-            tokenIn: address(tokenC),
-            tokenOut: address(tokenA),
-            amountIn: 67 * ONE,
-            minAmountOut: 67 * ONE,
-            adapterData: ""
-        });
-        trades[1] = TradeInstruction({
-            adapter: address(adapter),
-            tokenIn: address(tokenC),
-            tokenOut: address(tokenB),
-            amountIn: 33 * ONE,
-            minAmountOut: 33 * ONE,
-            adapterData: ""
-        });
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
-        vault.executeRebalanceTrades(trades);
-
-        uint256 tokenCBefore = tokenC.balanceOf(address(this));
-        uint256[] memory minimums = new uint256[](3);
-        vault.redeem(ONE, address(this), address(this), minimums);
-        assertGt(tokenC.balanceOf(address(this)), tokenCBefore);
-        assertTrue(vault.isConstituent(address(tokenC)));
-    }
-
-    function testRevocationRoundingAssignsEveryBasisPoint() public {
-        VaultInitParams memory params = _defaultParams();
-        params.initialAssets = new address[](3);
-        params.initialAssets[0] = address(tokenA);
-        params.initialAssets[1] = address(tokenB);
-        params.initialAssets[2] = address(tokenC);
-        params.initialTargetWeightsBps = new uint16[](3);
-        params.initialTargetWeightsBps[0] = 5_001;
-        params.initialTargetWeightsBps[1] = 2_999;
-        params.initialTargetWeightsBps[2] = 2_000;
-        params.initialAmounts = new uint256[](3);
-        params.initialAmounts[0] = 5_001 * ONE;
-        params.initialAmounts[1] = 2_999 * ONE;
-        params.initialAmounts[2] = 2_000 * ONE;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
-
-        assetRegistry.setAssetApproved(address(tokenA), false);
-
-        uint16[] memory effectiveTargets = vault.targetWeightsBps();
-        assertEq(effectiveTargets[0], 0);
-        assertEq(effectiveTargets[1], 6_000);
-        assertEq(effectiveTargets[2], 4_000);
-        assertEq(uint256(effectiveTargets[0]) + effectiveTargets[1] + effectiveTargets[2], 10_000);
-    }
-
-    function testAllRevokedAssetsEnterPermanentTerminalShutdown() public {
-        ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
-        assetRegistry.setAssetApproved(address(tokenB), false);
-
-        uint16[] memory effectiveTargets = vault.targetWeightsBps();
-        assertEq(effectiveTargets[0], 0);
-        assertEq(effectiveTargets[1], 0);
-        assertEq(vault.pruneRetiredAssets(), 0);
-        assertTrue(vault.sunset());
-        assertFalse(vault.challengeActive());
-        assertEq(vault.targetWeightBps(address(tokenA)), 0);
-        assertEq(vault.targetWeightBps(address(tokenB)), 0);
-
-        assetRegistry.setAssetApproved(address(tokenA), true);
-        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
-        vault.previewMint(ONE);
-    }
-
-    function testPruneRetiredAssetsReturnsExactRemovalCount() public {
-        ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
-
-        uint256 retiredBalance = tokenA.balanceOf(address(vault));
-        vm.prank(address(vault));
-        assertTrue(tokenA.transfer(ALICE, retiredBalance));
-
-        assertEq(vault.pruneRetiredAssets(), 1);
-        assertFalse(vault.isConstituent(address(tokenA)));
-        assertEq(vault.targetWeightBps(address(tokenB)), 10_000);
-    }
-
-    function testRetiredConstituentAtDustThresholdCanBePruned() public {
-        ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
-
-        uint256 dust = vault.MAX_RETIRING_DUST();
-        uint256 retiredBalance = tokenA.balanceOf(address(vault));
-        vm.prank(address(vault));
-        assertTrue(tokenA.transfer(ALICE, retiredBalance - dust));
-
-        assertEq(vault.pruneRetiredAssets(), 1);
-        assertEq(tokenA.balanceOf(address(vault)), dust);
-        assertFalse(vault.isConstituent(address(tokenA)));
-        assertEq(vault.assetCount(), 1);
-        assertEq(vault.getReserve(address(tokenA)), 0);
-        assertEq(vault.targetWeightBps(address(tokenB)), 10_000);
-    }
-
-    function testRetiredConstituentAboveDustThresholdRemainsChallengeable() public {
-        ManagedOTFVault vault = _createVault();
-        assetRegistry.setAssetApproved(address(tokenA), false);
-
-        uint256 remaining = vault.MAX_RETIRING_DUST() + 1;
-        uint256 retiredBalance = tokenA.balanceOf(address(vault));
-        vm.prank(address(vault));
-        assertTrue(tokenA.transfer(ALICE, retiredBalance - remaining));
-
-        assertEq(vault.pruneRetiredAssets(), 0);
-        assertEq(tokenA.balanceOf(address(vault)), remaining);
-        assertEq(vault.assetCount(), 2);
-        assertEq(vault.getReserve(address(tokenA)), remaining);
-        vm.prank(ATTACKER);
-        vault.flagOutOfBand();
-        assertTrue(vault.challengeActive());
-    }
-
-    function testPruningFinalRevokedAssetLeavesVaultDepositBlocked() public {
-        VaultInitParams memory params = _defaultParams();
-        params.initialAssets = new address[](1);
-        params.initialAssets[0] = address(tokenA);
-        params.initialTargetWeightsBps = new uint16[](1);
-        params.initialTargetWeightsBps[0] = 10_000;
-        params.initialAmounts = new uint256[](1);
-        params.initialAmounts[0] = 1_000 * ONE;
-        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
-
-        assetRegistry.setAssetApproved(address(tokenA), false);
-        uint256 dust = vault.MAX_RETIRING_DUST();
-        uint256 retiredBalance = tokenA.balanceOf(address(vault));
-        vm.prank(address(vault));
-        assertTrue(tokenA.transfer(ALICE, retiredBalance - dust));
-
-        assertEq(vault.pruneRetiredAssets(), 1);
-        assertEq(vault.assetCount(), 0);
-        assertTrue(vault.sunset());
-
-        uint256 supplyBefore = vault.totalSupply();
-        uint256[] memory emptyAmounts = new uint256[](0);
-        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
-        vault.previewMint(ONE);
-        vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
-        vault.mintWithBasket(ONE, ALICE, emptyAmounts);
-        assertEq(vault.totalSupply(), supplyBefore);
-        assertEq(vault.balanceOf(ALICE), 0);
+        (
+            bool configured,
+            PricingSource source,
+            address primarySource,
+            address secondarySource,
+            address normalizedPriceFeed,
+            uint32 primaryMaxStaleness,
+            uint32 secondaryMaxStaleness,
+            OracleValidationMode primaryMode,
+            OracleValidationMode secondaryMode
+        ) = vault.pricingConfigForAsset(address(tokenC));
+        assertTrue(configured);
+        assertEq(uint256(source), uint256(PricingSource.ChainlinkDirect));
+        assertEq(primarySource, address(feedC));
+        assertEq(secondarySource, address(0));
+        assertEq(normalizedPriceFeed, address(feedC));
+        assertEq(uint256(primaryMaxStaleness), 25 hours);
+        assertEq(uint256(secondaryMaxStaleness), 0);
+        assertEq(uint256(primaryMode), uint256(OracleValidationMode.RobinhoodStockToken));
+        assertEq(uint256(secondaryMode), uint256(OracleValidationMode.StandardChainlink));
+        assertEq(vault.marketIdForAsset(address(tokenC)), bytes32(0));
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

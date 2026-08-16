@@ -9,9 +9,20 @@ enum OracleValidationMode {
 }
 
 interface IOracleRegistry {
+    function usdQuote() external pure returns (address);
+
     function priceFeedFor(address asset) external view returns (address);
 
     function oracleConfigFor(address asset)
+        external
+        view
+        returns (
+            AggregatorV3Interface feed,
+            uint32 maxStaleness,
+            OracleValidationMode validationMode
+        );
+
+    function oracleConfigForPair(address base, address quote)
         external
         view
         returns (

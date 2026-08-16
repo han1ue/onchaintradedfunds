@@ -193,7 +193,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
     }
 
-    function testStaleOraclesBlockCorrectiveTradesAndDirectResolution() public {
+    function testPinnedStalenessBlocksCorrectiveTradesAndDirectResolution() public {
         ManagedOTFVault vault = _createVault();
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 1 hours, OracleValidationMode.RobinhoodStockToken
@@ -204,6 +204,9 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
         vm.warp(block.timestamp + 1 hours + 1);
+        assertGt(vault.totalAssetsValue(), 0);
+
+        vm.warp(block.timestamp + 24 hours);
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenA), address(tokenB), 20 * ONE, 24 * ONE);

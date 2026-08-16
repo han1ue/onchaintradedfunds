@@ -26,7 +26,7 @@ export default async function PointsPage() {
 
     <div className="pointsMeta" aria-label="XP calculation timestamps">
       <span><Clock3 size={15} aria-hidden="true" />Calculated {formatTimestamp(xp.calculatedAt)} UTC</span>
-      <span><DatabaseZap size={15} aria-hidden="true" />Prices as of {formatTimestamp(xp.priceCheckpointAt)} UTC</span>
+      <span><DatabaseZap size={15} aria-hidden="true" />{xp.status === "final" ? `Final provider prices captured ${formatTimestamp(xp.priceCheckpointAt)} UTC` : "Performance settles from the final provider snapshot"}</span>
       <span>Policy {xp.policyVersion}</span>
     </div>
 
@@ -39,7 +39,7 @@ export default async function PointsPage() {
     {session?.user?.id && <SectionCard className="myXpSummary">
       <div className="myXpIdentity"><Gauge size={22} aria-hidden="true" /><div><span>Your {xp.status === "final" ? "Final" : "Live"} XP</span><strong>{formatXp(own?.totalXp ?? 0)} XP</strong></div></div>
       <dl><div><dt>Performance</dt><dd>{formatXp(own?.performanceXp ?? 0)}</dd></div><div><dt>Participation</dt><dd>{formatXp(own?.participationXp ?? 0)}</dd></div><div><dt>Creator</dt><dd>{formatXp(own?.creatorXp ?? 0)}</dd></div></dl>
-      {own?.pendingTrancheCount ? <StatusBadge tone="warning">Awaiting price checkpoint · {own.pendingTrancheCount}</StatusBadge> : null}
+      {own?.pendingTrancheCount ? <StatusBadge tone="warning">Awaiting final price · {own.pendingTrancheCount}</StatusBadge> : null}
     </SectionCard>}
 
     <SectionCard className="xpLeaderboardCard">
@@ -48,16 +48,16 @@ export default async function PointsPage() {
         <div className="xpTableHeader" role="row"><span>Rank / participant</span><span>Performance</span><span>Participation</span><span>Creator</span><span>Supporters</span><span>Total XP</span></div>
         {xp.rows.length ? xp.rows.map((row, index) => <div className="xpTableRow" role="row" key={row.userId}>
           <div className="xpParticipant"><span className="xpRank">{index + 1}</span><span className="xpAliasAvatar" aria-hidden="true"><UserRound size={15} /></span><div><strong>{row.publicName}</strong><small>{row.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
-          <span data-label="Performance">{formatXp(row.performanceXp)}{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting price checkpoint</small>}</span>
+          <span data-label="Performance">{formatXp(row.performanceXp)}{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting final price</small>}</span>
           <span data-label="Participation">{formatXp(row.participationXp)}</span>
           <span data-label="Creator">{formatXp(row.creatorXp)}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</span>
           <span data-label="Supporters">{row.uniqueSupporterCount.toLocaleString()}</span>
           <strong data-label="Total XP">{formatXp(row.totalXp)}</strong>
-          {(row.pendingTrancheCount > 0 || row.submissionBoost) && <div className="xpMobileStatuses">{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting price checkpoint</small>}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</div>}
+          {(row.pendingTrancheCount > 0 || row.submissionBoost) && <div className="xpMobileStatuses">{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting final price</small>}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</div>}
         </div>) : <div className="xpEmpty"><Gauge size={26} aria-hidden="true" /><strong>XP calculation is starting</strong><p>Verified participation will appear after the first calculation run.</p></div>}
       </div>
     </SectionCard>
 
-    <Callout tone="warning"><AlertTriangle size={17} aria-hidden="true" /><span>{xp.status === "live" ? "Live XP can rise or fall as prices, maturity, evidence, and valid participation change. " : "Final XP reflects the completed competition audit. "}XP has no guaranteed monetary value.</span></Callout>
+    <Callout tone="warning"><AlertTriangle size={17} aria-hidden="true" /><span>{xp.status === "live" ? "Live XP includes participation and creator support; performance remains Pending until the final provider snapshot. " : "Final XP reflects the completed competition audit. "}XP has no guaranteed monetary value.</span></Callout>
   </div>;
 }

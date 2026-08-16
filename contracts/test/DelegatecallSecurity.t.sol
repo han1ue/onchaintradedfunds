@@ -19,7 +19,7 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
         vm.expectRevert(ManagedOTFVaultStorage.NotInitialized.selector);
         vault.mintWithBasket(ONE, ATTACKER, emptyAmounts);
 
-        vm.expectRevert(ManagedOTFVaultStorage.NotInitialized.selector);
+        vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
         vault.setExecutor(ATTACKER, true);
 
         vm.expectRevert(ManagedOTFVaultStorage.NotInitialized.selector);
@@ -57,9 +57,6 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
     function testStrategyModuleRejectsDirectAdministrativeCalls() public {
         ManagedOTFVault vault = _createVault();
         ManagedOTFVaultStrategy module = ManagedOTFVaultStrategy(vault.strategyModule());
-
-        vm.expectRevert(ManagedOTFVaultStorage.DirectStrategyCall.selector);
-        module.setExecutor(ALICE, true);
 
         vm.expectRevert(ManagedOTFVaultStorage.DirectStrategyCall.selector);
         module.setManagerFeeBps(100);

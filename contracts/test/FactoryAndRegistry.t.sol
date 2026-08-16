@@ -177,6 +177,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets = new address[](1);
         params.initialAssets[0] = address(tokenA);
+        params.initialPricingConfigs = _pricingConfigsFor(params.initialAssets);
         params.initialTargetWeightsBps = new uint16[](1);
         params.initialTargetWeightsBps[0] = 10_000;
         params.initialAmounts = new uint256[](1);
@@ -205,7 +206,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(vault.CHALLENGE_GRACE_PERIOD(), 7 days);
     }
 
-    function testOracleConfigsUseIndependentStalenessThresholds() public {
+    function testExistingVaultPinsStalenessAfterRegistryChanges() public {
         ManagedOTFVault vault = _createVault();
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 1 hours, OracleValidationMode.RobinhoodStockToken
@@ -215,16 +216,11 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         );
 
         vm.warp(START + 2 hours);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.StaleOraclePrice.selector);
-        vault.totalAssetsValue();
-
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 3 hours, OracleValidationMode.RobinhoodStockToken
-        );
+        assertEq(vault.maxStalenessForAsset(address(tokenA)), 25 hours);
         assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
-    function testOraclePauseFlagBlocksValuationWhenConfigured() public {
+    function testExistingVaultPinsValidationModeAfterRegistryChanges() public {
         ManagedOTFVault vault = _createVault();
         tokenA.setOraclePaused(true);
 
@@ -234,6 +230,10 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 25 hours, OracleValidationMode.StandardChainlink
         );
+        vm.expectPartialRevert(ManagedOTFVaultStorage.OraclePaused.selector);
+        vault.totalAssetsValue();
+
+        tokenA.setOraclePaused(false);
         assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
@@ -250,18 +250,17 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(this)), tokenBalanceBefore);
     }
 
-    function testOnlyOwnerCanApproveAssetsAndAdapters() public {
+    function testAssetDiscoveryIsPermissionlessAndOnlyOwnerCanApproveAdapters() public {
+        MockStockToken discovered = new MockStockToken("Discovered", "DISC", 18);
         vm.prank(ATTACKER);
-        vm.expectRevert(AssetRegistry.NotOwner.selector);
-        assetRegistry.setAssetApproved(address(tokenA), false);
+        assetRegistry.registerAsset(address(discovered));
+        assertTrue(assetRegistry.isRegisteredAsset(address(discovered)));
 
         vm.prank(ATTACKER);
         vm.expectRevert(OTFFactory.NotOwner.selector);
         factory.setTradeAdapterApproved(address(adapter), false);
 
-        assetRegistry.setAssetApproved(address(tokenA), false);
         factory.setTradeAdapterApproved(address(adapter), false);
-        assertFalse(assetRegistry.isApprovedAsset(address(tokenA)));
         assertFalse(factory.isTradeAdapterApproved(address(adapter)));
     }
 
@@ -283,37 +282,26 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertTrue(factory.isTradeAdapterApproved(address(replacement)));
     }
 
-    function testRegistryOwnershipTransfersAreEnforced() public {
-        assetRegistry.beginOwnershipTransfer(ALICE);
+    function testOracleRegistryOwnershipTransferIsEnforced() public {
         oracleRegistry.beginOwnershipTransfer(ALICE);
 
-        vm.prank(BOB);
-        vm.expectRevert(AssetRegistry.NotPendingOwner.selector);
-        assetRegistry.acceptOwnershipTransfer();
         vm.prank(BOB);
         vm.expectRevert(OracleRegistry.NotPendingOwner.selector);
         oracleRegistry.acceptOwnershipTransfer();
 
-        vm.startPrank(ALICE);
-        assetRegistry.acceptOwnershipTransfer();
+        vm.prank(ALICE);
         oracleRegistry.acceptOwnershipTransfer();
-        vm.stopPrank();
 
-        vm.expectRevert(AssetRegistry.NotOwner.selector);
-        assetRegistry.setAssetApproved(address(tokenA), false);
         vm.expectRevert(OracleRegistry.NotOwner.selector);
         oracleRegistry.setOracleConfig(
             address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
         );
 
-        vm.startPrank(ALICE);
-        assetRegistry.setAssetApproved(address(tokenA), false);
+        vm.prank(ALICE);
         oracleRegistry.setOracleConfig(
             address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
         );
-        vm.stopPrank();
 
-        assertFalse(assetRegistry.isApprovedAsset(address(tokenA)));
         assertEq(oracleRegistry.priceFeedFor(address(tokenA)), address(feedB));
         (, uint32 maxStaleness, OracleValidationMode validationMode) =
             oracleRegistry.oracleConfigFor(address(tokenA));
@@ -378,7 +366,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
 
     function testRegistriesRejectEOAAssetsAndFeeds() public {
         vm.expectPartialRevert(AssetRegistry.AssetNotContract.selector);
-        assetRegistry.setAssetApproved(ALICE, true);
+        assetRegistry.registerAsset(ALICE);
 
         vm.expectPartialRevert(OracleRegistry.AssetNotContract.selector);
         oracleRegistry.setOracleConfig(
@@ -403,9 +391,9 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         MockStockToken sixDecimalToken = new MockStockToken("Six Decimal", "SIX", 6);
 
         vm.expectPartialRevert(AssetRegistry.UnsupportedAssetDecimals.selector);
-        assetRegistry.setAssetApproved(address(sixDecimalToken), true);
+        assetRegistry.registerAsset(address(sixDecimalToken));
 
-        assertFalse(assetRegistry.isApprovedAsset(address(sixDecimalToken)));
+        assertFalse(assetRegistry.isRegisteredAsset(address(sixDecimalToken)));
     }
 
     function testAssetValuePreservesSubTokenPrecision() public {

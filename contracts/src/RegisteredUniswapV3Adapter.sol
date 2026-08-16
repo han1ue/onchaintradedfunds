@@ -2,14 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { IUniswapV3SwapRouter } from "./UniswapV3Adapter.sol";
-import { IUniswapV3MarketPool } from "./AssetMarketRegistry.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
-/// @notice V3-only adapter that derives every hop from the protocol market registry.
-/// @dev Deploy one instance for USDG and one for WETH investor settlement.
+/// @notice Generic Uniswap V3 adapter for explicit fee-bearing paths through a fixed settlement token.
+/// @dev Execution paths are independent from every oracle pool and pricing registry.
 contract RegisteredUniswapV3Adapter is ITradeAdapter {
     using SafeTransferLib for address;
 
@@ -17,10 +15,8 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
     error UnauthorizedCaller(address caller);
     error ZeroAddress();
     error InvalidDependency(address dependency);
-    error InvalidSettlementToken(address settlementToken);
     error InvalidAmount();
-    error InvalidRoute(address tokenIn, address tokenOut);
-    error InvalidMarket(bytes32 marketId, address asset);
+    error InvalidPath();
     error Slippage(uint256 received, uint256 minimum);
     error InputMismatch(uint256 expected, uint256 observed);
     error OutputMismatch(uint256 reported, uint256 observed);
@@ -31,39 +27,17 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
 
     address public owner;
     address public immutable uniswapRouter;
-    IAssetMarketRegistry public immutable marketRegistry;
     address public immutable settlementToken;
-    address public immutable weth;
-    address public immutable usdg;
-    uint24 public immutable wethUsdgFee;
     mapping(address => bool) public isCallerApproved;
     bool private _entered;
 
-    constructor(
-        address initialOwner,
-        address uniswapRouter_,
-        IAssetMarketRegistry marketRegistry_,
-        address settlementToken_
-    ) {
-        if (initialOwner == address(0)) revert ZeroAddress();
+    constructor(address initialOwner, address uniswapRouter_, address settlementToken_) {
+        if (initialOwner == address(0) || settlementToken_ == address(0)) revert ZeroAddress();
         if (uniswapRouter_.code.length == 0) revert InvalidDependency(uniswapRouter_);
-        if (address(marketRegistry_).code.length == 0) {
-            revert InvalidDependency(address(marketRegistry_));
-        }
-        address weth_ = marketRegistry_.weth();
-        address usdg_ = marketRegistry_.usdg();
-        if (settlementToken_ != weth_ && settlementToken_ != usdg_) {
-            revert InvalidSettlementToken(settlementToken_);
-        }
-        address bridgePool = marketRegistry_.wethUsdgPool();
-        if (bridgePool.code.length == 0) revert InvalidDependency(bridgePool);
+        if (settlementToken_.code.length == 0) revert InvalidDependency(settlementToken_);
         owner = initialOwner;
         uniswapRouter = uniswapRouter_;
-        marketRegistry = marketRegistry_;
         settlementToken = settlementToken_;
-        weth = weth_;
-        usdg = usdg_;
-        wethUsdgFee = IUniswapV3MarketPool(bridgePool).fee();
         emit OwnershipTransferred(address(0), initialOwner);
     }
 
@@ -97,10 +71,6 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         emit OwnershipTransferred(oldOwner, newOwner);
     }
 
-    function marketIdFromData(bytes calldata data) external pure returns (bytes32 marketId) {
-        marketId = abi.decode(data, (bytes32));
-    }
-
     function executeSwap(
         address tokenIn,
         address tokenOut,
@@ -109,12 +79,7 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         bytes calldata data
     ) external onlyApprovedCaller nonReentrant returns (uint256 amountOut) {
         if (amountIn == 0 || tokenIn == tokenOut) revert InvalidAmount();
-        if (tokenIn != settlementToken && tokenOut != settlementToken) {
-            revert InvalidRoute(tokenIn, tokenOut);
-        }
-        bytes32 marketId = abi.decode(data, (bytes32));
-        address asset = tokenIn == settlementToken ? tokenOut : tokenIn;
-        bytes memory path = _registeredPath(tokenIn, tokenOut, asset, marketId);
+        _validatePath(data, tokenIn, tokenOut);
 
         uint256 inputBefore = IERC20(tokenIn).balanceOf(address(this));
         uint256 outputBefore = IERC20(tokenOut).balanceOf(msg.sender);
@@ -123,11 +88,11 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         uint256 reportedOutput = IUniswapV3SwapRouter(uniswapRouter)
             .exactInput(
                 IUniswapV3SwapRouter.ExactInputParams({
-                    path: path,
-                    recipient: msg.sender,
-                    amountIn: amountIn,
-                    amountOutMinimum: minAmountOut
-                })
+                path: data,
+                recipient: msg.sender,
+                amountIn: amountIn,
+                amountOutMinimum: minAmountOut
+            })
             );
         tokenIn.safeApprove(uniswapRouter, 0);
 
@@ -138,31 +103,38 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         if (amountOut < minAmountOut) revert Slippage(amountOut, minAmountOut);
     }
 
-    function _registeredPath(
-        address tokenIn,
-        address tokenOut,
-        address asset,
-        bytes32 marketId
-    ) private view returns (bytes memory path) {
-        if (settlementToken == weth) {
-            (,,, uint24 fee, bool wethRouteActive) = marketRegistry.marketFor(marketId);
-            if (!wethRouteActive || !marketRegistry.isActiveMarketForAsset(marketId, asset)) {
-                revert InvalidMarket(marketId, asset);
-            }
-            return abi.encodePacked(tokenIn, bytes3(fee), tokenOut);
+    function _validatePath(bytes calldata path, address tokenIn, address tokenOut) private view {
+        uint256 length = path.length;
+        if (length < 43 || (length - 20) % 23 != 0) revert InvalidPath();
+        uint256 hops = (length - 20) / 23;
+        if (_addressAt(path, 0) != tokenIn || _addressAt(path, hops * 23) != tokenOut) {
+            revert InvalidPath();
         }
 
-        if (asset == weth) {
-            if (marketId != bytes32(0)) revert InvalidMarket(marketId, asset);
-            return abi.encodePacked(tokenIn, bytes3(wethUsdgFee), tokenOut);
+        uint256 settlementOccurrences;
+        for (uint256 i = 0; i <= hops; i++) {
+            address token = _addressAt(path, i * 23);
+            if (token == address(0)) revert InvalidPath();
+            if (token == settlementToken) settlementOccurrences++;
+            if (i == hops) continue;
+            address nextToken = _addressAt(path, (i + 1) * 23);
+            if (token == nextToken || _feeAt(path, i * 23 + 20) == 0) revert InvalidPath();
         }
 
-        (,,, uint24 assetFee, bool active) = marketRegistry.marketFor(marketId);
-        if (!active || !marketRegistry.isActiveMarketForAsset(marketId, asset)) {
-            revert InvalidMarket(marketId, asset);
+        bool endpointIsSettlement = tokenIn == settlementToken || tokenOut == settlementToken;
+        if (settlementOccurrences != 1) revert InvalidPath();
+        if (!endpointIsSettlement && hops < 2) revert InvalidPath();
+    }
+
+    function _addressAt(bytes calldata path, uint256 offset) private pure returns (address token) {
+        assembly {
+            token := shr(96, calldataload(add(path.offset, offset)))
         }
-        path = tokenIn == asset
-            ? abi.encodePacked(asset, bytes3(assetFee), weth, bytes3(wethUsdgFee), usdg)
-            : abi.encodePacked(usdg, bytes3(wethUsdgFee), weth, bytes3(assetFee), asset);
+    }
+
+    function _feeAt(bytes calldata path, uint256 offset) private pure returns (uint24 fee) {
+        assembly {
+            fee := shr(232, calldataload(add(path.offset, offset)))
+        }
     }
 }

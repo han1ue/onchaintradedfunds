@@ -3,6 +3,7 @@
     {
       "symbol": "TSLA",
       "name": "Tesla",
+      "quality": "high",
       "deployments": [
         {
           "chainId": 4663,
@@ -20,6 +21,7 @@
     {
       "symbol": "AMZN",
       "name": "Amazon",
+      "quality": "high",
       "deployments": [
         {
           "chainId": 4663,
@@ -37,6 +39,7 @@
     {
       "symbol": "PLTR",
       "name": "Palantir Technologies",
+      "quality": "high",
       "deployments": [
         {
           "chainId": 4663,
@@ -54,6 +57,7 @@
     {
       "symbol": "NFLX",
       "name": "Netflix",
+      "quality": "high",
       "deployments": [
         {
           "chainId": 4663,
@@ -71,6 +75,7 @@
     {
       "symbol": "AMD",
       "name": "AMD",
+      "quality": "high",
       "deployments": [
         {
           "chainId": 4663,

@@ -7,11 +7,13 @@ import { adminXIds } from "./env";
 import { requireDb } from "./db";
 import {
   activityEvents, adminActions, ballotAllocations, ballots, competitions, evidenceChecks,
-  finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue, proposals,
+  eligibleAssets, finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue,
+  proposalAssets, proposals,
   tweetEvidence, xpCalculationRuns, xpSnapshotRows
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
 import { calculateXpSnapshot, recomputeLiveXp } from "./xp";
+import { captureAssetPrices } from "./prices";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -79,6 +81,16 @@ export async function finalizeCompetition() {
   await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
   try {
     await recheckEvidence(competitionId, run.id);
+    const finalAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
+      .from(proposalAssets)
+      .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
+      .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
+      .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted")));
+    await captureAssetPrices({
+      assetIds: finalAssets.map((asset) => asset.id),
+      sampledAt: new Date(),
+      purpose: "final",
+    });
     const scored = await database.select({ id: proposals.id, acceptedAt: proposals.acceptedAt, votes: sql<number>`coalesce(sum(case when ${ballots.status} = 'valid' then ${ballotAllocations.votes} else 0 end), 0)::int` })
       .from(proposals).leftJoin(ballotAllocations, eq(ballotAllocations.proposalId, proposals.id)).leftJoin(ballots, eq(ballots.id, ballotAllocations.ballotId))
       .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted"))).groupBy(proposals.id);

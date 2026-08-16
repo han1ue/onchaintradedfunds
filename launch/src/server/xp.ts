@@ -2,12 +2,10 @@ import { and, eq, isNull } from "drizzle-orm";
 import { PublicApiError } from "@/lib/errors";
 import { getVotingStartsAt } from "@/lib/competition";
 import type { XpLeaderboard } from "@/lib/types";
-import { evaluateSevenDayContinuity } from "@/lib/experimental-eligibility";
 import {
   XP_POLICY_VERSION,
   calculateXp,
   eligibleProposalIdsAt,
-  firstCompleteCheckpointAtOrAfter,
   parseFixedPrice,
   stableCanonicalHash,
   syntheticPortfolioReturn,
@@ -25,8 +23,6 @@ type ProposalRow = {
   allocations: {
     assetId: string;
     weightBps: number;
-    qualityStatus: "open" | "qualified" | "blocked";
-    marketId: string | null;
   }[];
 };
 
@@ -38,13 +34,11 @@ type TrancheRow = {
   quantity: number;
   acceptedAt: string;
   effectiveEntryAt: string | null;
-  performanceCohort: "qualified" | "experimental" | null;
-  cohortLockedAt: string | null;
   performanceComparisonProposalIds: string[] | null;
+  entryPriceCaptureRunId: string | null;
 };
 
-type CaptureRun = { id: string; sampledAt: string };
-type EligibilitySnapshotRow = { marketId: string; sampledAt: string; status: "Pass" | "Pending" | "Fail" };
+type CaptureRun = { id: string; sampledAt: string; purpose: "entry" | "final" };
 
 export type CalculatedXpSnapshot = {
   competitionId: string;
@@ -70,25 +64,23 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     select id::text, starts_at as "startsAt", ends_at as "endsAt" from competitions limit 1`;
   if (!competition) throw new Error("COMPETITION_NOT_FOUND");
 
-  const [proposals, tranches, runs, snapshots, eligibilitySnapshots] = await Promise.all([
+  const [proposals, tranches, runs, snapshots] = await Promise.all([
     sqlClient<ProposalRow[]>`
       select p.id::text, p.creator_user_id as "creatorUserId", p.accepted_at as "acceptedAt",
         (select coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int
           from ballot_allocations ba join ballots b on b.id = ba.ballot_id where ba.proposal_id = p.id) as votes,
         coalesce(json_agg(json_build_object(
-          'assetId', pa.asset_id::text, 'weightBps', pa.weight_bps,
-          'qualityStatus', ea.quality_status, 'marketId', pa.market_id::text
+          'assetId', pa.asset_id::text, 'weightBps', pa.weight_bps
         ) order by pa.position), '[]') as allocations
       from proposals p join proposal_assets pa on pa.proposal_id = p.id
-      join eligible_assets ea on ea.id = pa.asset_id
       where p.competition_id = ${competition.id}::uuid and p.status = 'accepted'
       group by p.id`,
     sqlClient<TrancheRow[]>`
       select vt.id::text, vt.voter_user_id as "voterUserId", vt.proposal_id::text as "proposalId",
         p.creator_user_id as "proposalCreatorUserId", vt.quantity, vt.accepted_at as "acceptedAt",
-        vt.effective_entry_at as "effectiveEntryAt", vt.performance_cohort as "performanceCohort",
-        vt.cohort_locked_at as "cohortLockedAt",
-        vt.performance_comparison_proposal_ids::text[] as "performanceComparisonProposalIds"
+        vt.effective_entry_at as "effectiveEntryAt",
+        vt.performance_comparison_proposal_ids::text[] as "performanceComparisonProposalIds",
+        vt.entry_price_capture_run_id::text as "entryPriceCaptureRunId"
       from vote_tranches vt
       join ballots b on b.id = vt.ballot_id and b.status = 'valid'
       join tweet_evidence te on te.id = vt.evidence_id and te.status = 'valid'
@@ -96,19 +88,13 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       where vt.competition_id = ${competition.id}::uuid
       order by vt.accepted_at, vt.id`,
     sqlClient<CaptureRun[]>`
-      select id::text, sampled_at as "sampledAt"
-      from price_capture_runs where purpose = 'scoring'
+      select id::text, sampled_at as "sampledAt", purpose
+      from price_capture_runs where purpose in ('entry', 'final')
         and sampled_at <= ${now.toISOString()}::timestamptz
       order by sampled_at, id`,
     sqlClient<{ runId: string; assetId: string; bidUsd: string }[]>`
       select capture_run_id::text as "runId", asset_id::text as "assetId", bid_usd::text as "bidUsd"
       from asset_price_snapshots where capture_run_id is not null`,
-    sqlClient<EligibilitySnapshotRow[]>`
-      select market_id::text as "marketId", sampled_at as "sampledAt", status
-      from asset_eligibility_snapshots
-      where sampled_at >= ${new Date(now.getTime() - 7 * 86_400_000).toISOString()}::timestamptz
-        and sampled_at <= ${now.toISOString()}::timestamptz
-      order by sampled_at`,
   ]);
 
   const pricesByRun = new Map<string, Map<string, bigint>>();
@@ -119,87 +105,44 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
   }
   const deadline = new Date(competition.endsAt);
   const evaluationRun = options.final
-    ? runs.find((run) => new Date(run.sampledAt) >= deadline)
-    : runs.at(-1);
+    ? runs.find((run) => run.purpose === "final" && new Date(run.sampledAt) >= deadline)
+    : undefined;
   if (options.final && proposals.length > 0 && !evaluationRun) {
     throw new PublicApiError("FINAL_PRICE_CHECKPOINT_UNAVAILABLE", { deadline: deadline.toISOString() });
   }
 
   const proposalById = new Map(proposals.map((proposal) => [proposal.id, proposal]));
-  const eligibilityByMarket = new Map<string, EligibilitySnapshotRow[]>();
-  for (const snapshot of [...eligibilitySnapshots]) {
-    const rows = eligibilityByMarket.get(snapshot.marketId) ?? [];
-    rows.push(snapshot);
-    eligibilityByMarket.set(snapshot.marketId, rows);
-  }
-  const proposalTier = (proposal: ProposalRow) => proposal.allocations.every((allocation) => allocation.qualityStatus === "qualified")
-    ? "qualified" as const
-    : "experimental" as const;
-  const experimentalProposalEligible = (proposal: ProposalRow) => !proposal.allocations.some((allocation) => allocation.qualityStatus === "blocked")
-    && proposal.allocations
-    .filter((allocation) => allocation.qualityStatus !== "qualified")
-    .every((allocation) => Boolean(
-      allocation.marketId
-        && evaluateSevenDayContinuity(
-          (eligibilityByMarket.get(allocation.marketId) ?? []).map((snapshot) => ({
-            sampledAt: new Date(snapshot.sampledAt), status: snapshot.status,
-          })),
-          now,
-        ).status === "Pass",
-    ));
   const evaluationAt = evaluationRun ? new Date(evaluationRun.sampledAt) : null;
   const evaluationPrices = evaluationRun ? pricesByRun.get(evaluationRun.id) : undefined;
   const trancheLocks = new Map<string, {
     effectiveEntryAt: Date;
-    cohort: "qualified" | "experimental";
-    cohortLockedAt: Date;
     comparisonProposalIds: string[];
   }>();
   const scoredTranches: XpTrancheScoreInput[] = tranches.map((tranche) => {
     const acceptedAt = new Date(tranche.acceptedAt);
     const selectedProposal = proposalById.get(tranche.proposalId)!;
-    let cohort = tranche.performanceCohort;
-    let comparisonProposalIds = tranche.performanceComparisonProposalIds;
-    let cohortLockedAt = tranche.cohortLockedAt ? new Date(tranche.cohortLockedAt) : undefined;
-    if (!cohort) {
-      const selectedTier = proposalTier(selectedProposal);
-      if (selectedTier === "experimental" && !experimentalProposalEligible(selectedProposal)) {
-        return {
-          id: tranche.id, voterUserId: tranche.voterUserId, proposalId: tranche.proposalId,
-          proposalCreatorUserId: tranche.proposalCreatorUserId, quantity: tranche.quantity,
-        };
-      }
-      cohort = selectedTier;
-      cohortLockedAt = selectedTier === "qualified" ? acceptedAt : evaluationAt ?? now;
-      const acceptedIds = new Set(eligibleProposalIdsAt(proposals, acceptedAt));
-      comparisonProposalIds = proposals.filter((proposal) =>
-        acceptedIds.has(proposal.id)
-          && proposalTier(proposal) === cohort
-          && (cohort === "qualified" || experimentalProposalEligible(proposal))
-      ).map((proposal) => proposal.id);
-    }
+    const comparisonProposalIds = tranche.performanceComparisonProposalIds
+      ?? eligibleProposalIdsAt(proposals, acceptedAt);
     const eligibleIds = new Set(comparisonProposalIds ?? []);
     const eligibleProposals = proposals.filter((proposal) => eligibleIds.has(proposal.id));
     const returns: { proposalId: string; returnValue: bigint }[] = [];
     let selectedEntryAt: Date | undefined;
-    const entryFloor = tranche.effectiveEntryAt
-      ? new Date(tranche.effectiveEntryAt)
-      : cohortLockedAt ?? acceptedAt;
+    const entryRun = tranche.entryPriceCaptureRunId
+      ? runs.find((run) => run.id === tranche.entryPriceCaptureRunId && run.purpose === "entry")
+      : undefined;
     for (const proposal of eligibleProposals) {
       const assetIds = proposal.allocations.map((allocation) => allocation.assetId);
-      const entryRun = firstCompleteCheckpointAtOrAfter(runs, entryFloor, (run) => coversAssets(pricesByRun.get(run.id), assetIds), evaluationAt ?? undefined);
-      if (!entryRun || !evaluationPrices || !coversAssets(evaluationPrices, assetIds)) continue;
+      if (!entryRun || !coversAssets(pricesByRun.get(entryRun.id), assetIds)) continue;
       if (proposal.id === selectedProposal.id) selectedEntryAt = new Date(entryRun.sampledAt);
+      if (!evaluationPrices || !coversAssets(evaluationPrices, assetIds)) continue;
       returns.push({
         proposalId: proposal.id,
         returnValue: syntheticPortfolioReturn(proposal.allocations, pricesByRun.get(entryRun.id)!, evaluationPrices),
       });
     }
-    if (selectedEntryAt && cohortLockedAt && comparisonProposalIds) {
+    if (selectedEntryAt) {
       trancheLocks.set(tranche.id, {
         effectiveEntryAt: selectedEntryAt,
-        cohort,
-        cohortLockedAt: tranche.cohortLockedAt ? cohortLockedAt : selectedEntryAt,
         comparisonProposalIds,
       });
     }
@@ -210,7 +153,6 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       proposalId: tranche.proposalId,
       proposalCreatorUserId: tranche.proposalCreatorUserId,
       quantity: tranche.quantity,
-      cohort,
       effectiveEntryAt: selectedEntryAt,
       selectedReturn: comparisonComplete ? returns.find((result) => result.proposalId === tranche.proposalId)!.returnValue : undefined,
       comparisonReturns: comparisonComplete ? returns : undefined,
@@ -222,11 +164,9 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     await Promise.all([...trancheLocks].map(([trancheId, lock]) => database.update(voteTranches)
       .set({
         effectiveEntryAt: lock.effectiveEntryAt,
-        performanceCohort: lock.cohort,
-        cohortLockedAt: lock.cohortLockedAt,
         performanceComparisonProposalIds: lock.comparisonProposalIds,
       })
-      .where(and(eq(voteTranches.id, trancheId), isNull(voteTranches.performanceCohort)))));
+      .where(and(eq(voteTranches.id, trancheId), isNull(voteTranches.performanceComparisonProposalIds)))));
   }
 
   const votingStartsAt = getVotingStartsAt(competition.startsAt);
@@ -312,14 +252,14 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
   if (!sqlClient) {
     const now = new Date();
     return {
-      status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: now.toISOString(), policyVersion: XP_POLICY_VERSION,
-      released: { performance: 2_520_000, participation: 360_000, creator: 720_000, total: 3_600_000 },
-      allocated: { performance: 2_520_000, participation: 360_000, creator: 720_000, total: 3_600_000 },
+      status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: null, policyVersion: XP_POLICY_VERSION,
+      released: { performance: 0, participation: 360_000, creator: 720_000, total: 1_080_000 },
+      allocated: { performance: 0, participation: 360_000, creator: 720_000, total: 1_080_000 },
       rows: [
-        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 884_321, participationXp: 126_486, creatorXp: 251_908, totalXp: 1_262_715, uniqueSupporterCount: 18, submissionBoost: true, pendingTrancheCount: 0 },
-        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 701_204, participationXp: 103_514, creatorXp: 215_742, totalXp: 1_020_460, uniqueSupporterCount: 13, submissionBoost: true, pendingTrancheCount: 1 },
-        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 582_991, participationXp: 82_000, creatorXp: 162_350, totalXp: 827_341, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 0 },
-        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 351_484, participationXp: 48_000, creatorXp: 90_000, totalXp: 489_484, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 0 },
+        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 126_486, creatorXp: 251_908, totalXp: 378_394, uniqueSupporterCount: 18, submissionBoost: true, pendingTrancheCount: 1 },
+        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 103_514, creatorXp: 215_742, totalXp: 319_256, uniqueSupporterCount: 13, submissionBoost: true, pendingTrancheCount: 1 },
+        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 82_000, creatorXp: 162_350, totalXp: 244_350, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 48_000, creatorXp: 90_000, totalXp: 138_000, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
       ],
     };
   }

@@ -1,18 +1,52 @@
 import { z } from "zod";
 import { COMPETITION_RULES } from "./competition";
 
-export const allocationSchema = z.object({
-  assetId: z.string().uuid(),
-  marketId: z.string().uuid().nullable().optional(),
-  weightBps: z.number().int().min(COMPETITION_RULES.minAssetWeightBps).max(COMPETITION_RULES.portfolioWeightBps)
-});
+export const evmAddressSchema = z.string().trim().regex(/^0x[0-9a-fA-F]{40}$/).transform((value) => value.toLowerCase());
+
+export const pricingConfigSchema = z.discriminatedUnion("source", [
+  z.object({
+    source: z.literal("chainlink-direct"),
+    feedAddress: evmAddressSchema,
+  }).strict(),
+  z.object({
+    source: z.literal("chainlink-weth"),
+    assetWethFeedAddress: evmAddressSchema,
+    wethUsdFeedAddress: evmAddressSchema,
+  }).strict(),
+  z.object({
+    source: z.literal("uniswap-v3"),
+    poolAddress: evmAddressSchema,
+  }).strict(),
+]);
+
+export const proposalAssetMetadataSchema = z.object({
+  network: z.literal("robinhood-mainnet"),
+  chainId: z.literal(4663),
+  contractAddress: evmAddressSchema,
+  decimals: z.literal(18),
+  symbol: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9-]{0,15}$/),
+  name: z.string().trim().min(1).max(80),
+}).strict();
+
+const allocationFields = {
+  pricingConfig: pricingConfigSchema,
+  weightBps: z.number().int().min(COMPETITION_RULES.minAssetWeightBps).max(COMPETITION_RULES.portfolioWeightBps),
+};
+
+export const allocationSchema = z.union([
+  z.object({ assetId: z.string().uuid(), ...allocationFields }).strict(),
+  z.object({ assetMetadata: proposalAssetMetadataSchema, ...allocationFields }).strict(),
+]);
 
 export const proposalInputSchema = z.object({
   name: z.string().trim().min(5).max(80).refine((value) => value.endsWith(" OTF"), "Name must end in OTF"),
   ticker: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9-]{0,15}$/),
   thesis: z.string().trim().min(1, "Thesis is required").refine((value) => Buffer.byteLength(value, "utf8") <= 2048, "Thesis must be at most 2,048 bytes"),
   allocations: z.array(allocationSchema).min(COMPETITION_RULES.minAssets).superRefine((items, context) => {
-    if (new Set(items.map((item) => item.assetId)).size !== items.length) context.addIssue({ code: "custom", message: "Assets must be unique" });
+    const identities = items.map((item) => "assetId" in item
+      ? `id:${item.assetId}`
+      : `${item.assetMetadata.network}:${item.assetMetadata.contractAddress}`);
+    if (new Set(identities).size !== items.length) context.addIssue({ code: "custom", message: "Assets must be unique" });
     if (items.reduce((sum, item) => sum + item.weightBps, 0) !== COMPETITION_RULES.portfolioWeightBps) context.addIssue({ code: "custom", message: "Weights must total 100%" });
   })
 });

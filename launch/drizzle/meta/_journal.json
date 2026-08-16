@@ -15,6 +15,27 @@
       "when": 1786856037373,
       "tag": "0001_permissionless_asset_tiers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786894670031,
+      "tag": "0002_cynical_klaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786895871329,
+      "tag": "0003_milky_speed_demon",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786914302180,
+      "tag": "0004_unified_asset_quality_pricing",
+      "breakpoints": true
     }
   ]
 }

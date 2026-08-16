@@ -2,14 +2,19 @@
 pragma solidity ^0.8.24;
 
 import { ERC20Base } from "./ERC20Base.sol";
-import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { MathEx } from "./libraries/MathEx.sol";
-import { RebalanceRecord, StrategyVersion, TradeExecutionRecord } from "./VaultTypes.sol";
+import {
+    AssetPricingConfig,
+    RebalanceRecord,
+    StrategyVersion,
+    TradeExecutionRecord
+} from "./VaultTypes.sol";
 
 interface IProtocolPortfolioLimits {
     function minTargetWeightBps() external view returns (uint16);
     function depositsPaused() external view returns (bool);
+    function vaultDepositsPaused(address vault) external view returns (bool);
+    function pricingResolver() external view returns (address);
     function otfTokenURI() external pure returns (string memory);
 }
 
@@ -66,7 +71,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidRoleAddress(address account);
     error InvalidReceiver(address receiver);
     error AssetNotContract(address asset);
-    error UnapprovedAsset(address asset);
     error InvalidWeightSum(uint256 sum);
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
     error TrackedAssetLimitExceeded();
@@ -79,7 +83,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error AmountTooHigh(address asset, uint256 required, uint256 maximum);
     error AmountTooLow(address asset, uint256 actual, uint256 minimum);
     error NonProportionalContribution(address asset, uint256 supplied, uint256 required);
-    error DepositsPausedForAssetRemoval(address asset);
+    error DepositsPausedForRetiringAsset(address asset);
     error OracleFeedMissing(address asset);
     error InvalidOraclePrice(address asset, int256 answer);
     error InvalidOracleTimestamp(address asset, uint256 updatedAt);
@@ -91,9 +95,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
     error NavLossTooHigh(uint256 navBefore, uint256 navAfter, uint16 maximumLossBps);
-    error NavLossBudgetExceeded(
-        uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps
-    );
+    error NavLossBudgetExceeded(uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps);
     error OracleSlippageTooHigh(
         address tokenIn, address tokenOut, uint256 valueIn, uint256 valueOut, uint16 maximumLossBps
     );
@@ -103,7 +105,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error TooManyTrades(uint256 count, uint256 maximum);
     error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
     error TradeAssetNotTracked(address token);
-    error SettlementBalanceConsumed(address settlementAsset, uint256 beforeBalance, uint256 afterBalance);
     error UnapprovedAdapter(address adapter);
     error InvalidRecordIndex(uint256 index);
     error StrategyStateLocked();
@@ -130,11 +131,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error ZeroAddress();
     error VaultAlreadySunset();
     error VaultSunset();
-    error ActiveConstituentsRemain();
     error ProtocolDepositsPaused();
+    error VaultDepositsPaused();
     error AssetMarketRegistryNotConfigured();
+    error PricingResolverNotConfigured();
     error InvalidAssetMarket(address asset, bytes32 marketId);
-    error AssetMarketAlreadyPinned(address asset, bytes32 currentMarketId, bytes32 suppliedMarketId);
+    error InvalidPricingConfig(address asset);
+    error PriceFeedMismatch(address asset, address expected, address supplied);
+    error AssetPricingAlreadyPinned(address asset);
 
     enum FeeState {
         Accruing,
@@ -297,6 +301,20 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => address) internal _priceFeedForAsset;
     bytes32[] internal _pendingMarketIds;
 
+    // Version-3 storage. Pricing identity is pinned per asset and never read through a mutable
+    // global source after selection. The legacy market fields above retain their original slots.
+    mapping(address => uint8) internal _pricingSourceForAsset;
+    mapping(address => address) internal _primaryPriceSourceForAsset;
+    mapping(address => address) internal _secondaryPriceSourceForAsset;
+    mapping(address => uint32) internal _maxStalenessForAsset;
+    mapping(address => uint8) internal _oracleValidationModeForAsset;
+    mapping(address => uint32) internal _secondaryMaxStalenessForAsset;
+    mapping(address => uint8) internal _secondaryOracleValidationModeForAsset;
+    mapping(address => bool) internal _pricingConfiguredForAsset;
+    AssetPricingConfig[] internal _pendingPricingConfigs;
+    mapping(address => uint32) internal _primaryMaxStalenessForAsset;
+    mapping(address => uint8) internal _primaryOracleValidationModeForAsset;
+
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();
         _;
@@ -330,52 +348,24 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {
-        return targetWeightBps[asset] == 0 || !IAssetRegistry(assetRegistry).isApprovedAsset(asset);
-    }
-
-    function _hasActiveConstituent() internal view returns (bool) {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            if (!_isRetiringAsset(_assets[i])) return true;
-        }
-        return false;
+        return targetWeightBps[asset] == 0;
     }
 
     function _effectiveTargetWeights() internal view returns (uint256[] memory weights) {
         uint256 length = _assets.length;
         weights = new uint256[](length);
         uint256 storedWeightTotal;
-        uint256 activeWeightTotal;
 
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
             uint256 storedWeight = targetWeightBps[asset];
             storedWeightTotal += storedWeight;
-            if (!_isRetiringAsset(asset)) {
-                weights[i] = storedWeight;
-                activeWeightTotal += storedWeight;
-            }
+            weights[i] = storedWeight;
         }
 
         if (storedWeightTotal != 0 && storedWeightTotal != BPS) {
             revert InvalidWeightSum(storedWeightTotal);
         }
-        if (activeWeightTotal == 0 || activeWeightTotal == BPS) return weights;
-
-        uint256 assignedWeight;
-        for (uint256 i = 0; i < length; i++) {
-            if (weights[i] == 0) continue;
-            weights[i] = MathEx.mulDiv(weights[i], BPS, activeWeightTotal);
-            assignedWeight += weights[i];
-        }
-
-        uint256 remainder = BPS - assignedWeight;
-        for (uint256 i = 0; i < length && remainder != 0; i++) {
-            if (weights[i] != 0) {
-                weights[i]++;
-                remainder--;
-            }
-        }
-        if (remainder != 0) revert InvalidWeightSum(BPS - remainder);
     }
 
     function _retiringBalancesAreWithinDust() internal view returns (bool) {
@@ -479,28 +469,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         }
 
         while (_assets.length > writeIndex) _assets.pop();
-        if (remainingWeightTotal == 0 || remainingWeightTotal == BPS) return removed;
-
-        uint256 assignedWeight;
-        for (uint256 i = 0; i < _assets.length; i++) {
-            address asset = _assets[i];
-            uint256 storedWeight = targetWeightBps[asset];
-            if (storedWeight == 0) continue;
-            uint256 normalizedWeight = MathEx.mulDiv(storedWeight, BPS, remainingWeightTotal);
-            // A normalized basis-point weight cannot exceed BPS.
-            // forge-lint: disable-next-line(unsafe-typecast)
-            targetWeightBps[asset] = uint16(normalizedWeight);
-            assignedWeight += normalizedWeight;
+        if (remainingWeightTotal != 0 && remainingWeightTotal != BPS) {
+            revert InvalidWeightSum(remainingWeightTotal);
         }
-
-        uint256 remainder = BPS - assignedWeight;
-        for (uint256 i = 0; i < _assets.length && remainder != 0; i++) {
-            address asset = _assets[i];
-            if (targetWeightBps[asset] != 0) {
-                targetWeightBps[asset]++;
-                remainder--;
-            }
-        }
-        if (remainder != 0) revert InvalidWeightSum(BPS - remainder);
     }
 }

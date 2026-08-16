@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { AssetRegistry } from "../src/AssetRegistry.sol";
+import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
+import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
@@ -15,7 +17,12 @@ import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
-import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
+import {
+    AssetPricingConfig,
+    PricingSource,
+    TradeInstruction,
+    VaultInitParams
+} from "../src/VaultTypes.sol";
 import { TestBase } from "./TestBase.sol";
 
 abstract contract ProtocolTestBase is TestBase {
@@ -60,9 +67,9 @@ abstract contract ProtocolTestBase is TestBase {
         adapter = new MockTradeAdapter();
         collector = new FeeCollector(TREASURY);
 
-        assetRegistry.setAssetApproved(address(tokenA), true);
-        assetRegistry.setAssetApproved(address(tokenB), true);
-        assetRegistry.setAssetApproved(address(tokenC), true);
+        assetRegistry.registerAsset(address(tokenA));
+        assetRegistry.registerAsset(address(tokenB));
+        assetRegistry.registerAsset(address(tokenC));
         oracleRegistry.setOracleConfig(
             address(tokenA), feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
         );
@@ -75,7 +82,7 @@ abstract contract ProtocolTestBase is TestBase {
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
-        ManagedOTFVaultView viewModule = new ManagedOTFVaultView();
+        ManagedOTFVaultView viewModule = new ManagedOTFVaultView(calculator);
         ManagedOTFVault implementation =
             new ManagedOTFVault(calculator, address(strategy), address(viewModule));
         factory = new OTFFactory(
@@ -89,6 +96,13 @@ abstract contract ProtocolTestBase is TestBase {
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
         factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
+        factory.setPricingResolver(
+            address(
+                new AssetPricingResolver(
+                    oracleRegistry, IAssetMarketRegistry(address(0)), calculator
+                )
+            )
+        );
 
         tokenA.mint(address(this), 1_000_000 * ONE);
         tokenB.mint(address(this), 1_000_000 * ONE);
@@ -125,6 +139,8 @@ abstract contract ProtocolTestBase is TestBase {
         amounts[0] = 500 * ONE;
         amounts[1] = 500 * ONE;
 
+        AssetPricingConfig[] memory pricingConfigs = _pricingConfigsFor(assets);
+
         params = VaultInitParams({
             name: "Test OTF",
             symbol: "TEST",
@@ -132,7 +148,7 @@ abstract contract ProtocolTestBase is TestBase {
             manager: address(this),
             feeRecipient: FEE_RECIPIENT,
             initialAssets: assets,
-            initialMarketIds: new bytes32[](0),
+            initialPricingConfigs: pricingConfigs,
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
@@ -203,8 +219,11 @@ abstract contract ProtocolTestBase is TestBase {
         uint256 nextStrategyTime = vault.nextStrategyChangeTime();
         if (block.timestamp < nextStrategyTime) vm.warp(nextStrategyTime);
         _refreshPrices();
-        vault.proposeStrategy(
-            assets, _uint256Weights(weights), "Update the portfolio to the 60/40 strategy."
+        vault.proposeStrategyWithPricing(
+            assets,
+            _uint256Weights(weights),
+            _pricingConfigsFor(assets),
+            "Update the portfolio to the 60/40 strategy."
         );
         vm.warp(vault.pendingStrategyActivationTime());
         _refreshPrices();
@@ -226,6 +245,34 @@ abstract contract ProtocolTestBase is TestBase {
     function _refreshPrice(MockPriceFeed feed) internal {
         uint80 nextRound = feed.roundId() + 1;
         feed.setRoundData(nextRound, feed.answer(), block.timestamp, block.timestamp, nextRound);
+    }
+
+    function _directPricing(address feed) internal pure returns (AssetPricingConfig memory config) {
+        config = AssetPricingConfig({
+            source: PricingSource.ChainlinkDirect, primarySource: feed, secondarySource: address(0)
+        });
+    }
+
+    function _pricingConfigFor(address asset)
+        internal
+        view
+        returns (AssetPricingConfig memory config)
+    {
+        if (asset == address(tokenA)) return _directPricing(address(feedA));
+        if (asset == address(tokenB)) return _directPricing(address(feedB));
+        if (asset == address(tokenC)) return _directPricing(address(feedC));
+        revert("missing test pricing config");
+    }
+
+    function _pricingConfigsFor(address[] memory assets)
+        internal
+        view
+        returns (AssetPricingConfig[] memory configs)
+    {
+        configs = new AssetPricingConfig[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            configs[i] = _pricingConfigFor(assets[i]);
+        }
     }
 
     function _rebalanceToTarget(

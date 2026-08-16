@@ -1,25 +1,72 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, earliestLaunchAt, parseXPostId, proposalInputSchema, rankEntries, voteDistributionSchema, xPostReasonSchema } from "./validation";
+import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteDistributionSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
 const assetB = "22222222-2222-4222-8222-222222222222";
+const directPricing = { source: "chainlink-direct" as const, feedAddress: "0x1111111111111111111111111111111111111111" };
+const allocation = (assetId: string, weightBps: number) => ({ assetId, weightBps, pricingConfig: directPricing });
+const inlineAsset = {
+  network: "robinhood-mainnet" as const,
+  chainId: 4663 as const,
+  contractAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  decimals: 18 as const,
+  symbol: "new-token",
+  name: "New Token",
+};
 describe("proposal validation", () => {
   it("normalizes ticker input before submission", () => {
     expect(normalizeTickerInput(" aix  ")).toBe("AIX");
     expect(normalizeTickerInput("ai/x-longer-than-sixteen-characters")).toBe("AIX-LONGER-THAN-");
   });
   it("accepts exactly 10,000 basis points across distinct assets", () => {
-    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).allocations).toHaveLength(2);
+    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 6000), allocation(assetB, 4000)] }).allocations).toHaveLength(2);
   });
   it("accepts a thesis of any non-empty length", () => {
-    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 4000 }] }).thesis).toBe("A");
+    expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [allocation(assetA, 6000), allocation(assetB, 4000)] }).thesis).toBe("A");
   });
   it("rejects allocations that do not total 100%", () => {
-    expect(() => proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 6000 }, { assetId: assetB, weightBps: 3000 }] })).toThrow(/100%/);
+    expect(() => proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 6000), allocation(assetB, 3000)] })).toThrow(/100%/);
   });
   it("rejects duplicate assets and names without the OTF suffix", () => {
-    expect(() => proposalInputSchema.parse({ name: "Compute", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [{ assetId: assetA, weightBps: 5000 }, { assetId: assetA, weightBps: 5000 }] })).toThrow();
+    expect(() => proposalInputSchema.parse({ name: "Compute", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 5000), allocation(assetA, 5000)] })).toThrow();
+  });
+
+  it("accepts permissionless 18-decimal token metadata with an explicit pricing config", () => {
+    const parsed = proposalInputSchema.parse({
+      name: "Permissionless OTF",
+      ticker: "OPEN",
+      thesis: "A mechanically valid portfolio.",
+      allocations: [
+        { assetMetadata: inlineAsset, weightBps: 5000, pricingConfig: directPricing },
+        allocation(assetB, 5000),
+      ],
+    });
+    const metadata = "assetMetadata" in parsed.allocations[0] ? parsed.allocations[0].assetMetadata : null;
+    expect(metadata).toMatchObject({ symbol: "NEW-TOKEN", decimals: 18, contractAddress: inlineAsset.contractAddress });
+  });
+
+  it("rejects inline metadata that is not exactly 18 decimals", () => {
+    expect(() => proposalAssetMetadataSchema.parse({ ...inlineAsset, decimals: 6 })).toThrow();
+  });
+
+  it("normalizes inline addresses before duplicate detection", () => {
+    expect(() => proposalInputSchema.parse({
+      name: "Duplicate OTF",
+      ticker: "DUPE",
+      thesis: "Duplicate address coverage.",
+      allocations: [
+        { assetMetadata: inlineAsset, weightBps: 5000, pricingConfig: directPricing },
+        { assetMetadata: { ...inlineAsset, contractAddress: inlineAsset.contractAddress.toUpperCase().replace("0X", "0x") }, weightBps: 5000, pricingConfig: directPricing },
+      ],
+    })).toThrow(/unique/);
+  });
+
+  it("accepts only the three exact pricing routes and rejects Uniswap V4", () => {
+    expect(pricingConfigSchema.parse(directPricing).source).toBe("chainlink-direct");
+    expect(pricingConfigSchema.parse({ source: "chainlink-weth", assetWethFeedAddress: directPricing.feedAddress, wethUsdFeedAddress: "0x2222222222222222222222222222222222222222" }).source).toBe("chainlink-weth");
+    expect(pricingConfigSchema.parse({ source: "uniswap-v3", poolAddress: directPricing.feedAddress }).source).toBe("uniswap-v3");
+    expect(() => pricingConfigSchema.parse({ source: "uniswap-v4", poolAddress: directPricing.feedAddress })).toThrow();
   });
 });
 

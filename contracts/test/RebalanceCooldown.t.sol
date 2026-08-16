@@ -2,11 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { AssetRegistry } from "../src/AssetRegistry.sol";
+import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
+import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { OracleRegistry } from "../src/OracleRegistry.sol";
@@ -17,7 +19,12 @@ import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
-import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
+import {
+    AssetPricingConfig,
+    PricingSource,
+    TradeInstruction,
+    VaultInitParams
+} from "../src/VaultTypes.sol";
 import { TestBase } from "./TestBase.sol";
 
 contract RebalanceCooldownTest is TestBase {
@@ -45,8 +52,8 @@ contract RebalanceCooldownTest is TestBase {
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
 
-        assetRegistry.setAssetApproved(address(tokenA), true);
-        assetRegistry.setAssetApproved(address(tokenB), true);
+        assetRegistry.registerAsset(address(tokenA));
+        assetRegistry.registerAsset(address(tokenB));
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
         oracleRegistry.setOracleConfig(
@@ -65,7 +72,7 @@ contract RebalanceCooldownTest is TestBase {
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
-        ManagedOTFVaultView viewModule = new ManagedOTFVaultView();
+        ManagedOTFVaultView viewModule = new ManagedOTFVaultView(calculator);
         ManagedOTFVault implementation =
             new ManagedOTFVault(calculator, address(strategy), address(viewModule));
         FeeCollector collector = new FeeCollector(address(0xCAFE));
@@ -80,6 +87,13 @@ contract RebalanceCooldownTest is TestBase {
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
         factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
+        factory.setPricingResolver(
+            address(
+                new AssetPricingResolver(
+                    oracleRegistry, IAssetMarketRegistry(address(0)), calculator
+                )
+            )
+        );
 
         tokenA.approve(address(factory), type(uint256).max);
         tokenB.approve(address(factory), type(uint256).max);
@@ -291,6 +305,18 @@ contract RebalanceCooldownTest is TestBase {
         amounts[0] = 500 * ONE;
         amounts[1] = 500 * ONE;
 
+        AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
+        pricingConfigs[0] = AssetPricingConfig({
+            source: PricingSource.ChainlinkDirect,
+            primarySource: address(feedA),
+            secondarySource: address(0)
+        });
+        pricingConfigs[1] = AssetPricingConfig({
+            source: PricingSource.ChainlinkDirect,
+            primarySource: address(feedB),
+            secondarySource: address(0)
+        });
+
         params = VaultInitParams({
             name: "Onchain Technology Leaders OTF",
             symbol: "TECH",
@@ -298,7 +324,7 @@ contract RebalanceCooldownTest is TestBase {
             manager: address(this),
             feeRecipient: address(0xFEE),
             initialAssets: assets,
-            initialMarketIds: new bytes32[](0),
+            initialPricingConfigs: pricingConfigs,
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,

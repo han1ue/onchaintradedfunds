@@ -123,7 +123,9 @@ assert(
 
 const productionContracts = [
   ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
+  ["AssetPricingResolver.sol", "AssetPricingResolver"],
   ["AssetRegistry.sol", "AssetRegistry"],
+  ["ChainlinkRoutePriceFeed.sol", "ChainlinkRoutePriceFeed"],
   ["FeeCollector.sol", "FeeCollector"],
   ["ManagedOTFVault.sol", "ManagedOTFVault"],
   ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
@@ -132,12 +134,10 @@ const productionContracts = [
   ["OTFFactory.sol", "OTFFactory"],
   ["OTFEntryRouter.sol", "OTFEntryRouter"],
   ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
-  ["OTFBuyback.sol", "OTFBuyback"],
   ["OTFToken.sol", "OTFToken"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RegisteredUniswapV3Adapter.sol", "RegisteredUniswapV3Adapter"],
   ["RebalanceExecutor.sol", "RebalanceExecutor"],
-  ["UniswapV3Adapter.sol", "UniswapV3Adapter"],
   ["UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed"],
 ];
 
@@ -152,9 +152,36 @@ for (const [source, name] of productionContracts) {
 const vault = artifact("ManagedOTFVault.sol", "ManagedOTFVault");
 const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy");
 const viewModule = artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView");
+const factory = artifact("OTFFactory.sol", "OTFFactory");
+const assetRegistry = artifact("AssetRegistry.sol", "AssetRegistry");
+const oracleRegistry = artifact("OracleRegistry.sol", "OracleRegistry");
+const pricingResolver = artifact("AssetPricingResolver.sol", "AssetPricingResolver");
+const registeredV3Adapter = artifact(
+  "RegisteredUniswapV3Adapter.sol",
+  "RegisteredUniswapV3Adapter",
+);
 const erc7621 = artifact("IERC7621.sol", "IERC7621");
 const vaultFunctions = vault.abi.filter((item) => item.type === "function").map((item) => item.name);
 const strategyFunctions = strategy.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const factoryFunctions = factory.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const factoryEvents = abiSignatures(factory, "event");
+const assetRegistryFunctions = assetRegistry.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const assetRegistryEventNames = assetRegistry.abi
+  .filter((item) => item.type === "event")
+  .map((item) => item.name);
+const oracleRegistryFunctions = oracleRegistry.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const pricingResolverFunctions = pricingResolver.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const registeredV3AdapterFunctions = registeredV3Adapter.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 
@@ -233,6 +260,90 @@ for (const signature of officialERC7621Errors) {
 }
 
 assert(!vaultFunctions.includes("execute"), "generic execute function found in vault ABI");
+for (const legacyFunction of [
+  "finalizeTerminalShutdown",
+  "proposeStrategyWithMarkets",
+]) {
+  assert(!vaultFunctions.includes(legacyFunction), `legacy vault function found: ${legacyFunction}`);
+}
+for (const legacyEvent of [
+  "AssetApprovalChanged",
+  "AssetBlocked",
+  "AssetRemoved",
+  "AssetStatusChanged",
+]) {
+  assert(
+    !assetRegistryEventNames.includes(legacyEvent),
+    `legacy AssetRegistry event found: ${legacyEvent}`,
+  );
+}
+assert(
+  ![...vaultEvents].some((signature) => signature.startsWith("TerminalShutdown")),
+  "registry-driven terminal-shutdown event found in vault ABI",
+);
+for (const legacyFunction of [
+  "owner",
+  "statusOf",
+  "canBeConstituent",
+  "isApprovedAsset",
+  "isQualifiedAsset",
+  "setAssetStatus",
+  "setAssetApproved",
+  "approveAsset",
+  "blockAsset",
+  "removeAsset",
+]) {
+  assert(
+    !assetRegistryFunctions.includes(legacyFunction),
+    `legacy AssetRegistry authority found: ${legacyFunction}`,
+  );
+}
+assert(assetRegistryFunctions.includes("registerAsset"), "permissionless asset discovery is absent");
+assert(
+  assetRegistryFunctions.includes("isRegisteredAsset"),
+  "permissionless asset discovery view is absent",
+);
+assert(
+  oracleRegistryFunctions.includes("oracleConfigForPair")
+    && oracleRegistryFunctions.includes("setOracleRoute"),
+  "trusted Chainlink pair-route validation surface is absent",
+);
+assert(
+  pricingResolverFunctions.includes("validatePricing")
+    && pricingResolverFunctions.includes("resolvePricing"),
+  "user-supplied pricing resolver surface is absent",
+);
+assert(
+  registeredV3AdapterFunctions.includes("executeSwap"),
+  "generic V3 adapter executeSwap surface is absent",
+);
+assert(
+  !registeredV3AdapterFunctions.includes("marketIdFromData"),
+  "V3 execution remains coupled to a pricing market ID",
+);
+assert(
+  factoryFunctions.includes("setVaultDepositsPaused")
+    && factoryFunctions.includes("vaultDepositsPaused"),
+  "per-vault deposit pause controls are absent",
+);
+assert(
+  factoryEvents.has("VaultDepositsPauseChanged(address,bool)"),
+  "per-vault deposit pause event is absent",
+);
+const createVaultAbi = factory.abi.find(
+  (item) => item.type === "function" && item.name === "createVault",
+);
+const vaultInitComponents = createVaultAbi?.inputs?.[0]?.components ?? [];
+assert(
+  vaultInitComponents.some((component) => component.name === "initialPricingConfigs"),
+  "factory createVault tuple does not accept initialPricingConfigs",
+);
+assert(
+  !vaultInitComponents.some((component) => component.name === "initialMarketIds"),
+  "factory createVault tuple still accepts initialMarketIds",
+);
+const vaultTypesSource = readFileSync(join(contracts, "src", "VaultTypes.sol"), "utf8");
+assert(!/UniswapV4|PricingSource[^}]*V4/su.test(vaultTypesSource), "V4 pricing source found");
 assert(!strategyFunctions.includes("initialize"), "strategy initializer found");
 assert(
   !strategyFunctions.some((name) => /upgrade|implementation/i.test(name)),

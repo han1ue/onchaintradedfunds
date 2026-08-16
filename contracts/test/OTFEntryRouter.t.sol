@@ -177,6 +177,43 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(vault.balanceOf(ALICE), 0);
     }
 
+    function testVaultLocalPauseBlocksEntryBeforePullButKeepsSettlementExitOpen() public {
+        ManagedOTFVault vault = _createVault();
+        EntrySwap[] memory entrySwaps = _entrySwaps(60 * ONE, 40 * ONE);
+        factory.setVaultDepositsPaused(address(vault), true);
+
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryRouter.VaultDepositsPaused.selector, address(vault))
+        );
+        entryRouter.enterWithSettlement(
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, entrySwaps
+        );
+        vm.stopPrank();
+        assertEq(tokenC.balanceOf(ALICE), 10_000 * ONE);
+        assertEq(vault.balanceOf(ALICE), 0);
+
+        uint256 shares = ONE;
+        vault.transfer(ALICE, shares);
+        uint256[] memory expectedAssets = vault.previewRedeem(shares);
+        ExitSwap[] memory exitSwaps = _exitSwaps(expectedAssets[0], expectedAssets[1]);
+        uint256 settlementBefore = tokenC.balanceOf(ALICE);
+        vm.startPrank(ALICE);
+        vault.approve(address(entryRouter), shares);
+        uint256 received = entryRouter.redeemToSettlement(
+            address(vault),
+            shares,
+            ALICE,
+            expectedAssets[0] + expectedAssets[1],
+            block.timestamp + 1 hours,
+            exitSwaps
+        );
+        vm.stopPrank();
+        assertEq(tokenC.balanceOf(ALICE), settlementBefore + received);
+        assertEq(vault.balanceOf(ALICE), 0);
+    }
+
     function testSettlementEntryEnforcesPerAssetMinimumAtomically() public {
         ManagedOTFVault vault = _createVault();
         exitAdapter.setRate(address(tokenC), address(tokenA), 1, 2);

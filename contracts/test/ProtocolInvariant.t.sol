@@ -293,7 +293,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(vault.totalSupply(), accountedSupply);
     }
 
-    function invariantPortfolioAlwaysSatisfiesMandateLimits() public view {
+    function invariantPortfolioAlwaysSatisfiesMandateLimits() public {
         address[] memory assets = vault.assets();
         uint16[] memory weights = vault.targetWeightsBps();
         uint256 sum;
@@ -301,7 +301,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertGt(assets.length, 0);
         assertEq(assets.length, weights.length);
         for (uint256 i; i < assets.length; ++i) {
-            assertTrue(assetRegistry.isApprovedAsset(assets[i]));
+            assertTrue(assetRegistry.isRegisteredAsset(assets[i]));
             // Raising the protocol floor is intentionally non-retroactive for active targets.
             assertGt(weights[i], 0);
             sum += weights[i];
@@ -312,7 +312,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(sum, 10_000);
     }
 
-    function invariantVaultAlwaysHasPositiveBackingAndNav() public view {
+    function invariantVaultAlwaysHasPositiveBackingAndNav() public {
         assertGt(tokenA.balanceOf(address(vault)), 0);
         assertGt(tokenB.balanceOf(address(vault)), 0);
         assertGt(vault.totalAssetsValue(), 0);
@@ -332,7 +332,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(tokenB.balanceOf(address(currentExecutor)), 0);
     }
 
-    function invariantCooldownAndHistoryRemainConsistent() public view {
+    function invariantCooldownAndHistoryRemainConsistent() public {
         assertLe(vault.lastCompletedStrategyTimestamp(), block.timestamp);
         assertEq(
             vault.nextStrategyChangeTime(),
@@ -361,7 +361,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(vault.factory(), address(factory));
     }
 
-    function invariantStandardRedemptionOrderMatchesTrackedAssets() public view {
+    function invariantStandardRedemptionOrderMatchesTrackedAssets() public {
         address[] memory tracked = vault.assets();
         IERC7621 basket = IERC7621(address(vault));
         (address[] memory constituents, uint256[] memory weights) = basket.getConstituents();

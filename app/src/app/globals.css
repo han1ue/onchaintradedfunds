@@ -1034,6 +1034,7 @@ h2 {
 }
 
 .valueHelp > button {
+  position: relative;
   display: inline-grid;
   width: 20px;
   height: 20px;
@@ -1044,6 +1045,12 @@ h2 {
   color: var(--text-muted);
   background: transparent;
   cursor: help;
+}
+
+.valueHelp > button::before {
+  position: absolute;
+  inset: -12px;
+  content: "";
 }
 
 .valueHelp > button:hover,

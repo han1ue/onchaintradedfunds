@@ -1,10 +1,8 @@
 export const errorMessages: Record<string, string> = {
   X_NOT_VERIFIED: "A verified, public X account is required.",
   FOLLOWER_THRESHOLD: "Your X account must have at least 100 followers to submit or vote.",
-  ASSET_INELIGIBLE: "One or more portfolio assets are not currently eligible.",
-  ASSET_MARKET_NOT_READY: "An Open asset needs an active pinned Uniswap V3 market with a ready one-hour TWAP.",
-  ASSET_MARKET_POOL_AGE_UNKNOWN: "The pinned pool's creation time has not been verified yet.",
-  ASSET_MARKET_POOL_TOO_NEW: "The pinned pool was not at least seven days old when this competition started.",
+  ASSET_NOT_FOUND: "One or more asset metadata records could not be found.",
+  ASSETS_NOT_UNIQUE: "Each token contract may appear only once in a proposal.",
   WEIGHTS_NOT_100: "Portfolio weights must total 100%.",
   X_RECONNECT_REQUIRED: "Sign in with X again so OTF Launch can refresh your eligibility.",
   X_POST_NOT_FOUND: "That public X post could not be found. Check the URL and try again.",
@@ -25,8 +23,7 @@ export const errorMessages: Record<string, string> = {
   NO_NEW_VOTES: "Add at least one newly unlocked vote before continuing.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
   COMPETITION_NOT_OPEN: "The competition is not currently open.",
-  PROPOSAL_PRICE_UNAVAILABLE: "One or more portfolio assets could not be priced. Please try verification again shortly.",
-  FINAL_PRICE_CHECKPOINT_UNAVAILABLE: "The first complete post-deadline price checkpoint is not available yet. Please retry finalization after the next price capture."
+  FINAL_PRICE_CHECKPOINT_UNAVAILABLE: "The competition-end provider price snapshot is not available yet. Please retry finalization."
 };
 
 export class PublicApiError extends Error {
