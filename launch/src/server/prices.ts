@@ -1,10 +1,10 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { PortfolioReturns } from "@/lib/types";
 import { PublicApiError } from "@/lib/errors";
 import { calculatePortfolioReturns } from "@/lib/returns";
 import { requireDb, sqlClient } from "./db";
-import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns, proposalAssets, proposals } from "./db/schema";
+import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
 
 const pricesResponseSchema = z.object({
   quotes: z.array(z.object({
@@ -112,10 +112,7 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
   const sampledAt = options.sampledAt ?? new Date();
   const assets = options.assetIds
     ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
-    : await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource })
-      .from(eligibleAssets)
-      .innerJoin(proposalAssets, eq(proposalAssets.assetId, eligibleAssets.id))
-      .innerJoin(proposals, and(eq(proposals.id, proposalAssets.proposalId), eq(proposals.status, "accepted")));
+    : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
   if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
 
   const typedAssets = assets as PriceAsset[];

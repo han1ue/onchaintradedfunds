@@ -23,9 +23,17 @@ export async function getCompetition(): Promise<CompetitionSummary> {
 export async function getEligibleAssets(): Promise<EligibleAsset[]> {
   if (!sqlClient) return demoAssets;
   return sqlClient<EligibleAsset[]>`
-    select id::text, symbol, name, contract_address as "contractAddress", price_source as "priceSource"
-    from eligible_assets
-    order by symbol`;
+    select ea.id::text, ea.symbol, ea.name, ea.contract_address as "contractAddress", ea.price_source as "priceSource",
+      latest.bid_usd::float8 as "latestPriceUsd", latest.sampled_at::text as "latestPriceAt"
+    from eligible_assets ea
+    left join lateral (
+      select aps.bid_usd, aps.sampled_at
+      from asset_price_snapshots aps
+      where aps.asset_id = ea.id
+      order by aps.sampled_at desc
+      limit 1
+    ) latest on true
+    order by ea.symbol`;
 }
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {

@@ -178,7 +178,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   }
 
   if (!availability.votingOpen) return <SectionCard className="emptyState phaseBlocked"><CalendarClock size={28} /><h2>Voting opens on competition day 8</h2><p>Three votes unlock at {formatDateTime(availability.votingStartsAt)}. Until then, the first week is reserved for OTF submissions.</p><Button href="/submit">Submit an OTF</Button></SectionCard>;
-  if (!proposals.length) return <SectionCard className="emptyState"><Vote size={28} /><h2>No OTF proposals available</h2><p>Your unlocked votes remain available until proposals join the competition.</p><Button href="/submit">Submit the first OTF</Button></SectionCard>;
+  if (!proposals.length) return <SectionCard className="emptyState ballotEmptyState"><Vote size={28} /><h2>No OTF proposals available</h2><p>Your unlocked votes remain available until proposals join the competition.</p><Button href="/submit">Submit the first OTF</Button></SectionCard>;
   if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {COMPETITION_RULES.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
