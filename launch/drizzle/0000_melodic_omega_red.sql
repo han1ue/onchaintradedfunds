@@ -298,7 +298,6 @@ CREATE TABLE "xp_calculation_runs" (
 	"participation_allocated" integer NOT NULL,
 	"creator_released" integer NOT NULL,
 	"creator_allocated" integer NOT NULL,
-	"policy_version" text NOT NULL,
 	"canonical_hash" text NOT NULL,
 	"canonical_json" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL

@@ -3,7 +3,6 @@ import { PublicApiError } from "@/lib/errors";
 import { getVotingStartsAt } from "@/lib/competition";
 import type { XpLeaderboard } from "@/lib/types";
 import {
-  XP_POLICY_VERSION,
   calculateXp,
   eligibleProposalIdsAt,
   parseFixedPrice,
@@ -20,6 +19,7 @@ type ProposalRow = {
   creatorUserId: string;
   acceptedAt: string;
   votes: number;
+  performancePool: "verified" | "nonVerified";
   allocations: {
     assetId: string;
     weightBps: number;
@@ -45,9 +45,8 @@ export type CalculatedXpSnapshot = {
   status: "live" | "final";
   calculatedAt: Date;
   priceCheckpointAt: Date | null;
-  released: { performance: number; participation: number; creator: number };
+  released: { performance: number; verifiedPerformance: number; nonVerifiedPerformance: number; participation: number; creator: number };
   allocated: { performance: number; participation: number; creator: number };
-  policyVersion: string;
   canonicalHash: string;
   canonical: Record<string, unknown>;
   users: ReturnType<typeof calculateXp>["users"];
@@ -69,6 +68,10 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       select p.id::text, p.creator_user_id as "creatorUserId", p.accepted_at as "acceptedAt",
         (select coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int
           from ballot_allocations ba join ballots b on b.id = ba.ballot_id where ba.proposal_id = p.id) as votes,
+        case when exists (
+          select 1 from proposal_assets quality_pa join eligible_assets quality_a on quality_a.id = quality_pa.asset_id
+          where quality_pa.proposal_id = p.id and quality_a.quality <> 'high'
+        ) then 'nonVerified' else 'verified' end as "performancePool",
         coalesce(json_agg(json_build_object(
           'assetId', pa.asset_id::text, 'weightBps', pa.weight_bps
         ) order by pa.position), '[]') as allocations
@@ -153,6 +156,7 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       proposalId: tranche.proposalId,
       proposalCreatorUserId: tranche.proposalCreatorUserId,
       quantity: tranche.quantity,
+      performancePool: selectedProposal.performancePool,
       effectiveEntryAt: selectedEntryAt,
       selectedReturn: comparisonComplete ? returns.find((result) => result.proposalId === tranche.proposalId)!.returnValue : undefined,
       comparisonReturns: comparisonComplete ? returns : undefined,
@@ -176,16 +180,11 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     calculatedAt: options.final && evaluationAt ? evaluationAt : now,
     final: options.final,
     tranches: scoredTranches,
-    creators: [...proposals]
-      .sort((left, right) => right.votes - left.votes
-        || new Date(left.acceptedAt).getTime() - new Date(right.acceptedAt).getTime()
-        || left.id.localeCompare(right.id))
-      .map((proposal, index) => ({
-        proposalId: proposal.id,
-        creatorUserId: proposal.creatorUserId,
-        acceptedAt: new Date(proposal.acceptedAt),
-        finalRank: options.final ? index + 1 : undefined,
-      })),
+    creators: proposals.map((proposal) => ({
+      proposalId: proposal.id,
+      creatorUserId: proposal.creatorUserId,
+      votes: proposal.votes,
+    })),
   });
   if (options.final && result.users.reduce((sum, user) => sum + user.totalXp, 0) !== 10_000_000) {
     throw new Error("XP_FINAL_ALLOCATION_INCOMPLETE");
@@ -194,7 +193,6 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
   const canonical = {
     competitionId: competition.id,
     status,
-    policyVersion: XP_POLICY_VERSION,
     calculatedAt: now.toISOString(),
     priceCheckpointAt: evaluationAt?.toISOString() ?? null,
     released: result.released,
@@ -208,7 +206,6 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     priceCheckpointAt: evaluationAt,
     released: result.released,
     allocated: result.allocated,
-    policyVersion: XP_POLICY_VERSION,
     canonicalHash: stableCanonicalHash(canonical),
     canonical,
     users: result.users,
@@ -229,7 +226,6 @@ export async function persistXpSnapshot(snapshot: CalculatedXpSnapshot) {
       participationAllocated: snapshot.allocated.participation,
       creatorReleased: snapshot.released.creator,
       creatorAllocated: snapshot.allocated.creator,
-      policyVersion: snapshot.policyVersion,
       canonicalHash: snapshot.canonicalHash,
       canonicalJson: snapshot.canonical,
     }).returning({ id: xpCalculationRuns.id });
@@ -252,28 +248,28 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
   if (!sqlClient) {
     const now = new Date();
     return {
-      status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: null, policyVersion: XP_POLICY_VERSION,
-      released: { performance: 0, participation: 360_000, creator: 720_000, total: 1_080_000 },
-      allocated: { performance: 0, participation: 360_000, creator: 720_000, total: 1_080_000 },
+      status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: null,
+      released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 308_571, creator: 720_000, total: 1_028_571 },
+      allocated: { performance: 0, participation: 308_571, creator: 720_000, total: 1_028_571 },
       rows: [
-        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 126_486, creatorXp: 251_908, totalXp: 378_394, uniqueSupporterCount: 18, submissionBoost: true, pendingTrancheCount: 1 },
-        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 103_514, creatorXp: 215_742, totalXp: 319_256, uniqueSupporterCount: 13, submissionBoost: true, pendingTrancheCount: 1 },
-        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 82_000, creatorXp: 162_350, totalXp: 244_350, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 48_000, creatorXp: 90_000, totalXp: 138_000, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 108_417, creatorXp: 251_908, totalXp: 360_325, uniqueSupporterCount: 18, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 88_727, creatorXp: 215_742, totalXp: 304_469, uniqueSupporterCount: 13, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 70_286, creatorXp: 162_350, totalXp: 232_636, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 41_141, creatorXp: 90_000, totalXp: 131_141, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
       ],
     };
   }
   const [run] = await sqlClient<{
-    id: string; status: "live" | "final"; calculatedAt: string; priceCheckpointAt: string | null; policyVersion: string;
+    id: string; status: "live" | "final"; calculatedAt: string; priceCheckpointAt: string | null;
     performanceReleased: number; participationReleased: number; creatorReleased: number;
     performanceAllocated: number; participationAllocated: number; creatorAllocated: number;
   }[]>`
-    select id::text, status, calculated_at as "calculatedAt", price_checkpoint_at as "priceCheckpointAt", policy_version as "policyVersion",
+    select id::text, status, calculated_at as "calculatedAt", price_checkpoint_at as "priceCheckpointAt",
       performance_released as "performanceReleased", participation_released as "participationReleased", creator_released as "creatorReleased",
       performance_allocated as "performanceAllocated", participation_allocated as "participationAllocated", creator_allocated as "creatorAllocated"
     from xp_calculation_runs order by case when status = 'final' then 0 else 1 end, calculated_at desc limit 1`;
   if (!run) {
-    return { status: "live", calculatedAt: new Date(0).toISOString(), priceCheckpointAt: null, policyVersion: XP_POLICY_VERSION, released: { performance: 0, participation: 0, creator: 0, total: 0 }, allocated: { performance: 0, participation: 0, creator: 0, total: 0 }, rows: [] };
+    return { status: "live", calculatedAt: new Date(0).toISOString(), priceCheckpointAt: null, released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 0, creator: 0, total: 0 }, allocated: { performance: 0, participation: 0, creator: 0, total: 0 }, rows: [] };
   }
   const privateRows = await sqlClient<{
     userId: string; username: string; allowRealUsername: boolean;
@@ -291,8 +287,8 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
     usesRealUsername: allowRealUsername,
   }));
   return {
-    status: run.status, calculatedAt: run.calculatedAt, priceCheckpointAt: run.priceCheckpointAt, policyVersion: run.policyVersion,
-    released: { performance: run.performanceReleased, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
+    status: run.status, calculatedAt: run.calculatedAt, priceCheckpointAt: run.priceCheckpointAt,
+    released: { performance: run.performanceReleased, verifiedPerformance: run.status === "final" ? 3_500_000 : 0, nonVerifiedPerformance: run.status === "final" ? 1_500_000 : 0, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
     allocated: { performance: run.performanceAllocated, participation: run.participationAllocated, creator: run.creatorAllocated, total: run.performanceAllocated + run.participationAllocated + run.creatorAllocated },
     rows,
   };

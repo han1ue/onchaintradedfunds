@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock3, DatabaseZap, Gauge, TrendingUp, UserRound, Users, Vote } from "lucide-react";
+import { AlertTriangle, Clock3, DatabaseZap, Gauge, ShieldAlert, ShieldCheck, UserRound, Users, Vote } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getUserXp, getXpLeaderboard } from "@/server/xp";
@@ -20,20 +20,20 @@ export default async function PointsPage() {
   const own = ownXp?.rows[0];
   return <div className="pageShell pointsPage">
     <header className="pointsHeader">
-      <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1><StatusBadge tone={xp.status === "final" ? "positive" : "warning"}>{xp.status === "final" ? "Final" : "Provisional"}</StatusBadge></div><p>Ten million XP tracks voter performance, voting participation, and unique creator support—entirely separate from OTF launch order.</p></div>
+      <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1>{xp.status === "final" && <StatusBadge tone="positive">Final</StatusBadge>}</div><p>Ten million XP rewards verified and non-verified OTF performance, voting participation, and creator vote share—entirely separate from launch order.</p></div>
       <div className="pointsRelease"><span>{xp.status === "final" ? "Final allocation" : "Released so far"}</span><strong>{formatXp(xp.released.total)} <small>XP</small></strong><small>{formatXp(xp.allocated.total)} currently allocated</small></div>
     </header>
 
     <div className="pointsMeta" aria-label="XP calculation timestamps">
       <span><Clock3 size={15} aria-hidden="true" />Calculated {formatTimestamp(xp.calculatedAt)} UTC</span>
       <span><DatabaseZap size={15} aria-hidden="true" />{xp.status === "final" ? `Final provider prices captured ${formatTimestamp(xp.priceCheckpointAt)} UTC` : "Performance settles from the final provider snapshot"}</span>
-      <span>Policy {xp.policyVersion}</span>
     </div>
 
     <div className="xpPoolStrip">
-      <SectionCard><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><strong>{formatXp(xp.released.performance)}</strong><small>of 4,500,000 XP</small></SectionCard>
-      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>of 3,500,000 XP</small></SectionCard>
-      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator</span><strong>{formatXp(xp.released.creator)}</strong><small>of 2,000,000 XP</small></SectionCard>
+      <SectionCard><ShieldCheck size={18} aria-hidden="true" /><span>Verified performance</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>of 3,500,000 XP</small></SectionCard>
+      <SectionCard><ShieldAlert size={18} aria-hidden="true" /><span>Non-verified performance</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>of 1,500,000 XP</small></SectionCard>
+      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>of 3,000,000 XP</small></SectionCard>
+      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator vote share</span><strong>{formatXp(xp.released.creator)}</strong><small>of 2,000,000 XP · weighted by votes</small></SectionCard>
     </div>
 
     {session?.user?.id && <SectionCard className="myXpSummary">
@@ -50,14 +50,14 @@ export default async function PointsPage() {
           <div className="xpParticipant"><span className="xpRank">{index + 1}</span><span className="xpAliasAvatar" aria-hidden="true"><UserRound size={15} /></span><div><strong>{row.publicName}</strong><small>{row.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
           <span data-label="Performance">{formatXp(row.performanceXp)}{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting final price</small>}</span>
           <span data-label="Participation">{formatXp(row.participationXp)}</span>
-          <span data-label="Creator">{formatXp(row.creatorXp)}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</span>
+          <span data-label="Creator">{formatXp(row.creatorXp)}</span>
           <span data-label="Supporters">{row.uniqueSupporterCount.toLocaleString()}</span>
           <strong data-label="Total XP">{formatXp(row.totalXp)}</strong>
-          {(row.pendingTrancheCount > 0 || row.submissionBoost) && <div className="xpMobileStatuses">{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting final price</small>}{row.submissionBoost && <small className="xpBoost">Submission Week Boost · 1.5×</small>}</div>}
+          {row.pendingTrancheCount > 0 && <div className="xpMobileStatuses"><small className="xpPending">Awaiting final price</small></div>}
         </div>) : <div className="xpEmpty"><Gauge size={26} aria-hidden="true" /><strong>XP calculation is starting</strong><p>Verified participation will appear after the first calculation run.</p></div>}
       </div>
     </SectionCard>
 
-    <Callout tone="warning"><AlertTriangle size={17} aria-hidden="true" /><span>{xp.status === "live" ? "Live XP includes participation and creator support; performance remains Pending until the final provider snapshot. " : "Final XP reflects the completed competition audit. "}XP has no guaranteed monetary value.</span></Callout>
+    <Callout tone="warning"><AlertTriangle size={17} aria-hidden="true" /><span>{xp.status === "live" ? "Live XP includes participation and creator vote share; performance remains pending until the final provider snapshot. " : "Final XP reflects the completed competition audit. "}XP has no guaranteed monetary value.</span></Callout>
   </div>;
 }

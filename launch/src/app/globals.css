@@ -694,7 +694,7 @@ button { color: inherit; }
 .pointsMeta { min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px 20px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: color-mix(in srgb, var(--card) 78%, transparent); color: var(--text-muted); font-size: .67rem; }
 .pointsMeta span { display: inline-flex; align-items: center; gap: 6px; }
 .pointsMeta svg { color: var(--teal); }
-.xpPoolStrip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.xpPoolStrip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .xpPoolStrip > section { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 3px 8px; padding: 15px 16px; }
 .xpPoolStrip svg { grid-row: 1 / 4; color: var(--teal); }
 .xpPoolStrip span { color: var(--text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
@@ -835,7 +835,7 @@ button { color: inherit; }
   .voterPrivacyActions { align-items: flex-start; flex-direction: column; }
   .pointsHeader { align-items: flex-start; flex-direction: column; gap: 18px; }
   .pointsRelease { justify-items: start; }
-  .xpPoolStrip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .xpPoolStrip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
   .xpPoolStrip > section { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 4px; align-content: center; padding: 11px 9px; }
   .xpPoolStrip svg { display: none; }
   .xpPoolStrip span { font-size: .54rem; white-space: nowrap; }

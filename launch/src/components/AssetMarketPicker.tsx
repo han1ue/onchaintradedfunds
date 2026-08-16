@@ -107,7 +107,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity"><strong>{selectedSymbol}</strong><small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small></span>
         <StatusBadge tone={selected?.quality === "high" ? "positive" : "neutral"}>
-          {selected?.quality === "high" ? "High quality" : "Normal quality"}
+          {selected?.quality === "high" ? "Verified" : "Non-verified"}
         </StatusBadge>
       </> : <span className="assetPickerPlaceholder">Search by name, symbol, or contract</span>}
       <ChevronDown size={15} aria-hidden="true" />

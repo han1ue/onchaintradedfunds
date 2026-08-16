@@ -117,7 +117,6 @@ export async function finalizeCompetition() {
         participationAllocated: xpSnapshot.allocated.participation,
         creatorReleased: xpSnapshot.released.creator,
         creatorAllocated: xpSnapshot.allocated.creator,
-        policyVersion: xpSnapshot.policyVersion,
         canonicalHash: xpSnapshot.canonicalHash,
         canonicalJson: xpSnapshot.canonical,
       }).returning({ id: xpCalculationRuns.id });

@@ -4,7 +4,6 @@ import {
   XP_POOLS,
   XP_SCORE_SCALE,
   calculateXp,
-  creatorScore,
   eligibleProposalIdsAt,
   largestRemainderAllocate,
   maturityFactor,
@@ -21,9 +20,9 @@ const votingEndsAt = new Date("2026-09-07T00:00:00Z");
 describe("Live XP policy", () => {
   it("releases each pool linearly over 30 voting days", () => {
     const halfway = new Date((votingStartsAt.getTime() + votingEndsAt.getTime()) / 2);
-    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(2_250_000);
-    expect(releasedXp(XP_POOLS.creatorSupport, votingStartsAt, votingEndsAt, votingStartsAt)).toBe(0);
-    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(3_500_000);
+    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(2_500_000);
+    expect(releasedXp(XP_POOLS.creator, votingStartsAt, votingEndsAt, votingStartsAt)).toBe(0);
+    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(3_000_000);
   });
 
   it("uses largest remainder rounding with exact deterministic totals", () => {
@@ -36,27 +35,27 @@ describe("Live XP policy", () => {
   it("keeps later vote batches as separate score-bearing tranches", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
-      creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: new Date("2026-08-01T00:00:00Z") }],
+      creators: [{ proposalId: "p1", creatorUserId: "creator", votes: 5 }],
       tranches: [
-        { id: "t1", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 2, effectiveEntryAt: new Date("2026-08-08T00:00:00Z"), selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 1n }] },
-        { id: "t2", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 3, effectiveEntryAt: new Date("2026-08-09T00:00:00Z"), selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 1n }] },
+        { id: "t1", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 2, performancePool: "verified", effectiveEntryAt: new Date("2026-08-08T00:00:00Z"), selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 1n }] },
+        { id: "t2", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 3, performancePool: "verified", effectiveEntryAt: new Date("2026-08-09T00:00:00Z"), selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 1n }] },
       ],
     });
     const voter = result.users.find((user) => user.userId === "voter")!;
-    expect(voter.participationXp).toBe(3_500_000);
-    expect(voter.performanceXp).toBe(4_500_000);
+    expect(voter.participationXp).toBe(4_500_000);
+    expect(voter.performanceXp).toBe(3_500_000);
     expect(result.users.find((user) => user.userId === "creator")?.uniqueSupporterCount).toBe(1);
   });
 
-  it("leaves missing-price performance pending while keeping participation and creator support", () => {
+  it("leaves missing-price performance pending while keeping participation and vote-weighted creator XP", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"),
-      creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: new Date("2026-08-02T00:00:00Z") }],
-      tranches: [{ id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 4 }],
+      creators: [{ proposalId: "p1", creatorUserId: "creator", votes: 4 }],
+      tranches: [{ id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 4, performancePool: "verified" }],
     });
-    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 1_750_000, pendingTrancheCount: 1 });
+    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 1_500_000, pendingTrancheCount: 1 });
     expect(result.released.performance).toBe(0);
-    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 750_000, uniqueSupporterCount: 1, submissionBoost: true });
+    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 1_000_000, uniqueSupporterCount: 1, submissionBoost: false });
   });
 
   it("excludes proposals accepted after the tranche comparison time", () => {
@@ -86,79 +85,78 @@ describe("Live XP policy", () => {
     expect(value).toBe(20_000_000_000n);
   });
 
-  it("counts unique non-self supporters and applies an exact 1.5x submission boost", () => {
-    expect(creatorScore(1, true)).toBe(creatorScore(1, false) * 3n / 2n);
+  it("keeps unique supporter counts as context without changing vote-weighted creator XP", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
-      creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: new Date("2026-08-01T00:00:00Z") }],
+      creators: [{ proposalId: "p1", creatorUserId: "creator", votes: 3 }],
       tranches: [
-        { id: "self", voterUserId: "creator", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1 },
-        { id: "support-1", voterUserId: "supporter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1 },
-        { id: "support-2", voterUserId: "supporter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1 },
+        { id: "self", voterUserId: "creator", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1, performancePool: "verified" },
+        { id: "support-1", voterUserId: "supporter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1, performancePool: "verified" },
+        { id: "support-2", voterUserId: "supporter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1, performancePool: "verified" },
       ],
     });
-    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ uniqueSupporterCount: 1, submissionBoost: true });
+    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 2_000_000, uniqueSupporterCount: 1, submissionBoost: false });
   });
 
   it("drops invalid or disqualified tranche inputs without penalizing remaining users", () => {
     const validOnly = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"), creators: [],
-      tranches: [{ id: "valid", voterUserId: "valid-voter", proposalId: "eligible", proposalCreatorUserId: "creator", quantity: 2 }],
+      tranches: [{ id: "valid", voterUserId: "valid-voter", proposalId: "eligible", proposalCreatorUserId: "creator", quantity: 2, performancePool: "verified" }],
     });
-    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(1_750_000);
+    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(1_500_000);
     expect(validOnly.users.some((user) => user.userId === "invalid-voter")).toBe(false);
   });
 
-  it("scores every tranche in one quality-independent performance pool", () => {
+  it("allocates verified and non-verified performance independently", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true, creators: [],
       tranches: [
-        { id: "best", voterUserId: "best-voter", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1, effectiveEntryAt: votingStartsAt, selectedReturn: 2n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
-        { id: "worst", voterUserId: "worst-voter", proposalId: "p2", proposalCreatorUserId: "c2", quantity: 1, effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
+        { id: "verified", voterUserId: "verified-voter", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1, performancePool: "verified", effectiveEntryAt: votingStartsAt, selectedReturn: 2n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }] },
+        { id: "non-verified", voterUserId: "non-verified-voter", proposalId: "p2", proposalCreatorUserId: "c2", quantity: 1, performancePool: "nonVerified", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "p2", returnValue: 1n }] },
       ],
     });
-    expect(result.users.find((row) => row.userId === "best-voter")?.performanceXp).toBe(4_500_000);
-    expect(result.users.find((row) => row.userId === "worst-voter")?.performanceXp).toBe(0);
+    expect(result.users.find((row) => row.userId === "verified-voter")?.performanceXp).toBe(3_500_000);
+    expect(result.users.find((row) => row.userId === "non-verified-voter")?.performanceXp).toBe(1_500_000);
   });
 
   it("rolls the unified performance pool to participation when no performance is awardable", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
-      creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: votingStartsAt }],
+      creators: [{ proposalId: "p1", creatorUserId: "creator", votes: 1 }],
       tranches: [
-        { id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1 },
+        { id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1, performancePool: "verified" },
       ],
     });
-    expect(result.rollovers.performanceToParticipation).toBe(4_500_000);
+    expect(result.rollovers.performanceToParticipation).toBe(5_000_000);
     expect(result.users.reduce((sum, user) => sum + user.totalXp, 0)).toBe(10_000_000);
   });
 
-  it("pays fixed final creator ranks and rolls missing ranks into creator support", () => {
+  it("allocates the full creator pool in direct proportion to valid votes", () => {
     const result = calculateXp({
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
       creators: [
-        { proposalId: "p1", creatorUserId: "c1", acceptedAt: votingStartsAt, finalRank: 1 },
-        { proposalId: "p2", creatorUserId: "c2", acceptedAt: votingStartsAt, finalRank: 2 },
+        { proposalId: "p1", creatorUserId: "c1", votes: 1 },
+        { proposalId: "p2", creatorUserId: "c2", votes: 3 },
       ],
       tranches: [
-        { id: "support", voterUserId: "v", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1 },
+        { id: "support", voterUserId: "v", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1, performancePool: "verified" },
       ],
     });
-    expect(result.users.find((row) => row.userId === "c1")?.creatorAwardXp).toBe(232_000);
-    expect(result.users.find((row) => row.userId === "c2")?.creatorAwardXp).toBe(120_000);
-    expect(result.rollovers.creatorAwardsToSupport).toBe(148_000);
+    expect(result.users.find((row) => row.userId === "c1")?.creatorXp).toBe(500_000);
+    expect(result.users.find((row) => row.userId === "c2")?.creatorXp).toBe(1_500_000);
+    expect(result.users.find((row) => row.userId === "c1")?.creatorAwardXp).toBe(0);
   });
 
   it("allocates exactly 10M final XP idempotently with deterministic hashes and does not alter launch ranking", () => {
     const input: Parameters<typeof calculateXp>[0] = {
       votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
       creators: [
-        { proposalId: "p1", creatorUserId: "c1", acceptedAt: new Date("2026-08-01T00:00:00Z") },
-        { proposalId: "p2", creatorUserId: "c2", acceptedAt: new Date("2026-08-09T00:00:00Z") },
+        { proposalId: "p1", creatorUserId: "c1", votes: 2 },
+        { proposalId: "p2", creatorUserId: "c2", votes: 1 },
       ],
       tranches: [
-        { id: "t1", voterUserId: "v1", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 2, effectiveEntryAt: votingStartsAt, selectedReturn: 2n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
-        { id: "t2", voterUserId: "v2", proposalId: "p2", proposalCreatorUserId: "c2", quantity: 1, effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
+        { id: "t1", voterUserId: "v1", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 2, performancePool: "verified", effectiveEntryAt: votingStartsAt, selectedReturn: 2n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
+        { id: "t2", voterUserId: "v2", proposalId: "p2", proposalCreatorUserId: "c2", quantity: 1, performancePool: "nonVerified", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "p1", returnValue: 2n }, { proposalId: "p2", returnValue: 1n }] },
       ],
     };
     const result = calculateXp(input);

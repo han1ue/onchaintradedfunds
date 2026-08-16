@@ -32,7 +32,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
         <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
-        <div><span className="otfName">{entry.name}</span><StatusBadge tone={entry.quality === "high" ? "positive" : "neutral"}>{entry.quality === "high" ? "High quality" : "Normal quality"}</StatusBadge><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
+        <div><span className="otfName">{entry.name}</span>{entry.quality === "high" && <StatusBadge tone="positive">Verified</StatusBadge>}<p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
       </div>
       <AllocationStrip allocations={entry.allocations} showPercentages />
       <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>

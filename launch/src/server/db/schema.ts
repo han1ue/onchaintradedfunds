@@ -404,7 +404,6 @@ export const xpCalculationRuns = pgTable("xp_calculation_runs", {
   participationAllocated: integer("participation_allocated").notNull(),
   creatorReleased: integer("creator_released").notNull(),
   creatorAllocated: integer("creator_allocated").notNull(),
-  policyVersion: text("policy_version").notNull(),
   canonicalHash: text("canonical_hash").notNull(),
   canonicalJson: jsonb("canonical_json").$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()

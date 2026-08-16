@@ -3192,12 +3192,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "policy_version": {
-          "name": "policy_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "canonical_hash": {
           "name": "canonical_hash",
           "type": "text",

@@ -1,14 +1,12 @@
 import { createHash } from "node:crypto";
 
-export const XP_POLICY_VERSION = "unified-assets-provider-snapshots-v4";
 export const XP_POOLS = {
-  participation: 3_500_000,
-  performance: 4_500_000,
-  creatorSupport: 1_500_000,
-  creatorAwards: 500_000,
+  participation: 3_000_000,
+  verifiedPerformance: 3_500_000,
+  nonVerifiedPerformance: 1_500_000,
+  performance: 5_000_000,
   creator: 2_000_000,
 } as const;
-export const TOP_TEN_CREATOR_AWARDS = [232_000, 120_000, 70_000, 30_000, 20_000, 12_000, 8_000, 5_000, 2_000, 1_000] as const;
 export const XP_SCORE_SCALE = 1_000_000_000_000n;
 
 export type XpTrancheScoreInput = {
@@ -17,6 +15,7 @@ export type XpTrancheScoreInput = {
   proposalId: string;
   proposalCreatorUserId: string;
   quantity: number;
+  performancePool: "verified" | "nonVerified";
   effectiveEntryAt?: Date;
   selectedReturn?: bigint;
   comparisonReturns?: { proposalId: string; returnValue: bigint }[];
@@ -25,8 +24,7 @@ export type XpTrancheScoreInput = {
 export type CreatorXpInput = {
   proposalId: string;
   creatorUserId: string;
-  acceptedAt: Date;
-  finalRank?: number;
+  votes: number;
 };
 
 export type XpUserResult = {
@@ -68,26 +66,6 @@ export function largestRemainderAllocate(pool: number, scores: { id: string; sco
     remaining -= extra;
   }
   return result;
-}
-
-export function integerSqrt(value: bigint) {
-  if (value < 0n) throw new Error("NEGATIVE_SQUARE_ROOT");
-  if (value < 2n) return value;
-  let left = 1n;
-  let right = value;
-  while (left <= right) {
-    const middle = (left + right) / 2n;
-    const square = middle * middle;
-    if (square === value) return middle;
-    if (square < value) left = middle + 1n;
-    else right = middle - 1n;
-  }
-  return right;
-}
-
-export function creatorScore(uniqueSupporters: number, boosted: boolean) {
-  const base = integerSqrt(BigInt(uniqueSupporters) * XP_SCORE_SCALE * XP_SCORE_SCALE);
-  return boosted ? base * 3n / 2n : base;
 }
 
 export function tieAwarePercentile(results: { proposalId: string; returnValue: bigint }[], selectedProposalId: string) {
@@ -149,15 +127,15 @@ export function calculateXp(input: {
 }) {
   const released = {
     performance: input.final ? XP_POOLS.performance : 0,
+    verifiedPerformance: input.final ? XP_POOLS.verifiedPerformance : 0,
+    nonVerifiedPerformance: input.final ? XP_POOLS.nonVerifiedPerformance : 0,
     participation: releasedXp(XP_POOLS.participation, input.votingStartsAt, input.votingEndsAt, input.calculatedAt, input.final),
-    creatorSupport: releasedXp(XP_POOLS.creatorSupport, input.votingStartsAt, input.votingEndsAt, input.calculatedAt, input.final),
-    creatorAwards: input.final ? XP_POOLS.creatorAwards : 0,
-    creator: 0,
+    creator: releasedXp(XP_POOLS.creator, input.votingStartsAt, input.votingEndsAt, input.calculatedAt, input.final),
   };
-  released.creator = released.creatorSupport + released.creatorAwards;
   const userIds = new Set<string>();
   const participationScores = new Map<string, bigint>();
-  const performanceScores = new Map<string, bigint>();
+  const verifiedPerformanceScores = new Map<string, bigint>();
+  const nonVerifiedPerformanceScores = new Map<string, bigint>();
   const pendingCounts = new Map<string, number>();
   for (const tranche of input.tranches) {
     userIds.add(tranche.voterUserId);
@@ -168,6 +146,7 @@ export function calculateXp(input: {
     }
     const percentile = tieAwarePercentile(tranche.comparisonReturns, tranche.proposalId);
     const score = performanceScore(tranche.quantity, percentile, maturityFactor(tranche.effectiveEntryAt, input.calculatedAt));
+    const performanceScores = tranche.performancePool === "verified" ? verifiedPerformanceScores : nonVerifiedPerformanceScores;
     performanceScores.set(tranche.voterUserId, (performanceScores.get(tranche.voterUserId) ?? 0n) + score);
   }
 
@@ -179,62 +158,46 @@ export function calculateXp(input: {
     supporters.set(tranche.proposalId, set);
   }
   const creatorScores = new Map<string, bigint>();
-  const creatorAwards = new Map<string, number>();
   const creatorSupporters = new Map<string, number>();
-  const creatorBoost = new Map<string, boolean>();
   for (const creator of input.creators) {
     userIds.add(creator.creatorUserId);
     const count = supporters.get(creator.proposalId)?.size ?? 0;
-    const boosted = creator.acceptedAt < input.votingStartsAt;
-    creatorScores.set(creator.creatorUserId, (creatorScores.get(creator.creatorUserId) ?? 0n) + creatorScore(count, boosted));
+    creatorScores.set(creator.creatorUserId, (creatorScores.get(creator.creatorUserId) ?? 0n) + BigInt(creator.votes));
     creatorSupporters.set(creator.creatorUserId, (creatorSupporters.get(creator.creatorUserId) ?? 0) + count);
-    creatorBoost.set(creator.creatorUserId, (creatorBoost.get(creator.creatorUserId) ?? false) || boosted);
-  }
-  if (input.final) {
-    const awardedRanks = new Set<number>();
-    for (const creator of [...input.creators].sort(
-      (left, right) => (left.finalRank ?? 11) - (right.finalRank ?? 11) || left.proposalId.localeCompare(right.proposalId),
-    )) {
-      const rank = creator.finalRank;
-      if (!rank || rank < 1 || rank > 10 || awardedRanks.has(rank)) continue;
-      awardedRanks.add(rank);
-      creatorAwards.set(
-        creator.creatorUserId,
-        (creatorAwards.get(creator.creatorUserId) ?? 0) + TOP_TEN_CREATOR_AWARDS[rank - 1],
-      );
-    }
   }
 
   const scoreRows = (scores: Map<string, bigint>) => [...scores].map(([id, score]) => ({ id, score }));
   const hasPositiveScore = (scores: Map<string, bigint>) => [...scores.values()].some((score) => score > 0n);
-  let performancePool = released.performance;
+  let verifiedPerformancePool = released.verifiedPerformance;
+  let nonVerifiedPerformancePool = released.nonVerifiedPerformance;
   let participationPool = released.participation;
   const rollovers = {
+    verifiedPerformanceToParticipation: 0,
+    nonVerifiedPerformanceToParticipation: 0,
     performanceToParticipation: 0,
-    creatorAwardsToSupport: 0,
   };
-  if (input.final && !hasPositiveScore(performanceScores)) {
-    rollovers.performanceToParticipation = performancePool;
-    participationPool += performancePool;
-    performancePool = 0;
+  if (input.final && !hasPositiveScore(verifiedPerformanceScores)) {
+    rollovers.verifiedPerformanceToParticipation = verifiedPerformancePool;
+    participationPool += verifiedPerformancePool;
+    verifiedPerformancePool = 0;
   }
-
-  const fixedCreatorAwards = [...creatorAwards.values()].reduce((sum, value) => sum + value, 0);
-  rollovers.creatorAwardsToSupport = released.creatorAwards - fixedCreatorAwards;
-  const creatorSupportPool = released.creatorSupport + rollovers.creatorAwardsToSupport;
-  if (!hasPositiveScore(creatorScores) && input.creators.length > 0) {
-    for (const creator of input.creators) creatorScores.set(creator.creatorUserId, 1n);
+  if (input.final && !hasPositiveScore(nonVerifiedPerformanceScores)) {
+    rollovers.nonVerifiedPerformanceToParticipation = nonVerifiedPerformancePool;
+    participationPool += nonVerifiedPerformancePool;
+    nonVerifiedPerformancePool = 0;
   }
+  rollovers.performanceToParticipation = rollovers.verifiedPerformanceToParticipation + rollovers.nonVerifiedPerformanceToParticipation;
 
-  const performance = largestRemainderAllocate(performancePool, scoreRows(performanceScores));
+  const verifiedPerformance = largestRemainderAllocate(verifiedPerformancePool, scoreRows(verifiedPerformanceScores));
+  const nonVerifiedPerformance = largestRemainderAllocate(nonVerifiedPerformancePool, scoreRows(nonVerifiedPerformanceScores));
   const participation = largestRemainderAllocate(participationPool, scoreRows(participationScores));
-  const creatorSupport = largestRemainderAllocate(creatorSupportPool, scoreRows(creatorScores));
+  const creator = largestRemainderAllocate(released.creator, scoreRows(creatorScores));
   const users = [...userIds].sort().map<XpUserResult>((userId) => {
-    const performanceXp = performance.get(userId) ?? 0;
+    const performanceXp = (verifiedPerformance.get(userId) ?? 0) + (nonVerifiedPerformance.get(userId) ?? 0);
     const participationXp = participation.get(userId) ?? 0;
-    const creatorSupportXp = creatorSupport.get(userId) ?? 0;
-    const creatorAwardXp = creatorAwards.get(userId) ?? 0;
-    const creatorXp = creatorSupportXp + creatorAwardXp;
+    const creatorXp = creator.get(userId) ?? 0;
+    const creatorSupportXp = creatorXp;
+    const creatorAwardXp = 0;
     return {
       userId,
       performanceXp,
@@ -244,12 +207,14 @@ export function calculateXp(input: {
       creatorAwardXp,
       totalXp: performanceXp + participationXp + creatorXp,
       uniqueSupporterCount: creatorSupporters.get(userId) ?? 0,
-      submissionBoost: creatorBoost.get(userId) ?? false,
+      submissionBoost: false,
       pendingTrancheCount: pendingCounts.get(userId) ?? 0,
     };
   });
   const allocated = {
     performance: users.reduce((sum, user) => sum + user.performanceXp, 0),
+    verifiedPerformance: [...verifiedPerformance.values()].reduce((sum, value) => sum + value, 0),
+    nonVerifiedPerformance: [...nonVerifiedPerformance.values()].reduce((sum, value) => sum + value, 0),
     participation: users.reduce((sum, user) => sum + user.participationXp, 0),
     creatorSupport: users.reduce((sum, user) => sum + user.creatorSupportXp, 0),
     creatorAwards: users.reduce((sum, user) => sum + user.creatorAwardXp, 0),

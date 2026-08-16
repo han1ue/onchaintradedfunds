@@ -138,8 +138,7 @@ export type XpLeaderboard = {
   status: "live" | "final";
   calculatedAt: string;
   priceCheckpointAt: string | null;
-  released: { performance: number; participation: number; creator: number; total: number };
+  released: { performance: number; verifiedPerformance: number; nonVerifiedPerformance: number; participation: number; creator: number; total: number };
   allocated: { performance: number; participation: number; creator: number; total: number };
-  policyVersion: string;
   rows: XpLeaderboardRow[];
 };
