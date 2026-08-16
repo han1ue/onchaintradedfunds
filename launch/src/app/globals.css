@@ -342,7 +342,7 @@ button { color: inherit; }
 .rwaDirectoryCount { flex: 0 0 auto; color: var(--text-muted); font-size: .74rem; }
 .rwaDirectoryCount strong { color: var(--text); font-size: 1rem; }
 .rwaDirectory { overflow: hidden; }
-.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(210px, .85fr) minmax(240px, 1fr); align-items: center; gap: 24px; }
+.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(200px, .8fr) minmax(210px, .85fr); align-items: center; gap: 24px; }
 .rwaDirectoryHeading { min-height: 38px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--card-raised); color: var(--text-muted); font-size: .63rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
 .rwaDirectoryHeading span:nth-child(n+2) { text-align: right; }
 .rwaDirectoryRow { min-height: 76px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
@@ -352,6 +352,10 @@ button { color: inherit; }
 .rwaDirectoryIdentity strong, .rwaDirectoryIdentity small { display: block; }
 .rwaDirectoryIdentity strong { font-size: .82rem; }
 .rwaDirectoryIdentity small { margin-top: 4px; color: var(--text-muted); font-size: .69rem; }
+.rwaDirectoryPrice { min-width: 0; text-align: right; }
+.rwaDirectoryPrice strong, .rwaDirectoryPrice small { display: block; }
+.rwaDirectoryPrice strong { color: var(--text); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.rwaDirectoryPrice small { margin-top: 4px; overflow: hidden; color: var(--text-muted); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
 .rwaDirectoryAddress { min-width: 0; display: inline-flex; align-items: center; justify-self: end; gap: 6px; overflow: hidden; color: var(--text-soft); font-family: "SFMono-Regular", Consolas, monospace; font-size: .68rem; white-space: nowrap; }
 .rwaDirectoryAddress span { overflow: hidden; text-overflow: ellipsis; }
 .rwaDirectoryAddress svg { flex: 0 0 auto; color: var(--text-muted); }
@@ -853,6 +857,9 @@ button { color: inherit; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
   .rwaDirectoryHeading { display: none; }
   .rwaDirectoryRow { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .rwaDirectoryPrice { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: right; }
+  .rwaDirectoryPrice::before { content: attr(data-label); flex: 0 0 auto; color: var(--text-muted); font-size: .59rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+  .rwaDirectoryPrice small { white-space: normal; }
   .rwaDirectoryAddress { grid-column: 1 / -1; }
 }
 

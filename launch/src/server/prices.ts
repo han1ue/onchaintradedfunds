@@ -46,7 +46,7 @@ type PriceFetchResult = {
 export type PriceCaptureOptions = {
   assetIds?: string[];
   sampledAt?: Date;
-  purpose: "entry" | "final";
+  purpose: "entry" | "final" | "scoring";
 };
 
 export type PriceCaptureResult = {

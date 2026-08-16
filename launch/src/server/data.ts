@@ -35,7 +35,8 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
     left join lateral (
       select aps.bid_usd, aps.sampled_at
       from asset_price_snapshots aps
-      where aps.asset_id = ea.id
+      join price_capture_runs pcr on pcr.id = aps.capture_run_id
+      where aps.asset_id = ea.id and pcr.purpose = 'scoring'
       order by aps.sampled_at desc
       limit 1
     ) latest on true

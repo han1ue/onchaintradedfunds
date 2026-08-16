@@ -1,0 +1,35 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  assertCron: vi.fn(),
+  captureAssetPrices: vi.fn(),
+  captureMarketEvidence: vi.fn(),
+  recomputeLiveXp: vi.fn(),
+}));
+
+vi.mock("@/server/cron", () => ({ assertCron: mocks.assertCron }));
+vi.mock("@/server/prices", () => ({ captureAssetPrices: mocks.captureAssetPrices }));
+vi.mock("@/server/market-evidence", () => ({ captureMarketEvidence: mocks.captureMarketEvidence }));
+vi.mock("@/server/xp", () => ({ recomputeLiveXp: mocks.recomputeLiveXp }));
+
+import { GET } from "./route";
+
+describe("hourly price job", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.captureAssetPrices.mockResolvedValue({ stored: 46, complete: true });
+    mocks.captureMarketEvidence.mockResolvedValue({ markets: [] });
+    mocks.recomputeLiveXp.mockResolvedValue({ runId: "xp-run" });
+  });
+
+  it("stores an hourly scoring checkpoint before recomputing XP", async () => {
+    const response = await GET(new Request("https://launch.example/api/jobs/prices"));
+
+    expect(mocks.assertCron).toHaveBeenCalledOnce();
+    expect(mocks.captureAssetPrices).toHaveBeenCalledWith({ purpose: "scoring" });
+    expect(mocks.captureMarketEvidence).toHaveBeenCalledOnce();
+    expect(mocks.recomputeLiveXp).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: { prices: { stored: 46 } } });
+  });
+});

@@ -1,0 +1,53 @@
+{
+  "pages": {
+    "/_app": [
+      "static/chunks/50588_next_dist_compiled_next-devtools_index_4da0b2e4.js",
+      "static/chunks/50588_next_dist_compiled_641d60d9._.js",
+      "static/chunks/50588_next_dist_shared_lib_961965a5._.js",
+      "static/chunks/50588_next_dist_client_bf74312c._.js",
+      "static/chunks/50588_next_dist_17c7915a._.js",
+      "static/chunks/50588_next_app_53fac4b5.js",
+      "static/chunks/[next]_entry_page-loader_ts_a85eac11._.js",
+      "static/chunks/c046a_react-dom_812c9f31._.js",
+      "static/chunks/node_modules__pnpm_f012a4b7._.js",
+      "static/chunks/[root-of-the-server]__a09f07ff._.js",
+      "static/chunks/launch_pages__app_2da965e7._.js",
+      "static/chunks/turbopack-launch_pages__app_a08e9e7a._.js"
+    ],
+    "/_error": [
+      "static/chunks/50588_next_dist_compiled_next-devtools_index_4da0b2e4.js",
+      "static/chunks/50588_next_dist_compiled_641d60d9._.js",
+      "static/chunks/50588_next_dist_shared_lib_53892729._.js",
+      "static/chunks/50588_next_dist_client_bf74312c._.js",
+      "static/chunks/50588_next_dist_3b914947._.js",
+      "static/chunks/50588_next_error_ef1c4d69.js",
+      "static/chunks/[next]_entry_page-loader_ts_8166f496._.js",
+      "static/chunks/c046a_react-dom_812c9f31._.js",
+      "static/chunks/node_modules__pnpm_f012a4b7._.js",
+      "static/chunks/[root-of-the-server]__272aee7a._.js",
+      "static/chunks/launch_pages__error_2da965e7._.js",
+      "static/chunks/turbopack-launch_pages__error_cd06bfe1._.js"
+    ]
+  },
+  "devFiles": [],
+  "ampDevFiles": [],
+  "polyfillFiles": [
+    "static/chunks/50588_next_dist_build_polyfills_polyfill-nomodule.js"
+  ],
+  "lowPriorityFiles": [
+    "static/development/_ssgManifest.js",
+    "static/development/_buildManifest.js"
+  ],
+  "rootMainFiles": [
+    "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_5d00ed37._.js",
+    "static/chunks/50588_next_dist_compiled_react-dom_e8c4df36._.js",
+    "static/chunks/50588_next_dist_compiled_next-devtools_index_708ca35a.js",
+    "static/chunks/50588_next_dist_compiled_1e79baf3._.js",
+    "static/chunks/50588_next_dist_client_c56ba2b0._.js",
+    "static/chunks/50588_next_dist_1054cded._.js",
+    "static/chunks/69652_@swc_helpers_cjs_77b72907._.js",
+    "static/chunks/launch_a0ff3932._.js",
+    "static/chunks/turbopack-launch_d3dfb334._.js"
+  ],
+  "ampFirstPages": []
+}
