@@ -18,11 +18,13 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 2. Set the variables in `.env.example`. `AUTH_SECRET`, `CRON_SECRET`, and `IP_HASH_SECRET` must be independent random secrets. Use the same `AUTH_SECRET` in Preview and Production. `ADMIN_X_IDS` contains immutable X IDs, not handles. `AUTH_X_CONSUMER_SECRET` and `TWITTERAPI_IO_API_KEY` remain server-only.
 3. Enable X OAuth 1.0a with read-only access and callback URL `/api/auth/x/callback`. The OAuth access-token exchange proves account ownership and returns the immutable X user ID. TwitterAPI.io supplies the public profile exactly once, when that immutable X ID is first added to `users`; repeat sign-ins never call it. Submissions and votes use free X intents plus oEmbed verification; the app never publishes posts through an API.
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
-5. Verify the seeded Supported RWA records after migration. The database is the sole runtime source for asset names, tickers, and Robinhood Chain token contracts.
+5. Verify the seeded supported-asset records after migration. The database is the sole runtime source for asset names, tickers, Robinhood Chain token contracts, and checkpoint price sources.
 
 The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
 
-The initial Supported RWA records use one-time token contract data from the Robinhood assets API for Robinhood Chain (`4663`). Runtime pages do not call Robinhood or maintain a second static catalog.
+The baseline stock-token records use one-time contract data from Robinhood's public APIs for Robinhood Chain (`4663`). Assets are included only after their active 18-decimal deployment and live Robinhood bid are verified. ETH exposure is represented by Robinhood Chain WETH. Runtime pages use the database rather than a second static asset catalog.
+
+Hourly checkpoints use Robinhood bid quotes for stock tokens and the public Coinbase Exchange `ETH-USD` best bid for ETH. A mixed portfolio is stored only as a complete checkpoint when every requested constituent succeeds in the same capture run; provider failures produce a partial checkpoint and never substitute a spot estimate.
 
 ## Verification and finalization
 
@@ -33,7 +35,7 @@ The initial Supported RWA records use one-time token contract data from the Robi
 - Finalization rechecks evidence before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` retains Robinhood bid snapshots hourly at minute 17 and rechecks public X evidence once daily at 02:42 UTC. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` retains market-bid checkpoints hourly at minute 17 and rechecks public X evidence once daily at 02:42 UTC. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
 
 ## Vercel
 

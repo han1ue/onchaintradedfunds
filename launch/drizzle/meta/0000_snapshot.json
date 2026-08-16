@@ -745,6 +745,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "price_source": {
+          "name": "price_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'robinhood-bid'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -796,7 +803,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "eligible_asset_price_source": {
+          "name": "eligible_asset_price_source",
+          "value": "\"eligible_assets\".\"price_source\" in ('robinhood-bid', 'coinbase-eth-usd-bid')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.evidence_checks": {

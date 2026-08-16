@@ -23,7 +23,7 @@ export async function getCompetition(): Promise<CompetitionSummary> {
 export async function getEligibleAssets(): Promise<EligibleAsset[]> {
   if (!sqlClient) return demoAssets;
   return sqlClient<EligibleAsset[]>`
-    select id::text, symbol, name, contract_address as "contractAddress"
+    select id::text, symbol, name, contract_address as "contractAddress", price_source as "priceSource"
     from eligible_assets
     order by symbol`;
 }

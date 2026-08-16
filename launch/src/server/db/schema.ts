@@ -98,10 +98,12 @@ export const eligibleAssets = pgTable("eligible_assets", {
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   contractAddress: text("contract_address").notNull(),
+  priceSource: text("price_source").default("robinhood-bid").notNull(),
   ...timestamps
 }, (table) => [
   uniqueIndex("eligible_asset_symbol_uq").on(sql`upper(${table.symbol})`),
-  uniqueIndex("eligible_asset_contract_address_uq").on(sql`lower(${table.contractAddress})`)
+  uniqueIndex("eligible_asset_contract_address_uq").on(sql`lower(${table.contractAddress})`),
+  check("eligible_asset_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid')`)
 ]);
 
 export const priceCaptureRuns = pgTable("price_capture_runs", {

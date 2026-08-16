@@ -14,6 +14,29 @@ const pricesResponseSchema = z.object({
   }).passthrough()),
 });
 
+const coinbaseTickerSchema = z.object({
+  bid: z.string(),
+  time: z.string().datetime({ offset: true }),
+});
+
+export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid";
+
+type PriceAsset = {
+  id: string;
+  symbol: string;
+  priceSource: AssetPriceSource;
+};
+
+type SourceQuote = {
+  bid: string;
+  generatedAt: Date;
+};
+
+type PriceFetchResult = {
+  quotes: Map<string, SourceQuote>;
+  errors: { source: AssetPriceSource; message: string }[];
+};
+
 export type PriceCaptureOptions = {
   assetIds?: string[];
   sampledAt?: Date;
@@ -34,29 +57,73 @@ export function assertCompleteProposalPriceCapture(result: PriceCaptureResult, a
   return result.runId;
 }
 
-export async function captureAssetPrices(options: PriceCaptureOptions = {}): Promise<PriceCaptureResult> {
-  const database = requireDb();
-  const sampledAt = options.sampledAt ?? new Date();
-  const assets = options.assetIds
-    ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
-    : await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
-      .from(eligibleAssets)
-      .innerJoin(proposalAssets, eq(proposalAssets.assetId, eligibleAssets.id))
-      .innerJoin(proposals, and(eq(proposals.id, proposalAssets.proposalId), eq(proposals.status, "accepted")));
-  if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
-
+async function fetchRobinhoodBids(): Promise<Map<string, SourceQuote>> {
   const response = await fetch("https://api.robinhood.com/rhj/prices", {
     cache: "no-store",
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`ROBINHOOD_PRICES_${response.status}`);
-
   const payload = pricesResponseSchema.parse(await response.json());
-  const quotesBySymbol = new Map(payload.quotes.map((quote) => [quote.tokenSymbol.toUpperCase(), quote]));
+  return new Map(payload.quotes.map((quote) => [quote.tokenSymbol.toUpperCase(), {
+    bid: quote.bid,
+    generatedAt: new Date(quote.generatedAt),
+  }]));
+}
+
+async function fetchCoinbaseEthBid(): Promise<Map<string, SourceQuote>> {
+  const response = await fetch("https://api.exchange.coinbase.com/products/ETH-USD/ticker", {
+    cache: "no-store",
+    headers: { accept: "application/json", "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`COINBASE_ETH_USD_${response.status}`);
+  const payload = coinbaseTickerSchema.parse(await response.json());
+  return new Map([["ETH", { bid: payload.bid, generatedAt: new Date(payload.time) }]]);
+}
+
+export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<PriceFetchResult> {
+  const requestedSources = new Set(assets.map((asset) => asset.priceSource));
+  const requests: { source: AssetPriceSource; load: () => Promise<Map<string, SourceQuote>> }[] = [];
+  if (requestedSources.has("robinhood-bid")) requests.push({ source: "robinhood-bid", load: fetchRobinhoodBids });
+  if (requestedSources.has("coinbase-eth-usd-bid")) requests.push({ source: "coinbase-eth-usd-bid", load: fetchCoinbaseEthBid });
+
+  const settled = await Promise.all(requests.map(async ({ source, load }) => {
+    try {
+      return { source, quotes: await load() };
+    } catch (error) {
+      return { source, error: error instanceof Error ? error.message : "UNKNOWN_PRICE_SOURCE_ERROR" };
+    }
+  }));
+  const quotes = new Map<string, SourceQuote>();
+  const errors: PriceFetchResult["errors"] = [];
+  for (const result of settled) {
+    if (result.error !== undefined) {
+      errors.push({ source: result.source, message: result.error });
+      continue;
+    }
+    for (const [symbol, quote] of result.quotes ?? []) quotes.set(`${result.source}:${symbol}`, quote);
+  }
+  return { quotes, errors };
+}
+
+export async function captureAssetPrices(options: PriceCaptureOptions = {}): Promise<PriceCaptureResult> {
+  const database = requireDb();
+  const sampledAt = options.sampledAt ?? new Date();
+  const assets = options.assetIds
+    ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
+    : await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource })
+      .from(eligibleAssets)
+      .innerJoin(proposalAssets, eq(proposalAssets.assetId, eligibleAssets.id))
+      .innerJoin(proposals, and(eq(proposals.id, proposalAssets.proposalId), eq(proposals.status, "accepted")));
+  if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
+
+  const typedAssets = assets as PriceAsset[];
+  const priceFetch = await fetchAssetPriceQuotes(typedAssets);
+  if (priceFetch.errors.length) console.error("Price source capture failed", { errors: priceFetch.errors });
   const missing: string[] = [];
-  const values = assets.flatMap((asset) => {
-    const quote = quotesBySymbol.get(asset.symbol.toUpperCase());
+  const values = typedAssets.flatMap((asset) => {
+    const quote = priceFetch.quotes.get(`${asset.priceSource}:${asset.symbol.toUpperCase()}`);
     const bid = quote ? Number(quote.bid) : Number.NaN;
     if (!quote || !Number.isFinite(bid) || bid <= 0) {
       missing.push(asset.symbol);
@@ -65,10 +132,12 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
     return [{
       assetId: asset.id,
       sampledAt,
-      quoteGeneratedAt: new Date(quote.generatedAt),
+      quoteGeneratedAt: quote.generatedAt,
       bidUsd: quote.bid,
     }];
   });
+
+  const provider = [...new Set(typedAssets.map((asset) => asset.priceSource))].sort().join("+");
 
   const [run, stored] = await database.transaction(async (transaction) => {
     const [captureRun] = await transaction.insert(priceCaptureRuns).values({
@@ -76,13 +145,14 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
       status: missing.length ? "partial" : "complete",
       requestedAssetIds: assets.map((asset) => asset.id),
       missingSymbols: missing,
+      provider,
     }).returning({ id: priceCaptureRuns.id });
     const captured = values.length
       ? await transaction.insert(assetPriceSnapshots).values(values.map((value) => ({ ...value, captureRunId: captureRun.id }))).onConflictDoNothing().returning({ assetId: assetPriceSnapshots.assetId })
       : [];
     return [captureRun, captured] as const;
   });
-  if (missing.length) console.error("Robinhood price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing });
+  if (missing.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing, provider });
   return { runId: run.id, sampledAt, stored: stored.length, complete: missing.length === 0, missing };
 }
 

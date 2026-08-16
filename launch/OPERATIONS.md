@@ -5,7 +5,8 @@
 - Apply launch-only Drizzle migrations to a backed-up Neon branch.
 - Verify X OAuth callbacks for preview and production URLs.
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
-- Verify the seeded Supported RWA records contain the intended names, tickers, and Robinhood Chain token contracts.
+- Verify the seeded supported-asset records contain the intended names, tickers, Robinhood Chain token contracts, and price sources.
+- Confirm both the Robinhood stock-token bid endpoint and Coinbase ETH-USD public ticker return valid timestamps and positive bids.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
 - Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 

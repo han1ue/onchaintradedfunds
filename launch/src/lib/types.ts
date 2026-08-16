@@ -50,6 +50,7 @@ export type EligibleAsset = {
   symbol: string;
   name: string;
   contractAddress: string;
+  priceSource: "robinhood-bid" | "coinbase-eth-usd-bid";
 };
 
 export type ParticipationEligibility = {

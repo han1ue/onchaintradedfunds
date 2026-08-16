@@ -75,7 +75,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   return <div className="portfolioReturns">
     <div className="returnsHeading">
-      <div><h2>Returns since proposed</h2><p>Initial portfolio weights, indexed from the first complete Robinhood bid observation.</p></div>
+      <div><h2>Returns since proposed</h2><p>Initial portfolio weights, indexed from the first complete market-bid checkpoint.</p></div>
       {points.length > 1 && <div className={`returnsCurrent ${tone}`}><span>Current</span><strong>{formatReturn(current)}</strong></div>}
     </div>
     {points.length < 2 || !layout || !active ? <div className="returnsEmpty">

@@ -85,8 +85,10 @@ CREATE TABLE "eligible_assets" (
 	"symbol" text NOT NULL,
 	"name" text NOT NULL,
 	"contract_address" text NOT NULL,
+	"price_source" text DEFAULT 'robinhood-bid' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "eligible_asset_price_source" CHECK ("eligible_assets"."price_source" in ('robinhood-bid', 'coinbase-eth-usd-bid'))
 );
 --> statement-breakpoint
 CREATE TABLE "evidence_checks" (
@@ -481,3 +483,19 @@ INSERT INTO "eligible_assets" ("symbol", "name", "contract_address") VALUES
   ('TSM', 'Taiwan Semiconductor Manufacturing', '0x58FfE4a942d3885bAa22D7520691F611EF09e7AA'),
   ('TTWO', 'Take-Two Interactive', '0x5e81213613b6B86EaB4c6c50d718d34359459786'),
   ('USO', 'United States Oil Fund', '0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344');
+--> statement-breakpoint
+INSERT INTO "eligible_assets" ("symbol", "name", "contract_address", "price_source") VALUES
+  ('AAOI', 'Applied Optoelectronics', '0x521Cf887E6531c6F667b5BC4D896E5d9bfE8EB2E', 'robinhood-bid'),
+  ('AMC', 'AMC Entertainment Holdings', '0x05a3d1Cd21d0C88145E82600E62e7E496e0F222B', 'robinhood-bid'),
+  ('APLD', 'Applied Digital', '0xb8DBf92F9741c9ac1c32115E78581f23509916FD', 'robinhood-bid'),
+  ('AVGO', 'Broadcom', '0x156E175DD063a8cE274C50654eF40e0032b3fbcF', 'robinhood-bid'),
+  ('CLSK', 'CleanSpark', '0xcBB95BBF36099d34dA091dc6Fa6F49EfA257Cee3', 'robinhood-bid'),
+  ('DJT', 'Trump Media & Technology Group', '0x1D11f0496982706C5e14A514D4E79F2e6BdE4516', 'robinhood-bid'),
+  ('ETH', 'Ether · represented by WETH', '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', 'coinbase-eth-usd-bid'),
+  ('LLY', 'Eli Lilly', '0x8005d266423c7ea827372c9c864491e5786600ea', 'robinhood-bid'),
+  ('ORCL', 'Oracle', '0xb0992820E760d836549ba69BC7598b4af75dEE03', 'robinhood-bid'),
+  ('PENG', 'Penguin Solutions', '0x9b23573b156B52565012F5cE02CDF60AFBaa70Be', 'robinhood-bid'),
+  ('RIVN', 'Rivian Automotive', '0xB1BF26c1D20ff267A4f93550d1E0d06ac40a114B', 'robinhood-bid'),
+  ('SKHY', 'SK hynix ADR', '0x84CAb63bc87912E71ad199ff14A0bA45de68FeF8', 'robinhood-bid'),
+  ('SMCI', 'Super Micro Computer', '0xc01aA1fECeC0605b13bc84874ff7256C0f5F562a', 'robinhood-bid'),
+  ('USAR', 'USA Rare Earth', '0xd917B029C761D264c6A312BBbcDA868658eF86a6', 'robinhood-bid');

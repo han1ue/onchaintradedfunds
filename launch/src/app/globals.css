@@ -341,7 +341,7 @@ button { color: inherit; }
 .rwaDirectoryCount { flex: 0 0 auto; color: var(--text-muted); font-size: .74rem; }
 .rwaDirectoryCount strong { color: var(--text); font-size: 1rem; }
 .rwaDirectory { overflow: hidden; }
-.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(260px, 1fr); align-items: center; gap: 18px; }
+.rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(150px, .65fr) minmax(230px, .8fr); align-items: center; gap: 18px; }
 .rwaDirectoryHeading { min-height: 38px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--card-raised); color: var(--text-muted); font-size: .63rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
 .rwaDirectoryHeading span:last-child { text-align: right; }
 .rwaDirectoryRow { min-height: 76px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
@@ -351,6 +351,7 @@ button { color: inherit; }
 .rwaDirectoryIdentity strong, .rwaDirectoryIdentity small { display: block; }
 .rwaDirectoryIdentity strong { font-size: .82rem; }
 .rwaDirectoryIdentity small { margin-top: 4px; color: var(--text-muted); font-size: .69rem; }
+.rwaDirectorySource { color: var(--text-soft); font-size: .7rem; }
 .rwaDirectoryAddress { min-width: 0; display: inline-flex; align-items: center; justify-self: end; gap: 6px; overflow: hidden; color: var(--text-soft); font-family: "SFMono-Regular", Consolas, monospace; font-size: .68rem; white-space: nowrap; }
 .rwaDirectoryAddress span { overflow: hidden; text-overflow: ellipsis; }
 .rwaDirectoryAddress svg { flex: 0 0 auto; color: var(--text-muted); }
@@ -803,6 +804,8 @@ button { color: inherit; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
   .rwaDirectoryHeading { display: none; }
   .rwaDirectoryRow { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .rwaDirectorySource { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rwaDirectorySource::before { content: attr(data-label); color: var(--text-muted); font-size: .59rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
   .rwaDirectoryAddress { grid-column: 1 / -1; }
 }
 
