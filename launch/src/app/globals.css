@@ -357,6 +357,8 @@ button { color: inherit; }
 .rwaDirectoryAddress svg { flex: 0 0 auto; color: var(--text-muted); }
 .rwaDirectoryAddress:hover { color: var(--teal); }
 .rwaDirectoryAddress:hover svg { color: currentColor; }
+.rwaDirectoryAddressUnavailable { color: var(--text-muted); }
+.rwaDirectoryAddressUnavailable:hover { color: var(--text-muted); }
 .rwaDirectoryEmpty { display: grid; min-height: 180px; place-content: center; justify-items: center; padding: 30px 18px; text-align: center; }
 .rwaDirectoryEmpty strong { font-size: .9rem; }
 .rwaDirectoryEmpty p { max-width: 530px; margin: 7px 0 0; color: var(--text-muted); font-size: .74rem; line-height: 1.55; }

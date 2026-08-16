@@ -491,7 +491,7 @@ INSERT INTO "eligible_assets" ("symbol", "name", "contract_address", "price_sour
   ('AVGO', 'Broadcom', '0x156E175DD063a8cE274C50654eF40e0032b3fbcF', 'robinhood-bid'),
   ('CLSK', 'CleanSpark', '0xcBB95BBF36099d34dA091dc6Fa6F49EfA257Cee3', 'robinhood-bid'),
   ('DJT', 'Trump Media & Technology Group', '0x1D11f0496982706C5e14A514D4E79F2e6BdE4516', 'robinhood-bid'),
-  ('ETH', 'Ether · represented by WETH', '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', 'coinbase-eth-usd-bid'),
+  ('ETH', 'Ethereum', 'N/A', 'coinbase-eth-usd-bid'),
   ('LLY', 'Eli Lilly', '0x8005d266423c7ea827372c9c864491e5786600ea', 'robinhood-bid'),
   ('ORCL', 'Oracle', '0xb0992820E760d836549ba69BC7598b4af75dEE03', 'robinhood-bid'),
   ('PENG', 'Penguin Solutions', '0x9b23573b156B52565012F5cE02CDF60AFBaa70Be', 'robinhood-bid'),
