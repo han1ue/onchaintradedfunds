@@ -2,7 +2,7 @@
 
 Repository/package folder: `onchaintradedfunds`.
 
-Onchain Traded Funds, abbreviated OTF, is an experimental MVP for permissionless onchain investment vaults backed by approved stock-token style ERC-20 assets. Each vault is an ERC-20 share token and a custodian of its own underlying basket. Managers can rebalance, but only through a narrow, safety-checked execution path.
+Onchain Traded Funds, abbreviated OTF, is an experimental MVP for permissionless onchain investment vaults backed by qualified or open exact-transfer ERC-20 assets. Each vault is an ERC-20 share token and a custodian of its own underlying basket. Managers can rebalance, but only through a narrow, safety-checked execution path.
 
 This code is not audited, not production ready, and must not be deployed to mainnet.
 
@@ -21,8 +21,9 @@ This repository currently implements the first MVP slice:
 - Fixed minimum rebalance cooldown model.
 - Direct basket vault creation through the factory.
 - Proportional mint and redeem logic.
-- Atomic fixed-USDG entry through a separately allowlisted router and adapter.
+- Atomic USDG or WETH entry through separately configured allowlisted routers and registered V3 adapters.
 - Lazy share-based management fee accrual.
+- Optional OTF-token holding rebates and treasury-funded protocol-token buybacks.
 - Onchain strategy history binding rationales to target snapshots.
 - Oracle-valued NAV and weight checks.
 - Approved-adapter rebalance execution.
@@ -138,7 +139,7 @@ flowchart LR
 
 `AssetRegistry`
 
-- Onchain allowlist for approved assets in local development.
+- Onchain `Open`, `Qualified`, and `Blocked` asset statuses with permissionless open registration.
 - Production integration point for an official Robinhood Chain stock-token registry.
 - A revoked constituent immediately receives a 0% effective target; remaining approved targets
   are renormalized proportionally to exactly 10,000 bps whenever at least one remains.
@@ -147,15 +148,27 @@ flowchart LR
 
 `OracleRegistry`
 
-- Maps approved assets to `AggregatorV3Interface` feeds, per-feed freshness thresholds, and an
+- Maps protocol-qualified assets to `AggregatorV3Interface` feeds, per-feed freshness thresholds, and an
   explicit validation mode.
 - Lets vaults evaluate NAV, turnover, and post-trade weight deviation.
 
 `FeeCollector`
 
 - Receives the protocol portion of manager-selected fee shares.
-- Allows only the configured treasury to claim those shares.
+- Allows only the configured treasury to claim those shares and configure an optional percentage
+  allocation to the buyback contract.
 - Uses a two-step treasury transfer.
+
+`OTFToken` and `OTFBuyback`
+
+- Provide a fixed-supply, no-privileged-minter OTF protocol token contract.
+- Scale each vault's protocol fee share linearly using its live oracle-valued OTF holding, up to an
+  admin-configured full-rebate threshold.
+- Redeem allocated protocol fee shares and buy only OTF through explicitly approved adapters with
+  transaction-level minimum outputs.
+- Send purchased OTF only to the immutable treasury, timelock, or burn-vault recipient selected at
+  buyback deployment.
+- Are specified in [`docs/OTF_TOKEN_AND_FEE_INCENTIVES.md`](./docs/OTF_TOKEN_AND_FEE_INCENTIVES.md).
 
 ### Basket Share Safety
 
@@ -261,7 +274,7 @@ The vault initializer:
 
 - Validates manager and fee recipient.
 - Validates initial thesis byte length.
-- Validates approved assets and no duplicates.
+- Validates constituent status, pinned V3 markets, and no duplicates.
 - Validates weight totals equal 10,000 bps.
 - Validates min, max, and count constraints.
 - Validates exact initial balances arrived.
@@ -333,7 +346,7 @@ Redemption:
 - Remains available when oracle-dependent actions fail.
 
 Investors likewise have exactly three exit paths: receive the proportional RWA basket directly,
-sell OTF shares into the official OTF/USDG pool, or redeem through `OTFEntryRouter` for USDG. For
+sell OTF shares into the official OTF/USDG pool, or redeem through an `OTFEntryRouter` for USDG or WETH. For
 the routed settlement exit, the holder approves
 the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
 proportional `redeem` path, sells each received constituent through an approved adapter, enforces
@@ -768,6 +781,11 @@ forge coverage --report summary
 security lint, canonical vault/module storage, deployable bytecode sizes, and restricted
 delegation surfaces.
 
+The current permissionless v2 implementation intentionally fails the deployable-size gate:
+`ManagedOTFVault` is 25,692 bytes and `ManagedOTFVaultStrategy` is 28,297 bytes under the pinned
+build settings. Mainnet deployment remains blocked until both implementations are split below the
+24,576-byte EIP-170 runtime limit and the complete gate passes.
+
 ## Tests
 
 The Solidity suite contains broad deterministic, fuzz-property, and stateful invariant coverage.
@@ -802,8 +820,8 @@ Deterministic coverage includes:
   fee resumption, and deposits and withdrawals during challenge states.
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
-- Atomic fixed-USDG entry, exact-input minimum-share protection, proportional-only deposits,
-  slippage-protected USDG surplus refunds, entry-adapter authorization, expired entry rejection,
+- Atomic USDG/WETH entry, exact-input minimum-share protection, proportional-only deposits,
+  slippage-protected settlement-asset surplus refunds, entry-adapter authorization, expired entry rejection,
   and Uniswap-compatible direct and USDG-hop adapter behavior.
 - Atomic USDG redemption, exact share approval, per-leg and aggregate minimum outputs, deadline
   enforcement, and complete rollback when an exit adapter or quote is invalid.
@@ -822,9 +840,9 @@ history, and immutable factory provenance.
 ## Known Limitations
 
 - No production Robinhood Chain addresses are verified or configured.
-- RWA/USDG pools are initialized separately from liquidity provisioning; constituent entry, USDG redemption, and rebalances remain unavailable while any required pool has zero active liquidity.
+- Registered asset/WETH pools are initialized separately from liquidity provisioning; routed entry, redemption, and rebalances remain unavailable while any required pool lacks active liquidity or TWAP history.
 - RFQ, proprietary AMM, and order-book adapters are not implemented.
-- USDG entry currently quotes direct USDG-to-constituent pools; more advanced route discovery is not implemented.
+- V1 routes are registry-derived Uniswap V3 paths: asset/WETH for WETH settlement and asset/WETH/USDG for USDG settlement. V4 is intentionally unsupported.
 - The generated ABI package is currently a hand-maintained MVP subset.
 - The contracts are intentionally compact for MVP exploration and have not been gas optimized.
 - ERC-7621 remains a draft and its interface may change.

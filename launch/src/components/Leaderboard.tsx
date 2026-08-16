@@ -5,6 +5,7 @@ import type { LeaderboardEntry, VoterLeaderboardEntry } from "@/lib/types";
 import { truncateText } from "@/lib/truncate-text";
 import { AllocationStrip } from "./AllocationStrip";
 import { XProfileImage } from "./XProfileImage";
+import { StatusBadge } from "./ui";
 
 const LEADERBOARD_THESIS_LIMIT = 120;
 
@@ -31,7 +32,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">
         <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
-        <div><span className="otfName">{entry.name}</span><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
+        <div><span className="otfName">{entry.name}</span><StatusBadge tone={entry.qualityTier === "blocked" ? "danger" : entry.qualityTier === "experimental" ? "warning" : "positive"}>{entry.qualityTier === "blocked" ? "Blocked" : entry.qualityTier === "experimental" ? "Experimental" : "Protocol-qualified assets"}</StatusBadge><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
       </div>
       <AllocationStrip allocations={entry.allocations} showPercentages />
       <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>

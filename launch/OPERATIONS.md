@@ -5,14 +5,16 @@
 - Apply launch-only Drizzle migrations to a backed-up Neon branch.
 - Verify X OAuth callbacks for preview and production URLs.
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
-- Verify the seeded supported-asset records contain the intended names, tickers, Robinhood Chain token contracts, and price sources.
-- Confirm both the Robinhood stock-token bid endpoint and Coinbase ETH-USD public ticker return valid timestamps and positive bids.
+- Verify the versioned asset and V3 market registries, trusted factory, WETH, USDG, and canonical WETH/USDG pool against deployed bytecode and transactions. Keep Robinhood Mainnet disabled until this is complete.
+- Configure `COINGECKO_PRO_API_KEY`, `COINGECKO_NETWORK_ID`, and the authenticated `MARKET_EVIDENCE_URL`. The evidence service must read one-hour and 24-hour V3 TWAPs and simulate both $1,000 route directions; missing evidence must remain Pending.
+- Confirm Robinhood/Coinbase feeds for qualified assets and one-hour/24-hour onchain V3 checkpoints for open assets return valid timestamps and positive values.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
 - Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 
 ## During the competition
 
 - Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
+- Run `/api/jobs/prices` hourly. It captures market evidence first, stores threshold results, captures scoring prices, and then recomputes cohort-isolated XP.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 

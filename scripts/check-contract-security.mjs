@@ -122,6 +122,7 @@ assert(
 );
 
 const productionContracts = [
+  ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
   ["AssetRegistry.sol", "AssetRegistry"],
   ["FeeCollector.sol", "FeeCollector"],
   ["ManagedOTFVault.sol", "ManagedOTFVault"],
@@ -131,9 +132,13 @@ const productionContracts = [
   ["OTFFactory.sol", "OTFFactory"],
   ["OTFEntryRouter.sol", "OTFEntryRouter"],
   ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
+  ["OTFBuyback.sol", "OTFBuyback"],
+  ["OTFToken.sol", "OTFToken"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
+  ["RegisteredUniswapV3Adapter.sol", "RegisteredUniswapV3Adapter"],
   ["RebalanceExecutor.sol", "RebalanceExecutor"],
   ["UniswapV3Adapter.sol", "UniswapV3Adapter"],
+  ["UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed"],
 ];
 
 for (const [source, name] of productionContracts) {

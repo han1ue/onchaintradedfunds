@@ -298,6 +298,7 @@ contract RebalanceCooldownTest is TestBase {
             manager: address(this),
             feeRecipient: address(0xFEE),
             initialAssets: assets,
+            initialMarketIds: new bytes32[](0),
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,

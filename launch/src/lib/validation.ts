@@ -3,6 +3,7 @@ import { COMPETITION_RULES } from "./competition";
 
 export const allocationSchema = z.object({
   assetId: z.string().uuid(),
+  marketId: z.string().uuid().nullable().optional(),
   weightBps: z.number().int().min(COMPETITION_RULES.minAssetWeightBps).max(COMPETITION_RULES.portfolioWeightBps)
 });
 

@@ -2,7 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
-import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { AssetStatus, IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IOracleRegistry, OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
@@ -14,6 +15,12 @@ interface ITargetWeightVault {
 
 interface IOraclePauseStatus {
     function oraclePaused() external view returns (bool);
+}
+
+interface IVaultAssetPriceSources {
+    function priceFeedForAsset(address asset) external view returns (address);
+    function assetMarketRegistry() external view returns (address);
+    function assetRegistry() external view returns (address);
 }
 
 contract PortfolioCalculator {
@@ -238,12 +245,33 @@ contract PortfolioCalculator {
         view
         returns (uint256)
     {
-        return _assetValue(asset, rawBalance, oracleRegistry);
+        return _assetValue(address(0), asset, rawBalance, oracleRegistry);
     }
 
     function validateAsset(address asset, address oracleRegistry) external view {
         _tokenDecimals(asset);
-        _validPrice(asset, oracleRegistry);
+        _validPrice(address(0), asset, oracleRegistry);
+    }
+
+    function assetValueForVault(
+        address vault,
+        address asset,
+        uint256 rawBalance,
+        address oracleRegistry
+    ) external view returns (uint256) {
+        return _assetValue(vault, asset, rawBalance, oracleRegistry);
+    }
+
+    function validateAssetForVault(address vault, address asset, address oracleRegistry)
+        external
+        view
+    {
+        if (_isVaultUsdg(vault, asset)) {
+            _settlementDecimals(asset);
+            return;
+        }
+        _tokenDecimals(asset);
+        _validPrice(vault, asset, oracleRegistry);
     }
 
     function isWithinBands(
@@ -295,7 +323,8 @@ contract PortfolioCalculator {
     ) private view returns (uint256[] memory weights, uint256 nav) {
         uint256[] memory values = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            values[i] = _assetValue(assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
+            values[i] =
+                _assetValue(vault, assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
             nav += values[i];
         }
         if (nav == 0) {
@@ -308,26 +337,63 @@ contract PortfolioCalculator {
         }
     }
 
-    function _assetValue(address asset, uint256 rawBalance, address oracleRegistry)
+    function _assetValue(address vault, address asset, uint256 rawBalance, address oracleRegistry)
         private
         view
         returns (uint256)
     {
         if (rawBalance == 0) return 0;
-        (uint256 price, uint8 priceDecimals) = _validPrice(asset, oracleRegistry);
+        if (_isVaultUsdg(vault, asset)) {
+            uint8 settlementDecimals = _settlementDecimals(asset);
+            return MathEx.mulDiv(rawBalance, WAD, 10 ** uint256(settlementDecimals));
+        }
+        (uint256 price, uint8 priceDecimals) = _validPrice(vault, asset, oracleRegistry);
         _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
         return MathEx.mulDiv(rawBalance, price, 10 ** uint256(priceDecimals));
     }
 
-    function _validPrice(address asset, address oracleRegistry)
+    function _validPrice(address vault, address asset, address oracleRegistry)
         private
         view
         returns (uint256 price, uint8 priceDecimals)
     {
-        (AggregatorV3Interface feed, uint32 maxStaleness, OracleValidationMode validationMode) =
-            IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
+        AggregatorV3Interface feed;
+        uint32 maxStaleness;
+        OracleValidationMode validationMode;
+        if (vault != address(0)) {
+            AssetStatus status;
+            try IVaultAssetPriceSources(vault).assetRegistry() returns (address registry) {
+                status = IAssetRegistry(registry).statusOf(asset);
+            } catch { }
+            if (status == AssetStatus.Open) {
+                try IVaultAssetPriceSources(vault).priceFeedForAsset(asset) returns (
+                    address vaultFeed
+                ) {
+                    if (vaultFeed != address(0)) {
+                        feed = AggregatorV3Interface(vaultFeed);
+                        maxStaleness = 2 hours;
+                        validationMode = OracleValidationMode.StandardChainlink;
+                    }
+                } catch { }
+                // Open constituents never inherit a protocol oracle implicitly: their immutable
+                // vault-pinned V3 route is the only valid NAV source.
+                if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+            } else if (status != AssetStatus.Qualified) {
+                revert OracleFeedMissing(asset);
+            }
+            if (status == AssetStatus.Qualified) {
+                (feed, maxStaleness, validationMode) =
+                    IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
+            } else {
+                // Open feeds were resolved above.
+                if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+            }
+        } else {
+            (feed, maxStaleness, validationMode) =
+                IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
+        }
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         if (validationMode == OracleValidationMode.RobinhoodStockToken) {
             bool paused;
@@ -367,6 +433,24 @@ contract PortfolioCalculator {
             return decimals_;
         } catch {
             revert TokenDecimalsUnavailable(token);
+        }
+    }
+
+    function _settlementDecimals(address token) private view returns (uint8 tokenDecimals) {
+        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
+            if (decimals_ > 18) revert UnsupportedDecimals(token, decimals_);
+            return decimals_;
+        } catch {
+            revert TokenDecimalsUnavailable(token);
+        }
+    }
+
+    function _isVaultUsdg(address vault, address asset) private view returns (bool) {
+        if (vault == address(0)) return false;
+        try IVaultAssetPriceSources(vault).assetMarketRegistry() returns (address registry) {
+            return registry != address(0) && IAssetMarketRegistry(registry).usdg() == asset;
+        } catch {
+            return false;
         }
     }
 

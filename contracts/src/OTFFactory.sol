@@ -17,6 +17,10 @@ interface IOfficialMarketRegistry {
     function createOfficialPool(address vault) external returns (address pool);
 }
 
+interface IProtocolTokenWeight {
+    function currentWeight(address token) external view returns (uint256 weightBps);
+}
+
 contract OTFFactory is IAdapterAllowlist {
     string private constant OTF_TOKEN_METADATA_URI = "data:application/json;base64,eyJpbnRlcm9wIjp7ImVyYzEwNDYiOnRydWV9LCJkZXNjcmlwdGlvbiI6IkFuIE9uY2h"
         "haW4gVHJhZGVkIEZ1bmQgRVJDLTIwIHNoYXJlIHRva2VuLiIsImltYWdlIjoiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCx"
@@ -61,7 +65,11 @@ contract OTFFactory is IAdapterAllowlist {
     );
     error OfficialMarketRegistryNotConfigured();
     error OfficialMarketRegistryLocked();
+    error AssetMarketRegistryLocked();
     error DepositsPaused();
+    error ProtocolTokenAlreadyConfigured();
+    error ProtocolTokenNotConfigured();
+    error InvalidProtocolTokenThreshold(uint16 thresholdBps);
 
     event VaultCreated(
         address indexed creator,
@@ -73,7 +81,12 @@ contract OTFFactory is IAdapterAllowlist {
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
     event OfficialMarketRegistryConfigured(address indexed registry);
+    event AssetMarketRegistryConfigured(address indexed registry);
     event DepositsPauseChanged(bool paused);
+    event ProtocolTokenConfigured(address indexed token, uint16 fullRebateBps);
+    event ProtocolTokenFullRebateThresholdChanged(
+        uint16 previousThresholdBps, uint16 newThresholdBps
+    );
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     address public owner;
     address public pendingOwner;
@@ -85,6 +98,9 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public protocolFeeShareBps;
     uint16 public minTargetWeightBps = MIN_TARGET_WEIGHT_BPS;
     address public officialMarketRegistry;
+    address public assetMarketRegistry;
+    address public protocolToken;
+    uint16 public protocolTokenFullRebateBps;
     bool public depositsPaused;
 
     address[] private _vaults;
@@ -194,6 +210,7 @@ contract OTFFactory is IAdapterAllowlist {
                 params,
                 address(this),
                 assetRegistry,
+                assetMarketRegistry,
                 oracleRegistry,
                 rebalanceExecutor,
                 feeCollector,
@@ -238,6 +255,60 @@ contract OTFFactory is IAdapterAllowlist {
         emit DepositsPauseChanged(paused);
     }
 
+    /// @notice Permanently identifies the OTF protocol token used by the fee incentive.
+    /// @dev A zero threshold configures the token while leaving the incentive disabled.
+    function configureProtocolToken(address token, uint16 fullRebateBps) external onlyOwner {
+        if (protocolToken != address(0)) revert ProtocolTokenAlreadyConfigured();
+        if (token == address(0) || token.code.length == 0) revert InvalidDependency(token);
+        if (fullRebateBps > 10_000) {
+            revert InvalidProtocolTokenThreshold(fullRebateBps);
+        }
+        protocolToken = token;
+        protocolTokenFullRebateBps = fullRebateBps;
+        emit ProtocolTokenConfigured(token, fullRebateBps);
+    }
+
+    /// @notice Changes the live portfolio weight that earns a full protocol-fee rebate.
+    /// @dev The rebate scales linearly below this threshold. Zero disables the incentive.
+    function setProtocolTokenFullRebateBps(uint16 newThresholdBps) external onlyOwner {
+        if (protocolToken == address(0)) revert ProtocolTokenNotConfigured();
+        if (newThresholdBps > 10_000) {
+            revert InvalidProtocolTokenThreshold(newThresholdBps);
+        }
+        uint16 previousThresholdBps = protocolTokenFullRebateBps;
+        protocolTokenFullRebateBps = newThresholdBps;
+        emit ProtocolTokenFullRebateThresholdChanged(previousThresholdBps, newThresholdBps);
+    }
+
+    /// @notice Returns the live protocol share after applying the configured OTF holding rebate.
+    /// @dev Invalid vaults and unavailable oracle data fail closed to `baseShareBps`.
+    function effectiveProtocolFeeShareBps(address vault, uint16 baseShareBps)
+        external
+        view
+        returns (uint16 effectiveShareBps)
+    {
+        effectiveShareBps = baseShareBps;
+        address token = protocolToken;
+        uint16 fullRebateBps = protocolTokenFullRebateBps;
+        if (token == address(0) || fullRebateBps == 0 || baseShareBps == 0) {
+            return effectiveShareBps;
+        }
+
+        uint256 liveWeightBps;
+        try IProtocolTokenWeight(vault).currentWeight(token) returns (uint256 weightBps) {
+            liveWeightBps = weightBps;
+        } catch {
+            return effectiveShareBps;
+        }
+
+        if (liveWeightBps >= fullRebateBps) return 0;
+        uint256 scaledShare =
+            uint256(baseShareBps) * (uint256(fullRebateBps) - liveWeightBps) / fullRebateBps;
+        // The scaled share cannot exceed the uint16 baseShareBps input.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint16(scaledShare);
+    }
+
     function otfTokenURI() external pure returns (string memory) {
         return OTF_TOKEN_METADATA_URI;
     }
@@ -253,6 +324,17 @@ contract OTFFactory is IAdapterAllowlist {
         emit OfficialMarketRegistryConfigured(registry);
     }
 
+    /// @notice Configures the permissionless V3 market registry before the first OTF is created.
+    /// @dev A zero value is accepted only by the legacy qualified-only stack. New deployments set it.
+    function setAssetMarketRegistry(address registry) external onlyOwner {
+        if (_vaults.length != 0) revert AssetMarketRegistryLocked();
+        if (registry == address(0) || registry.code.length == 0) {
+            revert InvalidDependency(registry);
+        }
+        assetMarketRegistry = registry;
+        emit AssetMarketRegistryConfigured(registry);
+    }
+
     function beginOwnershipTransfer(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert ZeroAddress();
         pendingOwner = newOwner;
@@ -266,7 +348,7 @@ contract OTFFactory is IAdapterAllowlist {
         emit OwnershipTransferred(oldOwner, msg.sender);
     }
 
-    function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
+    function _validateFactoryBounds(VaultInitParams calldata params) internal view {
         bytes calldata name = bytes(params.name);
         uint256 nameLength = name.length;
         if (
@@ -294,6 +376,18 @@ contract OTFFactory is IAdapterAllowlist {
             revert InvalidArrayLength();
         }
         if (params.initialAssets.length != params.initialAmounts.length) {
+            revert InvalidArrayLength();
+        }
+        if (
+            params.initialMarketIds.length != 0
+                && params.initialAssets.length != params.initialMarketIds.length
+        ) {
+            revert InvalidArrayLength();
+        }
+        if (
+            assetMarketRegistry != address(0)
+                && params.initialAssets.length != params.initialMarketIds.length
+        ) {
             revert InvalidArrayLength();
         }
         if (params.creatorFeeBpsPerYear > MAX_CREATOR_FEE_BPS_PER_YEAR) {

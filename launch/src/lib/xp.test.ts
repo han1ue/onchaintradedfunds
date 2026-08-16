@@ -22,9 +22,9 @@ const votingEndsAt = new Date("2026-09-07T00:00:00Z");
 describe("Live XP policy", () => {
   it("releases each pool linearly over 30 voting days", () => {
     const halfway = new Date((votingStartsAt.getTime() + votingEndsAt.getTime()) / 2);
-    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(3_500_000);
-    expect(releasedXp(XP_POOLS.creator, votingStartsAt, votingEndsAt, votingStartsAt)).toBe(0);
-    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(1_000_000);
+    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(2_250_000);
+    expect(releasedXp(XP_POOLS.creatorSupport, votingStartsAt, votingEndsAt, votingStartsAt)).toBe(0);
+    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(3_500_000);
   });
 
   it("uses largest remainder rounding with exact deterministic totals", () => {
@@ -44,8 +44,8 @@ describe("Live XP policy", () => {
       ],
     });
     const voter = result.users.find((user) => user.userId === "voter")!;
-    expect(voter.participationXp).toBe(1_000_000);
-    expect(voter.performanceXp).toBe(7_000_000);
+    expect(voter.participationXp).toBe(3_500_000);
+    expect(voter.performanceXp).toBe(4_500_000);
     expect(result.users.find((user) => user.userId === "creator")?.uniqueSupporterCount).toBe(1);
   });
 
@@ -65,8 +65,8 @@ describe("Live XP policy", () => {
       creators: [{ proposalId: "p1", creatorUserId: "creator", acceptedAt: new Date("2026-08-02T00:00:00Z") }],
       tranches: [{ id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 4 }],
     });
-    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 500_000, pendingTrancheCount: 1 });
-    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 1_000_000, uniqueSupporterCount: 1, submissionBoost: true });
+    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 4_000_000, pendingTrancheCount: 1 });
+    expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 750_000, uniqueSupporterCount: 1, submissionBoost: true });
   });
 
   it("excludes proposals accepted after the tranche comparison time", () => {
@@ -115,7 +115,7 @@ describe("Live XP policy", () => {
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"), creators: [],
       tranches: [{ id: "valid", voterUserId: "valid-voter", proposalId: "eligible", proposalCreatorUserId: "creator", quantity: 2 }],
     });
-    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(500_000);
+    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(4_000_000);
     expect(validOnly.users.some((user) => user.userId === "invalid-voter")).toBe(false);
   });
 
@@ -126,6 +126,46 @@ describe("Live XP policy", () => {
       { id: "final", sampledAt: "2026-09-07T01:00:00Z", complete: true },
     ];
     expect(firstCompleteCheckpointAtOrAfter(checkpoints, votingEndsAt, (checkpoint) => checkpoint.complete)?.id).toBe("final");
+  });
+
+  it("isolates qualified and experimental performance cohorts", () => {
+    const result = calculateXp({
+      votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true, creators: [],
+      tranches: [
+        { id: "q", voterUserId: "qualified-voter", proposalId: "q1", proposalCreatorUserId: "c1", quantity: 1, cohort: "qualified", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "q1", returnValue: 1n }] },
+        { id: "e", voterUserId: "experimental-voter", proposalId: "e1", proposalCreatorUserId: "c2", quantity: 1, cohort: "experimental", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "e1", returnValue: 1n }] },
+      ],
+    });
+    expect(result.users.find((row) => row.userId === "qualified-voter")).toMatchObject({ qualifiedPerformanceXp: 3_500_000, experimentalPerformanceXp: 0 });
+    expect(result.users.find((row) => row.userId === "experimental-voter")).toMatchObject({ qualifiedPerformanceXp: 0, experimentalPerformanceXp: 1_000_000 });
+  });
+
+  it("preserves exact issuance when only experimental performance is awardable", () => {
+    const result = calculateXp({
+      votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
+      creators: [{ proposalId: "e1", creatorUserId: "creator", acceptedAt: votingStartsAt }],
+      tranches: [
+        { id: "e", voterUserId: "experimental-voter", proposalId: "e1", proposalCreatorUserId: "creator", quantity: 1, cohort: "experimental", effectiveEntryAt: votingStartsAt, selectedReturn: 1n, comparisonReturns: [{ proposalId: "e1", returnValue: 1n }] },
+      ],
+    });
+    expect(result.rollovers.qualifiedToParticipation).toBe(3_500_000);
+    expect(result.users.reduce((sum, user) => sum + user.totalXp, 0)).toBe(10_000_000);
+  });
+
+  it("pays fixed final creator ranks and rolls missing ranks into creator support", () => {
+    const result = calculateXp({
+      votingStartsAt, votingEndsAt, calculatedAt: votingEndsAt, final: true,
+      creators: [
+        { proposalId: "p1", creatorUserId: "c1", acceptedAt: votingStartsAt, finalRank: 1 },
+        { proposalId: "p2", creatorUserId: "c2", acceptedAt: votingStartsAt, finalRank: 2 },
+      ],
+      tranches: [
+        { id: "support", voterUserId: "v", proposalId: "p1", proposalCreatorUserId: "c1", quantity: 1 },
+      ],
+    });
+    expect(result.users.find((row) => row.userId === "c1")?.creatorAwardXp).toBe(232_000);
+    expect(result.users.find((row) => row.userId === "c2")?.creatorAwardXp).toBe(120_000);
+    expect(result.rollovers.creatorAwardsToSupport).toBe(148_000);
   });
 
   it("allocates exactly 10M final XP idempotently with deterministic hashes and does not alter launch ranking", () => {

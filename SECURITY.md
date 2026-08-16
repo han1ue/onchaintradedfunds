@@ -43,12 +43,18 @@ The factory owner can:
 
 - Approve or remove trade adapters for vault rebalances.
 - Change the protocol-wide minimum target weight for future portfolio proposals; the default is 1%.
+- Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
 - Start and complete ownership transfer.
 
 The fee collector treasury can:
 
 - Claim protocol fee shares held by `FeeCollector`.
+- Allocate a configurable percentage of subsequent claims to a buyback recipient.
 - Start a two-step treasury transfer that the new treasury must accept.
+
+The buyback owner can approve or remove buyback operators and typed trade adapters. Operators can
+redeem allocated protocol fee shares and execute slippage-bounded trades whose output must be OTF.
+They cannot change the immutable recipient of purchased OTF.
 
 The factory owner cannot:
 
@@ -279,7 +285,10 @@ discarding capped time. Fee-share tests cover:
 - Timely challenge resolution and fee-withdrawal resumption.
 
 The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
-Protocol shares held by `FeeCollector` can only be claimed by its configured treasury.
+When enabled, a vault's live oracle-valued OTF holding reduces that protocol share linearly up to
+the factory-set full-rebate threshold. Missing constituents or failed rebate pricing grant no
+discount. Protocol shares held by `FeeCollector` can only be claimed by its configured treasury,
+which can earmark a percentage for the configured buyback recipient.
 
 Missed challenge-window fees are not minted to the manager. The challenge caller can claim 50% as
 OTF shares; the remaining 50% is skipped rather than minted and burned.

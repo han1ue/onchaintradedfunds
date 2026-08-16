@@ -68,8 +68,8 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               </button>
             </div>
             <div className="landingProof">
-              <span><strong>Known assets</strong><small>approved universe</small></span>
-              <span><strong>Live weights</strong><small>oracle priced</small></span>
+              <span><strong>Open assets</strong><small>qualified or experimental</small></span>
+              <span><strong>Live weights</strong><small>feed or V3 TWAP priced</small></span>
               <span><strong>Atomic</strong><small>portfolio changes</small></span>
             </div>
           </div>
@@ -86,15 +86,15 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
           <div className="landingStoryCopy">
             <span className="landingChapter">01 / The basket</span>
             <Boxes size={22} />
-            <h2>Known assets.<br />One portfolio.</h2>
+            <h2>Any registered asset.<br />One portfolio.</h2>
             <p>
               TSLA, AMZN, and AMD can sit behind one OTF share. Each constituent keeps its
               identity while its allocation remains explicit and publicly inspectable.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Approved assets only</span>
+              <span><CheckCircle size={13} /> Qualified and experimental tiers</span>
               <span><CheckCircle size={13} /> Public target and actual weights</span>
-              <span><CheckCircle size={13} /> Oracle-priced balances</span>
+              <span><CheckCircle size={13} /> Protocol feeds or pinned V3 TWAPs</span>
             </div>
           </div>
         </section>

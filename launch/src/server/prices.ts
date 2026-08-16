@@ -1,10 +1,16 @@
-import { inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { PortfolioReturns } from "@/lib/types";
 import { PublicApiError } from "@/lib/errors";
 import { calculatePortfolioReturns } from "@/lib/returns";
 import { requireDb, sqlClient } from "./db";
-import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
+import {
+  assetEligibilitySnapshots,
+  assetMarkets,
+  assetPriceSnapshots,
+  eligibleAssets,
+  priceCaptureRuns,
+} from "./db/schema";
 
 const pricesResponseSchema = z.object({
   quotes: z.array(z.object({
@@ -19,7 +25,7 @@ const coinbaseTickerSchema = z.object({
   time: z.string().datetime({ offset: true }),
 });
 
-export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid";
+export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid" | "uniswap-v3-twap";
 
 type PriceAsset = {
   id: string;
@@ -40,6 +46,7 @@ type PriceFetchResult = {
 export type PriceCaptureOptions = {
   assetIds?: string[];
   sampledAt?: Date;
+  purpose?: "submission" | "scoring";
 };
 
 export type PriceCaptureResult = {
@@ -110,6 +117,7 @@ export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<Price
 export async function captureAssetPrices(options: PriceCaptureOptions = {}): Promise<PriceCaptureResult> {
   const database = requireDb();
   const sampledAt = options.sampledAt ?? new Date();
+  const purpose = options.purpose ?? "scoring";
   const assets = options.assetIds
     ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
     : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
@@ -118,9 +126,35 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
   const typedAssets = assets as PriceAsset[];
   const priceFetch = await fetchAssetPriceQuotes(typedAssets);
   if (priceFetch.errors.length) console.error("Price source capture failed", { errors: priceFetch.errors });
+  const onchainAssetIds = typedAssets.filter((asset) => asset.priceSource === "uniswap-v3-twap").map((asset) => asset.id);
+  const onchainRows = onchainAssetIds.length === 0 ? [] : await database.select({
+    assetId: assetMarkets.assetId,
+    oneHourPrice: assetMarkets.twapOneHourPriceUsd,
+    oneHourPriceAt: assetMarkets.twapOneHourPriceAt,
+    twentyFourHourPrice: assetEligibilitySnapshots.twapPriceUsd,
+    twentyFourHourPriceAt: assetEligibilitySnapshots.sampledAt,
+  }).from(assetMarkets).leftJoin(
+    assetEligibilitySnapshots,
+    eq(assetEligibilitySnapshots.marketId, assetMarkets.id),
+  ).where(and(
+    inArray(assetMarkets.assetId, onchainAssetIds),
+    eq(assetMarkets.active, true),
+    purpose === "submission"
+      ? eq(assetMarkets.twapOneHourReady, true)
+      : eq(assetMarkets.twapTwentyFourHourReady, true),
+  )).orderBy(desc(assetEligibilitySnapshots.sampledAt), desc(assetMarkets.registeredAt));
+  const onchainQuotes = new Map<string, SourceQuote>();
+  for (const row of onchainRows) {
+    if (onchainQuotes.has(row.assetId)) continue;
+    const bid = purpose === "submission" ? row.oneHourPrice : row.twentyFourHourPrice;
+    const generatedAt = purpose === "submission" ? row.oneHourPriceAt : row.twentyFourHourPriceAt;
+    if (bid && generatedAt) onchainQuotes.set(row.assetId, { bid, generatedAt });
+  }
   const missing: string[] = [];
   const values = typedAssets.flatMap((asset) => {
-    const quote = priceFetch.quotes.get(`${asset.priceSource}:${asset.symbol.toUpperCase()}`);
+    const quote = asset.priceSource === "uniswap-v3-twap"
+      ? onchainQuotes.get(asset.id)
+      : priceFetch.quotes.get(`${asset.priceSource}:${asset.symbol.toUpperCase()}`);
     const bid = quote ? Number(quote.bid) : Number.NaN;
     if (!quote || !Number.isFinite(bid) || bid <= 0) {
       missing.push(asset.symbol);
@@ -131,6 +165,9 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
       sampledAt,
       quoteGeneratedAt: quote.generatedAt,
       bidUsd: quote.bid,
+      twapWindowSeconds: asset.priceSource === "uniswap-v3-twap"
+        ? (purpose === "submission" ? 3_600 : 86_400)
+        : 0,
     }];
   });
 
@@ -143,6 +180,7 @@ export async function captureAssetPrices(options: PriceCaptureOptions = {}): Pro
       requestedAssetIds: assets.map((asset) => asset.id),
       missingSymbols: missing,
       provider,
+      purpose,
     }).returning({ id: priceCaptureRuns.id });
     const captured = values.length
       ? await transaction.insert(assetPriceSnapshots).values(values.map((value) => ({ ...value, captureRunId: captureRun.id }))).onConflictDoNothing().returning({ assetId: assetPriceSnapshots.assetId })

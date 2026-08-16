@@ -132,6 +132,7 @@ abstract contract ProtocolTestBase is TestBase {
             manager: address(this),
             feeRecipient: FEE_RECIPIENT,
             initialAssets: assets,
+            initialMarketIds: new bytes32[](0),
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,

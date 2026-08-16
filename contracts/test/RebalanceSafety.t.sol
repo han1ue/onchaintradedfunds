@@ -379,7 +379,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertFalse(vault.strategicRebalanceActive());
     }
 
-    function testFullBalanceSentinelRetiresRegistryRevokedAsset() public {
+    function testBlockedAssetRejectsManagementButKeepsProportionalRedemption() public {
         ManagedOTFVault vault = _createVault();
         uint256 retiringBalance = tokenA.balanceOf(address(vault));
         assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
@@ -387,12 +387,18 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenA), address(tokenB), type(uint256).max, retiringBalance);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
         vault.executeRebalanceTrades(trades);
 
-        assertEq(tokenA.balanceOf(address(vault)), 0);
+        uint256 receiverBalanceBefore = tokenA.balanceOf(address(this));
+        uint256[] memory minimums = new uint256[](2);
+        vault.redeem(ONE, address(this), address(this), minimums);
+
+        assertGt(tokenA.balanceOf(address(this)), receiverBalanceBefore);
+        assertLt(tokenA.balanceOf(address(vault)), retiringBalance);
         assertEq(tokenA.allowance(address(vault), address(executor)), 0);
-        assertFalse(vault.isConstituent(address(tokenA)));
-        assertEq(vault.assetCount(), 1);
+        assertTrue(vault.isConstituent(address(tokenA)));
+        assertEq(vault.assetCount(), 2);
     }
 
     function testFullBalanceSentinelRejectsActiveOrEmptyRetiringAsset() public {
@@ -493,7 +499,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(record.turnoverBps, 5_000);
     }
 
-    function testRevokedConstituentImmediatelyChallengesAndPrunesWithoutNotice() public {
+    function testBlockedConstituentCannotStartManagementChallenge() public {
         ManagedOTFVault vault = _createVault();
         assetRegistry.setAssetApproved(address(tokenA), false);
 
@@ -517,22 +523,25 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(effectiveTargets[1], 10_000);
 
         vm.prank(ATTACKER);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
         vault.flagOutOfBand();
-        assertTrue(vault.challengeActive());
+        assertFalse(vault.challengeActive());
 
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenA), address(tokenB), 500 * ONE, 500 * ONE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
         vault.executeRebalanceTrades(trades);
 
+        uint256 tokenABefore = tokenA.balanceOf(address(this));
+        uint256[] memory minimums = new uint256[](2);
+        vault.redeem(ONE, address(this), address(this), minimums);
+        assertGt(tokenA.balanceOf(address(this)), tokenABefore);
         assertFalse(vault.challengeActive());
-        assertFalse(vault.isConstituent(address(tokenA)));
-        assertEq(tokenA.balanceOf(address(vault)), 0);
-        assertEq(vault.assetCount(), 1);
-        assertEq(vault.getWeight(address(tokenB)), 10_000);
-        assertEq(vault.previewMint(ONE).length, 1);
+        assertTrue(vault.isConstituent(address(tokenA)));
+        assertEq(vault.assetCount(), 2);
     }
 
-    function testRevokedWeightIsRedistributedProportionallyAndPersistsAfterPruning() public {
+    function testBlockedWeightRedistributesButTradesRemainDisabled() public {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets = new address[](3);
         params.initialAssets[0] = address(tokenA);
@@ -573,13 +582,14 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             minAmountOut: 33 * ONE,
             adapterData: ""
         });
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAsset.selector);
         vault.executeRebalanceTrades(trades);
 
-        assertFalse(vault.isConstituent(address(tokenC)));
-        assertEq(vault.targetWeightBps(address(tokenA)), 6_667);
-        assertEq(vault.targetWeightBps(address(tokenB)), 3_333);
-        uint16[] memory storedTargets = vault.targetWeightsBps();
-        assertEq(uint256(storedTargets[0]) + storedTargets[1], 10_000);
+        uint256 tokenCBefore = tokenC.balanceOf(address(this));
+        uint256[] memory minimums = new uint256[](3);
+        vault.redeem(ONE, address(this), address(this), minimums);
+        assertGt(tokenC.balanceOf(address(this)), tokenCBefore);
+        assertTrue(vault.isConstituent(address(tokenC)));
     }
 
     function testRevocationRoundingAssignsEveryBasisPoint() public {

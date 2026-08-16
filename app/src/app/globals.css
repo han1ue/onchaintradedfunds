@@ -1011,6 +1011,80 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.metricValueWithHelp,
+.tableValueWithHelp {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.metricValueWithHelp {
+  margin-top: 10px;
+}
+
+.metricCard .metricValueWithHelp > strong {
+  margin-top: 0;
+}
+
+.valueHelp {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.valueHelp > button {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: help;
+}
+
+.valueHelp > button:hover,
+.valueHelp > button:focus-visible {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
+  outline: none;
+}
+
+.valueHelpTooltip {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  right: -8px;
+  width: min(310px, calc(100vw - 40px));
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-soft);
+  background: var(--card-raised);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 24%);
+  font-size: 0.7rem;
+  font-weight: 450;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.valueHelp:hover .valueHelpTooltip,
+.valueHelp:focus-within .valueHelpTooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 .metricCardValueLink {
   display: inline-flex;
   max-width: 100%;
@@ -5586,6 +5660,45 @@ input.invalid {
   opacity: 0;
 }
 
+.createAssetSearchControl {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-raised);
+  padding: 0 8px;
+}
+
+.createAssetSearchControl:focus-within {
+  border-color: rgb(var(--accent-rgb) / 62%);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
+}
+
+.createAssetSearchControl > svg {
+  color: var(--text-muted);
+}
+
+.createAssetSearchInput {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.66rem;
+  font-weight: 650;
+  outline: 0;
+}
+
+.assetSelectField > .stateBadge {
+  width: fit-content;
+  margin-top: 6px;
+}
+
 .initialPortfolioValueField {
   width: min(340px, 100%);
 }
@@ -5668,6 +5781,77 @@ input.invalid {
 .createAssetRow > button:hover {
   background: rgb(235 101 112 / 9%);
   color: var(--danger);
+}
+
+.manualAssetRegistration {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgb(232 171 72 / 38%);
+  background: rgb(232 171 72 / 4%);
+  padding: 14px;
+}
+
+.manualAssetRegistrationIntro,
+.manualAssetRegistrationFields,
+.manualAssetRiskNotice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.manualAssetRegistrationIntro {
+  justify-content: space-between;
+}
+
+.manualAssetRegistrationIntro strong,
+.manualAssetRegistrationIntro span {
+  display: block;
+}
+
+.manualAssetRegistrationIntro strong {
+  font-size: 0.74rem;
+}
+
+.manualAssetRegistrationIntro > div > span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.manualAssetRegistrationFields {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+}
+
+.manualAssetRegistrationFields label > span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.manualAssetRegistrationFields input {
+  width: 100%;
+  height: 34px;
+}
+
+.manualAssetRegistrationFields .secondaryAction {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+.manualAssetRiskNotice {
+  align-items: flex-start;
+  border-top: 1px solid rgb(232 171 72 / 22%);
+  color: var(--warning);
+  padding-top: 10px;
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.manualAssetRiskNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .formSection label > .assetAddressLabel {
@@ -7039,9 +7223,27 @@ input.invalid {
     grid-column: 3;
     grid-row: 1;
   }
+
+  .manualAssetRegistrationFields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .manualAssetRegistrationFields .secondaryAction {
+    grid-column: 1 / -1;
+    width: fit-content;
+  }
 }
 
 @media (max-width: 760px) {
+  .manualAssetRegistrationFields {
+    grid-template-columns: 1fr;
+  }
+
+  .manualAssetRegistrationFields .secondaryAction {
+    grid-column: 1;
+    width: 100%;
+  }
+
   .topNavInner,
   .dashboardMain {
     padding-right: 14px;

@@ -172,6 +172,7 @@ contract VaultHardeningTest is ProtocolTestBase {
                     params,
                     address(reentrantToken),
                     address(assetRegistry),
+                    address(0),
                     address(oracleRegistry),
                     address(executor),
                     address(collector),

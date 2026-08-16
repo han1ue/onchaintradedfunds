@@ -98,12 +98,80 @@ export const eligibleAssets = pgTable("eligible_assets", {
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   contractAddress: text("contract_address").notNull(),
+  network: text("network").default("robinhood-mainnet").notNull(),
+  chainId: integer("chain_id"),
+  decimals: integer("decimals").default(18).notNull(),
+  qualityStatus: text("quality_status").default("qualified").notNull(),
   priceSource: text("price_source").default("robinhood-bid").notNull(),
   ...timestamps
 }, (table) => [
-  uniqueIndex("eligible_asset_symbol_uq").on(sql`upper(${table.symbol})`),
-  uniqueIndex("eligible_asset_contract_address_uq").on(sql`lower(${table.contractAddress})`),
-  check("eligible_asset_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid')`)
+  index("eligible_asset_symbol_idx").on(sql`upper(${table.symbol})`),
+  uniqueIndex("eligible_asset_network_contract_uq").on(table.network, sql`lower(${table.contractAddress})`),
+  check("eligible_asset_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid', 'uniswap-v3-twap')`),
+  check("eligible_asset_quality_status", sql`${table.qualityStatus} in ('open', 'qualified', 'blocked')`),
+  check("eligible_asset_exact_decimals", sql`${table.decimals} = 18`)
+]);
+
+export const assetMarkets = pgTable("asset_markets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
+  marketId: text("market_id").notNull().unique(),
+  poolAddress: text("pool_address").notNull(),
+  factoryAddress: text("factory_address").notNull(),
+  quoteTokenAddress: text("quote_token_address").notNull(),
+  feeTier: integer("fee_tier").notNull(),
+  version: text("version").default("v3").notNull(),
+  active: boolean("active").default(true).notNull(),
+  twapOneHourReady: boolean("twap_one_hour_ready").default(false).notNull(),
+  twapTwentyFourHourReady: boolean("twap_twenty_four_hour_ready").default(false).notNull(),
+  twapOneHourPriceUsd: numeric("twap_one_hour_price_usd", { precision: 30, scale: 8 }),
+  twapOneHourPriceAt: timestamp("twap_one_hour_price_at", { withTimezone: true }),
+  poolCreatedAt: timestamp("pool_created_at", { withTimezone: true }),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+  ...timestamps
+}, (table) => [
+  uniqueIndex("asset_market_pool_uq").on(sql`lower(${table.poolAddress})`),
+  index("asset_markets_asset_active_idx").on(table.assetId, table.active),
+  check("asset_market_v3_only", sql`${table.version} = 'v3'`),
+  check("asset_market_fee_positive", sql`${table.feeTier} > 0`)
+]);
+
+export const assetEligibilitySnapshots = pgTable("asset_eligibility_snapshots", {
+  marketId: uuid("market_id").notNull().references(() => assetMarkets.id, { onDelete: "cascade" }),
+  sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull(),
+  liquidityUsd: numeric("liquidity_usd", { precision: 24, scale: 8 }),
+  marketCapUsd: numeric("market_cap_usd", { precision: 30, scale: 2 }),
+  marketCapVerified: boolean("market_cap_verified"),
+  gtVerified: boolean("gt_verified"),
+  gtScore: numeric("gt_score", { precision: 8, scale: 2 }),
+  isHoneypot: boolean("is_honeypot"),
+  criticalSellOrTaxFlag: boolean("critical_sell_or_tax_flag"),
+  lockedLiquidityPct: numeric("locked_liquidity_pct", { precision: 8, scale: 4 }),
+  buyImpactPct: numeric("buy_impact_pct", { precision: 8, scale: 4 }),
+  sellImpactPct: numeric("sell_impact_pct", { precision: 8, scale: 4 }),
+  twapPriceUsd: numeric("twap_price_usd", { precision: 30, scale: 8 }),
+  reasons: text("reasons").array().default(sql`ARRAY[]::text[]`).notNull(),
+  providerMetadata: jsonb("provider_metadata").$type<Record<string, unknown>>().default({}).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.marketId, table.sampledAt] }),
+  index("asset_eligibility_time_idx").on(table.sampledAt),
+  check("asset_eligibility_status", sql`${table.status} in ('Pass', 'Pending', 'Fail')`)
+]);
+
+export const assetMarketRequests = pgTable("asset_market_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  requesterUserId: text("requester_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  network: text("network").default("robinhood-mainnet").notNull(),
+  assetAddress: text("asset_address").notNull(),
+  poolAddress: text("pool_address").notNull(),
+  status: text("status").default("pending").notNull(),
+  reason: text("reason"),
+  ...timestamps
+}, (table) => [
+  uniqueIndex("asset_market_request_network_pool_uq").on(table.network, table.poolAddress),
+  index("asset_market_requests_status_idx").on(table.status, table.createdAt),
+  check("asset_market_request_status", sql`${table.status} in ('pending', 'registered', 'rejected')`)
 ]);
 
 export const priceCaptureRuns = pgTable("price_capture_runs", {
@@ -113,10 +181,12 @@ export const priceCaptureRuns = pgTable("price_capture_runs", {
   requestedAssetIds: uuid("requested_asset_ids").array().notNull(),
   missingSymbols: text("missing_symbols").array().default(sql`ARRAY[]::text[]`).notNull(),
   provider: text("provider").default("robinhood-bid").notNull(),
+  purpose: text("purpose").default("scoring").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [
   index("price_capture_runs_sampled_at_idx").on(table.sampledAt),
-  check("price_capture_run_status", sql`${table.status} in ('complete', 'partial')`)
+  check("price_capture_run_status", sql`${table.status} in ('complete', 'partial')`),
+  check("price_capture_run_purpose", sql`${table.purpose} in ('submission', 'scoring')`)
 ]);
 
 export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
@@ -124,7 +194,8 @@ export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
   sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
   captureRunId: uuid("capture_run_id").references(() => priceCaptureRuns.id, { onDelete: "restrict" }),
   quoteGeneratedAt: timestamp("quote_generated_at", { withTimezone: true }).notNull(),
-  bidUsd: numeric("bid_usd", { precision: 24, scale: 8 }).notNull()
+  bidUsd: numeric("bid_usd", { precision: 24, scale: 8 }).notNull(),
+  twapWindowSeconds: integer("twap_window_seconds").default(0).notNull()
 }, (table) => [
   primaryKey({ columns: [table.assetId, table.sampledAt] }),
   index("asset_price_snapshots_sampled_at_idx").on(table.sampledAt)
@@ -156,6 +227,7 @@ export const proposals = pgTable("proposals", {
 export const proposalAssets = pgTable("proposal_assets", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "restrict" }),
+  marketId: uuid("market_id").references(() => assetMarkets.id, { onDelete: "restrict" }),
   weightBps: integer("weight_bps").notNull(),
   position: integer("position").notNull()
 }, (table) => [
@@ -248,12 +320,16 @@ export const voteTranches = pgTable("vote_tranches", {
   quantity: integer("quantity").notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull(),
   effectiveEntryAt: timestamp("effective_entry_at", { withTimezone: true }),
+  performanceCohort: text("performance_cohort"),
+  cohortLockedAt: timestamp("cohort_locked_at", { withTimezone: true }),
+  performanceComparisonProposalIds: uuid("performance_comparison_proposal_ids").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [
   index("vote_tranches_competition_idx").on(table.competitionId, table.acceptedAt),
   index("vote_tranches_voter_idx").on(table.voterUserId),
   index("vote_tranches_proposal_idx").on(table.proposalId),
-  check("vote_tranche_quantity_positive", sql`${table.quantity} > 0`)
+  check("vote_tranche_quantity_positive", sql`${table.quantity} > 0`),
+  check("vote_tranche_performance_cohort", sql`${table.performanceCohort} is null or ${table.performanceCohort} in ('qualified', 'experimental')`)
 ]);
 
 export const activityEvents = pgTable("activity_events", {
@@ -307,8 +383,12 @@ export const xpSnapshotRows = pgTable("xp_snapshot_rows", {
   runId: uuid("run_id").notNull().references(() => xpCalculationRuns.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   performanceXp: integer("performance_xp").notNull(),
+  qualifiedPerformanceXp: integer("qualified_performance_xp").default(0).notNull(),
+  experimentalPerformanceXp: integer("experimental_performance_xp").default(0).notNull(),
   participationXp: integer("participation_xp").notNull(),
   creatorXp: integer("creator_xp").notNull(),
+  creatorSupportXp: integer("creator_support_xp").default(0).notNull(),
+  creatorAwardXp: integer("creator_award_xp").default(0).notNull(),
   totalXp: integer("total_xp").notNull(),
   uniqueSupporterCount: integer("unique_supporter_count").default(0).notNull(),
   submissionBoost: boolean("submission_boost").default(false).notNull(),

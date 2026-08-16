@@ -18,9 +18,9 @@ import {
   ChartPie,
   Check,
   CheckCircle,
-  ChevronDown,
   ChevronRight,
   CircleDollarSign,
+  CircleHelp,
   Clock3,
   Copy,
   Droplets,
@@ -53,18 +53,22 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  type Abi,
+  type ContractFunctionParameters,
   bytesToHex,
   encodeAbiParameters,
   encodePacked,
   formatUnits,
   isAddress,
+  keccak256,
   maxUint256,
   parseEventLogs,
   parseUnits,
   toFunctionSelector,
   zeroAddress,
+  zeroHash,
 } from "viem";
 import {
   useAccount,
@@ -83,6 +87,7 @@ import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
   robinhoodTestnetV3Venue,
+  robinhoodTestnetWethV3Venue,
 } from "@/lib/deployment";
 import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
@@ -109,6 +114,7 @@ type ContractValue =
 type ReadResult = readonly { result?: ContractValue }[];
 type TxState = "idle" | "simulating" | "ready" | "pending" | "submitted" | "confirmed" | "reverted";
 type AppearancePreference = "default" | "light" | "dark";
+type RoutedSettlementMode = "usdg" | "weth";
 type PositionTradeReceipt = {
   action: "deposit" | "redeem";
   detail: string;
@@ -131,7 +137,12 @@ type Allocation = {
 
 type TargetAsset = {
   ticker: string;
+  name?: string;
   address: string;
+  marketId?: `0x${string}`;
+  poolAddress?: `0x${string}`;
+  qualityStatus?: "qualified" | "open" | "blocked";
+  priceFeed?: `0x${string}`;
   targetWeight: string | number;
   initialAmount: string;
 };
@@ -408,6 +419,59 @@ const protocolAssetReadAbi = [
   },
 ] as const;
 
+const assetStatusReadAbi = [
+  {
+    type: "function",
+    name: "statusOf",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ name: "status", type: "uint8" }],
+  },
+] as const;
+
+const permissionlessAssetRegistryAbi = [
+  ...assetStatusReadAbi,
+  {
+    type: "function",
+    name: "registerOpenAsset",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [],
+  },
+] as const;
+
+const assetMarketRegistryAbi = [
+  {
+    type: "function",
+    name: "registerV3Market",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "pool", type: "address" },
+    ],
+    outputs: [{ name: "marketId", type: "bytes32" }],
+  },
+  {
+    type: "function",
+    name: "marketFor",
+    stateMutability: "view",
+    inputs: [{ name: "marketId", type: "bytes32" }],
+    outputs: [
+      { name: "asset", type: "address" },
+      { name: "pool", type: "address" },
+      { name: "priceFeed", type: "address" },
+      { name: "fee", type: "uint24" },
+      { name: "active", type: "bool" },
+    ],
+  },
+] as const;
+
+const erc20MetadataReadAbi = [
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
+] as const;
+
 const vaultCreatedEventAbi = [
   {
     type: "event",
@@ -455,7 +519,7 @@ const uniswapV3PoolAbi = [
   },
 ] as const;
 
-const uniswapV3QuoterAbi = [
+const uniswapV3QuoterAbi: Abi = [
   {
     type: "function",
     name: "quoteExactInputSingle",
@@ -519,6 +583,21 @@ const uniswapV3QuoterAbi = [
       { name: "gasEstimate", type: "uint256" },
     ],
   },
+  {
+    type: "function",
+    name: "quoteExactOutput",
+    stateMutability: "view",
+    inputs: [
+      { name: "path", type: "bytes" },
+      { name: "amountOut", type: "uint256" },
+    ],
+    outputs: [
+      { name: "amountIn", type: "uint256" },
+      { name: "sqrtPriceX96AfterList", type: "uint160[]" },
+      { name: "initializedTicksCrossedList", type: "uint32[]" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
 ] as const;
 
 const uniswapV3SwapRouterAbi = [
@@ -546,30 +625,44 @@ const uniswapV3SwapRouterAbi = [
 ] as const;
 
 const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
+type MulticallRead = ContractFunctionParameters & { chainId: number };
 function configuredFactoryAddress(): `0x${string}` | undefined {
   return robinhoodTestnetAddresses.factory;
 }
 
-function configuredEntryRouterAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.entryRouter;
+function configuredEntryRouterAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
+  return mode === "weth" ? robinhoodTestnetAddresses.entryRouterWeth : robinhoodTestnetAddresses.entryRouter;
 }
 
-function configuredEntryAdapterAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.uniswapV3Adapter;
+function configuredEntryAdapterAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
+  return mode === "weth"
+    ? robinhoodTestnetAddresses.registeredUniswapV3AdapterWeth
+    : robinhoodTestnetAddresses.uniswapV3Adapter ?? robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg;
 }
 
-function configuredSettlementTokenAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.usdg;
+function configuredSettlementTokenAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
+  return mode === "weth" ? robinhoodTestnetAddresses.weth : robinhoodTestnetAddresses.usdg;
 }
 
-function configuredConstituentFee(): number {
-  return robinhoodTestnetV3Venue.constituentFee ?? 3000;
+function configuredConstituentFee(asset?: string, mode: RoutedSettlementMode = "usdg"): number {
+  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
+  return venue.constituentPools.find((record) => !asset || record.asset.toLowerCase() === asset.toLowerCase())?.fee
+    ?? venue.constituentFee
+    ?? 3000;
 }
 
-function configuredConstituentPool(asset: string): `0x${string}` | undefined {
-  return robinhoodTestnetV3Venue.constituentPools.find(
+function configuredConstituentPool(asset: string, mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
+  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
+  return venue.constituentPools.find(
     (record) => record.asset.toLowerCase() === asset.toLowerCase(),
   )?.pool;
+}
+
+function configuredConstituentMarketId(asset: string, mode: RoutedSettlementMode): `0x${string}` | undefined {
+  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
+  return venue.constituentPools.find(
+    (record) => record.asset.toLowerCase() === asset.toLowerCase(),
+  )?.marketId;
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -1941,7 +2034,11 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
   return (
     <div className="metricGrid">
       <MetricCard label="NAV" value={vault.nav ?? "Oracle read failed"} tone={vault.nav ? "success" : "neutral"} />
-      <MetricCard label="NAV / Share" value={vault.navPerShare ?? "Oracle read failed"} />
+      <MetricCard
+        label="NAV / Share"
+        value={vault.navPerShare ?? "Oracle read failed"}
+        helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USDG using each asset's active protocol feed or pinned Uniswap V3 TWAP route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
+      />
       <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
       <MetricCard
         label="Liquidity Pool"
@@ -2135,6 +2232,7 @@ function MetricCard({
   href,
   linkLabel,
   external = false,
+  helpText,
 }: {
   label: string;
   value: string;
@@ -2145,6 +2243,7 @@ function MetricCard({
   href?: string;
   linkLabel?: string;
   external?: boolean;
+  helpText?: string;
 }) {
   return (
     <div className={`metricCard ${tone}${action ? " hasMetricAction" : ""}`}>
@@ -2157,9 +2256,21 @@ function MetricCard({
           <strong>{value}</strong>
           {external ? <ExternalLink size={12} /> : <ArrowRight size={12} />}
         </a>
-      ) : <strong>{value}</strong>}
+      ) : helpText ? <div className="metricValueWithHelp"><strong>{value}</strong><ValueHelp text={helpText} /></div> : <strong>{value}</strong>}
       {sub ? <span>{sub}</span> : null}
     </div>
+  );
+}
+
+function ValueHelp({ text }: { text: string }) {
+  const tooltipId = useId();
+  return (
+    <span className="valueHelp" onClick={(event) => event.stopPropagation()}>
+      <button type="button" title={text} aria-label="How this dollar value is calculated" aria-describedby={tooltipId}>
+        <CircleHelp size={14} aria-hidden="true" />
+      </button>
+      <span className="valueHelpTooltip" id={tooltipId} role="tooltip">{text}</span>
+    </span>
   );
 }
 
@@ -2663,7 +2774,7 @@ function UserActions({
   vault: VaultView;
 }) {
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
-  const [settlementMode, setSettlementMode] = useState<"usdg" | "rwas">("usdg");
+  const [settlementMode, setSettlementMode] = useState<RoutedSettlementMode | "rwas">("usdg");
   const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
   const [tradeAmount, setTradeAmount] = useState("");
   const [maxSlippage, setMaxSlippage] = useState("1.0");
@@ -2678,17 +2789,80 @@ function UserActions({
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const isLive = vault.dataMode === "live";
-  const entryRouterAddress = configuredEntryRouterAddress();
-  const entryAdapterAddress = configuredEntryAdapterAddress();
+  const routedSettlementMode: RoutedSettlementMode = settlementMode === "weth" ? "weth" : "usdg";
+  const isRoutedMode = settlementMode !== "rwas";
+  const isWethMode = settlementMode === "weth";
+  const settlementSymbol = isWethMode ? "WETH" : "USDG";
+  const entryRouterAddress = configuredEntryRouterAddress(routedSettlementMode);
+  const entryAdapterAddress = configuredEntryAdapterAddress(routedSettlementMode);
   const v3MarketRegistryAddress = configuredV3MarketRegistryAddress();
   const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
-  const configuredSettlementToken = configuredSettlementTokenAddress();
-  const constituentFee = configuredConstituentFee();
+  const configuredSettlementToken = configuredSettlementTokenAddress(routedSettlementMode);
+  const isRegisteredEntryAdapter = Boolean(
+    entryAdapterAddress && (
+      entryAdapterAddress.toLowerCase() === robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg?.toLowerCase() ||
+      entryAdapterAddress.toLowerCase() === robinhoodTestnetAddresses.registeredUniswapV3AdapterWeth?.toLowerCase()
+    ),
+  );
+  const usesTwoHopRegisteredRoute = isRegisteredEntryAdapter && routedSettlementMode === "usdg";
+  const registeredMarketIdFor = (asset: string) =>
+    configuredConstituentMarketId(asset, routedSettlementMode) ?? configuredConstituentMarketId(asset, "weth");
+  const routeFeeFor = (asset: string) => configuredConstituentFee(
+    asset,
+    usesTwoHopRegisteredRoute ? "weth" : routedSettlementMode,
+  );
+  const exactInputRouteFor = (asset: string, assetToSettlement = false) => {
+    if (!usesTwoHopRegisteredRoute || !configuredSettlementToken || !robinhoodTestnetAddresses.weth) {
+      return undefined;
+    }
+    return assetToSettlement
+      ? encodePacked(
+          ["address", "uint24", "address", "uint24", "address"],
+          [asset as `0x${string}`, routeFeeFor(asset), robinhoodTestnetAddresses.weth, 100, configuredSettlementToken as `0x${string}`],
+        )
+      : encodePacked(
+          ["address", "uint24", "address", "uint24", "address"],
+          [configuredSettlementToken as `0x${string}`, 100, robinhoodTestnetAddresses.weth, routeFeeFor(asset), asset as `0x${string}`],
+        );
+  };
+  const exactOutputRouteFor = (asset: string) => {
+    if (!usesTwoHopRegisteredRoute || !configuredSettlementToken || !robinhoodTestnetAddresses.weth) return undefined;
+    return encodePacked(
+      ["address", "uint24", "address", "uint24", "address"],
+      [asset as `0x${string}`, routeFeeFor(asset), robinhoodTestnetAddresses.weth, 100, configuredSettlementToken],
+    );
+  };
+  const registeredMarketsConfigured = !isRegisteredEntryAdapter || vault.allocations.every(
+    (asset) => asset.address.toLowerCase() === configuredSettlementToken?.toLowerCase() ||
+      Boolean(registeredMarketIdFor(asset.address)),
+  );
+  const routePoolMode: RoutedSettlementMode = usesTwoHopRegisteredRoute ? "weth" : routedSettlementMode;
+  const tieredAssetRegistryConfigured = Boolean(
+    robinhoodTestnetAddresses.assetMarketRegistry && robinhoodTestnetAddresses.assetRegistry,
+  );
+  const { data: constituentStatusResults } = useReadContracts({
+    contracts: vault.allocations.map((asset) => ({
+      address: robinhoodTestnetAddresses.assetRegistry ?? zeroAddress,
+      abi: assetStatusReadAbi,
+      functionName: "statusOf" as const,
+      args: [asset.address as `0x${string}`] as const,
+      chainId: robinhoodChainTestnet.id,
+    })),
+    query: { enabled: tieredAssetRegistryConfigured && vault.allocations.length > 0 },
+  });
+  const constituentStatuses = constituentStatusResults?.map((result) =>
+    result.status === "success" ? Number(result.result) : undefined,
+  );
+  const vaultExperimental = Boolean(tieredAssetRegistryConfigured && constituentStatuses?.some((status) => status === 1));
+  const vaultContainsBlockedAsset = Boolean(tieredAssetRegistryConfigured && constituentStatuses?.some((status) => status === 3));
+  const vaultQualityPending = Boolean(
+    tieredAssetRegistryConfigured && (!constituentStatuses || constituentStatuses.some((status) => status === undefined)),
+  );
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
   );
-  const vaultDepositsBlocked = vault.sunset || vault.depositsPaused || depositsPausedForAssetRemoval;
+  const vaultDepositsBlocked = vault.sunset || vault.depositsPaused || depositsPausedForAssetRemoval || vaultContainsBlockedAsset;
 
   useEffect(() => {
     if (!vault.sunset || activeAction !== "deposit") return;
@@ -2704,29 +2878,13 @@ function UserActions({
     setMarketError(undefined);
   }, [activeAction, vault.sunset]);
   const entryContractsConfigured = Boolean(
-    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress,
+    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress && registeredMarketsConfigured,
   );
   const parsedSlippage = Number(maxSlippage);
   const slippageBps = Number.isFinite(parsedSlippage)
     ? Math.round(parsedSlippage * 100)
     : 0;
   const slippageValid = slippageBps >= 1 && slippageBps <= 2_000;
-  const isUsdgMode = settlementMode === "usdg";
-  let normalizedUsdgAmount: bigint | undefined;
-  try {
-    normalizedUsdgAmount = isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
-      ? parseUnits(tradeAmount, 18)
-      : undefined;
-  } catch {
-    normalizedUsdgAmount = undefined;
-  }
-  const navEstimatedShares = normalizedUsdgAmount && vault.navPerShareValue
-    ? normalizedUsdgAmount * 10n ** 18n / vault.navPerShareValue
-    : undefined;
-  let navRequestedEntryShares: bigint | undefined;
-  if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
-    navRequestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
-  }
   let requestedRedeemShares: bigint | undefined;
   try {
     requestedRedeemShares = activeAction === "redeem" && Number(tradeAmount) > 0
@@ -2737,7 +2895,7 @@ function UserActions({
   }
   let requestedDirectMintShares: bigint | undefined;
   try {
-    requestedDirectMintShares = !isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
+    requestedDirectMintShares = !isRoutedMode && activeAction === "deposit" && Number(tradeAmount) > 0
       ? parseUnits(tradeAmount, 18)
       : undefined;
   } catch {
@@ -2758,7 +2916,7 @@ function UserActions({
     ? settlementTokenAddress
     : configuredSettlementToken;
   const constituentLiquidityContracts = vault.allocations.flatMap((asset) => {
-    const pool = configuredConstituentPool(asset.address);
+    const pool = configuredConstituentPool(asset.address, routePoolMode);
     return pool ? [{
       address: pool,
       abi: uniswapV3PoolAbi,
@@ -2778,7 +2936,7 @@ function UserActions({
   });
   let constituentLiquidityIndex = 0;
   const constituentPoolStates = vault.allocations.map((asset) => {
-    const pool = configuredConstituentPool(asset.address);
+    const pool = configuredConstituentPool(asset.address, routePoolMode);
     const result = pool ? constituentLiquidityResults?.[constituentLiquidityIndex++] : undefined;
     return {
       asset: asset.address,
@@ -2790,7 +2948,7 @@ function UserActions({
   const constituentPoolsConfigured = Boolean(
     settlementToken && vault.allocations.every((asset) =>
       asset.address.toLowerCase() === settlementToken.toLowerCase()
-        || Boolean(configuredConstituentPool(asset.address)),
+        || Boolean(configuredConstituentPool(asset.address, routePoolMode)),
     ),
   );
   const constituentPoolsReady = Boolean(
@@ -2820,13 +2978,52 @@ function UserActions({
     query: { enabled: Boolean(settlementToken) },
   });
   const settlementDecimals = Number(settlementDecimalsRead ?? 18);
-  let requestedUsdgAmount: bigint | undefined;
+  let requestedSettlementAmount: bigint | undefined;
   try {
-    requestedUsdgAmount = isUsdgMode && activeAction === "deposit" && Number(tradeAmount) > 0
+    requestedSettlementAmount = isRoutedMode && activeAction === "deposit" && Number(tradeAmount) > 0
       ? parseUnits(tradeAmount, settlementDecimals)
       : undefined;
   } catch {
-    requestedUsdgAmount = undefined;
+    requestedSettlementAmount = undefined;
+  }
+  const { data: usdgDecimalsRead } = useReadContract({
+    address: robinhoodTestnetAddresses.usdg,
+    abi: erc20BalanceAbi,
+    functionName: "decimals",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(robinhoodTestnetAddresses.usdg) },
+  });
+  const usdgDecimals = Number(usdgDecimalsRead ?? 18);
+  const { data: wethUsdgNavQuote } = useReadContract({
+    address: uniswapV3QuoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInputSingle",
+    args: isWethMode && requestedSettlementAmount && settlementToken && robinhoodTestnetAddresses.usdg
+      ? [{
+          tokenIn: settlementToken,
+          tokenOut: robinhoodTestnetAddresses.usdg,
+          amountIn: requestedSettlementAmount,
+          fee: 100,
+          sqrtPriceLimitX96: 0n,
+        }]
+      : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isWethMode && uniswapV3QuoterAddress && requestedSettlementAmount) },
+  });
+  const quotedUsdgForNav = (wethUsdgNavQuote as readonly [bigint, bigint, number, bigint] | undefined)?.[0];
+  const normalizedSettlementNavValue = requestedSettlementAmount === undefined
+    ? undefined
+    : isWethMode
+      ? quotedUsdgForNav === undefined
+        ? undefined
+        : quotedUsdgForNav * 10n ** 18n / 10n ** BigInt(usdgDecimals)
+      : requestedSettlementAmount * 10n ** 18n / 10n ** BigInt(settlementDecimals);
+  const navEstimatedShares = normalizedSettlementNavValue && vault.navPerShareValue
+    ? normalizedSettlementNavValue * 10n ** 18n / vault.navPerShareValue
+    : undefined;
+  let navRequestedEntryShares: bigint | undefined;
+  if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
+    navRequestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
   const { data: entryAdapterApproved } = useReadContract({
     address: entryRouterAddress,
@@ -2860,7 +3057,20 @@ function UserActions({
     query: { enabled: canQuoteEntry },
   });
   const entryQuoteContracts = canQuoteEntry && constituentPoolsReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? vault.allocations.flatMap((asset, index) => {
+    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = previewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        const multiHopPath = exactOutputRouteFor(asset.address);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutput" as const,
+          args: [multiHopPath, amountOut] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = previewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
@@ -2872,7 +3082,7 @@ function UserActions({
             tokenIn: settlementToken,
             tokenOut: asset.address as `0x${string}`,
             amountOut,
-            fee: constituentFee,
+            fee: routeFeeFor(asset.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -2884,7 +3094,7 @@ function UserActions({
     isLoading: entryQuotesLoading,
     refetch: refetchEntryQuotes,
   } = useReadContracts({
-    contracts: entryQuoteContracts,
+    contracts: entryQuoteContracts as readonly MulticallRead[],
     query: { enabled: entryQuoteContracts.length > 0 },
   });
   function deriveEntryLegs(
@@ -2943,11 +3153,11 @@ function UserActions({
     : undefined;
   const adjustedEntryShares =
     navRequestedEntryShares &&
-    requestedUsdgAmount !== undefined &&
+    requestedSettlementAmount !== undefined &&
     initialMaximumSettlementTotal !== undefined &&
     initialMaximumSettlementTotal > 0n &&
-    initialMaximumSettlementTotal !== requestedUsdgAmount
-      ? navRequestedEntryShares * requestedUsdgAmount / initialMaximumSettlementTotal
+    initialMaximumSettlementTotal !== requestedSettlementAmount
+      ? navRequestedEntryShares * requestedSettlementAmount / initialMaximumSettlementTotal
       : undefined;
   const canQuoteAdjustedEntry = Boolean(
     canQuoteEntry && adjustedEntryShares && adjustedEntryShares > 0n,
@@ -2965,7 +3175,20 @@ function UserActions({
     query: { enabled: canQuoteAdjustedEntry },
   });
   const adjustedEntryQuoteContracts = canQuoteAdjustedEntry && constituentPoolsReady && adjustedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? vault.allocations.flatMap((asset, index) => {
+    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = adjustedPreviewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        const multiHopPath = exactOutputRouteFor(asset.address);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutput" as const,
+          args: [multiHopPath, amountOut] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = adjustedPreviewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
@@ -2977,7 +3200,7 @@ function UserActions({
             tokenIn: settlementToken,
             tokenOut: asset.address as `0x${string}`,
             amountOut,
-            fee: constituentFee,
+            fee: routeFeeFor(asset.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -2988,7 +3211,7 @@ function UserActions({
     data: adjustedEntryQuoteResults,
     isLoading: adjustedEntryQuotesLoading,
   } = useReadContracts({
-    contracts: adjustedEntryQuoteContracts,
+    contracts: adjustedEntryQuoteContracts as readonly MulticallRead[],
     query: { enabled: adjustedEntryQuoteContracts.length > 0 },
   });
   const adjustedEntryLegs = deriveEntryLegs(adjustedPreviewEntryAmounts, adjustedEntryQuoteResults);
@@ -3013,17 +3236,17 @@ function UserActions({
     adjustedEntryShares &&
     initialMaximumSettlementTotal !== undefined &&
     adjustedMaximumSettlementTotal !== undefined &&
-    requestedUsdgAmount !== undefined
+    requestedSettlementAmount !== undefined
   ) {
-    const initialIsLower = initialMaximumSettlementTotal < requestedUsdgAmount;
-    const adjustedIsLower = adjustedMaximumSettlementTotal < requestedUsdgAmount;
+    const initialIsLower = initialMaximumSettlementTotal < requestedSettlementAmount;
+    const adjustedIsLower = adjustedMaximumSettlementTotal < requestedSettlementAmount;
     if (initialIsLower !== adjustedIsLower) {
       const lowerShares = initialIsLower ? navRequestedEntryShares : adjustedEntryShares;
       const lowerCost = initialIsLower ? initialMaximumSettlementTotal : adjustedMaximumSettlementTotal;
       const upperShares = initialIsLower ? adjustedEntryShares : navRequestedEntryShares;
       const upperCost = initialIsLower ? adjustedMaximumSettlementTotal : initialMaximumSettlementTotal;
       const interpolatedShares = lowerShares +
-        (upperShares - lowerShares) * (requestedUsdgAmount - lowerCost) / (upperCost - lowerCost);
+        (upperShares - lowerShares) * (requestedSettlementAmount - lowerCost) / (upperCost - lowerCost);
       if (interpolatedShares > lowerShares && interpolatedShares < upperShares) {
         refinedEntryShares = interpolatedShares;
       }
@@ -3045,7 +3268,20 @@ function UserActions({
     query: { enabled: canQuoteRefinedEntry },
   });
   const refinedEntryQuoteContracts = canQuoteRefinedEntry && constituentPoolsReady && refinedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
-    ? vault.allocations.flatMap((asset, index) => {
+    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountOut = refinedPreviewEntryAmounts[index];
+        if (amountOut === undefined || amountOut === 0n) return [];
+        const multiHopPath = exactOutputRouteFor(asset.address);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactOutput" as const,
+          args: [multiHopPath, amountOut] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = refinedPreviewEntryAmounts[index];
         if (amountOut === undefined || amountOut === 0n) return [];
@@ -3057,7 +3293,7 @@ function UserActions({
             tokenIn: settlementToken,
             tokenOut: asset.address as `0x${string}`,
             amountOut,
-            fee: constituentFee,
+            fee: routeFeeFor(asset.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -3068,7 +3304,7 @@ function UserActions({
     data: refinedEntryQuoteResults,
     isLoading: refinedEntryQuotesLoading,
   } = useReadContracts({
-    contracts: refinedEntryQuoteContracts,
+    contracts: refinedEntryQuoteContracts as readonly MulticallRead[],
     query: { enabled: refinedEntryQuoteContracts.length > 0 },
   });
   const requestedEntryShares = refinedEntryShares ?? adjustedEntryShares ?? navRequestedEntryShares;
@@ -3147,7 +3383,20 @@ function UserActions({
     query: { enabled: canPreviewRedeem },
   });
   const redeemQuoteContracts = previewRedeemAmounts && settlementToken && constituentPoolsReady && uniswapV3QuoterAddress && redeemSlippageValid
-    ? vault.allocations.flatMap((asset, index) => {
+    ? usesTwoHopRegisteredRoute ? vault.allocations.flatMap((asset, index) => {
+        if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
+        const amountIn = previewRedeemAmounts[index];
+        if (amountIn === undefined || amountIn === 0n) return [];
+        const multiHopPath = exactInputRouteFor(asset.address, true);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInput" as const,
+          args: [multiHopPath, amountIn] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountIn = previewRedeemAmounts[index];
         if (amountIn === undefined || amountIn === 0n) return [];
@@ -3159,7 +3408,7 @@ function UserActions({
             tokenIn: asset.address as `0x${string}`,
             tokenOut: settlementToken,
             amountIn,
-            fee: constituentFee,
+            fee: routeFeeFor(asset.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -3171,7 +3420,7 @@ function UserActions({
     isLoading: redeemQuotesLoading,
     refetch: refetchRedeemQuotes,
   } = useReadContracts({
-    contracts: redeemQuoteContracts,
+    contracts: redeemQuoteContracts as readonly MulticallRead[],
     query: { enabled: redeemQuoteContracts.length > 0 },
   });
   const redeemAuthorizationContracts = ([
@@ -3251,7 +3500,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: {
       enabled: Boolean(
-        !isUsdgMode && activeAction === "deposit" && requestedDirectMintShares && isLive && !vaultDepositsBlocked,
+        !isRoutedMode && activeAction === "deposit" && requestedDirectMintShares && isLive && !vaultDepositsBlocked,
       ),
     },
   });
@@ -3323,11 +3572,11 @@ function UserActions({
   const entrySettlementInputs = (() => {
     const inputs = new Array<bigint | undefined>(entryLegs.length).fill(undefined);
     if (
-      !entrySizingQuoteReady || requestedUsdgAmount === undefined ||
+      !entrySizingQuoteReady || requestedSettlementAmount === undefined ||
       quotedSettlementTotal === undefined || quotedSettlementTotal === 0n
     ) return inputs;
 
-    let remainingInput = requestedUsdgAmount;
+    let remainingInput = requestedSettlementAmount;
     let remainingQuote = quotedSettlementTotal;
     for (let index = 0; index < entryLegs.length; index += 1) {
       const quoted = entryLegs[index]?.quotedSettlement ?? 0n;
@@ -3341,7 +3590,19 @@ function UserActions({
     return inputs;
   })();
   const exactInputEntryQuoteContracts = entrySizingQuoteReady && settlementToken && uniswapV3QuoterAddress
-    ? entryLegs.flatMap((leg, index) => {
+    ? usesTwoHopRegisteredRoute ? entryLegs.flatMap((leg, index) => {
+        const settlementIn = entrySettlementInputs[index];
+        if (leg.isSettlement || settlementIn === undefined || settlementIn === 0n) return [];
+        const multiHopPath = exactInputRouteFor(leg.address);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInput" as const,
+          args: [multiHopPath, settlementIn] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : entryLegs.flatMap((leg, index) => {
         const settlementIn = entrySettlementInputs[index];
         if (leg.isSettlement || settlementIn === undefined || settlementIn === 0n) return [];
         return [{
@@ -3352,7 +3613,7 @@ function UserActions({
             tokenIn: settlementToken,
             tokenOut: leg.address as `0x${string}`,
             amountIn: settlementIn,
-            fee: constituentFee,
+            fee: routeFeeFor(leg.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -3364,7 +3625,7 @@ function UserActions({
     isLoading: exactInputEntryQuotesLoading,
     refetch: refetchExactInputEntryQuotes,
   } = useReadContracts({
-    contracts: exactInputEntryQuoteContracts,
+    contracts: exactInputEntryQuoteContracts as readonly MulticallRead[],
     query: { enabled: exactInputEntryQuoteContracts.length > 0 },
   });
   let exactInputEntryQuoteIndex = 0;
@@ -3400,7 +3661,18 @@ function UserActions({
     };
   });
   const entryRefundRateQuoteContracts = settlementToken && uniswapV3QuoterAddress
-    ? exactInputEntryLegs.flatMap((leg) => {
+    ? usesTwoHopRegisteredRoute ? exactInputEntryLegs.flatMap((leg) => {
+        if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
+        const multiHopPath = exactInputRouteFor(leg.address, true);
+        if (!multiHopPath) return [];
+        return [{
+          address: uniswapV3QuoterAddress,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInput" as const,
+          args: [multiHopPath, leg.quotedAssetOut] as const,
+          chainId: robinhoodChainTestnet.id,
+        }];
+      }) : exactInputEntryLegs.flatMap((leg) => {
         if (leg.isSettlement || leg.quotedAssetOut === undefined || leg.quotedAssetOut === 0n) return [];
         return [{
           address: uniswapV3QuoterAddress,
@@ -3410,7 +3682,7 @@ function UserActions({
             tokenIn: leg.address as `0x${string}`,
             tokenOut: settlementToken,
             amountIn: leg.quotedAssetOut,
-            fee: constituentFee,
+            fee: routeFeeFor(leg.address),
             sqrtPriceLimitX96: 0n,
           }],
           chainId: robinhoodChainTestnet.id,
@@ -3422,7 +3694,7 @@ function UserActions({
     isLoading: entryRefundRateQuotesLoading,
     refetch: refetchEntryRefundRateQuotes,
   } = useReadContracts({
-    contracts: entryRefundRateQuoteContracts,
+    contracts: entryRefundRateQuoteContracts as readonly MulticallRead[],
     query: { enabled: entryRefundRateQuoteContracts.length > 0 },
   });
   let entryRefundRateQuoteIndex = 0;
@@ -3480,7 +3752,7 @@ function UserActions({
     entryAssetQuotesReady && estimatedEntryShares && estimatedEntryShares > 0n &&
     minimumEntryShares && minimumEntryShares > 0n,
   );
-  const entrySettlementInput = entryQuoteReady ? requestedUsdgAmount : undefined;
+  const entrySettlementInput = entryQuoteReady ? requestedSettlementAmount : undefined;
   const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
   const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
   const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
@@ -3505,8 +3777,8 @@ function UserActions({
   const marketPoolChecking = Boolean(v3MarketRegistryAddress && vault.address) && (
     officialPoolLoading || (Boolean(marketPool) && marketLiquidityLoading)
   );
-  const marketInputAmount = isUsdgMode
-    ? activeAction === "deposit" ? requestedUsdgAmount : requestedRedeemShares
+  const marketInputAmount = settlementMode === "usdg"
+    ? activeAction === "deposit" ? requestedSettlementAmount : requestedRedeemShares
     : undefined;
   const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
   const marketOutputToken = activeAction === "deposit" ? vault.address : settlementToken;
@@ -3584,6 +3856,7 @@ function UserActions({
     marketLiquidityReady && marketInputAmount && marketQuotedOutput && marketMinimumOutput && !marketQuoteError,
   );
   const marketRouteAvailable = Boolean(
+    settlementMode === "usdg" &&
     marketLiquidityReady && uniswapV3QuoterAddress && uniswapV3SwapRouterAddress &&
     !(vault.sunset && activeAction === "deposit"),
   );
@@ -3647,17 +3920,41 @@ function UserActions({
         0n,
       )
     : undefined;
+  const { data: wethRedeemUsdgQuote } = useReadContract({
+    address: uniswapV3QuoterAddress,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInputSingle",
+    args: isWethMode && quotedRedeemSettlement && settlementToken && robinhoodTestnetAddresses.usdg
+      ? [{
+          tokenIn: settlementToken,
+          tokenOut: robinhoodTestnetAddresses.usdg,
+          amountIn: quotedRedeemSettlement,
+          fee: 100,
+          sqrtPriceLimitX96: 0n,
+        }]
+      : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isWethMode && uniswapV3QuoterAddress && quotedRedeemSettlement) },
+  });
+  const quotedRedeemUsdg = (wethRedeemUsdgQuote as readonly [bigint, bigint, number, bigint] | undefined)?.[0];
+  const normalizedRedeemNavOutput = quotedRedeemSettlement === undefined
+    ? undefined
+    : isWethMode
+      ? quotedRedeemUsdg === undefined
+        ? undefined
+        : quotedRedeemUsdg * 10n ** 18n / 10n ** BigInt(usdgDecimals)
+      : quotedRedeemSettlement * 10n ** 18n / 10n ** BigInt(settlementDecimals);
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
   const marketBusy = marketState === "pending" || marketState === "submitted";
-  const inputTokenSymbol = activeAction === "deposit" && isUsdgMode ? "USDG" : vault.symbol;
-  const inputTokenDecimals = activeAction === "deposit" && isUsdgMode ? settlementDecimals : 18;
+  const inputTokenSymbol = activeAction === "deposit" && isRoutedMode ? settlementSymbol : vault.symbol;
+  const inputTokenDecimals = activeAction === "deposit" && isRoutedMode ? settlementDecimals : 18;
   const walletInputBalance = activeAction === "deposit"
-    ? isUsdgMode ? settlementBalance : undefined
+    ? isRoutedMode ? settlementBalance : undefined
     : redeemShareBalance;
   const walletInputBalanceLoading = activeAction === "deposit"
-    ? isUsdgMode ? entryAuthorizationLoading : basketAuthorizationLoading
+    ? isRoutedMode ? entryAuthorizationLoading : basketAuthorizationLoading
     : redeemAuthorizationLoading;
-  const showWalletInputBalance = isUsdgMode || activeAction === "redeem";
+  const showWalletInputBalance = isRoutedMode || activeAction === "redeem";
   const walletInputBalanceLabel = !connectedAddress
     ? "Connect wallet"
     : walletInputBalanceLoading
@@ -3685,15 +3982,17 @@ function UserActions({
     if (redeemAmountExceedsBalance) setSelectedRoute(undefined);
   }, [redeemAmountExceedsBalance]);
 
-  const routeInputsReady = Boolean(isUsdgMode && marketInputAmount && marketInputAmount > 0n && slippageValid);
+  const routedInputAmount = activeAction === "deposit" ? requestedSettlementAmount : requestedRedeemShares;
+  const routeInputsReady = Boolean(isRoutedMode && routedInputAmount && routedInputAmount > 0n && slippageValid);
   const directInputsReady = Boolean(
-    !isUsdgMode && slippageValid && (
+    !isRoutedMode && slippageValid && (
       activeAction === "deposit" ? requestedDirectMintShares : requestedRedeemShares
     ),
   );
   const underlyingRouteAvailable = entryContractsConfigured &&
     entryAdapterApproved !== false &&
     constituentPoolsReady &&
+    !vaultContainsBlockedAsset &&
     (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
     entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
@@ -3709,7 +4008,7 @@ function UserActions({
     ? estimatedEntryShares
     : quotedRedeemSettlement;
   const underlyingQuotedSlippageBps = quotedSlippageBps(
-    underlyingQuotedOutput,
+    activeAction === "deposit" ? underlyingQuotedOutput : normalizedRedeemNavOutput,
     activeAction === "deposit" ? navEstimatedShares : navRedeemValue,
   );
   const marketQuoteProblem = routeInputsReady && marketRouteAvailable && !marketQuoteLoading && !marketQuoteReady
@@ -3806,7 +4105,7 @@ function UserActions({
         });
         setEntryState("submitted");
         const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
-        if (resetReceipt.status !== "success") throw new Error("The USDG approval reset reverted.");
+        if (resetReceipt.status !== "success") throw new Error(`The ${settlementSymbol} approval reset reverted.`);
       }
       setEntryState("pending");
       const hash = await writeContractAsync({
@@ -3818,7 +4117,7 @@ function UserActions({
       });
       setEntryState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The USDG approval reverted.");
+      if (receipt.status !== "success") throw new Error(`The ${settlementSymbol} approval reverted.`);
       await refetchEntryAuthorization();
       setEntryState("confirmed");
     } catch (error) {
@@ -3836,7 +4135,7 @@ function UserActions({
       !entryRouterAddress ||
       !entryAdapterAddress ||
       !settlementToken ||
-      requestedUsdgAmount === undefined ||
+      requestedSettlementAmount === undefined ||
       !minimumEntryShares ||
       !entryQuoteReady ||
       !entryBalanceSufficient ||
@@ -3856,14 +4155,24 @@ function UserActions({
           settlementIn: leg.settlementIn as bigint,
           minAssetOut: leg.minimumAssetOut as bigint,
           minRefundSettlementRate: leg.minimumRefundSettlementRate as bigint,
-          adapterData: encodeAbiParameters(
-            [{ type: "address[]" }],
-            [[settlementToken, leg.address as `0x${string}`]],
-          ),
-          refundAdapterData: encodeAbiParameters(
-            [{ type: "address[]" }],
-            [[leg.address as `0x${string}`, settlementToken]],
-          ),
+          adapterData: isRegisteredEntryAdapter
+            ? encodeAbiParameters(
+                [{ type: "bytes32" }],
+                [registeredMarketIdFor(leg.address) as `0x${string}`],
+              )
+            : encodeAbiParameters(
+                [{ type: "address[]" }],
+                [[settlementToken, leg.address as `0x${string}`]],
+              ),
+          refundAdapterData: isRegisteredEntryAdapter
+            ? encodeAbiParameters(
+                [{ type: "bytes32" }],
+                [registeredMarketIdFor(leg.address) as `0x${string}`],
+              )
+            : encodeAbiParameters(
+                [{ type: "address[]" }],
+                [[leg.address as `0x${string}`, settlementToken]],
+              ),
         });
     setEntryError(undefined);
     try {
@@ -3874,7 +4183,7 @@ function UserActions({
         functionName: "enterWithSettlement",
         args: [
           vault.address,
-          requestedUsdgAmount,
+          requestedSettlementAmount,
           minimumEntryShares,
           connectedAddress,
           BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
@@ -3884,7 +4193,7 @@ function UserActions({
       });
       setEntryState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The USDG entry transaction reverted.");
+      if (receipt.status !== "success") throw new Error(`The ${settlementSymbol} entry transaction reverted.`);
       const entryEvents = parseEventLogs({
         abi: otfEntryRouterAbi,
         eventName: "EnteredWithSettlement",
@@ -3902,7 +4211,7 @@ function UserActions({
       setEntryState("confirmed");
       setTradeReceipt({
         action: "deposit",
-        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through the underlying RWA pools.${settlementRefunded > 0n ? ` ${formatWalletTokenBalance(settlementRefunded, settlementDecimals)} USDG refunded.` : ""}`,
+        detail: `${formatWalletTokenBalance(mintedShares, 18)} ${vault.symbol} minted through the underlying asset pools.${settlementRefunded > 0n ? ` ${formatWalletTokenBalance(settlementRefunded, settlementDecimals)} ${settlementSymbol} refunded.` : ""}`,
         transactionHash: hash,
       });
       setTradeAmount("");
@@ -4082,10 +4391,15 @@ function UserActions({
       : {
           adapter: entryAdapterAddress,
           minSettlementOut: leg.minimumSettlement as bigint,
-          adapterData: encodeAbiParameters(
-            [{ type: "address[]" }],
-            [[leg.address as `0x${string}`, settlementToken]],
-          ),
+          adapterData: isRegisteredEntryAdapter
+            ? encodeAbiParameters(
+                [{ type: "bytes32" }],
+                [registeredMarketIdFor(leg.address) as `0x${string}`],
+              )
+            : encodeAbiParameters(
+                [{ type: "address[]" }],
+                [[leg.address as `0x${string}`, settlementToken]],
+              ),
         });
     setRedeemError(undefined);
     try {
@@ -4106,7 +4420,7 @@ function UserActions({
       });
       setRedeemState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The USDG redemption reverted.");
+      if (receipt.status !== "success") throw new Error(`The ${settlementSymbol} redemption reverted.`);
       await Promise.all([refetchRedeemAuthorization(), refetchRedeemPreview(), refetchRedeemQuotes()]);
       setTradeReceipt({
         action: "redeem",
@@ -4247,7 +4561,7 @@ function UserActions({
     setMarketError(undefined);
   }
 
-  function changeSettlementMode(nextMode: "usdg" | "rwas") {
+  function changeSettlementMode(nextMode: RoutedSettlementMode | "rwas") {
     if (nextMode === settlementMode) return;
     setSettlementMode(nextMode);
     setTradeAmount("");
@@ -4264,8 +4578,8 @@ function UserActions({
   return (
     <SectionCard
       title="Your position"
-      subtitle={isUsdgMode
-        ? activeAction === "deposit" ? `Buy ${vault.symbol} with USDG` : `Redeem ${vault.symbol} for USDG`
+      subtitle={isRoutedMode
+        ? activeAction === "deposit" ? `Buy ${vault.symbol} with ${settlementSymbol}` : `Redeem ${vault.symbol} for ${settlementSymbol}`
         : activeAction === "deposit" ? `Mint ${vault.symbol} with the underlying basket` : `Receive the underlying basket directly`}
       icon={<Wallet size={15} />}
     >
@@ -4331,19 +4645,30 @@ function UserActions({
             <span>Settle in</span>
             <div className="positionSettlementSelector" role="radiogroup" aria-label="Deposit and redemption asset mode">
               <button
-                className={isUsdgMode ? "active" : ""}
+                className={settlementMode === "usdg" ? "active" : ""}
                 type="button"
                 role="radio"
-                aria-checked={isUsdgMode}
+                aria-checked={settlementMode === "usdg"}
                 onClick={() => changeSettlementMode("usdg")}
               >
                 USDG
               </button>
               <button
-                className={!isUsdgMode ? "active" : ""}
+                className={settlementMode === "weth" ? "active" : ""}
                 type="button"
                 role="radio"
-                aria-checked={!isUsdgMode}
+                aria-checked={settlementMode === "weth"}
+                disabled={!configuredEntryRouterAddress("weth") || !configuredEntryAdapterAddress("weth") || !configuredSettlementTokenAddress("weth")}
+                title={!configuredEntryRouterAddress("weth") ? "WETH settlement is not deployed on this network" : undefined}
+                onClick={() => changeSettlementMode("weth")}
+              >
+                WETH
+              </button>
+              <button
+                className={settlementMode === "rwas" ? "active" : ""}
+                type="button"
+                role="radio"
+                aria-checked={settlementMode === "rwas"}
                 onClick={() => changeSettlementMode("rwas")}
               >
                 RWAs
@@ -4351,6 +4676,30 @@ function UserActions({
             </div>
           </div>
         </div>
+
+        {tieredAssetRegistryConfigured ? (
+          <div className={`validationSummary ${vaultContainsBlockedAsset ? "danger" : vaultExperimental ? "warning" : "success"}`} role="status">
+            {vaultContainsBlockedAsset || vaultExperimental ? <AlertTriangle size={15} /> : <ShieldCheck size={15} />}
+            <div>
+              <strong>
+                {vaultQualityPending
+                  ? "Checking constituent quality"
+                  : vaultContainsBlockedAsset
+                    ? "Blocked constituent — deposits and management disabled"
+                    : vaultExperimental
+                      ? "Experimental OTF"
+                      : "Protocol-qualified assets"}
+              </strong>
+              <span>
+                {vaultContainsBlockedAsset
+                  ? "New deposits are unavailable, but proportional redemption remains open."
+                  : vaultExperimental
+                    ? "Pool-derived prices and liquidity can be manipulated. Malicious or upgradable token transfers and routed redemptions can fail, and performance XP depends on continuing eligibility."
+                    : "Every current constituent is governance-qualified. This tier is derived live and updates automatically after qualification, demotion, or blocking."}
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         {vault.sunset ? (
           <div className="validationSummary danger" role="status">
@@ -4368,9 +4717,9 @@ function UserActions({
           <label>
             <span className="positionFieldHeading">
               <span>
-                {activeAction === "deposit" && isUsdgMode
-                  ? "USDG to spend"
-                  : !isUsdgMode && activeAction === "deposit"
+                {activeAction === "deposit" && isRoutedMode
+                  ? `${settlementSymbol} to spend`
+                  : !isRoutedMode && activeAction === "deposit"
                     ? "Shares to mint"
                     : `${inputTokenSymbol} amount`}
               </span>
@@ -4384,10 +4733,10 @@ function UserActions({
                 min="0"
                 inputMode="decimal"
                 placeholder="0.00"
-                aria-label={activeAction === "deposit" && isUsdgMode ? "USDG to spend" : `${inputTokenSymbol} amount`}
+                aria-label={activeAction === "deposit" && isRoutedMode ? `${settlementSymbol} to spend` : `${inputTokenSymbol} amount`}
                 disabled={!isLive || entryBusy || redeemBusy || marketBusy}
               />
-              {isUsdgMode || activeAction === "redeem" ? (
+              {isRoutedMode || activeAction === "redeem" ? (
                 <button
                   className="positionMaxButton"
                   type="button"
@@ -4449,8 +4798,8 @@ function UserActions({
               <strong>Choose how to execute</strong>
               <span>
                 {activeAction === "deposit"
-                  ? "Compare estimated shares for the same USDG spend."
-                  : "Compare estimated USDG proceeds for the same OTF shares."}
+                  ? `Compare estimated shares for the same ${settlementSymbol} spend.`
+                  : `Compare estimated ${settlementSymbol} proceeds for the same OTF shares.`}
               </span>
             </div>
             <div className="positionRouteChoices" role="radiogroup" aria-label="Execution route">
@@ -4540,7 +4889,7 @@ function UserActions({
                       ? underlyingQuoteProblem.title
                     : activeAction === "deposit"
                       ? `${vault.symbol} shares minted`
-                      : "USDG received"}
+                      : `${settlementSymbol} received`}
                 </small>
               </button>
             </div>
@@ -4557,7 +4906,7 @@ function UserActions({
               </div>
             ) : null}
           </div>
-        ) : !isUsdgMode && directInputsReady ? null : tradeReceipt ? (
+        ) : !isRoutedMode && directInputsReady ? null : tradeReceipt ? (
           <div className="positionTradeSuccess" role="status" aria-live="polite">
             <span className="positionTradeSuccessMark" aria-hidden="true">
               <Check size={20} strokeWidth={2.6} />
@@ -4580,9 +4929,9 @@ function UserActions({
           <div className="positionRoutePrompt">
             <ArrowDownToLine size={17} />
             <div>
-              <strong>{isUsdgMode ? activeAction === "deposit" ? "Enter a USDG amount to compare routes" : "Enter an amount to compare routes" : "Enter shares to preview the RWA basket"}</strong>
+              <strong>{isRoutedMode ? activeAction === "deposit" ? `Enter a ${settlementSymbol} amount to compare routes` : "Enter an amount to compare routes" : "Enter shares to preview the asset basket"}</strong>
               <span>
-                {isUsdgMode
+                {isRoutedMode
                   ? activeAction === "deposit"
                     ? `Both routes spend the entered ${inputTokenSymbol} amount and protect you with a minimum share output.`
                     : `Both execution paths use the same ${inputTokenSymbol} amount and slippage limit.`
@@ -4594,7 +4943,7 @@ function UserActions({
           </div>
         )}
 
-        {!isUsdgMode && directInputsReady ? (
+        {!isRoutedMode && directInputsReady ? (
           <div className="positionExecutionPanel">
             <div className="positionExecutionHeader">
               <div>
@@ -4810,8 +5159,8 @@ function UserActions({
                   <strong>Underlying RWA pools</strong>
                   <span>
                     {activeAction === "deposit"
-                      ? "Spend USDG across the portfolio pools and mint a proportional basket."
-                      : "Burn OTF shares and sell the portfolio assets for USDG."}
+                      ? `Spend ${settlementSymbol} across the portfolio pools and mint a proportional basket.`
+                      : `Burn OTF shares and sell the portfolio assets for ${settlementSymbol}.`}
                   </span>
                 </div>
               </div>
@@ -4821,7 +5170,7 @@ function UserActions({
             {activeAction === "deposit" ? (
               <>
                 <div className="positionExecutionQuote positionExecutionQuoteFour">
-                  <div><span>USDG supplied</span><strong>{requestedUsdgAmount !== undefined ? formatWalletTokenBalance(requestedUsdgAmount, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>{settlementSymbol} supplied</span><strong>{requestedSettlementAmount !== undefined ? formatWalletTokenBalance(requestedSettlementAmount, settlementDecimals) : "—"} {settlementSymbol}</strong></div>
                   <div><span>Estimated shares</span><strong>{estimatedEntryShares ? formatWalletTokenBalance(estimatedEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                   <div><span>Minimum shares</span><strong>{minimumEntryShares ? formatWalletTokenBalance(minimumEntryShares, 18) : "—"} {vault.symbol}</strong></div>
                   <div><span>Quoted slippage vs NAV</span><strong>{formatQuotedSlippage(underlyingQuotedSlippageBps)}</strong></div>
@@ -4829,7 +5178,7 @@ function UserActions({
                 {entryQuoteReady && !entryBalanceSufficient ? (
                   <div className="validationSummary danger">
                     <AlertTriangle size={15} />
-                    <div><strong>Insufficient USDG</strong><span>Your wallet balance is below this route&apos;s maximum spend.</span></div>
+                    <div><strong>Insufficient {settlementSymbol}</strong><span>Your wallet balance is below this route&apos;s maximum spend.</span></div>
                   </div>
                 ) : null}
                 {entryError ? (
@@ -4847,7 +5196,7 @@ function UserActions({
                     onClick={approveSettlementToken}
                   >
                     <ShieldCheck size={14} />
-                    {entryAllowanceSufficient ? "USDG approved" : "Approve USDG"}
+                    {entryAllowanceSufficient ? `${settlementSymbol} approved` : `Approve ${settlementSymbol}`}
                   </button>
                   <button
                     className="primaryAction"
@@ -4864,8 +5213,8 @@ function UserActions({
               <>
                 <div className="positionExecutionQuote positionExecutionQuoteFour">
                   <div><span>Shares redeemed</span><strong>{requestedRedeemShares ? formatWalletTokenBalance(requestedRedeemShares, 18) : "—"} {vault.symbol}</strong></div>
-                  <div><span>Expected proceeds</span><strong>{quotedRedeemSettlement !== undefined ? formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
-                  <div><span>Minimum received</span><strong>{minimumRedeemSettlement !== undefined ? formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals) : "—"} USDG</strong></div>
+                  <div><span>Expected proceeds</span><strong>{quotedRedeemSettlement !== undefined ? formatWalletTokenBalance(quotedRedeemSettlement, settlementDecimals) : "—"} {settlementSymbol}</strong></div>
+                  <div><span>Minimum received</span><strong>{minimumRedeemSettlement !== undefined ? formatWalletTokenBalance(minimumRedeemSettlement, settlementDecimals) : "—"} {settlementSymbol}</strong></div>
                   <div><span>Quoted slippage vs NAV</span><strong>{formatQuotedSlippage(underlyingQuotedSlippageBps)}</strong></div>
                 </div>
                 {requestedRedeemShares && !redeemBalanceSufficient ? (
@@ -4898,7 +5247,7 @@ function UserActions({
                     onClick={redeemToSettlement}
                   >
                     {redeemBusy ? <Loader2 className="spin" size={14} /> : <ArrowRight size={14} />}
-                    Redeem for USDG
+                    Redeem for {settlementSymbol}
                   </button>
                 </div>
               </>
@@ -4908,8 +5257,8 @@ function UserActions({
               <Info size={14} />
               <span>
                 {activeAction === "deposit"
-                  ? "The OTF receives only a proportional basket. Surplus RWA tokens are sold back under your slippage limit and refunded to your wallet as USDG."
-                  : "Underlying execution uses approved RWA pools. Final USDG depends on their live liquidity and price impact."}
+                  ? `The OTF receives only a proportional basket. Surplus tokens are sold back under your slippage limit and refunded as ${settlementSymbol}.`
+                  : `Underlying execution uses the pinned constituent pools. Final ${settlementSymbol} depends on live liquidity and price impact.`}
               </span>
             </div>
           </div>
@@ -5046,7 +5395,9 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [targets, setTargets] = useState<StrategyTargetAsset[]>(() =>
     vault.allocations.map((asset) => ({
       ticker: asset.symbol,
+      name: asset.name,
       address: asset.address,
+      qualityStatus: "qualified",
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
     })),
@@ -5055,6 +5406,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [rationale, setRationale] = useState("");
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
+  const [manualTargetAsset, setManualTargetAsset] = useState("");
+  const [manualTargetPool, setManualTargetPool] = useState("");
+  const [manualTargetState, setManualTargetState] = useState<TxState>("idle");
+  const [manualTargetError, setManualTargetError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
   const activationRemaining = useLiveCountdown(vault.pendingStrategyActivationTime);
@@ -5066,17 +5421,64 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     chainId: robinhoodChainTestnet.id,
     query: { enabled: Boolean(vault.address && vault.strategyProposalPending), refetchInterval: 12_000 },
   });
+  const usesPermissionlessMarkets = Boolean(
+    robinhoodTestnetAddresses.assetRegistry && robinhoodTestnetAddresses.assetMarketRegistry,
+  );
+  const { data: activeTargetMarketResults } = useReadContracts({
+    contracts: usesPermissionlessMarkets && vault.address
+      ? vault.allocations.flatMap((asset) => [
+          {
+            address: robinhoodTestnetAddresses.assetRegistry as `0x${string}`,
+            abi: assetStatusReadAbi,
+            functionName: "statusOf" as const,
+            args: [asset.address as `0x${string}`] as const,
+            chainId: robinhoodChainTestnet.id,
+          },
+          {
+            address: vault.address as `0x${string}`,
+            abi: managedOtfVaultAbi,
+            functionName: "marketIdForAsset" as const,
+            args: [asset.address as `0x${string}`] as const,
+            chainId: robinhoodChainTestnet.id,
+          },
+        ])
+      : [],
+    query: { enabled: usesPermissionlessMarkets && Boolean(vault.address) },
+  });
 
   useEffect(() => {
     if (initializedTargetsKey.current === activeTargetsKey) return;
     initializedTargetsKey.current = activeTargetsKey;
     setTargets(vault.allocations.map((asset) => ({
       ticker: asset.symbol,
+      name: asset.name,
       address: asset.address,
+      qualityStatus: "qualified",
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
     })));
   }, [activeTargetsKey, vault.allocations]);
+
+  useEffect(() => {
+    if (!activeTargetMarketResults || activeTargetMarketResults.length !== vault.allocations.length * 2) return;
+    setTargets((current) => current.map((target) => {
+      const allocationIndex = vault.allocations.findIndex(
+        (asset) => asset.address.toLowerCase() === target.address.toLowerCase(),
+      );
+      if (allocationIndex < 0) return target;
+      const statusResult = activeTargetMarketResults[allocationIndex * 2];
+      const marketResult = activeTargetMarketResults[allocationIndex * 2 + 1];
+      const status = statusResult?.status === "success" ? Number(statusResult.result) : undefined;
+      const marketId = marketResult?.status === "success"
+        ? marketResult.result as `0x${string}`
+        : undefined;
+      return {
+        ...target,
+        qualityStatus: status === 1 ? "open" : status === 3 ? "blocked" : "qualified",
+        marketId: marketId && marketId !== zeroHash ? marketId : undefined,
+      };
+    }));
+  }, [activeTargetMarketResults, vault.allocations]);
 
   const totalWeight = targets.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
   const targetChanges = targets.map((asset) => {
@@ -5102,6 +5504,11 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const weightsValid = weightSumValid && targetMinimumValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
+  const experimentalTargets = targets.filter((asset) => asset.qualityStatus === "open");
+  const blockedTargets = targets.filter((asset) => asset.qualityStatus === "blocked");
+  const targetMarketsValid = !usesPermissionlessMarkets || targets.every(
+    (asset) => asset.qualityStatus !== "open" || Boolean(asset.marketId && asset.marketId !== zeroHash),
+  );
   const targetsChanged = targets.length !== vault.allocations.length || targets.some((target) => {
     const current = vault.allocations.find(
       (allocation) => allocation.address.toLowerCase() === target.address.toLowerCase(),
@@ -5207,38 +5614,182 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     if (!nextAsset) return;
     setTargets((current) => [...current, {
       ticker: nextAsset.symbol,
+      name: nextAsset.name,
       address: nextAsset.address,
+      qualityStatus: "qualified",
       targetWeight: "",
       initialAmount: "",
     }]);
     setTxState("idle");
   }
 
+  async function registerAndAddOpenTarget() {
+    if (
+      !publicClient || !vault.connectedIsManager || !robinhoodTestnetAddresses.assetRegistry ||
+      !robinhoodTestnetAddresses.assetMarketRegistry || !isAddress(manualTargetAsset) ||
+      !isAddress(manualTargetPool) || protocolMinimumTargetWeightBps === undefined
+    ) return;
+    const assetAddress = manualTargetAsset as `0x${string}`;
+    const poolAddress = manualTargetPool as `0x${string}`;
+    if (targets.some((target) => target.address.toLowerCase() === assetAddress.toLowerCase())) {
+      setManualTargetError("This token contract is already in the proposal.");
+      return;
+    }
+    setManualTargetError(undefined);
+    setManualTargetState("pending");
+    try {
+      const [decimals, tokenName, tokenSymbol, currentStatus] = await Promise.all([
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "decimals" }),
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "name" }).catch(() => "Unindexed token"),
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
+        publicClient.readContract({
+          address: robinhoodTestnetAddresses.assetRegistry,
+          abi: permissionlessAssetRegistryAbi,
+          functionName: "statusOf",
+          args: [assetAddress],
+        }),
+      ]);
+      if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
+      if (Number(currentStatus) === 3) throw new Error("This token is blocked by protocol governance.");
+      let qualityStatus: "qualified" | "open" = Number(currentStatus) === 2 ? "qualified" : "open";
+      if (Number(currentStatus) === 0) {
+        const registrationHash = await writeContractAsync({
+          address: robinhoodTestnetAddresses.assetRegistry,
+          abi: permissionlessAssetRegistryAbi,
+          functionName: "registerOpenAsset",
+          args: [assetAddress],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setManualTargetState("submitted");
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: registrationHash });
+        if (receipt.status !== "success") throw new Error("Open-asset registration reverted.");
+        qualityStatus = "open";
+      }
+
+      let marketId: `0x${string}` | undefined;
+      if (qualityStatus === "open") {
+        setManualTargetState("pending");
+        const marketHash = await writeContractAsync({
+          address: robinhoodTestnetAddresses.assetMarketRegistry,
+          abi: assetMarketRegistryAbi,
+          functionName: "registerV3Market",
+          args: [assetAddress, poolAddress],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setManualTargetState("submitted");
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: marketHash });
+        if (receipt.status !== "success") throw new Error("V3 market registration reverted.");
+        marketId = keccak256(encodeAbiParameters(
+          [{ type: "uint256" }, { type: "address" }, { type: "address" }],
+          [BigInt(robinhoodChainTestnet.id), assetAddress, poolAddress],
+        ));
+        const market = await publicClient.readContract({
+          address: robinhoodTestnetAddresses.assetMarketRegistry,
+          abi: assetMarketRegistryAbi,
+          functionName: "marketFor",
+          args: [marketId],
+        });
+        const [marketAsset, registeredPool, priceFeed, , active] = market;
+        if (
+          !active || marketAsset.toLowerCase() !== assetAddress.toLowerCase() ||
+          registeredPool.toLowerCase() !== poolAddress.toLowerCase()
+        ) throw new Error("The registered market does not match the requested token and pool.");
+        try {
+          await publicClient.readContract({
+            address: priceFeed,
+            abi: aggregatorV3ReadAbi,
+            functionName: "latestRoundData",
+          });
+        } catch {
+          throw new Error("The V3 route needs a complete one-hour observation history before proposal.");
+        }
+      }
+
+      const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
+      setTargets((current) => {
+        const existingWeights = distributeWeight(
+          10_000 - protocolMinimumTargetWeightBps,
+          current.map((target) => Math.max(0, Math.round(Number(target.targetWeight || 0) * 100))),
+        );
+        return [
+          ...current.map((target, index) => ({
+            ...target,
+            targetWeight: formatDraftWeight(existingWeights[index]),
+          })),
+          {
+            ticker: symbol,
+            name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
+            address: assetAddress,
+            marketId,
+            poolAddress: qualityStatus === "open" ? poolAddress : undefined,
+            qualityStatus,
+            targetWeight: formatDraftWeight(protocolMinimumTargetWeightBps),
+            initialAmount: "",
+          },
+        ];
+      });
+      setManualTargetAsset("");
+      setManualTargetPool("");
+      setManualTargetState("confirmed");
+      setTxState("idle");
+    } catch (error) {
+      setManualTargetError(errorMessage(error));
+      setManualTargetState("reverted");
+    }
+  }
+
   async function submitTargets() {
-    if (!vault.address || !vault.connectedIsManager || !publicClient || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid) return;
+    if (
+      !vault.address || !vault.connectedIsManager || !publicClient || !weightsValid ||
+      !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid ||
+      !targetMarketsValid || blockedTargets.length > 0
+    ) return;
     setTxError(undefined);
     try {
       setTxState("simulating");
-      const args = [
-        targets.map((target) => target.address as `0x${string}`),
-        targetWeightBps.map(BigInt),
-        normalizedRationale,
-      ] as const;
-      await publicClient.simulateContract({
-        account: vault.manager as `0x${string}`,
-        address: vault.address,
-        abi: managedOtfVaultAbi,
-        functionName: "proposeStrategy",
-        args,
-      });
-      setTxState("pending");
-      const hash = await writeContractAsync({
-        address: vault.address,
-        abi: managedOtfVaultAbi,
-        functionName: "proposeStrategy",
-        args,
-        chainId: robinhoodChainTestnet.id,
-      });
+      const addresses = targets.map((target) => target.address as `0x${string}`);
+      const weights = targetWeightBps.map(BigInt);
+      let hash: `0x${string}`;
+      if (usesPermissionlessMarkets) {
+        const args = [
+          addresses,
+          weights,
+          targets.map((target) => target.marketId ?? zeroHash),
+          normalizedRationale,
+        ] as const;
+        await publicClient.simulateContract({
+          account: vault.manager as `0x${string}`,
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "proposeStrategyWithMarkets",
+          args,
+        });
+        setTxState("pending");
+        hash = await writeContractAsync({
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "proposeStrategyWithMarkets",
+          args,
+          chainId: robinhoodChainTestnet.id,
+        });
+      } else {
+        const args = [addresses, weights, normalizedRationale] as const;
+        await publicClient.simulateContract({
+          account: vault.manager as `0x${string}`,
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "proposeStrategy",
+          args,
+        });
+        setTxState("pending");
+        hash = await writeContractAsync({
+          address: vault.address,
+          abi: managedOtfVaultAbi,
+          functionName: "proposeStrategy",
+          args,
+          chainId: robinhoodChainTestnet.id,
+        });
+      }
       setTxState("submitted");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The target update reverted.");
@@ -5309,7 +5860,14 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                     disabled={targetEditorLocked}
                     onChange={(event) => {
                       const selected = testnetCreateAssets.find((asset) => asset.address === event.target.value);
-                      if (selected) updateTarget(index, { ticker: selected.symbol, address: selected.address });
+                      if (selected) updateTarget(index, {
+                        ticker: selected.symbol,
+                        name: selected.name,
+                        address: selected.address,
+                        marketId: undefined,
+                        poolAddress: undefined,
+                        qualityStatus: "qualified",
+                      });
                     }}
                   >
                     {testnetCreateAssets.map((asset) => (
@@ -5344,6 +5902,13 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 </div>
               </label>
               <small>Active target {targetChanges[index]?.activeTarget.toFixed(1) ?? "0.0"}% · Live holding {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
+              <span className={`stateBadge ${
+                target.qualityStatus === "open" ? "warning" : target.qualityStatus === "blocked" ? "danger" : "success"
+              }`}>
+                {target.qualityStatus === "open"
+                  ? "Experimental"
+                  : target.qualityStatus === "blocked" ? "Blocked" : "Protocol-qualified assets"}
+              </span>
             </div>
           ))}
         </div>
@@ -5351,6 +5916,59 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           <Plus size={13} />
           Add asset
         </button>
+        {usesPermissionlessMarkets ? (
+          <div className="manualAssetRegistration strategyManualAsset">
+            <div className="manualAssetRegistrationIntro">
+              <div>
+                <strong>Add an unindexed token</strong>
+                <span>Register the 18-decimal token and pin its Uniswap V3 asset/WETH market into this proposal.</span>
+              </div>
+              <span className="stateBadge warning">Experimental</span>
+            </div>
+            <div className="manualAssetRegistrationFields">
+              <label>
+                <span>Token contract</span>
+                <input
+                  value={manualTargetAsset}
+                  onChange={(event) => setManualTargetAsset(event.target.value.trim())}
+                  placeholder="0x ERC-20 address"
+                  disabled={targetEditorLocked}
+                />
+              </label>
+              <label>
+                <span>V3 asset/WETH pool</span>
+                <input
+                  value={manualTargetPool}
+                  onChange={(event) => setManualTargetPool(event.target.value.trim())}
+                  placeholder="0x Uniswap V3 pool"
+                  disabled={targetEditorLocked}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondaryAction"
+                onClick={registerAndAddOpenTarget}
+                disabled={
+                  targetEditorLocked || !vault.connectedIsManager ||
+                  manualTargetState === "pending" || manualTargetState === "submitted" ||
+                  !isAddress(manualTargetAsset) || !isAddress(manualTargetPool) ||
+                  protocolMinimumTargetWeightBps === undefined
+                }
+              >
+                {manualTargetState === "pending" || manualTargetState === "submitted"
+                  ? <Loader2 className="spin" size={14} />
+                  : <Plus size={14} />}
+                Register and add
+              </button>
+            </div>
+            <div className="manualAssetRiskNotice" role="note">
+              <AlertTriangle size={15} />
+              <span>Pool prices and liquidity can be manipulated. Malicious or upgradable tokens can block transfers, and experimental performance XP depends on continuing eligibility.</span>
+            </div>
+            {manualTargetError ? <span className="fieldError">{manualTargetError}</span> : null}
+            <TxStatus state={manualTargetState} persistent />
+          </div>
+        ) : null}
       </div>
 
       <div className="builderBlock strategyRationaleComposer">
@@ -5414,6 +6032,24 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
         ) : null}
+        {blockedTargets.length > 0 ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div>
+            <strong>Blocked constituents cannot be managed</strong>
+            <span>Remove {blockedTargets.map((target) => target.ticker).join(", ")} from the proposal. Existing holders retain proportional redemption.</span>
+          </div></div>
+        ) : null}
+        {!targetMarketsValid ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div>
+            <strong>Every experimental constituent needs a pinned market</strong>
+            <span>Register an active V3 asset/WETH route with a complete one-hour TWAP before proposal.</span>
+          </div></div>
+        ) : null}
+        {experimentalTargets.length > 0 ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div>
+            <strong>This proposal makes the OTF Experimental</strong>
+            <span>Pool-derived prices can be manipulated, token behavior can block transfers, and performance XP depends on continuing eligibility.</span>
+          </div></div>
+        ) : null}
         {!targetsChanged ? (
           <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Change at least one target</strong><span>Reordering the same assets or submitting identical weights does not create a new strategy.</span></div></div>
         ) : null}
@@ -5448,7 +6084,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || !targetMarketsValid || blockedTargets.length > 0 || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -5794,6 +6430,11 @@ function RebalanceTradesPanel({
     outputAsset ? { asset: outputAsset, predicted: predictedOutputWeight } : undefined,
   ].filter((item): item is { asset: Allocation; predicted: number | undefined } => Boolean(item));
 
+  const resetTradeState = useCallback(() => {
+    setTxState((current) => current === "idle" ? current : "idle");
+    setTxError(undefined);
+  }, []);
+
   useEffect(() => {
     const presetAmount = recommendedTradeAmount !== undefined
       ? recommendedTradeAmount * BigInt(tradeSize) / 100n
@@ -5810,11 +6451,6 @@ function RebalanceTradesPanel({
     rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
     !oracleValueLossTooHigh && !navLossBudgetTooHigh,
   );
-
-  function resetTradeState() {
-    if (txState !== "idle") setTxState("idle");
-    if (txError) setTxError(undefined);
-  }
 
   async function executeTrade() {
     if (!canSubmit || !vault.address || !adapterAddress || !connectedAddress || !publicClient || !amountIn || !minAmountOut) return;
@@ -6628,11 +7264,18 @@ function CreateVaultView({
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
     testnetCreateAssets.map((asset) => ({
       ticker: asset.symbol,
+      name: asset.name,
       address: asset.address,
+      qualityStatus: "qualified",
       targetWeight: 100 / testnetCreateAssets.length,
       initialAmount: "",
     })),
   );
+  const [manualAssetAddress, setManualAssetAddress] = useState("");
+  const [manualPoolAddress, setManualPoolAddress] = useState("");
+  const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
+  const [manualRegistrationError, setManualRegistrationError] = useState<string>();
+  const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
   const canReadSeedAuthorizations = Boolean(
     isTestnet && factoryAddress && connectedAddress && isAddress(connectedAddress),
   );
@@ -6676,13 +7319,13 @@ function CreateVaultView({
   });
   const canReadProtocolAssets = Boolean(oracleRegistryAddress);
   const protocolAssetContracts = canReadProtocolAssets
-    ? portfolio.map((asset) => ({
+    ? portfolio.flatMap((asset) => asset.qualityStatus === "open" ? [] : [{
         address: oracleRegistryAddress as `0x${string}`,
         abi: protocolAssetReadAbi,
         functionName: "oracleConfigFor" as const,
         args: [asset.address as `0x${string}`],
         chainId: robinhoodChainTestnet.id,
-      }))
+      }])
     : [];
   const {
     data: protocolAssetResults,
@@ -6698,9 +7341,11 @@ function CreateVaultView({
     !protocolAssetsLoading &&
     !protocolAssetReadFailed &&
     !oracleRegistryReadFailed &&
-    protocolAssetResults &&
-    protocolAssetResults.length === protocolAssetContracts.length &&
-    protocolAssetResults.every((result) => result?.error === undefined && result?.status === "success"),
+    (protocolAssetContracts.length === 0 || (
+      protocolAssetResults &&
+      protocolAssetResults.length === protocolAssetContracts.length &&
+      protocolAssetResults.every((result) => result?.error === undefined && result?.status === "success")
+    )),
   );
   const steps = [
     { label: "Basics", description: "Identity and roles" },
@@ -6712,6 +7357,7 @@ function CreateVaultView({
   const targetWeightBps = portfolio.map((asset) => percentToBps(asset.targetWeight));
   const totalWeightBps = targetWeightBps.reduce((sum, weight) => sum + weight, 0);
   const totalWeightValid = totalWeightBps === 10_000;
+  const portfolioAssetsUnique = new Set(portfolio.map((asset) => asset.address.toLowerCase())).size === portfolio.length;
   let initialPortfolioValue: bigint | undefined;
   try {
     initialPortfolioValue = Number(draft.initialPortfolioValue) > 0
@@ -6721,7 +7367,7 @@ function CreateVaultView({
     initialPortfolioValue = undefined;
   }
   const derivedSeedAmounts = portfolio.map((asset, index) => {
-    const price = oraclePrices[asset.address.toLowerCase()];
+    const price = manualOraclePrices[asset.address.toLowerCase()] ?? oraclePrices[asset.address.toLowerCase()];
     const targetValue = initialPortfolioValue !== undefined
       ? (initialPortfolioValue * BigInt(targetWeightBps[index] ?? 0)) / 10_000n
       : undefined;
@@ -6738,10 +7384,18 @@ function CreateVaultView({
       price,
     };
   });
-  const protocolOracleConfigs = portfolio.map((_, index) => {
+  let qualifiedOracleIndex = 0;
+  const protocolOracleConfigs = portfolio.map((asset) => {
+    if (asset.qualityStatus === "open") {
+      return { feed: asset.priceFeed, maxStaleness: 2 * 60 * 60, validationMode: 0 };
+    }
     const config = protocolAssetResultReady
-      ? resultAt<readonly [string, number, number]>(protocolAssetResults as ReadResult | undefined, index)
+      ? resultAt<readonly [string, number, number]>(
+          protocolAssetResults as ReadResult | undefined,
+          qualifiedOracleIndex,
+        )
       : undefined;
+    qualifiedOracleIndex += 1;
     return {
       feed: config?.[0],
       maxStaleness: Number(config?.[1] ?? 0),
@@ -6823,6 +7477,7 @@ function CreateVaultView({
     initialRationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES;
   const normalizedOtfName = draft.name.trim();
   const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
+  const hasExperimentalConstituent = portfolio.some((asset) => asset.qualityStatus === "open");
   const basicsValid =
     otfNameValid &&
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -6831,6 +7486,7 @@ function CreateVaultView({
     isAddress(draft.feeRecipient);
   const portfolioValid =
     portfolio.length >= 2 &&
+    portfolioAssetsUnique &&
     protocolMinimumTargetWeightBps !== undefined &&
     portfolio.every(
       (asset) =>
@@ -6864,6 +7520,7 @@ function CreateVaultView({
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
     portfolio.length >= 2 ? null : "Select at least two assets to continue.",
+    portfolioAssetsUnique ? null : "Each contract address can appear only once.",
     protocolMinimumTargetWeightBps !== undefined ? null : "Wait for the protocol target minimum to load.",
     protocolMinimumTargetWeightBps === undefined || portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
       ? null
@@ -6950,6 +7607,27 @@ function CreateVaultView({
     );
   }
 
+  if (!robinhoodTestnetAddresses.assetMarketRegistry) {
+    return (
+      <div className="appView">
+        <AppPageHeader
+          title="Create OTF"
+          description="Permissionless creation uses the versioned V3 market stack."
+          icon={<FilePlus2 size={18} />}
+        />
+        <section className="sectionCard depositsEmpty">
+          <span><Clock3 size={22} /></span>
+          <h2>The permissionless creation stack is not deployed yet</h2>
+          <p>Existing testnet OTFs remain readable. New creation will open after the asset-market registry, canonical WETH/USDG bridge, registered adapters, and both settlement routers are deployed and verified.</p>
+          <button className="secondaryAction" type="button" onClick={onBack}>
+            <ArrowLeft size={14} />
+            View existing OTFs
+          </button>
+        </section>
+      </div>
+    );
+  }
+
   function updateDraft(field: keyof typeof draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
   }
@@ -6999,7 +7677,9 @@ function CreateVaultView({
       if (current.length === 0) {
         return [{
           ticker: nextAvailableAsset.symbol,
+          name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
+          qualityStatus: "qualified",
           targetWeight: 100,
           initialAmount: "",
         }];
@@ -7009,12 +7689,156 @@ function CreateVaultView({
         ...current.map((asset, index) => ({ ...asset, targetWeight: existingWeights[index] })),
         {
           ticker: nextAvailableAsset.symbol,
+          name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
+          qualityStatus: "qualified",
           targetWeight: (protocolMinimumTargetWeightBps / 100).toString(),
           initialAmount: "",
         },
       ];
     });
+  }
+
+  async function registerAndAddOpenAsset() {
+    if (
+      !publicClient || !connectedAddress || !robinhoodTestnetAddresses.assetRegistry ||
+      !robinhoodTestnetAddresses.assetMarketRegistry || !isAddress(manualAssetAddress) ||
+      !isAddress(manualPoolAddress)
+    ) return;
+    const assetAddress = manualAssetAddress as `0x${string}`;
+    const poolAddress = manualPoolAddress as `0x${string}`;
+    if (portfolio.some((item) => item.address.toLowerCase() === assetAddress.toLowerCase())) {
+      setManualRegistrationError("This token contract is already in the portfolio.");
+      return;
+    }
+    setManualRegistrationError(undefined);
+    setManualRegistrationState("pending");
+    try {
+      const [decimals, tokenName, tokenSymbol, currentStatus] = await Promise.all([
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "decimals" }),
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "name" }).catch(() => "Unindexed token"),
+        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
+        publicClient.readContract({
+          address: robinhoodTestnetAddresses.assetRegistry,
+          abi: permissionlessAssetRegistryAbi,
+          functionName: "statusOf",
+          args: [assetAddress],
+        }),
+      ]);
+      if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
+      if (Number(currentStatus) === 3) throw new Error("This token is blocked by protocol governance.");
+      let qualityStatus: "qualified" | "open" = Number(currentStatus) === 2 ? "qualified" : "open";
+      if (Number(currentStatus) === 0) {
+        const registrationHash = await writeContractAsync({
+          address: robinhoodTestnetAddresses.assetRegistry,
+          abi: permissionlessAssetRegistryAbi,
+          functionName: "registerOpenAsset",
+          args: [assetAddress],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setManualRegistrationState("submitted");
+        const registrationReceipt = await publicClient.waitForTransactionReceipt({ hash: registrationHash });
+        if (registrationReceipt.status !== "success") throw new Error("Open-asset registration reverted.");
+        qualityStatus = "open";
+      }
+      let marketId: `0x${string}` | undefined;
+      let priceFeed: `0x${string}`;
+      if (qualityStatus === "open") {
+        setManualRegistrationState("pending");
+        const marketHash = await writeContractAsync({
+          address: robinhoodTestnetAddresses.assetMarketRegistry,
+          abi: assetMarketRegistryAbi,
+          functionName: "registerV3Market",
+          args: [assetAddress, poolAddress],
+          chainId: robinhoodChainTestnet.id,
+        });
+        setManualRegistrationState("submitted");
+        const marketReceipt = await publicClient.waitForTransactionReceipt({ hash: marketHash });
+        if (marketReceipt.status !== "success") throw new Error("V3 market registration reverted.");
+        marketId = keccak256(encodeAbiParameters(
+          [{ type: "uint256" }, { type: "address" }, { type: "address" }],
+          [BigInt(robinhoodChainTestnet.id), assetAddress, poolAddress],
+        ));
+        const market = await publicClient.readContract({
+          address: robinhoodTestnetAddresses.assetMarketRegistry,
+          abi: assetMarketRegistryAbi,
+          functionName: "marketFor",
+          args: [marketId],
+        });
+        const [marketAsset, registeredPool, routeFeed, , active] = market;
+        if (!active || marketAsset.toLowerCase() !== assetAddress.toLowerCase() || registeredPool.toLowerCase() !== poolAddress.toLowerCase()) {
+          throw new Error("The registered market does not match the requested token and pool.");
+        }
+        priceFeed = routeFeed;
+      } else {
+        if (!oracleRegistryAddress || !isAddress(oracleRegistryAddress)) {
+          throw new Error("The protocol oracle registry is unavailable for this qualified asset.");
+        }
+        const config = await publicClient.readContract({
+          address: oracleRegistryAddress,
+          abi: protocolAssetReadAbi,
+          functionName: "oracleConfigFor",
+          args: [assetAddress],
+        });
+        priceFeed = config[0];
+        if (priceFeed === zeroAddress) throw new Error("This qualified asset has no protocol oracle feed.");
+      }
+      let round: readonly [bigint, bigint, bigint, bigint, bigint];
+      try {
+        round = await publicClient.readContract({
+          address: priceFeed,
+          abi: aggregatorV3ReadAbi,
+          functionName: "latestRoundData",
+        });
+      } catch {
+        throw new Error(qualityStatus === "open"
+          ? "The V3 route needs a complete one-hour observation history before creation."
+          : "The protocol oracle is unavailable for creation.");
+      }
+      const feedDecimals = await publicClient.readContract({
+        address: priceFeed,
+        abi: aggregatorV3ReadAbi,
+        functionName: "decimals",
+      });
+      const answer = round[1];
+      if (answer <= 0n) throw new Error(qualityStatus === "open"
+        ? "The pinned V3 route returned an invalid TWAP."
+        : "The protocol oracle returned an invalid price.");
+      const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
+      setManualOraclePrices((current) => ({
+        ...current,
+        [assetAddress.toLowerCase()]: {
+          answer,
+          decimals: Number(feedDecimals),
+          updatedAt: round[3],
+          display: formatOraclePrice(Number(formatUnits(answer, Number(feedDecimals)))),
+        },
+      }));
+      setPortfolio((current) => {
+        const minimum = protocolMinimumTargetWeightBps ?? 500;
+        const existingWeights = distributePortfolioWeight(10_000 - minimum, current);
+        return [
+          ...current.map((item, index) => ({ ...item, targetWeight: existingWeights[index] })),
+          {
+            ticker: symbol,
+            name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
+            address: assetAddress,
+            marketId,
+            poolAddress: qualityStatus === "open" ? poolAddress : undefined,
+            qualityStatus,
+            priceFeed,
+            targetWeight: (minimum / 100).toString(),
+            initialAmount: "",
+          },
+        ];
+      });
+      setManualAssetAddress("");
+      setManualPoolAddress("");
+      setManualRegistrationState("confirmed");
+    } catch (error) {
+      setManualRegistrationError(errorMessage(error));
+      setManualRegistrationState("reverted");
+    }
   }
 
   function vaultInitParams(deploymentSalt: `0x${string}`) {
@@ -7033,6 +7857,7 @@ function CreateVaultView({
       manager: draft.manager,
       feeRecipient: draft.feeRecipient,
       initialAssets,
+      initialMarketIds: portfolio.map((asset) => asset.marketId ?? zeroHash),
       initialTargetWeightsBps: targetWeightBps,
       initialAmounts: derivedSeedAmounts.map((seed, index) => {
         if (seed.requiredAmount === undefined || seed.requiredAmount <= 0n) {
@@ -7367,7 +8192,7 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Select from the testnet catalog. Valuation uses self-updating synthetic USD feeds.</span>
+                    <span>Search by name, symbol, or contract address. Contract address and network are the canonical identity.</span>
                   </div>
                   <span className={`stateBadge ${totalWeightValid ? "success" : "danger"}`}>Total {totalWeight.toFixed(1)}%</span>
                 </div>
@@ -7385,43 +8210,58 @@ function CreateVaultView({
                   </div>
                   <small>Target weights and current oracle prices determine the required seed-token quantities.</small>
                 </label>
+                <datalist id="create-asset-directory">
+                  {testnetCreateAssets.map((candidate) => (
+                    <option key={candidate.address} value={candidate.address}>
+                      {candidate.symbol} · {candidate.name}
+                    </option>
+                  ))}
+                </datalist>
                 <div className="createAssetList">
                   {portfolio.map((asset, index) => (
                     <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
                       <label className="assetSelectField">
                         <span>Asset</span>
-                        <div className="createAssetPicker">
+                        <div className="createAssetSearchControl">
                           <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
-                          <span className="createAssetPickerIdentity">
-                            <strong>{asset.ticker}</strong>
-                            <small>{catalogAssetForAddress(asset.address)?.name ?? "Supported asset"}</small>
-                          </span>
-                          <ChevronDown aria-hidden="true" size={14} />
-                          <select
+                          <input
+                            key={asset.address}
+                            className="createAssetSearchInput"
+                            list="create-asset-directory"
                             aria-label={`Asset ${index + 1}`}
-                            value={asset.address}
+                            defaultValue={`${asset.ticker} · ${asset.name ?? catalogAssetForAddress(asset.address)?.name ?? asset.address}`}
+                            placeholder="Name, symbol, or 0x address"
                             onChange={(event) => {
-                              const selected = testnetCreateAssets.find((candidate) => candidate.address === event.target.value);
+                              const query = event.target.value.trim().toLowerCase();
+                              const selected = testnetCreateAssets.find((candidate) =>
+                                candidate.address.toLowerCase() === query ||
+                                candidate.symbol.toLowerCase() === query ||
+                                candidate.name.toLowerCase() === query,
+                              );
                               if (selected) {
-                                updatePortfolio(index, { ticker: selected.symbol, address: selected.address });
+                                updatePortfolio(index, {
+                                  ticker: selected.symbol,
+                                  name: selected.name,
+                                  address: selected.address,
+                                  qualityStatus: "qualified",
+                                  priceFeed: undefined,
+                                });
                               }
                             }}
-                          >
-                            {testnetCreateAssets.map((candidate) => (
-                              <option
-                                key={candidate.address}
-                                value={candidate.address}
-                                disabled={portfolio.some(
-                                  (portfolioAsset, assetIndex) =>
-                                    assetIndex !== index && portfolioAsset.address === candidate.address,
-                                )}
-                              >
-                                {candidate.symbol} · {candidate.name}
-                              </option>
-                            ))}
-                          </select>
+                          />
+                          <Search aria-hidden="true" size={14} />
                         </div>
-                        <small className="assetAddressLabel" title={asset.address}>Token: {shortAssetAddress(asset.address)}</small>
+                        <small className="assetAddressLabel" title={asset.address}>
+                          Robinhood Testnet · {asset.ticker} · {shortAssetAddress(asset.address)}
+                        </small>
+                        {asset.poolAddress ? (
+                          <small className="assetAddressLabel" title={asset.poolAddress}>
+                            Pinned V3 market · {shortAssetAddress(asset.poolAddress)}
+                          </small>
+                        ) : null}
+                        <span className={`stateBadge ${asset.qualityStatus === "open" ? "warning" : "success"}`}>
+                          {asset.qualityStatus === "open" ? "Experimental asset" : "Protocol-qualified assets"}
+                        </span>
                       </label>
                       <label className="assetWeightField">
                         <span>Target weight</span>
@@ -7467,6 +8307,58 @@ function CreateVaultView({
                   <Plus size={14} />
                   Add asset
                 </button>
+                <div className="manualAssetRegistration">
+                  <div className="manualAssetRegistrationIntro">
+                    <div>
+                      <strong>Add an unindexed token</strong>
+                      <span>Register an exact-transfer, 18-decimal ERC-20 and pin its initialized Uniswap V3 asset/WETH market.</span>
+                    </div>
+                    <span className="stateBadge warning">Experimental</span>
+                  </div>
+                  <div className="manualAssetRegistrationFields">
+                    <label>
+                      <span>Token contract</span>
+                      <input
+                        className={manualAssetAddress && !isAddress(manualAssetAddress) ? "invalid" : undefined}
+                        value={manualAssetAddress}
+                        onChange={(event) => setManualAssetAddress(event.target.value.trim())}
+                        placeholder="0x ERC-20 address"
+                      />
+                    </label>
+                    <label>
+                      <span>V3 asset/WETH pool</span>
+                      <input
+                        className={manualPoolAddress && !isAddress(manualPoolAddress) ? "invalid" : undefined}
+                        value={manualPoolAddress}
+                        onChange={(event) => setManualPoolAddress(event.target.value.trim())}
+                        placeholder="0x Uniswap V3 pool"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="secondaryAction"
+                      onClick={registerAndAddOpenAsset}
+                      disabled={
+                        manualRegistrationState === "pending" ||
+                        manualRegistrationState === "submitted" ||
+                        !connectedAddress ||
+                        !isAddress(manualAssetAddress) ||
+                        !isAddress(manualPoolAddress)
+                      }
+                    >
+                      {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
+                        ? <Loader2 className="spin" size={14} />
+                        : <Plus size={14} />}
+                      Register and add
+                    </button>
+                  </div>
+                  <div className="manualAssetRiskNotice" role="note">
+                    <AlertTriangle size={15} />
+                    <span>Pool-derived prices and liquidity can be manipulated. Malicious or upgradable tokens may block transfers or redemption. Performance XP depends on seven continuous days of eligibility.</span>
+                  </div>
+                  {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
+                  <TxStatus state={manualRegistrationState} persistent />
+                </div>
                 {portfolioIssues.length ? (
                   <div className="validationSummary warning" role="status">
                     <AlertTriangle size={15} />
@@ -7511,8 +8403,23 @@ function CreateVaultView({
               <div className="formSection reviewSection">
                 <div className="reviewHero">
                   <span className="vaultMonogram">NEW</span>
-                  <div><h2>{normalizedOtfName}</h2><span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span></div>
+                  <div>
+                    <h2>{normalizedOtfName}</h2>
+                    <span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span>
+                    <span className={`stateBadge ${hasExperimentalConstituent ? "warning" : "success"}`}>
+                      {hasExperimentalConstituent ? "Experimental OTF" : "Protocol-qualified assets"}
+                    </span>
+                  </div>
                 </div>
+                {hasExperimentalConstituent ? (
+                  <div className="validationSummary warning" role="note">
+                    <AlertTriangle size={15} />
+                    <div>
+                      <strong>Experimental OTF</strong>
+                      <span>At least one constituent uses a pinned pool-derived price. Liquidity can be manipulated, malicious or upgradable tokens may block transfers, and performance XP requires continuing eligibility.</span>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="reviewGrid">
                   <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.creatorFee}%</strong></div>
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
@@ -7528,7 +8435,14 @@ function CreateVaultView({
                 <div>
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
-                    {portfolio.map((asset, index) => <span key={asset.address}><AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact /><strong>{asset.ticker}</strong>{Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed</span>)}
+                    {portfolio.map((asset, index) => (
+                      <span key={asset.address} title={`${asset.address}${asset.poolAddress ? ` · V3 ${asset.poolAddress}` : ""}`}>
+                        <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
+                        <strong>{asset.ticker}</strong>
+                        {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed
+                        <small>{asset.qualityStatus === "open" ? "Experimental" : "Qualified"} · {shortAssetAddress(asset.address)}</small>
+                      </span>
+                    ))}
                   </div>
                 </div>
                 <div className="seedApprovalSection">
@@ -8014,7 +8928,7 @@ function WalletView({
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
                 <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} ticker={position.symbol} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
-                <td data-label="NAV / share">{position.navPerShare ?? "Unavailable"}</td>
+                <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USDG using each asset's active protocol feed or pinned Uniswap V3 TWAP route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
               </tr>)}</tbody>
             </table></div> : <div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div>}
           </section>

@@ -3,6 +3,10 @@ export type Allocation = {
   symbol: string;
   name: string;
   weightBps: number;
+  contractAddress?: string;
+  marketId?: string | null;
+  poolAddress?: string | null;
+  qualityStatus?: "open" | "qualified" | "blocked";
   color?: string;
 };
 
@@ -18,6 +22,7 @@ export type LeaderboardEntry = {
   acceptedAt: string;
   uniqueSupporterCount?: number;
   submissionBoost?: boolean;
+  qualityTier?: "qualified" | "experimental" | "blocked";
   allocations: Allocation[];
   proofUrl?: string;
 };
@@ -50,9 +55,25 @@ export type EligibleAsset = {
   symbol: string;
   name: string;
   contractAddress: string;
-  priceSource: "robinhood-bid" | "coinbase-eth-usd-bid";
+  network: string;
+  chainId: number | null;
+  decimals: 18;
+  qualityStatus: "open" | "qualified" | "blocked";
+  priceSource: "robinhood-bid" | "coinbase-eth-usd-bid" | "uniswap-v3-twap";
   latestPriceUsd: number | null;
   latestPriceAt: string | null;
+  markets: {
+    id: string;
+    marketId: string;
+    poolAddress: string;
+    feeTier: number;
+    active: boolean;
+    poolCreatedAt: string | null;
+    twapOneHourReady: boolean;
+    twapTwentyFourHourReady: boolean;
+    eligibilityStatus: "Pass" | "Pending" | "Fail" | null;
+    eligibilityReasons: string[];
+  }[];
 };
 
 export type ParticipationEligibility = {
@@ -93,8 +114,12 @@ export type XpLeaderboardRow = {
   publicName: string;
   usesRealUsername: boolean;
   performanceXp: number;
+  qualifiedPerformanceXp?: number;
+  experimentalPerformanceXp?: number;
   participationXp: number;
   creatorXp: number;
+  creatorSupportXp?: number;
+  creatorAwardXp?: number;
   totalXp: number;
   uniqueSupporterCount: number;
   submissionBoost: boolean;

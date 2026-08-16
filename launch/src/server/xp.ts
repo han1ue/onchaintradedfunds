@@ -2,6 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { PublicApiError } from "@/lib/errors";
 import { getVotingStartsAt } from "@/lib/competition";
 import type { XpLeaderboard } from "@/lib/types";
+import { evaluateSevenDayContinuity } from "@/lib/experimental-eligibility";
 import {
   XP_POLICY_VERSION,
   calculateXp,
@@ -20,7 +21,13 @@ type ProposalRow = {
   id: string;
   creatorUserId: string;
   acceptedAt: string;
-  allocations: { assetId: string; weightBps: number }[];
+  votes: number;
+  allocations: {
+    assetId: string;
+    weightBps: number;
+    qualityStatus: "open" | "qualified" | "blocked";
+    marketId: string | null;
+  }[];
 };
 
 type TrancheRow = {
@@ -31,9 +38,13 @@ type TrancheRow = {
   quantity: number;
   acceptedAt: string;
   effectiveEntryAt: string | null;
+  performanceCohort: "qualified" | "experimental" | null;
+  cohortLockedAt: string | null;
+  performanceComparisonProposalIds: string[] | null;
 };
 
 type CaptureRun = { id: string; sampledAt: string };
+type EligibilitySnapshotRow = { marketId: string; sampledAt: string; status: "Pass" | "Pending" | "Fail" };
 
 export type CalculatedXpSnapshot = {
   competitionId: string;
@@ -59,17 +70,25 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     select id::text, starts_at as "startsAt", ends_at as "endsAt" from competitions limit 1`;
   if (!competition) throw new Error("COMPETITION_NOT_FOUND");
 
-  const [proposals, tranches, runs, snapshots] = await Promise.all([
+  const [proposals, tranches, runs, snapshots, eligibilitySnapshots] = await Promise.all([
     sqlClient<ProposalRow[]>`
       select p.id::text, p.creator_user_id as "creatorUserId", p.accepted_at as "acceptedAt",
-        coalesce(json_agg(json_build_object('assetId', pa.asset_id::text, 'weightBps', pa.weight_bps) order by pa.position), '[]') as allocations
+        (select coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int
+          from ballot_allocations ba join ballots b on b.id = ba.ballot_id where ba.proposal_id = p.id) as votes,
+        coalesce(json_agg(json_build_object(
+          'assetId', pa.asset_id::text, 'weightBps', pa.weight_bps,
+          'qualityStatus', ea.quality_status, 'marketId', pa.market_id::text
+        ) order by pa.position), '[]') as allocations
       from proposals p join proposal_assets pa on pa.proposal_id = p.id
+      join eligible_assets ea on ea.id = pa.asset_id
       where p.competition_id = ${competition.id}::uuid and p.status = 'accepted'
       group by p.id`,
     sqlClient<TrancheRow[]>`
       select vt.id::text, vt.voter_user_id as "voterUserId", vt.proposal_id::text as "proposalId",
         p.creator_user_id as "proposalCreatorUserId", vt.quantity, vt.accepted_at as "acceptedAt",
-        vt.effective_entry_at as "effectiveEntryAt"
+        vt.effective_entry_at as "effectiveEntryAt", vt.performance_cohort as "performanceCohort",
+        vt.cohort_locked_at as "cohortLockedAt",
+        vt.performance_comparison_proposal_ids::text[] as "performanceComparisonProposalIds"
       from vote_tranches vt
       join ballots b on b.id = vt.ballot_id and b.status = 'valid'
       join tweet_evidence te on te.id = vt.evidence_id and te.status = 'valid'
@@ -78,11 +97,18 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       order by vt.accepted_at, vt.id`,
     sqlClient<CaptureRun[]>`
       select id::text, sampled_at as "sampledAt"
-      from price_capture_runs where status = 'complete' and sampled_at <= ${now.toISOString()}::timestamptz
+      from price_capture_runs where purpose = 'scoring'
+        and sampled_at <= ${now.toISOString()}::timestamptz
       order by sampled_at, id`,
     sqlClient<{ runId: string; assetId: string; bidUsd: string }[]>`
       select capture_run_id::text as "runId", asset_id::text as "assetId", bid_usd::text as "bidUsd"
       from asset_price_snapshots where capture_run_id is not null`,
+    sqlClient<EligibilitySnapshotRow[]>`
+      select market_id::text as "marketId", sampled_at as "sampledAt", status
+      from asset_eligibility_snapshots
+      where sampled_at >= ${new Date(now.getTime() - 7 * 86_400_000).toISOString()}::timestamptz
+        and sampled_at <= ${now.toISOString()}::timestamptz
+      order by sampled_at`,
   ]);
 
   const pricesByRun = new Map<string, Map<string, bigint>>();
@@ -91,30 +117,77 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     prices.set(snapshot.assetId, parseFixedPrice(snapshot.bidUsd));
     pricesByRun.set(snapshot.runId, prices);
   }
-  const requiredAssetIds = [...new Set(proposals.flatMap((proposal) => proposal.allocations.map((allocation) => allocation.assetId)))].sort();
   const deadline = new Date(competition.endsAt);
-  const eligibleEvaluationRuns = runs.filter((run) => coversAssets(pricesByRun.get(run.id), requiredAssetIds));
   const evaluationRun = options.final
-    ? eligibleEvaluationRuns.find((run) => new Date(run.sampledAt) >= deadline)
-    : eligibleEvaluationRuns.at(-1);
-  if (options.final && requiredAssetIds.length > 0 && !evaluationRun) {
+    ? runs.find((run) => new Date(run.sampledAt) >= deadline)
+    : runs.at(-1);
+  if (options.final && proposals.length > 0 && !evaluationRun) {
     throw new PublicApiError("FINAL_PRICE_CHECKPOINT_UNAVAILABLE", { deadline: deadline.toISOString() });
   }
 
   const proposalById = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+  const eligibilityByMarket = new Map<string, EligibilitySnapshotRow[]>();
+  for (const snapshot of [...eligibilitySnapshots]) {
+    const rows = eligibilityByMarket.get(snapshot.marketId) ?? [];
+    rows.push(snapshot);
+    eligibilityByMarket.set(snapshot.marketId, rows);
+  }
+  const proposalTier = (proposal: ProposalRow) => proposal.allocations.every((allocation) => allocation.qualityStatus === "qualified")
+    ? "qualified" as const
+    : "experimental" as const;
+  const experimentalProposalEligible = (proposal: ProposalRow) => !proposal.allocations.some((allocation) => allocation.qualityStatus === "blocked")
+    && proposal.allocations
+    .filter((allocation) => allocation.qualityStatus !== "qualified")
+    .every((allocation) => Boolean(
+      allocation.marketId
+        && evaluateSevenDayContinuity(
+          (eligibilityByMarket.get(allocation.marketId) ?? []).map((snapshot) => ({
+            sampledAt: new Date(snapshot.sampledAt), status: snapshot.status,
+          })),
+          now,
+        ).status === "Pass",
+    ));
   const evaluationAt = evaluationRun ? new Date(evaluationRun.sampledAt) : null;
   const evaluationPrices = evaluationRun ? pricesByRun.get(evaluationRun.id) : undefined;
-  const effectiveEntries = new Map<string, Date>();
+  const trancheLocks = new Map<string, {
+    effectiveEntryAt: Date;
+    cohort: "qualified" | "experimental";
+    cohortLockedAt: Date;
+    comparisonProposalIds: string[];
+  }>();
   const scoredTranches: XpTrancheScoreInput[] = tranches.map((tranche) => {
     const acceptedAt = new Date(tranche.acceptedAt);
     const selectedProposal = proposalById.get(tranche.proposalId)!;
-    const eligibleIds = new Set(eligibleProposalIdsAt(proposals, acceptedAt));
+    let cohort = tranche.performanceCohort;
+    let comparisonProposalIds = tranche.performanceComparisonProposalIds;
+    let cohortLockedAt = tranche.cohortLockedAt ? new Date(tranche.cohortLockedAt) : undefined;
+    if (!cohort) {
+      const selectedTier = proposalTier(selectedProposal);
+      if (selectedTier === "experimental" && !experimentalProposalEligible(selectedProposal)) {
+        return {
+          id: tranche.id, voterUserId: tranche.voterUserId, proposalId: tranche.proposalId,
+          proposalCreatorUserId: tranche.proposalCreatorUserId, quantity: tranche.quantity,
+        };
+      }
+      cohort = selectedTier;
+      cohortLockedAt = selectedTier === "qualified" ? acceptedAt : evaluationAt ?? now;
+      const acceptedIds = new Set(eligibleProposalIdsAt(proposals, acceptedAt));
+      comparisonProposalIds = proposals.filter((proposal) =>
+        acceptedIds.has(proposal.id)
+          && proposalTier(proposal) === cohort
+          && (cohort === "qualified" || experimentalProposalEligible(proposal))
+      ).map((proposal) => proposal.id);
+    }
+    const eligibleIds = new Set(comparisonProposalIds ?? []);
     const eligibleProposals = proposals.filter((proposal) => eligibleIds.has(proposal.id));
     const returns: { proposalId: string; returnValue: bigint }[] = [];
     let selectedEntryAt: Date | undefined;
+    const entryFloor = tranche.effectiveEntryAt
+      ? new Date(tranche.effectiveEntryAt)
+      : cohortLockedAt ?? acceptedAt;
     for (const proposal of eligibleProposals) {
       const assetIds = proposal.allocations.map((allocation) => allocation.assetId);
-      const entryRun = firstCompleteCheckpointAtOrAfter(runs, acceptedAt, (run) => coversAssets(pricesByRun.get(run.id), assetIds), evaluationAt ?? undefined);
+      const entryRun = firstCompleteCheckpointAtOrAfter(runs, entryFloor, (run) => coversAssets(pricesByRun.get(run.id), assetIds), evaluationAt ?? undefined);
       if (!entryRun || !evaluationPrices || !coversAssets(evaluationPrices, assetIds)) continue;
       if (proposal.id === selectedProposal.id) selectedEntryAt = new Date(entryRun.sampledAt);
       returns.push({
@@ -122,7 +195,14 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
         returnValue: syntheticPortfolioReturn(proposal.allocations, pricesByRun.get(entryRun.id)!, evaluationPrices),
       });
     }
-    if (selectedEntryAt) effectiveEntries.set(tranche.id, selectedEntryAt);
+    if (selectedEntryAt && cohortLockedAt && comparisonProposalIds) {
+      trancheLocks.set(tranche.id, {
+        effectiveEntryAt: selectedEntryAt,
+        cohort,
+        cohortLockedAt: tranche.cohortLockedAt ? cohortLockedAt : selectedEntryAt,
+        comparisonProposalIds,
+      });
+    }
     const comparisonComplete = returns.length === eligibleProposals.length && returns.some((result) => result.proposalId === tranche.proposalId);
     return {
       id: tranche.id,
@@ -130,17 +210,23 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       proposalId: tranche.proposalId,
       proposalCreatorUserId: tranche.proposalCreatorUserId,
       quantity: tranche.quantity,
+      cohort,
       effectiveEntryAt: selectedEntryAt,
       selectedReturn: comparisonComplete ? returns.find((result) => result.proposalId === tranche.proposalId)!.returnValue : undefined,
       comparisonReturns: comparisonComplete ? returns : undefined,
     };
   });
 
-  if (effectiveEntries.size) {
+  if (trancheLocks.size) {
     const database = requireDb();
-    await Promise.all([...effectiveEntries].map(([trancheId, effectiveEntryAt]) => database.update(voteTranches)
-      .set({ effectiveEntryAt })
-      .where(and(eq(voteTranches.id, trancheId), isNull(voteTranches.effectiveEntryAt)))));
+    await Promise.all([...trancheLocks].map(([trancheId, lock]) => database.update(voteTranches)
+      .set({
+        effectiveEntryAt: lock.effectiveEntryAt,
+        performanceCohort: lock.cohort,
+        cohortLockedAt: lock.cohortLockedAt,
+        performanceComparisonProposalIds: lock.comparisonProposalIds,
+      })
+      .where(and(eq(voteTranches.id, trancheId), isNull(voteTranches.performanceCohort)))));
   }
 
   const votingStartsAt = getVotingStartsAt(competition.startsAt);
@@ -150,9 +236,18 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     calculatedAt: options.final && evaluationAt ? evaluationAt : now,
     final: options.final,
     tranches: scoredTranches,
-    creators: proposals.map((proposal) => ({ proposalId: proposal.id, creatorUserId: proposal.creatorUserId, acceptedAt: new Date(proposal.acceptedAt) })),
+    creators: [...proposals]
+      .sort((left, right) => right.votes - left.votes
+        || new Date(left.acceptedAt).getTime() - new Date(right.acceptedAt).getTime()
+        || left.id.localeCompare(right.id))
+      .map((proposal, index) => ({
+        proposalId: proposal.id,
+        creatorUserId: proposal.creatorUserId,
+        acceptedAt: new Date(proposal.acceptedAt),
+        finalRank: options.final ? index + 1 : undefined,
+      })),
   });
-  if (options.final && Object.values(result.allocated).reduce((sum, value) => sum + value, 0) !== 10_000_000) {
+  if (options.final && result.users.reduce((sum, user) => sum + user.totalXp, 0) !== 10_000_000) {
     throw new Error("XP_FINAL_ALLOCATION_INCOMPLETE");
   }
   const status = options.final ? "final" as const : "live" as const;

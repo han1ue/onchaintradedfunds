@@ -31,9 +31,9 @@ export default async function PointsPage() {
     </div>
 
     <div className="xpPoolStrip">
-      <SectionCard><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><strong>{formatXp(xp.released.performance)}</strong><small>of 7,000,000 XP</small></SectionCard>
-      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>of 1,000,000 XP</small></SectionCard>
-      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator support</span><strong>{formatXp(xp.released.creator)}</strong><small>of 2,000,000 XP</small></SectionCard>
+      <SectionCard><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><strong>{formatXp(xp.released.performance)}</strong><small>of 4,500,000 XP</small></SectionCard>
+      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>of 3,500,000 XP</small></SectionCard>
+      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator</span><strong>{formatXp(xp.released.creator)}</strong><small>of 2,000,000 XP</small></SectionCard>
     </div>
 
     {session?.user?.id && <SectionCard className="myXpSummary">

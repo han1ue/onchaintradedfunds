@@ -124,6 +124,14 @@ const feedsByAsset = new Map(
 const priceFeeds = approvedAssets.map((asset) => feedsByAsset.get(asset.toLowerCase()));
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
+const deployPermissionlessV2 = process.argv.includes("--permissionless-v2")
+  || env("DEPLOY_PERMISSIONLESS_V2", "false").toLowerCase() === "true";
+const wethAddress = deployPermissionlessV2
+  ? parseAddress("externalContracts.weth", externalContracts.weth)
+  : undefined;
+const wethUsdgPoolAddress = deployPermissionlessV2
+  ? parseAddress("externalContracts.wethUsdgPool", externalContracts.wethUsdgPool)
+  : undefined;
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
   externalContracts.uniswapV3Factory,
@@ -211,10 +219,39 @@ const v3MarketRegistry = await deployContract({
   ],
 });
 
+const assetMarketRegistry = deployPermissionlessV2 ? await deployContract({
+  name: "AssetMarketRegistry",
+  args: [
+    account.address,
+    uniswapV3FactoryAddress,
+    wethAddress,
+    usdgAddress,
+    wethUsdgPoolAddress,
+  ],
+}) : undefined;
+const registeredUniswapV3AdapterUsdg = deployPermissionlessV2 ? await deployContract({
+  name: "RegisteredUniswapV3Adapter",
+  args: [account.address, uniswapV3SwapRouterAddress, assetMarketRegistry.address, usdgAddress],
+}) : undefined;
+const registeredUniswapV3AdapterWeth = deployPermissionlessV2 ? await deployContract({
+  name: "RegisteredUniswapV3Adapter",
+  args: [account.address, uniswapV3SwapRouterAddress, assetMarketRegistry.address, wethAddress],
+}) : undefined;
+const entryRouterUsdg = deployPermissionlessV2 ? await deployContract({
+  name: "OTFEntryRouter",
+  args: [account.address, factory.address, usdgAddress],
+}) : undefined;
+const entryRouterWeth = deployPermissionlessV2 ? await deployContract({
+  name: "OTFEntryRouter",
+  args: [account.address, factory.address, wethAddress],
+}) : undefined;
+
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const assetRegistryAbi = contractArtifact("AssetRegistry").abi;
 const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
+const registeredAdapterAbi = contractArtifact("RegisteredUniswapV3Adapter").abi;
+const entryRouterAbi = contractArtifact("OTFEntryRouter").abi;
 
 const setupTransactions = {
   setExecutorFactory: await writeContract({
@@ -233,7 +270,62 @@ const setupTransactions = {
     functionName: "setOfficialMarketRegistry",
     args: [v3MarketRegistry.address],
   }),
+  ...(assetMarketRegistry ? {
+    setAssetMarketRegistry: await writeContract({
+      address: factory.address,
+      abi: factoryAbi,
+      functionName: "setAssetMarketRegistry",
+      args: [assetMarketRegistry.address],
+    }),
+  } : {}),
 };
+
+if (deployPermissionlessV2) {
+  setupTransactions.approvedAdapters.push(
+    {
+      adapter: registeredUniswapV3AdapterUsdg.address,
+      purpose: "rebalance-usdg",
+      ...(await writeContract({
+        address: factory.address,
+        abi: factoryAbi,
+        functionName: "setTradeAdapterApproved",
+        args: [registeredUniswapV3AdapterUsdg.address, true],
+      })),
+    },
+  );
+  for (const [adapter, router, settlement] of [
+    [registeredUniswapV3AdapterUsdg, entryRouterUsdg, "USDG"],
+    [registeredUniswapV3AdapterWeth, entryRouterWeth, "WETH"],
+  ]) {
+    setupTransactions.settlementEntry.push({
+      settlement,
+      adapter: adapter.address,
+      router: router.address,
+      adapterCallerApproval: await writeContract({
+        address: adapter.address,
+        abi: registeredAdapterAbi,
+        functionName: "setCallerApproved",
+        args: [router.address, true],
+      }),
+      routerAdapterApproval: await writeContract({
+        address: router.address,
+        abi: entryRouterAbi,
+        functionName: "setEntryAdapterApproved",
+        args: [adapter.address, true],
+      }),
+    });
+  }
+  setupTransactions.approvedAdapters.push({
+    adapter: registeredUniswapV3AdapterUsdg.address,
+    purpose: "rebalance-executor-caller",
+    ...(await writeContract({
+      address: registeredUniswapV3AdapterUsdg.address,
+      abi: registeredAdapterAbi,
+      functionName: "setCallerApproved",
+      args: [rebalanceExecutor.address, true],
+    })),
+  });
+}
 
 for (const asset of approvedAssets) {
   setupTransactions.approvedAssets.push({
@@ -284,9 +376,16 @@ const deployment = {
     vaultImplementation,
     factory,
     ...(v3MarketRegistry ? { v3MarketRegistry } : {}),
+    ...(assetMarketRegistry ? { assetMarketRegistry } : {}),
+    ...(registeredUniswapV3AdapterUsdg ? { registeredUniswapV3AdapterUsdg } : {}),
+    ...(registeredUniswapV3AdapterWeth ? { registeredUniswapV3AdapterWeth } : {}),
+    ...(entryRouterUsdg ? { entryRouter: entryRouterUsdg } : {}),
+    ...(entryRouterWeth ? { entryRouterWeth } : {}),
   },
   externalContracts: {
     usdg: usdgAddress,
+    ...(wethAddress ? { weth: wethAddress } : {}),
+    ...(wethUsdgPoolAddress ? { wethUsdgPool: wethUsdgPoolAddress } : {}),
     uniswapV3Factory: uniswapV3FactoryAddress,
     uniswapV3PositionManager: uniswapV3PositionManagerAddress,
     uniswapV3SwapRouter: uniswapV3SwapRouterAddress,

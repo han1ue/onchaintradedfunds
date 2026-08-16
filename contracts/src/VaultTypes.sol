@@ -8,6 +8,7 @@ struct VaultInitParams {
     address manager;
     address feeRecipient;
     address[] initialAssets;
+    bytes32[] initialMarketIds;
     uint16[] initialTargetWeightsBps;
     uint256[] initialAmounts;
     uint256 initialShareSupply;

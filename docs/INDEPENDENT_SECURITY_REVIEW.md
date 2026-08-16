@@ -78,6 +78,10 @@ Attempt to falsify each property:
     vault state.
 12. A token callback during clone prefunding or initialization cannot mint shares or mutate state.
 13. `FeeCollector` is the sole treasury authority; factory views cannot diverge from it.
+14. OTF holding rebates scale the protocol portion only, use live oracle-valued weight, reach zero
+    protocol share at the configured threshold, and fail closed to the base share on lookup failure.
+15. Buyback allocation is treasury-only; buyback operators can use only approved adapters, can buy
+    only OTF, and cannot redirect purchased tokens away from the immutable recipient.
 
 ## Delegatecall review
 
@@ -136,9 +140,11 @@ areas, not as proof of safety.
 - The contracts are unaudited and must not be represented as production safe.
 - ERC-7621 remains a draft; the project documents intentional compatibility deviations.
 - Governance timelocks and multisigs are deployment requirements, not contracts in this repository.
-- Approved assets are assumed to have plain ERC-20 balance semantics.
+- Constituents are restricted to exact-transfer, 18-decimal ERC-20 balance semantics; qualification does not relax this requirement.
 - Oracle correctness and corporate-action handling remain external dependencies.
-- The vault runtime is close to EIP-170; the gate blocks oversized builds, but headroom is limited.
+- The current permissionless v2 vault (25,692 bytes) and strategy module (28,297 bytes) exceed the
+  24,576-byte EIP-170 runtime limit under the pinned optimizer settings. The security gate blocks
+  deployment until both are split below the limit and re-audited.
 - Unsupported tokens sent to an OTF are intentionally not manager-recoverable.
 - A funded constituent cannot currently be removed until its tracked reserve is exactly zero.
 

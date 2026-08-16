@@ -160,6 +160,7 @@ The protocol owner MAY:
 - Configure price-feed mappings.
 - Approve or remove trade adapters.
 - Set the protocol-wide minimum target weight within its hard bounds.
+- Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
 - Transfer registry or factory ownership using their defined controls.
 
 The protocol owner MUST NOT:
@@ -174,6 +175,12 @@ The protocol owner MUST NOT:
 `FeeCollector` is the sole source of truth for the protocol treasury. The factory MAY expose
 collector-backed treasury views but MUST NOT maintain independent treasury-transfer state.
 Treasury transfer MUST use the collector's two-step acceptance flow.
+
+The treasury MAY allocate a bounded percentage of subsequent protocol-fee claims to a buyback
+recipient. The allocation MUST NOT let any caller other than the treasury redirect fee assets.
+Buyback trades MUST output the permanently configured OTF token, use an owner-approved typed
+adapter, enforce a transaction-level minimum output, and retain an immutable purchased-token
+recipient.
 
 ### Manager
 
@@ -303,7 +310,7 @@ A proposal requires:
 - No active challenge.
 - No unfinished strategic rebalance.
 - The previous target's completion bands to be satisfied.
-- Valid portfolio shape and approved assets.
+- Valid portfolio shape, constituent status, and pinned market requirements.
 - At least one constituent, with every included target at or above the factory's live protocol-wide
   minimum target weight. That minimum has a permanent floor of 100 basis points (1%); the factory
   owner MAY raise it up to 10,000 basis points or reduce it back to the floor. Changes apply only when

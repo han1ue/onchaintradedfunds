@@ -1,16 +1,11 @@
 import { apiError, apiOk } from "@/server/api";
 import { assertCron } from "@/server/cron";
-import { captureAssetPrices } from "@/server/prices";
-import { recomputeLiveXp } from "@/server/xp";
 import { captureMarketEvidence } from "@/server/market-evidence";
 
 export async function GET(request: Request) {
   try {
     assertCron(request);
-    const markets = await captureMarketEvidence();
-    const prices = await captureAssetPrices();
-    const xp = await recomputeLiveXp();
-    return apiOk({ markets, prices, xp });
+    return apiOk(await captureMarketEvidence());
   } catch (error) {
     return apiError(error);
   }

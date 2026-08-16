@@ -72,12 +72,12 @@ const contractRows = [
   ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
   ["Uniswap V3 adapter", "Provides settlement-confined exact-input entry, redemption, and rebalance swaps through configured liquidity."],
   ["AssetRegistry", "Defines the asset universe a vault may hold."],
-  ["OracleRegistry", "Maps approved assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
+  ["OracleRegistry", "Maps protocol-qualified assets to Chainlink-compatible feeds and per-feed freshness thresholds."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
 ] as const;
 
 const safetyRows = [
-  ["Approved assets", "Every target asset must be present in the protocol asset registry."],
+  ["Asset tiers", "Qualified assets use protocol feeds; open assets pin an immutable registered V3 asset/WETH market."],
   ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
   ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
@@ -267,14 +267,14 @@ export default function DocsPage() {
               <h2>OTF creation</h2>
             </div>
             <p>
-              The creator selects a manager, fee recipient, approved assets, target weights, fee,
+              The creator selects a manager, fee recipient, qualified or open assets, pinned markets, target weights, fee,
               challenge and completion bands, and safety
               limits. The factory validates these
               parameters, deploys a deterministic clone, transfers the exact initial basket, and
               initializes the vault. Target weights must total <code>10,000 bps</code>.
             </p>
             <ol className="docsSteps">
-              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, approved assets, weight bounds, and cooldown are checked.</p></div></li>
+              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, constituent status, pinned V3 markets, weight bounds, and cooldown are checked.</p></div></li>
               <li><span>02</span><div><strong>Fund</strong><p>The exact initial constituent balances move into the new vault.</p></div></li>
               <li><span>03</span><div><strong>Initialize</strong><p>Rules, completed strategy version zero, its target snapshot, and the creation-time cooldown baseline are stored.</p></div></li>
               <li><span>04</span><div><strong>Issue</strong><p>Initial vault shares are minted to the manager.</p></div></li>
@@ -303,7 +303,7 @@ export default function DocsPage() {
                 <strong>Three ways to enter</strong>
                 <span>
                   Supply the proportional RWA basket, buy existing shares from the OTF/USDG pool,
-                  or supply a fixed USDG amount through the settlement router. Routed USDG entry
+                  or supply a fixed USDG or WETH amount through its settlement router. Routed entry
                   shows estimated shares and a slippage-protected minimum before signing.
                 </span>
               </div>

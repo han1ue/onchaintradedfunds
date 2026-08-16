@@ -13,6 +13,13 @@ interface IProtocolPortfolioLimits {
     function otfTokenURI() external pure returns (string memory);
 }
 
+interface IProtocolTokenFeePolicy {
+    function effectiveProtocolFeeShareBps(address vault, uint16 baseShareBps)
+        external
+        view
+        returns (uint16);
+}
+
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant BPS = 10_000;
     uint256 public constant YEAR = 365 days;
@@ -96,6 +103,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error TooManyTrades(uint256 count, uint256 maximum);
     error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
     error TradeAssetNotTracked(address token);
+    error SettlementBalanceConsumed(address settlementAsset, uint256 beforeBalance, uint256 afterBalance);
     error UnapprovedAdapter(address adapter);
     error InvalidRecordIndex(uint256 index);
     error StrategyStateLocked();
@@ -124,6 +132,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error VaultSunset();
     error ActiveConstituentsRemain();
     error ProtocolDepositsPaused();
+    error AssetMarketRegistryNotConfigured();
+    error InvalidAssetMarket(address asset, bytes32 marketId);
+    error AssetMarketAlreadyPinned(address asset, bytes32 currentMarketId, bytes32 suppliedMarketId);
 
     enum FeeState {
         Accruing,
@@ -277,6 +288,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public tradeExecutionCount;
     TradeExecutionRecord[16] internal _recentTradeExecutions;
     uint256 internal _challengeFeeAccrualRemainderWad;
+
+    // Version-2 storage. Appended so the clone layout used by the incumbent stack is preserved.
+    // Kept internal so delegatecall modules do not each embed duplicate public
+    // getter bytecode. ManagedOTFVault exposes the canonical read surface.
+    address internal _assetMarketRegistry;
+    mapping(address => bytes32) internal _marketIdForAsset;
+    mapping(address => address) internal _priceFeedForAsset;
+    bytes32[] internal _pendingMarketIds;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();

@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { PublicApiError } from "@/lib/errors";
 import { requireDb } from "./db";
 import {
-  activityEvents, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  activityEvents, assetMarkets, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   tweetEvidence, users, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
@@ -13,6 +13,7 @@ import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
 import { assertCompleteProposalPriceCapture, captureAssetPrices } from "./prices";
 import { recomputeLiveXp } from "./xp";
+import { evaluateCompetitionPoolAge } from "@/lib/experimental-eligibility";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -21,8 +22,28 @@ export async function saveProposalDraft(input: unknown) {
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
 
-  const selectedAssets = await database.select().from(eligibleAssets).where(inArray(eligibleAssets.id, parsed.allocations.map((item) => item.assetId)));
+  const selectedAssets = await database.select().from(eligibleAssets).where(and(
+    inArray(eligibleAssets.id, parsed.allocations.map((item) => item.assetId)),
+    or(eq(eligibleAssets.qualityStatus, "open"), eq(eligibleAssets.qualityStatus, "qualified")),
+  ));
   if (selectedAssets.length !== parsed.allocations.length) throw new Error("ASSET_INELIGIBLE");
+  const requestedMarketIds = parsed.allocations.map((item) => item.marketId).filter((id): id is string => Boolean(id));
+  const selectedMarkets = requestedMarketIds.length === 0 ? [] : await database.select().from(assetMarkets)
+    .where(and(inArray(assetMarkets.id, requestedMarketIds), eq(assetMarkets.active, true), eq(assetMarkets.twapOneHourReady, true)));
+  const marketById = new Map(selectedMarkets.map((market) => [market.id, market]));
+  for (const allocation of parsed.allocations) {
+    const asset = selectedAssets.find((candidate) => candidate.id === allocation.assetId);
+    const market = allocation.marketId ? marketById.get(allocation.marketId) : undefined;
+    if (asset?.qualityStatus === "open" && (!market || market.assetId !== asset.id)) {
+      throw new Error("ASSET_MARKET_NOT_READY");
+    }
+    if (asset?.qualityStatus === "open" && market) {
+      const poolAge = evaluateCompetitionPoolAge(market.poolCreatedAt, competition.startsAt);
+      if (poolAge.status === "Pending") throw new Error("ASSET_MARKET_POOL_AGE_UNKNOWN");
+      if (poolAge.status === "Fail") throw new Error("ASSET_MARKET_POOL_TOO_NEW");
+    }
+    if (market && market.assetId !== asset?.id) throw new Error("ASSET_MARKET_MISMATCH");
+  }
 
   return database.transaction(async (transaction) => {
     const [existing] = await transaction.select().from(proposals)
@@ -34,7 +55,8 @@ export async function saveProposalDraft(input: unknown) {
       : await transaction.insert(proposals).values(values).returning();
     await transaction.delete(proposalAssets).where(eq(proposalAssets.proposalId, proposal.id));
     await transaction.insert(proposalAssets).values(parsed.allocations.map((allocation, position) => ({
-      proposalId: proposal.id, assetId: allocation.assetId, weightBps: allocation.weightBps, position
+      proposalId: proposal.id, assetId: allocation.assetId, marketId: allocation.marketId ?? null,
+      weightBps: allocation.weightBps, position
     })));
     return proposal;
   });
@@ -102,7 +124,11 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const acceptedAt = new Date();
   let priceCapture: Awaited<ReturnType<typeof captureAssetPrices>>;
   try {
-    priceCapture = await captureAssetPrices({ assetIds: proposalAssetRows.map((asset) => asset.id), sampledAt: acceptedAt });
+    priceCapture = await captureAssetPrices({
+      assetIds: proposalAssetRows.map((asset) => asset.id),
+      sampledAt: acceptedAt,
+      purpose: "submission",
+    });
   } catch (error) {
     console.error("Proposal price validation failed", { proposalId: proposal.id, missingSymbols: proposalAssetRows.map((asset) => asset.symbol), error: error instanceof Error ? error.message : "UNKNOWN" });
     throw new PublicApiError("PROPOSAL_PRICE_UNAVAILABLE", { missingSymbols: proposalAssetRows.map((asset) => asset.symbol) });
