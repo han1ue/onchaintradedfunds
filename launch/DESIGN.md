@@ -261,7 +261,7 @@ The form language is precise and slightly softened: primary surfaces use an 8px 
 
 ### Navigation
 
-The 56px sticky navigation uses a translucent navigation-ink material, a bottom hairline, and a 1360px inner shell. The square OTF mark is stroked in teal. Links are compact and muted by default, become primary text on hover, and use a 2px teal underline for the active route. On small screens, the launch label and lower-priority links progressively disappear before core actions do.
+The 56px sticky navigation uses a translucent navigation-ink material, a bottom hairline, and a 1360px inner shell. The square OTF mark is stroked in teal. Links are compact and muted by default, become primary text on hover, and use a 2px teal underline for the active route. Submission is contextual rather than global: “Submit OTF” appears as a secondary action in leaderboard headings and as the primary profile action, never in the navigation. On small screens, the launch label and lower-priority links progressively disappear before core actions do.
 
 ### Ranked Leaderboard
 

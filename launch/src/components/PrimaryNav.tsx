@@ -8,7 +8,6 @@ const items = [
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/vote", label: "Vote" },
   { href: "/points", label: "XP" },
-  { href: "/submit", label: "Submit OTF", secondary: true },
   { href: "/rules", label: "Rules", secondary: true }
 ];
 

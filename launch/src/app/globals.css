@@ -162,6 +162,7 @@ button { color: inherit; }
 .cardHeading small, .cardHeading > div > small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .71rem; font-weight: 450; }
 .cardHeading svg { color: var(--teal); }
 .leaderboardSubmitButton { min-height: 32px; height: 32px; padding: 0 12px; }
+.leaderboardHeadingActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .leaderboardHeader, .leaderboardRow { display: grid; grid-template-columns: 84px minmax(270px, 1.4fr) minmax(220px, .95fr) minmax(125px, .6fr) 110px; column-gap: 12px; align-items: center; }
 .leaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
 .leaderboardHeader span:first-child { text-align: center; transform: translateX(-4px); }
@@ -776,6 +777,8 @@ button { color: inherit; }
   .creatorBlock { justify-items: start; }
   .accountHeader { align-items: flex-start; flex-direction: column; gap: 16px; }
   .accountControls { width: 100%; align-items: flex-start; flex-direction: column; }
+  .accountControls > .button { width: 100%; }
+  .leaderboardHeadingActions { flex-wrap: wrap; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
   .accountXpSummary { grid-template-columns: 1fr; }
   .accountXpSummary dl > div:first-child { padding-left: 0; border-left: 0; }

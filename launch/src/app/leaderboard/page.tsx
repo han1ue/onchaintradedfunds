@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Clock3 } from "lucide-react";
 import { ResponsiveLeaderboard, VoterLeaderboard } from "@/components/Leaderboard";
-import { SectionCard, StatusBadge } from "@/components/ui";
+import { Button, SectionCard, StatusBadge } from "@/components/ui";
 import { getCompetition, getLeaderboard, getVoterLeaderboard } from "@/server/data";
 import { getCompetitionStatus } from "@/lib/competition";
 
@@ -29,8 +29,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       <Link href="/leaderboard?view=voters" aria-current={view === "voters" ? "page" : undefined}>Voters</Link>
     </nav>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
-      {view === "otfs" ? <><div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div></div><ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} /><div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div></>
-        : <><div className="cardHeading"><div><span>Voters ranked by XP</span><small>{voters.length} ranked {voters.length === 1 ? "participant" : "participants"}</small></div><Link className="button buttonSecondary leaderboardPrivacyButton" href="/me#voter-leaderboard-privacy">Manage my public name</Link></div><VoterLeaderboard entries={voters} /><div className="cardFooter"><span>{preview ? "Preview data shown. Names and XP are illustrative." : "Latest canonical XP determines rank. Generated aliases protect voter identity by default."}</span><Link href="/rules#live-xp">How XP works <ArrowRight size={14} /></Link></div></>}
+      {view === "otfs" ? <><div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div>{leaderboard.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Submit OTF</Button>}</div><ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} /><div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div></>
+        : <><div className="cardHeading"><div><span>Voters ranked by XP</span><small>{voters.length} ranked {voters.length === 1 ? "participant" : "participants"}</small></div><div className="leaderboardHeadingActions"><Link className="button buttonSecondary leaderboardPrivacyButton" href="/me#voter-leaderboard-privacy">Manage my public name</Link>{voters.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Submit OTF</Button>}</div></div><VoterLeaderboard entries={voters} /><div className="cardFooter"><span>{preview ? "Preview data shown. Names and XP are illustrative." : "Latest canonical XP determines rank. Generated aliases protect voter identity by default."}</span><Link href="/rules#live-xp">How XP works <ArrowRight size={14} /></Link></div></>}
     </SectionCard>
   </div>;
 }

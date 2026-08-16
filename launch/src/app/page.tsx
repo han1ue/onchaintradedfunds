@@ -3,7 +3,7 @@ import { ArrowRight, FileCheck2, History, Layers3 } from "lucide-react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { CompetitionTimeline } from "@/components/CompetitionTimeline";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
-import { SectionCard, StatusBadge } from "@/components/ui";
+import { Button, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
@@ -35,7 +35,7 @@ export default async function HomePage() {
     </section>
     <CompetitionTimeline competition={competition} />
     <div className="boardGrid">
-      <SectionCard className="leaderboardCard"><div className="cardHeading"><span>Live leaderboard</span></div>
+      <SectionCard className="leaderboardCard"><div className="cardHeading"><span>Live leaderboard</span>{leaderboardPreview.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Submit OTF</Button>}</div>
         <ResponsiveLeaderboard entries={leaderboardPreview} final={competition.phase === "final"} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
