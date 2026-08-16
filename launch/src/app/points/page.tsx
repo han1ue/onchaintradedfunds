@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock3, DatabaseZap, Gauge, ShieldAlert, ShieldCheck, UserRound, Users, Vote } from "lucide-react";
+import { AlertTriangle, Clock3, DatabaseZap, Gauge, TrendingUp, UserRound, Users, Vote } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getUserXp, getXpLeaderboard } from "@/server/xp";
@@ -20,7 +20,7 @@ export default async function PointsPage() {
   const own = ownXp?.rows[0];
   return <div className="pageShell pointsPage">
     <header className="pointsHeader">
-      <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1>{xp.status === "final" && <StatusBadge tone="positive">Final</StatusBadge>}</div><p>Ten million XP rewards verified and non-verified OTF performance, voting participation, and creator vote share—entirely separate from launch order.</p></div>
+      <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1>{xp.status === "final" && <StatusBadge tone="positive">Final</StatusBadge>}</div><p>Ten million XP rewards split between performance, participation, and creator vote share.</p></div>
       <div className="pointsRelease"><span>{xp.status === "final" ? "Final allocation" : "Released so far"}</span><strong>{formatXp(xp.released.total)} <small>XP</small></strong><small>{formatXp(xp.allocated.total)} currently allocated</small></div>
     </header>
 
@@ -30,10 +30,9 @@ export default async function PointsPage() {
     </div>
 
     <div className="xpPoolStrip">
-      <SectionCard><ShieldCheck size={18} aria-hidden="true" /><span>Verified performance</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>of 3,500,000 XP</small></SectionCard>
-      <SectionCard><ShieldAlert size={18} aria-hidden="true" /><span>Non-verified performance</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>of 1,500,000 XP</small></SectionCard>
-      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>of 3,000,000 XP</small></SectionCard>
-      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator vote share</span><strong>{formatXp(xp.released.creator)}</strong><small>of 2,000,000 XP · weighted by votes</small></SectionCard>
+      <SectionCard className="xpPerformancePool"><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><div className="xpPerformanceSplit"><div><span>Verified</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>3,500,000 XP</small></div><div><span>Non-verified</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>1,500,000 XP</small></div></div></SectionCard>
+      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>3,000,000 XP</small></SectionCard>
+      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator vote share</span><strong>{formatXp(xp.released.creator)}</strong><small>2,000,000 XP</small></SectionCard>
     </div>
 
     {session?.user?.id && <SectionCard className="myXpSummary">
