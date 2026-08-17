@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "next build",
+    "deploy:build": "next build && node scripts/migrate-production.mjs",
     "dev": "next dev --turbopack -p 3001",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",

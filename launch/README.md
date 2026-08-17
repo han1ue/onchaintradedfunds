@@ -39,6 +39,8 @@ Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions w
 
 Create a second Vercel project from this repository with Root Directory `launch`. Keep source files outside the Root Directory enabled so Vercel can read the workspace manifest and root lockfile. Configure the launch environment variables only on that project, enable unaffected-project skipping, and use `https://onchaintradedfunds-launch.vercel.app` as the initial production URL.
 
+Production deployments run pending Drizzle migrations automatically after a successful Next.js build and before Vercel activates the deployment. Preview deployments skip migrations so they cannot mutate the production database; migrate a separately scoped preview database explicitly when one is used.
+
 No Vercel Cron Jobs are configured; scheduled work runs through GitHub Actions so the launch project remains compatible with Vercel Hobby. Set `NEXT_PUBLIC_SITE_URL=https://onchaintradedfunds-launch.vercel.app`, `TURNSTILE_HOSTNAMES=onchaintradedfunds-launch.vercel.app`, and the X callback to `https://onchaintradedfunds-launch.vercel.app/api/auth/x/callback`. Preview deployments use the production callback hostname from `VERCEL_PROJECT_PRODUCTION_URL`, then return to the equivalent path on the production site. Update these values and the GitHub Actions `LAUNCH_SITE_URL` variable together if a custom hostname is added later.
 
 Do not share the main app’s database, Auth.js secret, X application, Redis instance, analytics property, or environment variables with this project.
