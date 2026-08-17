@@ -79,6 +79,15 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
     limit 100`;
 }
 
+export async function getLatestScoringCheckpointAt(): Promise<string | null> {
+  if (!sqlClient) return null;
+  const rows = await sqlClient<{ sampledAt: string | null }[]>`
+    select max(sampled_at)::text as "sampledAt"
+    from price_capture_runs
+    where purpose = 'scoring'`;
+  return rows[0]?.sampledAt ?? null;
+}
+
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   if (!sqlClient) return demoLeaderboard;
   const rows = await sqlClient<LeaderboardEntry[]>`

@@ -333,6 +333,9 @@ button { color: inherit; }
 .rwaDirectory { overflow: hidden; }
 .rwaDirectoryHeading, .rwaDirectoryRow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(200px, .8fr) minmax(210px, .85fr); align-items: center; gap: 24px; }
 .rwaDirectoryHeading { min-height: 38px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--card-raised); color: var(--text-muted); font-size: .63rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
+.rwaDirectoryHeading > span:nth-child(2) { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.rwaDirectoryInfo { width: 16px; height: 16px; display: inline-grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--text-muted); cursor: help; outline: 0; text-transform: none; }
+.rwaDirectoryInfo:hover, .rwaDirectoryInfo:focus-visible { border-color: var(--teal); color: var(--teal); }
 .rwaDirectoryHeading span:nth-child(n+2) { text-align: right; }
 .rwaDirectoryRow { min-height: 76px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
 .rwaDirectoryRow:last-child { border-bottom: 0; }

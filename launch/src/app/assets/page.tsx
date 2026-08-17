@@ -1,6 +1,6 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Info } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
-import { getEligibleAssets } from "@/server/data";
+import { getEligibleAssets, getLatestScoringCheckpointAt } from "@/server/data";
 
 function shortAddress(address: string) {
   return `${address.slice(0, 8)}…${address.slice(-6)}`;
@@ -19,22 +19,30 @@ function formatCheckpointTime(value: string) {
   return new Date(value).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZoneName: "short",
   });
 }
 
 function priceSourceLabel(source: "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd") {
-  if (source === "coingecko-usd") return "CoinGecko";
-  if (source === "coinbase-eth-usd-bid") return "Coinbase";
-  return "Robinhood";
+  if (source === "coingecko-usd") return "CoinGecko API";
+  if (source === "coinbase-eth-usd-bid") return "Coinbase API";
+  return "Robinhood API";
 }
 
 export const metadata = { title: "Verified assets" };
 
 export default async function AssetsPage() {
-  const assets = await getEligibleAssets();
+  const [assets, latestScoringCheckpointAt] = await Promise.all([
+    getEligibleAssets(),
+    getLatestScoringCheckpointAt(),
+  ]);
   const preview = assets.length === 0 && !process.env.DATABASE_URL;
+  const latestPriceTooltip = latestScoringCheckpointAt
+    ? `Latest scoring checkpoint: ${formatCheckpointTime(latestScoringCheckpointAt)}`
+    : "No saved price checkpoint yet";
 
   return <div className="pageShell contentPage wideContent">
     <header className="pageHeader rwaDirectoryHeader">
@@ -47,13 +55,13 @@ export default async function AssetsPage() {
 
     <SectionCard className="rwaDirectory">
       {assets.length === 0 ? <Callout tone="danger">No verified assets have been added yet.</Callout> : <>
-        <div className="rwaDirectoryHeading"><span>Asset</span><span>Latest price</span><span>Token contract</span></div>
+        <div className="rwaDirectoryHeading"><span>Asset</span><span>Latest price <span className="rwaDirectoryInfo" role="img" tabIndex={0} title={latestPriceTooltip} aria-label={latestPriceTooltip}><Info size={12} aria-hidden="true" /></span></span><span>Token contract</span></div>
         {assets.map((asset) => <div className="rwaDirectoryRow" key={asset.id}>
           <div className="rwaDirectoryIdentity"><span className="rwaDirectoryMark">{asset.symbol.slice(0, 3)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div>
           <div className="rwaDirectoryPrice" data-label="Latest price">
             {asset.latestPriceUsd !== null ? <strong>{formatUsd(asset.latestPriceUsd)}</strong> : <strong>—</strong>}
             {asset.latestPriceAt
-              ? <small>Saved <time dateTime={asset.latestPriceAt}>{formatCheckpointTime(asset.latestPriceAt)}</time> · {priceSourceLabel(asset.priceSource)}</small>
+              ? <small>{priceSourceLabel(asset.priceSource)}</small>
               : <small>Awaiting first checkpoint</small>}
           </div>
           {asset.contractAddress === "N/A"
