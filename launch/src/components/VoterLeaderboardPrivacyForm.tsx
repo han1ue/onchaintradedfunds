@@ -24,8 +24,8 @@ export function VoterLeaderboardPrivacyForm({
     if (state.status === "success") setSavedChecked(submittedChecked.current);
   }, [state]);
   return <form className="voterPrivacyForm" action={action} onSubmit={() => { submittedChecked.current = checked; }}>
-    <div className={`privacyChoice voterPrivacyChoice${changed ? " changed" : ""}`}>
-      {changed && <Button type="submit" variant="secondary" className="privacyInlineSave" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>}
+    <div className="privacyChoice voterPrivacyChoice">
+      <Button type="submit" variant="secondary" className="privacyInlineSave" disabled={pending || !changed}>{pending ? "Saving…" : "Save"}</Button>
       <label className="voterPrivacyToggle">
         <input name="showRealUsername" type="checkbox" checked={checked} disabled={pending} onChange={(event) => setChecked(event.target.checked)} />
         <span><strong>Show @{username} on public user leaderboards</strong><small>Off by default. When off, the voter and XP leaderboards show {generatedAlias}. Your choice is reversible at any time.</small></span>

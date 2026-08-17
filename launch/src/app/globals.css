@@ -520,7 +520,7 @@ button { color: inherit; }
 .portfolioAllocationSection { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
 .portfolioAllocationSection > h2 { margin-top: 0; }
 .returnsHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
-.returnsHeading h2 { margin: 0; font-size: 1rem; letter-spacing: -.015em; }
+.returnsHeading h2 { margin: 0; font-size: 1.35rem; letter-spacing: -.025em; }
 .returnsHeading p { margin: 5px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
 .returnsCurrent { flex: 0 0 auto; display: grid; justify-items: end; gap: 3px; }
 .returnsCurrent span { color: var(--text-muted); font-size: .61rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
@@ -669,8 +669,7 @@ button { color: inherit; }
 .accountXpActions { display: grid; justify-items: end; gap: 5px; color: var(--text-muted); font-size: .62rem; }
 .accountPrivacyCard { width: 100%; margin-bottom: 12px; padding: 18px; scroll-margin-top: 72px; }
 .voterPrivacyForm { width: 100%; }
-.voterPrivacyChoice { width: 100%; grid-template-columns: minmax(0, 1fr); align-items: center; cursor: default; }
-.voterPrivacyChoice.changed { grid-template-columns: auto minmax(0, 1fr); }
+.voterPrivacyChoice { width: 100%; grid-template-columns: auto minmax(0, 1fr); align-items: center; cursor: default; }
 .voterPrivacyToggle { min-width: 0; display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 9px; align-items: start; cursor: pointer; }
 .voterPrivacyToggle input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--teal); }
 .voterPrivacyToggle > span { min-width: 0; display: grid; gap: 3px; }
@@ -858,7 +857,7 @@ button { color: inherit; }
   .accountXpSummary { grid-template-columns: 1fr; }
   .accountXpSummary dl > div:first-child { padding-left: 0; border-left: 0; }
   .accountXpActions { justify-items: start; }
-  .voterPrivacyChoice.changed { grid-template-columns: 1fr; }
+  .voterPrivacyChoice { grid-template-columns: 1fr; }
   .privacyInlineSave { justify-self: start; }
   .pointsHeader { align-items: flex-start; flex-direction: column; gap: 18px; }
   .pointsRelease { justify-items: start; }

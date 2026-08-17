@@ -75,7 +75,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   return <div className="portfolioReturns">
     <div className="returnsHeading">
-      <div><h2>Portfolio return</h2><p>Fixed initial weights, indexed from the first complete price checkpoint.</p></div>
+      <div><h2>Portgolio</h2></div>
       {points.length > 1 && <div className={`returnsCurrent ${tone}`}><span>Current return</span><strong>{formatReturn(current)}</strong></div>}
     </div>
     {points.length < 2 || !layout || !active ? <div className="returnsEmpty">
