@@ -116,7 +116,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity"><strong>{selectedSymbol}</strong><small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small></span>
-        <StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Review required"}</StatusBadge>
+        <StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Unverified"}</StatusBadge>
       </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
       <ChevronDown size={15} aria-hidden="true" />
     </button>
@@ -125,7 +125,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
           <span className="assetPickerIdentity"><strong>{selectedMetadata.symbol} <small>{selectedMetadata.name}</small></strong><code>Edit contract and Uniswap V3 pool</code></span>
-          <StatusBadge tone="warning">Review required</StatusBadge>
+          <StatusBadge tone="warning">Unverified</StatusBadge>
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity"><strong>{asset.symbol} <small>{asset.name}</small></strong><code>{asset.network} · {asset.contractAddress}</code></span>
@@ -169,12 +169,12 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
           <div><span>Age</span><p>Created at least 7 days before the OTF deploys</p></div>
           <div><span>Liquidity</span><p>At least $10,000 in active liquidity</p></div>
           <div><span>Market cap</span><p>Token above $1,000,000 on CoinMarketCap</p></div>
-          <small>These checks run again before deployment. Adding the asset now does not guarantee approval.</small>
+          <small>These requirements must be met before deployment. The OTF remains unverified because this asset is not in the verified directory.</small>
         </div>
 
         <div className="assetRequestActions">
           <Button variant="secondary" onClick={() => setManual(false)}>Cancel</Button>
-          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>Add asset for review</Button>
+          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>Add unverified asset</Button>
         </div>
       </div>
     </dialog>
