@@ -16,7 +16,7 @@ const passing = (overrides: Partial<MarketEvidenceInput> = {}): MarketEvidenceIn
   marketCapVerified: true,
   poolCreatedAt: new Date(competitionStartsAt.getTime() - 7 * 86_400_000),
   gtVerified: true,
-  gtScore: 60,
+  gtScore: 50,
   isHoneypot: false,
   lockedLiquidityPct: 50,
   ...overrides,
@@ -33,6 +33,11 @@ describe("informational provider market evidence", () => {
       status: "Fail",
       reasons: ["Pool was not at least seven days old when the competition started"],
     });
+  });
+
+  it("requires a GT score of at least 50", () => {
+    expect(evaluateMarketEvidence(passing({ gtScore: 49 })).reasons).toContain("GT score is below 50");
+    expect(evaluateMarketEvidence(passing({ gtScore: 50 })).status).toBe("Pass");
   });
 
   it("keeps missing provider evidence pending without substituting FDV", () => {

@@ -3,7 +3,7 @@ export const MARKET_EVIDENCE_THRESHOLDS = {
   marketCapUsd: 100_000,
   poolAgeMs: 7 * 86_400_000,
   continuityMs: 7 * 86_400_000,
-  gtScore: 60,
+  gtScore: 50,
   lockedLiquidityPct: 50,
   minimumHourlyCheckpoints: 169,
   maximumCheckpointGapMs: 90 * 60_000,
@@ -62,7 +62,7 @@ export function evaluateMarketEvidence(evidence: MarketEvidenceInput): MarketEvi
   const gtVerified = required(evidence.gtVerified, "GT verification");
   if (gtVerified === false) failed.push("GT verification is false");
   const gtScore = required(evidence.gtScore, "GT score");
-  if (gtScore !== null && gtScore < MARKET_EVIDENCE_THRESHOLDS.gtScore) failed.push("GT score is below 60");
+  if (gtScore !== null && gtScore < MARKET_EVIDENCE_THRESHOLDS.gtScore) failed.push("GT score is below 50");
   const honeypot = required(evidence.isHoneypot, "Honeypot evidence");
   if (honeypot === true) failed.push("Token is flagged as a honeypot");
   const locked = required(evidence.lockedLiquidityPct, "Locked-liquidity evidence");

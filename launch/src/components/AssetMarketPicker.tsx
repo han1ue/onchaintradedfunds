@@ -36,6 +36,25 @@ function requirementStatusLabel(status: AssetMarketRequirement["status"]) {
   return status === "pass" ? "Pass" : status === "fail" ? "Fail" : status === "pending" ? "Pending" : "Unavailable";
 }
 
+function validationDecision(validation: AssetMarketValidationResponse, approved: boolean) {
+  if (approved) return {
+    tone: "approved" as const,
+    title: "Asset approved",
+    detail: "Every ERC-20, pool, and market requirement passed.",
+  };
+  const failed = validation.requirements.filter((item) => item.status === "fail");
+  const waiting = validation.requirements.filter((item) => item.status === "pending" || item.status === "unavailable");
+  const details = [
+    failed.length ? `Failed: ${failed.map((item) => item.label).join(", ")}.` : "",
+    waiting.length ? `Evidence needed: ${waiting.map((item) => item.label).join(", ")}.` : "",
+  ].filter(Boolean).join(" ");
+  return {
+    tone: failed.length ? "blocked" as const : "waiting" as const,
+    title: failed.length ? "Asset not approved" : "Asset not approved yet",
+    detail: details || "Every requirement must pass before this token can be added.",
+  };
+}
+
 export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfig, label, onChange }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -126,6 +145,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   const canUseManualAsset = validation?.status === "pass"
     && Boolean(detected && detected.decimals === 18 && normalizeTickerInput(detected.symbol) && detected.name.trim())
     && validation.requirements.every((item) => item.status === "pass");
+  const decision = validation ? validationDecision(validation, canUseManualAsset) : null;
 
   return <div className="assetMarketPicker">
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
@@ -178,6 +198,11 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
           <input value={poolAddress} onChange={(event) => setPoolAddress(event.target.value)} placeholder="0x…" spellCheck="false" />
           <small>Use the canonical token/WETH or token/USDG Uniswap V3 pool. Every check below must pass.</small>
         </label>
+
+        {validation && decision && <div className={`marketValidationDecision ${decision.tone}`} role={decision.tone === "approved" ? "status" : "alert"} aria-live="polite">
+          {decision.tone === "approved" ? <CircleCheck size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
+          <div><strong>{decision.title}</strong><small>{decision.detail}</small></div>
+        </div>}
 
         {validation && <div className="poolRequirements" aria-live="polite">
           <strong>Observed market requirements</strong>
