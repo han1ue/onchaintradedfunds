@@ -5,10 +5,10 @@ import { Callout } from "@/components/ui";
 export const metadata = { title: "XP allocation" };
 
 const pools = [
-  { key: "verified", label: "Verified performance", value: "3,500,000", share: "35%" },
-  { key: "nonVerified", label: "Non-verified performance", value: "1,750,000", share: "17.5%" },
-  { key: "participation", label: "Participation", value: "2,750,000", share: "27.5%" },
-  { key: "creator", label: "Creator", value: "2,000,000", share: "20%" },
+  { key: "poolVerified", label: "Verified performance", value: "3,500,000", share: "35%" },
+  { key: "poolNonVerified", label: "Non-verified performance", value: "1,750,000", share: "17.5%" },
+  { key: "poolParticipation", label: "Participation", value: "2,750,000", share: "27.5%" },
+  { key: "poolCreator", label: "Creator", value: "2,000,000", share: "20%" },
 ] as const;
 
 export default function PointsPage() {

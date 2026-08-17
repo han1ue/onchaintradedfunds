@@ -707,17 +707,17 @@ button { color: inherit; }
 .xpAllocationBar { height: 68px; display: flex; overflow: hidden; border-radius: 10px; background: var(--surface); }
 .xpAllocationSegment { min-width: 0; display: grid; place-items: center; color: #061915; font-size: .76rem; font-variant-numeric: tabular-nums; }
 .xpAllocationSegment b { padding: 4px 6px; }
-.xpAllocationSegment.verified { flex: 35; background: var(--teal); }
-.xpAllocationSegment.nonVerified { flex: 17.5; background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
-.xpAllocationSegment.participation { flex: 27.5; background: var(--blue); }
-.xpAllocationSegment.creator { flex: 20; background: var(--gold); }
+.xpAllocationSegment.poolVerified { flex: 35; background: var(--teal); }
+.xpAllocationSegment.poolNonVerified { flex: 17.5; background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
+.xpAllocationSegment.poolParticipation { flex: 27.5; background: var(--blue); }
+.xpAllocationSegment.poolCreator { flex: 20; background: var(--gold); }
 .xpAllocationLegend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 16px; }
 .xpAllocationLegend > div { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 9px; }
 .xpLegendSwatch { width: 9px; height: 9px; margin-top: 3px; border-radius: 2px; }
-.xpLegendSwatch.verified { background: var(--teal); }
-.xpLegendSwatch.nonVerified { background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
-.xpLegendSwatch.participation { background: var(--blue); }
-.xpLegendSwatch.creator { background: var(--gold); }
+.xpLegendSwatch.poolVerified { background: var(--teal); }
+.xpLegendSwatch.poolNonVerified { background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
+.xpLegendSwatch.poolParticipation { background: var(--blue); }
+.xpLegendSwatch.poolCreator { background: var(--gold); }
 .xpAllocationLegend div > div { min-width: 0; display: grid; gap: 4px; }
 .xpAllocationLegend strong { font-size: .69rem; line-height: 1.35; }
 .xpAllocationLegend small { color: var(--text-muted); font-size: .62rem; font-variant-numeric: tabular-nums; }
