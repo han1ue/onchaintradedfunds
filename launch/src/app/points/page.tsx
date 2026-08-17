@@ -21,7 +21,7 @@ export default async function PointsPage() {
   return <div className="pageShell pointsPage">
     <header className="pointsHeader">
       <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1>{xp.status === "final" && <StatusBadge tone="positive">Final</StatusBadge>}</div><p>Ten million XP rewards split between performance, participation, and creator vote share.</p></div>
-      <div className="pointsRelease"><span>{xp.status === "final" ? "Final allocation" : "Released so far"}</span><strong>{formatXp(xp.released.total)} <small>XP</small></strong><small>{formatXp(xp.allocated.total)} currently allocated</small></div>
+      <div className="pointsRelease"><strong>{formatXp(xp.released.total)} <small>XP</small></strong><small>{formatXp(xp.allocated.total)} currently allocated</small></div>
     </header>
 
     <div className="pointsMeta" aria-label="XP calculation timestamps">
