@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "./ui";
 import { updateVoterLeaderboardPrivacy, type VoterPrivacyState } from "@/server/profile";
 
@@ -16,11 +16,21 @@ export function VoterLeaderboardPrivacyForm({
   defaultChecked: boolean;
 }) {
   const [state, action, pending] = useActionState(updateVoterLeaderboardPrivacy, initialState);
-  return <form className="voterPrivacyForm" action={action}>
-    <label className="privacyChoice">
-      <input name="showRealUsername" type="checkbox" defaultChecked={defaultChecked} />
-      <span><strong>Show @{username} on public user leaderboards</strong><small>Off by default. When off, the voter and XP leaderboards show {generatedAlias}. Your choice is reversible at any time.</small></span>
-    </label>
-    <div className="voterPrivacyActions"><Button type="submit" variant="secondary" disabled={pending}>{pending ? "Saving…" : "Save privacy choice"}</Button>{state.message && <p className={`privacySaveMessage ${state.status}`} aria-live="polite">{state.message}</p>}</div>
+  const [checked, setChecked] = useState(defaultChecked);
+  const [savedChecked, setSavedChecked] = useState(defaultChecked);
+  const submittedChecked = useRef(defaultChecked);
+  const changed = checked !== savedChecked;
+  useEffect(() => {
+    if (state.status === "success") setSavedChecked(submittedChecked.current);
+  }, [state]);
+  return <form className="voterPrivacyForm" action={action} onSubmit={() => { submittedChecked.current = checked; }}>
+    <div className={`privacyChoice voterPrivacyChoice${changed ? " changed" : ""}`}>
+      {changed && <Button type="submit" variant="secondary" className="privacyInlineSave" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>}
+      <label className="voterPrivacyToggle">
+        <input name="showRealUsername" type="checkbox" checked={checked} disabled={pending} onChange={(event) => setChecked(event.target.checked)} />
+        <span><strong>Show @{username} on public user leaderboards</strong><small>Off by default. When off, the voter and XP leaderboards show {generatedAlias}. Your choice is reversible at any time.</small></span>
+      </label>
+      {state.message && (state.status === "error" || !changed) && <p className={`privacySaveMessage ${state.status}`} aria-live="polite">{state.message}</p>}
+    </div>
   </form>;
 }

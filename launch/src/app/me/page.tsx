@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, BadgeCheck, CircleX, Gauge, Layers3, LogIn, LogOut, ShieldAlert, ShieldCheck, Users, Vote } from "lucide-react";
+import { Activity, BadgeCheck, CircleX, Gauge, Layers3, LogIn, LogOut, ShieldAlert, Users, Vote } from "lucide-react";
 import { desc, eq } from "drizzle-orm";
 import { EligibilityAction } from "@/components/EligibilityGate";
 import { Button, SectionCard } from "@/components/ui";
@@ -67,12 +67,12 @@ export default async function MePage() {
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
         <XProfileImage src={identity?.profileImageUrl ?? session.user.image} username={username} size={46} />
-        <div className="accountNameActions"><h1>@{username}</h1><form className="accountHeaderActionForm" action={disconnectX}><Button type="submit" variant="ghost" className="disconnectButton"><LogOut size={15} /> Disconnect X</Button></form></div>
+        <h1>@{username}</h1>
       </div>
       <div className="accountControls"><div className="accountIdentitySummary" aria-label="X account details">
         <div className={`accountFollowerCount ${meetsFollowerRequirement ? "eligible" : "underMinimum"}`}><Users size={17} aria-hidden="true" /><span><strong>{identity ? identity.followersCount.toLocaleString() : "—"}</strong> followers</span></div>
         <span className={`accountVerificationStatus ${identity?.verified ? "verified" : "unverified"}`}>{identity?.verified ? <BadgeCheck size={17} aria-hidden="true" /> : <CircleX size={17} aria-hidden="true" />}<span>{verificationLabel}</span></span>
-      </div><Button href="/submit">Submit OTF</Button></div>
+      </div><form className="accountHeaderActionForm" action={disconnectX}><Button type="submit" variant="ghost" className="disconnectButton"><LogOut size={15} /> Disconnect X</Button></form></div>
     </header>
     {!eligibility.eligible && <SectionCard className="contentCard accountEligibilityPrompt"><ShieldAlert size={22} aria-hidden="true" /><strong>Eligible X account required</strong><p>Your account needs to be verified, public, and have at least {eligibility.minFollowers.toLocaleString()} followers.</p><EligibilityAction eligibility={eligibility} action="submit" callbackUrl="/me">{eligibility.connected ? "Use another X account" : "Sign in with an eligible account"}</EligibilityAction></SectionCard>}
     <div className="accountMetrics">
@@ -81,10 +81,10 @@ export default async function MePage() {
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
     <SectionCard className="accountXpSummary"><div><Gauge size={21} aria-hidden="true" /><span>Your {xp.status === "final" ? "Final" : "Live"} XP</span><strong>{(ownXp?.totalXp ?? 0).toLocaleString()} XP</strong></div><dl><div><dt>Performance</dt><dd>{(ownXp?.performanceXp ?? 0).toLocaleString()}</dd></div><div><dt>Participation</dt><dd>{(ownXp?.participationXp ?? 0).toLocaleString()}</dd></div><div><dt>Creator</dt><dd>{(ownXp?.creatorXp ?? 0).toLocaleString()}</dd></div></dl><div className="accountXpActions">{ownXp?.pendingTrancheCount ? <span>Awaiting final price · {ownXp.pendingTrancheCount}</span> : <span>Latest canonical calculation</span>}<Link className="inlineLink" href="/points">View XP leaderboard</Link></div></SectionCard>
-    <SectionCard className="accountPrivacyCard" id="voter-leaderboard-privacy"><div className="accountPrivacyHeading"><ShieldCheck size={22} aria-hidden="true" /><div><h2>Public leaderboard privacy</h2><p>Your generated alias is public by default. Your real X username appears on voter and XP leaderboards only when you explicitly allow it here.</p></div></div><VoterLeaderboardPrivacyForm username={username} generatedAlias={voterAlias} defaultChecked={identity?.showRealUsernameOnVoterLeaderboard ?? false} /></SectionCard>
+    <SectionCard className="accountPrivacyCard" id="voter-leaderboard-privacy"><VoterLeaderboardPrivacyForm username={username} generatedAlias={voterAlias} defaultChecked={identity?.showRealUsernameOnVoterLeaderboard ?? false} /></SectionCard>
     <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => {
       const details = activityDetails(event);
       return <div className="activityRow" key={event.id}><span className={`activityIcon ${details.kind}`} aria-hidden="true">{details.kind === "vote" ? <Vote size={16} /> : details.kind === "proposal" ? <Layers3 size={16} /> : <Activity size={16} />}</span><div className="activityCopy"><strong>{details.title}</strong><small>{details.detail}</small></div><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>;
-    })}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Submit an OTF proposal</Link> or <Link className="inlineLink" href="/vote">cast your unlocked votes</Link>.</p>}</SectionCard>
+    })}</div> : <p>No activity yet. <Link className="inlineLink" href="/submit">Create an OTF</Link> or <Link className="inlineLink" href="/vote">cast your unlocked votes</Link>.</p>}</SectionCard>
   </div>;
 }

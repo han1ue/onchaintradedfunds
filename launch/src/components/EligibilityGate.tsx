@@ -52,7 +52,7 @@ function EligibilityDialog({ eligibility, action, callbackUrl, open, onClose }: 
     }
   }
 
-  const title = eligibility.connected ? "This X account isn’t eligible" : `Sign in to ${action === "vote" ? "vote" : "submit an OTF proposal"}`;
+  const title = eligibility.connected ? "This X account isn’t eligible" : `Sign in to ${action === "vote" ? "vote" : "create an OTF"}`;
   return <dialog ref={dialogRef} className="eligibilityDialog" onClose={onClose} onCancel={onClose} aria-labelledby="eligibility-title">
     <div className="eligibilityDialogBody">
       <button className="dialogClose" type="button" onClick={onClose} aria-label="Close eligibility requirements"><X size={17} /></button>
