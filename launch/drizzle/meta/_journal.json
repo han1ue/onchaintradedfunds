@@ -43,6 +43,13 @@
       "when": 1786970000000,
       "tag": "0005_coingecko_checkpoint_locking",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786971000000,
+      "tag": "0006_simple_submission_states",
+      "breakpoints": true
     }
   ]
 }

@@ -57,7 +57,7 @@ export default function XpPage() {
         </article>
         <article>
           <Users size={20} aria-hidden="true" />
-          <div><h3>Creator · 2,000,000 XP</h3><p>Distributed to proposal creators in direct proportion to the valid votes their accepted OTFs receive.</p></div>
+          <div><h3>Creator · 2,000,000 XP</h3><p>Distributed to proposal creators in direct proportion to the valid votes their confirmed OTFs receive.</p></div>
           <code>votes received ÷ all votes received</code>
         </article>
       </div>

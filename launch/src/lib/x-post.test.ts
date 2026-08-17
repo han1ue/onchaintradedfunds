@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approximateXPostLength, buildSubmissionPost, buildVotePost, slugifyProposalName } from "./x-post";
+import { approximateXPostLength, buildSubmissionPost, buildVotePost, isValidXPostUrl, slugifyProposalName } from "./x-post";
 
 const proposal = { name: "AI Infrastructure OTF", ticker: "AIX", slug: "ai-infrastructure-otf" };
 
@@ -23,4 +23,11 @@ describe("X post templates", () => {
   });
   it("matches proposal slug generation", () => expect(slugifyProposalName(proposal.name)).toBe(proposal.slug));
   it("counts links at X's shortened-link length", () => expect(approximateXPostLength("Read https://launch.example/a/very/long/path")).toBe(28));
+  it("recognizes canonical X status URLs before server verification", () => {
+    expect(isValidXPostUrl("https://x.com/otf/status/1234567890")).toBe(true);
+    expect(isValidXPostUrl("twitter.com/otf/status/1234567890")).toBe(true);
+    expect(isValidXPostUrl("https://x.com/otf/status/not-a-number")).toBe(false);
+    expect(isValidXPostUrl("https://x.com/otf")).toBe(false);
+    expect(isValidXPostUrl("https://x.com.evil.test/otf/status/1234567890")).toBe(false);
+  });
 });

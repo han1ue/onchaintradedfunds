@@ -21,7 +21,7 @@ const timestamps = {
 };
 
 export const competitionPhase = pgEnum("competition_phase", ["draft", "scheduled", "open", "auditing", "final", "cancelled"]);
-export const proposalStatus = pgEnum("proposal_status", ["draft", "posting", "accepted", "hidden", "disqualified", "withdrawn"]);
+export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "deleted"]);
 export const voteStatus = pgEnum("vote_status", ["posting", "valid", "invalid"]);
 export const evidenceStatus = pgEnum("evidence_status", ["pending", "valid", "invalid", "unavailable"]);
 export const evidenceAction = pgEnum("evidence_action", ["submission", "vote"]);
@@ -243,10 +243,9 @@ export const proposals = pgTable("proposals", {
   moderatedReason: text("moderated_reason"),
   ...timestamps
 }, (table) => [
-  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug),
-  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`),
-  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`),
-  uniqueIndex("proposal_one_creator_uq").on(table.competitionId, table.creatorUserId),
+  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug).where(sql`${table.status} <> 'deleted'`),
+  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`).where(sql`${table.status} <> 'deleted'`),
+  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`).where(sql`${table.status} <> 'deleted'`),
   check("proposal_ticker_format", sql`${table.ticker} ~ '^[A-Z0-9][A-Z0-9-]{0,15}$'`),
   check("proposal_name_suffix", sql`${table.name} like '% OTF'`),
   check("proposal_thesis_nonempty", sql`octet_length(${table.thesis}) between 1 and 2048`)

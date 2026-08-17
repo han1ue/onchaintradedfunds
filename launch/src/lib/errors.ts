@@ -24,6 +24,7 @@ export const errorMessages: Record<string, string> = {
   TURNSTILE_FAILED: "The verification check expired or failed. Complete it again and retry.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
+  PROPOSAL_HAS_VOTES: "This submission already has votes and can no longer be deleted.",
   BALLOT_ALREADY_ACTIVE: "Your ballot is already active. Cast newly unlocked votes from your existing ballot.",
   BALLOT_NOT_ACTIVE: "Activate your ballot before casting newly unlocked votes.",
   VOTING_NOT_OPEN: "Voting opens on competition day 8. OTF submissions are open now.",

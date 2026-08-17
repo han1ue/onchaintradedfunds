@@ -27,6 +27,20 @@ export function buildXIntentUrl(text: string) {
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
 }
 
+export function isValidXPostUrl(value: string) {
+  const trimmed = value.trim();
+  const candidate = /^(?:www\.)?(?:x|twitter)\.com\//i.test(trimmed)
+    ? `https://${trimmed}`
+    : trimmed;
+  try {
+    const url = new URL(candidate);
+    if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname.toLowerCase())) return false;
+    return /^\/[A-Za-z0-9_]+\/status\/\d+\/?$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function approximateXPostLength(text: string) {
   return text.replace(/https?:\/\/\S+/g, "x".repeat(23)).length;
 }

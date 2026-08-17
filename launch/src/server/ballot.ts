@@ -28,7 +28,7 @@ async function assertValidDistribution(
   const selected = await database.select({ id: proposals.id, ticker: proposals.ticker })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
-      eq(proposals.status, "accepted"),
+      eq(proposals.status, "confirmed"),
       inArray(proposals.id, proposalIds)
   ));
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
@@ -149,7 +149,7 @@ export async function verifyBallotProof(input: unknown) {
     .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
     .where(and(
       eq(proposals.competitionId, competition.id),
-      eq(proposals.status, "accepted"),
+      eq(proposals.status, "confirmed"),
       sql`${proposals.acceptedAt} <= ${activatedAt}`,
     ));
   const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), activatedAt);

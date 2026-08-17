@@ -1,10 +1,13 @@
 import { getTableColumns } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   assetPricingConfigs,
   eligibleAssets,
   priceCaptureRuns,
   proposalAssets,
+  proposals,
+  proposalStatus,
   voteTranches,
   xpSnapshotRows,
 } from "./schema";
@@ -37,5 +40,10 @@ describe("unified asset database schema", () => {
 
   it("keys price capture runs for cross-instance cron idempotency", () => {
     expect(getTableColumns(priceCaptureRuns)).toHaveProperty("captureKey");
+  });
+
+  it("uses only the three user-facing submission states", () => {
+    expect(proposalStatus.enumValues).toEqual(["draft", "confirmed", "deleted"]);
+    expect(getTableConfig(proposals).indexes.map((index) => index.config.name)).not.toContain("proposal_one_creator_uq");
   });
 });

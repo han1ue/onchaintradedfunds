@@ -1,14 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { COMPETITION_RULES } from "@/lib/competition";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
-  activityEvents, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  activityEvents, ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, xActionChallenges
 } from "./db/schema";
-import { requireEligibleActor } from "./guards";
+import { requireEligibleActor, requireSession } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
@@ -105,14 +106,8 @@ export async function saveProposalDraft(input: unknown) {
       throw new Error("PRICING_CONFIG_REQUIRED");
     }
 
-    const [existing] = await transaction.select().from(proposals)
-      .where(and(eq(proposals.competitionId, competition.id), eq(proposals.creatorUserId, session.user.id))).limit(1);
-    if (existing && existing.status !== "draft") throw new Error("PROPOSAL_IMMUTABLE");
     const values = { competitionId: competition.id, creatorUserId: session.user.id, slug: slugifyProposalName(parsed.name), name: parsed.name, ticker: parsed.ticker, thesis: parsed.thesis, updatedAt: new Date() };
-    const [proposal] = existing
-      ? await transaction.update(proposals).set(values).where(eq(proposals.id, existing.id)).returning()
-      : await transaction.insert(proposals).values(values).returning();
-    await transaction.delete(proposalAssets).where(eq(proposalAssets.proposalId, proposal.id));
+    const [proposal] = await transaction.insert(proposals).values(values).returning();
     await transaction.insert(proposalAssets).values(resolvedAllocations.map((allocation, position) => {
       const addresses = allocation.pricingConfig ? pricingConfigAddresses(allocation.pricingConfig) : { primaryAddress: null, secondaryAddress: null };
       return {
@@ -219,10 +214,42 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
-    const [accepted] = await transaction.update(proposals).set({ status: "accepted", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
-    if (!accepted) throw new Error("PROPOSAL_NOT_FOUND");
-    await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
+    const [confirmed] = await transaction.update(proposals).set({ status: "confirmed", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    if (!confirmed) throw new Error("PROPOSAL_NOT_FOUND");
+    await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.confirmed", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
   return result;
+}
+
+export async function deleteProposal(proposalId: string) {
+  const database = requireDb();
+  const session = await requireSession();
+  const [competition] = await database.select().from(competitions).limit(1);
+  if (!competition) throw new Error("COMPETITION_NOT_FOUND");
+  const deletedAt = new Date();
+  return database.transaction(async (transaction) => {
+    const [deleted] = await transaction.update(proposals).set({ status: "deleted", updatedAt: deletedAt }).where(and(
+      eq(proposals.id, proposalId),
+      eq(proposals.competitionId, competition.id),
+      eq(proposals.creatorUserId, session.user.id),
+      inArray(proposals.status, ["draft", "confirmed"]),
+      sql`not exists (
+        select 1 from ${ballotAllocations}
+        join ${ballots} on ${ballots.id} = ${ballotAllocations.ballotId}
+        where ${ballotAllocations.proposalId} = ${proposals.id} and ${ballots.status} = 'valid'
+      )`
+    )).returning();
+    if (!deleted) throw new Error("PROPOSAL_HAS_VOTES");
+    await transaction.insert(activityEvents).values({
+      competitionId: competition.id,
+      actorUserId: session.user.id,
+      proposalId: deleted.id,
+      eventType: "proposal.deleted",
+      occurredAt: deletedAt,
+      ruleVersion: COMPETITION_RULES.ruleVersion,
+      metadata: { ticker: deleted.ticker },
+    });
+    return deleted;
+  });
 }

@@ -19,7 +19,7 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   if (reason.trim().length < 8) throw new Error("REASON_REQUIRED");
   const [before] = await database.select().from(proposals).where(eq(proposals.id, proposalId)).limit(1);
   if (!before) throw new Error("PROPOSAL_NOT_FOUND");
-  const [after] = await database.update(proposals).set({ status, moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
+  const [after] = await database.update(proposals).set({ status: "deleted", moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
   await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: COMPETITION_RULES.ruleVersion, metadata: { reason } });
   return after;
@@ -48,7 +48,7 @@ export async function recheckEvidence(competitionId: string) {
             .where(eq(activityEvents.evidenceId, evidence.id)).limit(1);
           if (voteActivity?.ballotId) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, voteActivity.ballotId));
         }
-        if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
+        if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "deleted", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
       });
     }
   }
