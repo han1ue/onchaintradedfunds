@@ -58,9 +58,13 @@ export const xPostActionSchema = z.object({
   turnstileToken: z.string().optional()
 });
 
+const xPostUrlSchema = z.string().trim().max(300).transform((value) =>
+  /^(?:www\.)?(?:x|twitter)\.com\//i.test(value) ? `https://${value}` : value
+).pipe(z.string().url());
+
 export const xPostProofSchema = z.object({
   challengeId: z.string().uuid(),
-  postUrl: z.string().url().max(300)
+  postUrl: xPostUrlSchema,
 });
 
 export const voteAllocationSchema = z.object({

@@ -105,28 +105,35 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     const body = action === "prepare"
       ? { action, reason, allocations, revealVotes, turnstileToken }
       : { action, challengeId: challenge?.challengeId, postUrl };
-    const response = await fetch("/api/v1/ballot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const json = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      if (action === "prepare") setTurnstileResetKey((current) => current + 1);
-      const code = typeof json.error?.code === "string" ? json.error.code : undefined;
+    try {
+      const response = await fetch("/api/v1/ballot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (action === "prepare") setTurnstileResetKey((current) => current + 1);
+        const rawCode = typeof json?.error?.code === "string" ? json.error.code : undefined;
+        const code = rawCode && /^[A-Z0-9_]+$/.test(rawCode) ? rawCode : undefined;
+        setMessageTone("error");
+        setMessage(code ? errorMessages[code] ?? `Voting failed (${code}). Please try again.` : "The voting service did not return a valid response. Please try again.");
+        return;
+      }
+      if (action === "prepare") setChallenge(json.data);
+      if (action === "verify") {
+        setCommittedVotes({ ...votes });
+        setChallenge(null);
+        setPostUrl("");
+        setReason("");
+        setRevealVotes(false);
+        setTurnstileToken("");
+        setTurnstileResetKey((current) => current + 1);
+        setMessageTone("success");
+        setMessage(`${newVotes} ${newVotes === 1 ? "vote is" : "votes are"} now cast. Cast votes are final.`);
+        router.refresh();
+      }
+    } catch {
       setMessageTone("error");
-      setMessage(code ? errorMessages[code] ?? "Your votes could not be cast. Please try again." : "Your votes could not be cast.");
-      return;
-    }
-    if (action === "prepare") setChallenge(json.data);
-    if (action === "verify") {
-      setCommittedVotes({ ...votes });
-      setChallenge(null);
-      setPostUrl("");
-      setReason("");
-      setRevealVotes(false);
-      setTurnstileToken("");
-      setTurnstileResetKey((current) => current + 1);
-      setMessageTone("success");
-      setMessage(`${newVotes} ${newVotes === 1 ? "vote is" : "votes are"} now cast. Cast votes are final.`);
-      router.refresh();
+      setMessage("The voting service could not be reached. Check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
   }
 

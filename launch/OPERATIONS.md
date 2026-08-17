@@ -25,14 +25,11 @@
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 
-## Closing and finalization
+## After the competition closes
 
-- Database time is authoritative; writes are rejected at `ends_at`.
-- Allow evidence and asset-health audits to complete. Failed runs never publish a partial leaderboard.
-- Finalization captures one provider-price snapshot after `ends_at`; each performance return compares that snapshot with the vote tranche's stored entry snapshot.
-- A pool that fails at close receives the published 48-hour restoration window. Portfolios cannot be edited.
-- Verify the canonical hash and row count, then retain JSON/CSV exports with the finalization run.
-- Publicly expose rank/order only. Keep `earliest_launch_at` and readiness state private.
+- Database time is authoritative; prices, votes, and OTF submissions stop at `ends_at`.
+- Complete the competition-end audit and ranking locally after the competition closes.
+- Preserve the immutable evidence, price checkpoints, valid votes, and accepted proposals as the inputs to that local process.
 
 ## Recovery
 

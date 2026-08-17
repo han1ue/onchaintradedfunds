@@ -9,7 +9,6 @@ import {
   activityEvents, ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks,
   proposalAssets, proposals, tweetEvidence, voteTranches, xActionChallenges
 } from "./db/schema";
-import { env } from "./env";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { captureAssetPrices } from "./prices";
@@ -85,7 +84,7 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
   };
 }
 
-export async function prepareBallotProof(input: unknown) {
+export async function prepareBallotProof(input: unknown, siteOrigin: string) {
   const parsed = ballotActivationSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor({ votingRequired: true });
@@ -106,7 +105,7 @@ export async function prepareBallotProof(input: unknown) {
   const disclosedChoices = parsed.revealVotes
     ? additions.map((allocation) => ({ ticker: tickers.get(allocation.proposalId) ?? "OTF", votes: allocation.votes }))
     : [];
-  const postText = buildVotePost(parsed.reason, env.NEXT_PUBLIC_SITE_URL, token, disclosedChoices);
+  const postText = buildVotePost(parsed.reason, siteOrigin, token, disclosedChoices);
   if (approximateXPostLength(postText) > 280) throw new Error("POST_TOO_LONG");
   const [challenge] = await database.insert(xActionChallenges).values({
     action: "vote",
@@ -123,7 +122,9 @@ export async function prepareBallotProof(input: unknown) {
 }
 
 export async function verifyBallotProof(input: unknown) {
-  const parsed = xPostProofSchema.parse(input);
+  const proof = xPostProofSchema.safeParse(input);
+  if (!proof.success) throw new Error("PROOF_MISMATCH");
+  const parsed = proof.data;
   const database = requireDb();
   const { session, user, competition } = await requireEligibleActor({ votingRequired: true });
   const [challenge] = await database.select().from(xActionChallenges).where(and(

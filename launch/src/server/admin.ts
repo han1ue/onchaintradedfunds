@@ -1,19 +1,12 @@
-import { and, eq, sql } from "drizzle-orm";
-import { createHash } from "node:crypto";
-import { earliestLaunchAt, rankEntries } from "@/lib/validation";
+import { and, eq } from "drizzle-orm";
 import { COMPETITION_RULES } from "@/lib/competition";
 import { requireSession } from "./guards";
 import { adminXIds } from "./env";
 import { requireDb } from "./db";
 import {
-  activityEvents, adminActions, ballotAllocations, ballots, competitions, evidenceChecks,
-  eligibleAssets, finalizationRuns, leaderboardRows, leaderboardSnapshots, launchQueue,
-  proposalAssets, proposals,
-  tweetEvidence, xpCalculationRuns, xpSnapshotRows
+  activityEvents, adminActions, ballots, evidenceChecks, proposals, tweetEvidence
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
-import { calculateXpSnapshot } from "./xp";
-import { captureAssetPrices } from "./prices";
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -32,7 +25,7 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   return after;
 }
 
-export async function recheckEvidence(competitionId: string, runId?: string) {
+export async function recheckEvidence(competitionId: string) {
   const database = requireDb();
   const records = await database.select().from(tweetEvidence)
     .where(and(eq(tweetEvidence.competitionId, competitionId), eq(tweetEvidence.status, "valid")))
@@ -58,85 +51,5 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
         if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "disqualified", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
       });
     }
-    if (runId) await database.update(finalizationRuns).set({ cursor: evidence.id }).where(eq(finalizationRuns.id, runId));
   }
-}
-
-export async function finalizeCompetition() {
-  const database = requireDb(); await requireAdmin();
-  const [state] = await database.select().from(competitions).limit(1);
-  const competition = state ? { ...state, ...COMPETITION_RULES } : null;
-  if (!competition || Date.now() < competition.endsAt.getTime()) throw new Error("COMPETITION_NOT_ENDED");
-  if (competition.finalizedAt) {
-    const [leaderboard, xp] = await Promise.all([
-      database.select({ canonicalHash: leaderboardSnapshots.canonicalHash }).from(leaderboardSnapshots).where(eq(leaderboardSnapshots.competitionId, competition.id)).limit(1),
-      database.select({ canonicalHash: xpCalculationRuns.canonicalHash }).from(xpCalculationRuns).where(and(eq(xpCalculationRuns.competitionId, competition.id), eq(xpCalculationRuns.status, "final"))).limit(1),
-    ]);
-    return { alreadyFinalized: true, canonicalHash: leaderboard[0]?.canonicalHash, xpCanonicalHash: xp[0]?.canonicalHash };
-  }
-  const competitionId = competition.id;
-  const [run] = await database.insert(finalizationRuns).values({ competitionId, status: "auditing" }).returning();
-  await database.update(competitions).set({ phase: "auditing", updatedAt: new Date() }).where(eq(competitions.id, competitionId));
-  try {
-    await recheckEvidence(competitionId, run.id);
-    const finalAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
-      .from(proposalAssets)
-      .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
-      .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
-      .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted")));
-    await captureAssetPrices({
-      assetIds: finalAssets.map((asset) => asset.id),
-      sampledAt: new Date(),
-      purpose: "final",
-    });
-    const scored = await database.select({ id: proposals.id, acceptedAt: proposals.acceptedAt, votes: sql<number>`coalesce(sum(case when ${ballots.status} = 'valid' then ${ballotAllocations.votes} else 0 end), 0)::int` })
-      .from(proposals).leftJoin(ballotAllocations, eq(ballotAllocations.proposalId, proposals.id)).leftJoin(ballots, eq(ballots.id, ballotAllocations.ballotId))
-      .where(and(eq(proposals.competitionId, competitionId), eq(proposals.status, "accepted"))).groupBy(proposals.id);
-    const ranked = rankEntries(scored.map((item) => ({ id: item.id, acceptedAt: item.acceptedAt!, votes: item.votes })));
-    const canonical = { competitionId, ruleVersion: competition.ruleVersion, rankingPolicyVersion: competition.rankingPolicyVersion, rows: ranked.map(({ id, rank, votes }) => ({ rank, proposalId: id, votes })) };
-    const canonicalHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-    const xpSnapshot = await calculateXpSnapshot();
-    if (!xpSnapshot) throw new Error("XP_SNAPSHOT_UNAVAILABLE");
-    const launchStartAt = competition.launchStartAt ?? new Date(Date.now() + 86_400_000);
-    await database.transaction(async (transaction) => {
-      const [snapshot] = await transaction.insert(leaderboardSnapshots).values({ competitionId, canonicalHash, canonicalJson: canonical }).returning();
-      if (ranked.length) {
-        await transaction.insert(leaderboardRows).values(ranked.map((row) => ({ snapshotId: snapshot.id, proposalId: row.id, rank: row.rank, votes: row.votes })));
-        await transaction.insert(launchQueue).values(ranked.map((row) => ({ competitionId, proposalId: row.id, rank: row.rank, earliestLaunchAt: earliestLaunchAt(launchStartAt, row.rank, competition.launchIntervalDays) })));
-      }
-      const [xpRun] = await transaction.insert(xpCalculationRuns).values({
-        competitionId,
-        status: "final",
-        calculatedAt: xpSnapshot.calculatedAt,
-        priceCheckpointAt: xpSnapshot.priceCheckpointAt,
-        performanceReleased: xpSnapshot.released.performance,
-        performanceAllocated: xpSnapshot.allocated.performance,
-        participationReleased: xpSnapshot.released.participation,
-        participationAllocated: xpSnapshot.allocated.participation,
-        creatorReleased: xpSnapshot.released.creator,
-        creatorAllocated: xpSnapshot.allocated.creator,
-        canonicalHash: xpSnapshot.canonicalHash,
-        canonicalJson: xpSnapshot.canonical,
-      }).returning({ id: xpCalculationRuns.id });
-      if (xpSnapshot.users.length) await transaction.insert(xpSnapshotRows).values(xpSnapshot.users.map((user) => ({ runId: xpRun.id, ...user })));
-      await transaction.update(competitions).set({ phase: "final", launchStartAt, finalizedAt: new Date(), updatedAt: new Date() }).where(eq(competitions.id, competitionId));
-      await transaction.update(finalizationRuns).set({ status: "complete", completedAt: new Date(), metadata: { canonicalHash, xpCanonicalHash: xpSnapshot.canonicalHash, rows: ranked.length } }).where(eq(finalizationRuns.id, run.id));
-    });
-    return { runId: run.id, canonicalHash, xpCanonicalHash: xpSnapshot.canonicalHash, rows: ranked.length };
-  } catch (error) {
-    await database.update(finalizationRuns).set({ status: "failed", error: error instanceof Error ? error.message : "UNKNOWN" }).where(eq(finalizationRuns.id, run.id));
-    throw error;
-  }
-}
-
-export async function exportLaunchOrder() {
-  const database = requireDb(); await requireAdmin();
-  const [competition] = await database.select({ id: competitions.id }).from(competitions).limit(1);
-  if (!competition) throw new Error("COMPETITION_NOT_FOUND");
-  const competitionId = competition.id;
-  const [snapshot] = await database.select().from(leaderboardSnapshots).where(eq(leaderboardSnapshots.competitionId, competitionId)).limit(1);
-  if (!snapshot) throw new Error("FINALIZATION_NOT_FOUND");
-  const rows = await database.select({ rank: launchQueue.rank, proposalId: launchQueue.proposalId, earliestLaunchAt: launchQueue.earliestLaunchAt, status: launchQueue.status, name: proposals.name, ticker: proposals.ticker, slug: proposals.slug })
-    .from(launchQueue).innerJoin(proposals, eq(proposals.id, launchQueue.proposalId)).where(eq(launchQueue.competitionId, competitionId)).orderBy(launchQueue.rank);
-  return { competitionId, canonicalHash: snapshot.canonicalHash, rows };
 }

@@ -36,7 +36,7 @@ export default async function HomePage() {
     <CompetitionTimeline competition={competition} />
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><span>OTF Leaderboard</span>{leaderboardPreview.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div>
-        <ResponsiveLeaderboard entries={leaderboardPreview} final={competition.phase === "final"} />
+        <ResponsiveLeaderboard entries={leaderboardPreview} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
       <HowItWorks eligibility={eligibility} />

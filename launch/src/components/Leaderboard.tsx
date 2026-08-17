@@ -19,7 +19,7 @@ function RankEmblem({ rank, role }: { rank: number; role?: "rowheader" }) {
   </div>;
 }
 
-export function ResponsiveLeaderboard({ entries, final = false }: { entries: LeaderboardEntry[]; final?: boolean }) {
+export function ResponsiveLeaderboard({ entries }: { entries: LeaderboardEntry[] }) {
   if (!entries.length) return <div className="leaderboardEmpty">
     <Trophy size={24} aria-hidden="true" />
     <div><strong>No OTF proposals yet</strong><p>Create the first OTF to start the leaderboard.</p></div>
@@ -27,7 +27,7 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
   </div>;
 
   return <div className="leaderboard">
-    <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>{final ? "Final votes" : "Votes"}</span></div>
+    <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>Votes</span></div>
     {entries.map((entry) => <Link className="leaderboardRow" href={`/otfs/${entry.slug}`} aria-label={`View ${entry.name} proposal details`} key={entry.id}>
       <RankEmblem rank={entry.rank} />
       <div className="otfIdentity">

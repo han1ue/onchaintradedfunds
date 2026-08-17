@@ -123,7 +123,9 @@ async function prepareProof(proposalId: string, input: unknown) {
 }
 
 async function loadVerifiedProof(proposalId: string, input: unknown) {
-  const parsed = xPostProofSchema.parse(input);
+  const proof = xPostProofSchema.safeParse(input);
+  if (!proof.success) throw new Error("PROOF_MISMATCH");
+  const parsed = proof.data;
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
   const [proposal] = await database.select().from(proposals).where(and(

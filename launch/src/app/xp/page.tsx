@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Clock3, LockKeyhole, Scale, ShieldCheck, TrendingUp, Users, Vote } from "lucide-react";
+import { ArrowRight, Scale, ShieldCheck, TrendingUp, Users, Vote } from "lucide-react";
 import { Callout } from "@/components/ui";
 
 export const metadata = { title: "XP allocation" };
@@ -37,18 +37,6 @@ export default function XpPage() {
           {pools.map((pool) => <div key={pool.key}><span className={`xpLegendSwatch ${pool.key}`} aria-hidden="true" /><div><strong>{pool.label}</strong><small>{pool.value} XP · {pool.share}</small></div></div>)}
         </figcaption>
       </figure>
-    </section>
-
-    <section className="xpTimingSection" aria-labelledby="timing-heading">
-      <div className="xpSectionHeading">
-        <div><h2 id="timing-heading">XP becomes final in three steps</h2><p>Competition activity is recorded now. Allocation happens once, after every required input is available.</p></div>
-        <Clock3 size={22} aria-hidden="true" />
-      </div>
-      <ol className="xpFinalizationFlow">
-        <li><span><Vote size={18} aria-hidden="true" /></span><div><strong>During the competition</strong><p>Valid votes create immutable participation and performance records. No provisional XP is published.</p></div></li>
-        <li><span><LockKeyhole size={18} aria-hidden="true" /></span><div><strong>At competition close</strong><p>Final provider prices are captured and evidence, eligibility, votes, and proposals are audited.</p></div></li>
-        <li><span><CheckCircle2 size={18} aria-hidden="true" /></span><div><strong>After the final audit</strong><p>All four pools are allocated as exact integers and committed as one final snapshot.</p></div></li>
-      </ol>
     </section>
 
     <section className="xpFormulaSection" aria-labelledby="formula-heading">

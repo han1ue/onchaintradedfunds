@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteDistributionSchema, xPostReasonSchema } from "./validation";
+import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteDistributionSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
@@ -90,6 +90,16 @@ describe("proof links", () => {
   it("extracts an immutable post id from X and Twitter URLs", () => {
     expect(parseXPostId("https://x.com/otf/status/1234567890")).toBe("1234567890");
     expect(parseXPostId("https://twitter.com/otf/status/987654321")).toBe("987654321");
+  });
+  it("accepts copied X post links without a URL scheme", () => {
+    const challengeId = "11111111-1111-4111-8111-111111111111";
+    expect(xPostProofSchema.parse({ challengeId, postUrl: "x.com/otf/status/1234567890" }).postUrl)
+      .toBe("https://x.com/otf/status/1234567890");
+    expect(xPostProofSchema.parse({ challengeId, postUrl: " www.twitter.com/otf/status/1234567890 " }).postUrl)
+      .toBe("https://www.twitter.com/otf/status/1234567890");
+  });
+  it("rejects text that is not a post URL", () => {
+    expect(xPostProofSchema.safeParse({ challengeId: assetA, postUrl: "OTF-123" }).success).toBe(false);
   });
   it("rejects lookalike hosts", () => expect(() => parseXPostId("https://x.com.evil.test/a/status/1")).toThrow("PROOF_MISMATCH"));
 });

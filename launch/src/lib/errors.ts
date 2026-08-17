@@ -6,6 +6,9 @@ export const errorMessages: Record<string, string> = {
   ASSETS_NOT_UNIQUE: "Each token contract may appear only once in a proposal.",
   WEIGHTS_NOT_100: "Portfolio weights must total 100%.",
   X_RECONNECT_REQUIRED: "Sign in with X again so OTF Launch can refresh your eligibility.",
+  ACCOUNT_TOO_NEW: "Your X account must be at least 30 days old to submit or vote.",
+  X_UNAVAILABLE: "X verification is temporarily unavailable. Please try again shortly.",
+  X_NOT_FOUND: "That X account or post could not be found. Check it is public and try again.",
   X_POST_NOT_FOUND: "That public X post could not be found. Check the URL and try again.",
   PROOF_AUTHOR_MISMATCH: "This post was not published by your signed-in X account.",
   PROOF_CODE_MISSING: "The post does not contain the required verification code. Publish the prepared text without removing it.",
@@ -14,6 +17,8 @@ export const errorMessages: Record<string, string> = {
   X_RATE_LIMITED: "X is temporarily rate limited. Please try again shortly.",
   RATE_LIMITED: "Too many attempts. Please wait ten minutes and try again.",
   RATE_LIMIT_UNAVAILABLE: "Request protection is temporarily unavailable. Please try again shortly.",
+  TURNSTILE_REQUIRED: "Complete the verification check, then try again.",
+  TURNSTILE_FAILED: "The verification check expired or failed. Complete it again and retry.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
   BALLOT_ALREADY_ACTIVE: "Your ballot is already active. Cast newly unlocked votes from your existing ballot.",
@@ -23,8 +28,7 @@ export const errorMessages: Record<string, string> = {
   VOTES_ARE_FINAL: "Votes already cast cannot be moved or removed. Add only newly unlocked votes.",
   NO_NEW_VOTES: "Add at least one newly unlocked vote before continuing.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
-  COMPETITION_NOT_OPEN: "The competition is not currently open.",
-  FINAL_PRICE_CHECKPOINT_UNAVAILABLE: "The competition-end provider price snapshot is not available yet. Please retry finalization."
+  COMPETITION_NOT_OPEN: "The competition is not currently open."
 };
 
 export class PublicApiError extends Error {

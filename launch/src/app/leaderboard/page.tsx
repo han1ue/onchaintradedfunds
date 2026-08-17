@@ -25,7 +25,7 @@ export default async function LeaderboardPage() {
     </section>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
       <div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div>{leaderboard.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div>
-      <ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} />
+      <ResponsiveLeaderboard entries={leaderboard} />
       <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div>
     </SectionCard>
   </div>;

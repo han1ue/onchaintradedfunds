@@ -672,7 +672,7 @@ button { color: inherit; }
 .xpTotal { min-width: 210px; display: grid; justify-items: end; gap: 7px; padding-bottom: 4px; }
 .xpTotal strong { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .xpTotal span { color: var(--teal-readable); font-size: .64rem; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.xpAllocationOverview, .xpTimingSection, .xpFormulaSection { padding: 28px 0 34px; border-top: 1px solid var(--border); }
+.xpAllocationOverview, .xpFormulaSection { padding: 28px 0 34px; border-top: 1px solid var(--border); }
 .xpSectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; }
 .xpSectionHeading h2 { margin: 0; font-size: clamp(1.25rem, 2.6vw, 1.8rem); letter-spacing: -.025em; }
 .xpSectionHeading p { max-width: 70ch; margin: 8px 0 0; color: var(--text-muted); font-size: .76rem; line-height: 1.55; }
@@ -696,13 +696,6 @@ button { color: inherit; }
 .xpAllocationLegend div > div { min-width: 0; display: grid; gap: 4px; }
 .xpAllocationLegend strong { font-size: .69rem; line-height: 1.35; }
 .xpAllocationLegend small { color: var(--text-muted); font-size: .62rem; font-variant-numeric: tabular-nums; }
-.xpFinalizationFlow { display: grid; grid-template-columns: repeat(3, 1fr); margin: 28px 0 0; padding: 0; list-style: none; }
-.xpFinalizationFlow li { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding-right: 28px; }
-.xpFinalizationFlow li:not(:last-child)::after { content: ""; position: absolute; top: 19px; left: 38px; right: 0; height: 1px; background: var(--border-strong); }
-.xpFinalizationFlow li > span { position: relative; z-index: 1; width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--border)); border-radius: 50%; background: var(--surface); color: var(--teal); }
-.xpFinalizationFlow li > div { position: relative; z-index: 1; padding: 7px 8px; background: var(--surface); }
-.xpFinalizationFlow strong { font-size: .76rem; }
-.xpFinalizationFlow p { max-width: 34ch; margin: 7px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.55; }
 .xpFormulaRows { margin-top: 22px; }
 .xpFormulaRows article { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(250px, auto); align-items: center; gap: 14px; padding: 18px 0; border-top: 1px solid var(--border); }
 .xpFormulaRows article > svg { color: var(--teal); }
@@ -798,9 +791,6 @@ button { color: inherit; }
   .pointsExplainerHeader { grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }
   .xpTotal { justify-items: start; }
   .xpAllocationLegend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .xpFinalizationFlow { grid-template-columns: 1fr; gap: 22px; }
-  .xpFinalizationFlow li { padding-right: 0; }
-  .xpFinalizationFlow li:not(:last-child)::after { top: 38px; bottom: -22px; left: 19px; right: auto; width: 1px; height: auto; }
   .xpFormulaRows article { grid-template-columns: 30px minmax(0, 1fr); }
   .xpFormulaRows code { grid-column: 2; justify-self: start; white-space: normal; }
   .activityRow { grid-template-columns: 34px minmax(0, 1fr); }
