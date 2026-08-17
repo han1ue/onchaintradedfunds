@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { generatedVoterAlias, publicVoterName, rankVotersByParticipation } from "./voter-alias";
+import { generatedVoterAlias, publicVoterName } from "./voter-alias";
 
-describe("voter leaderboard privacy", () => {
+describe("public aliases", () => {
   it("generates a stable funny alias without exposing the username", () => {
     const first = publicVoterName({ userId: "user-secret-id", username: "real_handle", allowRealUsername: false });
     const retry = publicVoterName({ userId: "user-secret-id", username: "real_handle", allowRealUsername: false });
@@ -16,14 +16,5 @@ describe("voter leaderboard privacy", () => {
 
   it("generates different aliases for different users", () => {
     expect(generatedVoterAlias("user-a")).not.toBe(generatedVoterAlias("user-b"));
-  });
-
-  it("ranks voters by valid votes cast", () => {
-    const ranked = rankVotersByParticipation([
-      { userId: "few-votes", votesCast: 3 },
-      { userId: "many-votes", votesCast: 12 },
-    ]);
-    expect(ranked.map((row) => row.userId)).toEqual(["many-votes", "few-votes"]);
-    expect(ranked.map((row) => row.rank)).toEqual([1, 2]);
   });
 });

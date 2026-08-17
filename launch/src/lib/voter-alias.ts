@@ -21,9 +21,3 @@ export function generatedVoterAlias(userId: string) {
 export function publicVoterName(input: { userId: string; username: string; allowRealUsername: boolean }) {
   return input.allowRealUsername ? `@${input.username}` : generatedVoterAlias(input.userId);
 }
-
-export function rankVotersByParticipation<T extends { userId: string; votesCast: number }>(rows: T[]) {
-  return [...rows]
-    .sort((left, right) => right.votesCast - left.votesCast || left.userId.localeCompare(right.userId))
-    .map((row, index) => ({ ...row, rank: index + 1 }));
-}

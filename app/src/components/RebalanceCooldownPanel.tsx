@@ -609,7 +609,7 @@ const uniswapV3SwapRouterAbi = [
   },
 ] as const;
 
-const allocationTones = ["teal", "green", "gold", "blue", "rose", "violet"];
+const allocationTones = ["chart1", "chart2", "chart3", "chart4", "chart5", "chart6"];
 type MulticallRead = ContractFunctionParameters & { chainId: number };
 function configuredFactoryAddress(): `0x${string}` | undefined {
   return robinhoodTestnetAddresses.factory;

@@ -1,6 +1,13 @@
 import type { Allocation } from "@/lib/types";
 
-const fallback = ["#37b7aa", "#56acd3", "#9c8be5", "#f1b93d", "#e9717e", "#2ed09a"];
+const fallback = [
+  "var(--chart-series-1)",
+  "var(--chart-series-2)",
+  "var(--chart-series-3)",
+  "var(--chart-series-4)",
+  "var(--chart-series-5)",
+  "var(--chart-series-6)",
+];
 
 export function AllocationStrip({ allocations, showLabels = true, showPercentages = false }: { allocations: Allocation[]; showLabels?: boolean; showPercentages?: boolean }) {
   return <div className="allocationVisual" aria-label={allocations.map((item) => `${item.symbol} ${item.weightBps / 100}%`).join(", ")}>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import { BadgeCheck, Trophy, UserRound, Users } from "lucide-react";
-import type { LeaderboardEntry, VoterLeaderboardEntry } from "@/lib/types";
+import { BadgeCheck, Trophy } from "lucide-react";
+import type { LeaderboardEntry } from "@/lib/types";
 import { truncateText } from "@/lib/truncate-text";
 import { AllocationStrip } from "./AllocationStrip";
 import { XProfileImage } from "./XProfileImage";
@@ -38,22 +38,5 @@ export function ResponsiveLeaderboard({ entries, final = false }: { entries: Lea
       <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
       <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong></div>
     </Link>)}
-  </div>;
-}
-
-export function VoterLeaderboard({ entries }: { entries: VoterLeaderboardEntry[] }) {
-  if (!entries.length) return <div className="leaderboardEmpty">
-    <Users size={24} aria-hidden="true" />
-    <div><strong>No verified voters yet</strong><p>Voters appear after their first valid vote is verified.</p></div>
-    <Link className="button buttonPrimary" href="/vote">View voting</Link>
-  </div>;
-
-  return <div className="voterLeaderboard" role="table" aria-label="Verified voter participation leaderboard">
-    <div className="voterLeaderboardHeader" role="row"><span role="columnheader">Rank</span><span role="columnheader">Voter</span><span role="columnheader">Participation</span></div>
-    {entries.map((entry) => <div className="voterLeaderboardRow" role="row" key={entry.rank}>
-      <RankEmblem rank={entry.rank} role="rowheader" />
-      <div className="voterIdentity" role="cell"><span className="generatedVoterAvatar" aria-hidden="true"><UserRound size={18} /></span><div><strong>{entry.publicName}</strong><small>{entry.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
-      <span className="voterParticipation" role="cell"><small>{entry.otfsSupported.toLocaleString()} {entry.otfsSupported === 1 ? "OTF" : "OTFs"} backed</small><strong>{entry.votesCast.toLocaleString()} votes cast</strong></span>
-    </div>)}
   </div>;
 }

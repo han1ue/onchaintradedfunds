@@ -48,14 +48,6 @@ export type LeaderboardEntry = {
   proofUrl?: string;
 };
 
-export type VoterLeaderboardEntry = {
-  rank: number;
-  publicName: string;
-  usesRealUsername: boolean;
-  votesCast: number;
-  otfsSupported: number;
-};
-
 export type CompetitionSummary = {
   id: string;
   slug: string;

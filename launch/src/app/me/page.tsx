@@ -10,8 +10,6 @@ import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
 import { activityEvents, ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
 import { getParticipationEligibility } from "@/server/participation";
-import { generatedVoterAlias } from "@/lib/voter-alias";
-import { VoterLeaderboardPrivacyForm } from "@/components/VoterLeaderboardPrivacyForm";
 export const metadata = { title: "My profile" };
 
 type AccountActivity = {
@@ -60,7 +58,6 @@ export default async function MePage() {
   const proposedOtfCount = ownProposals.filter((proposal) => proposal.status !== "draft" && proposal.status !== "posting").length;
   const runningOtfCount = ownProposals.filter((proposal) => proposal.status === "accepted").length;
   const votesAllocated = ownVoteAllocations.filter((allocation) => allocation.status === "valid").reduce((sum, allocation) => sum + allocation.votes, 0);
-  const voterAlias = generatedVoterAlias(session.user.id);
   return <div className="pageShell contentPage">
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
@@ -78,7 +75,6 @@ export default async function MePage() {
       <SectionCard><Activity size={19} /><span>Running</span><strong>{runningOtfCount}</strong></SectionCard>
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
-    <SectionCard className="accountPrivacyCard" id="voter-leaderboard-privacy"><VoterLeaderboardPrivacyForm username={username} generatedAlias={voterAlias} defaultChecked={identity?.showRealUsernameOnVoterLeaderboard ?? false} /></SectionCard>
     <SectionCard className="contentCard"><h2>Activity history</h2>{activity.length ? <div className="activityList">{activity.map((event) => {
       const details = activityDetails(event);
       return <div className="activityRow" key={event.id}><span className={`activityIcon ${details.kind}`} aria-hidden="true">{details.kind === "vote" ? <Vote size={16} /> : details.kind === "proposal" ? <Layers3 size={16} /> : <Activity size={16} />}</span><div className="activityCopy"><strong>{details.title}</strong><small>{details.detail}</small></div><time dateTime={event.occurredAt.toISOString()}>{event.occurredAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>;

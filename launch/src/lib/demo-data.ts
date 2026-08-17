@@ -1,9 +1,15 @@
-import type { CompetitionSummary, EligibleAsset, LeaderboardEntry, VoterLeaderboardEntry } from "./types";
+import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "./types";
 import { COMPETITION_IDENTITY, COMPETITION_RULES, DAY_MS } from "./competition";
 
 export const demoAssets: EligibleAsset[] = [];
 
-const colors = ["#23d7b0", "#59a7ff", "#a982ff", "#f0b65a", "#e56f91"];
+const colors = [
+  "var(--chart-series-1)",
+  "var(--chart-series-3)",
+  "var(--chart-series-5)",
+  "var(--chart-series-4)",
+  "var(--chart-series-6)",
+];
 
 export const demoLeaderboard: LeaderboardEntry[] = [
   {
@@ -30,14 +36,6 @@ export const demoLeaderboard: LeaderboardEntry[] = [
     creator: { xId: "104", username: "marble_fund", displayName: "Marble Fund" }, votes: 19, acceptedAt: "2026-08-12T09:10:00Z",
     allocations: [{ assetId: "asset-msft", symbol: "MSFT", name: "Microsoft", weightBps: 5500, color: colors[1] }, { assetId: "asset-aapl", symbol: "AAPL", name: "Apple", weightBps: 4500, color: colors[3] }]
   }
-];
-
-export const demoVoterLeaderboard: VoterLeaderboardEntry[] = [
-  { rank: 1, publicName: "Turbo Capybara 404", usesRealUsername: false, votesCast: 12, otfsSupported: 4 },
-  { rank: 2, publicName: "Disco Pigeon 808", usesRealUsername: false, votesCast: 11, otfsSupported: 3 },
-  { rank: 3, publicName: "Wobbly Lobster 247", usesRealUsername: false, votesCast: 9, otfsSupported: 2 },
-  { rank: 4, publicName: "@public_voter", usesRealUsername: true, votesCast: 8, otfsSupported: 3 },
-  { rank: 5, publicName: "Sleepy Turnip 613", usesRealUsername: false, votesCast: 6, otfsSupported: 2 },
 ];
 
 const previewStartsAt = new Date(Date.now() - COMPETITION_RULES.submissionOnlyDays * DAY_MS - 60_000);

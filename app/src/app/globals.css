@@ -27,6 +27,12 @@
   --rose: #e9717e;
   --violet: #9c8be5;
   --danger: #eb6570;
+  --chart-series-1: #3cc7b5;
+  --chart-series-2: #f08a5d;
+  --chart-series-3: #6c8cff;
+  --chart-series-4: #f3c44e;
+  --chart-series-5: #b58ae8;
+  --chart-series-6: #e66b9d;
   --radius: 8px;
 }
 
@@ -1712,6 +1718,36 @@ button:disabled {
 
 .violet {
   background: var(--violet);
+}
+
+.allocationSegment.chart1,
+.legendSwatch.chart1 {
+  background: var(--chart-series-1);
+}
+
+.allocationSegment.chart2,
+.legendSwatch.chart2 {
+  background: var(--chart-series-2);
+}
+
+.allocationSegment.chart3,
+.legendSwatch.chart3 {
+  background: var(--chart-series-3);
+}
+
+.allocationSegment.chart4,
+.legendSwatch.chart4 {
+  background: var(--chart-series-4);
+}
+
+.allocationSegment.chart5,
+.legendSwatch.chart5 {
+  background: var(--chart-series-5);
+}
+
+.allocationSegment.chart6,
+.legendSwatch.chart6 {
+  background: var(--chart-series-6);
 }
 
 .assetTableWrap {

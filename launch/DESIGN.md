@@ -22,6 +22,12 @@ colors:
   rose: "#e9717e"
   violet: "#9c8be5"
   danger: "#eb6570"
+  chart-series-1: "#3cc7b5"
+  chart-series-2: "#f08a5d"
+  chart-series-3: "#6c8cff"
+  chart-series-4: "#f3c44e"
+  chart-series-5: "#b58ae8"
+  chart-series-6: "#e66b9d"
 typography:
   display:
     fontFamily: 'Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
@@ -140,7 +146,7 @@ Visual identity comes from disciplined density rather than ornament. Teal signal
 
 ## Colors
 
-The palette is a cool near-black neutral ladder with a single teal interaction voice and a small set of semantic status and allocation hues.
+The palette is a cool near-black neutral ladder with a single teal interaction voice, a small set of semantic status hues, and a dedicated categorical data palette.
 
 ### Primary
 
@@ -158,6 +164,11 @@ The palette is a cool near-black neutral ladder with a single teal interaction v
 - **Review Gold:** Warning, timing, and first-rank emphasis.
 - **Portfolio Rose:** Allocation-series differentiation; danger uses its separate semantic token.
 - **Portfolio Violet:** Allocation-series differentiation only.
+
+### Data visualization
+
+- **Categorical series:** Teal, coral, blue, gold, violet, and magenta are ordered to maximize adjacent hue separation in allocation bars. These tokens remain independent of action and status colors, including in branded themes.
+- **Segment boundaries:** Stacked bars retain a one-pixel dark separator, and labels or aligned legends remain visible so color is never the only cue.
 
 ### Neutral
 

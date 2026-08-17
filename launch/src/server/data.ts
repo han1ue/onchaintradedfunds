@@ -1,7 +1,6 @@
-import { demoAssets, demoCompetition, demoLeaderboard, demoVoterLeaderboard } from "@/lib/demo-data";
+import { demoAssets, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
 import { COMPETITION_IDENTITY, COMPETITION_RULES } from "@/lib/competition";
-import type { CompetitionSummary, EligibleAsset, LeaderboardEntry, VoterLeaderboardEntry } from "@/lib/types";
-import { publicVoterName, rankVotersByParticipation } from "@/lib/voter-alias";
+import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "@/lib/types";
 import { sqlClient } from "./db";
 
 export async function getCompetition(): Promise<CompetitionSummary> {
@@ -124,39 +123,6 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
         left join asset_markets am on am.id = pa.market_id where pa.proposal_id = o.id), '[]') as allocations
     from ordered o order by o.rank`;
   return rows;
-}
-
-export async function getVoterLeaderboard(): Promise<VoterLeaderboardEntry[]> {
-  if (!sqlClient) return demoVoterLeaderboard;
-  const rows = await sqlClient<{
-    userId: string;
-    username: string;
-    allowRealUsername: boolean;
-    votesCast: number;
-    otfsSupported: number;
-  }[]>`
-    with voter_scores as (
-      select u.id as user_id, u.x_username,
-        u.show_real_username_on_voter_leaderboard as allow_real_username,
-        coalesce(sum(ba.votes), 0)::int as votes_cast,
-        count(distinct ba.proposal_id)::int as otfs_supported
-      from competitions c
-      join ballots b on b.competition_id = c.id and b.status = 'valid'
-      join users u on u.id = b.voter_user_id
-      left join ballot_allocations ba on ba.ballot_id = b.id
-      group by b.id, u.id
-    )
-    select user_id as "userId", x_username as username, allow_real_username as "allowRealUsername",
-      votes_cast as "votesCast", otfs_supported as "otfsSupported"
-    from voter_scores
-    order by votes_cast desc, user_id`;
-  return rankVotersByParticipation(rows).map((row) => ({
-    rank: row.rank,
-    publicName: publicVoterName(row),
-    usesRealUsername: row.allowRealUsername,
-    votesCast: row.votesCast,
-    otfsSupported: row.otfsSupported,
-  }));
 }
 
 export async function getProposal(slug: string) {

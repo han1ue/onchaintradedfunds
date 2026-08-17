@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, Clock3 } from "lucide-react";
-import { ResponsiveLeaderboard, VoterLeaderboard } from "@/components/Leaderboard";
+import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { Button, SectionCard, StatusBadge } from "@/components/ui";
-import { getCompetition, getLeaderboard, getVoterLeaderboard } from "@/server/data";
+import { getCompetition, getLeaderboard } from "@/server/data";
 import { getCompetitionStatus } from "@/lib/competition";
 
 export const metadata = { title: "Leaderboard" };
 
-export default async function LeaderboardPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const view = (await searchParams).view === "voters" ? "voters" : "otfs";
-  const [competition, leaderboard, voters] = await Promise.all([getCompetition(), getLeaderboard(), getVoterLeaderboard()]);
+export default async function LeaderboardPage() {
+  const [competition, leaderboard] = await Promise.all([getCompetition(), getLeaderboard()]);
   const preview = competition.id.startsWith("preview");
   const status = getCompetitionStatus(competition);
 
@@ -17,20 +16,17 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
     <section className="leaderboardPageHeader">
       <div>
         <h1>Leaderboard</h1>
-        <p>Track OTF launch rank or compare verified voters by valid participation.</p>
+        <p>Track the community ranking that becomes OTF launch order.</p>
       </div>
       <div className="leaderboardSummary">
         <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
         <span><Clock3 size={14} /> {status.deadlineLabel} {status.deadlineAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
       </div>
     </section>
-    <nav className="leaderboardViewTabs" aria-label="Leaderboard view">
-      <Link href="/leaderboard" aria-current={view === "otfs" ? "page" : undefined}>OTFs</Link>
-      <Link href="/leaderboard?view=voters" aria-current={view === "voters" ? "page" : undefined}>Voters</Link>
-    </nav>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
-      {view === "otfs" ? <><div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div>{leaderboard.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div><ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} /><div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div></>
-        : <><div className="cardHeading"><div><span>Voter participation</span><small>{voters.length} ranked {voters.length === 1 ? "participant" : "participants"}</small></div><div className="leaderboardHeadingActions"><Link className="button buttonSecondary leaderboardPrivacyButton" href="/me#voter-leaderboard-privacy">Manage my public name</Link>{voters.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div></div><VoterLeaderboard entries={voters} /><div className="cardFooter"><span>{preview ? "Preview data shown. Participation is illustrative." : "Valid votes cast determine this participation view. Generated aliases protect voter identity by default."}</span><Link href="/rules#voting">How voting works <ArrowRight size={14} /></Link></div></>}
+      <div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div>{leaderboard.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div>
+      <ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} />
+      <div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div>
     </SectionCard>
   </div>;
 }
