@@ -154,8 +154,10 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   return <div className="assetMarketPicker">
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
-        <span className="assetPickerIdentity"><strong>{selectedSymbol}</strong><small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small></span>
-        <StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Unverified"}</StatusBadge>
+        <span className="assetPickerIdentity">
+          <span className="assetPickerTicker"><StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Unverified"}</StatusBadge><strong>{selectedSymbol}</strong></span>
+          <small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small>
+        </span>
       </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
       <ChevronDown size={15} aria-hidden="true" />
     </button>
@@ -163,13 +165,19 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       <label className="assetPickerSearch"><Search size={15} aria-hidden="true" /><span className="srOnly">Search verified assets</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ticker, or contract address" /></label>
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
-          <span className="assetPickerIdentity"><strong>{selectedMetadata.symbol} <small>{selectedMetadata.name}</small></strong><code>Edit contract and Uniswap V3 pool</code></span>
-          <StatusBadge tone="warning">Unverified</StatusBadge>
+          <span className="assetPickerIdentity">
+            <span className="assetPickerTicker"><StatusBadge tone="warning">Unverified</StatusBadge><strong>{selectedMetadata.symbol}</strong></span>
+            <small>{selectedMetadata.name}</small>
+            <code>Edit contract and Uniswap V3 pool</code>
+          </span>
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
-          <span className="assetPickerIdentity"><strong>{asset.symbol} <small>{asset.name}</small></strong><code>{asset.network} · {asset.contractAddress}</code></span>
+          <span className="assetPickerIdentity">
+            <span className="assetPickerTicker"><StatusBadge tone="positive">Verified</StatusBadge><strong>{asset.symbol}</strong></span>
+            <small>{asset.name}</small>
+            <code>{asset.network} · {asset.contractAddress}</code>
+          </span>
           <span className="assetPickerOptionStatus">
-            <StatusBadge tone="positive">Verified</StatusBadge>
             {asset.id === assetId && <Check size={15} aria-hidden="true" />}
           </span>
         </button>)}
