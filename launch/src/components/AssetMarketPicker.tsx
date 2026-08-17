@@ -1,12 +1,12 @@
 "use client";
 
-import { Check, ChevronDown, CircleAlert, CircleCheck, CircleDot, Search, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, CircleAlert, CircleCheck, CircleDot, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssetMarketRequirement, AssetMarketValidationResponse } from "@/lib/asset-market-validation";
 import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
 import type { EligibleAsset, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
-import { Button, StatusBadge } from "./ui";
+import { Button } from "./ui";
 
 type Props = {
   assets: EligibleAsset[];
@@ -155,7 +155,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity">
-          <span className="assetPickerTicker"><StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Unverified"}</StatusBadge><strong>{selectedSymbol}</strong></span>
+          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected ? <BadgeCheck className="assetPickerVerificationIcon" size={14} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={14} aria-label="Unverified asset" />}</span>
           <small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small>
         </span>
       </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
@@ -166,14 +166,14 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><StatusBadge tone="warning">Unverified</StatusBadge><strong>{selectedMetadata.symbol}</strong></span>
+            <span className="assetPickerTicker"><strong>{selectedMetadata.symbol}</strong><CircleAlert className="assetPickerVerificationIcon unverified" size={14} aria-label="Unverified asset" /></span>
             <small>{selectedMetadata.name}</small>
             <code>Edit contract and Uniswap V3 pool</code>
           </span>
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><StatusBadge tone="positive">Verified</StatusBadge><strong>{asset.symbol}</strong></span>
+            <span className="assetPickerTicker"><strong>{asset.symbol}</strong><BadgeCheck className="assetPickerVerificationIcon" size={14} aria-label="Verified asset" /></span>
             <small>{asset.name}</small>
             <code>{asset.network} · {asset.contractAddress}</code>
           </span>
