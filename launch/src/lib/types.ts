@@ -119,6 +119,17 @@ export type BallotSummary = {
   allocations: VoteAllocation[];
 };
 
+export type PortfolioReturnPoint = {
+  timestamp: string;
+  returnPct: number;
+};
+
+export type PortfolioReturns = {
+  proposedAt: string;
+  trackingStartedAt: string | null;
+  points: PortfolioReturnPoint[];
+};
+
 export type XpLeaderboardRow = {
   userId?: string;
   publicName: string;

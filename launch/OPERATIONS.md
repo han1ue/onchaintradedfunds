@@ -21,7 +21,7 @@
 ## During the competition
 
 - Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
-- Run `/api/jobs/prices` hourly. It stores CoinGecko/GT eligibility evidence and recomputes live participation and creator XP; it does not capture interim performance prices.
+- Run `/api/jobs/prices` every 30 minutes. It stores provider prices for every catalog asset, updates CoinGecko/GT eligibility evidence, feeds proposal return charts, and recomputes live participation and creator XP.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 

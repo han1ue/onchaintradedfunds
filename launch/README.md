@@ -35,7 +35,7 @@ Hourly checkpoints use Robinhood bid quotes for stock tokens and the public Coin
 - Finalization rechecks evidence before creating the leaderboard snapshot and private launch queue in one transaction.
 - Public launch-order responses contain rank only. The private administrator export contains readiness dates and the canonical hash.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` retains market-bid checkpoints hourly at minute 17 and rechecks public X evidence once daily at 02:42 UTC. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` retains provider-price checkpoints every 30 minutes, at minutes 17 and 47, and rechecks public X evidence once daily at 02:42 UTC. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
 
 ## Vercel
 

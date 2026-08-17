@@ -1,6 +1,8 @@
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
-import { requireDb } from "./db";
+import type { PortfolioReturns } from "@/lib/types";
+import { calculatePortfolioReturns } from "@/lib/returns";
+import { requireDb, sqlClient } from "./db";
 import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
 import { env } from "./env";
 
@@ -192,4 +194,35 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
   });
   if (missing.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing, provider });
   return { runId: run.id, sampledAt, stored: stored.length, complete: missing.length === 0, missing };
+}
+
+export async function getProposalReturns(
+  proposalId: string,
+  proposedAt: string,
+  allocations: { assetId: string; symbol: string; name: string; weightBps: number }[],
+): Promise<PortfolioReturns> {
+  if (!sqlClient) {
+    const start = new Date(proposedAt).getTime();
+    const shape = [0, 0.42, 0.18, 0.86, 0.61, 1.24, 1.08, 1.73, 1.51, 2.06, 1.88, 2.34];
+    const direction = proposalId.length % 2 === 0 ? 1 : -1;
+    const points = shape.map((returnPct, index) => ({
+      timestamp: new Date(start + index * 6 * 60 * 60_000).toISOString(),
+      returnPct: returnPct * direction,
+    }));
+    return { proposedAt, trackingStartedAt: points[0].timestamp, points };
+  }
+  const assetIds = allocations.map((allocation) => allocation.assetId);
+  if (assetIds.length === 0) return { proposedAt, trackingStartedAt: null, points: [] };
+
+  const rows = await sqlClient<{ assetId: string; sampledAt: string; bidUsd: number }[]>`
+    select aps.asset_id::text as "assetId", aps.sampled_at::text as "sampledAt", aps.bid_usd::float8 as "bidUsd"
+    from asset_price_snapshots aps
+    join price_capture_runs pcr on pcr.id = aps.capture_run_id and pcr.purpose = 'scoring'
+    join proposal_assets pa on pa.asset_id = aps.asset_id
+    where pa.proposal_id = ${proposalId}::uuid
+      and aps.asset_id in ${sqlClient(assetIds)}
+      and aps.sampled_at >= ${proposedAt}::timestamptz
+    order by aps.sampled_at asc, aps.asset_id asc`;
+  const points = calculatePortfolioReturns(allocations, rows);
+  return { proposedAt, trackingStartedAt: points[0]?.timestamp ?? null, points };
 }

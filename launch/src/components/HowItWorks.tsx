@@ -11,7 +11,7 @@ export function HowItWorks({ eligibility }: { eligibility: ParticipationEligibil
   return <SectionCard className="howCard"><div className="cardHeading"><span>How it works</span></div>
     <ol className="steps">{steps.map(({ icon: Icon, title, text }, index) => <li key={title}><div className="stepIcon"><Icon size={20} /></div><span className="stepNumber">{index + 1}</span><div><strong>{title}</strong><p>{text}</p></div></li>)}</ol>
     <div className="howActions">
-      <Button href="/vote">Go to voting</Button>
+      <Button href="/vote">Vote</Button>
       <p className="finePrint">We never post anything on your behalf.</p>
     </div>
   </SectionCard>;

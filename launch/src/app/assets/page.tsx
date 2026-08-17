@@ -62,7 +62,7 @@ export default async function AssetsPage() {
               <span>{shortAddress(asset.contractAddress)}</span><ExternalLink size={13} aria-hidden="true" />
             </a>}
         </div>)}
-        <Callout tone="warning"><strong>Prices are saved checkpoints, not live quotes.</strong> The hourly job stores the latest available provider price in the OTF database.</Callout>
+        <Callout tone="warning"><strong>Prices are saved checkpoints, not live quotes.</strong> The 30-minute job stores the latest available provider price in the OTF database.</Callout>
       </>}
     </SectionCard>
   </div>;

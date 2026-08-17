@@ -14,7 +14,7 @@ vi.mock("@/server/xp", () => ({ recomputeLiveXp: mocks.recomputeLiveXp }));
 
 import { GET } from "./route";
 
-describe("hourly price job", () => {
+describe("30-minute price job", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.captureAssetPrices.mockResolvedValue({ stored: 46, complete: true });
@@ -22,7 +22,7 @@ describe("hourly price job", () => {
     mocks.recomputeLiveXp.mockResolvedValue({ runId: "xp-run" });
   });
 
-  it("stores an hourly scoring checkpoint before recomputing XP", async () => {
+  it("stores a scoring checkpoint before recomputing XP", async () => {
     const response = await GET(new Request("https://launch.example/api/jobs/prices"));
 
     expect(mocks.assertCron).toHaveBeenCalledOnce();

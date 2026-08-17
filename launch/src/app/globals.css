@@ -190,6 +190,9 @@ button { color: inherit; }
 .otfIdentity { min-width: 0; display: flex; align-items: center; gap: 11px; padding-right: 18px; }
 .otfIdentity svg { flex: 0 0 auto; }
 .otfIdentity > div { min-width: 0; }
+.otfTitleLine { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.otfTitleLine .statusBadge { flex: 0 0 auto; min-height: 16px; gap: 3px; padding: 0 5px; font-size: .52rem; line-height: 1; }
+.otfTitleLine .statusBadge::before { width: 4px; height: 4px; box-shadow: none; }
 .otfName { display: inline-block; max-width: 100%; font-size: .86rem; font-weight: 700; transition: color .15s ease; }
 .leaderboardRow:hover .otfName { color: var(--teal); }
 .otfIdentity p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--text-muted); font-size: .71rem; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -487,7 +490,7 @@ button { color: inherit; }
 .postAction > .button { width: 100%; }
 .postAssurance { margin: 0; color: var(--text-muted); font-size: .66rem; line-height: 1.4; text-align: center; }
 .formMessage { margin: 14px 0 0; color: var(--gold); font-size: .75rem; }
-.turnstile { width: 100%; max-width: 100%; min-width: 0; min-height: 65px; display: grid; align-items: center; overflow: clip; contain: inline-size; }
+.turnstile { width: 100%; max-width: 100%; min-width: 0; min-height: 65px; display: grid; align-items: center; overflow: hidden; contain: inline-size; }
 .turnstile > div,
 .turnstile iframe { width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
 .turnstileComplete { height: 0; min-height: 0; visibility: hidden; }
@@ -510,6 +513,8 @@ button { color: inherit; }
 .allocationTable small { color: var(--text-muted); }
 .assetDot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
 .portfolioReturns { min-width: 0; }
+.portfolioAllocationSection { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.portfolioAllocationSection > h2 { margin-top: 0; }
 .returnsHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
 .returnsHeading h2 { margin: 0; font-size: 1rem; letter-spacing: -.015em; }
 .returnsHeading p { margin: 5px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
@@ -623,7 +628,8 @@ button { color: inherit; }
 .privacyChoice > span { display: grid; gap: 3px; }
 .privacyChoice strong { font-size: .72rem; }
 .privacyChoice small { color: var(--text-muted); font-size: .65rem; line-height: 1.45; }
-.proofFlow { display: grid; gap: 16px; }
+.proofFlow { min-width: 0; display: grid; gap: 16px; }
+.proofFlow > * { min-width: 0; }
 .proofFlow .button { width: 100%; }
 .proofLink { margin: 12px 4px; color: var(--text-muted); }
 .proofCard { max-width: 620px; margin: 80px auto; text-align: center; }

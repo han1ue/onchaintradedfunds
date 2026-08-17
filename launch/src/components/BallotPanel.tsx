@@ -194,7 +194,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
       const controlsLocked = busy || Boolean(challenge);
       return <div className="ballotRow" key={proposal.id}>
         <OtfTokenIcon ticker={proposal.ticker} size={38} />
-        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} community votes</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} cast here</small>}</div>
+        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} cast here</small>}</div>
         <div className="voteStepper" role="group" aria-label={`Votes for ${proposal.name}`}>
           <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || value <= committed} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
           <strong aria-live="polite">{value}</strong>
