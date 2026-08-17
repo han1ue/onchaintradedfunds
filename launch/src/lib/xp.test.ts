@@ -17,7 +17,7 @@ import {
 const votingStartsAt = new Date("2026-08-08T00:00:00Z");
 const votingEndsAt = new Date("2026-09-07T00:00:00Z");
 
-describe("Live XP policy", () => {
+describe("XP allocation policy", () => {
   it("keeps the verified pool at a 100% boost while distributing exactly 10M XP", () => {
     expect(XP_POOLS.verifiedPerformance).toBe(XP_POOLS.nonVerifiedPerformance * 2);
     expect(XP_POOLS.performance + XP_POOLS.participation + XP_POOLS.creator).toBe(10_000_000);

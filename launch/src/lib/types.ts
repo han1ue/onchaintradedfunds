@@ -52,7 +52,6 @@ export type VoterLeaderboardEntry = {
   rank: number;
   publicName: string;
   usesRealUsername: boolean;
-  totalXp: number;
   votesCast: number;
   otfsSupported: number;
 };
@@ -146,7 +145,7 @@ export type XpLeaderboardRow = {
 };
 
 export type XpLeaderboard = {
-  status: "live" | "final";
+  status: "final";
   calculatedAt: string;
   priceCheckpointAt: string | null;
   released: { performance: number; verifiedPerformance: number; nonVerifiedPerformance: number; participation: number; creator: number; total: number };

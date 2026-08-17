@@ -229,10 +229,10 @@ button { color: inherit; }
 .leaderboardViewTabs a:hover { color: var(--text); background: var(--card-raised); }
 .leaderboardViewTabs a[aria-current="page"] { background: color-mix(in srgb, var(--teal) 11%, var(--surface)); color: var(--teal-readable); }
 .leaderboardPrivacyButton { min-height: 32px; height: 32px; font-size: .68rem; }
-.voterLeaderboardHeader, .voterLeaderboardRow { display: grid; grid-template-columns: 84px minmax(240px, 1fr) 180px 140px; align-items: center; gap: 12px; }
+.voterLeaderboardHeader, .voterLeaderboardRow { display: grid; grid-template-columns: 84px minmax(240px, 1fr) 220px; align-items: center; gap: 12px; }
 .voterLeaderboardHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .63rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
 .voterLeaderboardHeader span:first-child { text-align: center; transform: translateX(-4px); }
-.voterLeaderboardHeader span:nth-last-child(-n+2) { text-align: right; }
+.voterLeaderboardHeader span:last-child { text-align: right; }
 .voterLeaderboardRow { min-height: 78px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .voterLeaderboardRow:last-child { border-bottom: 0; }
 .voterLeaderboardRow:hover { background: rgb(var(--accent-rgb) / 2.5%); }
@@ -241,10 +241,9 @@ button { color: inherit; }
 .voterIdentity > div { min-width: 0; display: grid; gap: 3px; }
 .voterIdentity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
 .voterIdentity small { color: var(--text-muted); font-size: .64rem; }
-.voterParticipation, .voterXp { display: grid; justify-items: end; gap: 3px; }
-.voterParticipation small, .voterXp small { color: var(--text-muted); font-size: .58rem; font-weight: 650; text-transform: uppercase; }
+.voterParticipation { display: grid; justify-items: end; gap: 3px; }
+.voterParticipation small { color: var(--text-muted); font-size: .58rem; font-weight: 650; text-transform: uppercase; }
 .voterParticipation strong { font-size: .76rem; }
-.voterXp strong { color: var(--teal-readable); font-size: 1rem; }
 .fullLeaderboardCard { overflow: hidden; }
 
 .howCard { padding-bottom: 16px; }
@@ -657,16 +656,6 @@ button { color: inherit; }
 .accountMetrics svg { grid-row: 1 / 3; color: var(--teal); }
 .accountMetrics span { color: var(--text-muted); font-size: .66rem; text-transform: uppercase; }
 .accountMetrics strong { font-size: .88rem; text-transform: capitalize; }
-.accountXpSummary { display: grid; grid-template-columns: minmax(190px, .9fr) minmax(360px, 1.4fr) auto; align-items: center; gap: 18px; margin-bottom: 12px; padding: 16px; }
-.accountXpSummary > div:first-child { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 8px; }
-.accountXpSummary > div:first-child svg { grid-row: 1 / 3; color: var(--teal); }
-.accountXpSummary > div:first-child span { color: var(--text-muted); font-size: .62rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
-.accountXpSummary > div:first-child strong { font-size: .92rem; }
-.accountXpSummary dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
-.accountXpSummary dl > div { padding-left: 11px; border-left: 1px solid var(--border); }
-.accountXpSummary dt { color: var(--text-muted); font-size: .58rem; text-transform: uppercase; }
-.accountXpSummary dd { margin: 4px 0 0; font-size: .72rem; font-weight: 700; }
-.accountXpActions { display: grid; justify-items: end; gap: 5px; color: var(--text-muted); font-size: .62rem; }
 .accountPrivacyCard { width: 100%; margin-bottom: 12px; padding: 18px; scroll-margin-top: 72px; }
 .voterPrivacyForm { width: 100%; }
 .voterPrivacyChoice { width: 100%; grid-template-columns: auto minmax(0, 1fr); align-items: center; cursor: default; }
@@ -702,67 +691,55 @@ button { color: inherit; }
 .proposalPage > .callout { margin: -6px 0 14px; }
 .allocationTable code { display: block; max-width: min(62vw, 520px); margin-top: 3px; overflow: hidden; color: var(--text-muted); font-size: .61rem; text-overflow: ellipsis; white-space: nowrap; }
 
-.pointsPage { max-width: 1180px; }
-.pointsHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 36px; margin-bottom: 18px; }
-.pointsTitleLine { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.pointsTitleLine h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1; letter-spacing: -.04em; }
-.pointsHeader p { max-width: 690px; margin: 13px 0 0; color: var(--text-soft); font-size: .88rem; line-height: 1.6; }
-.pointsRelease { flex: 0 0 auto; display: grid; justify-items: end; gap: 6px; }
-.pointsRelease > span, .pointsRelease > small { color: var(--text-muted); font-size: .67rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.pointsRelease strong { font-size: clamp(1.65rem, 3vw, 2.35rem); line-height: 1; letter-spacing: -.04em; }
-.pointsRelease strong small { color: var(--teal); font-size: .72rem; letter-spacing: .04em; }
-.pointsMeta { min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px 20px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: color-mix(in srgb, var(--card) 78%, transparent); color: var(--text-muted); font-size: .67rem; }
-.pointsMeta span { display: inline-flex; align-items: center; gap: 6px; }
-.pointsMeta svg { color: var(--teal); }
-.xpPoolStrip { display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-.xpPoolStrip > section { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 3px 8px; padding: 15px 16px; }
-.xpPoolStrip svg { grid-row: 1 / 4; color: var(--teal); }
-.xpPoolStrip span { color: var(--text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.xpPoolStrip strong { font-size: 1.08rem; letter-spacing: -.02em; }
-.xpPoolStrip small { color: var(--text-muted); font-size: .65rem; }
-.xpPerformancePool { grid-column: span 1; }
-.xpPerformanceSplit { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, max-content); gap: 30px; justify-content: start; margin-top: 7px; }
-.xpPerformanceSplit > div { display: grid; gap: 3px; }
-.xpPerformanceSplit > div + div { padding-left: 30px; border-left: 1px solid var(--border); }
-.xpPerformanceSplit > div > span { font-size: .58rem; }
-.myXpSummary { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(390px, 1.4fr) auto; align-items: center; gap: 20px; margin-bottom: 12px; padding: 16px 18px; border-color: color-mix(in srgb, var(--teal) 38%, var(--border)); background: color-mix(in srgb, var(--teal) 4%, var(--card)); }
-.myXpIdentity { display: flex; align-items: center; gap: 11px; }
-.myXpIdentity > svg { color: var(--teal); }
-.myXpIdentity div { display: grid; gap: 3px; }
-.myXpIdentity span { color: var(--text-muted); font-size: .64rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.myXpIdentity strong { font-size: 1.12rem; }
-.myXpSummary dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
-.myXpSummary dl > div { display: grid; gap: 3px; padding-left: 12px; border-left: 1px solid var(--border); }
-.myXpSummary dt { color: var(--text-muted); font-size: .61rem; text-transform: uppercase; }
-.myXpSummary dd { margin: 0; font-size: .8rem; font-weight: 700; }
-.xpLeaderboardCard { margin-bottom: 12px; overflow: hidden; }
-.xpTableIntro { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.xpTableIntro h2 { margin: 0; font-size: .98rem; }
-.xpTableIntro p { margin: 5px 0 0; color: var(--text-muted); font-size: .7rem; }
-.xpTableIntro > span { color: var(--text-muted); font-size: .68rem; }
-.xpTableHeader, .xpTableRow { display: grid; grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(112px, .72fr)) 88px minmax(105px, .7fr); align-items: center; gap: 12px; }
-.xpTableHeader { min-height: 34px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .59rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
-.xpTableHeader span:not(:first-child), .xpTableRow > span, .xpTableRow > strong { text-align: right; }
-.xpTableRow { min-height: 70px; padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: .73rem; }
-.xpTableRow:last-child { border-bottom: 0; }
-.xpTableRow:hover { background: color-mix(in srgb, var(--teal) 3%, transparent); }
-.xpParticipant { min-width: 0; display: grid; grid-template-columns: 25px 30px minmax(0, 1fr); align-items: center; gap: 8px; }
-.xpRank { color: var(--text-muted); font-size: .7rem; text-align: center; }
-.xpParticipant > div { min-width: 0; display: grid; gap: 2px; }
-.xpParticipant strong, .xpParticipant small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.xpParticipant strong { font-size: .75rem; }
-.xpParticipant small { color: var(--text-muted); font-size: .64rem; }
-.xpAliasAvatar { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--border)); border-radius: 50%; background: color-mix(in srgb, var(--teal) 6%, var(--surface)); color: var(--teal); }
-.xpTableRow > span { display: grid; justify-items: end; gap: 4px; }
-.xpTableRow > strong { font-size: .82rem; color: var(--teal); }
-.xpPending, .xpBoost { width: fit-content; max-width: 150px; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--gold) 5%, transparent); color: var(--gold); font-size: .56rem; font-weight: 650; line-height: 1.25; text-align: center; }
-.xpMobileStatuses { display: none; }
-.xpEmpty { min-height: 190px; display: grid; justify-items: center; align-content: center; gap: 7px; padding: 24px; color: var(--text-muted); text-align: center; }
-.xpEmpty svg { color: var(--teal); }
-.xpEmpty strong { color: var(--text); font-size: .84rem; }
-.xpEmpty p { margin: 0; font-size: .7rem; }
-.pointsPage > .callout { display: flex; align-items: flex-start; gap: 9px; }
-.pointsPage > .callout svg { flex: 0 0 auto; margin-top: 1px; color: var(--gold); }
+.pointsPage { max-width: 1120px; }
+.pointsExplainerHeader { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 48px; margin-bottom: 44px; }
+.pointsExplainerHeader h1 { max-width: 720px; margin: 0; font-size: clamp(2.2rem, 5vw, 4.5rem); line-height: .98; letter-spacing: -.04em; text-wrap: balance; }
+.pointsExplainerHeader p { max-width: 70ch; margin: 18px 0 0; color: var(--text-soft); font-size: .94rem; line-height: 1.65; }
+.xpTotal { min-width: 210px; display: grid; justify-items: end; gap: 7px; padding-bottom: 4px; }
+.xpTotal strong { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.xpTotal span { color: var(--teal-readable); font-size: .64rem; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
+.xpAllocationOverview, .xpTimingSection, .xpFormulaSection { padding: 28px 0 34px; border-top: 1px solid var(--border); }
+.xpSectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; }
+.xpSectionHeading h2 { margin: 0; font-size: clamp(1.25rem, 2.6vw, 1.8rem); letter-spacing: -.025em; }
+.xpSectionHeading p { max-width: 70ch; margin: 8px 0 0; color: var(--text-muted); font-size: .76rem; line-height: 1.55; }
+.xpSectionHeading > svg { flex: 0 0 auto; color: var(--teal); }
+.xpAllocationFigure { margin: 28px 0 0; }
+.xpAllocationBar { height: 68px; display: flex; overflow: hidden; border-radius: 10px; background: var(--surface); }
+.xpAllocationSegment { min-width: 0; display: grid; place-items: center; color: #061915; font-size: .76rem; font-variant-numeric: tabular-nums; }
+.xpAllocationSegment b { padding: 4px 6px; }
+.xpAllocationSegment.verified { flex: 35; background: var(--teal); }
+.xpAllocationSegment.nonVerified { flex: 17.5; background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
+.xpAllocationSegment.participation { flex: 27.5; background: var(--blue); }
+.xpAllocationSegment.creator { flex: 20; background: var(--gold); }
+.xpAllocationLegend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 16px; }
+.xpAllocationLegend > div { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 9px; }
+.xpLegendSwatch { width: 9px; height: 9px; margin-top: 3px; border-radius: 2px; }
+.xpLegendSwatch.verified { background: var(--teal); }
+.xpLegendSwatch.nonVerified { background: color-mix(in srgb, var(--teal) 58%, var(--blue)); }
+.xpLegendSwatch.participation { background: var(--blue); }
+.xpLegendSwatch.creator { background: var(--gold); }
+.xpAllocationLegend div > div { min-width: 0; display: grid; gap: 4px; }
+.xpAllocationLegend strong { font-size: .69rem; line-height: 1.35; }
+.xpAllocationLegend small { color: var(--text-muted); font-size: .62rem; font-variant-numeric: tabular-nums; }
+.xpFinalizationFlow { display: grid; grid-template-columns: repeat(3, 1fr); margin: 28px 0 0; padding: 0; list-style: none; }
+.xpFinalizationFlow li { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding-right: 28px; }
+.xpFinalizationFlow li:not(:last-child)::after { content: ""; position: absolute; top: 19px; left: 38px; right: 0; height: 1px; background: var(--border-strong); }
+.xpFinalizationFlow li > span { position: relative; z-index: 1; width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--border)); border-radius: 50%; background: var(--surface); color: var(--teal); }
+.xpFinalizationFlow li > div { position: relative; z-index: 1; padding: 7px 4px 0 0; background: var(--surface); }
+.xpFinalizationFlow strong { font-size: .76rem; }
+.xpFinalizationFlow p { max-width: 34ch; margin: 7px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.55; }
+.xpFormulaRows { margin-top: 22px; }
+.xpFormulaRows article { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(250px, auto); align-items: center; gap: 14px; padding: 18px 0; border-top: 1px solid var(--border); }
+.xpFormulaRows article > svg { color: var(--teal); }
+.xpFormulaRows h3 { margin: 0; font-size: .84rem; }
+.xpFormulaRows p { max-width: 68ch; margin: 6px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.5; }
+.xpFormulaRows code { justify-self: end; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--teal) 7%, var(--card)); color: var(--teal-readable); font-size: .66rem; white-space: nowrap; }
+.xpAuditNote { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 11px; margin: 10px 0 16px; padding: 18px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.xpAuditNote > svg { color: var(--teal); }
+.xpAuditNote strong { font-size: .78rem; }
+.xpAuditNote p { max-width: 80ch; margin: 6px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.55; }
+.pointsPage > .callout span { line-height: 1.55; }
+.pointsPage > .callout .inlineLink { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
 
 @media (max-width: 1120px) {
   .homePage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -776,8 +753,7 @@ button { color: inherit; }
   .howActions { padding-top: 0; }
   .leaderboardHeader, .leaderboardRow { grid-template-columns: 72px minmax(245px, 1.3fr) minmax(150px, .65fr) 110px; column-gap: 10px; }
   .leaderboardHeader span:nth-child(3), .leaderboardRow > .allocationVisual { display: none; }
-  .voterLeaderboardHeader, .voterLeaderboardRow { grid-template-columns: 72px minmax(220px, 1fr) 155px 125px; gap: 10px; }
-  .xpTableHeader, .xpTableRow { grid-template-columns: minmax(195px, 1.25fr) repeat(3, minmax(88px, .6fr)) 72px minmax(92px, .62fr); gap: 9px; }
+  .voterLeaderboardHeader, .voterLeaderboardRow { grid-template-columns: 72px minmax(220px, 1fr) 180px; gap: 10px; }
 }
 
 @media (max-width: 900px) {
@@ -815,11 +791,10 @@ button { color: inherit; }
   .leaderboardViewTabs { width: fit-content; }
   .leaderboardViewTabs a { flex: 1; justify-content: center; }
   .voterLeaderboardHeader { position: absolute; width: 1px; height: 1px; overflow: hidden; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
-  .voterLeaderboardRow { grid-template-columns: 52px minmax(0, 1fr) 76px; grid-template-rows: auto auto; gap: 4px 9px; min-height: 102px; padding: 13px 14px; align-items: center; }
+  .voterLeaderboardRow { grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto; gap: 4px 9px; min-height: 102px; padding: 13px 14px; align-items: center; }
   .voterLeaderboardRow > .rank { grid-row: 1 / 3; }
   .voterIdentity { grid-column: 2; grid-row: 1; }
   .voterParticipation { grid-column: 2; grid-row: 2; justify-items: start; grid-auto-flow: column; justify-content: start; gap: 6px; }
-  .voterXp { grid-column: 3; grid-row: 1 / 3; }
   .timelineHeader { align-items: flex-start; flex-direction: column; gap: 8px; }
   .competitionTimeline ol { grid-template-columns: 1fr; }
   .competitionTimeline li + li { border-top: 1px solid var(--border); border-left: 0; }
@@ -854,33 +829,16 @@ button { color: inherit; }
   .accountControls { width: 100%; align-items: center; justify-content: space-between; flex-wrap: wrap; }
   .leaderboardHeadingActions { flex-wrap: wrap; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
-  .accountXpSummary { grid-template-columns: 1fr; }
-  .accountXpSummary dl > div:first-child { padding-left: 0; border-left: 0; }
-  .accountXpActions { justify-items: start; }
   .voterPrivacyChoice { grid-template-columns: 1fr; }
   .privacyInlineSave { justify-self: start; }
-  .pointsHeader { align-items: flex-start; flex-direction: column; gap: 18px; }
-  .pointsRelease { justify-items: start; }
-  .xpPoolStrip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-  .xpPerformancePool { grid-column: span 2; }
-  .xpPoolStrip > section { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 4px; align-content: center; padding: 11px 9px; }
-  .xpPoolStrip svg { display: none; }
-  .xpPoolStrip span { font-size: .54rem; white-space: nowrap; }
-  .xpPoolStrip strong { font-size: .88rem; }
-  .xpPoolStrip small { font-size: .55rem; }
-  .xpPerformanceSplit { grid-column: 1; gap: 12px; margin-top: 2px; }
-  .xpPerformanceSplit > div + div { padding-left: 10px; }
-  .myXpSummary { grid-template-columns: 1fr; gap: 14px; }
-  .myXpSummary dl > div:first-child { padding-left: 0; border-left: 0; }
-  .xpTableHeader { display: none; }
-  .xpTableRow { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 14px; }
-  .xpParticipant { grid-column: 1 / -1; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-  .xpTableRow > span, .xpTableRow > strong { display: flex; justify-content: space-between; gap: 12px; text-align: right; }
-  .xpTableRow > span::before, .xpTableRow > strong::before { content: attr(data-label); color: var(--text-muted); font-size: .59rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
-  .xpTableRow > span:nth-child(5) { display: flex; }
-  .xpTableRow > span > .xpPending, .xpTableRow > span > .xpBoost { display: none; }
-  .xpMobileStatuses { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 3px; }
-  .xpMobileStatuses .xpPending, .xpMobileStatuses .xpBoost { max-width: none; white-space: nowrap; }
+  .pointsExplainerHeader { grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }
+  .xpTotal { justify-items: start; }
+  .xpAllocationLegend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .xpFinalizationFlow { grid-template-columns: 1fr; gap: 22px; }
+  .xpFinalizationFlow li { padding-right: 0; }
+  .xpFinalizationFlow li:not(:last-child)::after { top: 38px; bottom: -22px; left: 19px; right: auto; width: 1px; height: auto; }
+  .xpFormulaRows article { grid-template-columns: 30px minmax(0, 1fr); }
+  .xpFormulaRows code { grid-column: 2; justify-self: start; white-space: normal; }
   .activityRow { grid-template-columns: 34px minmax(0, 1fr); }
   .activityRow time { grid-column: 2; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }
@@ -900,6 +858,9 @@ button { color: inherit; }
 
 @media (max-width: 440px) {
   .primaryNav a { padding: 0 7px; }
+  .xpAllocationLegend { grid-template-columns: 1fr; }
+  .xpAllocationBar { height: 58px; }
+  .xpAllocationSegment { font-size: .66rem; }
   .accountButton { max-width: 108px; }
   .competitionHero h1 br { display: none; }
   .heroSummaryCard { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }

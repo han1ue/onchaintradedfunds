@@ -1,9 +1,9 @@
 import { apiError, apiOk } from "@/server/api";
-import { getXpLeaderboard } from "@/server/xp";
+import { getFinalXpAllocation } from "@/server/xp";
 
 export async function GET() {
   try {
-    return apiOk(await getXpLeaderboard());
+    return apiOk(await getFinalXpAllocation());
   } catch (error) {
     return apiError(error);
   }

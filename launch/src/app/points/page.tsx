@@ -1,62 +1,85 @@
-import { AlertTriangle, Clock3, DatabaseZap, Gauge, TrendingUp, UserRound, Users, Vote } from "lucide-react";
-import { Callout, SectionCard, StatusBadge } from "@/components/ui";
-import { auth } from "@/server/auth";
-import { getUserXp, getXpLeaderboard } from "@/server/xp";
+import Link from "next/link";
+import { ArrowRight, CheckCircle2, Clock3, LockKeyhole, Scale, ShieldCheck, TrendingUp, Users, Vote } from "lucide-react";
+import { Callout } from "@/components/ui";
 
-export const metadata = { title: "Live XP" };
+export const metadata = { title: "XP allocation" };
 
-function formatXp(value: number) {
-  return Math.round(value).toLocaleString("en-US");
-}
+const pools = [
+  { key: "verified", label: "Verified performance", value: "3,500,000", share: "35%" },
+  { key: "nonVerified", label: "Non-verified performance", value: "1,750,000", share: "17.5%" },
+  { key: "participation", label: "Participation", value: "2,750,000", share: "27.5%" },
+  { key: "creator", label: "Creator", value: "2,000,000", share: "20%" },
+] as const;
 
-function formatTimestamp(value: string | null) {
-  if (!value || new Date(value).getTime() === 0) return "Awaiting first run";
-  return new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
-}
-
-export default async function PointsPage() {
-  const session = await auth();
-  const [xp, ownXp] = await Promise.all([getXpLeaderboard(), session?.user?.id ? getUserXp(session.user.id) : null]);
-  const own = ownXp?.rows[0];
+export default function PointsPage() {
   return <div className="pageShell pointsPage">
-    <header className="pointsHeader">
-      <div><div className="pointsTitleLine"><h1>{xp.status === "final" ? "Final XP" : "Live XP"}</h1>{xp.status === "final" && <StatusBadge tone="positive">Final</StatusBadge>}</div><p>Ten million XP rewards split between performance, participation, and creator vote share.</p></div>
-      <div className="pointsRelease"><strong>{formatXp(xp.released.total)} <small>XP</small></strong><small>{formatXp(xp.allocated.total)} currently allocated</small></div>
+    <header className="pointsExplainerHeader">
+      <div>
+        <h1>How XP will be allocated</h1>
+        <p>Exactly 10,000,000 XP will be distributed after the competition closes and the final audit is complete. No XP balance or ranking is calculated while the competition is active.</p>
+      </div>
+      <div className="xpTotal" aria-label="Ten million total XP">
+        <strong>10,000,000</strong>
+        <span>XP after the final audit</span>
+      </div>
     </header>
 
-    <div className="pointsMeta" aria-label="XP calculation timestamps">
-      <span><Clock3 size={15} aria-hidden="true" />Calculated {formatTimestamp(xp.calculatedAt)} UTC</span>
-      <span><DatabaseZap size={15} aria-hidden="true" />{xp.status === "final" ? `Final provider prices captured ${formatTimestamp(xp.priceCheckpointAt)} UTC` : "Performance settles from the final provider snapshot"}</span>
-    </div>
-
-    <div className="xpPoolStrip">
-      <SectionCard className="xpPerformancePool"><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><div className="xpPerformanceSplit"><div><span>Verified</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>3,500,000 XP</small></div><div><span>Non-verified</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>1,750,000 XP</small></div></div></SectionCard>
-      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>2,750,000 XP</small></SectionCard>
-      <SectionCard><Users size={18} aria-hidden="true" /><span>Creator vote share</span><strong>{formatXp(xp.released.creator)}</strong><small>2,000,000 XP</small></SectionCard>
-    </div>
-
-    {session?.user?.id && <SectionCard className="myXpSummary">
-      <div className="myXpIdentity"><Gauge size={22} aria-hidden="true" /><div><span>Your {xp.status === "final" ? "Final" : "Live"} XP</span><strong>{formatXp(own?.totalXp ?? 0)} XP</strong></div></div>
-      <dl><div><dt>Performance</dt><dd>{formatXp(own?.performanceXp ?? 0)}</dd></div><div><dt>Participation</dt><dd>{formatXp(own?.participationXp ?? 0)}</dd></div><div><dt>Creator</dt><dd>{formatXp(own?.creatorXp ?? 0)}</dd></div></dl>
-      {own?.pendingTrancheCount ? <StatusBadge tone="warning">Awaiting final price · {own.pendingTrancheCount}</StatusBadge> : null}
-    </SectionCard>}
-
-    <SectionCard className="xpLeaderboardCard">
-      <div className="xpTableIntro"><div><h2>Public XP leaderboard</h2><p>Exact integer allocations from the latest canonical calculation.</p></div><span>{xp.rows.length.toLocaleString()} participants</span></div>
-      <div className="xpTable" role="table" aria-label="XP leaderboard">
-        <div className="xpTableHeader" role="row"><span>Rank / participant</span><span>Performance</span><span>Participation</span><span>Creator</span><span>Supporters</span><span>Total XP</span></div>
-        {xp.rows.length ? xp.rows.map((row, index) => <div className="xpTableRow" role="row" key={row.userId}>
-          <div className="xpParticipant"><span className="xpRank">{index + 1}</span><span className="xpAliasAvatar" aria-hidden="true"><UserRound size={15} /></span><div><strong>{row.publicName}</strong><small>{row.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
-          <span data-label="Performance">{formatXp(row.performanceXp)}{row.pendingTrancheCount > 0 && <small className="xpPending">Awaiting final price</small>}</span>
-          <span data-label="Participation">{formatXp(row.participationXp)}</span>
-          <span data-label="Creator">{formatXp(row.creatorXp)}</span>
-          <span data-label="Supporters">{row.uniqueSupporterCount.toLocaleString()}</span>
-          <strong data-label="Total XP">{formatXp(row.totalXp)}</strong>
-          {row.pendingTrancheCount > 0 && <div className="xpMobileStatuses"><small className="xpPending">Awaiting final price</small></div>}
-        </div>) : <div className="xpEmpty"><Gauge size={26} aria-hidden="true" /><strong>XP calculation is starting</strong><p>Verified participation will appear after the first calculation run.</p></div>}
+    <section className="xpAllocationOverview" aria-labelledby="allocation-heading">
+      <div className="xpSectionHeading">
+        <div><h2 id="allocation-heading">One fixed pool, four allocations</h2><p>The percentages are fixed. Final participant amounts depend on the complete set of valid votes, eligible proposals, and final portfolio performance.</p></div>
+        <Scale size={22} aria-hidden="true" />
       </div>
-    </SectionCard>
+      <figure className="xpAllocationFigure">
+        <div className="xpAllocationBar" role="img" aria-label="XP pool: 35 percent verified performance, 17.5 percent non-verified performance, 27.5 percent participation, and 20 percent creator">
+          {pools.map((pool) => <span className={`xpAllocationSegment ${pool.key}`} key={pool.key}><b>{pool.share}</b></span>)}
+        </div>
+        <figcaption className="xpAllocationLegend">
+          {pools.map((pool) => <div key={pool.key}><span className={`xpLegendSwatch ${pool.key}`} aria-hidden="true" /><div><strong>{pool.label}</strong><small>{pool.value} XP · {pool.share}</small></div></div>)}
+        </figcaption>
+      </figure>
+    </section>
 
-    <Callout tone="warning"><AlertTriangle size={17} aria-hidden="true" /><span>{xp.status === "live" ? "Live XP includes participation and creator vote share; performance remains pending until the final provider snapshot. " : "Final XP reflects the completed competition audit. "}XP has no guaranteed monetary value.</span></Callout>
+    <section className="xpTimingSection" aria-labelledby="timing-heading">
+      <div className="xpSectionHeading">
+        <div><h2 id="timing-heading">XP becomes final in three steps</h2><p>Competition activity is recorded now. Allocation happens once, after every required input is available.</p></div>
+        <Clock3 size={22} aria-hidden="true" />
+      </div>
+      <ol className="xpFinalizationFlow">
+        <li><span><Vote size={18} aria-hidden="true" /></span><div><strong>During the competition</strong><p>Valid votes create immutable participation and performance records. No provisional XP is published.</p></div></li>
+        <li><span><LockKeyhole size={18} aria-hidden="true" /></span><div><strong>At competition close</strong><p>Final provider prices are captured and evidence, eligibility, votes, and proposals are audited.</p></div></li>
+        <li><span><CheckCircle2 size={18} aria-hidden="true" /></span><div><strong>After the final audit</strong><p>All four pools are allocated as exact integers and committed as one final snapshot.</p></div></li>
+      </ol>
+    </section>
+
+    <section className="xpFormulaSection" aria-labelledby="formula-heading">
+      <div className="xpSectionHeading">
+        <div><h2 id="formula-heading">What determines each allocation</h2><p>Each pool rewards a different kind of contribution. XP never affects OTF launch rank.</p></div>
+        <ShieldCheck size={22} aria-hidden="true" />
+      </div>
+      <div className="xpFormulaRows">
+        <article>
+          <TrendingUp size={20} aria-hidden="true" />
+          <div><h3>Performance · 5,250,000 XP</h3><p>Each vote tranche is scored by vote quantity, its OTF&apos;s relative portfolio return, and how long the tranche was active. Verified and non-verified OTFs compete in separate pools.</p></div>
+          <code>votes × percentile² × maturity</code>
+        </article>
+        <article>
+          <Vote size={20} aria-hidden="true" />
+          <div><h3>Participation · 2,750,000 XP</h3><p>Distributed in direct proportion to valid vote units cast. Follower count and the number of different OTFs supported do not change this allocation.</p></div>
+          <code>your valid votes ÷ all valid votes</code>
+        </article>
+        <article>
+          <Users size={20} aria-hidden="true" />
+          <div><h3>Creator · 2,000,000 XP</h3><p>Distributed to proposal creators in direct proportion to the valid votes their accepted OTFs receive.</p></div>
+          <code>votes received ÷ all votes received</code>
+        </article>
+      </div>
+    </section>
+
+    <div className="xpAuditNote">
+      <ShieldCheck size={20} aria-hidden="true" />
+      <div><strong>Final allocation is deterministic</strong><p>If a performance pool has no eligible score, that pool rolls into participation. Integer rounding uses a deterministic largest-remainder method, and the final 10,000,000 XP snapshot receives a canonical hash.</p></div>
+    </div>
+
+    <Callout tone="warning"><span>XP has no guaranteed monetary value. It remains separate from competition ranking and launch order. <Link className="inlineLink" href="/rules#xp-allocation">Read the complete XP rules <ArrowRight size={14} /></Link></span></Callout>
   </div>;
 }

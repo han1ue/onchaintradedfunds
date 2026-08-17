@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generatedVoterAlias, publicVoterName, rankVotersByXp } from "./voter-alias";
+import { generatedVoterAlias, publicVoterName, rankVotersByParticipation } from "./voter-alias";
 
 describe("voter leaderboard privacy", () => {
   it("generates a stable funny alias without exposing the username", () => {
@@ -18,12 +18,12 @@ describe("voter leaderboard privacy", () => {
     expect(generatedVoterAlias("user-a")).not.toBe(generatedVoterAlias("user-b"));
   });
 
-  it("ranks voters by XP rather than vote count", () => {
-    const ranked = rankVotersByXp([
-      { userId: "many-votes", totalXp: 200, votesCast: 12 },
-      { userId: "high-xp", totalXp: 900, votesCast: 3 },
+  it("ranks voters by valid votes cast", () => {
+    const ranked = rankVotersByParticipation([
+      { userId: "few-votes", votesCast: 3 },
+      { userId: "many-votes", votesCast: 12 },
     ]);
-    expect(ranked.map((row) => row.userId)).toEqual(["high-xp", "many-votes"]);
+    expect(ranked.map((row) => row.userId)).toEqual(["many-votes", "few-votes"]);
     expect(ranked.map((row) => row.rank)).toEqual([1, 2]);
   });
 });

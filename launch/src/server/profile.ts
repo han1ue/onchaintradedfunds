@@ -30,8 +30,8 @@ export async function updateVoterLeaderboardPrivacy(
     return {
       status: "success",
       message: showRealUsername
-        ? `Saved. @${session.user.xUsername} is now public on voter and XP leaderboards.`
-        : "Saved. Public user leaderboards now use your generated alias.",
+        ? `Saved. @${session.user.xUsername} is now public on the voter leaderboard.`
+        : "Saved. The voter leaderboard now uses your generated alias.",
     };
   } catch {
     return { status: "error", message: "We could not save this privacy choice. Please try again." };

@@ -1,7 +1,7 @@
 import { demoAssets, demoCompetition, demoLeaderboard, demoVoterLeaderboard } from "@/lib/demo-data";
 import { COMPETITION_IDENTITY, COMPETITION_RULES } from "@/lib/competition";
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry, VoterLeaderboardEntry } from "@/lib/types";
-import { publicVoterName, rankVotersByXp } from "@/lib/voter-alias";
+import { publicVoterName, rankVotersByParticipation } from "@/lib/voter-alias";
 import { sqlClient } from "./db";
 
 export async function getCompetition(): Promise<CompetitionSummary> {
@@ -132,36 +132,28 @@ export async function getVoterLeaderboard(): Promise<VoterLeaderboardEntry[]> {
     userId: string;
     username: string;
     allowRealUsername: boolean;
-    totalXp: number;
     votesCast: number;
     otfsSupported: number;
   }[]>`
-    with latest_xp as (
-      select id, competition_id from xp_calculation_runs
-      order by case when status = 'final' then 0 else 1 end, calculated_at desc
-      limit 1
-    ), voter_scores as (
+    with voter_scores as (
       select u.id as user_id, u.x_username,
         u.show_real_username_on_voter_leaderboard as allow_real_username,
-        x.total_xp,
         coalesce(sum(ba.votes), 0)::int as votes_cast,
         count(distinct ba.proposal_id)::int as otfs_supported
-      from latest_xp lx
-      join xp_snapshot_rows x on x.run_id = lx.id
-      join users u on u.id = x.user_id
-      join ballots b on b.voter_user_id = x.user_id and b.competition_id = lx.competition_id and b.status = 'valid'
+      from competitions c
+      join ballots b on b.competition_id = c.id and b.status = 'valid'
+      join users u on u.id = b.voter_user_id
       left join ballot_allocations ba on ba.ballot_id = b.id
-      group by b.id, u.id, x.total_xp
+      group by b.id, u.id
     )
     select user_id as "userId", x_username as username, allow_real_username as "allowRealUsername",
-      total_xp as "totalXp", votes_cast as "votesCast", otfs_supported as "otfsSupported"
+      votes_cast as "votesCast", otfs_supported as "otfsSupported"
     from voter_scores
-    order by total_xp desc, user_id`;
-  return rankVotersByXp(rows).map((row) => ({
+    order by votes_cast desc, user_id`;
+  return rankVotersByParticipation(rows).map((row) => ({
     rank: row.rank,
     publicName: publicVoterName(row),
     usesRealUsername: row.allowRealUsername,
-    totalXp: row.totalXp,
     votesCast: row.votesCast,
     otfsSupported: row.otfsSupported,
   }));

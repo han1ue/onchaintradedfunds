@@ -11,7 +11,6 @@ import {
 import { requireEligibleActor } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
-import { recomputeLiveXp } from "./xp";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -170,6 +169,5 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.accepted", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
-  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after proposal acceptance failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
   return result;
 }

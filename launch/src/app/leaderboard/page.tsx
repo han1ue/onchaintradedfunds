@@ -17,7 +17,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
     <section className="leaderboardPageHeader">
       <div>
         <h1>Leaderboard</h1>
-        <p>Track OTF launch rank or compare verified voters by their latest Live or Final XP.</p>
+        <p>Track OTF launch rank or compare verified voters by valid participation.</p>
       </div>
       <div className="leaderboardSummary">
         <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -30,7 +30,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
     </nav>
     <SectionCard className="leaderboardCard fullLeaderboardCard">
       {view === "otfs" ? <><div className="cardHeading"><div><span>All OTF proposals</span><small>{leaderboard.length} ranked {leaderboard.length === 1 ? "entry" : "entries"}</small></div>{leaderboard.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div><ResponsiveLeaderboard entries={leaderboard} final={competition.phase === "final"} /><div className="cardFooter"><span>{preview ? "Preview data shown — not final." : status.votingOpen ? "Rankings update whenever newly unlocked votes are cast." : "The board is accepting OTF submissions before voting opens."}</span><Link href="/rules#ranking-and-launch-order">How ranking works <ArrowRight size={14} /></Link></div></>
-        : <><div className="cardHeading"><div><span>Voters ranked by XP</span><small>{voters.length} ranked {voters.length === 1 ? "participant" : "participants"}</small></div><div className="leaderboardHeadingActions"><Link className="button buttonSecondary leaderboardPrivacyButton" href="/me#voter-leaderboard-privacy">Manage my public name</Link>{voters.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div></div><VoterLeaderboard entries={voters} /><div className="cardFooter"><span>{preview ? "Preview data shown. Names and XP are illustrative." : "Latest canonical XP determines rank. Generated aliases protect voter identity by default."}</span><Link href="/rules#live-xp">How XP works <ArrowRight size={14} /></Link></div></>}
+        : <><div className="cardHeading"><div><span>Voter participation</span><small>{voters.length} ranked {voters.length === 1 ? "participant" : "participants"}</small></div><div className="leaderboardHeadingActions"><Link className="button buttonSecondary leaderboardPrivacyButton" href="/me#voter-leaderboard-privacy">Manage my public name</Link>{voters.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div></div><VoterLeaderboard entries={voters} /><div className="cardFooter"><span>{preview ? "Preview data shown. Participation is illustrative." : "Valid votes cast determine this participation view. Generated aliases protect voter identity by default."}</span><Link href="/rules#voting">How voting works <ArrowRight size={14} /></Link></div></>}
     </SectionCard>
   </div>;
 }

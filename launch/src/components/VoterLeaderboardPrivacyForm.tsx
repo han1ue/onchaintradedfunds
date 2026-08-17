@@ -28,7 +28,7 @@ export function VoterLeaderboardPrivacyForm({
       <Button type="submit" variant="secondary" className="privacyInlineSave" disabled={pending || !changed}>{pending ? "Saving…" : "Save"}</Button>
       <label className="voterPrivacyToggle">
         <input name="showRealUsername" type="checkbox" checked={checked} disabled={pending} onChange={(event) => setChecked(event.target.checked)} />
-        <span><strong>Show @{username} on public user leaderboards</strong><small>Off by default. When off, the voter and XP leaderboards show {generatedAlias}. Your choice is reversible at any time.</small></span>
+        <span><strong>Show @{username} on the voter leaderboard</strong><small>Off by default. When off, the voter leaderboard shows {generatedAlias}. Your choice is reversible at any time.</small></span>
       </label>
       {state.message && (state.status === "error" || !changed) && <p className={`privacySaveMessage ${state.status}`} aria-live="polite">{state.message}</p>}
     </div>

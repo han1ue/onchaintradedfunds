@@ -12,7 +12,7 @@ import {
   tweetEvidence, xpCalculationRuns, xpSnapshotRows
 } from "./db/schema";
 import { getXPost, hashXPostText } from "./x";
-import { calculateXpSnapshot, recomputeLiveXp } from "./xp";
+import { calculateXpSnapshot } from "./xp";
 import { captureAssetPrices } from "./prices";
 
 export async function requireAdmin() {
@@ -29,7 +29,6 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   const [after] = await database.update(proposals).set({ status, moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
   await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: COMPETITION_RULES.ruleVersion, metadata: { reason } });
-  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after moderation failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
   return after;
 }
 
@@ -61,7 +60,6 @@ export async function recheckEvidence(competitionId: string, runId?: string) {
     }
     if (runId) await database.update(finalizationRuns).set({ cursor: evidence.id }).where(eq(finalizationRuns.id, runId));
   }
-  if (!runId) await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after evidence audit failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
 }
 
 export async function finalizeCompetition() {
@@ -97,7 +95,7 @@ export async function finalizeCompetition() {
     const ranked = rankEntries(scored.map((item) => ({ id: item.id, acceptedAt: item.acceptedAt!, votes: item.votes })));
     const canonical = { competitionId, ruleVersion: competition.ruleVersion, rankingPolicyVersion: competition.rankingPolicyVersion, rows: ranked.map(({ id, rank, votes }) => ({ rank, proposalId: id, votes })) };
     const canonicalHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-    const xpSnapshot = await calculateXpSnapshot({ final: true });
+    const xpSnapshot = await calculateXpSnapshot();
     if (!xpSnapshot) throw new Error("XP_SNAPSHOT_UNAVAILABLE");
     const launchStartAt = competition.launchStartAt ?? new Date(Date.now() + 86_400_000);
     await database.transaction(async (transaction) => {

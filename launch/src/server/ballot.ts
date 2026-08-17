@@ -12,7 +12,6 @@ import {
 import { env } from "./env";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
-import { recomputeLiveXp } from "./xp";
 import { captureAssetPrices } from "./prices";
 
 const challengeLifetimeMs = 15 * 60_000;
@@ -240,6 +239,5 @@ export async function verifyBallotProof(input: unknown) {
       updatedAt: activatedAt.toISOString(),
     };
   });
-  await recomputeLiveXp().catch((error) => console.error("Live XP recalculation after vote failed", { error: error instanceof Error ? error.message : "UNKNOWN" }));
   return result;
 }

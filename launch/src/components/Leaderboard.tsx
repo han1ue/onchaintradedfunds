@@ -48,13 +48,12 @@ export function VoterLeaderboard({ entries }: { entries: VoterLeaderboardEntry[]
     <Link className="button buttonPrimary" href="/vote">View voting</Link>
   </div>;
 
-  return <div className="voterLeaderboard" role="table" aria-label="Verified voter leaderboard">
-    <div className="voterLeaderboardHeader" role="row"><span role="columnheader">Rank</span><span role="columnheader">Voter</span><span role="columnheader">Participation</span><span role="columnheader">Total XP</span></div>
+  return <div className="voterLeaderboard" role="table" aria-label="Verified voter participation leaderboard">
+    <div className="voterLeaderboardHeader" role="row"><span role="columnheader">Rank</span><span role="columnheader">Voter</span><span role="columnheader">Participation</span></div>
     {entries.map((entry) => <div className="voterLeaderboardRow" role="row" key={entry.rank}>
       <RankEmblem rank={entry.rank} role="rowheader" />
       <div className="voterIdentity" role="cell"><span className="generatedVoterAvatar" aria-hidden="true"><UserRound size={18} /></span><div><strong>{entry.publicName}</strong><small>{entry.usesRealUsername ? "Public X username" : "Generated alias"}</small></div></div>
       <span className="voterParticipation" role="cell"><small>{entry.otfsSupported.toLocaleString()} {entry.otfsSupported === 1 ? "OTF" : "OTFs"} backed</small><strong>{entry.votesCast.toLocaleString()} votes cast</strong></span>
-      <span className="voterXp" role="cell"><small>Total XP</small><strong>{entry.totalXp.toLocaleString()}</strong></span>
     </div>)}
   </div>;
 }

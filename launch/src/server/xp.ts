@@ -12,7 +12,7 @@ import {
   type XpTrancheScoreInput,
 } from "@/lib/xp";
 import { requireDb, sqlClient } from "./db";
-import { voteTranches, xpCalculationRuns, xpSnapshotRows } from "./db/schema";
+import { voteTranches } from "./db/schema";
 import { publicVoterName } from "@/lib/voter-alias";
 
 type ProposalRow = {
@@ -43,7 +43,7 @@ type CaptureRun = { id: string; sampledAt: string; purpose: "entry" | "final" };
 
 export type CalculatedXpSnapshot = {
   competitionId: string;
-  status: "live" | "final";
+  status: "final";
   calculatedAt: Date;
   priceCheckpointAt: Date | null;
   released: { performance: number; verifiedPerformance: number; nonVerifiedPerformance: number; participation: number; creator: number };
@@ -57,7 +57,7 @@ function coversAssets(prices: Map<string, bigint> | undefined, assetIds: string[
   return Boolean(prices && assetIds.every((assetId) => prices.has(assetId)));
 }
 
-export async function calculateXpSnapshot(options: { final?: boolean; now?: Date } = {}): Promise<CalculatedXpSnapshot | null> {
+export async function calculateXpSnapshot(options: { now?: Date } = {}): Promise<CalculatedXpSnapshot | null> {
   if (!sqlClient) return null;
   const now = options.now ?? new Date();
   const [competition] = await sqlClient<{ id: string; startsAt: string; endsAt: string }[]>`
@@ -108,10 +108,8 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
     pricesByRun.set(snapshot.runId, prices);
   }
   const deadline = new Date(competition.endsAt);
-  const evaluationRun = options.final
-    ? runs.find((run) => run.purpose === "final" && new Date(run.sampledAt) >= deadline)
-    : undefined;
-  if (options.final && proposals.length > 0 && !evaluationRun) {
+  const evaluationRun = runs.find((run) => run.purpose === "final" && new Date(run.sampledAt) >= deadline);
+  if (proposals.length > 0 && !evaluationRun) {
     throw new PublicApiError("FINAL_PRICE_CHECKPOINT_UNAVAILABLE", { deadline: deadline.toISOString() });
   }
 
@@ -178,8 +176,8 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
   const result = calculateXp({
     votingStartsAt,
     votingEndsAt: deadline,
-    calculatedAt: options.final && evaluationAt ? evaluationAt : now,
-    final: options.final,
+    calculatedAt: evaluationAt ?? now,
+    final: true,
     tranches: scoredTranches,
     creators: proposals.map((proposal) => ({
       proposalId: proposal.id,
@@ -187,10 +185,10 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
       votes: proposal.votes,
     })),
   });
-  if (options.final && result.users.reduce((sum, user) => sum + user.totalXp, 0) !== 10_000_000) {
+  if (result.users.reduce((sum, user) => sum + user.totalXp, 0) !== 10_000_000) {
     throw new Error("XP_FINAL_ALLOCATION_INCOMPLETE");
   }
-  const status = options.final ? "final" as const : "live" as const;
+  const status = "final" as const;
   const canonical = {
     competitionId: competition.id,
     status,
@@ -213,65 +211,18 @@ export async function calculateXpSnapshot(options: { final?: boolean; now?: Date
   };
 }
 
-export async function persistXpSnapshot(snapshot: CalculatedXpSnapshot) {
-  const database = requireDb();
-  return database.transaction(async (transaction) => {
-    const [run] = await transaction.insert(xpCalculationRuns).values({
-      competitionId: snapshot.competitionId,
-      status: snapshot.status,
-      calculatedAt: snapshot.calculatedAt,
-      priceCheckpointAt: snapshot.priceCheckpointAt,
-      performanceReleased: snapshot.released.performance,
-      performanceAllocated: snapshot.allocated.performance,
-      participationReleased: snapshot.released.participation,
-      participationAllocated: snapshot.allocated.participation,
-      creatorReleased: snapshot.released.creator,
-      creatorAllocated: snapshot.allocated.creator,
-      canonicalHash: snapshot.canonicalHash,
-      canonicalJson: snapshot.canonical,
-    }).returning({ id: xpCalculationRuns.id });
-    if (snapshot.users.length) await transaction.insert(xpSnapshotRows).values(snapshot.users.map((user) => ({ runId: run.id, ...user })));
-    return { runId: run.id, canonicalHash: snapshot.canonicalHash };
-  });
-}
-
-export async function recomputeLiveXp() {
-  const database = requireDb();
-  const [final] = await database.select({ id: xpCalculationRuns.id }).from(xpCalculationRuns)
-    .where(eq(xpCalculationRuns.status, "final")).limit(1);
-  if (final) return { skipped: "final" as const };
-  const snapshot = await calculateXpSnapshot();
-  if (!snapshot) return { skipped: "preview" as const };
-  return persistXpSnapshot(snapshot);
-}
-
-export async function getXpLeaderboard(): Promise<XpLeaderboard> {
-  if (!sqlClient) {
-    const now = new Date();
-    return {
-      status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: null,
-      released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 282_857, creator: 720_000, total: 1_002_857 },
-      allocated: { performance: 0, participation: 282_857, creator: 720_000, total: 1_002_857 },
-      rows: [
-        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 99_382, creatorXp: 251_908, totalXp: 351_290, uniqueSupporterCount: 18, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 81_333, creatorXp: 215_742, totalXp: 297_075, uniqueSupporterCount: 13, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 64_429, creatorXp: 162_350, totalXp: 226_779, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 37_713, creatorXp: 90_000, totalXp: 127_713, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
-      ],
-    };
-  }
+export async function getFinalXpAllocation(): Promise<XpLeaderboard | null> {
+  if (!sqlClient) return null;
   const [run] = await sqlClient<{
-    id: string; status: "live" | "final"; calculatedAt: string; priceCheckpointAt: string | null;
+    id: string; status: "final"; calculatedAt: string; priceCheckpointAt: string | null;
     performanceReleased: number; participationReleased: number; creatorReleased: number;
     performanceAllocated: number; participationAllocated: number; creatorAllocated: number;
   }[]>`
     select id::text, status, calculated_at as "calculatedAt", price_checkpoint_at as "priceCheckpointAt",
       performance_released as "performanceReleased", participation_released as "participationReleased", creator_released as "creatorReleased",
       performance_allocated as "performanceAllocated", participation_allocated as "participationAllocated", creator_allocated as "creatorAllocated"
-    from xp_calculation_runs order by case when status = 'final' then 0 else 1 end, calculated_at desc limit 1`;
-  if (!run) {
-    return { status: "live", calculatedAt: new Date(0).toISOString(), priceCheckpointAt: null, released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 0, creator: 0, total: 0 }, allocated: { performance: 0, participation: 0, creator: 0, total: 0 }, rows: [] };
-  }
+    from xp_calculation_runs where status = 'final' order by calculated_at desc limit 1`;
+  if (!run) return null;
   const privateRows = await sqlClient<{
     userId: string; username: string; allowRealUsername: boolean;
     performanceXp: number; participationXp: number; creatorXp: number; totalXp: number;
@@ -289,24 +240,8 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
   }));
   return {
     status: run.status, calculatedAt: run.calculatedAt, priceCheckpointAt: run.priceCheckpointAt,
-    released: { performance: run.performanceReleased, verifiedPerformance: run.status === "final" ? XP_POOLS.verifiedPerformance : 0, nonVerifiedPerformance: run.status === "final" ? XP_POOLS.nonVerifiedPerformance : 0, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
+    released: { performance: run.performanceReleased, verifiedPerformance: XP_POOLS.verifiedPerformance, nonVerifiedPerformance: XP_POOLS.nonVerifiedPerformance, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
     allocated: { performance: run.performanceAllocated, participation: run.participationAllocated, creator: run.creatorAllocated, total: run.performanceAllocated + run.participationAllocated + run.creatorAllocated },
     rows,
   };
-}
-
-export async function getUserXp(userId: string) {
-  const leaderboard = await getXpLeaderboard();
-  if (!sqlClient) return { ...leaderboard, rows: [] };
-  const [row] = await sqlClient<{
-    performanceXp: number; participationXp: number; creatorXp: number; totalXp: number;
-    uniqueSupporterCount: number; submissionBoost: boolean; pendingTrancheCount: number;
-  }[]>`
-    select x.performance_xp as "performanceXp", x.participation_xp as "participationXp", x.creator_xp as "creatorXp", x.total_xp as "totalXp",
-      x.unique_supporter_count as "uniqueSupporterCount", x.submission_boost as "submissionBoost", x.pending_tranche_count as "pendingTrancheCount"
-    from xp_snapshot_rows x
-    where x.user_id = ${userId}
-      and x.run_id = (select id from xp_calculation_runs order by case when status = 'final' then 0 else 1 end, calculated_at desc limit 1)
-    limit 1`;
-  return { ...leaderboard, rows: row ? [{ ...row, userId, publicName: "You", usesRealUsername: false }] : [] };
 }
