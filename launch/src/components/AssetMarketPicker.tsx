@@ -112,8 +112,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     && EVM_ADDRESS_PATTERN.test(poolAddress.trim());
 
   return <div className="assetMarketPicker">
-    <span className="assetPickerLabel">{label}</span>
-    <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+    <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity"><strong>{selectedSymbol}</strong><small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small></span>
         <StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Unverified"}</StatusBadge>
