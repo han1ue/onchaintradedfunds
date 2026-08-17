@@ -3,6 +3,7 @@ import { PublicApiError } from "@/lib/errors";
 import { getVotingStartsAt } from "@/lib/competition";
 import type { XpLeaderboard } from "@/lib/types";
 import {
+  XP_POOLS,
   calculateXp,
   eligibleProposalIdsAt,
   parseFixedPrice,
@@ -249,13 +250,13 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
     const now = new Date();
     return {
       status: "live", calculatedAt: now.toISOString(), priceCheckpointAt: null,
-      released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 308_571, creator: 720_000, total: 1_028_571 },
-      allocated: { performance: 0, participation: 308_571, creator: 720_000, total: 1_028_571 },
+      released: { performance: 0, verifiedPerformance: 0, nonVerifiedPerformance: 0, participation: 282_857, creator: 720_000, total: 1_002_857 },
+      allocated: { performance: 0, participation: 282_857, creator: 720_000, total: 1_002_857 },
       rows: [
-        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 108_417, creatorXp: 251_908, totalXp: 360_325, uniqueSupporterCount: 18, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 88_727, creatorXp: 215_742, totalXp: 304_469, uniqueSupporterCount: 13, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 70_286, creatorXp: 162_350, totalXp: 232_636, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
-        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 41_141, creatorXp: 90_000, totalXp: 131_141, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Turbo Capybara 404", usesRealUsername: false, performanceXp: 0, participationXp: 99_382, creatorXp: 251_908, totalXp: 351_290, uniqueSupporterCount: 18, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Disco Pigeon 808", usesRealUsername: false, performanceXp: 0, participationXp: 81_333, creatorXp: 215_742, totalXp: 297_075, uniqueSupporterCount: 13, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Wobbly Lobster 247", usesRealUsername: false, performanceXp: 0, participationXp: 64_429, creatorXp: 162_350, totalXp: 226_779, uniqueSupporterCount: 8, submissionBoost: false, pendingTrancheCount: 1 },
+        { publicName: "Sleepy Turnip 613", usesRealUsername: false, performanceXp: 0, participationXp: 37_713, creatorXp: 90_000, totalXp: 127_713, uniqueSupporterCount: 5, submissionBoost: false, pendingTrancheCount: 1 },
       ],
     };
   }
@@ -288,7 +289,7 @@ export async function getXpLeaderboard(): Promise<XpLeaderboard> {
   }));
   return {
     status: run.status, calculatedAt: run.calculatedAt, priceCheckpointAt: run.priceCheckpointAt,
-    released: { performance: run.performanceReleased, verifiedPerformance: run.status === "final" ? 3_500_000 : 0, nonVerifiedPerformance: run.status === "final" ? 1_500_000 : 0, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
+    released: { performance: run.performanceReleased, verifiedPerformance: run.status === "final" ? XP_POOLS.verifiedPerformance : 0, nonVerifiedPerformance: run.status === "final" ? XP_POOLS.nonVerifiedPerformance : 0, participation: run.participationReleased, creator: run.creatorReleased, total: run.performanceReleased + run.participationReleased + run.creatorReleased },
     allocated: { performance: run.performanceAllocated, participation: run.participationAllocated, creator: run.creatorAllocated, total: run.performanceAllocated + run.participationAllocated + run.creatorAllocated },
     rows,
   };

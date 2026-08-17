@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 
 export const XP_POOLS = {
-  participation: 3_000_000,
+  participation: 2_750_000,
   verifiedPerformance: 3_500_000,
-  nonVerifiedPerformance: 1_500_000,
-  performance: 5_000_000,
+  nonVerifiedPerformance: 1_750_000,
+  performance: 5_250_000,
   creator: 2_000_000,
 } as const;
 export const XP_SCORE_SCALE = 1_000_000_000_000n;

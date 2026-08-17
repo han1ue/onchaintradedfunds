@@ -16,7 +16,7 @@ export function Button({ href, children, variant = "primary", className = "", ..
   return href ? <Link className={classes} href={href}>{children}</Link> : <button className={classes} {...props}>{children}</button>;
 }
 
-export function Callout({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "warning" | "danger" }) {
+export function Callout({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "positive" | "warning" | "danger" }) {
   return <div className={`callout ${tone}`}>{children}</div>;
 }
 

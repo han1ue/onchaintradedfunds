@@ -30,8 +30,8 @@ export default async function PointsPage() {
     </div>
 
     <div className="xpPoolStrip">
-      <SectionCard className="xpPerformancePool"><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><div className="xpPerformanceSplit"><div><span>Verified</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>3,500,000 XP</small></div><div><span>Non-verified</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>1,500,000 XP</small></div></div></SectionCard>
-      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>3,000,000 XP</small></SectionCard>
+      <SectionCard className="xpPerformancePool"><TrendingUp size={18} aria-hidden="true" /><span>Performance</span><div className="xpPerformanceSplit"><div><span>Verified</span><strong>{formatXp(xp.released.verifiedPerformance)}</strong><small>3,500,000 XP</small></div><div><span>Non-verified</span><strong>{formatXp(xp.released.nonVerifiedPerformance)}</strong><small>1,750,000 XP</small></div></div></SectionCard>
+      <SectionCard><Vote size={18} aria-hidden="true" /><span>Participation</span><strong>{formatXp(xp.released.participation)}</strong><small>2,750,000 XP</small></SectionCard>
       <SectionCard><Users size={18} aria-hidden="true" /><span>Creator vote share</span><strong>{formatXp(xp.released.creator)}</strong><small>2,000,000 XP</small></SectionCard>
     </div>
 

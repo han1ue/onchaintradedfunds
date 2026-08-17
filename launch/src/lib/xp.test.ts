@@ -18,11 +18,16 @@ const votingStartsAt = new Date("2026-08-08T00:00:00Z");
 const votingEndsAt = new Date("2026-09-07T00:00:00Z");
 
 describe("Live XP policy", () => {
+  it("keeps the verified pool at a 100% boost while distributing exactly 10M XP", () => {
+    expect(XP_POOLS.verifiedPerformance).toBe(XP_POOLS.nonVerifiedPerformance * 2);
+    expect(XP_POOLS.performance + XP_POOLS.participation + XP_POOLS.creator).toBe(10_000_000);
+  });
+
   it("releases each pool linearly over 30 voting days", () => {
     const halfway = new Date((votingStartsAt.getTime() + votingEndsAt.getTime()) / 2);
-    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(2_500_000);
+    expect(releasedXp(XP_POOLS.performance, votingStartsAt, votingEndsAt, halfway)).toBe(2_625_000);
     expect(releasedXp(XP_POOLS.creator, votingStartsAt, votingEndsAt, votingStartsAt)).toBe(0);
-    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(3_000_000);
+    expect(releasedXp(XP_POOLS.participation, votingStartsAt, votingEndsAt, votingEndsAt)).toBe(2_750_000);
   });
 
   it("uses largest remainder rounding with exact deterministic totals", () => {
@@ -53,7 +58,7 @@ describe("Live XP policy", () => {
       creators: [{ proposalId: "p1", creatorUserId: "creator", votes: 4 }],
       tranches: [{ id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 4, performancePool: "verified" }],
     });
-    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 1_500_000, pendingTrancheCount: 1 });
+    expect(result.users.find((user) => user.userId === "voter")).toMatchObject({ performanceXp: 0, participationXp: 1_375_000, pendingTrancheCount: 1 });
     expect(result.released.performance).toBe(0);
     expect(result.users.find((user) => user.userId === "creator")).toMatchObject({ creatorXp: 1_000_000, uniqueSupporterCount: 1, submissionBoost: false });
   });
@@ -103,7 +108,7 @@ describe("Live XP policy", () => {
       votingStartsAt, votingEndsAt, calculatedAt: new Date("2026-08-23T00:00:00Z"), creators: [],
       tranches: [{ id: "valid", voterUserId: "valid-voter", proposalId: "eligible", proposalCreatorUserId: "creator", quantity: 2, performancePool: "verified" }],
     });
-    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(1_500_000);
+    expect(validOnly.users.find((user) => user.userId === "valid-voter")?.participationXp).toBe(1_375_000);
     expect(validOnly.users.some((user) => user.userId === "invalid-voter")).toBe(false);
   });
 
@@ -116,7 +121,7 @@ describe("Live XP policy", () => {
       ],
     });
     expect(result.users.find((row) => row.userId === "verified-voter")?.performanceXp).toBe(3_500_000);
-    expect(result.users.find((row) => row.userId === "non-verified-voter")?.performanceXp).toBe(1_500_000);
+    expect(result.users.find((row) => row.userId === "non-verified-voter")?.performanceXp).toBe(1_750_000);
   });
 
   it("rolls the unified performance pool to participation when no performance is awardable", () => {
@@ -127,7 +132,7 @@ describe("Live XP policy", () => {
         { id: "pending", voterUserId: "voter", proposalId: "p1", proposalCreatorUserId: "creator", quantity: 1, performancePool: "verified" },
       ],
     });
-    expect(result.rollovers.performanceToParticipation).toBe(5_000_000);
+    expect(result.rollovers.performanceToParticipation).toBe(5_250_000);
     expect(result.users.reduce((sum, user) => sum + user.totalXp, 0)).toBe(10_000_000);
   });
 

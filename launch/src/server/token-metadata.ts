@@ -2,6 +2,7 @@ const selectors = {
   name: "0x06fdde03",
   symbol: "0x95d89b41",
   decimals: "0x313ce567",
+  totalSupply: "0x18160ddd",
 } as const;
 
 function stripHexPrefix(value: string) {
@@ -46,11 +47,13 @@ async function ethCall(rpcUrl: string, address: string, data: string) {
 }
 
 export async function getTokenMetadata(address: string, rpcUrl: string) {
-  const [nameResult, symbolResult, decimalsResult] = await Promise.all([
+  const [nameResult, symbolResult, decimalsResult, totalSupplyResult] = await Promise.all([
     ethCall(rpcUrl, address, selectors.name),
     ethCall(rpcUrl, address, selectors.symbol),
     ethCall(rpcUrl, address, selectors.decimals),
+    ethCall(rpcUrl, address, selectors.totalSupply),
   ]);
+  decodeUint(totalSupplyResult);
   return {
     name: decodeErc20Text(nameResult),
     symbol: decodeErc20Text(symbolResult).toUpperCase(),

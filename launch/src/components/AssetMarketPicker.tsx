@@ -147,7 +147,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         </label>
 
         {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>Reading token details</strong><small>Checking the contract on Robinhood Chain…</small></div></div>}
-        {lookupState === "error" && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>Token details unavailable</strong><small>Check the contract address and try again.</small></div></div>}
+        {lookupState === "error" && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>No ERC-20 token found</strong><small>Check that this is a valid Robinhood Chain ERC-20 contract address.</small></div></div>}
         {detected && <div className={`detectedAsset${detected.decimals === 18 ? "" : " invalid"}`}>
           {detected.decimals === 18 ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
           <div><span>{detected.symbol}</span><strong>{detected.name}</strong><small>{detected.decimals} decimals</small></div>
@@ -170,7 +170,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
         <div className="assetRequestActions">
           <Button variant="secondary" onClick={() => setManual(false)}>Cancel</Button>
-          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>Add unverified asset</Button>
+          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>{detected ? `Add ${normalizeTickerInput(detected.symbol)}` : "Add token"}</Button>
         </div>
       </div>
     </dialog>
