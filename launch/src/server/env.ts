@@ -17,7 +17,8 @@ const schema = z.object({
   IP_HASH_SECRET: z.string().min(16).optional(),
   ADMIN_X_IDS: z.string().optional(),
   COINGECKO_PRO_API_KEY: z.string().optional(),
-  COINGECKO_NETWORK_ID: z.string().optional()
+  COINGECKO_NETWORK_ID: z.string().optional(),
+  ROBINHOOD_RPC_URL: optionalUrl.default("https://rpc.mainnet.chain.robinhood.com")
 });
 
 export const env = schema.parse(process.env);

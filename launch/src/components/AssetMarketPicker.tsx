@@ -1,16 +1,8 @@
 "use client";
 
-import { Check, ChevronDown, CircleAlert, Search } from "lucide-react";
-import { useState } from "react";
-import {
-  EVM_ADDRESS_PATTERN,
-  PRICING_SOURCE_OPTIONS,
-  configForSource,
-  emptyPricingConfig,
-  preferredPricingConfig,
-  pricingConfigComplete,
-  type PricingSource,
-} from "@/lib/pricing-config";
+import { Check, ChevronDown, CircleAlert, CircleCheck, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
 import type { EligibleAsset, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
 import { Button, StatusBadge } from "./ui";
@@ -24,124 +16,167 @@ type Props = {
   onChange: (assetId: string, assetMetadata: ProposalAssetMetadata | null, pricingConfig: PricingConfig) => void;
 };
 
+type DetectedMetadata = { address: string; name: string; symbol: string; decimals: number };
+
 function shortAddress(address: string) {
   return `${address.slice(0, 8)}…${address.slice(-6)}`;
 }
 
-function PricingFields({ config, onChange, prefix }: {
-  config: PricingConfig;
-  onChange: (config: PricingConfig) => void;
-  prefix: string;
-}) {
-  if (config.source === "chainlink-direct") return <label>
-    <span>ASSET/USD feed</span>
-    <input aria-label={`${prefix} ASSET/USD feed`} value={config.feedAddress} onChange={(event) => onChange({ ...config, feedAddress: event.target.value })} placeholder="0x…" />
-  </label>;
-  if (config.source === "chainlink-weth") return <>
-    <label>
-      <span>ASSET/WETH feed</span>
-      <input aria-label={`${prefix} ASSET/WETH feed`} value={config.assetWethFeedAddress} onChange={(event) => onChange({ ...config, assetWethFeedAddress: event.target.value })} placeholder="0x…" />
-    </label>
-    <label>
-      <span>WETH/USD feed</span>
-      <input aria-label={`${prefix} WETH/USD feed`} value={config.wethUsdFeedAddress} onChange={(event) => onChange({ ...config, wethUsdFeedAddress: event.target.value })} placeholder="0x…" />
-    </label>
-  </>;
-  return <label>
-    <span>Uniswap V3 asset/WETH or asset/USDG pool</span>
-    <input aria-label={`${prefix} Uniswap V3 pool`} value={config.poolAddress} onChange={(event) => onChange({ ...config, poolAddress: event.target.value })} placeholder="0x…" />
-  </label>;
-}
-
 export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfig, label, onChange }: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [manual, setManual] = useState(false);
-  const [assetName, setAssetName] = useState("");
-  const [assetSymbol, setAssetSymbol] = useState("");
   const [assetAddress, setAssetAddress] = useState("");
-  const [manualConfig, setManualConfig] = useState<PricingConfig>(emptyPricingConfig("uniswap-v3"));
+  const [poolAddress, setPoolAddress] = useState("");
+  const [detected, setDetected] = useState<DetectedMetadata | null>(null);
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "error">("idle");
   const selected = assets.find((asset) => asset.id === assetId) ?? null;
   const selectedMetadata = selected ? null : assetMetadata;
   const selectedSymbol = selected?.symbol ?? selectedMetadata?.symbol;
   const normalizedQuery = query.trim().toLowerCase();
-  const filtered = assets.filter((asset) => !normalizedQuery
+  const verifiedAssets = useMemo(() => assets.filter((asset) => (
+    asset.quality === "high" && Boolean(preferredPricingConfig(asset.pricingConfigs))
+  )), [assets]);
+  const filtered = verifiedAssets.filter((asset) => !normalizedQuery
     || asset.name.toLowerCase().includes(normalizedQuery)
     || asset.symbol.toLowerCase().includes(normalizedQuery)
     || asset.contractAddress.toLowerCase() === normalizedQuery);
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (manual && !dialog.open) dialog.showModal();
+    if (!manual && dialog.open) dialog.close();
+  }, [manual]);
+
+  useEffect(() => {
+    setDetected(null);
+    if (!manual || !EVM_ADDRESS_PATTERN.test(assetAddress.trim())) {
+      setLookupState("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setLookupState("loading");
+    fetch(`/api/v1/assets/metadata?address=${encodeURIComponent(assetAddress.trim())}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error?.code ?? "TOKEN_METADATA_UNAVAILABLE");
+        return payload.data as DetectedMetadata;
+      })
+      .then((metadata) => {
+        setDetected(metadata);
+        setLookupState("idle");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setLookupState("error");
+      });
+    return () => controller.abort();
+  }, [assetAddress, manual]);
+
   function choose(asset: EligibleAsset) {
-    const preferred = preferredPricingConfig(asset.pricingConfigs) ?? emptyPricingConfig("uniswap-v3");
-    onChange(asset.id, null, preferred);
+    const configuredPriceSource = preferredPricingConfig(asset.pricingConfigs);
+    if (!configuredPriceSource) return;
+    onChange(asset.id, null, configuredPriceSource);
     setOpen(false);
     setQuery("");
   }
 
-  function selectSource(source: PricingSource) {
-    if (!selected && !selectedMetadata) return;
-    onChange(
-      selected?.id ?? "",
-      selectedMetadata,
-      selected ? configForSource(selected.pricingConfigs, source) : emptyPricingConfig(source),
-    );
+  function openManualAsset() {
+    const queryAddress = EVM_ADDRESS_PATTERN.test(query.trim()) ? query.trim() : "";
+    const currentPool = pricingConfig?.source === "uniswap-v3" ? pricingConfig.poolAddress : "";
+    setAssetAddress(selectedMetadata?.contractAddress ?? queryAddress);
+    setPoolAddress(selectedMetadata ? currentPool : "");
+    setOpen(false);
+    setManual(true);
   }
 
   function useManualAsset() {
+    if (!detected || detected.decimals !== 18) return;
     const metadata: ProposalAssetMetadata = {
       network: "robinhood-mainnet",
       chainId: 4663,
-      contractAddress: assetAddress.trim().toLowerCase(),
+      contractAddress: detected.address.toLowerCase(),
       decimals: 18,
-      symbol: normalizeTickerInput(assetSymbol),
-      name: assetName.trim(),
+      symbol: normalizeTickerInput(detected.symbol),
+      name: detected.name.trim().slice(0, 80),
     };
-    onChange("", metadata, manualConfig);
-    setOpen(false);
+    onChange("", metadata, { source: "uniswap-v3", poolAddress: poolAddress.trim().toLowerCase() });
     setManual(false);
     setQuery("");
   }
+
+  const canUseManualAsset = detected?.decimals === 18
+    && Boolean(normalizeTickerInput(detected.symbol) && detected.name.trim())
+    && EVM_ADDRESS_PATTERN.test(poolAddress.trim());
 
   return <div className="assetMarketPicker">
     <span className="assetPickerLabel">{label}</span>
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity"><strong>{selectedSymbol}</strong><small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small></span>
-        <StatusBadge tone={selected?.quality === "high" ? "positive" : "neutral"}>
-          {selected?.quality === "high" ? "Verified" : "Non-verified"}
-        </StatusBadge>
-      </> : <span className="assetPickerPlaceholder">Search by name, symbol, or contract</span>}
+        <StatusBadge tone={selected ? "positive" : "warning"}>{selected ? "Verified" : "Review required"}</StatusBadge>
+      </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
       <ChevronDown size={15} aria-hidden="true" />
     </button>
     {open && <div className="assetPickerMenu">
-      <label className="assetPickerSearch"><Search size={15} aria-hidden="true" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="AAPL, token name, or 0x…" /></label>
+      <label className="assetPickerSearch"><Search size={15} aria-hidden="true" /><span className="srOnly">Search verified assets</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ticker, or contract address" /></label>
       <div className="assetPickerResults">
+        {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
+          <span className="assetPickerIdentity"><strong>{selectedMetadata.symbol} <small>{selectedMetadata.name}</small></strong><code>Edit contract and Uniswap V3 pool</code></span>
+          <StatusBadge tone="warning">Review required</StatusBadge>
+        </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity"><strong>{asset.symbol} <small>{asset.name}</small></strong><code>{asset.network} · {asset.contractAddress}</code></span>
           <span className="assetPickerOptionStatus">
-            <StatusBadge tone={asset.quality === "high" ? "positive" : "neutral"}>{asset.quality === "high" ? "High" : "Normal"}</StatusBadge>
+            <StatusBadge tone="positive">Verified</StatusBadge>
             {asset.id === assetId && <Check size={15} aria-hidden="true" />}
           </span>
         </button>)}
-        {filtered.length === 0 && <div className="assetPickerEmpty"><strong>No metadata entry found</strong><p>The directory is optional. Enter the token&apos;s 18-decimal metadata and exact pricing route to use it in this proposal now.</p><Button variant="secondary" onClick={() => setManual(true)}>Use an unlisted token</Button></div>}
+        {filtered.length === 0 && <div className="assetPickerEmpty"><strong>No verified asset found</strong><p>Add another Robinhood Chain token by contract address. We&apos;ll read its ticker and name onchain, then ask for a qualifying Uniswap V3 pool.</p><Button variant="secondary" onClick={openManualAsset}>{EVM_ADDRESS_PATTERN.test(query.trim()) ? "Continue with this address" : "Add by contract address"}</Button></div>}
       </div>
-      {manual && <div className="manualMarketRequest">
-        <label><span>Token name</span><input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Token name" maxLength={80} /></label>
-        <label><span>Token symbol</span><input value={assetSymbol} onChange={(event) => setAssetSymbol(normalizeTickerInput(event.target.value))} placeholder="TOKEN" maxLength={16} /></label>
-        <label><span>Token contract · Robinhood Mainnet</span><input value={assetAddress} onChange={(event) => setAssetAddress(event.target.value)} placeholder="0x…" /></label>
-        <label><span>Token decimals</span><input value="18" readOnly aria-readonly="true" /></label>
-        <label><span>Pricing route</span><select value={manualConfig.source} onChange={(event) => setManualConfig(emptyPricingConfig(event.target.value as PricingSource))}>{PRICING_SOURCE_OPTIONS.map((option) => <option key={option.source} value={option.source}>{option.label}</option>)}</select></label>
-        <PricingFields config={manualConfig} onChange={setManualConfig} prefix="Metadata request" />
-        <Button onClick={useManualAsset} disabled={!assetName.trim() || !normalizeTickerInput(assetSymbol) || !EVM_ADDRESS_PATTERN.test(assetAddress) || !pricingConfigComplete(manualConfig)}>Use token in proposal</Button>
-      </div>}
     </div>}
-    {(selected || selectedMetadata) && pricingConfig && <div className="selectedMarketEvidence">
-      <CircleAlert size={14} aria-hidden="true" />
-      <div><strong>Exact pricing configuration</strong><span>This configuration is pinned for the OTF. It never falls back to a different source automatically.</span></div>
-      <div className="pricingConfigFields">
-        <label><span>Pricing route</span><select aria-label={`${selectedSymbol} pricing route`} value={pricingConfig.source} onChange={(event) => selectSource(event.target.value as PricingSource)}>{PRICING_SOURCE_OPTIONS.map((option) => <option key={option.source} value={option.source}>{option.label}</option>)}</select></label>
-        <PricingFields config={pricingConfig} onChange={(config) => onChange(selected?.id ?? "", selectedMetadata, config)} prefix={selectedSymbol ?? "Token"} />
+
+    <dialog ref={dialogRef} className="assetRequestDialog" onClose={() => setManual(false)} onCancel={() => setManual(false)} aria-labelledby={`${label.replace(/\s+/g, "-").toLowerCase()}-asset-dialog-title`}>
+      <div className="assetRequestDialogBody">
+        <button className="dialogClose" type="button" onClick={() => setManual(false)} aria-label="Close asset request"><X size={17} /></button>
+        <h2 id={`${label.replace(/\s+/g, "-").toLowerCase()}-asset-dialog-title`}>Add an unlisted asset</h2>
+        <p>Enter its Robinhood Chain contract. We&apos;ll read the token identity onchain before you add a pricing pool.</p>
+
+        <label className="assetRequestField">
+          <span>Token contract address</span>
+          <input autoFocus value={assetAddress} onChange={(event) => setAssetAddress(event.target.value)} placeholder="0x…" spellCheck="false" />
+          {!assetAddress && <small>Robinhood Chain · 18-decimal ERC-20 tokens only</small>}
+        </label>
+
+        {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>Reading token details</strong><small>Checking the contract on Robinhood Chain…</small></div></div>}
+        {lookupState === "error" && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>Token details unavailable</strong><small>Check the contract address and try again.</small></div></div>}
+        {detected && <div className={`detectedAsset${detected.decimals === 18 ? "" : " invalid"}`}>
+          {detected.decimals === 18 ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
+          <div><span>{detected.symbol}</span><strong>{detected.name}</strong><small>{detected.decimals} decimals</small></div>
+        </div>}
+        {detected && detected.decimals !== 18 && <p className="assetRequestError" role="alert">This token cannot be added. OTF constituents must use 18 decimals.</p>}
+
+        <label className="assetRequestField">
+          <span>Uniswap V3 pool address</span>
+          <input value={poolAddress} onChange={(event) => setPoolAddress(event.target.value)} placeholder="0x…" spellCheck="false" />
+          <small>Use the token/WETH or token/USDG pool that should provide its TWAP price.</small>
+        </label>
+
+        <div className="poolRequirements">
+          <strong>Pool requirements before deployment</strong>
+          <div><span>Age</span><p>Created at least 7 days before the OTF deploys</p></div>
+          <div><span>Liquidity</span><p>At least $10,000 in active liquidity</p></div>
+          <div><span>Market cap</span><p>Token above $1,000,000 on CoinMarketCap</p></div>
+          <small>These checks run again before deployment. Adding the asset now does not guarantee approval.</small>
+        </div>
+
+        <div className="assetRequestActions">
+          <Button variant="secondary" onClick={() => setManual(false)}>Cancel</Button>
+          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>Add asset for review</Button>
+        </div>
       </div>
-      <code>{pricingConfigComplete(pricingConfig) ? "Exact addresses ready for onchain validation" : "Enter every required 0x address"}</code>
-    </div>}
+    </dialog>
   </div>;
 }
