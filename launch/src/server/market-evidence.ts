@@ -1,30 +1,12 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import {
   evaluateMarketEvidence,
   type MarketEvidenceInput,
 } from "@/lib/market-evidence-policy";
+import { getCoinGeckoClient } from "./coingecko";
 import { requireDb } from "./db";
 import { assetEligibilitySnapshots, assetMarkets, competitions, eligibleAssets } from "./db/schema";
 import { env } from "./env";
-
-const tokenDataSchema = z.object({
-  data: z.object({ attributes: z.object({ market_cap_usd: z.string().nullable() }).passthrough() }),
-});
-const tokenInfoSchema = z.object({
-  data: z.object({ attributes: z.object({
-    gt_score: z.number().nullable(),
-    gt_verified: z.boolean().nullable(),
-    is_honeypot: z.boolean().nullable(),
-  }).passthrough() }),
-});
-const poolDataSchema = z.object({
-  data: z.object({ attributes: z.object({
-    reserve_in_usd: z.string().nullable(),
-    locked_liquidity_percentage: z.string().nullable(),
-    pool_created_at: z.string().datetime({ offset: true }).nullable(),
-  }).passthrough() }),
-});
 type MarketRow = {
   id: string;
   marketId: string;
@@ -35,28 +17,17 @@ type MarketRow = {
   assetAddress: string;
 };
 
-function finiteNumber(value: string | null | undefined) {
+function finiteNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
-async function coinGecko(path: string) {
-  if (!env.COINGECKO_PRO_API_KEY || !env.COINGECKO_NETWORK_ID) return null;
-  const response = await fetch(`https://pro-api.coingecko.com/api/v3/onchain/networks/${encodeURIComponent(env.COINGECKO_NETWORK_ID)}/${path}`, {
-    headers: { accept: "application/json", "x-cg-pro-api-key": env.COINGECKO_PRO_API_KEY },
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new Error(`COINGECKO_${response.status}`);
-  return response.json();
-}
-
 async function fetchProviderEvidence(market: MarketRow) {
   const providerErrors: string[] = [];
-  let tokenData: z.infer<typeof tokenDataSchema> | null = null;
-  let tokenInfo: z.infer<typeof tokenInfoSchema> | null = null;
-  let poolData: z.infer<typeof poolDataSchema> | null = null;
+  let tokenData: Awaited<ReturnType<ReturnType<typeof getCoinGeckoClient>["getToken"]>> | null = null;
+  let tokenInfo: Awaited<ReturnType<ReturnType<typeof getCoinGeckoClient>["getTokenInfo"]>> | null = null;
+  let poolData: Awaited<ReturnType<ReturnType<typeof getCoinGeckoClient>["getPool"]>> | null = null;
   const safeLoad = async <T>(label: string, load: () => Promise<T>) => {
     try { return await load(); }
     catch (error) {
@@ -65,9 +36,16 @@ async function fetchProviderEvidence(market: MarketRow) {
     }
   };
 
-  tokenData = await safeLoad("token-data", async () => tokenDataSchema.parse(await coinGecko(`tokens/${market.assetAddress}`)));
-  tokenInfo = await safeLoad("token-info", async () => tokenInfoSchema.parse(await coinGecko(`tokens/${market.assetAddress}/info`)));
-  poolData = await safeLoad("pool-data", async () => poolDataSchema.parse(await coinGecko(`pools/${market.poolAddress}`)));
+  if (env.COINGECKO_NETWORK_ID) {
+    const client = getCoinGeckoClient();
+    [tokenData, tokenInfo, poolData] = await Promise.all([
+      safeLoad("token-data", () => client.getToken(env.COINGECKO_NETWORK_ID!, market.assetAddress)),
+      safeLoad("token-info", () => client.getTokenInfo(env.COINGECKO_NETWORK_ID!, market.assetAddress)),
+      safeLoad("pool-data", () => client.getPool(env.COINGECKO_NETWORK_ID!, market.poolAddress)),
+    ]);
+  } else {
+    providerErrors.push("configuration:COINGECKO_NETWORK_NOT_CONFIGURED");
+  }
   return { tokenData, tokenInfo, poolData, providerErrors };
 }
 
@@ -91,8 +69,9 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
   for (const market of markets) {
     const provider = await fetchProviderEvidence(market);
     const marketCap = finiteNumber(provider.tokenData?.data.attributes.market_cap_usd);
-    const poolCreatedAt = provider.poolData?.data.attributes.pool_created_at
-      ? new Date(provider.poolData.data.attributes.pool_created_at)
+    const poolCreatedAtValue = provider.poolData?.data.attributes.pool_created_at;
+    const poolCreatedAt = poolCreatedAtValue && !Number.isNaN(new Date(poolCreatedAtValue).getTime())
+      ? new Date(poolCreatedAtValue)
       : null;
     const evidence: MarketEvidenceInput = {
       sampledAt,
@@ -103,7 +82,7 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
       marketCapVerified: provider.tokenData ? marketCap !== null : null,
       poolCreatedAt,
       gtVerified: provider.tokenInfo?.data.attributes.gt_verified ?? null,
-      gtScore: provider.tokenInfo?.data.attributes.gt_score ?? null,
+      gtScore: finiteNumber(provider.tokenInfo?.data.attributes.gt_score),
       isHoneypot: provider.tokenInfo?.data.attributes.is_honeypot ?? null,
       lockedLiquidityPct: finiteNumber(provider.poolData?.data.attributes.locked_liquidity_percentage),
     };

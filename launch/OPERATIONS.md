@@ -8,20 +8,28 @@
 - Verify the optional asset-discovery index, trusted Chainlink pair map, V3 market registry, pricing
   resolver, factory, WETH, USDG, and canonical WETH/USDG pool against deployed bytecode and
   transactions. Keep Robinhood Mainnet disabled until this is complete.
-- Configure `COINGECKO_PRO_API_KEY` and `COINGECKO_NETWORK_ID`. Launch performance uses provider APIs
-  only: Robinhood bids for supported stock-token contracts and CoinGecko USD prices keyed by network
-  and contract for other catalog assets. These performance prices are not OTF onchain pricing.
+- Configure `COINGECKO_DEMO_API_KEY` and `COINGECKO_NETWORK_ID`. The server calls public GeckoTerminal
+  first and uses the Demo API only as a bounded fallback; the key is never sent to the browser. Launch
+  performance uses Robinhood bids for supported stock-token contracts and CoinGecko USD prices keyed by
+  network and contract for `coingecko-usd` assets. These performance prices are not OTF onchain pricing.
+- Configure `ROBINHOOD_V3_FACTORY_ADDRESS`, `ROBINHOOD_WETH_ADDRESS`, `ROBINHOOD_USDG_ADDRESS`, and
+  `ROBINHOOD_V3_SUPPORTED_FEES`. Unlisted asset validation reads token and pool state from
+  `ROBINHOOD_RPC_URL` before making any CoinGecko request.
 - Confirm high-quality/normal labels and pricing prefills are recomputed from live evidence. They are
   frontend metadata only and MUST NOT be described as an onchain approval, qualification, block, or
   authorization.
-- Confirm entry-price capture succeeds when a vote tranche is verified. Missing provider prices leave performance Pending without invalidating the vote.
+- Confirm vote activation finds the newest complete saved scoring checkpoint at or before activation
+  within the 90-minute freshness window. Missing checkpoints fail closed with
+  `PRICE_CHECKPOINT_UNAVAILABLE`; activation never makes provider calls.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
 - Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 
 ## During the competition
 
 - Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
-- Run `/api/jobs/prices` every 30 minutes. It stores provider prices for every catalog asset, updates CoinGecko/GT eligibility evidence, feeds proposal return charts, and recomputes live participation and creator XP.
+- Run `/api/jobs/prices` every 30 minutes. It stores provider prices for every catalog asset and feeds
+  proposal return charts. Run `/api/jobs/evidence` hourly for the canonical market-evidence checkpoint;
+  do not run a separate markets job. Run `/api/jobs/x-evidence` daily for public X evidence rechecks.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 

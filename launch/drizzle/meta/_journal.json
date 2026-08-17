@@ -36,6 +36,13 @@
       "when": 1786914302180,
       "tag": "0004_unified_asset_quality_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786970000000,
+      "tag": "0005_coingecko_checkpoint_locking",
+      "breakpoints": true
     }
   ]
 }

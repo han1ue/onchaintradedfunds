@@ -202,6 +202,7 @@ export const assetMarketRequests = pgTable("asset_market_requests", {
 
 export const priceCaptureRuns = pgTable("price_capture_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
+  captureKey: text("capture_key").notNull(),
   sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
   status: text("status").notNull(),
   requestedAssetIds: uuid("requested_asset_ids").array().notNull(),
@@ -210,6 +211,7 @@ export const priceCaptureRuns = pgTable("price_capture_runs", {
   purpose: text("purpose").default("scoring").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [
+  uniqueIndex("price_capture_runs_capture_key_uq").on(table.captureKey),
   index("price_capture_runs_sampled_at_idx").on(table.sampledAt),
   check("price_capture_run_status", sql`${table.status} in ('complete', 'partial')`),
   check("price_capture_run_purpose", sql`${table.purpose} in ('submission', 'entry', 'final', 'scoring')`)

@@ -11,7 +11,7 @@ import {
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
-import { captureAssetPrices } from "./prices";
+import { getNewestCompletePriceCheckpoint } from "./prices";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -152,11 +152,7 @@ export async function verifyBallotProof(input: unknown) {
       eq(proposals.status, "accepted"),
       sql`${proposals.acceptedAt} <= ${activatedAt}`,
     ));
-  const entryCapture = await captureAssetPrices({
-    assetIds: entryAssets.map((asset) => asset.id),
-    sampledAt: activatedAt,
-    purpose: "entry",
-  });
+  const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), activatedAt);
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: activatedAt }).where(and(
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)

@@ -3,6 +3,9 @@ export const errorMessages: Record<string, string> = {
   PRICING_CONFIG_REQUIRED: "An exact pricing route is required for this unverified asset.",
   FOLLOWER_THRESHOLD: "Your X account must have at least 100 followers to submit or vote.",
   ASSET_NOT_FOUND: "One or more asset metadata records could not be found.",
+  UNLISTED_ASSET_MARKET_REQUIRED: "Unlisted assets must include a validated Uniswap V3 pool.",
+  ASSET_MARKET_REQUIREMENTS_NOT_MET: "This asset or pool does not currently meet every market requirement. Review the observed values and try again later.",
+  ASSET_MARKET_VALIDATION_UNAVAILABLE: "Asset validation is temporarily unavailable. No asset or proposal was saved; try again shortly.",
   ASSETS_NOT_UNIQUE: "Each token contract may appear only once in a proposal.",
   WEIGHTS_NOT_100: "Portfolio weights must total 100%.",
   X_RECONNECT_REQUIRED: "Sign in with X again so OTF Launch can refresh your eligibility.",
@@ -28,7 +31,8 @@ export const errorMessages: Record<string, string> = {
   VOTES_ARE_FINAL: "Votes already cast cannot be moved or removed. Add only newly unlocked votes.",
   NO_NEW_VOTES: "Add at least one newly unlocked vote before continuing.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
-  COMPETITION_NOT_OPEN: "The competition is not currently open."
+  COMPETITION_NOT_OPEN: "The competition is not currently open.",
+  PRICE_CHECKPOINT_UNAVAILABLE: "A complete price checkpoint within the allowed freshness window is unavailable. Try again after the next 30-minute checkpoint."
 };
 
 export class PublicApiError extends Error {

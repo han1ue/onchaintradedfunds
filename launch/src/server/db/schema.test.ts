@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetPricingConfigs,
   eligibleAssets,
+  priceCaptureRuns,
   proposalAssets,
   voteTranches,
   xpSnapshotRows,
@@ -32,5 +33,9 @@ describe("unified asset database schema", () => {
     expect(getTableColumns(voteTranches)).not.toHaveProperty("performanceCohort");
     expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("qualifiedPerformanceXp");
     expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("experimentalPerformanceXp");
+  });
+
+  it("keys price capture runs for cross-instance cron idempotency", () => {
+    expect(getTableColumns(priceCaptureRuns)).toHaveProperty("captureKey");
   });
 });

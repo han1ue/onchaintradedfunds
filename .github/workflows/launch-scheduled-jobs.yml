@@ -3,6 +3,7 @@ name: Launch scheduled jobs
 on:
   schedule:
     - cron: "17,47 * * * *"
+    - cron: "0 * * * *"
     - cron: "42 2 * * *"
   workflow_dispatch:
     inputs:
@@ -15,6 +16,7 @@ on:
           - both
           - prices
           - evidence
+          - x-evidence
 
 permissions:
   contents: read
@@ -43,7 +45,7 @@ jobs:
           "${LAUNCH_SITE_URL%/}/api/jobs/prices"
 
   evidence:
-    if: github.event.schedule == '42 2 * * *' || (github.event_name == 'workflow_dispatch' && (inputs.job == 'evidence' || inputs.job == 'both'))
+    if: github.event.schedule == '0 * * * *' || (github.event_name == 'workflow_dispatch' && (inputs.job == 'evidence' || inputs.job == 'both'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -52,10 +54,28 @@ jobs:
     steps:
       - name: Validate configuration
         run: test -n "$LAUNCH_SITE_URL" && test -n "$CRON_SECRET"
-      - name: Recheck public evidence
+      - name: Capture hourly market evidence
         run: >-
           curl --fail-with-body --silent --show-error
           --retry 3 --retry-delay 5 --max-time 300
           --header "Authorization: Bearer $CRON_SECRET"
           --header "Accept: application/json"
           "${LAUNCH_SITE_URL%/}/api/jobs/evidence"
+
+  x-evidence:
+    if: github.event.schedule == '42 2 * * *' || (github.event_name == 'workflow_dispatch' && (inputs.job == 'x-evidence' || inputs.job == 'both'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LAUNCH_SITE_URL: ${{ vars.LAUNCH_SITE_URL }}
+      CRON_SECRET: ${{ secrets.LAUNCH_CRON_SECRET }}
+    steps:
+      - name: Validate configuration
+        run: test -n "$LAUNCH_SITE_URL" && test -n "$CRON_SECRET"
+      - name: Recheck public X evidence
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --retry 3 --retry-delay 5 --max-time 300
+          --header "Authorization: Bearer $CRON_SECRET"
+          --header "Accept: application/json"
+          "${LAUNCH_SITE_URL%/}/api/jobs/x-evidence"

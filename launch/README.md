@@ -24,7 +24,7 @@ The direct-post implementation replaces the original, pre-deployment challenge s
 
 The baseline stock-token records use one-time contract data from Robinhood's public APIs for Robinhood Chain (`4663`). Assets are included only after their active 18-decimal deployment and live Robinhood bid are verified. ETH exposure is represented by Robinhood Chain WETH. Runtime pages use the database rather than a second static asset catalog.
 
-Hourly checkpoints use Robinhood bid quotes for stock tokens and the public Coinbase Exchange `ETH-USD` best bid for ETH. A mixed portfolio is stored only as a complete checkpoint when every requested constituent succeeds in the same capture run; provider failures produce a partial checkpoint and never substitute a spot estimate.
+30-minute checkpoints use Robinhood bid quotes for stock tokens, the public Coinbase Exchange `ETH-USD` best bid for ETH, and one batched GeckoTerminal/CoinGecko token-price request for all `coingecko-usd` contract addresses. A mixed portfolio is stored only as a complete checkpoint when every requested constituent succeeds in the same capture run; provider failures produce a partial checkpoint and never substitute a spot estimate. Checkpoint runs use a PostgreSQL advisory lock plus a unique capture key, so duplicate cron calls do not repeat provider requests.
 
 ## Verification
 
@@ -33,7 +33,7 @@ Hourly checkpoints use Robinhood bid quotes for stock tokens and the public Coin
 - The immutable X ID is the actor identity. Current X identity and eligibility fields live on the user record; action-specific facts such as accepted follower count stay with the action.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` captures provider-price checkpoints every 30 minutes, at minutes 17 and 47, while the competition is open, and rechecks public X evidence once daily at 02:42 UTC while it is open. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` captures provider-price checkpoints every 30 minutes, captures market evidence hourly for the seven-day continuity policy, and rechecks public X evidence once daily at 02:42 UTC while it is open. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
 
 ## Vercel
 

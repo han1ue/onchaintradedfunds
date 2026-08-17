@@ -16,8 +16,12 @@ const schema = z.object({
   CRON_SECRET: z.string().min(16).optional(),
   IP_HASH_SECRET: z.string().min(16).optional(),
   ADMIN_X_IDS: z.string().optional(),
-  COINGECKO_PRO_API_KEY: z.string().optional(),
+  COINGECKO_DEMO_API_KEY: z.string().optional(),
   COINGECKO_NETWORK_ID: z.string().optional(),
+  ROBINHOOD_V3_FACTORY_ADDRESS: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  ROBINHOOD_WETH_ADDRESS: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  ROBINHOOD_USDG_ADDRESS: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  ROBINHOOD_V3_SUPPORTED_FEES: z.string().default("3000"),
   ROBINHOOD_RPC_URL: optionalUrl.default("https://rpc.mainnet.chain.robinhood.com")
 });
 

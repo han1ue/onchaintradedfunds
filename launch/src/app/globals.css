@@ -437,6 +437,14 @@ button { color: inherit; }
 .poolRequirements > div > span { color: var(--text-muted); font-size: .65rem; font-weight: 650; text-transform: uppercase; letter-spacing: .045em; }
 .poolRequirements p { margin: 0; color: var(--text-soft); font-size: .69rem; line-height: 1.45; }
 .poolRequirements > small { margin-top: 9px; color: var(--text-muted); font-size: .64rem; line-height: 1.5; }
+.marketRequirement { grid-template-columns: 22px minmax(0, 1fr) !important; align-items: start !important; }
+.marketRequirementIcon { display: grid; place-items: center; padding-top: 2px; color: var(--text-muted) !important; }
+.marketRequirement.pass .marketRequirementIcon { color: var(--green) !important; }
+.marketRequirement.fail .marketRequirementIcon { color: var(--danger) !important; }
+.marketRequirement.unavailable .marketRequirementIcon, .marketRequirement.pending .marketRequirementIcon { color: var(--warning) !important; }
+.marketRequirement > div > strong { display: block; color: var(--text); font-size: .7rem; }
+.marketRequirement > div > p { margin-top: 3px; }
+.marketRequirement > div > small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .63rem; line-height: 1.4; }
 .assetRequestActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 @keyframes token-lookup { 0%, 100% { opacity: .35; transform: scale(.72); } 50% { opacity: 1; transform: scale(1); } }
 .weightField > div { position: relative; height: 100%; }

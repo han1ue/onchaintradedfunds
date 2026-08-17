@@ -4,6 +4,7 @@ import type { PortfolioReturns } from "@/lib/types";
 import { calculatePortfolioReturns } from "@/lib/returns";
 import { requireDb, sqlClient } from "./db";
 import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
+import { getCoinGeckoClient } from "./coingecko";
 import { env } from "./env";
 
 const pricesResponseSchema = z.object({
@@ -17,13 +18,6 @@ const pricesResponseSchema = z.object({
 const coinbaseTickerSchema = z.object({
   bid: z.string(),
   time: z.string().datetime({ offset: true }),
-});
-
-const coinGeckoOnchainPriceSchema = z.object({
-  data: z.object({ attributes: z.object({
-    token_prices: z.record(z.string().nullable()),
-    last_trade_timestamp: z.record(z.number().int().nullable()).optional(),
-  }) }),
 });
 
 export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
@@ -57,6 +51,7 @@ export type PriceCaptureResult = {
   stored: number;
   complete: boolean;
   missing: string[];
+  skipped?: boolean;
 };
 
 async function fetchRobinhoodBids(): Promise<Map<string, SourceQuote>> {
@@ -88,22 +83,7 @@ async function fetchCoinGeckoOnchainPrices(assets: PriceAsset[]): Promise<Map<st
   if (!env.COINGECKO_NETWORK_ID) throw new Error("COINGECKO_NETWORK_NOT_CONFIGURED");
   const addresses = [...new Set(assets.map((asset) => asset.contractAddress.toLowerCase()))];
   if (addresses.length === 0) return new Map();
-  const apiRoot = env.COINGECKO_PRO_API_KEY
-    ? "https://pro-api.coingecko.com/api/v3/onchain"
-    : "https://api.geckoterminal.com/api/v2";
-  const response = await fetch(
-    `${apiRoot}/simple/networks/${encodeURIComponent(env.COINGECKO_NETWORK_ID)}/token_price/${addresses.map(encodeURIComponent).join(",")}`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json",
-        ...(env.COINGECKO_PRO_API_KEY ? { "x-cg-pro-api-key": env.COINGECKO_PRO_API_KEY } : {}),
-      },
-      signal: AbortSignal.timeout(10_000),
-    },
-  );
-  if (!response.ok) throw new Error(`COINGECKO_PRICES_${response.status}`);
-  const attributes = coinGeckoOnchainPriceSchema.parse(await response.json()).data.attributes;
+  const attributes = (await getCoinGeckoClient().getTokenPrices(env.COINGECKO_NETWORK_ID, addresses)).data.attributes;
   const fallbackTimestamp = new Date();
   return new Map(Object.entries(attributes.token_prices).flatMap(([address, bid]) => {
     if (!bid) return [];
@@ -144,10 +124,56 @@ export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<Price
   return { quotes, errors };
 }
 
-export async function captureAssetPrices(options: PriceCaptureOptions): Promise<PriceCaptureResult> {
+const inFlightCaptures = new Map<string, Promise<PriceCaptureResult>>();
+
+function captureKey(sampledAt: Date, purpose: PriceCaptureOptions["purpose"], assetIds?: string[]) {
+  const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
+  if (purpose !== "scoring") return `${purpose}:${sampledAt.toISOString()}:${scope}`;
+  const bucket = Math.floor(sampledAt.getTime() / (30 * 60_000)) * (30 * 60_000);
+  return `${purpose}:${new Date(bucket).toISOString()}:${scope}`;
+}
+
+async function readExistingCapture(key: string): Promise<PriceCaptureResult | null> {
+  if (!sqlClient) return null;
+  const rows = await sqlClient<{ id: string; sampledAt: string; status: "complete" | "partial"; missingSymbols: string[] }[]>`
+    select id::text, sampled_at as "sampledAt", status, missing_symbols as "missingSymbols"
+    from price_capture_runs where capture_key = ${key} limit 1`;
+  const existing = rows[0];
+  if (!existing) return null;
+  const stored = await sqlClient<{ count: string }[]>`
+    select count(*)::text as count from asset_price_snapshots where capture_run_id = ${existing.id}::uuid`;
+  return {
+    runId: existing.id,
+    sampledAt: new Date(existing.sampledAt),
+    stored: Number(stored[0]?.count ?? 0),
+    complete: existing.status === "complete",
+    missing: existing.missingSymbols ?? [],
+    skipped: true,
+  };
+}
+
+async function withPriceCaptureLock<T>(key: string, work: () => Promise<T>): Promise<T | null> {
+  if (!sqlClient) return work();
+  const connection = await sqlClient.reserve();
+  const lockKey = `otf-launch:price-capture:${key}`;
+  try {
+    const [lock] = await connection<{ locked: boolean }[]>`select pg_try_advisory_lock(hashtext(${lockKey})) as locked`;
+    if (!lock?.locked) return null;
+    try {
+      return await work();
+    } finally {
+      await connection`select pg_advisory_unlock(hashtext(${lockKey}))`;
+    }
+  } finally {
+    connection.release();
+  }
+}
+
+async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: Date, key: string): Promise<PriceCaptureResult> {
   const database = requireDb();
-  const sampledAt = options.sampledAt ?? new Date();
   const purpose = options.purpose;
+  const existing = await readExistingCapture(key);
+  if (existing) return existing;
   const assets = options.assetIds
     ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
     : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
@@ -181,12 +207,14 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
   const [run, stored] = await database.transaction(async (transaction) => {
     const [captureRun] = await transaction.insert(priceCaptureRuns).values({
       sampledAt,
+      captureKey: key,
       status: missing.length ? "partial" : "complete",
       requestedAssetIds: assets.map((asset) => asset.id),
       missingSymbols: missing,
       provider,
       purpose,
-    }).returning({ id: priceCaptureRuns.id });
+    }).onConflictDoNothing({ target: priceCaptureRuns.captureKey }).returning({ id: priceCaptureRuns.id });
+    if (!captureRun) throw new Error("PRICE_CAPTURE_ALREADY_EXISTS");
     const captured = values.length
       ? await transaction.insert(assetPriceSnapshots).values(values.map((value) => ({ ...value, captureRunId: captureRun.id }))).onConflictDoNothing().returning({ assetId: assetPriceSnapshots.assetId })
       : [];
@@ -194,6 +222,46 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
   });
   if (missing.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing, provider });
   return { runId: run.id, sampledAt, stored: stored.length, complete: missing.length === 0, missing };
+}
+
+export async function captureAssetPrices(options: PriceCaptureOptions): Promise<PriceCaptureResult> {
+  const sampledAt = options.sampledAt ?? new Date();
+  const key = captureKey(sampledAt, options.purpose, options.assetIds);
+  const existing = await readExistingCapture(key);
+  if (existing) return existing;
+  const running = inFlightCaptures.get(key);
+  if (running) return running;
+  const promise = (async () => {
+    const captured = await withPriceCaptureLock(key, async () => {
+      const lockedExisting = await readExistingCapture(key);
+      if (lockedExisting) return lockedExisting;
+      return captureAssetPricesOnce(options, sampledAt, key);
+    });
+    return captured ?? { runId: null, sampledAt, stored: 0, complete: false, missing: [], skipped: true };
+  })().finally(() => inFlightCaptures.delete(key));
+  inFlightCaptures.set(key, promise);
+  return promise;
+}
+
+export const PRICE_CHECKPOINT_FRESHNESS_MS = 90 * 60_000;
+
+export async function getNewestCompletePriceCheckpoint(assetIds: string[], activatedAt: Date) {
+  if (!sqlClient || assetIds.length === 0) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");
+  const rows = await sqlClient<{ id: string; sampledAt: string }[]>`
+    select pcr.id::text, pcr.sampled_at as "sampledAt"
+    from price_capture_runs pcr
+    join asset_price_snapshots aps on aps.capture_run_id = pcr.id
+    where pcr.purpose = 'scoring'
+      and pcr.status = 'complete'
+      and pcr.sampled_at <= ${activatedAt.toISOString()}::timestamptz
+      and pcr.sampled_at >= ${new Date(activatedAt.getTime() - PRICE_CHECKPOINT_FRESHNESS_MS).toISOString()}::timestamptz
+      and aps.asset_id in ${sqlClient(assetIds)}
+    group by pcr.id, pcr.sampled_at
+    having count(distinct aps.asset_id) = ${assetIds.length}
+    order by pcr.sampled_at desc
+    limit 1`;
+  if (!rows[0]) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");
+  return { runId: rows[0].id, sampledAt: new Date(rows[0].sampledAt) };
 }
 
 export async function getProposalReturns(
