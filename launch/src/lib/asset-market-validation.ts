@@ -14,7 +14,7 @@ export type AssetMarketValidationResponse = {
   status: AssetMarketRequirementStatus;
   asset: { address: string; name: string; symbol: string; decimals: number } | null;
   market: {
-    poolAddress: string;
+    poolAddress: string | null;
     factoryAddress: string | null;
     quoteTokenAddress: string | null;
     feeTier: number | null;

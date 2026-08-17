@@ -179,7 +179,7 @@ export class CoinGeckoClient {
     return cachedRequest(
       `/networks/${encodeURIComponent(network)}/pools/${encodeURIComponent(poolAddress.toLowerCase())}`,
       poolSchema,
-      15 * 60_000,
+      30 * 60_000,
     );
   }
 
@@ -187,7 +187,7 @@ export class CoinGeckoClient {
     return cachedRequest(
       `/networks/${encodeURIComponent(network)}/tokens/${encodeURIComponent(assetAddress.toLowerCase())}`,
       tokenSchema,
-      15 * 60_000,
+      30 * 60_000,
     );
   }
 
@@ -195,7 +195,7 @@ export class CoinGeckoClient {
     return cachedRequest(
       `/networks/${encodeURIComponent(network)}/tokens/${encodeURIComponent(assetAddress.toLowerCase())}/info`,
       tokenInfoSchema,
-      15 * 60_000,
+      30 * 60_000,
     );
   }
 }

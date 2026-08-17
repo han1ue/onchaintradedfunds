@@ -7,6 +7,7 @@ import type {
 import { evaluateCompetitionPoolAge, MARKET_EVIDENCE_THRESHOLDS } from "@/lib/market-evidence-policy";
 import { getCoinGeckoClient } from "./coingecko";
 import { env } from "./env";
+import { cachedAssetValidation } from "./validation-cache";
 
 const rpcResponseSchema = z.object({
   result: z.string().optional(),
@@ -160,16 +161,84 @@ function providerUnavailableRequirements(): AssetMarketRequirement[] {
   ];
 }
 
-export async function validateUnlistedAsset(input: {
-  assetAddress: string;
-  poolAddress: string;
-  competitionStartsAt: Date | null;
-}): Promise<AssetMarketValidationResponse & { marketDetails: {
+function poolPendingRequirements(): AssetMarketRequirement[] {
+  return [
+    requirement("canonical-pool", "Canonical pool", "Uniswap V3 pool from the configured factory", null, "pending", "robinhood-rpc"),
+    requirement("asset-in-pool", "Asset in pool", "Submitted contract is token0 or token1", null, "pending", "robinhood-rpc"),
+    requirement("quote-token", "Quote token", "Exactly canonical WETH or USDG", null, "pending", "robinhood-rpc"),
+    requirement("factory", "Pool factory", "Configured canonical factory", null, "pending", "robinhood-rpc"),
+    requirement("factory-pool", "Factory lookup", "factory.getPool() equals submitted pool", null, "pending", "robinhood-rpc"),
+    requirement("fee", "Pool fee", "One of the configured supported fees", null, "pending", "robinhood-rpc"),
+    requirement("initialized", "Pool initialized", "Initialized sqrt price", null, "pending", "robinhood-rpc"),
+    requirement("observation-cardinality", "Observation cardinality", `At least ${minimumObservationCardinality}`, null, "pending", "robinhood-rpc"),
+    requirement("one-hour-observe", "One-hour observation", "observe([3600, 0]) succeeds", null, "pending", "robinhood-rpc"),
+    requirement("pool-age", "Pool age", "At least 7 days before competition start", null, "pending", "geckoterminal"),
+    requirement("liquidity-usd", "USD liquidity", `At least $${MARKET_EVIDENCE_THRESHOLDS.liquidityUsd.toLocaleString()}`, null, "pending", "geckoterminal"),
+    requirement("locked-liquidity", "Locked liquidity", `At least ${MARKET_EVIDENCE_THRESHOLDS.lockedLiquidityPct}%`, null, "pending", "geckoterminal"),
+  ];
+}
+
+type ValidationResult = AssetMarketValidationResponse & { marketDetails: {
   factoryAddress: string;
   quoteTokenAddress: string;
   feeTier: number;
   poolCreatedAt: Date | null;
-} | null }> {
+} | null };
+
+async function validateTokenOnly(assetAddress: string): Promise<ValidationResult> {
+  return cachedAssetValidation(`token:${assetAddress}`, async () => {
+    const [name, symbol, decimals, totalSupply] = await Promise.all([
+      safeRead(() => rpcCall(assetAddress, selectors.name).then(decodeText)),
+      safeRead(() => rpcCall(assetAddress, selectors.symbol).then(decodeText)),
+      safeRead(() => rpcCall(assetAddress, selectors.decimals).then(decodeUint).then(Number)),
+      safeRead(() => rpcCall(assetAddress, selectors.totalSupply).then(decodeUint)),
+    ]);
+    const tokenRpcReady = name.value !== null && symbol.value !== null && decimals.value === 18 && totalSupply.value !== null;
+    const tokenRequirements: AssetMarketRequirement[] = [
+      requirement("erc20-contract", "ERC-20 contract", "Readable name, symbol, decimals, and total supply", Boolean(name.value && symbol.value && decimals.value !== null && totalSupply.value !== null), name.error !== null || symbol.error !== null || decimals.error !== null || totalSupply.error !== null ? "unavailable" : tokenRpcReady ? "pass" : "fail", "robinhood-rpc"),
+      requirement("token-decimals", "Token decimals", "Exactly 18", decimals.value, statusForValue(decimals.value, (value) => value === 18, Boolean(decimals.error)), "robinhood-rpc"),
+    ];
+    const asset = name.value !== null && symbol.value !== null && decimals.value !== null && totalSupply.value !== null
+      ? { address: assetAddress, name: name.value, symbol: symbol.value.toUpperCase(), decimals: decimals.value }
+      : null;
+    const providerRequirements: AssetMarketRequirement[] = tokenRpcReady && env.COINGECKO_NETWORK_ID
+      ? await (async () => {
+        const client = getCoinGeckoClient();
+        const [tokenProvider, infoProvider] = await Promise.all([
+          safeRead(() => client.getToken(env.COINGECKO_NETWORK_ID!, assetAddress)),
+          safeRead(() => client.getTokenInfo(env.COINGECKO_NETWORK_ID!, assetAddress)),
+        ]);
+        const marketCap = tokenProvider.value?.data.attributes.market_cap_usd === null || tokenProvider.value?.data.attributes.market_cap_usd === undefined ? null : Number(tokenProvider.value.data.attributes.market_cap_usd);
+        const gtScore = infoProvider.value?.data.attributes.gt_score === null || infoProvider.value?.data.attributes.gt_score === undefined ? null : Number(infoProvider.value.data.attributes.gt_score);
+        return [
+          requirement("verified-market-cap", "Verified market cap", `At least $${MARKET_EVIDENCE_THRESHOLDS.marketCapUsd.toLocaleString()} (market cap only)`, marketCap, tokenProvider.error !== null ? "unavailable" : statusForValue(marketCap, (value) => Number.isFinite(value) && value >= MARKET_EVIDENCE_THRESHOLDS.marketCapUsd), "geckoterminal"),
+          requirement("gt-verified", "GT verification", "Verified", infoProvider.value?.data.attributes.gt_verified ?? null, infoProvider.error !== null ? "unavailable" : statusForValue(infoProvider.value?.data.attributes.gt_verified ?? null, (value) => value === true), "geckoterminal"),
+          requirement("gt-score", "GT score", `At least ${MARKET_EVIDENCE_THRESHOLDS.gtScore}`, gtScore, infoProvider.error !== null ? "unavailable" : statusForValue(gtScore, (value) => Number.isFinite(value) && value >= MARKET_EVIDENCE_THRESHOLDS.gtScore), "geckoterminal"),
+          requirement("honeypot", "Honeypot status", "Not a honeypot", infoProvider.value?.data.attributes.is_honeypot ?? null, infoProvider.error !== null ? "unavailable" : statusForValue(infoProvider.value?.data.attributes.is_honeypot ?? null, (value) => value === false), "geckoterminal"),
+        ];
+      })()
+      : [
+        requirement("verified-market-cap", "Verified market cap", `At least $${MARKET_EVIDENCE_THRESHOLDS.marketCapUsd.toLocaleString()} (market cap only)`, null, "unavailable", "geckoterminal"),
+        requirement("gt-verified", "GT verification", "Verified", null, "unavailable", "geckoterminal"),
+        requirement("gt-score", "GT score", `At least ${MARKET_EVIDENCE_THRESHOLDS.gtScore}`, null, "unavailable", "geckoterminal"),
+        requirement("honeypot", "Honeypot status", "Not a honeypot", null, "unavailable", "geckoterminal"),
+      ];
+    const requirements = [...tokenRequirements, ...providerRequirements, ...poolPendingRequirements()];
+    return {
+      status: overallStatus(requirements),
+      asset,
+      market: { poolAddress: null, factoryAddress: null, quoteTokenAddress: null, feeTier: null, poolCreatedAt: null },
+      requirements,
+      marketDetails: null,
+    };
+  });
+}
+
+async function validateFullUnlistedAsset(input: {
+  assetAddress: string;
+  poolAddress: string;
+  competitionStartsAt: Date | null;
+}): Promise<ValidationResult> {
   const assetAddress = normalizeAddress(input.assetAddress);
   const poolAddress = normalizeAddress(input.poolAddress);
   const canonical = configuredCanonicalAddresses();
@@ -319,4 +388,39 @@ export async function validateUnlistedAsset(input: {
     requirements,
     marketDetails: { factoryAddress: factory.value!, quoteTokenAddress: quoteToken!, feeTier: fee.value!, poolCreatedAt },
   };
+}
+
+function normalizeCachedResult(result: ValidationResult): ValidationResult {
+  if (!result.marketDetails || result.marketDetails.poolCreatedAt instanceof Date || result.marketDetails.poolCreatedAt === null) return result;
+  return {
+    ...result,
+    marketDetails: { ...result.marketDetails, poolCreatedAt: new Date(result.marketDetails.poolCreatedAt as unknown as string) },
+  };
+}
+
+function tokenValidationPassed(result: ValidationResult) {
+  const tokenKeys = new Set(["erc20-contract", "token-decimals", "verified-market-cap", "gt-verified", "gt-score", "honeypot"]);
+  return result.requirements.filter((item) => tokenKeys.has(item.key)).every((item) => item.status === "pass");
+}
+
+export async function validateUnlistedAsset(input: {
+  assetAddress: string;
+  poolAddress?: string | null;
+  competitionStartsAt: Date | null;
+}): Promise<ValidationResult> {
+  const assetAddress = normalizeAddress(input.assetAddress);
+  const poolAddress = input.poolAddress ? normalizeAddress(input.poolAddress) : null;
+  if (!poolAddress) return normalizeCachedResult(await validateTokenOnly(assetAddress));
+  const competitionKey = input.competitionStartsAt?.toISOString() ?? "unknown";
+  const result = await cachedAssetValidation(
+    `market:${assetAddress}:${poolAddress}:${competitionKey}`,
+    async () => {
+      const tokenResult = await validateTokenOnly(assetAddress);
+      if (!tokenValidationPassed(tokenResult)) {
+        return { ...tokenResult, market: { ...tokenResult.market, poolAddress } };
+      }
+      return validateFullUnlistedAsset({ assetAddress, poolAddress, competitionStartsAt: input.competitionStartsAt });
+    },
+  );
+  return normalizeCachedResult(result);
 }

@@ -83,14 +83,17 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
   useEffect(() => {
     setValidation(null);
-    if (!manual || !EVM_ADDRESS_PATTERN.test(assetAddress.trim()) || !EVM_ADDRESS_PATTERN.test(poolAddress.trim())) {
+    if (!manual || !EVM_ADDRESS_PATTERN.test(assetAddress.trim())) {
       setLookupState("idle");
       return;
     }
+    const hasPoolAddress = EVM_ADDRESS_PATTERN.test(poolAddress.trim());
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLookupState("loading");
-      fetch(`/api/v1/assets/validate?assetAddress=${encodeURIComponent(assetAddress.trim())}&poolAddress=${encodeURIComponent(poolAddress.trim())}`, { signal: controller.signal })
+      const query = new URLSearchParams({ assetAddress: assetAddress.trim() });
+      if (hasPoolAddress) query.set("poolAddress", poolAddress.trim());
+      fetch(`/api/v1/assets/validate?${query.toString()}`, { signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error?.code ?? "ASSET_MARKET_VALIDATION_UNAVAILABLE");
@@ -135,13 +138,14 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       symbol: normalizeTickerInput(detected.symbol),
       name: detected.name.trim().slice(0, 80),
     };
-    onChange("", metadata, { source: "uniswap-v3", poolAddress: validation.market.poolAddress });
+    onChange("", metadata, { source: "uniswap-v3", poolAddress: validation.market.poolAddress! });
     setManual(false);
     setQuery("");
     setValidation(null);
   }
 
   const detected = validation?.asset ?? null;
+  const hasValidPoolAddress = EVM_ADDRESS_PATTERN.test(poolAddress.trim());
   const canUseManualAsset = validation?.status === "pass"
     && Boolean(detected && detected.decimals === 18 && normalizeTickerInput(detected.symbol) && detected.name.trim())
     && validation.requirements.every((item) => item.status === "pass");
@@ -185,7 +189,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
           {!assetAddress && <small>Robinhood Chain · 18-decimal ERC-20 tokens only</small>}
         </label>
 
-        {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>Validating asset and pool</strong><small>Checking Robinhood Chain first, then market evidence…</small></div></div>}
+        {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>{hasValidPoolAddress ? "Validating asset and pool" : "Validating token"}</strong><small>{hasValidPoolAddress ? "Checking Robinhood Chain first, then market evidence…" : "Checking token info now; enter a pool address to continue."}</small></div></div>}
         {lookupState === "error" && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>Validation request unavailable</strong><small>Nothing was saved. Check both addresses and try again.</small></div></div>}
         {detected && <div className={`detectedAsset${detected.decimals === 18 ? "" : " invalid"}`}>
           {detected.decimals === 18 ? <CircleCheck size={18} /> : <CircleAlert size={18} />}

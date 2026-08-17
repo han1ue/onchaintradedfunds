@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const querySchema = z.object({
   assetAddress: evmAddressSchema,
-  poolAddress: evmAddressSchema,
+  poolAddress: evmAddressSchema.optional(),
 });
 
 export async function GET(request: Request) {

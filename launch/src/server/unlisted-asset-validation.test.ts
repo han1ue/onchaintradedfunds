@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("unlisted asset validation", () => {
-  it("finishes all RPC checks before reading the three provider evidence endpoints", async () => {
+  it("validates the token first, then the pool, and reuses the 30-minute cache", async () => {
     process.env.ROBINHOOD_V3_FACTORY_ADDRESS = factory;
     process.env.ROBINHOOD_WETH_ADDRESS = weth;
     process.env.ROBINHOOD_USDG_ADDRESS = usdg;
@@ -61,17 +61,26 @@ describe("unlisted asset validation", () => {
 
     try {
       const { validateUnlistedAsset } = await import("./unlisted-asset-validation");
+      const tokenResult = await validateUnlistedAsset({ assetAddress: asset, competitionStartsAt: new Date("2026-08-17T00:00:00Z") });
+      expect(tokenResult.asset).toMatchObject({ address: asset, decimals: 18 });
+      expect(tokenResult.market.poolAddress).toBeNull();
+      expect(tokenResult.status).toBe("pending");
+      expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.startsWith("https://api.geckoterminal.com/")).length).toBe(2);
+
       const result = await validateUnlistedAsset({ assetAddress: asset, poolAddress: pool, competitionStartsAt: new Date("2026-08-17T00:00:00Z") });
       expect(result.status).toBe("pass");
       expect(result.requirements.every((item) => item.status === "pass")).toBe(true);
       expect(result.marketDetails).toMatchObject({ factoryAddress: factory, quoteTokenAddress: weth, feeTier: 3000 });
+      const callsAfterFullValidation = fetchMock.mock.calls.length;
+      await validateUnlistedAsset({ assetAddress: asset, poolAddress: pool, competitionStartsAt: new Date("2026-08-17T00:00:00Z") });
+      expect(fetchMock).toHaveBeenCalledTimes(callsAfterFullValidation);
       const calls = fetchMock.mock.calls.map(([input]) => String(input));
       expect(calls.findIndex((url) => url.includes("/pools/"))).toBeGreaterThan(calls.filter((url) => url === "https://rpc.test").length - 1);
       expect(calls.filter((url) => url.startsWith("https://api.geckoterminal.com/")).length).toBe(3);
     } finally {
       vi.resetModules();
     }
-  });
+  }, 15_000);
 });
 
 function encodeAddress(address: string) {

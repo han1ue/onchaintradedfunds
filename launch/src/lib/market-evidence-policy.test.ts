@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateCompetitionPoolAge,
   evaluateMarketEvidence,
-  evaluateMarketEvidenceContinuity,
   type MarketEvidenceInput,
 } from "./market-evidence-policy";
 
@@ -53,13 +52,4 @@ describe("informational provider market evidence", () => {
     expect(result.reasons).toHaveLength(3);
   });
 
-  it("evaluates seven continuous days of hourly evidence without gating XP", () => {
-    const checkpoints: { sampledAt: Date; status: "Pass" | "Pending" | "Fail" }[] = Array.from({ length: 169 }, (_, index) => ({
-      sampledAt: new Date(now.getTime() - (168 - index) * 60 * 60_000),
-      status: "Pass" as const,
-    }));
-    expect(evaluateMarketEvidenceContinuity(checkpoints, now).status).toBe("Pass");
-    checkpoints[100] = { ...checkpoints[100], status: "Pending" };
-    expect(evaluateMarketEvidenceContinuity(checkpoints, now).status).toBe("Pending");
-  });
 });

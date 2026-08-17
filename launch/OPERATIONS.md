@@ -21,6 +21,9 @@
 - Confirm vote activation finds the newest complete saved scoring checkpoint at or before activation
   within the 90-minute freshness window. Missing checkpoints fail closed with
   `PRICE_CHECKPOINT_UNAVAILABLE`; activation never makes provider calls.
+- Unlisted validation is staged by token and pool address. Token and pool evidence is cached for
+  30 minutes in Redis when available, with an in-memory fallback; backend save/submit checks reuse
+  that cache and refresh only when it is missing or expired.
 - Create the competition with final dates and thresholds. Rules freeze when it opens.
 - Exercise one real submission and vote in a non-production competition. Confirm each X intent contains the one-time code and each pasted public post URL is verified and stored.
 
@@ -28,8 +31,9 @@
 
 - Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
 - Run `/api/jobs/prices` every 30 minutes. It stores provider prices for every catalog asset and feeds
-  proposal return charts. Run `/api/jobs/evidence` hourly for the canonical market-evidence checkpoint;
-  do not run a separate markets job. Run `/api/jobs/x-evidence` daily for public X evidence rechecks.
+  proposal return charts. Market eligibility is captured during one-time asset validation and
+  independently revalidated before submission; there is no hourly market-evidence job. Run
+  `/api/jobs/x-evidence` daily for public X evidence rechecks.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 

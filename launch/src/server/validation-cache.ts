@@ -1,0 +1,78 @@
+import { createClient } from "redis";
+import { env } from "./env";
+
+export const ASSET_VALIDATION_CACHE_TTL_MS = 30 * 60_000;
+
+type CacheEntry = { expiresAt: number; value: unknown };
+type RedisClient = ReturnType<typeof createClient>;
+
+const memoryCache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<unknown>>();
+const globalForValidationCache = globalThis as unknown as {
+  launchValidationRedis?: RedisClient;
+  launchValidationRedisPromise?: Promise<RedisClient>;
+};
+
+async function getRedis() {
+  if (!env.REDIS_URL) return null;
+  if (globalForValidationCache.launchValidationRedis?.isReady) return globalForValidationCache.launchValidationRedis;
+  if (!globalForValidationCache.launchValidationRedisPromise) {
+    const client = createClient({ url: env.REDIS_URL });
+    client.on("error", () => undefined);
+    globalForValidationCache.launchValidationRedisPromise = client.connect().then(() => {
+      globalForValidationCache.launchValidationRedis = client;
+      return client;
+    }).catch((error) => {
+      globalForValidationCache.launchValidationRedisPromise = undefined;
+      throw error;
+    });
+  }
+  return globalForValidationCache.launchValidationRedisPromise;
+}
+
+function namespacedKey(key: string) {
+  return `otf-launch:asset-validation:${key}`;
+}
+
+async function readCache<T>(key: string): Promise<T | null> {
+  const local = memoryCache.get(key);
+  if (local) {
+    if (local.expiresAt > Date.now()) return local.value as T;
+    memoryCache.delete(key);
+  }
+  try {
+    const redis = await getRedis();
+    if (!redis) return null;
+    const value = await redis.get(key);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as T;
+    memoryCache.set(key, { expiresAt: Date.now() + 60_000, value: parsed });
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCache(key: string, value: unknown) {
+  memoryCache.set(key, { expiresAt: Date.now() + ASSET_VALIDATION_CACHE_TTL_MS, value });
+  try {
+    const redis = await getRedis();
+    if (redis) await redis.setEx(key, Math.ceil(ASSET_VALIDATION_CACHE_TTL_MS / 1_000), JSON.stringify(value));
+  } catch {
+    // Redis is an optimization. The in-memory cache remains available when it is unavailable.
+  }
+}
+
+export async function cachedAssetValidation<T>(key: string, load: () => Promise<T>) {
+  const cacheKey = namespacedKey(key);
+  const cached = await readCache<T>(cacheKey);
+  if (cached !== null) return cached;
+  const existing = inFlight.get(cacheKey);
+  if (existing) return existing as Promise<T>;
+  const request = load().then(async (value) => {
+    await writeCache(cacheKey, value);
+    return value;
+  }).finally(() => inFlight.delete(cacheKey));
+  inFlight.set(cacheKey, request);
+  return request;
+}

@@ -2,11 +2,8 @@ export const MARKET_EVIDENCE_THRESHOLDS = {
   liquidityUsd: 30_000,
   marketCapUsd: 100_000,
   poolAgeMs: 7 * 86_400_000,
-  continuityMs: 7 * 86_400_000,
   gtScore: 50,
   lockedLiquidityPct: 50,
-  minimumHourlyCheckpoints: 169,
-  maximumCheckpointGapMs: 90 * 60_000,
 } as const;
 
 export type MarketEvidenceStatus = "Pass" | "Pending" | "Fail";
@@ -69,28 +66,5 @@ export function evaluateMarketEvidence(evidence: MarketEvidenceInput): MarketEvi
   if (locked !== null && locked < MARKET_EVIDENCE_THRESHOLDS.lockedLiquidityPct) failed.push("Reported locked liquidity is below 50%");
   if (failed.length > 0) return { status: "Fail", reasons: failed };
   if (pending.length > 0) return { status: "Pending", reasons: pending };
-  return { status: "Pass", reasons: [] };
-}
-
-export function evaluateMarketEvidenceContinuity(
-  snapshots: { sampledAt: Date; status: MarketEvidenceStatus }[],
-  now: Date,
-): MarketEvidenceResult {
-  const start = now.getTime() - MARKET_EVIDENCE_THRESHOLDS.continuityMs;
-  const window = snapshots
-    .filter((snapshot) => snapshot.sampledAt.getTime() >= start && snapshot.sampledAt <= now)
-    .sort((left, right) => left.sampledAt.getTime() - right.sampledAt.getTime());
-  if (window.some((snapshot) => snapshot.status === "Fail")) return { status: "Fail", reasons: ["At least one hourly evidence snapshot failed during the last seven days"] };
-  if (window.some((snapshot) => snapshot.status === "Pending")) return { status: "Pending", reasons: ["At least one hourly evidence snapshot is pending during the last seven days"] };
-  if (window.length < MARKET_EVIDENCE_THRESHOLDS.minimumHourlyCheckpoints) return { status: "Pending", reasons: ["Seven consecutive days of hourly evidence snapshots are not complete"] };
-  if (
-    window[0].sampledAt.getTime() > start + MARKET_EVIDENCE_THRESHOLDS.maximumCheckpointGapMs
-    || window[window.length - 1].sampledAt.getTime() < now.getTime() - MARKET_EVIDENCE_THRESHOLDS.maximumCheckpointGapMs
-  ) return { status: "Pending", reasons: ["The seven-day evidence window is not fully covered"] };
-  for (let index = 1; index < window.length; index += 1) {
-    if (window[index].sampledAt.getTime() - window[index - 1].sampledAt.getTime() > MARKET_EVIDENCE_THRESHOLDS.maximumCheckpointGapMs) {
-      return { status: "Pending", reasons: ["An hourly evidence snapshot is missing"] };
-    }
-  }
   return { status: "Pass", reasons: [] };
 }

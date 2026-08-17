@@ -33,7 +33,7 @@ The baseline stock-token records use one-time contract data from Robinhood's pub
 - The immutable X ID is the actor identity. Current X identity and eligibility fields live on the user record; action-specific facts such as accepted follower count stay with the action.
 - Valid votes sort descending, then earlier proposal acceptance, then immutable proposal UUID.
 
-Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` captures provider-price checkpoints every 30 minutes, captures market evidence hourly for the seven-day continuity policy, and rechecks public X evidence once daily at 02:42 UTC while it is open. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either job or both jobs.
+Cron handlers require `Authorization: Bearer $CRON_SECRET`. The GitHub Actions workflow `.github/workflows/launch-scheduled-jobs.yml` captures provider-price checkpoints every 30 minutes and rechecks public X evidence once daily at 02:42 UTC while it is open. Unlisted validation is staged server-side as the token and pool are entered, with a 30-minute Redis/in-memory cache, then the backend rechecks the combined result before saving and submitting. There is no hourly market-evidence cron. In the GitHub repository, set the Actions variable `LAUNCH_SITE_URL` to the production launch origin and set the Actions secret `LAUNCH_CRON_SECRET` to the same value as the Vercel project's `CRON_SECRET`. The workflow also supports manual runs for either scheduled job or both jobs.
 
 ## Vercel
 
