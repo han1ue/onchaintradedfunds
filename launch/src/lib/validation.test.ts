@@ -22,6 +22,19 @@ describe("proposal validation", () => {
   it("accepts exactly 10,000 basis points across distinct assets", () => {
     expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 6000), allocation(assetB, 4000)] }).allocations).toHaveLength(2);
   });
+  it("allows directory assets to use their configured source without a per-proposal route", () => {
+    const parsed = proposalInputSchema.parse({
+      name: "Directory OTF",
+      ticker: "DIR",
+      thesis: "Use the directory price source for both constituents.",
+      allocations: [
+        { assetId: assetA, weightBps: 5000, pricingConfig: null },
+        { assetId: assetB, weightBps: 5000 },
+      ],
+    });
+    expect(parsed.allocations[0]).toMatchObject({ assetId: assetA, pricingConfig: null });
+    expect(parsed.allocations[1]).toMatchObject({ assetId: assetB });
+  });
   it("accepts a thesis of any non-empty length", () => {
     expect(proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A", allocations: [allocation(assetA, 6000), allocation(assetB, 4000)] }).thesis).toBe("A");
   });

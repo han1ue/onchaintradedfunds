@@ -25,7 +25,7 @@ export async function saveProposalDraft(input: unknown) {
       "assetId" in allocation ? [allocation.assetId] : []
     ));
     const selectedAssets = selectedAssetIds.length
-      ? await transaction.select({ id: eligibleAssets.id }).from(eligibleAssets)
+      ? await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality }).from(eligibleAssets)
         .where(inArray(eligibleAssets.id, selectedAssetIds))
       : [];
     if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
@@ -64,6 +64,13 @@ export async function saveProposalDraft(input: unknown) {
     if (new Set(resolvedAllocations.map((allocation) => allocation.assetId)).size !== resolvedAllocations.length) {
       throw new Error("ASSETS_NOT_UNIQUE");
     }
+    const resolvedAssetRows = await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality })
+      .from(eligibleAssets)
+      .where(inArray(eligibleAssets.id, resolvedAllocations.map((allocation) => allocation.assetId)));
+    const assetQuality = new Map(resolvedAssetRows.map((asset) => [asset.id, asset.quality]));
+    if (resolvedAllocations.some((allocation) => assetQuality.get(allocation.assetId) !== "high" && !allocation.pricingConfig)) {
+      throw new Error("PRICING_CONFIG_REQUIRED");
+    }
 
     const [existing] = await transaction.select().from(proposals)
       .where(and(eq(proposals.competitionId, competition.id), eq(proposals.creatorUserId, session.user.id))).limit(1);
@@ -74,12 +81,12 @@ export async function saveProposalDraft(input: unknown) {
       : await transaction.insert(proposals).values(values).returning();
     await transaction.delete(proposalAssets).where(eq(proposalAssets.proposalId, proposal.id));
     await transaction.insert(proposalAssets).values(resolvedAllocations.map((allocation, position) => {
-      const addresses = pricingConfigAddresses(allocation.pricingConfig);
+      const addresses = allocation.pricingConfig ? pricingConfigAddresses(allocation.pricingConfig) : { primaryAddress: null, secondaryAddress: null };
       return {
         proposalId: proposal.id,
         assetId: allocation.assetId,
         marketId: null,
-        pricingSource: allocation.pricingConfig.source,
+        pricingSource: allocation.pricingConfig?.source ?? null,
         primaryAddress: addresses.primaryAddress,
         secondaryAddress: addresses.secondaryAddress,
         weightBps: allocation.weightBps,

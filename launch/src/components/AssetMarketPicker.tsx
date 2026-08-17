@@ -13,7 +13,7 @@ type Props = {
   assetMetadata: ProposalAssetMetadata | null;
   pricingConfig: PricingConfig | null;
   label: string;
-  onChange: (assetId: string, assetMetadata: ProposalAssetMetadata | null, pricingConfig: PricingConfig) => void;
+  onChange: (assetId: string, assetMetadata: ProposalAssetMetadata | null, pricingConfig: PricingConfig | null) => void;
 };
 
 type DetectedMetadata = { address: string; name: string; symbol: string; decimals: number };
@@ -35,9 +35,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   const selectedMetadata = selected ? null : assetMetadata;
   const selectedSymbol = selected?.symbol ?? selectedMetadata?.symbol;
   const normalizedQuery = query.trim().toLowerCase();
-  const verifiedAssets = useMemo(() => assets.filter((asset) => (
-    asset.quality === "high" && Boolean(preferredPricingConfig(asset.pricingConfigs))
-  )), [assets]);
+  const verifiedAssets = useMemo(() => assets.filter((asset) => asset.quality === "high"), [assets]);
   const filtered = verifiedAssets.filter((asset) => !normalizedQuery
     || asset.name.toLowerCase().includes(normalizedQuery)
     || asset.symbol.toLowerCase().includes(normalizedQuery)
@@ -77,7 +75,6 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
   function choose(asset: EligibleAsset) {
     const configuredPriceSource = preferredPricingConfig(asset.pricingConfigs);
-    if (!configuredPriceSource) return;
     onChange(asset.id, null, configuredPriceSource);
     setOpen(false);
     setQuery("");

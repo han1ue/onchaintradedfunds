@@ -1,5 +1,6 @@
 export const errorMessages: Record<string, string> = {
   X_NOT_VERIFIED: "A verified, public X account is required.",
+  PRICING_CONFIG_REQUIRED: "An exact pricing route is required for this unverified asset.",
   FOLLOWER_THRESHOLD: "Your X account must have at least 100 followers to submit or vote.",
   ASSET_NOT_FOUND: "One or more asset metadata records could not be found.",
   ASSETS_NOT_UNIQUE: "Each token contract may appear only once in a proposal.",

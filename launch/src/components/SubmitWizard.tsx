@@ -5,12 +5,7 @@ import { useMemo, useState } from "react";
 import { deriveOtfQuality } from "@/lib/asset-quality";
 import { errorMessages } from "@/lib/errors";
 import { normalizeWholeNumberInput } from "@/lib/numeric-input";
-import {
-  emptyPricingConfig,
-  preferredPricingConfig,
-  pricingConfigComplete,
-  pricingConfigSummary,
-} from "@/lib/pricing-config";
+import { preferredPricingConfig, pricingConfigComplete, pricingConfigSummary } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
 import type { CompetitionSummary, EligibleAsset, ParticipationEligibility, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
 import { buildSubmissionPost, slugifyProposalName } from "@/lib/x-post";
@@ -30,9 +25,7 @@ function initialRow(asset: EligibleAsset | undefined, weight: string): Row {
   return {
     assetId: asset?.id ?? "",
     assetMetadata: null,
-    pricingConfig: asset
-      ? preferredPricingConfig(asset.pricingConfigs) ?? emptyPricingConfig("uniswap-v3")
-      : null,
+    pricingConfig: asset ? preferredPricingConfig(asset.pricingConfigs) : null,
     weight,
   };
 }
@@ -45,7 +38,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   siteUrl: string;
 }) {
   const verifiedAssets = useMemo(() => assets.filter((asset) => (
-    asset.quality === "high" && Boolean(preferredPricingConfig(asset.pricingConfigs))
+    asset.quality === "high"
   )), [assets]);
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -73,9 +66,11 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   });
   const allAssetsSelected = rowIdentities.every(Boolean);
   const assetsUnique = new Set(rowIdentities).size === rows.length;
-  const allPricingReady = rows.every((row) => Boolean(
-    (assets.some((asset) => asset.id === row.assetId) || row.assetMetadata) && pricingConfigComplete(row.pricingConfig),
-  ));
+  const allPricingReady = rows.every((row) => {
+    const asset = assets.find((candidate) => candidate.id === row.assetId);
+    const assetExists = Boolean(asset || row.assetMetadata);
+    return assetExists && (asset?.quality === "high" || pricingConfigComplete(row.pricingConfig));
+  });
   const preview = competition.id.startsWith("preview");
   const postText = buildSubmissionPost(reason, {
     name: name || "Your OTF",

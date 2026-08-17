@@ -29,7 +29,7 @@ export const proposalAssetMetadataSchema = z.object({
 }).strict();
 
 const allocationFields = {
-  pricingConfig: pricingConfigSchema,
+  pricingConfig: pricingConfigSchema.nullable().optional(),
   weightBps: z.number().int().min(COMPETITION_RULES.minAssetWeightBps).max(COMPETITION_RULES.portfolioWeightBps),
 };
 
