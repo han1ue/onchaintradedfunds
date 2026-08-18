@@ -13,6 +13,11 @@ function formatReturn(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatAxisReturn(value: number) {
+  if (value === 0) return "0%";
+  return `${value > 0 ? "+" : "−"}${Math.abs(value).toFixed(0)}%`;
+}
+
 function formatDate(timestamp: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(timestamp));
 }
@@ -33,9 +38,11 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
     const end = timestamps[timestamps.length - 1];
     const observedMin = Math.min(0, ...points.map((point) => point.returnPct));
     const observedMax = Math.max(0, ...points.map((point) => point.returnPct));
-    const yPadding = Math.max((observedMax - observedMin) * 0.18, 0.35);
-    const min = observedMin - yPadding;
-    const max = observedMax + yPadding;
+    const tickStep = 2;
+    const roundedMin = Math.floor(observedMin / tickStep) * tickStep;
+    const roundedMax = Math.ceil(observedMax / tickStep) * tickStep;
+    const min = roundedMin === roundedMax ? roundedMin - tickStep : roundedMin;
+    const max = roundedMin === roundedMax ? roundedMax + tickStep : roundedMax;
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const x = (timestamp: number) => padding.left + ((timestamp - start) / Math.max(1, end - start)) * plotWidth;
@@ -44,7 +51,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
     const linePath = plotted.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
     const zeroY = y(0);
     const areaPath = `${linePath} L${plotted[plotted.length - 1].x.toFixed(2)},${zeroY.toFixed(2)} L${plotted[0].x.toFixed(2)},${zeroY.toFixed(2)} Z`;
-    const grid = Array.from({ length: 5 }, (_, index) => max - (index / 4) * (max - min));
+    const grid = Array.from({ length: Math.round((max - min) / tickStep) + 1 }, (_, index) => max - index * tickStep);
     return { start, end, min, max, plotted, linePath, areaPath, zeroY, grid };
   }, [points]);
 
@@ -93,7 +100,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
       >
         <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Portfolio return from ${formatDate(points[0].timestamp)} to ${formatDate(points[points.length - 1].timestamp)}`}>
           <defs><linearGradient id="returnsArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--teal)" stopOpacity=".18" /><stop offset="1" stopColor="var(--teal)" stopOpacity="0" /></linearGradient></defs>
-          {layout.grid.map((value) => <g className="returnsGrid" key={value}><line x1={padding.left} x2={width - padding.right} y1={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} y2={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} /><text x={padding.left - 9} y={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom) + 3}>{formatReturn(value)}</text></g>)}
+          {layout.grid.map((value) => <g className="returnsGrid" key={value}><line x1={padding.left} x2={width - padding.right} y1={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} y2={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} /><text x={padding.left - 9} y={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom) + 3}>{formatAxisReturn(value)}</text></g>)}
           <line className="returnsZero" x1={padding.left} x2={width - padding.right} y1={layout.zeroY} y2={layout.zeroY} />
           <path className="returnsArea" d={layout.areaPath} />
           <path className="returnsLine" d={layout.linePath} />
