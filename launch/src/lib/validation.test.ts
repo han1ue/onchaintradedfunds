@@ -90,6 +90,8 @@ describe("proof links", () => {
   it("extracts an immutable post id from X and Twitter URLs", () => {
     expect(parseXPostId("https://x.com/otf/status/1234567890")).toBe("1234567890");
     expect(parseXPostId("https://twitter.com/otf/status/987654321")).toBe("987654321");
+    expect(parseXPostId("https://x.com/i/status/1234567890")).toBe("1234567890");
+    expect(parseXPostId("https://x.com/i/web/status/1234567890")).toBe("1234567890");
   });
   it("accepts copied X post links without a URL scheme", () => {
     const challengeId = "11111111-1111-4111-8111-111111111111";

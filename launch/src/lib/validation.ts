@@ -87,7 +87,7 @@ export const ballotActivationSchema = z.object({
 export function parseXPostId(value: string) {
   const url = new URL(value);
   if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname.toLowerCase())) throw new Error("PROOF_MISMATCH");
-  const match = url.pathname.match(/^\/[A-Za-z0-9_]+\/status\/(\d+)/);
+  const match = url.pathname.match(/^\/(?:[A-Za-z0-9_]+\/status|i\/(?:web\/)?status)\/(\d+)/);
   if (!match) throw new Error("PROOF_MISMATCH");
   return match[1];
 }
