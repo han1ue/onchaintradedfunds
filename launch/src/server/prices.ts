@@ -129,7 +129,8 @@ const inFlightCaptures = new Map<string, Promise<PriceCaptureResult>>();
 function captureKey(sampledAt: Date, purpose: PriceCaptureOptions["purpose"], assetIds?: string[]) {
   const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
   if (purpose !== "scoring") return `${purpose}:${sampledAt.toISOString()}:${scope}`;
-  const bucket = Math.floor(sampledAt.getTime() / (30 * 60_000)) * (30 * 60_000);
+  const interval = 30 * 60_000;
+  const bucket = Math.floor((sampledAt.getTime() + interval / 2) / interval) * interval;
   return `${purpose}:${new Date(bucket).toISOString()}:${scope}`;
 }
 
