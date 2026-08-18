@@ -7,6 +7,12 @@ import type { PortfolioReturns } from "@/lib/types";
 const width = 720;
 const height = 238;
 const padding = { top: 18, right: 14, bottom: 30, left: 52 };
+const ranges = [
+  { value: "day", label: "Day", durationMs: 24 * 60 * 60 * 1000 },
+  { value: "week", label: "Week", durationMs: 7 * 24 * 60 * 60 * 1000 },
+  { value: "all", label: "All", durationMs: null },
+] as const;
+type ReturnRange = (typeof ranges)[number]["value"];
 
 function formatReturn(value: number) {
   if (Math.abs(value) < 0.005) return "0.00%";
@@ -22,6 +28,11 @@ function formatDate(timestamp: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(timestamp));
 }
 
+function formatAxisDate(timestamp: string, range: ReturnRange) {
+  if (range !== "day") return formatDate(timestamp);
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(new Date(timestamp));
+}
+
 function formatDateTime(timestamp: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short",
@@ -29,8 +40,15 @@ function formatDateTime(timestamp: string) {
 }
 
 export function PortfolioReturnsChart({ returns, preview = false }: { returns: PortfolioReturns; preview?: boolean }) {
-  const { points } = returns;
-  const [activeIndex, setActiveIndex] = useState(Math.max(0, points.length - 1));
+  const allPoints = returns.points;
+  const [range, setRange] = useState<ReturnRange>("all");
+  const points = useMemo(() => {
+    const durationMs = ranges.find((option) => option.value === range)?.durationMs;
+    if (!durationMs || allPoints.length === 0) return allPoints;
+    const end = new Date(allPoints[allPoints.length - 1].timestamp).getTime();
+    return allPoints.filter((point) => new Date(point.timestamp).getTime() >= end - durationMs);
+  }, [allPoints, range]);
+  const [activeIndex, setActiveIndex] = useState(Math.max(0, allPoints.length - 1));
   const layout = useMemo(() => {
     if (points.length < 2) return null;
     const timestamps = points.map((point) => new Date(point.timestamp).getTime());
@@ -57,7 +75,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   const resolvedIndex = Math.min(activeIndex, Math.max(0, points.length - 1));
   const active = points[resolvedIndex];
-  const current = points.at(-1)?.returnPct ?? 0;
+  const current = allPoints.at(-1)?.returnPct ?? 0;
   const tone = current > 0.005 ? "positive" : current < -0.005 ? "negative" : "neutral";
 
   function selectFromPointer(event: PointerEvent<HTMLDivElement>) {
@@ -82,8 +100,16 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   return <div className="portfolioReturns">
     <div className="returnsHeading">
-      <div><h2>Portfolio</h2></div>
-      {points.length > 1 && <div className={`returnsCurrent ${tone}`}><span>Current return</span><strong>{formatReturn(current)}</strong></div>}
+      <h2>Portfolio</h2>
+      {allPoints.length > 1 && <div className={`returnsCurrent ${tone}`}><strong>{formatReturn(current)}</strong></div>}
+    </div>
+    <div className="returnsRanges" aria-label="Portfolio return range">
+      {ranges.map((option) => <button
+        key={option.value}
+        type="button"
+        aria-pressed={range === option.value}
+        onClick={() => { setRange(option.value); setActiveIndex(Number.MAX_SAFE_INTEGER); }}
+      >{option.label}</button>)}
     </div>
     {points.length < 2 || !layout || !active ? <div className="returnsEmpty">
       <ChartNoAxesCombined size={22} aria-hidden="true" />
@@ -98,7 +124,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
         onPointerLeave={() => setActiveIndex(points.length - 1)}
         onKeyDown={moveSelection}
       >
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Portfolio return from ${formatDate(points[0].timestamp)} to ${formatDate(points[points.length - 1].timestamp)}`}>
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Portfolio return from ${formatDateTime(points[0].timestamp)} to ${formatDateTime(points[points.length - 1].timestamp)}`}>
           <defs><linearGradient id="returnsArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--teal)" stopOpacity=".18" /><stop offset="1" stopColor="var(--teal)" stopOpacity="0" /></linearGradient></defs>
           {layout.grid.map((value) => <g className="returnsGrid" key={value}><line x1={padding.left} x2={width - padding.right} y1={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} y2={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom)} /><text x={padding.left - 9} y={padding.top + ((layout.max - value) / (layout.max - layout.min)) * (height - padding.top - padding.bottom) + 3}>{formatAxisReturn(value)}</text></g>)}
           <line className="returnsZero" x1={padding.left} x2={width - padding.right} y1={layout.zeroY} y2={layout.zeroY} />
@@ -107,9 +133,9 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
           <line className="returnsCrosshair" x1={layout.plotted[resolvedIndex].x} x2={layout.plotted[resolvedIndex].x} y1={padding.top} y2={height - padding.bottom} />
           <circle className="returnsPointHalo" cx={layout.plotted[resolvedIndex].x} cy={layout.plotted[resolvedIndex].y} r="7" />
           <circle className="returnsPoint" cx={layout.plotted[resolvedIndex].x} cy={layout.plotted[resolvedIndex].y} r="3.5" />
-          <text className="returnsDateLabel" x={padding.left} y={height - 6} textAnchor="start">{formatDate(points[0].timestamp)}</text>
-          <text className="returnsDateLabel" x={(padding.left + width - padding.right) / 2} y={height - 6} textAnchor="middle">{formatDate(points[Math.floor((points.length - 1) / 2)].timestamp)}</text>
-          <text className="returnsDateLabel" x={width - padding.right} y={height - 6} textAnchor="end">{formatDate(points[points.length - 1].timestamp)}</text>
+          <text className="returnsDateLabel" x={padding.left} y={height - 6} textAnchor="start">{formatAxisDate(points[0].timestamp, range)}</text>
+          <text className="returnsDateLabel" x={(padding.left + width - padding.right) / 2} y={height - 6} textAnchor="middle">{formatAxisDate(points[Math.floor((points.length - 1) / 2)].timestamp, range)}</text>
+          <text className="returnsDateLabel" x={width - padding.right} y={height - 6} textAnchor="end">{formatAxisDate(points[points.length - 1].timestamp, range)}</text>
         </svg>
         <div className={`returnsTooltip ${layout.plotted[resolvedIndex].x > width * .7 ? "alignRight" : ""}`} style={{ left: `${layout.plotted[resolvedIndex].x / width * 100}%` }} aria-hidden="true"><strong>{formatReturn(active.returnPct)}</strong><span>{formatDateTime(active.timestamp)}</span></div>
       </div>
