@@ -1,0 +1,31 @@
+name: Launch X evidence recheck
+
+on:
+  schedule:
+    - cron: "42 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launch-x-evidence
+  cancel-in-progress: false
+
+jobs:
+  recheck-x-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LAUNCH_SITE_URL: ${{ vars.LAUNCH_SITE_URL }}
+      CRON_SECRET: ${{ secrets.LAUNCH_CRON_SECRET }}
+    steps:
+      - name: Validate configuration
+        run: test -n "$LAUNCH_SITE_URL" && test -n "$CRON_SECRET"
+      - name: Recheck public X evidence
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --retry 3 --retry-delay 5 --max-time 300
+          --header "Authorization: Bearer $CRON_SECRET"
+          --header "Accept: application/json"
+          "${LAUNCH_SITE_URL%/}/api/jobs/x-evidence"
