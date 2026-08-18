@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
 import { getUnlockedVoteCount, getVotingStartsAt } from "@/lib/competition";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
@@ -150,7 +150,7 @@ export async function verifyBallotProof(input: unknown) {
     .where(and(
       eq(proposals.competitionId, competition.id),
       eq(proposals.status, "confirmed"),
-      sql`${proposals.acceptedAt} <= ${activatedAt}`,
+      lte(proposals.acceptedAt, activatedAt),
     ));
   const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), activatedAt);
   const result = await database.transaction(async (transaction) => {
