@@ -643,6 +643,11 @@ button { color: inherit; }
 .emptyState svg { color: var(--teal); }
 .emptyState h1 { margin: 16px 0 7px; font-size: 1.5rem; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
+.submissionSuccessPage { min-height: calc(100dvh - 210px); display: grid; place-items: center; }
+.submissionSuccess { width: min(560px, 100%); margin: 0; }
+.submissionSuccess > svg { color: var(--green); }
+.submissionSuccessCountdown { margin-bottom: 16px !important; }
+.submissionSuccess .button { width: auto; }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
 .accountTitle { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .accountTitle h1 { min-width: 0; font-size: clamp(1.65rem, 4vw, 2.55rem); line-height: 1; overflow-wrap: anywhere; }
