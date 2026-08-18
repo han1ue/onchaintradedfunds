@@ -139,6 +139,31 @@ export async function getProposal(slug: string) {
   return leaderboard.find((proposal) => proposal.slug === slug) ?? null;
 }
 
+export async function getInvalidProposal(slug: string) {
+  if (!sqlClient) return null;
+  const rows = await sqlClient<{
+    id: string;
+    slug: string;
+    name: string;
+    ticker: string;
+    votes: number;
+    creator: { xId: string; username: string; profileImageUrl: string | null };
+  }[]>`
+    select p.id::text, p.slug, p.name, p.ticker,
+      coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes,
+      json_build_object('xId', u.x_user_id, 'username', u.x_username, 'profileImageUrl', u.profile_image_url) as creator
+    from proposals p
+    join users u on u.id = p.creator_user_id
+    left join ballot_allocations ba on ba.proposal_id = p.id
+    left join ballots b on b.id = ba.ballot_id
+    where p.slug = ${slug}
+      and p.status = 'deleted'
+      and p.moderated_reason like 'X post invalid:%'
+    group by p.id, u.id
+    limit 1`;
+  return rows[0] ?? null;
+}
+
 export async function getPublicLaunchOrder() {
   const leaderboard = await getLeaderboard();
   return leaderboard.map(({ rank, slug, name, ticker }) => ({ rank, slug, name, ticker }));

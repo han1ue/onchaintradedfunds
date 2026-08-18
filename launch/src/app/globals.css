@@ -696,6 +696,17 @@ button { color: inherit; }
 .callout.warning { border-color: color-mix(in srgb, var(--gold) 42%, var(--border)); background: color-mix(in srgb, var(--gold) 4%, var(--card-raised)); }
 .callout.danger { border-color: color-mix(in srgb, var(--danger) 42%, var(--border)); background: color-mix(in srgb, var(--danger) 4%, var(--card-raised)); }
 .proposalPage > .callout { margin: -6px 0 14px; }
+.proposalInvalidPage { min-height: calc(100dvh - 210px); display: grid; place-items: center; }
+.proposalInvalidState { width: min(680px, 100%); display: grid; justify-items: center; padding: clamp(30px, 6vw, 56px); border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--danger) 4%, var(--card-raised)); text-align: center; }
+.proposalInvalidState > svg { margin-bottom: 14px; color: var(--danger); }
+.proposalInvalidState h1 { margin: 16px 0 8px; font-size: clamp(1.6rem, 4vw, 2.4rem); letter-spacing: -.035em; }
+.proposalInvalidState > p { max-width: 62ch; margin: 0; color: var(--text-muted); font-size: .82rem; line-height: 1.6; }
+.invalidProposalIdentity { display: flex; align-items: center; gap: 12px; margin: 28px 0 18px; text-align: left; }
+.invalidProposalIdentity > div { display: grid; gap: 5px; }
+.invalidProposalIdentity strong { font-size: .9rem; }
+.invalidProposalIdentity span { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: .7rem; }
+.proposalInvalidState .invalidProposalVotes { padding-top: 18px; border-top: 1px solid color-mix(in srgb, var(--danger) 25%, var(--border)); }
+.proposalInvalidState form { margin-top: 24px; }
 .allocationTable code { display: block; max-width: min(62vw, 520px); margin-top: 3px; overflow: hidden; color: var(--text-muted); font-size: .61rem; text-overflow: ellipsis; white-space: nowrap; }
 
 .pointsPage { max-width: 1120px; }
