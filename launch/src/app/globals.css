@@ -385,8 +385,9 @@ button { color: inherit; }
 .allocationTotal strong.valid { color: var(--green); }
 .assetDirectoryPrompt { margin: 9px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.5; }
 .allocationRows { display: grid; gap: 10px; }
-.allocationColumnHeaders { display: grid; grid-template-columns: minmax(0, 1fr) 104px 34px; gap: 10px; padding: 0 1px; color: var(--text-soft); font-size: .72rem; font-weight: 650; }
-.allocationInput { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 104px 34px; gap: 10px; align-items: stretch; }
+.allocationColumnHeaders { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; padding: 0 1px; color: var(--text-soft); font-size: .72rem; font-weight: 650; }
+.allocationInput { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; align-items: stretch; }
+.allocationColumnHeaders.removable, .allocationInput.removable { grid-template-columns: minmax(0, 1fr) 104px 34px; }
 .assetMarketPicker { position: relative; min-width: 0; height: 100%; }
 .assetPickerTrigger { width: 100%; min-height: 52px; height: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); color: var(--text); text-align: left; }
 .assetPickerTrigger:hover, .assetPickerTrigger[aria-expanded="true"] { border-color: var(--teal); }
@@ -885,7 +886,8 @@ button { color: inherit; }
   .otfName { font-size: .8rem; }
   .leaderboardRow { grid-template-columns: 42px minmax(0, 1fr) 57px; column-gap: 6px; padding: 12px 10px; }
   .voteTotal strong { font-size: .88rem; }
-  .allocationInput, .allocationColumnHeaders { grid-template-columns: minmax(0, 1fr) 82px 34px; }
+  .allocationInput, .allocationColumnHeaders { grid-template-columns: minmax(0, 1fr) 82px; }
+  .allocationInput.removable, .allocationColumnHeaders.removable { grid-template-columns: minmax(0, 1fr) 82px 34px; }
   .assetPickerTrigger { align-items: flex-start; flex-wrap: wrap; }
   .assetPickerMenu { position: fixed; inset: auto 12px 12px; max-height: min(72vh, 560px); }
   .assetPickerResults { max-height: 42vh; }
