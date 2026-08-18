@@ -55,6 +55,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   const [draftId, setDraftId] = useState<string | null>(null);
   const [postUrl, setPostUrl] = useState("");
   const [successSlug, setSuccessSlug] = useState<string | null>(null);
+  const [redirectSeconds, setRedirectSeconds] = useState(5);
   const total = useMemo(() => rows.reduce((sum, row) => sum + Number(row.weight || 0), 0), [rows]);
   const thesisBytes = new TextEncoder().encode(thesis).length;
   const thesisValid = thesis.trim().length > 0 && thesisBytes <= 2048;
@@ -83,15 +84,22 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
 
   useEffect(() => {
     if (!successSlug) return;
+    setRedirectSeconds(5);
+    const countdownTimer = window.setInterval(() => {
+      setRedirectSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1_000);
     const redirectTimer = window.setTimeout(() => {
       window.location.href = `/otfs/${successSlug}`;
-    }, 3_000);
-    return () => window.clearTimeout(redirectTimer);
+    }, 5_000);
+    return () => {
+      window.clearInterval(countdownTimer);
+      window.clearTimeout(redirectTimer);
+    };
   }, [successSlug]);
 
   if (successSlug) {
     const successTarget = `/otfs/${successSlug}`;
-    return <div className="pageShell submissionSuccessPage"><section className="emptyState submissionSuccess" role="status" aria-live="polite"><CheckCircle2 size={48} aria-hidden="true" /><h1>OTF created successfully</h1><p>Your proposal is live in the launch competition.</p><p className="submissionSuccessCountdown">You’ll be redirected to your OTF in 3 seconds.</p><a className="button buttonPrimary" href={successTarget}>View your OTF <ArrowRight size={15} /></a></section></div>;
+    return <div className="pageShell submissionSuccessPage"><section className="emptyState submissionSuccess" role="status" aria-live="polite"><CheckCircle2 size={48} aria-hidden="true" /><h1>OTF created successfully</h1><p>Your proposal is live in the launch competition.</p><p className="submissionSuccessCountdown">You’ll be redirected to your OTF in {redirectSeconds} {redirectSeconds === 1 ? "second" : "seconds"}.</p><div className="submissionRedirectProgress" role="progressbar" aria-label="Redirecting to your OTF" aria-valuemin={0} aria-valuemax={5} aria-valuenow={5 - redirectSeconds}><span /></div><a className="button buttonPrimary submissionSuccessButton" href={successTarget}><span>View your OTF</span><ArrowRight size={15} /></a></section></div>;
   }
 
   if (!eligibility.eligible) return <div className="wizardLayout"><SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Creating an OTF requires a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers. Please connect an eligible account.</p><EligibilityAction eligibility={eligibility} action="submit" callbackUrl="/submit" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in with an eligible account"}</EligibilityAction></SectionCard><aside><SectionCard className="sideNote"><strong>Proposal requirements</strong><ul><li>Use a verified, public X account.</li><li>Have at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>Use an account that is at least {eligibility.minAccountAgeDays} days old.</li></ul></SectionCard></aside></div>;

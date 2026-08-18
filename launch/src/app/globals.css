@@ -646,8 +646,15 @@ button { color: inherit; }
 .submissionSuccessPage { min-height: calc(100dvh - 210px); display: grid; place-items: center; }
 .submissionSuccess { width: min(560px, 100%); margin: 0; }
 .submissionSuccess > svg { color: var(--green); }
-.submissionSuccessCountdown { margin-bottom: 16px !important; }
+.submissionSuccessCountdown { margin-bottom: 10px !important; font-variant-numeric: tabular-nums; }
+.submissionRedirectProgress { width: min(280px, 100%); height: 3px; margin-bottom: 18px; overflow: hidden; border-radius: 2px; background: var(--border-strong); }
+.submissionRedirectProgress span { display: block; width: 100%; height: 100%; transform: scaleX(0); transform-origin: left; background: var(--teal); animation: submissionRedirectProgress 5s linear forwards; }
 .submissionSuccess .button { width: auto; }
+.submissionSuccessButton { position: relative; min-width: 180px; padding-inline: 38px; }
+.submissionSuccessButton > span { width: 100%; text-align: center; }
+.submissionSuccessButton > svg { position: absolute; right: 14px; }
+@keyframes submissionRedirectProgress { to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .submissionRedirectProgress span { animation: none; transform: scaleX(1); } }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
 .accountTitle { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .accountTitle h1 { min-width: 0; font-size: clamp(1.65rem, 4vw, 2.55rem); line-height: 1; overflow-wrap: anywhere; }
