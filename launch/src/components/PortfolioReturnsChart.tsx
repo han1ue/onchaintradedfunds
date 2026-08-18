@@ -46,7 +46,13 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
     const durationMs = ranges.find((option) => option.value === range)?.durationMs;
     if (!durationMs || allPoints.length === 0) return allPoints;
     const end = new Date(allPoints[allPoints.length - 1].timestamp).getTime();
-    return allPoints.filter((point) => new Date(point.timestamp).getTime() >= end - durationMs);
+    const windowPoints = allPoints.filter((point) => new Date(point.timestamp).getTime() >= end - durationMs);
+    const baseline = 1 + (windowPoints[0]?.returnPct ?? 0) / 100;
+    if (baseline <= 0) return windowPoints;
+    return windowPoints.map((point) => ({
+      ...point,
+      returnPct: ((1 + point.returnPct / 100) / baseline - 1) * 100,
+    }));
   }, [allPoints, range]);
   const [activeIndex, setActiveIndex] = useState(Math.max(0, allPoints.length - 1));
   const layout = useMemo(() => {
@@ -75,7 +81,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   const resolvedIndex = Math.min(activeIndex, Math.max(0, points.length - 1));
   const active = points[resolvedIndex];
-  const current = allPoints.at(-1)?.returnPct ?? 0;
+  const current = points.at(-1)?.returnPct ?? 0;
   const tone = current > 0.005 ? "positive" : current < -0.005 ? "negative" : "neutral";
 
   function selectFromPointer(event: PointerEvent<HTMLDivElement>) {
@@ -100,16 +106,18 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
 
   return <div className="portfolioReturns">
     <div className="returnsHeading">
-      <h2>Portfolio</h2>
-      {allPoints.length > 1 && <div className={`returnsCurrent ${tone}`}><strong>{formatReturn(current)}</strong></div>}
-    </div>
-    <div className="returnsRanges" aria-label="Portfolio return range">
-      {ranges.map((option) => <button
-        key={option.value}
-        type="button"
-        aria-pressed={range === option.value}
-        onClick={() => { setRange(option.value); setActiveIndex(Number.MAX_SAFE_INTEGER); }}
-      >{option.label}</button>)}
+      <div className="returnsSummary">
+        <h2>Portfolio</h2>
+        {allPoints.length > 1 && <div className={`returnsCurrent ${tone}`}><strong>{formatReturn(current)}</strong></div>}
+      </div>
+      <div className="returnsRanges" aria-label="Portfolio return range">
+        {ranges.map((option) => <button
+          key={option.value}
+          type="button"
+          aria-pressed={range === option.value}
+          onClick={() => { setRange(option.value); setActiveIndex(Number.MAX_SAFE_INTEGER); }}
+        >{option.label}</button>)}
+      </div>
     </div>
     {points.length < 2 || !layout || !active ? <div className="returnsEmpty">
       <ChartNoAxesCombined size={22} aria-hidden="true" />
@@ -139,7 +147,7 @@ export function PortfolioReturnsChart({ returns, preview = false }: { returns: P
         </svg>
         <div className={`returnsTooltip ${layout.plotted[resolvedIndex].x > width * .7 ? "alignRight" : ""}`} style={{ left: `${layout.plotted[resolvedIndex].x / width * 100}%` }} aria-hidden="true"><strong>{formatReturn(active.returnPct)}</strong><span>{formatDateTime(active.timestamp)}</span></div>
       </div>
-      <div className="returnsFootnote"><span>{preview ? "Preview series" : "30-minute price checkpoints"}</span><span>Baseline {formatDateTime(returns.trackingStartedAt ?? points[0].timestamp)}</span></div>
+      <div className="returnsFootnote"><span>{preview ? "Preview series" : "30-minute price checkpoints"}</span><span>Baseline {formatDateTime(range === "all" ? returns.trackingStartedAt ?? points[0].timestamp : points[0].timestamp)}</span></div>
     </>}
   </div>;
 }
