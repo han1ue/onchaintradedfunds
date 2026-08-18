@@ -3,6 +3,7 @@
 import { BadgeCheck, Check, ChevronDown, CircleAlert, CircleCheck, CircleDot, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssetMarketRequirement, AssetMarketValidationResponse } from "@/lib/asset-market-validation";
+import { shortAddress } from "@/lib/format-address";
 import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
 import type { EligibleAsset, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
@@ -16,10 +17,6 @@ type Props = {
   label: string;
   onChange: (assetId: string, assetMetadata: ProposalAssetMetadata | null, pricingConfig: PricingConfig | null) => void;
 };
-
-function shortAddress(address: string) {
-  return `${address.slice(0, 8)}…${address.slice(-6)}`;
-}
 
 function observedValue(requirement: AssetMarketRequirement) {
   if (requirement.observed === null) return requirement.status === "pending" ? "Pending" : "Unavailable";
@@ -155,7 +152,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity">
-          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected ? <BadgeCheck className="assetPickerVerificationIcon" size={14} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={14} aria-label="Unverified asset" />}</span>
+          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
           <small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small>
         </span>
       </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
@@ -166,16 +163,16 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><strong>{selectedMetadata.symbol}</strong><CircleAlert className="assetPickerVerificationIcon unverified" size={14} aria-label="Unverified asset" /></span>
+            <span className="assetPickerTicker"><strong>{selectedMetadata.symbol}</strong><CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" /></span>
             <small>{selectedMetadata.name}</small>
             <code>Edit contract and Uniswap V3 pool</code>
           </span>
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><strong>{asset.symbol}</strong><BadgeCheck className="assetPickerVerificationIcon" size={14} aria-label="Verified asset" /></span>
+            <span className="assetPickerTicker"><strong>{asset.symbol}</strong><BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /></span>
             <small>{asset.name}</small>
-            <code>{asset.network} · {asset.contractAddress}</code>
+            <code>{asset.network} · {shortAddress(asset.contractAddress)}</code>
           </span>
           <span className="assetPickerOptionStatus">
             {asset.id === assetId && <Check size={15} aria-hidden="true" />}

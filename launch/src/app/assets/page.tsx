@@ -1,10 +1,7 @@
 import { ExternalLink, Info } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
+import { shortAddress } from "@/lib/format-address";
 import { getEligibleAssets, getLatestScoringCheckpointAt } from "@/server/data";
-
-function shortAddress(address: string) {
-  return `${address.slice(0, 8)}…${address.slice(-6)}`;
-}
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat("en-US", {
