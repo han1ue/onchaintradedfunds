@@ -557,6 +557,9 @@ button { color: inherit; }
 .returnsEmpty p { margin: 4px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.45; }
 .eligibilityNote { display: flex; align-items: flex-start; gap: 7px; margin: 18px 0 0; color: var(--text-muted) !important; font-size: .68rem !important; }
 .eligibilityNote svg { flex: 0 0 auto; color: var(--teal); }
+.otfVoteTotal { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid var(--border); background: var(--card-raised); }
+.otfVoteTotal span { color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.otfVoteTotal strong { color: var(--text); font-size: 1.8rem; line-height: 1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .votePanel .cardHeading svg { color: var(--teal); }
 .panelBody { display: grid; gap: 14px; padding: 18px; }
 .panelBody .button { width: 100%; }
