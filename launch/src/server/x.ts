@@ -133,12 +133,17 @@ async function fetchXOEmbed(postUrl: string, revalidate?: number) {
     omit_script: "true",
     maxwidth: "550",
   });
-  const response = await fetch(`https://publish.twitter.com/oembed?${query}`, {
-    signal: AbortSignal.timeout(5_000),
-    ...(revalidate ? { next: { revalidate } } : { cache: "no-store" as const }),
-  });
-  if (!response.ok) throw new Error("X_POST_NOT_FOUND");
-  const result = await response.json() as XOEmbed;
+  let response: Response;
+  try {
+    response = await fetch(`https://publish.twitter.com/oembed?${query}`, {
+      signal: AbortSignal.timeout(5_000),
+      ...(revalidate ? { next: { revalidate } } : { cache: "no-store" as const }),
+    });
+  } catch {
+    throw new Error("X_UNAVAILABLE");
+  }
+  if (!response.ok) throw new Error(response.status >= 500 ? "X_UNAVAILABLE" : "X_POST_NOT_FOUND");
+  const result = await response.json().catch(() => { throw new Error("X_UNAVAILABLE"); }) as XOEmbed;
   if (typeof result.html !== "string" || result.html.length > 50_000 || !result.html.includes("twitter-tweet") || /<script/i.test(result.html)) {
     throw new Error("X_POST_NOT_FOUND");
   }

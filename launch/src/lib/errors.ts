@@ -1,4 +1,5 @@
 export const errorMessages: Record<string, string> = {
+  INTERNAL_ERROR: "The service hit an unexpected error. Please try again shortly.",
   X_NOT_VERIFIED: "A verified, public X account is required.",
   PRICING_CONFIG_REQUIRED: "An exact pricing route is required for this unverified asset.",
   FOLLOWER_THRESHOLD: "Your X account must have at least 100 followers to submit or vote.",
