@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { BadgeCheck, CircleX, Layers3, LogIn, LogOut, ShieldAlert, Trash2, UnlockKeyhole, Users, Vote } from "lucide-react";
+import { BadgeCheck, CircleX, Layers3, LogIn, LogOut, ShieldAlert, UnlockKeyhole, Users, Vote } from "lucide-react";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { EligibilityAction } from "@/components/EligibilityGate";
+import { DeleteProposalForm, type DeleteProposalState } from "@/components/DeleteProposalForm";
 import { Button, SectionCard, StatusBadge } from "@/components/ui";
 import { XSignInButton } from "@/components/XSignInButton";
 import { XProfileImage } from "@/components/XProfileImage";
@@ -12,6 +13,7 @@ import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
 import { ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
 import { getCompetitionTiming } from "@/lib/competition";
+import { errorMessages } from "@/lib/errors";
 import { getParticipationEligibility } from "@/server/participation";
 export const metadata = { title: "My profile" };
 
@@ -20,14 +22,21 @@ async function disconnectX() {
   await signOut({ redirectTo: "/" });
 }
 
-async function deleteOwnProposal(formData: FormData) {
+async function deleteOwnProposal(_state: DeleteProposalState, formData: FormData): Promise<DeleteProposalState> {
   "use server";
   const proposalId = formData.get("proposalId");
-  if (typeof proposalId !== "string") return;
-  await deleteProposal(proposalId);
+  if (typeof proposalId !== "string") return { error: errorMessages.INTERNAL_ERROR };
+  try {
+    await deleteProposal(proposalId);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+    if (!(code in errorMessages)) console.error("Failed to delete proposal", error);
+    return { error: errorMessages[code] ?? errorMessages.INTERNAL_ERROR };
+  }
   revalidatePath("/me");
   revalidatePath("/");
   revalidatePath("/leaderboard");
+  return { error: null };
 }
 
 export default async function MePage() {
@@ -91,7 +100,7 @@ export default async function MePage() {
       const canDelete = proposal.status !== "deleted" && proposal.votes === 0;
       const badgeTone = proposal.status === "confirmed" ? "positive" : proposal.status === "deleted" ? "danger" : "warning";
       const identity = <><strong>{proposal.name}</strong><small>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</small></>;
-      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{canDelete ? <form action={deleteOwnProposal}><input type="hidden" name="proposalId" value={proposal.id} /><Button type="submit" variant="ghost" className="deleteSubmissionButton" aria-label={`Delete ${proposal.name}`}><Trash2 size={14} /> Delete</Button></form> : proposal.status !== "deleted" && <span className="submissionDeleteUnavailable">Has votes</span>}</div></div>;
+      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{canDelete ? <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} action={deleteOwnProposal} /> : proposal.status !== "deleted" && <span className="submissionDeleteUnavailable">Has votes</span>}</div></div>;
     })}</div> : <p>No submissions yet. <Link className="inlineLink" href="/submit">Create an OTF</Link>.</p>}</SectionCard>
     <SectionCard className="contentCard"><h2>OTFs you voted on</h2>{ownVoteAllocations.length ? <div className="activityList">{ownVoteAllocations.map((allocation) => <div className="activityRow" key={allocation.proposalId}><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy"><Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link><small>${allocation.proposalTicker} · {allocation.votes} locked {allocation.votes === 1 ? "vote" : "votes"}</small></div><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
   </div>;

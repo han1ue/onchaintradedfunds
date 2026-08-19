@@ -694,8 +694,11 @@ button { color: inherit; }
 .submissionIdentity strong { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .submissionIdentity small, .submissionDeleteUnavailable { color: var(--text-muted); font-size: .66rem; }
 .submissionRowActions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.deleteSubmissionForm { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.submissionDeleteError { max-width: 260px; color: var(--danger); font-size: .66rem; line-height: 1.35; text-align: right; }
 .deleteSubmissionButton { min-height: 32px; padding: 0 8px; color: var(--danger); }
 .deleteSubmissionButton:hover { background: color-mix(in srgb, var(--danger) 7%, transparent); }
+.deleteSubmissionButton:disabled { cursor: wait; opacity: .6; }
 .submissionDeleteUnavailable { justify-self: end; }
 .activityRow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border); }
 .activityIcon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: color-mix(in srgb, var(--text-muted) 9%, transparent); color: var(--text-muted); }
