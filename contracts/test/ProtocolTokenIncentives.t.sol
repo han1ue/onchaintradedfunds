@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
@@ -41,9 +42,9 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         new OTFToken(address(0));
     }
 
-    function testFullThresholdRedirectsAllProtocolFeesToManager() public {
+    function testFullRebateAtTargetThreshold() public {
         ManagedOTFVault vault = _createProtocolTokenVault(1_000);
-        assertEq(vault.currentWeight(address(otfToken)), 1_000);
+        assertEq(vault.targetWeightBps(address(otfToken)), 1_000);
         assertEq(vault.effectiveProtocolFeeShareBps(), 0);
 
         vm.warp(START + 365 days);
@@ -55,9 +56,9 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertEq(vault.balanceOf(FEE_RECIPIENT), feeShares);
     }
 
-    function testHalfThresholdHalvesProtocolFeeShare() public {
+    function testProportionalRebateBelowTargetThreshold() public {
         ManagedOTFVault vault = _createProtocolTokenVault(500);
-        assertEq(vault.currentWeight(address(otfToken)), 500);
+        assertEq(vault.targetWeightBps(address(otfToken)), 500);
         assertEq(vault.effectiveProtocolFeeShareBps(), 750);
 
         vm.warp(START + 365 days);
@@ -69,19 +70,110 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertEq(vault.balanceOf(FEE_RECIPIENT), feeShares - expectedProtocolShares);
     }
 
-    function testAdminCanChangeOrDisableFullRebateThreshold() public {
+    function testZeroThresholdDisablesIncentive() public {
         ManagedOTFVault vault = _createProtocolTokenVault(500);
         assertEq(vault.effectiveProtocolFeeShareBps(), 750);
 
-        factory.setProtocolTokenFullRebateBps(500);
-        assertEq(vault.effectiveProtocolFeeShareBps(), 0);
-
         factory.setProtocolTokenFullRebateBps(0);
+        assertEq(factory.protocolTokenFullRebateBps(), 0);
         assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
+    }
 
+    function testOnlyOwnerCanChangeFullRebateThreshold() public {
         vm.prank(ALICE);
         vm.expectRevert(OTFFactory.NotOwner.selector);
         factory.setProtocolTokenFullRebateBps(1_000);
+    }
+
+    function testNoRebateWhenProtocolTokenIsAbsent() public {
+        ManagedOTFVault vault = _createVault();
+
+        assertEq(vault.targetWeightBps(address(otfToken)), 0);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
+    }
+
+    function testLiveMarketWeightChangesDoNotAffectTargetWeightRebate() public {
+        ManagedOTFVault vault = _createProtocolTokenVault(500);
+        assertEq(vault.currentWeight(address(otfToken)), 500);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 750);
+
+        uint80 nextRound = otfFeed.roundId() + 1;
+        otfFeed.setRoundData(nextRound, 200_00000000, block.timestamp, block.timestamp, nextRound);
+
+        assertGt(vault.currentWeight(address(otfToken)), 500);
+        assertEq(vault.targetWeightBps(address(otfToken)), 500);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 750);
+    }
+
+    function testTargetChangeCheckpointsOldFeePeriodBeforeApplyingNewTarget() public {
+        ManagedOTFVault vault = _createProtocolTokenVault(1_000);
+
+        vm.warp(vault.nextStrategyChangeTime());
+        _refreshAllPrices();
+        _proposeProtocolTokenTarget(vault, 500);
+
+        uint256 activationTime = vault.pendingStrategyActivationTime();
+        vm.warp(activationTime);
+        _refreshAllPrices();
+        vault.activatePendingStrategy();
+
+        assertEq(vault.lastFeeAccrualTimestamp(), activationTime);
+        assertEq(vault.balanceOf(address(collector)), 0);
+        assertGt(vault.balanceOf(FEE_RECIPIENT), 0);
+        assertEq(vault.targetWeightBps(address(otfToken)), 500);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 750);
+    }
+
+    function testProtocolTokenUsesProtocolWideConstituentMinimum() public {
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        _createProtocolTokenVault(99);
+    }
+
+    function testFullRebateThresholdUsesCurrentMutableMinimum() public {
+        vm.expectPartialRevert(OTFFactory.InvalidProtocolTokenThreshold.selector);
+        factory.setProtocolTokenFullRebateBps(99);
+
+        assertEq(factory.protocolTokenFullRebateBps(), 1_000);
+
+        factory.setMinTargetWeightBps(10);
+        factory.setProtocolTokenFullRebateBps(50);
+
+        assertEq(factory.minTargetWeightBps(), 10);
+        assertEq(factory.protocolTokenFullRebateBps(), 50);
+    }
+
+    function testRaisingMinimumAboveEnabledFullRebateThresholdReverts() public {
+        factory.setProtocolTokenFullRebateBps(200);
+
+        vm.expectPartialRevert(OTFFactory.InvalidProtocolTokenThreshold.selector);
+        factory.setMinTargetWeightBps(201);
+
+        assertEq(factory.minTargetWeightBps(), 100);
+        assertEq(factory.protocolTokenFullRebateBps(), 200);
+    }
+
+    function testRaisingMinimumSucceedsAfterRaisingFullRebateThreshold() public {
+        factory.setProtocolTokenFullRebateBps(300);
+        factory.setMinTargetWeightBps(250);
+
+        assertEq(factory.minTargetWeightBps(), 250);
+        assertEq(factory.protocolTokenFullRebateBps(), 300);
+    }
+
+    function testLatestAdminThresholdAppliesToEntirePeriodAtNextCheckpoint() public {
+        ManagedOTFVault vault = _createProtocolTokenVault(500);
+
+        vm.warp(START + 180 days);
+        factory.setProtocolTokenFullRebateBps(500);
+        assertEq(vault.lastFeeAccrualTimestamp(), START);
+
+        vm.warp(START + 365 days);
+        _refreshAllPrices();
+        uint256 feeShares = vault.accrueFees();
+
+        assertGt(feeShares, 0);
+        assertEq(vault.balanceOf(address(collector)), 0);
+        assertEq(vault.balanceOf(FEE_RECIPIENT), feeShares);
     }
 
     function testAdminCanChangeProtocolFeeShareForExistingVaultsUpToOneHundredPercent() public {
@@ -106,21 +198,6 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         vm.expectPartialRevert(OTFFactory.InvalidProtocolTokenThreshold.selector);
         factory.setProtocolTokenFullRebateBps(10_001);
-    }
-
-    function testMissingOrStaleRebateOracleFailsClosedWithoutBlockingRedemption() public {
-        ManagedOTFVault vaultWithoutOtf = _createVault();
-        assertEq(vaultWithoutOtf.effectiveProtocolFeeShareBps(), 1_500);
-
-        ManagedOTFVault vault = _createProtocolTokenVault(500);
-        assertEq(vault.effectiveProtocolFeeShareBps(), 750);
-
-        vm.warp(START + 25 hours + 1);
-        assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
-        uint256[] memory minimums = new uint256[](vault.assetCount());
-        vault.redeem(ONE, address(this), address(this), minimums);
-
-        assertGt(vault.balanceOf(address(collector)), 0);
     }
 
     function testTreasuryCanClaimAndRedeemProtocolFeesForManualBuybacks() public {
@@ -171,6 +248,21 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.deploymentSalt = keccak256(abi.encode("otf-incentive", otfWeightBps));
 
         vault = ManagedOTFVault(factory.createVault(params));
+    }
+
+    function _proposeProtocolTokenTarget(ManagedOTFVault vault, uint16 otfWeightBps) private {
+        address[] memory assets = new address[](3);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        assets[2] = address(otfToken);
+
+        uint256 remainingWeight = 10_000 - otfWeightBps;
+        uint256[] memory weights = new uint256[](3);
+        weights[0] = remainingWeight / 2;
+        weights[1] = remainingWeight - remainingWeight / 2;
+        weights[2] = otfWeightBps;
+
+        vault.proposeStrategy(assets, weights, "Update the configured OTF target allocation.");
     }
 
     function _refreshAllPrices() private {

@@ -333,6 +333,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
     }
 
     function testManagerRemovedConstituentPausesDepositsAndIsPrunedAtZero() public {
+        factory.setMinTargetWeightBps(10);
         ManagedOTFVault vault = _createVault();
         address[] memory assets = new address[](1);
         assets[0] = address(tokenA);

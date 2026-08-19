@@ -160,17 +160,42 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         factory.setMinTargetWeightBps(0);
     }
 
-    function testFactoryEnforcesOnePercentMinimumTargetWeightFloor() public {
-        assertEq(factory.MIN_TARGET_WEIGHT_BPS(), 100);
+    function testFactoryDefaultsToOnePercentAndAllowsHardFloor() public {
+        assertEq(factory.MIN_TARGET_WEIGHT_BPS(), 10);
+        assertEq(factory.minTargetWeightBps(), 100);
 
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.setMinTargetWeightBps(99);
+        factory.setMinTargetWeightBps(9);
         assertEq(factory.minTargetWeightBps(), 100);
 
-        factory.setMinTargetWeightBps(200);
-        assertEq(factory.minTargetWeightBps(), 200);
-        factory.setMinTargetWeightBps(100);
-        assertEq(factory.minTargetWeightBps(), 100);
+        factory.setMinTargetWeightBps(10);
+        assertEq(factory.minTargetWeightBps(), 10);
+    }
+
+    function testStrategyCanUseHardFloorButCannotProposeZeroWeight() public {
+        ManagedOTFVault vault = _createVault();
+        factory.setMinTargetWeightBps(10);
+
+        vm.warp(START + 14 days);
+        _refreshPrices();
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 10_000;
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
+        vault.proposeStrategy(assets, weights, "Zero is not a valid constituent target.");
+
+        weights[0] = 9_990;
+        weights[1] = 10;
+        vault.proposeStrategy(assets, weights, "Use the protocol hard-floor allocation.");
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        vault.activatePendingStrategy();
+
+        assertEq(vault.targetWeightBps(address(tokenA)), 9_990);
+        assertEq(vault.targetWeightBps(address(tokenB)), 10);
     }
 
     function testFactoryAllowsSingleAssetPortfolio() public {

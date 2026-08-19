@@ -104,11 +104,8 @@ export function DocsNavigation({ groups }: { groups: readonly DocsSectionGroup[]
       </div>
       {navigation()}
       <div className="docsStatus">
-        <span />
-        <div>
-          <strong>MVP documentation</strong>
-          <small>Robinhood Testnet</small>
-        </div>
+        <strong>MVP documentation</strong>
+        <small>Robinhood Testnet</small>
       </div>
       <details className="docsMobileMenu" ref={mobileMenuRef}>
         <summary>

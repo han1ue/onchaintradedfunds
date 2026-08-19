@@ -44,8 +44,11 @@ Primary security goals:
 The factory owner can:
 
 - Approve or remove trade adapters for vault rebalances.
-- Change the protocol-wide minimum target weight for future portfolio proposals; the default is 1%.
-- Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
+- Change the protocol-wide minimum target weight for future portfolio proposals; the default is 1%
+  and the immutable hard floor is 0.1%. An enabled OTF full-rebate threshold prevents raising this
+  minimum above that threshold.
+- Permanently identify the OTF protocol token and change or disable its full-rebate threshold. A
+  nonzero threshold must be at least the current protocol-wide minimum target weight.
 - Reversibly pause creation and all primary deposits globally.
 - Reversibly pause direct and routed deposits for one factory-created OTF; non-factory targets are
   rejected.
@@ -126,7 +129,7 @@ continuously over seven days; profitable execution does not restore it.
 
 Changing the protocol-wide minimum target weight is not retroactive: it does not invalidate an
 active portfolio or create a challenge. Existing and new vaults apply the live minimum when they
-validate a new target proposal.
+validate a new target proposal. The OTF protocol token follows this same constituent minimum.
 
 The vault grants exact temporary approvals to the executor and clears them after each trade. This reduces approval exposure but does not remove adapter-integration risk.
 
@@ -331,10 +334,14 @@ discarding capped time. Fee-share tests cover:
 - Timely challenge resolution and fee-withdrawal resumption.
 
 The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
-When enabled, a vault's live oracle-valued OTF holding reduces that protocol share linearly up to
-the factory-set full-rebate threshold. Missing constituents or failed rebate pricing grant no
-discount. Protocol shares held by `FeeCollector` can only be claimed by its configured treasury,
+When enabled, a vault's configured OTF target weight reduces that protocol share linearly up to the
+factory-set full-rebate threshold. A missing OTF constituent grants no discount. Protocol shares
+held by `FeeCollector` can only be claimed by its configured treasury,
 which can redeem those shares and perform any approved buybacks manually.
+
+Rebate-policy changes use the latest configuration when an OTF next checkpoints fees; there is no
+historical rebate-policy accounting. Strategy activation checkpoints the preceding fee interval
+before replacing the active target weights.
 
 Missed challenge-window fees are not minted to the manager. The challenge caller can claim 50% as
 OTF shares; the remaining 50% is skipped rather than minted and burned.

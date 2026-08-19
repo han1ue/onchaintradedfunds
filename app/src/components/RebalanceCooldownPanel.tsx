@@ -230,7 +230,7 @@ type VaultView = {
   manager?: string;
   feeRecipient?: string;
   creatorFeeBps: number;
-  protocolFeeShareBps: number;
+  effectiveProtocolFeeShareBps: number;
   totalSupply: string;
   cooldownSeconds: number;
   lastStrategyCompletion?: number;
@@ -1338,6 +1338,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           functionName: "vaultDepositsPaused",
           args: [vaultAddress],
         },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "effectiveProtocolFeeShareBps" },
       ] as const)
     : undefined;
 
@@ -1462,6 +1463,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const protocolDepositsPaused = Boolean(resultAt<boolean>(results, 38));
   const navLossBudget = resultAt<readonly [bigint, number, number]>(results, 39);
   const vaultDepositsPaused = Boolean(resultAt<boolean>(results, 40));
+  const effectiveProtocolFeeShareBps =
+    resultAt<number>(results, 41) ?? protocolFeeShareBps;
   const depositPauseStatusUnavailable = Boolean(enabled) && (
     results?.[38]?.status !== "success" || results?.[40]?.status !== "success"
   );
@@ -1487,7 +1490,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     manager,
     feeRecipient,
     creatorFeeBps,
-    protocolFeeShareBps,
+    effectiveProtocolFeeShareBps,
     totalSupply: supplyDisplay,
     cooldownSeconds,
     lastStrategyCompletion,
@@ -9569,7 +9572,7 @@ function ManageVaultsView({
     query: { enabled: Boolean(vault.enabled && vault.address && vault.manager && !vault.sunset) },
   });
   const pendingManagerFeeShares = feeWithdrawalPreview?.result !== undefined
-    ? feeWithdrawalPreview.result * BigInt(10_000 - vault.protocolFeeShareBps) / 10_000n
+    ? feeWithdrawalPreview.result * BigInt(10_000 - vault.effectiveProtocolFeeShareBps) / 10_000n
     : undefined;
   const pendingManagerFeeDisplay = feeWithdrawalPreviewLoading
     ? "Calculating"
@@ -10041,10 +10044,10 @@ function ManageVaultsView({
             <div className="accrualSummary">
               <div><span>Pending manager fees</span><strong>{pendingManagerFeeDisplay}</strong></div>
               <div><span>Manager fee</span><strong>{bpsToPercent(vault.creatorFeeBps)} / yr</strong></div>
-              <div><span>Protocol cut</span><strong>{bpsToPercent(vault.protocolFeeShareBps)} of accrued fees</strong></div>
+              <div><span>Effective protocol cut</span><strong>{bpsToPercent(vault.effectiveProtocolFeeShareBps)} of accrued fees</strong></div>
               <div><span>Historically forfeited</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
             </div>
-            <p>Pending fees are calculated by simulating a withdrawal at the latest block. They are minted as OTF shares when the withdrawal confirms, with the protocol cut sent to the collector and the remainder sent to the fee recipient.</p>
+            <p>Pending fees are calculated by simulating a withdrawal at the latest block. The protocol rebate is based on the manager&apos;s active $OTF target allocation, not its live portfolio weight. Changes to protocol rebate parameters take effect for this OTF when its fees are next checkpointed.</p>
             {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Fee withdrawal failed</strong><span>{feeAccrualError}</span></div></div> : null}
             <TxStatus state={feeAccrualState} />
             <button

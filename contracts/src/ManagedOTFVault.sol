@@ -366,8 +366,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    /// @notice Protocol fee share after the live OTF-token holding incentive is applied.
-    /// @dev Missing constituents and unavailable oracle data fail closed to the base fee share.
+    /// @notice Protocol fee share after the OTF target-weight incentive is applied.
+    /// @dev Missing constituents and failed target-weight reads preserve the base fee share.
     function effectiveProtocolFeeShareBps() public view returns (uint16 effectiveShareBps) {
         effectiveShareBps = protocolFeeShareBps;
         try IProtocolTokenFeePolicy(factory)
@@ -376,7 +376,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         ) {
             if (configuredShareBps <= BPS) return configuredShareBps;
         } catch {
-            // Legacy factories and failed oracle reads preserve the base protocol share.
+            // Legacy factories and failed target-weight reads preserve the base protocol share.
         }
     }
 

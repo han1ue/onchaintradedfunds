@@ -71,6 +71,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "effectiveProtocolFeeShareBps",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "function",
     name: "totalSupply",
     stateMutability: "view",
     inputs: [],

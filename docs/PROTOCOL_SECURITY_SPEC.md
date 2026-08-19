@@ -176,8 +176,10 @@ The protocol owner MAY:
 
 - Approve or remove trade adapters.
 - Set the protocol share of manager fees between 0 and 10,000 BPS for existing and future OTFs.
-- Set the protocol-wide minimum target weight within its hard bounds.
-- Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
+- Set the protocol-wide minimum target weight within its hard bounds, provided it does not exceed
+  an enabled OTF full-rebate threshold.
+- Permanently identify the OTF protocol token and change or disable its full-rebate threshold. A
+  nonzero threshold MUST be at least the current protocol-wide minimum target weight.
 - Reversibly pause creation and all direct or routed primary deposits globally.
 - Reversibly pause direct or routed primary deposits for one factory-created OTF. The setter MUST
   reject a non-factory target.
@@ -347,10 +349,11 @@ A proposal requires:
   V3 configuration that passes canonical-factory, exact pair/fee, initialization, observation
   capacity, and full-history validation.
 - At least one constituent, with every included target at or above the factory's live protocol-wide
-  minimum target weight. That minimum has a permanent floor of 100 basis points (1%); the factory
-  owner MAY raise it up to 10,000 basis points or reduce it back to the floor. Changes apply only when
-  an initial or proposed target is validated and MUST NOT invalidate an active portfolio or trigger
-  a challenge retroactively.
+  minimum target weight. That minimum defaults to 100 basis points (1%) and has a permanent floor of
+  10 basis points (0.1%); the factory owner MAY raise it up to 10,000 basis points or reduce it back
+  to the floor. Changes apply only when an initial or proposed target is validated and MUST NOT
+  invalidate an active portfolio or trigger a challenge retroactively. The OTF protocol token MUST
+  follow the same constituent minimum.
 - The union of positive-target and zero-target assets awaiting manager-directed removal MUST NOT
   exceed 100 tracked assets.
 - Any constituent omitted from the proposal remains tracked at a zero target until its reserve is

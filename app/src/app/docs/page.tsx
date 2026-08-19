@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Boxes,
+  ChevronDown,
   Coins,
   ExternalLink,
   Landmark,
@@ -118,15 +119,14 @@ export default function DocsPage() {
 
         <main className="docsContent">
           <section className="docsIntro" id="overview">
-            <span className="docsEyebrow">Protocol documentation</span>
             <h1>Onchain funds with legible portfolios and bounded management.</h1>
             <p>
-              Onchain Traded Funds is an experimental protocol for managed multi-asset basket
-              vaults. An OTF owns mechanically valid tokenized assets with per-OTF pinned pricing, issues transferable proportional
-              shares, and allows its manager to update the portfolio only through a narrow,
-              safety-checked strategic and execution paths. OTFs are not ERC-4626 vaults. They
-              expose the current draft ERC-7621 basket interface and exact standard events, with
-              stricter proportional-contribution and ownership rules documented below.
+              Onchain Traded Funds is an experimental protocol for managed, multi-asset baskets.
+              Each OTF holds mechanically valid tokenized assets, pins one pricing route per asset,
+              and issues transferable proportional shares. Its manager can update the portfolio
+              only through narrow, safety-checked strategy and execution paths. OTFs are not
+              ERC-4626 vaults: they expose the current draft ERC-7621 basket interface and exact
+              standard events, with the stricter contribution and ownership rules documented below.
             </p>
             <div className="docsNotice">
               <ShieldCheck size={17} />
@@ -167,32 +167,69 @@ export default function DocsPage() {
               sends the protocol share of accrued fees to the fee collector. The factory and
               registries never custody a vault&apos;s portfolio.
             </p>
-            <div className="docsFlow" aria-label="Protocol architecture">
-              <span>Creator</span>
-              <b>Factory</b>
-              <b>Managed vault</b>
-              <span>Registries</span>
-              <span>Executor</span>
-              <span>Fee collector</span>
-            </div>
-            <div className="docsTableWrap">
-              <table className="docsTable">
-                <thead>
-                  <tr>
-                    <th>Contract</th>
-                    <th>Responsibility</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contractRows.map(([contract, responsibility]) => (
-                    <tr key={contract}>
-                      <td><code>{contract}</code></td>
-                      <td>{responsibility}</td>
+            <figure className="docsArchitecture" aria-labelledby="architecture-caption">
+              <div className="docsArchitecturePath">
+                <article>
+                  <span>Configuration</span>
+                  <strong>Creator</strong>
+                  <small>Defines the basket, manager, pricing, fees, and permanent limits.</small>
+                </article>
+                <div className="docsArchitectureArrow" aria-hidden="true">
+                  <span>submits to</span>
+                  <ArrowRight size={16} />
+                </div>
+                <article>
+                  <span>Deployment</span>
+                  <strong>Factory</strong>
+                  <small>Validates the configuration and creates the minimal-proxy OTF.</small>
+                </article>
+                <div className="docsArchitectureArrow" aria-hidden="true">
+                  <span>creates</span>
+                  <ArrowRight size={16} />
+                </div>
+                <article className="portfolioOwner">
+                  <span>Portfolio owner</span>
+                  <strong>Managed OTF</strong>
+                  <small>Holds every constituent, issues shares, and enforces portfolio rules.</small>
+                </article>
+              </div>
+              <div className="docsArchitectureServices">
+                <p>Connected contracts support the OTF without holding its portfolio:</p>
+                <div>
+                  <span><strong>Registries</strong> validate pricing and protocol rules.</span>
+                  <span><strong>Executor</strong> routes typed trades through approved adapters.</span>
+                  <span><strong>Fee collector</strong> receives the protocol share of accrued fees.</span>
+                </div>
+              </div>
+              <figcaption id="architecture-caption">
+                “Portfolio owner” is a custody label, not an admin role. Only the managed OTF holds
+                the basket; the factory and registries never do.
+              </figcaption>
+            </figure>
+            <details className="docsDisclosure">
+              <summary>
+                Contract responsibilities
+                <span><ChevronDown size={14} aria-hidden="true" />{contractRows.length} contracts</span>
+              </summary>
+              <div className="docsTableWrap">
+                <table className="docsTable">
+                  <thead>
+                    <tr>
+                      <th>Contract</th>
+                      <th>Responsibility</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {contractRows.map(([contract, responsibility]) => (
+                      <tr key={contract}>
+                        <td><code>{contract}</code></td>
+                        <td>{responsibility}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </section>
 
           <section className="docsSection" id="lifecycle">
@@ -208,58 +245,46 @@ export default function DocsPage() {
               and starts its own seven-day response window.
             </p>
             <figure className="otfLifecycleFigure" aria-labelledby="otf-lifecycle-caption">
-              <div
-                className="otfLifecycleGantt"
-                role="img"
-                aria-label="OTF lifecycle Gantt chart from creation through cooldown, proposal, holder notice, activation, rebalance, and challenge response"
-              >
-                <div className="otfLifecycleAxis">
-                  <strong>Phase</strong>
-                  <div>
-                    <span className="axisStart">Day 0</span>
-                    <span className="axisWeek">Day 7</span>
-                    <span className="axisCooldown">Day 14</span>
-                    <span className="axisActivation">Day 16</span>
-                    <span className="axisOngoing">Ongoing</span>
-                  </div>
-                </div>
-                <div className="otfLifecycleRow creation">
-                  <span>OTF creation</span>
-                  <div><b>Initial strategy active</b></div>
-                </div>
-                <div className="otfLifecycleRow cooldown">
-                  <span>Strategy cooldown</span>
-                  <div><b>14 days</b></div>
-                </div>
-                <div className="otfLifecycleRow proposal">
+              <ol className="otfStateFlow" aria-label="Main OTF strategy state flow">
+                <li>
+                  <span>Active strategy</span>
+                  <div><strong>Portfolio operates</strong><small>Creation records strategy version zero and activates its targets.</small></div>
+                </li>
+                <li>
+                  <span>14-day cooldown</span>
+                  <div><strong>Targets stay fixed</strong><small>The wait starts at creation or the last completed rebalance.</small></div>
+                </li>
+                <li>
                   <span>Proposal eligible</span>
-                  <div><b>In-band check</b></div>
+                  <div><strong>Current basket must be in band</strong><small>No active challenge or strategy change may exist.</small></div>
+                </li>
+                <li>
+                  <span>48-hour notice</span>
+                  <div><strong>Proposed targets are visible</strong><small>Current targets remain active and holders may redeem.</small></div>
+                </li>
+                <li>
+                  <span>Rebalance active</span>
+                  <div><strong>Activation switches the targets</strong><small>Constrained trades continue until every asset enters its completion bands.</small></div>
+                </li>
+                <li>
+                  <span>Complete</span>
+                  <div><strong>The cycle restarts</strong><small>Completion starts a new 14-day cooldown.</small></div>
+                </li>
+              </ol>
+              <aside className="otfChallengeBranch" aria-label="Conditional challenge state">
+                <div>
+                  <span>Can interrupt any live state</span>
+                  <strong>Out-of-band challenge</strong>
+                  <small>Fresh oracle prices must prove that a constituent crossed its wider challenge band.</small>
                 </div>
-                <div className="otfLifecycleRow notice">
-                  <span>Holder notice</span>
-                  <div><b>48 hours</b></div>
+                <div className="otfChallengeOutcomes">
+                  <span><ShieldCheck size={14} aria-hidden="true" /><b>Restored within 7 days</b>Held-back fees are preserved.</span>
+                  <span><Scale size={14} aria-hidden="true" /><b>Still out of band after 7 days</b>Fees remain suspended until recovery.</span>
                 </div>
-                <div className="otfLifecycleRow activation">
-                  <span>Activation</span>
-                  <div><b>Targets switch</b></div>
-                </div>
-                <div className="otfLifecycleRow rebalance">
-                  <span>Rebalance</span>
-                  <div><b>Until completion bands</b></div>
-                </div>
-                <div className="otfLifecycleRow challenge">
-                  <span>Challenge branch</span>
-                  <div><b>7-day response if out of band</b></div>
-                </div>
-              </div>
-              <div className="otfLifecycleOutcomes">
-                <span><RotateCcw size={14} aria-hidden="true" />Completion restarts the 14-day cooldown</span>
-                <span><ShieldCheck size={14} aria-hidden="true" />Timely challenge recovery preserves accrued fees</span>
-                <span><Scale size={14} aria-hidden="true" />An overdue challenge suspends fees until recovery</span>
-              </div>
+              </aside>
               <figcaption id="otf-lifecycle-caption">
-                Challenge timing is conditional: it can begin whenever fresh oracle prices prove
-                that a live constituent has crossed its wider challenge band.
+                The main flow repeats after every completed strategy. Challenge timing is separate
+                because it depends on portfolio state, not a scheduled day.
               </figcaption>
             </figure>
           </section>
@@ -549,7 +574,10 @@ canProposeStrategy =
               formula is cadence-independent and calibrated to the displayed annual dilution.
               Deposits, redemptions, and fee changes settle the preceding interval first, so a new
               fee rate never applies retroactively. Missed challenge-window fees are skipped rather
-              than minted; suspended intervals never accrue later.
+              than minted; suspended intervals never accrue later. The protocol rebate uses the
+              manager&apos;s active $OTF target allocation, not its live portfolio weight. Protocol
+              rebate parameter changes use the latest setting when this OTF next checkpoints fees;
+              they do not create historical rebate-policy intervals.
             </p>
           </section>
 

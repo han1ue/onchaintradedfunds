@@ -8876,21 +8876,9 @@ input.invalid {
 }
 
 .docsStatus {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  gap: 8px;
   border-top: 1px solid var(--border);
   margin-top: 18px;
   padding: 16px 4px 0;
-}
-
-.docsStatus > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgb(46 208 154 / 9%);
-  margin-top: 3px;
 }
 
 .docsStatus strong,
@@ -8921,16 +8909,9 @@ input.invalid {
   padding: 14px 0 54px;
 }
 
-.docsEyebrow {
-  color: var(--accent-text);
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .docsIntro h1 {
   max-width: 760px;
-  margin: 12px 0 18px;
+  margin: 0 0 18px;
   font-size: 2.45rem;
   font-weight: 620;
   line-height: 1.1;
@@ -8987,10 +8968,8 @@ input.invalid {
 }
 
 .docsPillars article {
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--card);
-  padding: 14px;
+  border-top: 1px solid var(--border);
+  padding: 14px 0 0;
 }
 
 .docsPillars svg {
@@ -9063,212 +9042,277 @@ input.invalid {
   line-height: 1.65;
 }
 
-.docsFlow {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 22px 0;
+.docsArchitecture {
+  margin: 24px 0 8px;
 }
 
-.docsFlow span,
-.docsFlow b {
+.docsArchitecturePath {
   display: grid;
-  min-height: 54px;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card);
+  grid-template-columns: minmax(0, 1fr) 62px minmax(0, 1fr) 62px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.docsArchitecturePath article {
+  border-top: 1px solid var(--border-strong);
+  padding: 14px 0 4px;
+}
+
+.docsArchitecturePath article.portfolioOwner {
+  border-top-color: var(--accent-text);
+}
+
+.docsArchitecturePath article > span,
+.docsArchitecturePath article > strong,
+.docsArchitecturePath article > small {
+  display: block;
+}
+
+.docsArchitecturePath article > span {
+  color: var(--text-muted);
+  font-size: 0.57rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.docsArchitecturePath article > strong {
+  margin-top: 7px;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.docsArchitecturePath article > small {
+  margin-top: 6px;
   color: var(--text-soft);
   font-size: 0.64rem;
-  font-weight: 600;
-  text-align: center;
+  line-height: 1.55;
 }
 
-.docsFlow b {
-  border-color: rgb(var(--accent-rgb) / 32%);
-  background: rgb(var(--accent-rgb) / 8%);
-  color: var(--accent-text);
+.docsArchitectureArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.docsArchitectureArrow span {
+  font-size: 0.55rem;
+}
+
+.docsArchitectureServices {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 14px;
+}
+
+.docsArchitectureServices > p {
+  margin: 0 0 9px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+}
+
+.docsArchitectureServices > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.docsArchitectureServices span {
+  color: var(--text-soft);
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.docsArchitectureServices strong {
+  color: var(--text);
+}
+
+.docsArchitecture figcaption,
+.otfLifecycleFigure figcaption {
+  margin-top: 13px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.docsDisclosure {
+  border-top: 1px solid var(--border);
+  margin-top: 22px;
+  padding-top: 2px;
+}
+
+.docsDisclosure summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 650;
+  list-style-position: inside;
+}
+
+.docsDisclosure summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+.docsDisclosure summary svg {
+  transition: transform 150ms ease;
+}
+
+.docsDisclosure[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.docsDisclosure .docsTableWrap {
+  margin-top: 8px;
 }
 
 .otfLifecycleFigure {
   margin: 24px 0 8px;
 }
 
-.otfLifecycleGantt {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--card);
-}
-
-.otfLifecycleAxis,
-.otfLifecycleRow {
-  display: grid;
-  min-width: 820px;
-  grid-template-columns: 150px minmax(630px, 1fr);
-}
-
-.otfLifecycleAxis {
-  border-bottom: 1px solid var(--border-strong);
-  background: var(--card-raised);
-}
-
-.otfLifecycleAxis > strong,
-.otfLifecycleRow > span {
-  display: flex;
-  align-items: center;
-  border-right: 1px solid var(--border);
-  padding: 9px 12px;
-  color: var(--text-soft);
-  font-size: 0.63rem;
-  font-weight: 650;
-}
-
-.otfLifecycleAxis > div,
-.otfLifecycleRow > div {
+.otfStateFlow {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(21, minmax(28px, 1fr));
-  align-items: center;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.otfLifecycleAxis > div {
-  min-height: 38px;
-  color: var(--text-muted);
-  font-size: 0.56rem;
+.otfStateFlow::before {
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  left: 112px;
+  width: 1px;
+  background: var(--border-strong);
+  content: "";
 }
 
-.otfLifecycleAxis > div span {
-  align-self: end;
-  padding: 0 4px 8px;
-  white-space: nowrap;
-}
-
-.otfLifecycleAxis .axisStart {
-  grid-column: 1;
-}
-
-.otfLifecycleAxis .axisWeek {
-  grid-column: 8;
-}
-
-.otfLifecycleAxis .axisCooldown {
-  grid-column: 15;
-}
-
-.otfLifecycleAxis .axisActivation {
-  grid-column: 17;
-}
-
-.otfLifecycleAxis .axisOngoing {
-  grid-column: 21;
-  justify-self: end;
-}
-
-.otfLifecycleRow {
-  border-bottom: 1px solid var(--border);
-}
-
-.otfLifecycleRow:last-child {
-  border-bottom: 0;
-}
-
-.otfLifecycleRow > div {
-  min-height: 48px;
-  padding: 7px 0;
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent 0,
-    transparent calc((100% / 21) - 1px),
-    rgb(var(--accent-rgb) / 7%) calc((100% / 21) - 1px),
-    rgb(var(--accent-rgb) / 7%) calc(100% / 21)
-  );
-}
-
-.otfLifecycleRow b {
+.otfStateFlow li {
   position: relative;
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 100px 24px minmax(0, 1fr);
+  align-items: start;
+  padding: 10px 0;
+}
+
+.otfStateFlow li::before {
   z-index: 1;
-  display: flex;
-  min-height: 30px;
-  align-items: center;
-  overflow: visible;
-  border: 1px solid rgb(var(--accent-rgb) / 36%);
-  border-radius: 4px;
-  background: rgb(var(--accent-rgb) / 12%);
-  color: var(--text);
-  padding: 5px 8px;
-  font-size: 0.6rem;
+  grid-column: 2;
+  width: 9px;
+  height: 9px;
+  border: 3px solid var(--background);
+  border-radius: 50%;
+  background: var(--accent-text);
+  margin: 5px auto 0;
+  box-sizing: content-box;
+  content: "";
+}
+
+.otfStateFlow li > span {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--text-muted);
+  padding-top: 4px;
+  font-size: 0.61rem;
   font-weight: 650;
-  line-height: 1.25;
-  white-space: nowrap;
+  text-align: right;
 }
 
-.otfLifecycleRow.creation b {
-  grid-column: 1 / span 4;
+.otfStateFlow li > div {
+  grid-column: 3;
+  grid-row: 1;
+  padding-left: 10px;
 }
 
-.otfLifecycleRow.cooldown b {
-  grid-column: 1 / span 14;
+.otfStateFlow strong,
+.otfStateFlow small {
+  display: block;
 }
 
-.otfLifecycleRow.proposal b {
-  grid-column: 15 / span 3;
-  border-color: rgb(86 172 211 / 38%);
-  background: rgb(86 172 211 / 11%);
+.otfStateFlow strong {
+  color: var(--text);
+  font-size: 0.72rem;
 }
 
-.otfLifecycleRow.notice b {
-  grid-column: 15 / span 2;
-  min-width: 82px;
-  border-color: rgb(241 185 61 / 40%);
-  background: rgb(241 185 61 / 11%);
-}
-
-.otfLifecycleRow.activation b {
-  grid-column: 17 / span 3;
-  border-color: rgb(46 208 154 / 40%);
-  background: rgb(46 208 154 / 11%);
-}
-
-.otfLifecycleRow.rebalance b {
-  grid-column: 17 / -1;
-  border-color: rgb(156 139 229 / 40%);
-  background: rgb(156 139 229 / 11%);
-}
-
-.otfLifecycleRow.challenge b {
-  grid-column: 6 / span 7;
-  border-color: rgb(235 101 112 / 42%);
-  background: rgb(235 101 112 / 10%);
-}
-
-.otfLifecycleOutcomes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.otfLifecycleOutcomes span {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.otfStateFlow small {
+  max-width: 620px;
+  margin-top: 5px;
   color: var(--text-soft);
   font-size: 0.65rem;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
-.otfLifecycleOutcomes svg {
-  flex: 0 0 auto;
+.otfChallengeBranch {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(0, 1.6fr);
+  gap: 20px;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  margin-top: 10px;
+  padding: 16px 0;
+}
+
+.otfChallengeBranch > div:first-child span,
+.otfChallengeBranch > div:first-child strong,
+.otfChallengeBranch > div:first-child small {
+  display: block;
+}
+
+.otfChallengeBranch > div:first-child span {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.otfChallengeBranch > div:first-child strong {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.otfChallengeBranch > div:first-child small {
+  margin-top: 5px;
+  color: var(--text-soft);
+  font-size: 0.63rem;
+  line-height: 1.5;
+}
+
+.otfChallengeOutcomes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.otfChallengeOutcomes span {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-content: start;
+  color: var(--text-soft);
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.otfChallengeOutcomes svg {
+  grid-row: 1 / span 2;
   color: var(--accent-text);
   margin-top: 1px;
 }
 
-.otfLifecycleFigure figcaption {
-  margin-top: 11px;
-  color: var(--text-muted);
+.otfChallengeOutcomes b {
+  color: var(--text);
   font-size: 0.64rem;
-  line-height: 1.5;
 }
 
 .challengeLifecycle {
@@ -9459,7 +9503,7 @@ input.invalid {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--text-faint);
   content: "";
 }
 
@@ -9761,9 +9805,28 @@ input.invalid {
   }
 
   .docsPillars,
-  .docsFlow,
   .docsRoleGrid,
   .docsRepoTree {
+    grid-template-columns: 1fr;
+  }
+
+  .docsArchitecturePath {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .docsArchitectureArrow {
+    justify-content: flex-start;
+    padding-left: 8px;
+  }
+
+  .docsArchitectureArrow svg {
+    transform: rotate(90deg);
+  }
+
+  .docsArchitectureServices > div,
+  .otfChallengeBranch,
+  .otfChallengeOutcomes {
     grid-template-columns: 1fr;
   }
 
@@ -9785,9 +9848,28 @@ input.invalid {
     gap: 6px;
   }
 
-  .otfLifecycleOutcomes {
-    grid-template-columns: 1fr;
-    gap: 7px;
+  .otfStateFlow::before {
+    left: 8px;
+  }
+
+  .otfStateFlow li {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .otfStateFlow li::before {
+    grid-column: 1;
+  }
+
+  .otfStateFlow li > span {
+    grid-column: 2;
+    padding: 0 0 4px 8px;
+    text-align: left;
+  }
+
+  .otfStateFlow li > div {
+    grid-column: 2;
+    grid-row: 2;
+    padding-left: 8px;
   }
 
   .docsSection {

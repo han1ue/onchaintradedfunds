@@ -179,7 +179,7 @@ flowchart LR
 `OTFToken` and the holding rebate
 
 - Provide a fixed-supply, no-privileged-minter OTF protocol token contract.
-- Scale each vault's protocol fee share linearly using its live oracle-valued OTF holding, up to an
+- Scale each vault's protocol fee share linearly using its configured OTF target weight, up to an
   admin-configured full-rebate threshold.
 - Leave protocol fee shares claimable by the treasury, which can redeem them and conduct manual
   buybacks without a dedicated protocol contract.
@@ -478,8 +478,9 @@ Retained rebalance protections:
 - Linearly replenishing NAV-loss budget; a full charge recovers over seven days and gains do not
   restore consumed capacity.
 - Narrow completion bands and wider challenge bands.
-- Protocol-wide minimum target weight with a permanent 1% floor; the factory owner may raise it or
-  reduce it back to, but never below, that floor.
+- Protocol-wide minimum target weight initialized at 1%, with a permanent 0.1% hard floor; the
+  factory owner may adjust it but never below that floor. An enabled OTF full-rebate threshold must
+  remain at or above the current minimum.
 - At most 100 tracked assets, including zero-target assets awaiting manager-directed removal.
 - Fresh onchain prices.
 - Atomicity of each partial trade transaction.

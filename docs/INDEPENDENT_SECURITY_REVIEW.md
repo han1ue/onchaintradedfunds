@@ -86,7 +86,7 @@ Attempt to falsify each property:
     vault state.
 12. A token callback during clone prefunding or initialization cannot mint shares or mutate state.
 13. `FeeCollector` is the sole treasury authority; factory views cannot diverge from it.
-14. OTF holding rebates scale the protocol portion only, use live oracle-valued weight, reach zero
+14. OTF holding rebates scale the protocol portion only, use configured target weight, reach zero
     protocol share at the configured threshold, and fail closed to the base share on lookup failure.
 15. The same mechanical asset rules apply without an administrator approval, quality, block,
     revocation, or removal state.

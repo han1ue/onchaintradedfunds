@@ -3,7 +3,7 @@
 Status: implementation-ready, not approved for production deployment.
 
 This design adds a fixed-supply `OTF` protocol token and a linear protocol-fee incentive for OTFs
-that hold it. Token distribution, launch valuation, liquidity provisioning, and governance are
+that target an allocation to it. Token distribution, launch valuation, liquidity provisioning, and governance are
 intentionally outside the contract defaults and must be decided before deployment.
 
 ## Contracts
@@ -26,11 +26,13 @@ vesting contracts rather than being held by recipients without restrictions.
 
 The factory owner can permanently identify one protocol-token address. The identity cannot later be
 replaced, preventing an admin from redirecting the incentive to an unrelated asset. The owner can
-change `protocolTokenFullRebateBps` from 0 to 10,000 BPS; setting it to zero disables the incentive.
+change `protocolTokenFullRebateBps` from the current `minTargetWeightBps` to 10,000 BPS; setting it
+to zero disables the incentive. An enabled threshold cannot be below the mutable constituent
+minimum, and that minimum cannot be raised above an enabled threshold.
 
-For each fee accrual, a vault measures the OTF token's live share of oracle-valued NAV. If:
+For each fee accrual, a vault reads the OTF token's configured target weight. If:
 
-- `W` is the live OTF weight in BPS,
+- `W` is the configured OTF target weight in BPS,
 - `T` is the admin-set full-rebate threshold in BPS, and
 - `P` is the normal protocol share of the manager's AUM fee,
 
@@ -44,11 +46,11 @@ This means a vault at half of the threshold pays half of the normal protocol sha
 or above the threshold pays none of it. All fee shares not sent to the protocol remain with the
 manager's configured fee recipient; the investor's total manager-selected AUM fee does not change.
 
-The calculation uses actual holdings rather than declared target weights. If OTF is not a
-constituent, the threshold is disabled, or any required oracle read fails, the vault charges the
-normal protocol share. The rebate lookup therefore grants no rebate and introduces no new revert
-when pricing is unavailable. Other vault workflows may independently require fresh oracles for
-their existing portfolio-band checks; the incentive does not weaken or bypass those checks.
+The calculation uses the manager's active target allocation rather than live portfolio weight. OTF
+follows the same `minTargetWeightBps` rule as every other constituent. If OTF is not a constituent
+or the threshold is disabled, the vault charges the normal protocol share. Other vault workflows
+may independently require fresh oracles for their existing portfolio-band checks; the incentive
+does not weaken or bypass those checks.
 
 ### Treasury fee claims and manual buybacks
 
@@ -67,9 +69,10 @@ No dedicated buyback contract or automatic fee allocation is required.
   share of manager fees from 0% to 100% for all existing and future OTFs.
 - Protocol treasury: claims protocol fee shares and controls any manual redemption or buyback.
 
-Threshold changes affect the next lazy fee accrual using the weight observed at that accrual. Before
-changing a live threshold, operations should checkpoint affected vaults so an unaccrued historical
-interval is not evaluated entirely under the new setting.
+Threshold changes affect an OTF when its fees are next checkpointed. The latest threshold and active
+target are intentionally applied to the entire uncheckpointed interval; the protocol does not keep
+historical rebate-policy intervals. Strategy activation checkpoints fees before replacing the
+active target weights.
 
 ## Launch gates
 

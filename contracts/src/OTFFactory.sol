@@ -17,8 +17,8 @@ interface IOfficialMarketRegistry {
     function createOfficialPool(address vault) external returns (address pool);
 }
 
-interface IProtocolTokenWeight {
-    function currentWeight(address token) external view returns (uint256 weightBps);
+interface IProtocolTokenTargetWeight {
+    function targetWeightBps(address token) external view returns (uint16 weightBps);
 }
 
 contract OTFFactory is IAdapterAllowlist {
@@ -40,7 +40,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
-    uint16 public constant MIN_TARGET_WEIGHT_BPS = 100;
+    uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
@@ -102,7 +102,7 @@ contract OTFFactory is IAdapterAllowlist {
     address public oracleRegistry;
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
-    uint16 public minTargetWeightBps = MIN_TARGET_WEIGHT_BPS;
+    uint16 public minTargetWeightBps = 100; // 1%
     address public officialMarketRegistry;
     address public assetMarketRegistry;
     address public pricingResolver;
@@ -262,6 +262,10 @@ contract OTFFactory is IAdapterAllowlist {
         if (newMinimumBps < MIN_TARGET_WEIGHT_BPS || newMinimumBps > 10_000) {
             revert InvalidLimit();
         }
+        uint16 fullRebateBps = protocolTokenFullRebateBps;
+        if (fullRebateBps != 0 && newMinimumBps > fullRebateBps) {
+            revert InvalidProtocolTokenThreshold(fullRebateBps);
+        }
         uint16 previousMinimumBps = minTargetWeightBps;
         minTargetWeightBps = newMinimumBps;
         emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);
@@ -287,28 +291,24 @@ contract OTFFactory is IAdapterAllowlist {
     function configureProtocolToken(address token, uint16 fullRebateBps) external onlyOwner {
         if (protocolToken != address(0)) revert ProtocolTokenAlreadyConfigured();
         if (token == address(0) || token.code.length == 0) revert InvalidDependency(token);
-        if (fullRebateBps > 10_000) {
-            revert InvalidProtocolTokenThreshold(fullRebateBps);
-        }
+        _validateProtocolTokenThreshold(fullRebateBps);
         protocolToken = token;
         protocolTokenFullRebateBps = fullRebateBps;
         emit ProtocolTokenConfigured(token, fullRebateBps);
     }
 
-    /// @notice Changes the live portfolio weight that earns a full protocol-fee rebate.
+    /// @notice Changes the OTF target weight that earns a full protocol-fee rebate.
     /// @dev The rebate scales linearly below this threshold. Zero disables the incentive.
     function setProtocolTokenFullRebateBps(uint16 newThresholdBps) external onlyOwner {
         if (protocolToken == address(0)) revert ProtocolTokenNotConfigured();
-        if (newThresholdBps > 10_000) {
-            revert InvalidProtocolTokenThreshold(newThresholdBps);
-        }
+        _validateProtocolTokenThreshold(newThresholdBps);
         uint16 previousThresholdBps = protocolTokenFullRebateBps;
         protocolTokenFullRebateBps = newThresholdBps;
         emit ProtocolTokenFullRebateThresholdChanged(previousThresholdBps, newThresholdBps);
     }
 
-    /// @notice Returns the live protocol share after applying the configured OTF holding rebate.
-    /// @dev Invalid vaults and unavailable oracle data use the current configured protocol share.
+    /// @notice Returns the protocol share after applying the configured OTF target-weight rebate.
+    /// @dev Missing constituents and failed target-weight reads use the configured protocol share.
     function effectiveProtocolFeeShareBps(address vault, uint16)
         external
         view
@@ -321,19 +321,25 @@ contract OTFFactory is IAdapterAllowlist {
             return effectiveShareBps;
         }
 
-        uint256 liveWeightBps;
-        try IProtocolTokenWeight(vault).currentWeight(token) returns (uint256 weightBps) {
-            liveWeightBps = weightBps;
+        uint256 targetWeightBps;
+        try IProtocolTokenTargetWeight(vault).targetWeightBps(token) returns (uint16 weightBps) {
+            targetWeightBps = weightBps;
         } catch {
             return effectiveShareBps;
         }
 
-        if (liveWeightBps >= fullRebateBps) return 0;
+        if (targetWeightBps >= fullRebateBps) return 0;
         uint256 scaledShare =
-            uint256(effectiveShareBps) * (uint256(fullRebateBps) - liveWeightBps) / fullRebateBps;
+            uint256(effectiveShareBps) * (uint256(fullRebateBps) - targetWeightBps) / fullRebateBps;
         // The scaled share cannot exceed the uint16 protocolFeeShareBps value.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint16(scaledShare);
+    }
+
+    function _validateProtocolTokenThreshold(uint16 thresholdBps) private view {
+        if (thresholdBps > 10_000 || (thresholdBps != 0 && thresholdBps < minTargetWeightBps)) {
+            revert InvalidProtocolTokenThreshold(thresholdBps);
+        }
     }
 
     function otfTokenURI() external pure returns (string memory) {
