@@ -5,7 +5,9 @@ const migration = readFileSync(
   new URL("../../../drizzle/0008_reset_participation_data.sql", import.meta.url),
   "utf8",
 );
-const truncateStatement = migration.slice(migration.indexOf("TRUNCATE TABLE"));
+const truncateStart = migration.indexOf("TRUNCATE TABLE");
+const truncateEnd = migration.indexOf("RESTART IDENTITY CASCADE;", truncateStart);
+const truncateStatement = migration.slice(truncateStart, truncateEnd);
 
 describe("launch data reset migration", () => {
   it("preserves users, competition configuration, and all asset data", () => {
