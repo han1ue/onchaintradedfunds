@@ -1,13 +1,14 @@
 "use client";
 
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import { CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, Clock3, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCommittedBallotState } from "@/lib/ballot-state";
 import { COMPETITION_RULES } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import type { BallotSummary, LeaderboardEntry, ParticipationEligibility } from "@/lib/types";
+import { formatProposalVoteCountdown, getProposalVotingStartsAt, isProposalVotingOpen } from "@/lib/proposal-voting";
 import { buildVotePost } from "@/lib/x-post";
 import { EligibilityAction } from "./EligibilityGate";
 import { Turnstile } from "./Turnstile";
@@ -36,7 +37,7 @@ function sumVotes(votes: Record<string, number>) {
   return Object.values(votes).reduce((sum, value) => sum + value, 0);
 }
 
-export function BallotPanel({ proposals, ballot, eligibility, availability, focusSlug, turnstileSiteKey, siteUrl }: {
+export function BallotPanel({ proposals, ballot, eligibility, availability, focusSlug, turnstileSiteKey, siteUrl, currentTime }: {
   proposals: LeaderboardEntry[];
   ballot: BallotSummary | null;
   eligibility: ParticipationEligibility;
@@ -44,8 +45,17 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   focusSlug?: string;
   turnstileSiteKey?: string;
   siteUrl: string;
+  currentTime: string;
 }) {
   const router = useRouter();
+  const initialNowMs = useMemo(() => new Date(currentTime).getTime(), [currentTime]);
+  const [nowMs, setNowMs] = useState(initialNowMs);
+  const hasLockedProposals = proposals.some((proposal) => !isProposalVotingOpen(proposal.acceptedAt, nowMs));
+  useEffect(() => {
+    if (!hasLockedProposals) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasLockedProposals]);
   const initialCommittedState = useMemo(() => getCommittedBallotState(
     proposals.map((proposal) => proposal.id),
     ballot,
@@ -54,10 +64,10 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     const values = Object.fromEntries(proposals.map((proposal) => [proposal.id, 0])) as Record<string, number>;
     if (ballot?.status !== "valid" && focusSlug && availability.unlockedVotes > 0) {
       const focused = proposals.find((proposal) => proposal.slug === focusSlug);
-      if (focused) values[focused.id] = 1;
+      if (focused && isProposalVotingOpen(focused.acceptedAt, initialNowMs)) values[focused.id] = 1;
     }
     return values;
-  }, [availability.unlockedVotes, ballot?.status, focusSlug, proposals]);
+  }, [availability.unlockedVotes, ballot?.status, focusSlug, initialNowMs, proposals]);
   const [additions, setAdditions] = useState<Record<string, number>>(initialAdditions);
   const [committedVotes, setCommittedVotes] = useState<Record<string, number>>(initialCommittedState.committedVotes);
   const [castTotal, setCastTotal] = useState(initialCommittedState.castTotal);
@@ -86,6 +96,8 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     : "picks not shown";
 
   function adjustVote(proposalId: string, delta: number) {
+    const proposal = proposals.find((entry) => entry.id === proposalId);
+    if (!proposal || !isProposalVotingOpen(proposal.acceptedAt, nowMs)) return;
     setMessage(null);
     setAdditions((current) => {
       const currentValue = current[proposalId] ?? 0;
@@ -165,7 +177,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {COMPETITION_RULES.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
-    <div className="ballotActionIntro"><strong>Publish your voting post</strong><p>{challenge ? `Publish the prepared X post, then paste its URL below to cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}.` : newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p></div>
+    <div className="ballotActionIntro"><strong>Publish your voting post</strong><p>{challenge ? `Publish the prepared X post, then paste its URL below to cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}.` : newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 && hasLockedProposals && proposals.every((proposal) => !isProposalVotingOpen(proposal.acceptedAt, nowMs)) ? "New OTFs become votable 30 minutes after confirmation. Their controls unlock automatically." : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p></div>
     {message ? <div className={`ballotActionResult ${messageTone}`} role="status">{messageTone === "success" ? <CheckCircle2 size={24} /> : <CircleAlert size={24} />}<div><strong>{messageTone === "success" ? "Votes cast" : "Couldn't cast your votes"}</strong><p>{message}</p></div>{messageTone === "success" && unlockedRemaining > 0 && <div className="ballotActionResultActions"><Button onClick={() => setMessage(null)}>Cast more votes</Button></div>}{messageTone === "error" && <div className="ballotActionResultActions"><Button onClick={challenge ? startAgain : () => setMessage(null)}>Try again</Button></div>}</div> : <><div className="ballotActionFields"><label className="formField"><span>Why are you voting? <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Share why you’re helping choose the next OTFs…" rows={3} maxLength={120} disabled={busy || Boolean(challenge)} /><small>{reason.length} / 120 characters</small></label><label className="privacyChoice"><input type="checkbox" checked={revealVotes} disabled={busy || Boolean(challenge)} onChange={(event) => setRevealVotes(event.target.checked)} /><span><strong>Reveal my picks in this post</strong><small>{revealVotes ? addedChoices.length > 0 ? "The post will name the OTFs and vote counts in this batch." : "Your selected OTFs will appear after you add votes." : "Off by default. The OTFs receiving these votes will stay private."}</small></span></label></div>
     <div className="ballotActionPublish"><div className="xPostPreview compact"><div><span>{challenge ? "Ready to publish" : `Post preview · ${disclosurePreviewLabel}`}</span><Send size={13} /></div><p>{challenge?.postText ?? previewText}</p></div>{challenge ? <div className="postAction"><a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a><p className="postAssurance">We never post anything on your behalf.</p></div> : <><Turnstile siteKey={turnstileSiteKey} action="vote_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} />{(!turnstileSiteKey || turnstileToken) && <div className="postAction"><Button onClick={() => request("prepare")} disabled={busy || newVotes < 1}>{busy ? "Preparing…" : <>Open X and post <ExternalLink size={14} /></>}</Button><p className="postAssurance">We never post anything on your behalf.</p></div>}</>}<label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" disabled={busy || !challenge} /><small>{challenge ? "Paste the URL of the public post containing the verification code." : "Post to X first; this field will be ready after the post is prepared."}</small></label><Button onClick={() => request("verify")} disabled={busy || !challenge || !postUrl.trim()}>{busy ? "Verifying…" : `Verify and cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}`}</Button></div></>}
   </SectionCard>;
@@ -175,11 +187,13 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
       const committed = committedVotes[proposal.id] ?? 0;
       const addition = additions[proposal.id] ?? 0;
       const value = committed + addition;
-      const controlsLocked = busy || Boolean(challenge);
+      const proposalVotingOpen = isProposalVotingOpen(proposal.acceptedAt, nowMs);
+      const controlsLocked = busy || Boolean(challenge) || !proposalVotingOpen;
+      const proposalVotingStartsAt = getProposalVotingStartsAt(proposal.acceptedAt);
       return <div className="ballotRow" key={proposal.id}>
         <OtfTokenIcon ticker={proposal.ticker} size={38} />
-        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} locked {committed === 1 ? "vote" : "votes"}</small>}</div>
-        <div className="voteStepper" role="group" aria-label={`Votes for ${proposal.name}`}>
+        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</span>{!proposalVotingOpen ? <small className="proposalVoteCooldown"><Clock3 size={11} aria-hidden="true" /><span role="timer" aria-label={`Voting opens at ${proposalVotingStartsAt.toISOString()}`}>Voting opens in {formatProposalVoteCountdown(proposal.acceptedAt, nowMs)}</span></small> : committed > 0 && <small><LockKeyhole size={11} /> {committed} locked {committed === 1 ? "vote" : "votes"}</small>}</div>
+        <div className={`voteStepper${proposalVotingOpen ? "" : " locked"}`} role="group" aria-label={proposalVotingOpen ? `Votes for ${proposal.name}` : `Voting for ${proposal.name} opens at ${proposalVotingStartsAt.toISOString()}`} aria-disabled={!proposalVotingOpen}>
           <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || addition === 0} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
           <strong aria-live="polite">{value}</strong>
           <button type="button" onClick={() => adjustVote(proposal.id, 1)} disabled={controlsLocked || total >= availability.unlockedVotes} aria-label={`Add vote to ${proposal.name}`}><Plus size={15} /></button>

@@ -29,6 +29,7 @@ export const errorMessages: Record<string, string> = {
   PROPOSAL_NAME_MISMATCH: "Enter the exact OTF name to confirm deletion.",
   PROPOSAL_POST_NOT_FOUND: "This OTF’s required X post was deleted and it can no longer receive votes.",
   PROPOSAL_NOT_FOUND: "One or more selected OTFs are no longer available.",
+  PROPOSAL_VOTING_LOCKED: "New OTFs become votable 30 minutes after their submission is confirmed.",
   BALLOT_ALREADY_ACTIVE: "Your ballot is already active. Cast newly unlocked votes from your existing ballot.",
   BALLOT_NOT_ACTIVE: "Activate your ballot before casting newly unlocked votes.",
   VOTING_NOT_OPEN: "Voting opens on competition day 8. OTF submissions are open now.",

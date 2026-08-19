@@ -3,6 +3,8 @@ import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import { buildBallotVotePosts } from "@/lib/ballot-history";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
 import { getUnlockedVoteCount, getVotingStartsAt } from "@/lib/competition";
+import { getProposalVotingStartsAt, isProposalVotingOpen } from "@/lib/proposal-voting";
+import { PublicApiError } from "@/lib/errors";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
 import { ballotActivationSchema, voteAdditionsSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
@@ -28,17 +30,25 @@ async function assertValidDistribution(
   forcePostCheck = false,
 ) {
   const proposalIds = allocations.map((allocation) => allocation.proposalId);
-  if (forcePostCheck) {
-    const invalidated = await recheckSubmissionEvidence(competitionId, proposalIds, 0);
-    if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
-  }
-  const selected = await database.select({ id: proposals.id, ticker: proposals.ticker })
+  const selected = await database.select({ id: proposals.id, ticker: proposals.ticker, acceptedAt: proposals.acceptedAt })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
       eq(proposals.status, "confirmed"),
       inArray(proposals.id, proposalIds)
   ));
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
+  const lockedProposal = selected.find((proposal) => !proposal.acceptedAt || !isProposalVotingOpen(proposal.acceptedAt));
+  if (lockedProposal?.acceptedAt) {
+    throw new PublicApiError("PROPOSAL_VOTING_LOCKED", {
+      proposalId: lockedProposal.id,
+      votingStartsAt: getProposalVotingStartsAt(lockedProposal.acceptedAt).toISOString(),
+    });
+  }
+  if (lockedProposal) throw new Error("PROPOSAL_NOT_FOUND");
+  if (forcePostCheck) {
+    const invalidated = await recheckSubmissionEvidence(competitionId, proposalIds, 0);
+    if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
+  }
   return selected;
 }
 

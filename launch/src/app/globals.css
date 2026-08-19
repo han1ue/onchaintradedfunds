@@ -568,6 +568,8 @@ button { color: inherit; }
 .votePanel .cardHeading svg { color: var(--teal); }
 .panelBody { display: grid; gap: 14px; padding: 18px; }
 .panelBody .button { width: 100%; }
+.voteCooldownButton { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.voteCooldownButton svg { flex: 0 0 auto; }
 .ballotCta > div:not(.eligibilityPrompt) { display: grid; gap: 7px; }
 .ballotCta > div:not(.eligibilityPrompt) > strong { font-size: .86rem; }
 .ballotCta > div:not(.eligibilityPrompt) > p { margin: 0; color: var(--text-muted); font-size: .73rem; line-height: 1.55; }
@@ -589,7 +591,9 @@ button { color: inherit; }
 .ballotIdentity strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .ballotIdentity span { color: var(--text-muted); font-size: .66rem; }
 .ballotIdentity small { display: flex; align-items: center; gap: 4px; color: var(--green); font-size: .62rem; }
+.ballotIdentity small.proposalVoteCooldown { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .voteStepper { height: 38px; display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); overflow: hidden; }
+.voteStepper.locked { border-color: var(--border); opacity: .66; }
 .voteStepper button { height: 100%; display: grid; place-items: center; border: 0; background: var(--card-raised); color: var(--teal); cursor: pointer; }
 .voteStepper button:first-child { border-right: 1px solid var(--border); }
 .voteStepper button:last-child { border-left: 1px solid var(--border); }
