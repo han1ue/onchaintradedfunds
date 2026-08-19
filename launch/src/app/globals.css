@@ -585,8 +585,6 @@ button { color: inherit; }
 .ballotRows { display: grid; }
 .ballotRow { min-height: 70px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 122px; gap: 12px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .ballotRow:last-child { border-bottom: 0; }
-.ballotRow.invalidProposal { background: color-mix(in srgb, var(--text-muted) 5%, transparent); opacity: .58; }
-.ballotRow.invalidProposal .voteStepper { background: var(--muted); }
 .ballotIdentity { min-width: 0; display: grid; gap: 3px; }
 .ballotIdentity strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .ballotIdentity span { color: var(--text-muted); font-size: .66rem; }
@@ -598,13 +596,6 @@ button { color: inherit; }
 .voteStepper button:hover:not(:disabled) { background: var(--surface); }
 .voteStepper button:disabled { color: var(--text-muted); cursor: not-allowed; opacity: .42; }
 .voteStepper strong { text-align: center; font-size: .86rem; }
-.voteUnavailableDialog { width: min(440px, calc(100vw - 28px)); padding: 0; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--card); color: var(--text); box-shadow: 0 24px 72px rgb(0 0 0 / 46%); }
-.voteUnavailableDialog::backdrop { background: rgb(4 8 13 / 78%); backdrop-filter: blur(3px); }
-.voteUnavailableDialogBody { display: grid; justify-items: start; padding: 24px; }
-.voteUnavailableDialogBody > svg { color: var(--danger); }
-.voteUnavailableDialogBody h2 { margin: 14px 0 7px; font-size: 1.25rem; letter-spacing: -.025em; }
-.voteUnavailableDialogBody p { margin: 0 0 20px; color: var(--text-muted); font-size: .76rem; line-height: 1.55; }
-.voteUnavailableDialogBody p strong { color: var(--text); }
 .ballotRail { position: sticky; top: 68px; height: 100%; display: grid; gap: 12px; }
 .ballotActionArea { grid-column: 1 / -1; display: grid; gap: 10px; }
 .ballotSummary { height: 100%; display: flex; flex-direction: column; padding: 18px; }

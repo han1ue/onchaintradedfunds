@@ -63,7 +63,7 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
 
     function testFactoryRejectsCreatorFeeAboveGlobalMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = 1_001;
+        params.creatorFeeBpsPerYear = 9_001;
 
         vm.expectPartialRevert(OTFFactory.CreatorFeeTooHigh.selector);
         factory.createVault(params);

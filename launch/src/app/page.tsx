@@ -3,7 +3,7 @@ import { ArrowRight, FileCheck2, History, Layers3 } from "lucide-react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { CompetitionTimeline } from "@/components/CompetitionTimeline";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
-import { Button, SectionCard, StatusBadge } from "@/components/ui";
+import { Button, Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
@@ -11,7 +11,8 @@ import { COMPETITION_RULES, getCompetitionStatus } from "@/lib/competition";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ voteError?: string }> }) {
+  const { voteError } = await searchParams;
   const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
   const eligibility = await getParticipationEligibility(session?.user, competition);
   const status = getCompetitionStatus(competition);
@@ -33,6 +34,7 @@ export default async function HomePage() {
         </dl>
       </div>
     </section>
+    {(voteError === "PROPOSAL_POST_NOT_FOUND" || voteError === "PROPOSAL_NOT_FOUND") && <Callout tone="danger"><strong>Your votes were not cast.</strong> A selected OTF no longer has its required X post and was removed from the competition.</Callout>}
     <CompetitionTimeline competition={competition} />
     <div className="boardGrid">
       <SectionCard className="leaderboardCard"><div className="cardHeading"><span>OTF Leaderboard</span>{leaderboardPreview.length > 0 && <Button href="/submit" variant="secondary" className="leaderboardSubmitButton">Create OTF</Button>}</div>

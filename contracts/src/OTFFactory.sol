@@ -35,8 +35,8 @@ contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
-    uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 1_000;
-    uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 5_000;
+    uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 9_000;
+    uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
     uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
@@ -82,6 +82,7 @@ contract OTFFactory is IAdapterAllowlist {
         string symbol
     );
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
+    event ProtocolFeeShareUpdated(uint16 previousShareBps, uint16 newShareBps);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
     event OfficialMarketRegistryConfigured(address indexed registry);
     event AssetMarketRegistryConfigured(address indexed registry);
@@ -247,6 +248,16 @@ contract OTFFactory is IAdapterAllowlist {
         emit TradeAdapterApprovalChanged(adapter, approved);
     }
 
+    /// @notice Changes the protocol's share of manager fees for all existing and future OTFs.
+    function setProtocolFeeShareBps(uint16 newShareBps) external onlyOwner {
+        if (newShareBps > MAX_PROTOCOL_FEE_SHARE_BPS) {
+            revert ProtocolFeeShareTooHigh(newShareBps, MAX_PROTOCOL_FEE_SHARE_BPS);
+        }
+        uint16 previousShareBps = protocolFeeShareBps;
+        protocolFeeShareBps = newShareBps;
+        emit ProtocolFeeShareUpdated(previousShareBps, newShareBps);
+    }
+
     function setMinTargetWeightBps(uint16 newMinimumBps) external onlyOwner {
         if (newMinimumBps < MIN_TARGET_WEIGHT_BPS || newMinimumBps > 10_000) {
             revert InvalidLimit();
@@ -297,16 +308,16 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     /// @notice Returns the live protocol share after applying the configured OTF holding rebate.
-    /// @dev Invalid vaults and unavailable oracle data fail closed to `baseShareBps`.
-    function effectiveProtocolFeeShareBps(address vault, uint16 baseShareBps)
+    /// @dev Invalid vaults and unavailable oracle data use the current configured protocol share.
+    function effectiveProtocolFeeShareBps(address vault, uint16)
         external
         view
         returns (uint16 effectiveShareBps)
     {
-        effectiveShareBps = baseShareBps;
+        effectiveShareBps = protocolFeeShareBps;
         address token = protocolToken;
         uint16 fullRebateBps = protocolTokenFullRebateBps;
-        if (token == address(0) || fullRebateBps == 0 || baseShareBps == 0) {
+        if (token == address(0) || fullRebateBps == 0 || effectiveShareBps == 0) {
             return effectiveShareBps;
         }
 
@@ -319,8 +330,8 @@ contract OTFFactory is IAdapterAllowlist {
 
         if (liveWeightBps >= fullRebateBps) return 0;
         uint256 scaledShare =
-            uint256(baseShareBps) * (uint256(fullRebateBps) - liveWeightBps) / fullRebateBps;
-        // The scaled share cannot exceed the uint16 baseShareBps input.
+            uint256(effectiveShareBps) * (uint256(fullRebateBps) - liveWeightBps) / fullRebateBps;
+        // The scaled share cannot exceed the uint16 protocolFeeShareBps value.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint16(scaledShare);
     }

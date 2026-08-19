@@ -175,6 +175,7 @@ No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent se
 The protocol owner MAY:
 
 - Approve or remove trade adapters.
+- Set the protocol share of manager fees between 0 and 10,000 BPS for existing and future OTFs.
 - Set the protocol-wide minimum target weight within its hard bounds.
 - Permanently identify the OTF protocol token and change or disable its full-rebate threshold.
 - Reversibly pause creation and all direct or routed primary deposits globally.
@@ -207,7 +208,7 @@ Treasury transfer MUST use the collector's two-step acceptance flow.
 Each OTF has exactly one manager. The manager MAY:
 
 - Select constituents, target weights, and allowed weight bands.
-- Change the manager fee within the protocol maximum.
+- Change the annual manager fee from 0 to the 9,000 BPS (90%) protocol maximum.
 - Add and remove authorized executors.
 - Receive execution permission automatically, remove or restore their own permission, and execute
   constrained trades while authorized.

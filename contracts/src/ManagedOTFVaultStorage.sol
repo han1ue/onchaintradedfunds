@@ -42,7 +42,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     /// @dev Approved constituents are restricted to 18 decimals, so this is 1e-9 tokens.
     uint256 public constant MAX_RETIRING_DUST = 1_000_000_000;
     uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
-    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 1_000;
+    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 9_000;
     uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
     uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
     uint256 internal constant RECENT_REBALANCE_CAP = 16;

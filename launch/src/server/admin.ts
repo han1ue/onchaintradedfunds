@@ -6,7 +6,7 @@ import { requireDb } from "./db";
 import {
   activityEvents, adminActions, ballots, evidenceChecks, proposals, tweetEvidence
 } from "./db/schema";
-import { getXPost, getXPostsByIds, hashXPostText } from "./x";
+import { getXPostsByIds, hashXPostText } from "./x";
 
 type EvidenceRecord = typeof tweetEvidence.$inferSelect;
 
@@ -70,9 +70,17 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
 
 export async function recheckEvidence(competitionId: string) {
   const database = requireDb();
-  const records = await database.select().from(tweetEvidence)
-    .where(and(eq(tweetEvidence.competitionId, competitionId), eq(tweetEvidence.status, "valid")))
+  const rows = await database.select({ evidence: tweetEvidence }).from(tweetEvidence)
+    .innerJoin(proposals, eq(tweetEvidence.proposalId, proposals.id))
+    .where(and(
+      eq(tweetEvidence.competitionId, competitionId),
+      eq(tweetEvidence.action, "submission"),
+      eq(tweetEvidence.status, "valid"),
+      eq(proposals.status, "confirmed"),
+    ))
     .orderBy(tweetEvidence.id);
+  const records = rows.map(({ evidence }) => evidence);
+  if (records.length === 0) return;
   const livePosts = await getXPostsByIds(records.map((evidence) => evidence.xPostId));
   const liveById = new Map(livePosts.map((post) => [post.id, post]));
   for (const evidence of records) {
@@ -80,11 +88,10 @@ export async function recheckEvidence(competitionId: string) {
       const livePost = liveById.get(evidence.xPostId);
       if (!livePost) throw new Error("X_POST_NOT_FOUND");
       if (livePost.authorId && livePost.authorId !== evidence.xAuthorId) throw new Error("X_POST_CHANGED");
-      const post = await getXPost(evidence.postUrl);
-      if (post.username.toLowerCase() !== evidence.xAuthorUsername.toLowerCase()) throw new Error("X_POST_CHANGED");
-      if (hashXPostText(post.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
+      if (livePost.authorUsername && livePost.authorUsername.toLowerCase() !== evidence.xAuthorUsername.toLowerCase()) throw new Error("X_POST_CHANGED");
+      if (hashXPostText(livePost.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
       await database.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "evidence-recheck" });
-      await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: [post.id] }).where(eq(tweetEvidence.id, evidence.id));
+      await database.update(tweetEvidence).set({ lastCheckedAt: new Date(), editHistoryIds: [livePost.id] }).where(eq(tweetEvidence.id, evidence.id));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "X_UNAVAILABLE";
       if (reason === "X_UNAVAILABLE") throw error;

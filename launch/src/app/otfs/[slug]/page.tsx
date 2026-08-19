@@ -18,7 +18,6 @@ import { shortAddress } from "@/lib/format-address";
 import { formatProposalAge } from "@/lib/relative-time";
 import { pricingConfigSummary } from "@/lib/pricing-config";
 import { getProposalReturns } from "@/server/prices";
-import { recheckSubmissionEvidence } from "@/server/admin";
 
 function InvalidProposalState({ proposal }: {
   proposal: { name: string; ticker: string; votes: number; creator: { username: string; profileImageUrl?: string | null } };
@@ -33,12 +32,6 @@ export default async function ProposalPage({ params }: { params: Promise<{ slug:
     const invalidProposal = await getInvalidProposal(slug);
     if (!invalidProposal) notFound();
     return <InvalidProposalState proposal={invalidProposal} />;
-  }
-  try {
-    if (await recheckSubmissionEvidence(competition.id, [proposal.id])) return <InvalidProposalState proposal={proposal} />;
-  } catch (error) {
-    const code = error instanceof Error ? error.message : "X_UNAVAILABLE";
-    if (code !== "X_UNAVAILABLE" && code !== "X_RATE_LIMITED") throw error;
   }
   const [eligibility, ballot, portfolioReturns] = await Promise.all([
     getParticipationEligibility(session?.user, competition),

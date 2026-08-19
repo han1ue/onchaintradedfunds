@@ -84,6 +84,22 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         factory.setProtocolTokenFullRebateBps(1_000);
     }
 
+    function testAdminCanChangeProtocolFeeShareForExistingVaultsUpToOneHundredPercent() public {
+        ManagedOTFVault vault = _createVault();
+        assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
+
+        factory.setProtocolFeeShareBps(10_000);
+        assertEq(factory.protocolFeeShareBps(), 10_000);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 10_000);
+
+        vm.prank(ALICE);
+        vm.expectRevert(OTFFactory.NotOwner.selector);
+        factory.setProtocolFeeShareBps(1_500);
+
+        vm.expectPartialRevert(OTFFactory.ProtocolFeeShareTooHigh.selector);
+        factory.setProtocolFeeShareBps(10_001);
+    }
+
     function testProtocolTokenIdentityCannotBeChanged() public {
         vm.expectRevert(OTFFactory.ProtocolTokenAlreadyConfigured.selector);
         factory.configureProtocolToken(address(tokenC), 500);

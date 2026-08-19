@@ -374,7 +374,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             .effectiveProtocolFeeShareBps(address(this), effectiveShareBps) returns (
             uint16 configuredShareBps
         ) {
-            if (configuredShareBps <= effectiveShareBps) return configuredShareBps;
+            if (configuredShareBps <= BPS) return configuredShareBps;
         } catch {
             // Legacy factories and failed oracle reads preserve the base protocol share.
         }

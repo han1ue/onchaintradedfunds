@@ -176,7 +176,11 @@ async function fetchXOEmbed(postUrl: string, revalidate?: number) {
   } catch {
     throw new Error("X_UNAVAILABLE");
   }
-  if (!response.ok) throw new Error(response.status >= 500 ? "X_UNAVAILABLE" : "X_POST_NOT_FOUND");
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 410) throw new Error("X_POST_NOT_FOUND");
+    if (response.status === 429) throw new Error("X_RATE_LIMITED");
+    throw new Error("X_UNAVAILABLE");
+  }
   const result = await response.json().catch(() => { throw new Error("X_UNAVAILABLE"); }) as XOEmbed;
   if (typeof result.html !== "string" || result.html.length > 50_000 || !result.html.includes("twitter-tweet") || /<script/i.test(result.html)) {
     throw new Error("X_POST_NOT_FOUND");
