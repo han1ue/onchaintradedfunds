@@ -80,13 +80,17 @@ type TwitterApiIoTweetsResponse = {
   message?: string;
 };
 
+export function twitterApiIoErrorCode(status: number) {
+  return status === 429 ? "X_RATE_LIMITED" : "X_UNAVAILABLE";
+}
+
 async function twitterApiIoFetch<T>(path: string): Promise<T> {
   if (!env.TWITTERAPI_IO_API_KEY) throw new Error("X_UNAVAILABLE");
   const response = await fetch(`https://api.twitterapi.io${path}`, {
     headers: { "x-api-key": env.TWITTERAPI_IO_API_KEY },
     cache: "no-store"
   });
-  if (!response.ok) throw new Error(response.status === 429 ? "X_RATE_LIMITED" : response.status === 403 || response.status === 404 ? "X_NOT_FOUND" : "X_UNAVAILABLE");
+  if (!response.ok) throw new Error(twitterApiIoErrorCode(response.status));
   return response.json() as Promise<T>;
 }
 
@@ -128,13 +132,7 @@ export async function getXPostsByIds(xPostIds: string[]) {
   const ids = [...new Set(xPostIds)].filter(Boolean);
   if (ids.length === 0) return [];
   const query = new URLSearchParams({ tweet_ids: ids.join(",") });
-  let result: TwitterApiIoTweetsResponse;
-  try {
-    result = await twitterApiIoFetch<TwitterApiIoTweetsResponse>(`/twitter/tweets?${query}`);
-  } catch (error) {
-    if (error instanceof Error && error.message === "X_NOT_FOUND") return [];
-    throw error;
-  }
+  const result = await twitterApiIoFetch<TwitterApiIoTweetsResponse>(`/twitter/tweets?${query}`);
   if (!Array.isArray(result.tweets)) throw new Error("X_UNAVAILABLE");
   return result.tweets.map((post) => ({
     id: post.id,

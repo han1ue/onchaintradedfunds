@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertStoredXEligible, assertXEligible, getXPost, hashXPostText, verifyStoredXPost, type XPost, type XUser } from "./x";
+import { assertStoredXEligible, assertXEligible, getXPost, hashXPostText, twitterApiIoErrorCode, verifyStoredXPost, type XPost, type XUser } from "./x";
 
 const eligibleUser: XUser = { id: "42", username: "verified", name: "Verified", created_at: "2020-01-01T00:00:00Z", protected: false, verified: true, public_metrics: { followers_count: 100, following_count: 20, tweet_count: 30, listed_count: 1 } };
 
@@ -30,6 +30,13 @@ describe("X post evidence", () => {
   it("rejects a wrong author", () => expect(() => verifyStoredXPost({ ...post, author_id: "99" }, expected)).toThrow("X_POST_CHANGED"));
   it("rejects edited text", () => expect(() => verifyStoredXPost({ ...post, text: "Changed" }, expected)).toThrow("X_POST_CHANGED"));
   it("rejects repost evidence", () => expect(() => verifyStoredXPost({ ...post, referenced_tweets: [{ type: "retweeted", id: "1" }] }, expected)).toThrow("X_POST_CHANGED"));
+});
+
+describe("TwitterAPI.io failures", () => {
+  it("treats rate limiting as retryable", () => expect(twitterApiIoErrorCode(429)).toBe("X_RATE_LIMITED"));
+  it.each([400, 401, 403, 404, 500, 503])("treats HTTP %i as provider unavailability", (status) => {
+    expect(twitterApiIoErrorCode(status)).toBe("X_UNAVAILABLE");
+  });
 });
 
 describe("X oEmbed failures", () => {
