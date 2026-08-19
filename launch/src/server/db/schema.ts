@@ -325,7 +325,6 @@ export const ballots = pgTable("ballots", {
   id: uuid("id").defaultRandom().primaryKey(),
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   voterUserId: text("voter_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  evidenceId: uuid("evidence_id").unique().references(() => tweetEvidence.id, { onDelete: "restrict" }),
   followerCount: integer("follower_count").notNull(),
   status: voteStatus("status").default("posting").notNull(),
   activatedAt: timestamp("activated_at", { withTimezone: true }),

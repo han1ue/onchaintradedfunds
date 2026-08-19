@@ -4,6 +4,7 @@ import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import { CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { getCommittedBallotState } from "@/lib/ballot-state";
 import { COMPETITION_RULES } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import type { BallotSummary, LeaderboardEntry, ParticipationEligibility } from "@/lib/types";
@@ -45,25 +46,21 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   siteUrl: string;
 }) {
   const router = useRouter();
-  const initialCommitted = useMemo(() => {
+  const initialCommittedState = useMemo(() => getCommittedBallotState(
+    proposals.map((proposal) => proposal.id),
+    ballot,
+  ), [ballot, proposals]);
+  const initialAdditions = useMemo(() => {
     const values = Object.fromEntries(proposals.map((proposal) => [proposal.id, 0])) as Record<string, number>;
-    if (ballot?.status === "valid") {
-      for (const allocation of ballot.allocations) {
-        if (allocation.proposalId in values) values[allocation.proposalId] = allocation.votes;
-      }
-    }
-    return values;
-  }, [ballot, proposals]);
-  const initialVotes = useMemo(() => {
-    const values = { ...initialCommitted };
     if (ballot?.status !== "valid" && focusSlug && availability.unlockedVotes > 0) {
       const focused = proposals.find((proposal) => proposal.slug === focusSlug);
       if (focused) values[focused.id] = 1;
     }
     return values;
-  }, [availability.unlockedVotes, ballot?.status, focusSlug, initialCommitted, proposals]);
-  const [votes, setVotes] = useState<Record<string, number>>(initialVotes);
-  const [committedVotes, setCommittedVotes] = useState<Record<string, number>>(initialCommitted);
+  }, [availability.unlockedVotes, ballot?.status, focusSlug, proposals]);
+  const [additions, setAdditions] = useState<Record<string, number>>(initialAdditions);
+  const [committedVotes, setCommittedVotes] = useState<Record<string, number>>(initialCommittedState.committedVotes);
+  const [castTotal, setCastTotal] = useState(initialCommittedState.castTotal);
   const [reason, setReason] = useState("");
   const [postUrl, setPostUrl] = useState("");
   const [challenge, setChallenge] = useState<Challenge | null>(null);
@@ -73,15 +70,16 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [revealVotes, setRevealVotes] = useState(false);
-  const total = sumVotes(votes);
-  const castTotal = sumVotes(committedVotes);
-  const newVotes = total - castTotal;
+  const voteAdditions = proposals
+    .map((proposal) => ({ proposalId: proposal.id, votes: additions[proposal.id] ?? 0 }))
+    .filter(({ votes }) => votes > 0);
+  const newVotes = voteAdditions.reduce((sum, addition) => sum + addition.votes, 0);
+  const total = castTotal + newVotes;
   const unlockedRemaining = Math.max(0, availability.unlockedVotes - castTotal);
-  const allocations = Object.entries(votes).map(([proposalId, value]) => ({ proposalId, votes: value })).filter(({ votes: value }) => value > 0);
-  const addedChoices = allocations.map((allocation) => ({
-    ticker: proposals.find((proposal) => proposal.id === allocation.proposalId)?.ticker ?? "OTF",
-    votes: allocation.votes - (committedVotes[allocation.proposalId] ?? 0),
-  })).filter((choice) => choice.votes > 0);
+  const addedChoices = voteAdditions.map((addition) => ({
+    ticker: proposals.find((proposal) => proposal.id === addition.proposalId)?.ticker ?? "OTF",
+    votes: addition.votes,
+  }));
   const previewText = buildVotePost(reason, siteUrl, "[verification code]", revealVotes ? addedChoices : []);
   const disclosurePreviewLabel = revealVotes
     ? addedChoices.length > 0 ? "batch picks included" : "picks appear after selection"
@@ -89,11 +87,10 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
 
   function adjustVote(proposalId: string, delta: number) {
     setMessage(null);
-    setVotes((current) => {
+    setAdditions((current) => {
       const currentValue = current[proposalId] ?? 0;
-      const floor = committedVotes[proposalId] ?? 0;
-      const nextValue = Math.max(floor, Math.min(COMPETITION_RULES.totalVotes, currentValue + delta));
-      const nextTotal = sumVotes(current) - currentValue + nextValue;
+      const nextValue = Math.max(0, Math.min(COMPETITION_RULES.totalVotes, currentValue + delta));
+      const nextTotal = castTotal + sumVotes(current) - currentValue + nextValue;
       if (nextTotal > availability.unlockedVotes) return current;
       return { ...current, [proposalId]: nextValue };
     });
@@ -104,7 +101,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     setBusy(true);
     setMessage(null);
     const body = action === "prepare"
-      ? { action, reason, allocations, revealVotes, turnstileToken }
+      ? { action, reason, additions: voteAdditions, revealVotes, turnstileToken }
       : { action, challengeId: challenge?.challengeId, postUrl };
     try {
       const response = await fetch("/api/v1/ballot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -130,7 +127,12 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
         }
       }
       if (action === "verify") {
-        setCommittedVotes({ ...votes });
+        setCommittedVotes((current) => Object.fromEntries(Object.entries(current).map(([proposalId, votes]) => [
+          proposalId,
+          votes + (additions[proposalId] ?? 0),
+        ])));
+        setCastTotal(total);
+        setAdditions(Object.fromEntries(proposals.map((proposal) => [proposal.id, 0])));
         setChallenge(null);
         setPostUrl("");
         setReason("");
@@ -163,21 +165,22 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {COMPETITION_RULES.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
-    <div className="ballotActionIntro"><strong>Publish your voting post</strong><p>{challenge ? `Publish the prepared X post, then paste its URL below to cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}.` : newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p>{ballot?.proofUrl && <a className="inlineLink" href={ballot.proofUrl} target="_blank" rel="noreferrer">View first vote post <ExternalLink size={13} /></a>}</div>
+    <div className="ballotActionIntro"><strong>Publish your voting post</strong><p>{challenge ? `Publish the prepared X post, then paste its URL below to cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}.` : newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p></div>
     {message ? <div className={`ballotActionResult ${messageTone}`} role="status">{messageTone === "success" ? <CheckCircle2 size={24} /> : <CircleAlert size={24} />}<div><strong>{messageTone === "success" ? "Votes cast" : "Couldn't cast your votes"}</strong><p>{message}</p></div>{messageTone === "success" && unlockedRemaining > 0 && <div className="ballotActionResultActions"><Button onClick={() => setMessage(null)}>Cast more votes</Button></div>}{messageTone === "error" && <div className="ballotActionResultActions"><Button onClick={challenge ? startAgain : () => setMessage(null)}>Try again</Button></div>}</div> : <><div className="ballotActionFields"><label className="formField"><span>Why are you voting? <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Share why you’re helping choose the next OTFs…" rows={3} maxLength={120} disabled={busy || Boolean(challenge)} /><small>{reason.length} / 120 characters</small></label><label className="privacyChoice"><input type="checkbox" checked={revealVotes} disabled={busy || Boolean(challenge)} onChange={(event) => setRevealVotes(event.target.checked)} /><span><strong>Reveal my picks in this post</strong><small>{revealVotes ? addedChoices.length > 0 ? "The post will name the OTFs and vote counts in this batch." : "Your selected OTFs will appear after you add votes." : "Off by default. The OTFs receiving these votes will stay private."}</small></span></label></div>
     <div className="ballotActionPublish"><div className="xPostPreview compact"><div><span>{challenge ? "Ready to publish" : `Post preview · ${disclosurePreviewLabel}`}</span><Send size={13} /></div><p>{challenge?.postText ?? previewText}</p></div>{challenge ? <div className="postAction"><a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a><p className="postAssurance">We never post anything on your behalf.</p></div> : <><Turnstile siteKey={turnstileSiteKey} action="vote_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} />{(!turnstileSiteKey || turnstileToken) && <div className="postAction"><Button onClick={() => request("prepare")} disabled={busy || newVotes < 1}>{busy ? "Preparing…" : <>Open X and post <ExternalLink size={14} /></>}</Button><p className="postAssurance">We never post anything on your behalf.</p></div>}</>}<label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" disabled={busy || !challenge} /><small>{challenge ? "Paste the URL of the public post containing the verification code." : "Post to X first; this field will be ready after the post is prepared."}</small></label><Button onClick={() => request("verify")} disabled={busy || !challenge || !postUrl.trim()}>{busy ? "Verifying…" : `Verify and cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}`}</Button></div></>}
   </SectionCard>;
 
   return <div className="ballotLayout"><SectionCard className="ballotCard"><div className="ballotToolbar"><div><span>Your vote ledger</span><small>Cast votes are permanent. Add newly unlocked votes at any time.</small></div><div className={`ballotTotal${newVotes > 0 ? " valid" : ""}`} aria-label={`${total} of ${availability.unlockedVotes} votes selected`}><strong>{total} / {availability.unlockedVotes}</strong></div></div>
     <div className="ballotRows">{proposals.map((proposal) => {
-      const value = votes[proposal.id] ?? 0;
       const committed = committedVotes[proposal.id] ?? 0;
+      const addition = additions[proposal.id] ?? 0;
+      const value = committed + addition;
       const controlsLocked = busy || Boolean(challenge);
       return <div className="ballotRow" key={proposal.id}>
         <OtfTokenIcon ticker={proposal.ticker} size={38} />
         <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} locked {committed === 1 ? "vote" : "votes"}</small>}</div>
         <div className="voteStepper" role="group" aria-label={`Votes for ${proposal.name}`}>
-          <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || value <= committed} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
+          <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || addition === 0} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
           <strong aria-live="polite">{value}</strong>
           <button type="button" onClick={() => adjustVote(proposal.id, 1)} disabled={controlsLocked || total >= availability.unlockedVotes} aria-label={`Add vote to ${proposal.name}`}><Plus size={15} /></button>
         </div>

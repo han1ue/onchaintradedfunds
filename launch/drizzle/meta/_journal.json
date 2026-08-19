@@ -50,6 +50,13 @@
       "when": 1786971000000,
       "tag": "0006_simple_submission_states",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787112000000,
+      "tag": "0007_reset_launch_data",
+      "breakpoints": true
     }
   ]
 }

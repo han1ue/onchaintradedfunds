@@ -72,14 +72,14 @@ export const voteAllocationSchema = z.object({
   votes: z.number().int().min(1).max(COMPETITION_RULES.totalVotes)
 });
 
-export const voteDistributionSchema = z.array(voteAllocationSchema).min(1).superRefine((items, context) => {
+export const voteAdditionsSchema = z.array(voteAllocationSchema).min(1).superRefine((items, context) => {
   if (new Set(items.map((item) => item.proposalId)).size !== items.length) context.addIssue({ code: "custom", message: "OTF proposals must be unique" });
   if (items.reduce((sum, item) => sum + item.votes, 0) > COMPETITION_RULES.totalVotes) context.addIssue({ code: "custom", message: `Votes cannot exceed ${COMPETITION_RULES.totalVotes}` });
 });
 
 export const ballotActivationSchema = z.object({
   reason: xPostReasonSchema,
-  allocations: voteDistributionSchema,
+  additions: voteAdditionsSchema,
   revealVotes: z.boolean().default(false),
   turnstileToken: z.string().optional()
 });

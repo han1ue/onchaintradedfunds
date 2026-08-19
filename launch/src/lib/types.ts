@@ -101,13 +101,33 @@ export type ParticipationEligibility = {
 
 export type VoteAllocation = { proposalId: string; votes: number };
 
+export type VotePostTranche = {
+  id: string;
+  proposalId: string;
+  proposalName: string;
+  proposalSlug: string;
+  proposalTicker: string;
+  proposalStatus: "draft" | "confirmed" | "deleted";
+  votes: number;
+  acceptedAt: string;
+  createdAt: string;
+};
+
+export type BallotVotePost = {
+  evidenceId: string;
+  postUrl: string;
+  status: "pending" | "valid" | "invalid" | "unavailable";
+  acceptedAt: string;
+  tranches: VotePostTranche[];
+};
+
 export type BallotSummary = {
   id: string;
   status: "posting" | "valid" | "invalid";
   activatedAt: string | null;
   updatedAt: string;
-  proofUrl?: string | null;
   allocations: VoteAllocation[];
+  votePosts: BallotVotePost[];
 };
 
 export type PortfolioReturnPoint = {

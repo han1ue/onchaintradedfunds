@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteDistributionSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
+import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteAdditionsSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
@@ -107,18 +107,21 @@ describe("proof links", () => {
 });
 
 describe("earned-vote ballot validation", () => {
-  it("accepts a partial set of earned votes across distinct proposals", () => {
-    expect(voteDistributionSchema.parse([{ proposalId: assetA, votes: 3 }, { proposalId: assetB, votes: 2 }])).toHaveLength(2);
+  it("accepts a batch of new votes across distinct proposals", () => {
+    expect(voteAdditionsSchema.parse([{ proposalId: assetA, votes: 3 }, { proposalId: assetB, votes: 2 }])).toHaveLength(2);
   });
-  it("rejects distributions above the 12-vote maximum", () => {
-    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 7 }, { proposalId: assetB, votes: 6 }])).toThrow(/12/);
+  it("rejects addition batches above the 12-vote maximum", () => {
+    expect(() => voteAdditionsSchema.parse([{ proposalId: assetA, votes: 7 }, { proposalId: assetB, votes: 6 }])).toThrow(/12/);
   });
   it("rejects duplicate proposals", () => {
-    expect(() => voteDistributionSchema.parse([{ proposalId: assetA, votes: 1 }, { proposalId: assetA, votes: 1 }])).toThrow(/unique/);
+    expect(() => voteAdditionsSchema.parse([{ proposalId: assetA, votes: 1 }, { proposalId: assetA, votes: 1 }])).toThrow(/unique/);
   });
   it("keeps vote disclosure off unless the voter enables it", () => {
-    const ballot = ballotActivationSchema.parse({ reason: "I want to support strong OTF proposals.", allocations: [{ proposalId: assetA, votes: 1 }] });
+    const ballot = ballotActivationSchema.parse({ reason: "I want to support strong OTF proposals.", additions: [{ proposalId: assetA, votes: 1 }] });
     expect(ballot.revealVotes).toBe(false);
+  });
+  it("requires additions instead of a complete ballot snapshot", () => {
+    expect(ballotActivationSchema.safeParse({ reason: "", allocations: [{ proposalId: assetA, votes: 1 }] }).success).toBe(false);
   });
 });
 

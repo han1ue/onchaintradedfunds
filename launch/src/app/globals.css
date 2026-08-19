@@ -686,6 +686,7 @@ button { color: inherit; }
 .accountMetrics strong { font-size: .88rem; text-transform: capitalize; }
 .accountSectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .accountSectionHeading h2 { margin: 0; }
+.accountSectionHeading > div > p { margin: 5px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
 .accountSubmissions { margin-bottom: 12px; }
 .submissionList { display: grid; }
 .submissionRow { min-height: 62px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; border-top: 1px solid var(--border); }
@@ -729,6 +730,22 @@ button { color: inherit; }
 .activityCopy strong { color: var(--text); font-size: .78rem; line-height: 1.35; }
 .activityCopy small { color: var(--text-muted); font-size: .69rem; line-height: 1.4; }
 .activityRow time { flex: 0 0 auto; color: var(--text-muted); font-size: .69rem; white-space: nowrap; }
+.accountVoteHistory { margin-top: 12px; }
+.votePostList, .voteTrancheList { margin: 0; padding: 0; list-style: none; }
+.votePostRow { padding: 14px 0; border-top: 1px solid var(--border); }
+.votePostRow:last-child { padding-bottom: 0; }
+.votePostHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.votePostIdentity { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.votePostLink { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; color: var(--teal); font-size: .76rem; font-weight: 700; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--teal) 42%, transparent); text-underline-offset: 3px; }
+.votePostLink:hover { text-decoration-color: currentColor; }
+.votePostHeader time { flex: 0 0 auto; color: var(--text-muted); font-size: .69rem; white-space: nowrap; }
+.voteTrancheList { display: grid; gap: 2px; margin-top: 6px; }
+.voteTrancheRow { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 0 7px 16px; }
+.voteTrancheRow > div { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.voteTrancheRow a, .voteTrancheRow > div > span { overflow: hidden; color: var(--text-soft); font-size: .73rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.voteTrancheRow a:hover { color: var(--teal); }
+.voteTrancheRow small { color: var(--text-muted); font-size: .65rem; }
+.voteTrancheRow > strong { color: var(--text); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .accountEligibilityPrompt { display: grid; justify-items: start; gap: 9px; margin-bottom: 12px; }
 .accountEligibilityPrompt > svg { color: var(--gold); }
 .accountEligibilityPrompt > strong { font-size: .86rem; }
@@ -884,6 +901,9 @@ button { color: inherit; }
   .xpFormulaRows code { grid-column: 2; justify-self: start; white-space: normal; }
   .activityRow { grid-template-columns: 34px minmax(0, 1fr); }
   .activityRow time { grid-column: 2; }
+  .votePostHeader { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .votePostHeader time { padding-left: 0; }
+  .voteTrancheRow { padding-left: 0; }
   .submissionRow { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 0; }
   .submissionRowActions { flex-wrap: wrap; }
   .rwaDirectoryHeader { align-items: flex-start; flex-direction: column; gap: 10px; }

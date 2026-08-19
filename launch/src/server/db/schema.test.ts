@@ -3,6 +3,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   assetPricingConfigs,
+  ballots,
   eligibleAssets,
   priceCaptureRuns,
   proposalAssets,
@@ -36,6 +37,11 @@ describe("unified asset database schema", () => {
     expect(getTableColumns(voteTranches)).not.toHaveProperty("performanceCohort");
     expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("qualifiedPerformanceXp");
     expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("experimentalPerformanceXp");
+  });
+
+  it("keeps voting evidence on tranches rather than the aggregate ballot", () => {
+    expect(getTableColumns(ballots)).not.toHaveProperty("evidenceId");
+    expect(getTableColumns(voteTranches)).toHaveProperty("evidenceId");
   });
 
   it("keys price capture runs for cross-instance cron idempotency", () => {
