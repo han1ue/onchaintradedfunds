@@ -666,7 +666,7 @@ button { color: inherit; }
 @media (prefers-reduced-motion: reduce) { .submissionRedirectProgress span { animation: none; transform: scaleX(1); } }
 .accountHeader { display: flex; align-items: center; justify-content: space-between; }
 .accountTitle { min-width: 0; display: flex; align-items: center; gap: 12px; }
-.accountTitle h1 { min-width: 0; font-size: clamp(1.65rem, 4vw, 2.55rem); line-height: 1; overflow-wrap: anywhere; }
+.accountTitle h1 { min-width: 0; margin: 0; font-size: clamp(1.65rem, 4vw, 2.55rem); line-height: 1; overflow-wrap: anywhere; }
 .accountControls { display: flex; align-items: center; gap: 10px; }
 .accountIdentitySummary { display: flex; align-items: center; gap: 10px; }
 .accountHeaderActionForm { display: inline-flex; align-self: center; flex: 0 0 auto; margin: 0; }
