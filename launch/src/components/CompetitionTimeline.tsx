@@ -6,11 +6,7 @@ import { SectionCard } from "./ui";
 export function CompetitionTimeline({ competition }: { competition: CompetitionSummary }) {
   const status = getCompetitionStatus(competition);
   const totalDays = COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays;
-  const elapsedDays = status.stage === "upcoming"
-    ? 0
-    : status.stage === "review" || status.stage === "final"
-      ? totalDays
-      : status.competitionDay;
+  const elapsedDays = status.progressDays;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
     { title: "Submission week", timing: "Days 1–7", detail: "Create OTF proposals." },

@@ -53,7 +53,9 @@ export function getCompetitionTiming(competition: CompetitionWindow, now: Date =
   const startsAt = new Date(competition.startsAt);
   const endsAt = new Date(competition.endsAt);
   const votingStartsAt = getVotingStartsAt(startsAt);
-  const elapsedDays = Math.floor((now.getTime() - startsAt.getTime()) / DAY_MS);
+  const elapsedMs = now.getTime() - startsAt.getTime();
+  const elapsedDays = Math.floor(elapsedMs / DAY_MS);
+  const totalDays = COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays;
   let stage: CompetitionStage;
 
   if (competition.phase === "cancelled") stage = "cancelled";
@@ -65,7 +67,12 @@ export function getCompetitionTiming(competition: CompetitionWindow, now: Date =
 
   return {
     stage,
-    competitionDay: Math.max(1, Math.min(COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays, elapsedDays + 1)),
+    competitionDay: Math.max(1, Math.min(totalDays, elapsedDays + 1)),
+    progressDays: stage === "upcoming"
+      ? 0
+      : stage === "review" || stage === "final"
+        ? totalDays
+        : Math.max(0, Math.min(totalDays, elapsedMs / DAY_MS)),
     votingStartsAt,
     unlockedVotes: getUnlockedVoteCount(startsAt, now),
     nextVoteUnlockAt: stage === "voting" ? getNextVoteUnlockAt(startsAt, now) : null,
