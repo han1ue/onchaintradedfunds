@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertStoredXEligible, assertXEligible, getXPost, hashXPostText, twitterApiIoErrorCode, verifyStoredXPost, type XPost, type XUser } from "./x";
+import { assertStoredXEligible, assertXEligible, getXPost, hashXPostText, isSuccessfulTwitterApiIoResponse, twitterApiIoErrorCode, verifyStoredXPost, type XPost, type XUser } from "./x";
 
 const eligibleUser: XUser = { id: "42", username: "verified", name: "Verified", created_at: "2020-01-01T00:00:00Z", protected: false, verified: true, public_metrics: { followers_count: 100, following_count: 20, tweet_count: 30, listed_count: 1 } };
 
@@ -36,6 +36,11 @@ describe("TwitterAPI.io failures", () => {
   it("treats rate limiting as retryable", () => expect(twitterApiIoErrorCode(429)).toBe("X_RATE_LIMITED"));
   it.each([400, 401, 403, 404, 500, 503])("treats HTTP %i as provider unavailability", (status) => {
     expect(twitterApiIoErrorCode(status)).toBe("X_UNAVAILABLE");
+  });
+  it("accepts only an explicit success status", () => {
+    expect(isSuccessfulTwitterApiIoResponse({ status: "success" })).toBe(true);
+    expect(isSuccessfulTwitterApiIoResponse({ status: "error" })).toBe(false);
+    expect(isSuccessfulTwitterApiIoResponse({})).toBe(false);
   });
 });
 
