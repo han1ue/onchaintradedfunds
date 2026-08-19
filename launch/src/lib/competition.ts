@@ -73,7 +73,7 @@ export function getCompetitionTiming(competition: CompetitionWindow, now: Date =
       ? 0
       : stage === "review" || stage === "final"
         ? totalDays
-        : Math.max(0, Math.min(totalDays, Math.floor(elapsedMs / COMPETITION_PROGRESS_INTERVAL_MS) * COMPETITION_PROGRESS_INTERVAL_MS / DAY_MS)),
+        : Math.max(0, Math.min(totalDays, Math.ceil(elapsedMs / COMPETITION_PROGRESS_INTERVAL_MS) * COMPETITION_PROGRESS_INTERVAL_MS / DAY_MS)),
     votingStartsAt,
     unlockedVotes: getUnlockedVoteCount(startsAt, now),
     nextVoteUnlockAt: stage === "voting" ? getNextVoteUnlockAt(startsAt, now) : null,
