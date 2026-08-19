@@ -27,4 +27,14 @@ describe("launch data reset migration", () => {
   it("also removes the obsolete ballot evidence column", () => {
     expect(migration).toContain('ALTER TABLE "ballots" DROP COLUMN IF EXISTS "evidence_id"');
   });
+
+  it("repairs a competition and the canonical asset catalog if the old reset removed them", () => {
+    expect(migration).toContain('WHERE NOT EXISTS (SELECT 1 FROM "competitions")');
+    expect(migration).toContain('INSERT INTO "eligible_assets"');
+    expect(migration).toContain("('AAPL', 'Apple'");
+    expect(migration).toContain("('ETH', 'Ethereum'");
+    expect(migration).toContain("('USAR', 'USA Rare Earth'");
+    expect(migration.match(/'high'\)/g)).toHaveLength(46);
+    expect(migration).toContain("ON CONFLICT DO NOTHING");
+  });
 });
