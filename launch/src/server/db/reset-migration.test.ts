@@ -5,9 +5,20 @@ const migration = readFileSync(new URL("../../../drizzle/0007_reset_launch_data.
 const truncateStatement = migration.slice(migration.indexOf("TRUNCATE TABLE"));
 
 describe("launch data reset migration", () => {
-  it("preserves users while resetting every other application table", () => {
-    expect(truncateStatement).not.toContain('"users"');
-    expect(truncateStatement.match(/^\s+"[a-z_]+",?$/gm)).toHaveLength(26);
+  it("preserves users, competition configuration, and all asset data", () => {
+    const preservedTables = [
+      "users",
+      "competitions",
+      "eligible_assets",
+      "asset_pricing_configs",
+      "asset_markets",
+      "asset_eligibility_snapshots",
+      "asset_market_requests",
+      "price_capture_runs",
+      "asset_price_snapshots",
+    ];
+    for (const table of preservedTables) expect(truncateStatement).not.toContain(`"${table}"`);
+    expect(truncateStatement.match(/^\s+"[a-z_]+",?$/gm)).toHaveLength(18);
   });
 
   it("also removes the obsolete ballot evidence column", () => {
