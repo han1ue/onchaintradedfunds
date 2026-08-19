@@ -3,7 +3,7 @@
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import { CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { COMPETITION_RULES } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import type { BallotSummary, LeaderboardEntry, ParticipationEligibility } from "@/lib/types";
@@ -73,6 +73,12 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [revealVotes, setRevealVotes] = useState(false);
+  const [checkingProposals, setCheckingProposals] = useState<Set<string>>(() => new Set());
+  const [invalidProposals, setInvalidProposals] = useState<Set<string>>(() => new Set());
+  const [proposalError, setProposalError] = useState<{ name: string; message: string; missing: boolean } | null>(null);
+  const checkedProposalIds = useRef<Set<string>>(new Set());
+  const checkingProposalIds = useRef<Set<string>>(new Set());
+  const proposalErrorDialog = useRef<HTMLDialogElement>(null);
   const total = sumVotes(votes);
   const castTotal = sumVotes(committedVotes);
   const newVotes = total - castTotal;
@@ -87,6 +93,11 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     ? addedChoices.length > 0 ? "batch picks included" : "picks appear after selection"
     : "picks not shown";
 
+  useEffect(() => {
+    const dialog = proposalErrorDialog.current;
+    if (proposalError && dialog && !dialog.open) dialog.showModal();
+  }, [proposalError]);
+
   function adjustVote(proposalId: string, delta: number) {
     setMessage(null);
     setVotes((current) => {
@@ -97,6 +108,42 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
       if (nextTotal > availability.unlockedVotes) return current;
       return { ...current, [proposalId]: nextValue };
     });
+  }
+
+  async function addVote(proposal: LeaderboardEntry) {
+    if (checkedProposalIds.current.has(proposal.id)) {
+      adjustVote(proposal.id, 1);
+      return;
+    }
+    if (checkingProposalIds.current.has(proposal.id)) return;
+    checkingProposalIds.current.add(proposal.id);
+    setCheckingProposals((current) => new Set(current).add(proposal.id));
+    try {
+      const response = await fetch("/api/v1/ballot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "check-proposal", proposalId: proposal.id }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        const code = typeof json?.error?.code === "string" ? json.error.code : "X_UNAVAILABLE";
+        const missing = code === "PROPOSAL_POST_NOT_FOUND" || code === "PROPOSAL_NOT_FOUND";
+        if (missing) setInvalidProposals((current) => new Set(current).add(proposal.id));
+        setProposalError({
+          name: proposal.name,
+          message: missing ? "The creator’s required X post was deleted. This OTF can no longer receive votes." : errorMessages[code] ?? "The submission post could not be checked. Please try again.",
+          missing,
+        });
+        return;
+      }
+      checkedProposalIds.current.add(proposal.id);
+      adjustVote(proposal.id, 1);
+    } catch {
+      setProposalError({ name: proposal.name, message: "The submission post could not be checked. Please try again.", missing: false });
+    } finally {
+      checkingProposalIds.current.delete(proposal.id);
+      setCheckingProposals((current) => { const next = new Set(current); next.delete(proposal.id); return next; });
+    }
   }
 
   async function request(action: "prepare" | "verify") {
@@ -169,17 +216,22 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
       const value = votes[proposal.id] ?? 0;
       const committed = committedVotes[proposal.id] ?? 0;
       const controlsLocked = busy || Boolean(challenge);
-      return <div className="ballotRow" key={proposal.id}>
+      const checking = checkingProposals.has(proposal.id);
+      const invalid = invalidProposals.has(proposal.id);
+      return <div className={`ballotRow${invalid ? " invalidProposal" : ""}`} key={proposal.id}>
         <OtfTokenIcon ticker={proposal.ticker} size={38} />
-        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} locked {committed === 1 ? "vote" : "votes"}</small>}</div>
+        <div className="ballotIdentity"><strong>{proposal.name}</strong><span>{invalid ? "Tweet not found · voting unavailable" : `$${proposal.ticker} · ${proposal.votes.toLocaleString()} votes`}</span>{committed > 0 && <small><LockKeyhole size={11} /> {committed} locked {committed === 1 ? "vote" : "votes"}</small>}</div>
         <div className="voteStepper" role="group" aria-label={`Votes for ${proposal.name}`}>
-          <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || value <= committed} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
-          <strong aria-live="polite">{value}</strong>
-          <button type="button" onClick={() => adjustVote(proposal.id, 1)} disabled={controlsLocked || total >= availability.unlockedVotes} aria-label={`Add vote to ${proposal.name}`}><Plus size={15} /></button>
+          <button type="button" onClick={() => adjustVote(proposal.id, -1)} disabled={controlsLocked || checking || invalid || value <= committed} aria-label={`Remove uncast vote from ${proposal.name}`}><Minus size={15} /></button>
+          <strong aria-live="polite">{checking ? "…" : value}</strong>
+          <button type="button" onClick={() => addVote(proposal)} disabled={controlsLocked || checking || invalid || total >= availability.unlockedVotes} aria-label={`Add vote to ${proposal.name}`}><Plus size={15} /></button>
         </div>
       </div>;
     })}</div>
   </SectionCard><aside className="ballotRail"><SectionCard className="ballotSummary"><div className="ballotSummaryStatus"><div className="ballotSummaryCount"><span>Remaining votes</span><strong className={unlockedRemaining === 0 ? "complete" : ""}>{unlockedRemaining}</strong></div><p>{availability.nextVoteUnlockAt ? `Next vote unlocks ${formatDateTime(availability.nextVoteUnlockAt)}.` : `All ${COMPETITION_RULES.totalVotes} votes are unlocked. No vote is added on voting day 30.`}</p></div><div className="voteUnlockTrack" role="progressbar" aria-label="Votes unlocked" aria-valuemin={0} aria-valuemax={COMPETITION_RULES.totalVotes} aria-valuenow={availability.unlockedVotes}><span style={{ width: `${availability.unlockedVotes / COMPETITION_RULES.totalVotes * 100}%` }} /></div><small>{availability.unlockedVotes} of {COMPETITION_RULES.totalVotes} unlocked</small></SectionCard></aside>
     <div className="ballotActionArea">{actionPanel}</div>
+    <dialog ref={proposalErrorDialog} className="voteUnavailableDialog" aria-labelledby="vote-unavailable-title" onClose={() => setProposalError(null)}>
+      <div className="voteUnavailableDialogBody"><CircleAlert size={28} aria-hidden="true" /><h2 id="vote-unavailable-title">{proposalError?.missing ? "Tweet not found" : "Couldn’t check this OTF"}</h2><p><strong>{proposalError?.name}</strong> wasn’t added to your ballot. {proposalError?.message}</p><Button onClick={() => proposalErrorDialog.current?.close()}>Close</Button></div>
+    </dialog>
   </div>;
 }

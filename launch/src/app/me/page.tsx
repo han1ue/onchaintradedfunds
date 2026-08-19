@@ -25,11 +25,16 @@ async function disconnectX() {
 async function deleteOwnProposal(_state: DeleteProposalState, formData: FormData): Promise<DeleteProposalState> {
   "use server";
   const proposalId = formData.get("proposalId");
-  if (typeof proposalId !== "string") return { error: errorMessages.INTERNAL_ERROR };
+  const confirmationName = formData.get("confirmationName");
+  if (typeof proposalId !== "string" || typeof confirmationName !== "string") return { error: errorMessages.INTERNAL_ERROR };
   try {
-    await deleteProposal(proposalId);
+    await deleteProposal(proposalId, confirmationName);
   } catch (error) {
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+    if (code === "PROPOSAL_HAS_VOTES") {
+      revalidatePath("/me");
+      return { error: null, disabledReason: errorMessages.PROPOSAL_HAS_VOTES };
+    }
     if (!(code in errorMessages)) console.error("Failed to delete proposal", error);
     return { error: errorMessages[code] ?? errorMessages.INTERNAL_ERROR };
   }
@@ -97,10 +102,9 @@ export default async function MePage() {
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
     <SectionCard className="contentCard accountSubmissions"><div className="accountSectionHeading"><h2>Your submissions</h2><Button href="/submit" variant="secondary">Submit OTF</Button></div>{ownProposals.length ? <div className="submissionList">{ownProposals.map((proposal) => {
-      const canDelete = proposal.status !== "deleted" && proposal.votes === 0;
       const badgeTone = proposal.status === "confirmed" ? "positive" : proposal.status === "deleted" ? "danger" : "warning";
       const identity = <><strong>{proposal.name}</strong><small>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</small></>;
-      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{canDelete ? <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} action={deleteOwnProposal} /> : proposal.status !== "deleted" && <span className="submissionDeleteUnavailable">Has votes</span>}</div></div>;
+      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{proposal.status !== "deleted" && <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} action={deleteOwnProposal} disabledReason={proposal.votes > 0 ? errorMessages.PROPOSAL_HAS_VOTES : undefined} />}</div></div>;
     })}</div> : <p>No submissions yet. <Link className="inlineLink" href="/submit">Create an OTF</Link>.</p>}</SectionCard>
     <SectionCard className="contentCard"><h2>OTFs you voted on</h2>{ownVoteAllocations.length ? <div className="activityList">{ownVoteAllocations.map((allocation) => <div className="activityRow" key={allocation.proposalId}><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy"><Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link><small>${allocation.proposalTicker} · {allocation.votes} locked {allocation.votes === 1 ? "vote" : "votes"}</small></div><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
   </div>;

@@ -18,11 +18,12 @@ import { shortAddress } from "@/lib/format-address";
 import { formatProposalAge } from "@/lib/relative-time";
 import { pricingConfigSummary } from "@/lib/pricing-config";
 import { getProposalReturns } from "@/server/prices";
+import { recheckSubmissionEvidence } from "@/server/admin";
 
 function InvalidProposalState({ proposal }: {
   proposal: { name: string; ticker: string; votes: number; creator: { username: string; profileImageUrl?: string | null } };
 }) {
-  return <div className="pageShell proposalInvalidPage"><section className="proposalInvalidState" role="alert"><CircleAlert size={38} aria-hidden="true" /><StatusBadge tone="danger">Invalid proposal</StatusBadge><h1>This OTF proposal is invalid</h1><p>The creator deleted the required X submission post. This proposal cannot be restored.</p><div className="invalidProposalIdentity"><OtfTokenIcon ticker={proposal.ticker} size={44} /><div><strong>{proposal.name}</strong><span><XProfileImage src={proposal.creator.profileImageUrl} username={proposal.creator.username} size={22} />@{proposal.creator.username}</span></div></div><p className="invalidProposalVotes">{proposal.votes > 0 ? `${proposal.votes.toLocaleString()} ${proposal.votes === 1 ? "vote was" : "votes were"} cast for this OTF. Those votes remain spent and cannot be reassigned.` : "No votes were cast for this OTF."}</p></section></div>;
+  return <div className="pageShell proposalInvalidPage"><section className="proposalInvalidState" role="alert"><CircleAlert size={38} aria-hidden="true" /><StatusBadge tone="danger">Voting unavailable</StatusBadge><h1>Tweet not found</h1><p>The creator deleted the required X submission post, so this OTF can no longer receive votes.</p><div className="invalidProposalIdentity"><OtfTokenIcon ticker={proposal.ticker} size={44} /><div><strong>{proposal.name}</strong><span><XProfileImage src={proposal.creator.profileImageUrl} username={proposal.creator.username} size={22} />@{proposal.creator.username}</span></div></div><p className="invalidProposalVotes">{proposal.votes > 0 ? `${proposal.votes.toLocaleString()} ${proposal.votes === 1 ? "vote was" : "votes were"} cast for this OTF. Those votes remain spent and cannot be reassigned.` : "No votes were cast for this OTF."}</p></section></div>;
 }
 
 export default async function ProposalPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -32,6 +33,12 @@ export default async function ProposalPage({ params }: { params: Promise<{ slug:
     const invalidProposal = await getInvalidProposal(slug);
     if (!invalidProposal) notFound();
     return <InvalidProposalState proposal={invalidProposal} />;
+  }
+  try {
+    if (await recheckSubmissionEvidence(competition.id, [proposal.id])) return <InvalidProposalState proposal={proposal} />;
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "X_UNAVAILABLE";
+    if (code !== "X_UNAVAILABLE" && code !== "X_RATE_LIMITED") throw error;
   }
   const [eligibility, ballot, portfolioReturns] = await Promise.all([
     getParticipationEligibility(session?.user, competition),

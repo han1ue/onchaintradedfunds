@@ -67,6 +67,19 @@ type TwitterApiIoUserResponse = {
   msg?: string;
 };
 
+type TwitterApiIoTweet = {
+  id: string;
+  text: string;
+  createdAt: string;
+  author?: { id: string; userName: string };
+};
+
+type TwitterApiIoTweetsResponse = {
+  tweets?: TwitterApiIoTweet[];
+  status?: string;
+  message?: string;
+};
+
 async function twitterApiIoFetch<T>(path: string): Promise<T> {
   if (!env.TWITTERAPI_IO_API_KEY) throw new Error("X_UNAVAILABLE");
   const response = await fetch(`https://api.twitterapi.io${path}`, {
@@ -109,6 +122,27 @@ export async function getXUserById(xUserId: string) {
     responseStatus: result.status,
     responseMessage: result.msg,
   };
+}
+
+export async function getXPostsByIds(xPostIds: string[]) {
+  const ids = [...new Set(xPostIds)].filter(Boolean);
+  if (ids.length === 0) return [];
+  const query = new URLSearchParams({ tweet_ids: ids.join(",") });
+  let result: TwitterApiIoTweetsResponse;
+  try {
+    result = await twitterApiIoFetch<TwitterApiIoTweetsResponse>(`/twitter/tweets?${query}`);
+  } catch (error) {
+    if (error instanceof Error && error.message === "X_NOT_FOUND") return [];
+    throw error;
+  }
+  if (!Array.isArray(result.tweets)) throw new Error("X_UNAVAILABLE");
+  return result.tweets.map((post) => ({
+    id: post.id,
+    text: post.text,
+    authorId: post.author?.id,
+    authorUsername: post.author?.userName,
+    createdAt: post.createdAt,
+  }));
 }
 
 type XOEmbed = { html?: unknown; author_url?: unknown };

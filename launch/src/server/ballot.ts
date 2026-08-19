@@ -12,6 +12,7 @@ import {
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { getNewestCompletePriceCheckpoint } from "./prices";
+import { recheckSubmissionEvidence } from "./admin";
 
 const challengeLifetimeMs = 15 * 60_000;
 
@@ -22,9 +23,12 @@ function newChallengeToken() {
 async function assertValidDistribution(
   database: ReturnType<typeof requireDb>,
   competitionId: string,
-  allocations: VoteAllocation[]
+  allocations: VoteAllocation[],
+  forcePostCheck = false,
 ) {
   const proposalIds = allocations.map((allocation) => allocation.proposalId);
+  const invalidated = await recheckSubmissionEvidence(competitionId, proposalIds, forcePostCheck ? 0 : undefined);
+  if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
   const selected = await database.select({ id: proposals.id, ticker: proposals.ticker })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
@@ -33,6 +37,20 @@ async function assertValidDistribution(
   ));
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
   return selected;
+}
+
+export async function checkProposalSubmission(proposalId: unknown) {
+  if (typeof proposalId !== "string") throw new Error("PROPOSAL_NOT_FOUND");
+  const database = requireDb();
+  const { competition } = await requireEligibleActor({ votingRequired: true });
+  const [proposal] = await database.select({ id: proposals.id }).from(proposals).where(and(
+    eq(proposals.id, proposalId),
+    eq(proposals.competitionId, competition.id),
+    eq(proposals.status, "confirmed"),
+  )).limit(1);
+  if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
+  if (await recheckSubmissionEvidence(competition.id, [proposal.id], 0)) throw new Error("PROPOSAL_POST_NOT_FOUND");
+  return { proposalId: proposal.id, available: true as const };
 }
 
 function totalVotes(allocations: VoteAllocation[]) {
@@ -137,7 +155,7 @@ export async function verifyBallotProof(input: unknown) {
   )).limit(1);
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
   const allocations = voteDistributionSchema.parse(challenge.payload.allocations);
-  await assertValidDistribution(database, competition.id, allocations);
+  await assertValidDistribution(database, competition.id, allocations, true);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");

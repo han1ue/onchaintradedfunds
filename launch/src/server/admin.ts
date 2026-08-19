@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { COMPETITION_RULES } from "@/lib/competition";
 import { requireSession } from "./guards";
 import { adminXIds } from "./env";
@@ -6,7 +6,50 @@ import { requireDb } from "./db";
 import {
   activityEvents, adminActions, ballots, evidenceChecks, proposals, tweetEvidence
 } from "./db/schema";
-import { getXPost, hashXPostText } from "./x";
+import { getXPost, getXPostsByIds, hashXPostText } from "./x";
+
+type EvidenceRecord = typeof tweetEvidence.$inferSelect;
+
+async function invalidateEvidence(database: ReturnType<typeof requireDb>, evidence: EvidenceRecord, reason: string) {
+  await database.transaction(async (transaction) => {
+    await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
+    await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
+    if (evidence.action === "vote") {
+      const [voteActivity] = await transaction.select({ ballotId: activityEvents.ballotId }).from(activityEvents)
+        .where(eq(activityEvents.evidenceId, evidence.id)).limit(1);
+      if (voteActivity?.ballotId) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, voteActivity.ballotId));
+    }
+    if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "deleted", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
+  });
+}
+
+export async function recheckSubmissionEvidence(competitionId: string, proposalIds?: string[], maxAgeMs = 60_000) {
+  const database = requireDb();
+  const filters = [
+    eq(tweetEvidence.competitionId, competitionId),
+    eq(tweetEvidence.action, "submission"),
+    eq(tweetEvidence.status, "valid"),
+    ...(proposalIds?.length ? [inArray(tweetEvidence.proposalId, proposalIds)] : []),
+  ];
+  const candidates = await database.select().from(tweetEvidence).where(and(...filters)).orderBy(tweetEvidence.id);
+  const cutoff = Date.now() - maxAgeMs;
+  const records = candidates.filter((evidence) => !evidence.lastCheckedAt || evidence.lastCheckedAt.getTime() <= cutoff);
+  if (records.length === 0) return 0;
+  const livePosts = await getXPostsByIds(records.map((evidence) => evidence.xPostId));
+  const liveById = new Map(livePosts.map((post) => [post.id, post]));
+  let invalidated = 0;
+  for (const evidence of records) {
+    const post = liveById.get(evidence.xPostId);
+    const reason = !post ? "X_POST_NOT_FOUND" : post.authorId && post.authorId !== evidence.xAuthorId ? "X_POST_CHANGED" : null;
+    if (!reason) {
+      await database.update(tweetEvidence).set({ lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
+      continue;
+    }
+    await invalidateEvidence(database, evidence, reason);
+    invalidated += 1;
+  }
+  return invalidated;
+}
 
 export async function requireAdmin() {
   const session = await requireSession();
@@ -30,8 +73,13 @@ export async function recheckEvidence(competitionId: string) {
   const records = await database.select().from(tweetEvidence)
     .where(and(eq(tweetEvidence.competitionId, competitionId), eq(tweetEvidence.status, "valid")))
     .orderBy(tweetEvidence.id);
+  const livePosts = await getXPostsByIds(records.map((evidence) => evidence.xPostId));
+  const liveById = new Map(livePosts.map((post) => [post.id, post]));
   for (const evidence of records) {
     try {
+      const livePost = liveById.get(evidence.xPostId);
+      if (!livePost) throw new Error("X_POST_NOT_FOUND");
+      if (livePost.authorId && livePost.authorId !== evidence.xAuthorId) throw new Error("X_POST_CHANGED");
       const post = await getXPost(evidence.postUrl);
       if (post.username.toLowerCase() !== evidence.xAuthorUsername.toLowerCase()) throw new Error("X_POST_CHANGED");
       if (hashXPostText(post.text) !== evidence.evidenceHash) throw new Error("X_POST_CHANGED");
@@ -40,16 +88,7 @@ export async function recheckEvidence(competitionId: string) {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "X_UNAVAILABLE";
       if (reason === "X_UNAVAILABLE") throw error;
-      await database.transaction(async (transaction) => {
-        await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
-        await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
-        if (evidence.action === "vote") {
-          const [voteActivity] = await transaction.select({ ballotId: activityEvents.ballotId }).from(activityEvents)
-            .where(eq(activityEvents.evidenceId, evidence.id)).limit(1);
-          if (voteActivity?.ballotId) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, voteActivity.ballotId));
-        }
-        if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "deleted", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
-      });
+      await invalidateEvidence(database, evidence, reason);
     }
   }
 }

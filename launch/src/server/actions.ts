@@ -222,13 +222,20 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   return result;
 }
 
-export async function deleteProposal(proposalId: string) {
+export async function deleteProposal(proposalId: string, confirmationName: string) {
   const database = requireDb();
   const session = await requireSession();
   const [competition] = await database.select().from(competitions).limit(1);
   if (!competition) throw new Error("COMPETITION_NOT_FOUND");
   const deletedAt = new Date();
   return database.transaction(async (transaction) => {
+    const [proposal] = await transaction.select({ name: proposals.name }).from(proposals).where(and(
+      eq(proposals.id, proposalId),
+      eq(proposals.competitionId, competition.id),
+      eq(proposals.creatorUserId, session.user.id),
+    )).limit(1);
+    if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
+    if (proposal.name !== confirmationName) throw new Error("PROPOSAL_NAME_MISMATCH");
     const [deleted] = await transaction.update(proposals).set({ status: "deleted", updatedAt: deletedAt }).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
