@@ -18,16 +18,17 @@ import { getNewestCompletePriceCheckpoint } from "./prices";
 import { recheckSubmissionEvidence } from "./admin";
 
 const challengeLifetimeMs = 15 * 60_000;
+type LaunchDatabase = ReturnType<typeof requireDb>;
+type LaunchTransaction = Parameters<Parameters<LaunchDatabase["transaction"]>[0]>[0];
 
 function newChallengeToken() {
   return `OTF-${randomBytes(8).toString("hex").toUpperCase()}`;
 }
 
 async function assertValidDistribution(
-  database: ReturnType<typeof requireDb>,
+  database: LaunchDatabase | LaunchTransaction,
   competitionId: string,
   allocations: VoteAllocation[],
-  forcePostCheck = false,
 ) {
   const proposalIds = allocations.map((allocation) => allocation.proposalId);
   const selected = await database.select({ id: proposals.id, ticker: proposals.ticker, acceptedAt: proposals.acceptedAt })
@@ -45,10 +46,6 @@ async function assertValidDistribution(
     });
   }
   if (lockedProposal) throw new Error("PROPOSAL_NOT_FOUND");
-  if (forcePostCheck) {
-    const invalidated = await recheckSubmissionEvidence(competitionId, proposalIds, 0);
-    if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
-  }
   return selected;
 }
 
@@ -58,6 +55,31 @@ function totalVotes(allocations: VoteAllocation[]) {
 
 function assertVotesUnlocked(startsAt: Date | string, existingVotes: number, additions: VoteAllocation[], now: Date = new Date()) {
   if (existingVotes + totalVotes(additions) > getUnlockedVoteCount(startsAt, now)) throw new Error("VOTES_NOT_UNLOCKED");
+}
+
+async function assertBallotCanAccept(
+  database: ReturnType<typeof requireDb>,
+  competitionId: string,
+  voterUserId: string,
+  additions: VoteAllocation[],
+  now: Date,
+) {
+  const [openCompetition] = await database.select({ startsAt: competitions.startsAt }).from(competitions).where(and(
+    eq(competitions.id, competitionId),
+    eq(competitions.phase, "open"),
+    sql`${competitions.endsAt} > ${now}`,
+  )).limit(1);
+  if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
+  if (now < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
+  const [existing] = await database.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
+    eq(ballots.competitionId, competitionId),
+    eq(ballots.voterUserId, voterUserId),
+  )).limit(1);
+  const previousAllocations = existing?.status === "valid"
+    ? await database.select({ proposalId: ballotAllocations.proposalId, votes: ballotAllocations.votes })
+      .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
+    : [];
+  assertVotesUnlocked(openCompetition.startsAt, totalVotes(previousAllocations), additions, now);
 }
 
 export async function getBallotSummary(competitionId: string, voterUserId: string): Promise<BallotSummary | null> {
@@ -160,12 +182,8 @@ export async function verifyBallotProof(input: unknown) {
   )).limit(1);
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
   const additions = voteAdditionsSchema.parse(challenge.payload.additions);
-  const post = await getXPost(parsed.postUrl);
-  if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
-  if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
-  await assertValidDistribution(database, competition.id, additions, true);
-
   const activatedAt = new Date();
+  await assertValidDistribution(database, competition.id, additions);
   const entryAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
     .from(proposalAssets)
     .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
@@ -176,6 +194,20 @@ export async function verifyBallotProof(input: unknown) {
       lte(proposals.acceptedAt, activatedAt),
     ));
   const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), activatedAt);
+  await assertBallotCanAccept(database, competition.id, session.user.id, additions, activatedAt);
+  const post = await getXPost(parsed.postUrl);
+  if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
+  if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
+
+  // Repeat free checks immediately before reserving the ballot transaction.
+  await assertValidDistribution(database, competition.id, additions);
+  await assertBallotCanAccept(database, competition.id, session.user.id, additions, activatedAt);
+  const [activeChallenge] = await database.select({ id: xActionChallenges.id }).from(xActionChallenges).where(and(
+    eq(xActionChallenges.id, challenge.id),
+    isNull(xActionChallenges.consumedAt),
+    gt(xActionChallenges.expiresAt, new Date()),
+  )).limit(1);
+  if (!activeChallenge) throw new Error("CHALLENGE_EXPIRED");
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: activatedAt }).where(and(
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)
@@ -198,6 +230,12 @@ export async function verifyBallotProof(input: unknown) {
     const existingVotes = totalVotes(previousAllocations);
     const votesAdded = totalVotes(additions);
     assertVotesUnlocked(openCompetition.startsAt, existingVotes, additions, activatedAt);
+
+    // TwitterAPI.io is deliberately last, after every domain check and ballot lock.
+    await assertValidDistribution(transaction, competition.id, additions);
+    const invalidated = await recheckSubmissionEvidence(competition.id, additions.map((addition) => addition.proposalId), 0);
+    if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
+
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "vote",
       competitionId: competition.id,

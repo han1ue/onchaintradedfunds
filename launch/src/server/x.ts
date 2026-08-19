@@ -91,10 +91,16 @@ export function isSuccessfulTwitterApiIoResponse(result: unknown) {
 
 async function twitterApiIoFetch<T>(path: string): Promise<T> {
   if (!env.TWITTERAPI_IO_API_KEY) throw new Error("X_UNAVAILABLE");
-  const response = await fetch(`https://api.twitterapi.io${path}`, {
-    headers: { "x-api-key": env.TWITTERAPI_IO_API_KEY },
-    cache: "no-store"
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://api.twitterapi.io${path}`, {
+      headers: { "x-api-key": env.TWITTERAPI_IO_API_KEY },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new Error("X_UNAVAILABLE");
+  }
   if (response.status !== 200) throw new Error(twitterApiIoErrorCode(response.status));
   return response.json().catch(() => { throw new Error("X_UNAVAILABLE"); }) as Promise<T>;
 }
