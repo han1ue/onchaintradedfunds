@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(new URL("../../../drizzle/0007_reset_launch_data.sql", import.meta.url), "utf8");
+const migration = readFileSync(
+  new URL("../../../drizzle/0008_reset_participation_data.sql", import.meta.url),
+  "utf8",
+);
 const truncateStatement = migration.slice(migration.indexOf("TRUNCATE TABLE"));
 
 describe("launch data reset migration", () => {

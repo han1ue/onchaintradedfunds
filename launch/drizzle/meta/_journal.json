@@ -57,6 +57,13 @@
       "when": 1787112000000,
       "tag": "0007_reset_launch_data",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787113200000,
+      "tag": "0008_reset_participation_data",
+      "breakpoints": true
     }
   ]
 }
