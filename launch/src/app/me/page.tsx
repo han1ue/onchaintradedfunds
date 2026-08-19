@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { BadgeCheck, CircleX, ExternalLink, Layers3, LogIn, LogOut, ShieldAlert, UnlockKeyhole, Users, Vote } from "lucide-react";
+import { BadgeCheck, CircleX, Clock3, ExternalLink, Layers3, LogIn, LogOut, ShieldAlert, UnlockKeyhole, Users, Vote } from "lucide-react";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { EligibilityAction } from "@/components/EligibilityGate";
 import { DeleteProposalForm, type DeleteProposalState } from "@/components/DeleteProposalForm";
+import { CompetitionCountdown } from "@/components/CompetitionCountdown";
 import { Button, SectionCard, StatusBadge } from "@/components/ui";
 import { XSignInButton } from "@/components/XSignInButton";
 import { XProfileImage } from "@/components/XProfileImage";
@@ -12,7 +13,7 @@ import { deleteProposal } from "@/server/actions";
 import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
 import { ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
-import { getCompetitionTiming } from "@/lib/competition";
+import { COMPETITION_RULES, getCompetitionTiming } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import { getBallotSummary } from "@/server/ballot";
 import { getParticipationEligibility } from "@/server/participation";
@@ -79,7 +80,8 @@ export default async function MePage() {
   ]) : [[], [], []];
   const identity = identityRows[0];
   const competition = await getCompetition();
-  const timing = getCompetitionTiming(competition);
+  const currentTime = new Date();
+  const timing = getCompetitionTiming(competition, currentTime);
   const [eligibility, ballot] = await Promise.all([
     getParticipationEligibility(session.user, competition),
     getBallotSummary(competition.id, session.user.id),
@@ -107,16 +109,17 @@ export default async function MePage() {
       <SectionCard><UnlockKeyhole size={19} /><span>Votes unlocked</span><strong>{timing.unlockedVotes}</strong></SectionCard>
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
+    {!timing.votingOpen && <SectionCard className="accountVotingGate"><Clock3 size={24} aria-hidden="true" /><div className="accountVotingGateCopy"><strong>Voting opens in</strong><CompetitionCountdown target={timing.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} /><p>Your first {COMPETITION_RULES.initialVotes} votes unlock when submission week ends.</p></div><Button href="/vote" variant="secondary">View voting</Button></SectionCard>}
     <SectionCard className="contentCard accountSubmissions"><div className="accountSectionHeading"><h2>Your submissions</h2><Button href="/submit" variant="secondary">Submit OTF</Button></div>{ownProposals.length ? <div className="submissionList">{ownProposals.map((proposal) => {
       const badgeTone = proposal.status === "confirmed" ? "positive" : proposal.status === "deleted" ? "danger" : "warning";
       const identity = <><strong>{proposal.name}</strong><small>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</small></>;
       return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{proposal.status !== "deleted" && <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} action={deleteOwnProposal} disabledReason={proposal.votes > 0 ? errorMessages.PROPOSAL_HAS_VOTES : undefined} />}</div></div>;
     })}</div> : <p>No submissions yet. <Link className="inlineLink" href="/submit">Create an OTF</Link>.</p>}</SectionCard>
-    <SectionCard className="contentCard"><h2>OTFs you voted on</h2>{ownVoteAllocations.length ? <div className="activityList">{ownVoteAllocations.map((allocation) => <div className="activityRow" key={allocation.proposalId}><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy">{allocation.proposalStatus === "confirmed" ? <Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link> : <strong>{allocation.proposalName}</strong>}<small>${allocation.proposalTicker} · {allocation.votes} locked {allocation.votes === 1 ? "vote" : "votes"}{allocation.proposalStatus === "deleted" ? " · unavailable" : ""}</small></div><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
+    {timing.votingOpen && <><SectionCard className="contentCard"><h2>OTFs you voted on</h2>{ownVoteAllocations.length ? <div className="activityList">{ownVoteAllocations.map((allocation) => <div className="activityRow" key={allocation.proposalId}><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy">{allocation.proposalStatus === "confirmed" ? <Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link> : <strong>{allocation.proposalName}</strong>}<small>${allocation.proposalTicker} · {allocation.votes} locked {allocation.votes === 1 ? "vote" : "votes"}{allocation.proposalStatus === "deleted" ? " · unavailable" : ""}</small></div><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
     <SectionCard className="contentCard accountVoteHistory"><div className="accountSectionHeading"><div><h2>Voting post history</h2><p>Each post records one batch of newly allocated votes.</p></div></div>{votePosts.length ? <ol className="votePostList">{votePosts.map((post, index) => {
       const label = `Vote post ${index + 1}`;
       const statusTone = post.status === "valid" ? "positive" : post.status === "invalid" ? "danger" : "warning";
       return <li className="votePostRow" key={post.evidenceId}><div className="votePostHeader"><div className="votePostIdentity"><a className="votePostLink" href={post.postUrl} target="_blank" rel="noreferrer" aria-label={`${label} on X (opens in a new tab)`}>{label}<ExternalLink size={13} aria-hidden="true" /></a><StatusBadge tone={statusTone}>{post.status}</StatusBadge></div><time dateTime={post.acceptedAt}>{new Date(post.acceptedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div><ul className="voteTrancheList" aria-label={`Votes verified by ${label}`}>{post.tranches.map((tranche) => <li className="voteTrancheRow" key={tranche.id}><div>{tranche.proposalStatus === "confirmed" ? <Link href={`/otfs/${tranche.proposalSlug}`}>{tranche.proposalName}</Link> : <span>{tranche.proposalName}</span>}<small>${tranche.proposalTicker}{tranche.proposalStatus === "deleted" ? " · unavailable" : ""}</small></div><strong>{tranche.votes} {tranche.votes === 1 ? "vote" : "votes"}</strong></li>)}</ul></li>;
-    })}</ol> : <p>No voting posts yet. Your verified voting batches will appear here.</p>}</SectionCard>
+    })}</ol> : <p>No voting posts yet. Your verified voting batches will appear here.</p>}</SectionCard></>}
   </div>;
 }

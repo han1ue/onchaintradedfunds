@@ -656,6 +656,10 @@ button { color: inherit; }
 .emptyState svg { color: var(--teal); }
 .emptyState h1 { margin: 16px 0 7px; font-size: 1.5rem; }
 .emptyState p { margin: 0 0 20px; color: var(--text-muted); font-size: .8rem; }
+.competitionCountdown { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.competitionCountdown.full { display: block; color: var(--text); font-size: clamp(1.45rem, 4vw, 2.25rem); font-weight: 750; line-height: 1; letter-spacing: -.025em; }
+.competitionCountdown.compact { display: inline; color: inherit; font: inherit; letter-spacing: inherit; }
+.phaseBlocked .competitionCountdown { margin: 1px 0 17px; }
 .submissionSuccessPage { min-height: calc(100dvh - 210px); display: grid; place-items: center; }
 .submissionSuccess { width: min(560px, 100%); margin: 0; }
 .submissionSuccess > svg { color: var(--green); }
@@ -688,6 +692,12 @@ button { color: inherit; }
 .accountMetrics svg { grid-row: 1 / 3; color: var(--teal); }
 .accountMetrics span { color: var(--text-muted); font-size: .66rem; text-transform: uppercase; }
 .accountMetrics strong { font-size: .88rem; text-transform: capitalize; }
+.accountVotingGate { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 14px; margin-bottom: 12px; padding: 18px; }
+.accountVotingGate > svg { color: var(--teal); }
+.accountVotingGateCopy { min-width: 0; display: grid; gap: 5px; }
+.accountVotingGateCopy > strong { font-size: .76rem; }
+.accountVotingGateCopy .competitionCountdown.full { font-size: 1.35rem; }
+.accountVotingGateCopy p { margin: 2px 0 0; color: var(--text-muted); font-size: .7rem; line-height: 1.45; }
 .accountSectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .accountSectionHeading h2 { margin: 0; }
 .accountSectionHeading > div > p { margin: 5px 0 0; color: var(--text-muted); font-size: .69rem; line-height: 1.45; }
@@ -898,6 +908,8 @@ button { color: inherit; }
   .accountHeader { align-items: stretch; flex-direction: column; gap: 16px; }
   .accountControls { width: 100%; align-items: center; justify-content: space-between; flex-wrap: wrap; }
   .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
+  .accountVotingGate { grid-template-columns: 32px minmax(0, 1fr); }
+  .accountVotingGate .button { grid-column: 2; justify-self: start; }
   .pointsExplainerHeader { grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }
   .xpTotal { justify-items: start; }
   .xpAllocationLegend { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -25,7 +25,7 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
             ? "This competition has been cancelled."
             : "The submission week begins when the competition opens.";
 
-  return <SectionCard className="competitionTimeline"><div className="timelineHeader"><div><strong>timeline</strong><p>{stageCopy}</p></div><span>Competition day {status.competitionDay} of {totalDays}</span></div>
+  return <SectionCard className="competitionTimeline"><div className="timelineHeader"><div><strong>Timeline</strong><p>{stageCopy}</p></div><span>Competition day {status.competitionDay} of {totalDays}</span></div>
     <div className="timelineProgress" role="progressbar" aria-label="Competition progress" aria-valuemin={0} aria-valuemax={totalDays} aria-valuenow={elapsedDays}><span style={{ width: `${elapsedDays / totalDays * 100}%` }} /></div>
     <ol>{phases.map((phase, index) => {
       const state = index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";

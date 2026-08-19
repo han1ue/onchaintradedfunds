@@ -13,10 +13,11 @@ import { selectRecentProposals } from "@/lib/recent-activity";
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ voteError?: string }> }) {
+  const currentTime = new Date();
   const { voteError } = await searchParams;
   const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
   const eligibility = await getParticipationEligibility(session?.user, competition);
-  const status = getCompetitionStatus(competition);
+  const status = getCompetitionStatus(competition, currentTime);
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
   const recentProposals = selectRecentProposals(leaderboard);
@@ -40,7 +41,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <ResponsiveLeaderboard entries={leaderboardPreview} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
-      <HowItWorks eligibility={eligibility} />
+      <HowItWorks eligibility={eligibility} votingOpen={status.votingOpen} votingStartsAt={status.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} />
     </div>
     <div className="lowerGrid">
       <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Create one OTF per X account; proposals cannot be edited after creation.</li><li>Voting starts after the 7-day submission week with {COMPETITION_RULES.initialVotes} unlocked votes.</li><li>One vote unlocks every {COMPETITION_RULES.voteUnlockIntervalDays} voting days, up to {COMPETITION_RULES.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>

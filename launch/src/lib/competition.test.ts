@@ -12,13 +12,16 @@ describe("competition phases", () => {
     expect(timing.submissionsOpen).toBe(true);
   });
 
-  it("advances timeline progress continuously without pre-filling day one", () => {
+  it("advances timeline progress in six-hour intervals without pre-filling day one", () => {
     const competition = { phase: "open" as const, startsAt, endsAt: "2026-09-07T00:00:00.000Z" };
     expect(getCompetitionTiming(competition, startsAt).progressDays).toBe(0);
+    expect(getCompetitionTiming(competition, new Date("2026-08-01T05:59:59.999Z")).progressDays).toBe(0);
 
     const sixHoursIn = getCompetitionTiming(competition, new Date("2026-08-01T06:00:00.000Z"));
     expect(sixHoursIn.competitionDay).toBe(1);
     expect(sixHoursIn.progressDays).toBe(0.25);
+    expect(getCompetitionTiming(competition, new Date("2026-08-01T11:59:59.999Z")).progressDays).toBe(0.25);
+    expect(getCompetitionTiming(competition, new Date("2026-08-01T12:00:00.000Z")).progressDays).toBe(0.5);
   });
 
   it("opens voting on competition day 8 with exactly 3 votes", () => {

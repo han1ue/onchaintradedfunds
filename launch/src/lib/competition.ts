@@ -17,6 +17,7 @@ export const COMPETITION_RULES = {
 } as const;
 
 export const DAY_MS = 86_400_000;
+export const COMPETITION_PROGRESS_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 type CompetitionWindow = {
   phase: "draft" | "scheduled" | "open" | "auditing" | "final" | "cancelled";
@@ -72,7 +73,7 @@ export function getCompetitionTiming(competition: CompetitionWindow, now: Date =
       ? 0
       : stage === "review" || stage === "final"
         ? totalDays
-        : Math.max(0, Math.min(totalDays, elapsedMs / DAY_MS)),
+        : Math.max(0, Math.min(totalDays, Math.floor(elapsedMs / COMPETITION_PROGRESS_INTERVAL_MS) * COMPETITION_PROGRESS_INTERVAL_MS / DAY_MS)),
     votingStartsAt,
     unlockedVotes: getUnlockedVoteCount(startsAt, now),
     nextVoteUnlockAt: stage === "voting" ? getNextVoteUnlockAt(startsAt, now) : null,
