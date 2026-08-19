@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  new URL("../../../drizzle/0008_reset_participation_data.sql", import.meta.url),
+  new URL("../../../drizzle/0009_restore_competition_assets.sql", import.meta.url),
   "utf8",
 );
 const truncateStart = migration.indexOf("TRUNCATE TABLE");

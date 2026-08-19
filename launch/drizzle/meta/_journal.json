@@ -64,6 +64,13 @@
       "when": 1787113200000,
       "tag": "0008_reset_participation_data",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787114400000,
+      "tag": "0009_restore_competition_assets",
+      "breakpoints": true
     }
   ]
 }
