@@ -4,7 +4,6 @@ export const COMPETITION_IDENTITY = {
 } as const;
 
 export const COMPETITION_RULES = {
-  launchIntervalDays: 4,
   minFollowers: 100,
   minAccountAgeDays: 30,
   minAssets: 2,
@@ -15,8 +14,6 @@ export const COMPETITION_RULES = {
   initialVotes: 3,
   voteUnlockIntervalDays: 3,
   totalVotes: 12,
-  ruleVersion: "v4",
-  rankingPolicyVersion: "earned-votes-v3",
 } as const;
 
 export const DAY_MS = 86_400_000;

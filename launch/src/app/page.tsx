@@ -8,6 +8,7 @@ import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
 import { COMPETITION_RULES, getCompetitionStatus } from "@/lib/competition";
+import { selectRecentProposals } from "@/lib/recent-activity";
 
 function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000)); }
 
@@ -18,9 +19,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const status = getCompetitionStatus(competition);
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
-  const recentProposals = [...leaderboard]
-    .sort((left, right) => new Date(right.acceptedAt).getTime() - new Date(left.acceptedAt).getTime())
-    .slice(0, 3);
+  const recentProposals = selectRecentProposals(leaderboard);
   return <div className="pageShell homePage">
     <section className="competitionHero compactHero">
       <div><h1>Launch Competition</h1><div className="competitionStatus"><StatusBadge tone={status.tone}>{status.label}</StatusBadge>{preview && <span>Preview data · not final</span>}</div></div>

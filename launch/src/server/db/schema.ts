@@ -22,11 +22,9 @@ const timestamps = {
 
 export const competitionPhase = pgEnum("competition_phase", ["draft", "scheduled", "open", "auditing", "final", "cancelled"]);
 export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "deleted"]);
-export const voteStatus = pgEnum("vote_status", ["posting", "valid", "invalid"]);
+export const voteStatus = pgEnum("vote_status", ["valid", "invalid"]);
 export const evidenceStatus = pgEnum("evidence_status", ["pending", "valid", "invalid", "unavailable"]);
 export const evidenceAction = pgEnum("evidence_action", ["submission", "vote"]);
-export const launchStatus = pgEnum("launch_status", ["waiting", "eligible", "launched", "void"]);
-export const xpRunStatus = pgEnum("xp_run_status", ["live", "final"]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -84,9 +82,6 @@ export const competitions = pgTable("competitions", {
   phase: competitionPhase("phase").default("draft").notNull(),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
-  launchStartAt: timestamp("launch_start_at", { withTimezone: true }),
-  rulesFrozenAt: timestamp("rules_frozen_at", { withTimezone: true }),
-  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [
   check("competition_singleton", sql`${table.singleton} = true`),
@@ -326,8 +321,7 @@ export const ballots = pgTable("ballots", {
   competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   voterUserId: text("voter_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   followerCount: integer("follower_count").notNull(),
-  status: voteStatus("status").default("posting").notNull(),
-  activatedAt: timestamp("activated_at", { withTimezone: true }),
+  status: voteStatus("status").notNull(),
   invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [
@@ -366,96 +360,6 @@ export const voteTranches = pgTable("vote_tranches", {
   check("vote_tranche_quantity_positive", sql`${table.quantity} > 0`)
 ]);
 
-export const activityEvents = pgTable("activity_events", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  competitionId: uuid("competition_id").references(() => competitions.id, { onDelete: "set null" }),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "set null" }),
-  ballotId: uuid("ballot_id").references(() => ballots.id, { onDelete: "set null" }),
-  evidenceId: uuid("evidence_id").references(() => tweetEvidence.id, { onDelete: "set null" }),
-  eventType: text("event_type").notNull(),
-  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
-  ruleVersion: text("rule_version").notNull(),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
-  reversesEventId: uuid("reverses_event_id")
-}, (table) => [index("activity_actor_time_idx").on(table.actorUserId, table.occurredAt)]);
-
-export const finalizationRuns = pgTable("finalization_runs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
-  status: text("status").notNull(),
-  cursor: text("cursor"),
-  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  error: text("error"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull()
-});
-
-export const xpCalculationRuns = pgTable("xp_calculation_runs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
-  status: xpRunStatus("status").notNull(),
-  calculatedAt: timestamp("calculated_at", { withTimezone: true }).notNull(),
-  priceCheckpointAt: timestamp("price_checkpoint_at", { withTimezone: true }),
-  performanceReleased: integer("performance_released").notNull(),
-  performanceAllocated: integer("performance_allocated").notNull(),
-  participationReleased: integer("participation_released").notNull(),
-  participationAllocated: integer("participation_allocated").notNull(),
-  creatorReleased: integer("creator_released").notNull(),
-  creatorAllocated: integer("creator_allocated").notNull(),
-  canonicalHash: text("canonical_hash").notNull(),
-  canonicalJson: jsonb("canonical_json").$type<Record<string, unknown>>().notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [
-  index("xp_runs_competition_time_idx").on(table.competitionId, table.calculatedAt),
-  uniqueIndex("xp_final_once_uq").on(table.competitionId).where(sql`${table.status} = 'final'`)
-]);
-
-export const xpSnapshotRows = pgTable("xp_snapshot_rows", {
-  runId: uuid("run_id").notNull().references(() => xpCalculationRuns.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  performanceXp: integer("performance_xp").notNull(),
-  participationXp: integer("participation_xp").notNull(),
-  creatorXp: integer("creator_xp").notNull(),
-  creatorSupportXp: integer("creator_support_xp").default(0).notNull(),
-  creatorAwardXp: integer("creator_award_xp").default(0).notNull(),
-  totalXp: integer("total_xp").notNull(),
-  uniqueSupporterCount: integer("unique_supporter_count").default(0).notNull(),
-  submissionBoost: boolean("submission_boost").default(false).notNull(),
-  pendingTrancheCount: integer("pending_tranche_count").default(0).notNull()
-}, (table) => [primaryKey({ columns: [table.runId, table.userId] })]);
-
-export const leaderboardSnapshots = pgTable("leaderboard_snapshots", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  competitionId: uuid("competition_id").notNull().unique().references(() => competitions.id, { onDelete: "cascade" }),
-  canonicalHash: text("canonical_hash").notNull(),
-  canonicalJson: jsonb("canonical_json").$type<Record<string, unknown>>().notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-});
-
-export const leaderboardRows = pgTable("leaderboard_rows", {
-  snapshotId: uuid("snapshot_id").notNull().references(() => leaderboardSnapshots.id, { onDelete: "cascade" }),
-  proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "restrict" }),
-  rank: integer("rank").notNull(),
-  votes: integer("votes").notNull()
-}, (table) => [
-  primaryKey({ columns: [table.snapshotId, table.proposalId] }),
-  uniqueIndex("leaderboard_rank_uq").on(table.snapshotId, table.rank)
-]);
-
-export const launchQueue = pgTable("launch_queue", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  competitionId: uuid("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
-  proposalId: uuid("proposal_id").notNull().unique().references(() => proposals.id, { onDelete: "restrict" }),
-  rank: integer("rank").notNull(),
-  earliestLaunchAt: timestamp("earliest_launch_at", { withTimezone: true }).notNull(),
-  status: launchStatus("status").default("waiting").notNull(),
-  launchedAt: timestamp("launched_at", { withTimezone: true }),
-  voidReason: text("void_reason"),
-  ...timestamps
-}, (table) => [uniqueIndex("launch_queue_rank_uq").on(table.competitionId, table.rank)]);
-
 export const adminActions = pgTable("admin_actions", {
   id: uuid("id").defaultRandom().primaryKey(),
   adminUserId: text("admin_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -468,7 +372,7 @@ export const adminActions = pgTable("admin_actions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
-export const usersRelations = relations(users, ({ many }) => ({ proposals: many(proposals), ballots: many(ballots), voteTranches: many(voteTranches), sessions: many(sessions), xpSnapshots: many(xpSnapshotRows) }));
+export const usersRelations = relations(users, ({ many }) => ({ proposals: many(proposals), ballots: many(ballots), voteTranches: many(voteTranches), sessions: many(sessions) }));
 export const proposalsRelations = relations(proposals, ({ many, one }) => ({
   assets: many(proposalAssets), ballotAllocations: many(ballotAllocations), voteTranches: many(voteTranches), creator: one(users, { fields: [proposals.creatorUserId], references: [users.id] })
 }));
@@ -484,9 +388,4 @@ export const voteTranchesRelations = relations(voteTranches, ({ one }) => ({
   voter: one(users, { fields: [voteTranches.voterUserId], references: [users.id] }),
   proposal: one(proposals, { fields: [voteTranches.proposalId], references: [proposals.id] }),
   evidence: one(tweetEvidence, { fields: [voteTranches.evidenceId], references: [tweetEvidence.id] })
-}));
-export const xpCalculationRunsRelations = relations(xpCalculationRuns, ({ many }) => ({ rows: many(xpSnapshotRows) }));
-export const xpSnapshotRowsRelations = relations(xpSnapshotRows, ({ one }) => ({
-  run: one(xpCalculationRuns, { fields: [xpSnapshotRows.runId], references: [xpCalculationRuns.id] }),
-  user: one(users, { fields: [xpSnapshotRows.userId], references: [users.id] })
 }));

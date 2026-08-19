@@ -123,8 +123,7 @@ export type BallotVotePost = {
 
 export type BallotSummary = {
   id: string;
-  status: "posting" | "valid" | "invalid";
-  activatedAt: string | null;
+  status: "valid" | "invalid";
   updatedAt: string;
   allocations: VoteAllocation[];
   votePosts: BallotVotePost[];
@@ -139,28 +138,4 @@ export type PortfolioReturns = {
   proposedAt: string;
   trackingStartedAt: string | null;
   points: PortfolioReturnPoint[];
-};
-
-export type XpLeaderboardRow = {
-  userId?: string;
-  publicName: string;
-  usesRealUsername: boolean;
-  performanceXp: number;
-  participationXp: number;
-  creatorXp: number;
-  creatorSupportXp?: number;
-  creatorAwardXp?: number;
-  totalXp: number;
-  uniqueSupporterCount: number;
-  submissionBoost: boolean;
-  pendingTrancheCount: number;
-};
-
-export type XpLeaderboard = {
-  status: "final";
-  calculatedAt: string;
-  priceCheckpointAt: string | null;
-  released: { performance: number; verifiedPerformance: number; nonVerifiedPerformance: number; participation: number; creator: number; total: number };
-  allocated: { performance: number; participation: number; creator: number; total: number };
-  rows: XpLeaderboardRow[];
 };

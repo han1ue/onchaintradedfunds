@@ -1,16 +1,18 @@
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import * as schema from "./schema";
 import {
   assetPricingConfigs,
   ballots,
+  competitions,
   eligibleAssets,
   priceCaptureRuns,
   proposalAssets,
   proposals,
   proposalStatus,
+  voteStatus,
   voteTranches,
-  xpSnapshotRows,
 } from "./schema";
 
 describe("unified asset database schema", () => {
@@ -33,15 +35,30 @@ describe("unified asset database schema", () => {
     });
   });
 
-  it("has no quality cohort columns in new XP state", () => {
+  it("has no obsolete quality cohort columns on vote tranches", () => {
     expect(getTableColumns(voteTranches)).not.toHaveProperty("performanceCohort");
-    expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("qualifiedPerformanceXp");
-    expect(getTableColumns(xpSnapshotRows)).not.toHaveProperty("experimentalPerformanceXp");
   });
 
-  it("keeps voting evidence on tranches rather than the aggregate ballot", () => {
+  it("keeps all vote-specific evidence and chronology on tranches", () => {
     expect(getTableColumns(ballots)).not.toHaveProperty("evidenceId");
+    expect(getTableColumns(ballots)).not.toHaveProperty("activatedAt");
     expect(getTableColumns(voteTranches)).toHaveProperty("evidenceId");
+    expect(getTableColumns(voteTranches)).toHaveProperty("acceptedAt");
+  });
+
+  it("does not expose retired finalization, snapshot, launch queue, or activity tables", () => {
+    for (const exportName of [
+      "activityEvents",
+      "finalizationRuns",
+      "xpCalculationRuns",
+      "xpSnapshotRows",
+      "leaderboardSnapshots",
+      "leaderboardRows",
+      "launchQueue",
+    ]) expect(schema).not.toHaveProperty(exportName);
+    expect(getTableColumns(competitions)).not.toHaveProperty("launchStartAt");
+    expect(getTableColumns(competitions)).not.toHaveProperty("rulesFrozenAt");
+    expect(getTableColumns(competitions)).not.toHaveProperty("finalizedAt");
   });
 
   it("keys price capture runs for cross-instance cron idempotency", () => {
@@ -51,5 +68,9 @@ describe("unified asset database schema", () => {
   it("uses only the three user-facing submission states", () => {
     expect(proposalStatus.enumValues).toEqual(["draft", "confirmed", "deleted"]);
     expect(getTableConfig(proposals).indexes.map((index) => index.config.name)).not.toContain("proposal_one_creator_uq");
+  });
+
+  it("uses only persisted aggregate ballot states", () => {
+    expect(voteStatus.enumValues).toEqual(["valid", "invalid"]);
   });
 });

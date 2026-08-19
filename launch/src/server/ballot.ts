@@ -9,7 +9,7 @@ import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-
 import { ballotActivationSchema, voteAdditionsSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
 import {
-  activityEvents, ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks,
+  ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks,
   proposalAssets, proposals, tweetEvidence, voteTranches, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
@@ -87,7 +87,6 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
   const [ballot] = await db.select({
     id: ballots.id,
     status: ballots.status,
-    activatedAt: ballots.activatedAt,
     updatedAt: ballots.updatedAt,
   }).from(ballots).where(and(
     eq(ballots.competitionId, competitionId),
@@ -124,7 +123,6 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
   return {
     id: ballot.id,
     status: ballot.status,
-    activatedAt: ballot.activatedAt?.toISOString() ?? null,
     updatedAt: ballot.updatedAt.toISOString(),
     allocations,
     votePosts,
@@ -182,7 +180,7 @@ export async function verifyBallotProof(input: unknown) {
   )).limit(1);
   if (!challenge) throw new Error("CHALLENGE_EXPIRED");
   const additions = voteAdditionsSchema.parse(challenge.payload.additions);
-  const activatedAt = new Date();
+  const acceptedAt = new Date();
   await assertValidDistribution(database, competition.id, additions);
   const entryAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
     .from(proposalAssets)
@@ -191,17 +189,17 @@ export async function verifyBallotProof(input: unknown) {
     .where(and(
       eq(proposals.competitionId, competition.id),
       eq(proposals.status, "confirmed"),
-      lte(proposals.acceptedAt, activatedAt),
+      lte(proposals.acceptedAt, acceptedAt),
     ));
-  const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), activatedAt);
-  await assertBallotCanAccept(database, competition.id, session.user.id, additions, activatedAt);
+  const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), acceptedAt);
+  await assertBallotCanAccept(database, competition.id, session.user.id, additions, acceptedAt);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
   if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
 
   // Repeat free checks immediately before reserving the ballot transaction.
   await assertValidDistribution(database, competition.id, additions);
-  await assertBallotCanAccept(database, competition.id, session.user.id, additions, activatedAt);
+  await assertBallotCanAccept(database, competition.id, session.user.id, additions, acceptedAt);
   const [activeChallenge] = await database.select({ id: xActionChallenges.id }).from(xActionChallenges).where(and(
     eq(xActionChallenges.id, challenge.id),
     isNull(xActionChallenges.consumedAt),
@@ -209,18 +207,18 @@ export async function verifyBallotProof(input: unknown) {
   )).limit(1);
   if (!activeChallenge) throw new Error("CHALLENGE_EXPIRED");
   const result = await database.transaction(async (transaction) => {
-    const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: activatedAt }).where(and(
-      eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, activatedAt)
+    const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(
+      eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt)
     )).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
     const [openCompetition] = await transaction.select({ id: competitions.id, startsAt: competitions.startsAt }).from(competitions).where(and(
       eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`
     )).limit(1);
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
-    if (activatedAt < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
+    if (acceptedAt < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
 
     await transaction.execute(sql`select id from ballots where competition_id = ${competition.id} and voter_user_id = ${session.user.id} for update`);
-    const [existing] = await transaction.select({ id: ballots.id, status: ballots.status, activatedAt: ballots.activatedAt }).from(ballots).where(and(
+    const [existing] = await transaction.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
       eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id)
     )).limit(1);
     const previousAllocations = existing?.status === "valid"
@@ -228,8 +226,7 @@ export async function verifyBallotProof(input: unknown) {
         .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
       : [];
     const existingVotes = totalVotes(previousAllocations);
-    const votesAdded = totalVotes(additions);
-    assertVotesUnlocked(openCompetition.startsAt, existingVotes, additions, activatedAt);
+    assertVotesUnlocked(openCompetition.startsAt, existingVotes, additions, acceptedAt);
 
     // TwitterAPI.io is deliberately last, after every domain check and ballot lock.
     await assertValidDistribution(transaction, competition.id, additions);
@@ -245,12 +242,12 @@ export async function verifyBallotProof(input: unknown) {
       xAuthorId: user.xUserId,
       xAuthorUsername: user.xUsername,
       postUrl: post.postUrl,
-      postedAt: activatedAt,
+      postedAt: acceptedAt,
       editHistoryIds: [post.id],
       evidenceHash: hashXPostText(post.text),
       status: "valid",
-      verifiedAt: activatedAt,
-      lastCheckedAt: activatedAt,
+      verifiedAt: acceptedAt,
+      lastCheckedAt: acceptedAt,
       rawText: post.text,
       rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000),
     }).returning();
@@ -258,19 +255,18 @@ export async function verifyBallotProof(input: unknown) {
     const isUpdate = existing?.status === "valid";
     const [ballot] = existing
       ? await transaction.update(ballots).set({
-        ...(isUpdate ? {} : { activatedAt }),
         followerCount: user.followersCount,
         status: "valid",
         invalidatedAt: null,
-        updatedAt: activatedAt,
+        updatedAt: acceptedAt,
       }).where(eq(ballots.id, existing.id)).returning()
-      : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, followerCount: user.followersCount, status: "valid", activatedAt }).returning();
+      : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, followerCount: user.followersCount, status: "valid" }).returning();
     if (existing && !isUpdate) await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
     await transaction.insert(ballotAllocations)
-      .values(additions.map((addition) => ({ ballotId: ballot.id, ...addition, updatedAt: activatedAt })))
+      .values(additions.map((addition) => ({ ballotId: ballot.id, ...addition, updatedAt: acceptedAt })))
       .onConflictDoUpdate({
         target: [ballotAllocations.ballotId, ballotAllocations.proposalId],
-        set: { votes: sql`${ballotAllocations.votes} + excluded.votes`, updatedAt: activatedAt },
+        set: { votes: sql`${ballotAllocations.votes} + excluded.votes`, updatedAt: acceptedAt },
       });
     await transaction.insert(voteTranches).values(additions.map((addition) => ({
       competitionId: competition.id,
@@ -279,26 +275,16 @@ export async function verifyBallotProof(input: unknown) {
       proposalId: addition.proposalId,
       evidenceId: evidence.id,
       quantity: addition.votes,
-      acceptedAt: activatedAt,
+      acceptedAt,
       entryPriceCaptureRunId: entryCapture.runId,
     })));
-    await transaction.insert(activityEvents).values({
-      competitionId: competition.id,
-      actorUserId: session.user.id,
-      ballotId: ballot.id,
-      evidenceId: evidence.id,
-      eventType: isUpdate ? "ballot.updated" : "ballot.activated",
-      occurredAt: activatedAt,
-      ruleVersion: competition.ruleVersion,
-      metadata: { votesAdded, votes: existingVotes + votesAdded, proposals: additions.length, xPostId: post.id, verifiedBy: "oembed-challenge" },
-    });
     return {
       action: "ballot" as const,
       ballotId: ballot.id,
       postUrl: evidence.postUrl,
       embedHtml: post.embedHtml,
       additions,
-      updatedAt: activatedAt.toISOString(),
+      updatedAt: acceptedAt.toISOString(),
     };
   });
   return result;

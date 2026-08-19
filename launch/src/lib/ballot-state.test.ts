@@ -5,7 +5,6 @@ import { getCommittedBallotState } from "./ballot-state";
 const ballot = (proposalId: string): BallotSummary => ({
   id: "11111111-1111-4111-8111-111111111111",
   status: "valid",
-  activatedAt: "2026-08-19T01:00:00.000Z",
   updatedAt: "2026-08-19T01:00:00.000Z",
   allocations: [{ proposalId, votes: 1 }],
   votePosts: [],

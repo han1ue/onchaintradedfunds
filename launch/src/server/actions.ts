@@ -1,12 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { COMPETITION_RULES } from "@/lib/competition";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
-  activityEvents, ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor, requireSession } from "./guards";
@@ -216,7 +215,6 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
     const [confirmed] = await transaction.update(proposals).set({ status: "confirmed", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
     if (!confirmed) throw new Error("PROPOSAL_NOT_FOUND");
-    await transaction.insert(activityEvents).values({ competitionId: competition.id, actorUserId: session.user.id, proposalId: proposal.id, evidenceId: evidence.id, eventType: "proposal.confirmed", occurredAt: acceptedAt, ruleVersion: competition.ruleVersion, metadata: { ticker: proposal.ticker, xPostId: post.id, verifiedBy: "oembed-challenge" } });
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
   return result;
@@ -248,15 +246,6 @@ export async function deleteProposal(proposalId: string, confirmationName: strin
       )`
     )).returning();
     if (!deleted) throw new Error("PROPOSAL_HAS_VOTES");
-    await transaction.insert(activityEvents).values({
-      competitionId: competition.id,
-      actorUserId: session.user.id,
-      proposalId: deleted.id,
-      eventType: "proposal.deleted",
-      occurredAt: deletedAt,
-      ruleVersion: COMPETITION_RULES.ruleVersion,
-      metadata: { ticker: deleted.ticker },
-    });
     return deleted;
   });
 }

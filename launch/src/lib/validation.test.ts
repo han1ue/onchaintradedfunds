@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, earliestLaunchAt, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteAdditionsSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
+import { ballotActivationSchema, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteAdditionsSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
@@ -125,13 +125,10 @@ describe("earned-vote ballot validation", () => {
   });
 });
 
-describe("ranking and launch windows", () => {
+describe("ranking", () => {
   it("sorts votes, acceptance time, then immutable id into ordinal ranks", () => {
     const time = new Date("2026-01-01T00:00:00Z");
     const ranked = rankEntries([{ id: "b", votes: 10, acceptedAt: time }, { id: "a", votes: 10, acceptedAt: time }, { id: "c", votes: 11, acceptedAt: new Date("2026-01-02") }]);
     expect(ranked.map((row) => [row.id, row.rank])).toEqual([["c", 1], ["a", 2], ["b", 3]]);
-  });
-  it("uses independent four-day eligibility intervals", () => {
-    expect(earliestLaunchAt(new Date("2026-01-01T00:00:00Z"), 3).toISOString()).toBe("2026-01-09T00:00:00.000Z");
   });
 });

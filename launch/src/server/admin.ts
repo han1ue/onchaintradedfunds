@@ -1,11 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { COMPETITION_RULES } from "@/lib/competition";
 import { requireSession } from "./guards";
 import { adminXIds } from "./env";
 import { requireDb } from "./db";
-import {
-  activityEvents, adminActions, ballots, evidenceChecks, proposals, tweetEvidence
-} from "./db/schema";
+import { adminActions, ballots, evidenceChecks, proposals, tweetEvidence, voteTranches } from "./db/schema";
 import { getXPostsByIds, hashXPostText } from "./x";
 
 type EvidenceRecord = typeof tweetEvidence.$inferSelect;
@@ -15,9 +12,9 @@ async function invalidateEvidence(database: ReturnType<typeof requireDb>, eviden
     await transaction.update(tweetEvidence).set({ status: "invalid", reason, lastCheckedAt: new Date() }).where(eq(tweetEvidence.id, evidence.id));
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "invalid", reason });
     if (evidence.action === "vote") {
-      const [voteActivity] = await transaction.select({ ballotId: activityEvents.ballotId }).from(activityEvents)
-        .where(eq(activityEvents.evidenceId, evidence.id)).limit(1);
-      if (voteActivity?.ballotId) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, voteActivity.ballotId));
+      const [tranche] = await transaction.select({ ballotId: voteTranches.ballotId }).from(voteTranches)
+        .where(eq(voteTranches.evidenceId, evidence.id)).limit(1);
+      if (tranche) await transaction.update(ballots).set({ status: "invalid", invalidatedAt: new Date(), updatedAt: new Date() }).where(eq(ballots.id, tranche.ballotId));
     }
     if (evidence.action === "submission" && evidence.proposalId) await transaction.update(proposals).set({ status: "deleted", moderatedReason: `X post invalid: ${reason}`, updatedAt: new Date() }).where(eq(proposals.id, evidence.proposalId));
   });
@@ -64,7 +61,6 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
   if (!before) throw new Error("PROPOSAL_NOT_FOUND");
   const [after] = await database.update(proposals).set({ status: "deleted", moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
   await database.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before, after });
-  await database.insert(activityEvents).values({ competitionId: before.competitionId, actorUserId: before.creatorUserId, proposalId, eventType: `proposal.${status}`, occurredAt: new Date(), ruleVersion: COMPETITION_RULES.ruleVersion, metadata: { reason } });
   return after;
 }
 

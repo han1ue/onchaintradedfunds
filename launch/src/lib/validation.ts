@@ -99,8 +99,3 @@ export function rankEntries<T extends Rankable>(entries: T[]) {
     .sort((a, b) => b.votes - a.votes || a.acceptedAt.getTime() - b.acceptedAt.getTime() || a.id.localeCompare(b.id))
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
-
-export function earliestLaunchAt(start: Date, rank: number, intervalDays = COMPETITION_RULES.launchIntervalDays) {
-  if (!Number.isInteger(rank) || rank < 1) throw new Error("INVALID_RANK");
-  return new Date(start.getTime() + (rank - 1) * intervalDays * 86_400_000);
-}

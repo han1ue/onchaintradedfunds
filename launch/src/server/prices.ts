@@ -246,7 +246,7 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
 
 export const PRICE_CHECKPOINT_FRESHNESS_MS = 90 * 60_000;
 
-export async function getNewestCompletePriceCheckpoint(assetIds: string[], activatedAt: Date) {
+export async function getNewestCompletePriceCheckpoint(assetIds: string[], acceptedAt: Date) {
   if (!sqlClient || assetIds.length === 0) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");
   const rows = await sqlClient<{ id: string; sampledAt: string }[]>`
     select pcr.id::text, pcr.sampled_at as "sampledAt"
@@ -254,8 +254,8 @@ export async function getNewestCompletePriceCheckpoint(assetIds: string[], activ
     join asset_price_snapshots aps on aps.capture_run_id = pcr.id
     where pcr.purpose = 'scoring'
       and pcr.status = 'complete'
-      and pcr.sampled_at <= ${activatedAt.toISOString()}::timestamptz
-      and pcr.sampled_at >= ${new Date(activatedAt.getTime() - PRICE_CHECKPOINT_FRESHNESS_MS).toISOString()}::timestamptz
+      and pcr.sampled_at <= ${acceptedAt.toISOString()}::timestamptz
+      and pcr.sampled_at >= ${new Date(acceptedAt.getTime() - PRICE_CHECKPOINT_FRESHNESS_MS).toISOString()}::timestamptz
       and aps.asset_id in ${sqlClient(assetIds)}
     group by pcr.id, pcr.sampled_at
     having count(distinct aps.asset_id) = ${assetIds.length}
