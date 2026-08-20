@@ -768,6 +768,21 @@ button { color: inherit; }
 .inlineLink { color: var(--teal); font-weight: 650; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--teal) 42%, transparent); text-underline-offset: 3px; }
 .inlineLink:hover { text-decoration-color: currentColor; }
 .adminGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.adminModerationLayout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+.adminModerationCard { display: grid; gap: 18px; }
+.adminSectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.adminSectionHeading h2 { margin: 0 0 5px; font-size: .98rem; letter-spacing: -.015em; }
+.adminSectionHeading p, .adminAuditNote p, .adminEmptyState p, .adminModerationResult p { margin: 0; color: var(--text-muted); font-size: .75rem; line-height: 1.55; }
+.adminSectionHeading > svg { flex: 0 0 auto; color: var(--teal); }
+.adminModerationForm { display: grid; gap: 14px; }
+.adminModerateButton { justify-self: start; }
+.adminAuditNote { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.adminAuditNote strong { display: block; margin-bottom: 6px; font-size: .78rem; }
+.adminEmptyState, .adminModerationResult { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.adminEmptyState > svg, .adminModerationResult.success > svg { flex: 0 0 auto; color: var(--green); }
+.adminModerationResult.error { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.adminModerationResult.error > svg { flex: 0 0 auto; color: var(--danger); }
+.adminModerationResult.success p { color: var(--text-soft); }
 .callout { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--blue) 4%, var(--card-raised)); color: var(--text-soft); font-size: .78rem; line-height: 1.5; }
 .callout.positive { border-color: color-mix(in srgb, var(--green) 42%, var(--border)); background: color-mix(in srgb, var(--green) 5%, var(--card-raised)); color: color-mix(in srgb, var(--green) 70%, var(--text)); }
 .callout.warning { border-color: color-mix(in srgb, var(--gold) 42%, var(--border)); background: color-mix(in srgb, var(--gold) 4%, var(--card-raised)); }
@@ -909,7 +924,8 @@ button { color: inherit; }
   .creatorBlock { justify-items: start; }
   .accountHeader { align-items: stretch; flex-direction: column; gap: 16px; }
   .accountControls { width: 100%; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-  .accountMetrics, .adminGrid { grid-template-columns: 1fr; }
+  .accountMetrics, .adminGrid, .adminModerationLayout { grid-template-columns: 1fr; }
+  .adminModerateButton { width: 100%; }
   .accountVotingGate { grid-template-columns: 32px minmax(0, 1fr); }
   .accountVotingGate .button { grid-column: 2; justify-self: start; }
   .pointsExplainerHeader { grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }

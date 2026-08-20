@@ -1,7 +1,37 @@
+import { and, asc, eq, gt, ne } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { Database, RefreshCw, Shield } from "lucide-react";
-import { SectionCard } from "@/components/ui";
+import { AdminModerationPanel } from "@/components/AdminModerationPanel";
 import { auth } from "@/server/auth";
+import { requireDb } from "@/server/db";
+import { competitions, proposals } from "@/server/db/schema";
 import { adminXIds } from "@/server/env";
+
 export const metadata = { title: "Admin" };
-export default async function AdminPage() { const session = await auth(); if (!session?.user?.xUserId || !adminXIds.has(session.user.xUserId)) redirect("/"); return <div className="pageShell contentPage"><header className="pageHeader"><h1>Competition operations</h1><p>Launch-only controls. Every mutation requires an allowlisted X ID and a written audit reason.</p></header><div className="adminGrid"><SectionCard className="compactInfo"><Database /><div><strong>Asset metadata</strong><p>The database maintains names, token contracts, quality labels, and convenient pricing suggestions. Every proposal snapshots its exact user-selected pricing addresses.</p></div></SectionCard><SectionCard className="compactInfo"><Shield /><div><strong>Moderation</strong><p>Hide or disqualify proposals, invalidate evidence, and preserve before/after state.</p></div></SectionCard><SectionCard className="compactInfo"><RefreshCw /><div><strong>Evidence checks</strong><p>Retry unavailable X reads and inspect post validity history.</p></div></SectionCard></div></div>; }
+
+export default async function AdminPage() {
+  const session = await auth();
+  if (!session?.user?.xUserId || !adminXIds.has(session.user.xUserId)) redirect("/");
+
+  const database = requireDb();
+  const availableProposals = await database.select({
+    id: proposals.id,
+    name: proposals.name,
+    ticker: proposals.ticker,
+    status: proposals.status,
+  }).from(proposals)
+    .innerJoin(competitions, eq(competitions.id, proposals.competitionId))
+    .where(and(
+      ne(proposals.status, "deleted"),
+      eq(competitions.phase, "open"),
+      gt(competitions.endsAt, new Date()),
+    ))
+    .orderBy(asc(proposals.name));
+
+  return <div className="pageShell contentPage">
+    <header className="pageHeader">
+      <h1>Competition operations</h1>
+      <p>Moderate active proposals. Every action is attributed to @{session.user.xUsername} and saved with its reason and before/after state.</p>
+    </header>
+    <AdminModerationPanel proposals={availableProposals} />
+  </div>;
+}
