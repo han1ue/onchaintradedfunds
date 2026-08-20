@@ -1,9 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
-import { COMPETITION_RULES, getVotingStartsAt } from "@/lib/competition";
+import { getVotingStartsAt } from "@/lib/competition";
 import { auth } from "./auth";
 import { requireDb } from "./db";
 import { competitions, users } from "./db/schema";
 import { assertStoredXEligible } from "./x";
+import { assertCompetitionRulesSnapshot } from "./competition-rules";
 
 export async function requireSession() {
   const session = await auth();
@@ -17,7 +18,8 @@ export async function currentCompetition() {
     .where(and(eq(competitions.phase, "open"), sql`${competitions.startsAt} <= now()`, sql`${competitions.endsAt} > now()`))
     .limit(1);
   if (!competition) throw new Error("COMPETITION_NOT_OPEN");
-  return { ...competition, ...COMPETITION_RULES };
+  const rules = assertCompetitionRulesSnapshot(competition.rules, competition.rulesHash);
+  return { ...competition, rules, ...rules };
 }
 
 export async function priceCapturePurpose(now: Date = new Date()) {
@@ -39,10 +41,10 @@ export async function requireEligibleActor(options: { votingRequired?: boolean }
   const competition = await currentCompetition();
   const [user] = await database.select().from(users).where(eq(users.id, session.user.id)).limit(1);
   if (!user || user.xUserId !== session.user.xUserId) throw new Error("X_RECONNECT_REQUIRED");
-  if (options.votingRequired && Date.now() < getVotingStartsAt(competition.startsAt).getTime()) throw new Error("VOTING_NOT_OPEN");
+  if (options.votingRequired && Date.now() < getVotingStartsAt(competition.startsAt, competition.rules).getTime()) throw new Error("VOTING_NOT_OPEN");
   assertStoredXEligible(user, {
-    minAccountAgeDays: COMPETITION_RULES.minAccountAgeDays,
-    minFollowers: COMPETITION_RULES.minFollowers
+    minAccountAgeDays: competition.rules.minAccountAgeDays,
+    minFollowers: competition.rules.minFollowers
   });
   return { session, user, competition };
 }

@@ -7,7 +7,7 @@ import { Button, Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
 import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
-import { COMPETITION_RULES, getCompetitionStatus } from "@/lib/competition";
+import { getCompetitionStatus } from "@/lib/competition";
 import { authErrorMessages } from "@/lib/errors";
 import { selectRecentProposals } from "@/lib/recent-activity";
 
@@ -44,10 +44,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <ResponsiveLeaderboard entries={leaderboardPreview} submissionsOpen={status.submissionsOpen} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
-      <HowItWorks eligibility={eligibility} votingOpen={status.votingOpen} votingStartsAt={status.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} />
+      <HowItWorks eligibility={eligibility} rules={competition.rules} votingOpen={status.votingOpen} votingStartsAt={status.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.minFollowers.toLocaleString()} followers.</li><li>Create one OTF per X account; proposals cannot be edited after creation.</li><li>Voting starts after the 7-day submission week with {COMPETITION_RULES.initialVotes} unlocked votes.</li><li>One vote unlocks every {COMPETITION_RULES.voteUnlockIntervalDays} voting days, up to {COMPETITION_RULES.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.rules.minFollowers.toLocaleString()} followers.</li><li>Submit as many OTF proposals as you want; proposals cannot be edited after creation.</li><li>Voting starts after the {competition.rules.submissionOnlyDays}-day submission week with {competition.rules.initialVotes} unlocked votes.</li><li>{competition.rules.votesPerUnlock} vote unlocks every {competition.rules.voteUnlockIntervalDays} voting days, up to {competition.rules.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
       <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><History size={18} /></div><div className="participationActivity">{recentProposals.length ? recentProposals.map((proposal) => <div key={proposal.id}><Layers3 size={16} /><span className="activitySentence"><a href={`https://x.com/${encodeURIComponent(proposal.creator.username)}`} target="_blank" rel="noreferrer">@{proposal.creator.username}</a><span>proposed</span><Link href={`/otfs/${proposal.slug}`}>{proposal.name}</Link></span></div>) : <div><Layers3 size={16} /><span>No recent proposals yet.</span></div>}</div></SectionCard>
     </div>
   </div>;

@@ -20,7 +20,7 @@ The public read surfaces use clearly labelled preview data when `DATABASE_URL` i
 4. Configure Redis Cloud with `REDIS_URL` and Cloudflare Turnstile with the public site key, secret key, and `TURNSTILE_HOSTNAMES`. Use `localhost,127.0.0.1` locally and only the exact public launch hostname in production. Production writes fail closed when launch data, rate limiting, Turnstile, or X checks are unavailable.
 5. Verify the seeded supported-asset records after migration. The database is the sole runtime source for asset names, tickers, Robinhood Chain token contracts, and checkpoint price sources.
 
-The direct-post implementation replaces the original, pre-deployment challenge schema in the initial migration. If that earlier migration was applied to a disposable launch database, recreate or reset that launch-only branch before running this migration.
+The migration history contains the current-state baseline and one idempotent rules-snapshot backfill for databases that recorded the baseline before those columns existed. The seeded competition includes the canonical rules JSON, its SHA-256 hash, and the time it was frozen; those fields become immutable when the competition opens. Do not replay retired reset migrations from an older checkout.
 
 The baseline stock-token records use one-time contract data from Robinhood's public APIs for Robinhood Chain (`4663`). Assets are included only after their active 18-decimal deployment and live Robinhood bid are verified. ETH exposure is represented by Robinhood Chain WETH. Runtime pages use the database rather than a second static asset catalog.
 

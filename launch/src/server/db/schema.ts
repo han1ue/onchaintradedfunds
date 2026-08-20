@@ -1,4 +1,5 @@
 import { relations, sql } from "drizzle-orm";
+import type { CompetitionRules } from "@/lib/competition";
 import {
   boolean,
   check,
@@ -82,10 +83,14 @@ export const competitions = pgTable("competitions", {
   phase: competitionPhase("phase").default("draft").notNull(),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  rules: jsonb("rules").$type<CompetitionRules>().notNull(),
+  rulesHash: text("rules_hash").notNull(),
+  rulesFrozenAt: timestamp("rules_frozen_at", { withTimezone: true }).notNull(),
   ...timestamps
 }, (table) => [
   check("competition_singleton", sql`${table.singleton} = true`),
-  check("competition_time_order", sql`${table.endsAt} > ${table.startsAt}`)
+  check("competition_time_order", sql`${table.endsAt} > ${table.startsAt}`),
+  check("competition_rules_hash", sql`${table.rulesHash} ~ '^[0-9a-f]{64}$'`)
 ]);
 
 export const eligibleAssets = pgTable("eligible_assets", {
@@ -102,6 +107,7 @@ export const eligibleAssets = pgTable("eligible_assets", {
 }, (table) => [
   index("eligible_asset_symbol_idx").on(sql`upper(${table.symbol})`),
   uniqueIndex("eligible_asset_network_contract_uq").on(table.network, sql`lower(${table.contractAddress})`),
+  check("eligible_asset_contract_address", sql`${table.contractAddress} ~ '^0x[0-9a-fA-F]{40}$'`),
   check("eligible_asset_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid', 'coingecko-usd')`),
   check("eligible_asset_quality", sql`${table.quality} in ('high', 'normal')`),
   check("eligible_asset_exact_decimals", sql`${table.decimals} = 18`)

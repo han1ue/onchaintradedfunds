@@ -5,7 +5,7 @@ import { CalendarClock, CheckCircle2, CircleAlert, Clock3, ExternalLink, LockKey
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getCommittedBallotState } from "@/lib/ballot-state";
-import { COMPETITION_RULES } from "@/lib/competition";
+import type { CompetitionRules } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import type { BallotSummary, LeaderboardEntry, ParticipationEligibility } from "@/lib/types";
 import { formatProposalVoteCountdown, getProposalVotingStartsAt, isProposalVotingOpen } from "@/lib/proposal-voting";
@@ -39,10 +39,11 @@ function sumVotes(votes: Record<string, number>) {
   return Object.values(votes).reduce((sum, value) => sum + value, 0);
 }
 
-export function BallotPanel({ proposals, ballot, eligibility, availability, focusSlug, turnstileSiteKey, siteUrl, currentTime }: {
+export function BallotPanel({ proposals, ballot, eligibility, rules, availability, focusSlug, turnstileSiteKey, siteUrl, currentTime }: {
   proposals: LeaderboardEntry[];
   ballot: BallotSummary | null;
   eligibility: ParticipationEligibility;
+  rules: CompetitionRules;
   availability: VoteAvailability;
   focusSlug?: string;
   turnstileSiteKey?: string;
@@ -103,7 +104,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
     setMessage(null);
     setAdditions((current) => {
       const currentValue = current[proposalId] ?? 0;
-      const nextValue = Math.max(0, Math.min(COMPETITION_RULES.totalVotes, currentValue + delta));
+      const nextValue = Math.max(0, Math.min(rules.totalVotes, currentValue + delta));
       const nextTotal = castTotal + sumVotes(current) - currentValue + nextValue;
       if (nextTotal > availability.unlockedVotes) return current;
       return { ...current, [proposalId]: nextValue };
@@ -177,7 +178,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
   if (availability.competitionEnded) return <SectionCard className="emptyState phaseBlocked"><LockKeyhole size={28} /><h2>Voting is closed</h2><p>The competition has ended. Cast votes and proposal records are locked for the final audit.</p></SectionCard>;
   if (!availability.votingOpen) return <SectionCard className="emptyState phaseBlocked"><CalendarClock size={28} /><h2>Voting opens in</h2><CompetitionCountdown target={availability.votingStartsAt} currentTime={currentTime} /><p>Three votes unlock at {formatDateTime(availability.votingStartsAt)}. Until then, the first week is reserved for OTF submissions.</p><Button href="/submit">Create an OTF</Button></SectionCard>;
   if (!proposals.length) return <SectionCard className="emptyState ballotEmptyState"><Vote size={28} /><h2>No OTF proposals available</h2><p>Your unlocked votes remain available until proposals join the competition.</p><Button href="/submit">Create the first OTF</Button></SectionCard>;
-  if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {COMPETITION_RULES.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
+  if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {rules.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
     <div className="ballotActionIntro"><strong>Publish your voting post</strong><p>{challenge ? `Publish the prepared X post, then paste its URL below to cast ${newVotes} ${newVotes === 1 ? "vote" : "votes"}.` : newVotes > 0 ? `${newVotes} new ${newVotes === 1 ? "vote is" : "votes are"} ready. One X post can verify this whole batch.` : unlockedRemaining > 0 && hasLockedProposals && proposals.every((proposal) => !isProposalVotingOpen(proposal.acceptedAt, nowMs)) ? "New OTFs become votable 30 minutes after confirmation. Their controls unlock automatically." : unlockedRemaining > 0 ? "Use the + controls to choose one or more votes. Every voting action requires a new X post." : availability.nextVoteUnlockAt ? "You have cast every vote currently unlocked." : "You have cast all 12 votes."}</p></div>
@@ -203,7 +204,7 @@ export function BallotPanel({ proposals, ballot, eligibility, availability, focu
         </div>
       </div>;
     })}</div>
-  </SectionCard><aside className="ballotRail"><SectionCard className="ballotSummary"><div className="ballotSummaryStatus"><div className="ballotSummaryCount"><span>Remaining votes</span><strong className={unlockedRemaining === 0 ? "complete" : ""}>{unlockedRemaining}</strong></div><p>{availability.nextVoteUnlockAt ? `Next vote unlocks ${formatDateTime(availability.nextVoteUnlockAt)}.` : `All ${COMPETITION_RULES.totalVotes} votes are unlocked. No vote is added on voting day 30.`}</p></div><div className="voteUnlockTrack" role="progressbar" aria-label="Votes unlocked" aria-valuemin={0} aria-valuemax={COMPETITION_RULES.totalVotes} aria-valuenow={availability.unlockedVotes}><span style={{ width: `${availability.unlockedVotes / COMPETITION_RULES.totalVotes * 100}%` }} /></div><small>{availability.unlockedVotes} of {COMPETITION_RULES.totalVotes} unlocked</small></SectionCard></aside>
+  </SectionCard><aside className="ballotRail"><SectionCard className="ballotSummary"><div className="ballotSummaryStatus"><div className="ballotSummaryCount"><span>Remaining votes</span><strong className={unlockedRemaining === 0 ? "complete" : ""}>{unlockedRemaining}</strong></div><p>{availability.nextVoteUnlockAt ? `Next vote unlocks ${formatDateTime(availability.nextVoteUnlockAt)}.` : `All ${rules.totalVotes} votes are unlocked. No vote is added on the final voting day.`}</p></div><div className="voteUnlockTrack" role="progressbar" aria-label="Votes unlocked" aria-valuemin={0} aria-valuemax={rules.totalVotes} aria-valuenow={availability.unlockedVotes}><span style={{ width: `${availability.unlockedVotes / rules.totalVotes * 100}%` }} /></div><small>{availability.unlockedVotes} of {rules.totalVotes} unlocked</small></SectionCard></aside>
     <div className="ballotActionArea">{actionPanel}</div>
   </div>;
 }

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  new URL("../../../drizzle/0011_freeze_closed_competition.sql", import.meta.url),
+  new URL("../../../drizzle/0000_launch_baseline.sql", import.meta.url),
   "utf8",
 );
 

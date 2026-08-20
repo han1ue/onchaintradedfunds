@@ -3,6 +3,22 @@ export const COMPETITION_IDENTITY = {
   name: "Genesis Competition",
 } as const;
 
+export type CompetitionRules = {
+  minFollowers: number;
+  minAccountAgeDays: number;
+  minAssets: number;
+  minAssetWeightBps: number;
+  portfolioWeightBps: number;
+  submissionOnlyDays: number;
+  votingDays: number;
+  initialVotes: number;
+  votesPerUnlock: number;
+  voteUnlockIntervalDays: number;
+  totalVotes: number;
+  maxProposalsPerAccount: number | null;
+  eligibilityAllowlistBypasses: readonly ("verified" | "minFollowers")[];
+};
+
 export const COMPETITION_RULES = {
   minFollowers: 100,
   minAccountAgeDays: 30,
@@ -12,9 +28,13 @@ export const COMPETITION_RULES = {
   submissionOnlyDays: 7,
   votingDays: 30,
   initialVotes: 3,
+  votesPerUnlock: 1,
   voteUnlockIntervalDays: 3,
   totalVotes: 12,
-} as const;
+  maxProposalsPerAccount: null,
+  eligibilityAllowlistBypasses: ["verified", "minFollowers"],
+} as const satisfies CompetitionRules;
+export const COMPETITION_RULES_HASH = "5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9";
 
 export const DAY_MS = 86_400_000;
 export const COMPETITION_PROGRESS_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -23,40 +43,42 @@ type CompetitionWindow = {
   phase: "draft" | "scheduled" | "open" | "auditing" | "final" | "cancelled";
   startsAt: string | Date;
   endsAt: string | Date;
+  rules?: CompetitionRules;
 };
 
 export type CompetitionStage = "upcoming" | "submissions" | "voting" | "review" | "final" | "cancelled";
 
-export function getVotingStartsAt(startsAt: string | Date) {
-  return new Date(new Date(startsAt).getTime() + COMPETITION_RULES.submissionOnlyDays * DAY_MS);
+export function getVotingStartsAt(startsAt: string | Date, rules: CompetitionRules = COMPETITION_RULES) {
+  return new Date(new Date(startsAt).getTime() + rules.submissionOnlyDays * DAY_MS);
 }
 
-export function getUnlockedVoteCount(startsAt: string | Date, now: Date = new Date()) {
-  const votingStartsAt = getVotingStartsAt(startsAt);
+export function getUnlockedVoteCount(startsAt: string | Date, now: Date = new Date(), rules: CompetitionRules = COMPETITION_RULES) {
+  const votingStartsAt = getVotingStartsAt(startsAt, rules);
   const elapsedVotingMs = now.getTime() - votingStartsAt.getTime();
   if (elapsedVotingMs < 0) return 0;
   const elapsedVotingDays = Math.floor(elapsedVotingMs / DAY_MS);
   return Math.min(
-    COMPETITION_RULES.totalVotes,
-    COMPETITION_RULES.initialVotes + Math.floor(elapsedVotingDays / COMPETITION_RULES.voteUnlockIntervalDays),
+    rules.totalVotes,
+    rules.initialVotes + Math.floor(elapsedVotingDays / rules.voteUnlockIntervalDays) * rules.votesPerUnlock,
   );
 }
 
-export function getNextVoteUnlockAt(startsAt: string | Date, now: Date = new Date()) {
-  const unlockedVotes = getUnlockedVoteCount(startsAt, now);
-  if (unlockedVotes === 0) return getVotingStartsAt(startsAt);
-  if (unlockedVotes >= COMPETITION_RULES.totalVotes) return null;
-  const unlockNumber = unlockedVotes - COMPETITION_RULES.initialVotes + 1;
-  return new Date(getVotingStartsAt(startsAt).getTime() + unlockNumber * COMPETITION_RULES.voteUnlockIntervalDays * DAY_MS);
+export function getNextVoteUnlockAt(startsAt: string | Date, now: Date = new Date(), rules: CompetitionRules = COMPETITION_RULES) {
+  const unlockedVotes = getUnlockedVoteCount(startsAt, now, rules);
+  if (unlockedVotes === 0) return getVotingStartsAt(startsAt, rules);
+  if (unlockedVotes >= rules.totalVotes) return null;
+  const completedUnlocks = Math.floor((unlockedVotes - rules.initialVotes) / rules.votesPerUnlock);
+  return new Date(getVotingStartsAt(startsAt, rules).getTime() + (completedUnlocks + 1) * rules.voteUnlockIntervalDays * DAY_MS);
 }
 
 export function getCompetitionTiming(competition: CompetitionWindow, now: Date = new Date()) {
+  const rules = competition.rules ?? COMPETITION_RULES;
   const startsAt = new Date(competition.startsAt);
   const endsAt = new Date(competition.endsAt);
-  const votingStartsAt = getVotingStartsAt(startsAt);
+  const votingStartsAt = getVotingStartsAt(startsAt, rules);
   const elapsedMs = now.getTime() - startsAt.getTime();
   const elapsedDays = Math.floor(elapsedMs / DAY_MS);
-  const totalDays = COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays;
+  const totalDays = rules.submissionOnlyDays + rules.votingDays;
   let stage: CompetitionStage;
 
   if (competition.phase === "cancelled") stage = "cancelled";
@@ -75,8 +97,8 @@ export function getCompetitionTiming(competition: CompetitionWindow, now: Date =
         ? totalDays
         : Math.max(0, Math.min(totalDays, Math.ceil(elapsedMs / COMPETITION_PROGRESS_INTERVAL_MS) * COMPETITION_PROGRESS_INTERVAL_MS / DAY_MS)),
     votingStartsAt,
-    unlockedVotes: getUnlockedVoteCount(startsAt, now),
-    nextVoteUnlockAt: stage === "voting" ? getNextVoteUnlockAt(startsAt, now) : null,
+    unlockedVotes: getUnlockedVoteCount(startsAt, now, rules),
+    nextVoteUnlockAt: stage === "voting" ? getNextVoteUnlockAt(startsAt, now, rules) : null,
     submissionsOpen: stage === "submissions" || stage === "voting",
     votingOpen: stage === "voting",
   };

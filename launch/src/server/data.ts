@@ -1,22 +1,23 @@
 import { demoAssets, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
-import { COMPETITION_IDENTITY, COMPETITION_RULES } from "@/lib/competition";
+import { COMPETITION_IDENTITY } from "@/lib/competition";
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "@/lib/types";
 import { sqlClient } from "./db";
+import { assertCompetitionRulesSnapshot } from "./competition-rules";
 
 export async function getCompetition(): Promise<CompetitionSummary> {
   if (!sqlClient) return demoCompetition;
   const rows = await sqlClient<CompetitionSummary[]>`
     select c.id::text, ${COMPETITION_IDENTITY.slug}::text as slug, ${COMPETITION_IDENTITY.name}::text as name,
       c.phase, c.starts_at as "startsAt", c.ends_at as "endsAt",
-      ${COMPETITION_RULES.minFollowers}::int as "minFollowers",
-      ${COMPETITION_RULES.minAccountAgeDays}::int as "minAccountAgeDays",
+      c.rules, c.rules_hash as "rulesHash", c.rules_frozen_at as "rulesFrozenAt",
       (select count(*)::int from proposals p where p.competition_id = c.id and p.status = 'confirmed') as "proposalCount",
       (select coalesce(sum(ba.votes), 0)::int from ballots b join ballot_allocations ba on ba.ballot_id = b.id where b.competition_id = c.id and b.status = 'valid') as "voteCount",
       (select count(*)::int from ballots b where b.competition_id = c.id and b.status = 'valid') as "uniqueVoterCount"
     from competitions c
     limit 1`;
   if (!rows[0]) throw new Error("COMPETITION_NOT_FOUND");
-  return rows[0];
+  const rules = assertCompetitionRulesSnapshot(rows[0].rules, rows[0].rulesHash);
+  return { ...rows[0], rules, minFollowers: rules.minFollowers, minAccountAgeDays: rules.minAccountAgeDays };
 }
 
 export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {

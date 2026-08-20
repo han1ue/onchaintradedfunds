@@ -1,5 +1,5 @@
 import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "./types";
-import { COMPETITION_IDENTITY, COMPETITION_RULES, DAY_MS } from "./competition";
+import { COMPETITION_IDENTITY, COMPETITION_RULES, COMPETITION_RULES_HASH, DAY_MS } from "./competition";
 
 export const demoAssets: EligibleAsset[] = [];
 
@@ -44,6 +44,7 @@ const previewEndsAt = new Date(previewStartsAt.getTime() + (COMPETITION_RULES.su
 export const demoCompetition: CompetitionSummary = {
   id: "preview-competition", ...COMPETITION_IDENTITY, phase: "open",
   startsAt: previewStartsAt.toISOString(), endsAt: previewEndsAt.toISOString(),
+  rules: COMPETITION_RULES, rulesHash: COMPETITION_RULES_HASH, rulesFrozenAt: previewStartsAt.toISOString(),
   minFollowers: COMPETITION_RULES.minFollowers, minAccountAgeDays: COMPETITION_RULES.minAccountAgeDays,
   proposalCount: demoLeaderboard.length, voteCount: demoLeaderboard.reduce((sum, row) => sum + row.votes, 0), uniqueVoterCount: 37
 };

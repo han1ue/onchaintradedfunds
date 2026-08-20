@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { buildBallotVotePosts } from "@/lib/ballot-history";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
-import { getUnlockedVoteCount, getVotingStartsAt } from "@/lib/competition";
+import { getUnlockedVoteCount, getVotingStartsAt, type CompetitionRules } from "@/lib/competition";
 import { getProposalVotingStartsAt, isProposalVotingOpen } from "@/lib/proposal-voting";
 import { PublicApiError } from "@/lib/errors";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
@@ -16,6 +16,7 @@ import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { getNewestPriceCheckpointForAssets } from "./prices";
 import { recheckSubmissionEvidence } from "./admin";
+import { assertCompetitionRulesSnapshot } from "./competition-rules";
 
 const challengeLifetimeMs = 15 * 60_000;
 type LaunchDatabase = ReturnType<typeof requireDb>;
@@ -29,14 +30,16 @@ async function assertValidDistribution(
   database: LaunchDatabase | LaunchTransaction,
   competitionId: string,
   allocations: VoteAllocation[],
+  options: { lock?: boolean } = {},
 ) {
-  const proposalIds = allocations.map((allocation) => allocation.proposalId);
-  const selected = await database.select({ id: proposals.id, ticker: proposals.ticker, acceptedAt: proposals.acceptedAt })
+  const proposalIds = allocations.map((allocation) => allocation.proposalId).sort();
+  const query = database.select({ id: proposals.id, ticker: proposals.ticker, acceptedAt: proposals.acceptedAt })
     .from(proposals).where(and(
       eq(proposals.competitionId, competitionId),
       eq(proposals.status, "confirmed"),
       inArray(proposals.id, proposalIds)
-  ));
+    )).orderBy(asc(proposals.id));
+  const selected = options.lock ? await query.for("update") : await query;
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
   const lockedProposal = selected.find((proposal) => !proposal.acceptedAt || !isProposalVotingOpen(proposal.acceptedAt));
   if (lockedProposal?.acceptedAt) {
@@ -53,8 +56,8 @@ function totalVotes(allocations: VoteAllocation[]) {
   return allocations.reduce((sum, allocation) => sum + allocation.votes, 0);
 }
 
-function assertVotesUnlocked(startsAt: Date | string, existingVotes: number, additions: VoteAllocation[], now: Date = new Date()) {
-  if (existingVotes + totalVotes(additions) > getUnlockedVoteCount(startsAt, now)) throw new Error("VOTES_NOT_UNLOCKED");
+function assertVotesUnlocked(startsAt: Date | string, rules: CompetitionRules, existingVotes: number, additions: VoteAllocation[], now: Date = new Date()) {
+  if (existingVotes + totalVotes(additions) > getUnlockedVoteCount(startsAt, now, rules)) throw new Error("VOTES_NOT_UNLOCKED");
 }
 
 async function assertBallotCanAccept(
@@ -64,13 +67,14 @@ async function assertBallotCanAccept(
   additions: VoteAllocation[],
   now: Date,
 ) {
-  const [openCompetition] = await database.select({ startsAt: competitions.startsAt }).from(competitions).where(and(
+  const [openCompetition] = await database.select({ startsAt: competitions.startsAt, rules: competitions.rules, rulesHash: competitions.rulesHash }).from(competitions).where(and(
     eq(competitions.id, competitionId),
     eq(competitions.phase, "open"),
     sql`${competitions.endsAt} > ${now}`,
   )).limit(1);
   if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
-  if (now < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
+  const rules = assertCompetitionRulesSnapshot(openCompetition.rules, openCompetition.rulesHash);
+  if (now < getVotingStartsAt(openCompetition.startsAt, rules)) throw new Error("VOTING_NOT_OPEN");
   const [existing] = await database.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
     eq(ballots.competitionId, competitionId),
     eq(ballots.voterUserId, voterUserId),
@@ -79,7 +83,7 @@ async function assertBallotCanAccept(
     ? await database.select({ proposalId: ballotAllocations.proposalId, votes: ballotAllocations.votes })
       .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
     : [];
-  assertVotesUnlocked(openCompetition.startsAt, totalVotes(previousAllocations), additions, now);
+  assertVotesUnlocked(openCompetition.startsAt, rules, totalVotes(previousAllocations), additions, now);
 }
 
 export async function getBallotSummary(competitionId: string, voterUserId: string): Promise<BallotSummary | null> {
@@ -141,7 +145,7 @@ export async function prepareBallotProof(input: unknown, siteOrigin: string) {
       .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
     : [];
   const selectedProposals = await assertValidDistribution(database, competition.id, parsed.additions);
-  assertVotesUnlocked(competition.startsAt, totalVotes(previousAllocations), parsed.additions);
+  assertVotesUnlocked(competition.startsAt, competition.rules, totalVotes(previousAllocations), parsed.additions);
 
   const token = newChallengeToken();
   const tickers = new Map(selectedProposals.map((proposal) => [proposal.id, proposal.ticker]));
@@ -218,11 +222,12 @@ export async function verifyBallotProof(input: unknown) {
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt)
     )).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
-    const [openCompetition] = await transaction.select({ id: competitions.id, startsAt: competitions.startsAt }).from(competitions).where(and(
+    const [openCompetition] = await transaction.select({ id: competitions.id, startsAt: competitions.startsAt, rules: competitions.rules, rulesHash: competitions.rulesHash }).from(competitions).where(and(
       eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`
     )).limit(1);
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
-    if (acceptedAt < getVotingStartsAt(openCompetition.startsAt)) throw new Error("VOTING_NOT_OPEN");
+    const rules = assertCompetitionRulesSnapshot(openCompetition.rules, openCompetition.rulesHash);
+    if (acceptedAt < getVotingStartsAt(openCompetition.startsAt, rules)) throw new Error("VOTING_NOT_OPEN");
 
     await transaction.execute(sql`select id from ballots where competition_id = ${competition.id} and voter_user_id = ${session.user.id} for update`);
     const [existing] = await transaction.select({ id: ballots.id, status: ballots.status }).from(ballots).where(and(
@@ -233,11 +238,11 @@ export async function verifyBallotProof(input: unknown) {
         .from(ballotAllocations).where(eq(ballotAllocations.ballotId, existing.id))
       : [];
     const existingVotes = totalVotes(previousAllocations);
-    assertVotesUnlocked(openCompetition.startsAt, existingVotes, additions, acceptedAt);
+    assertVotesUnlocked(openCompetition.startsAt, rules, existingVotes, additions, acceptedAt);
 
     // External evidence was inspected before opening the transaction. Repeat
     // proposal state validation on this transaction's connection before writes.
-    await assertValidDistribution(transaction, competition.id, additions);
+    await assertValidDistribution(transaction, competition.id, additions, { lock: true });
 
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "vote",

@@ -5,85 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786825385403,
-      "tag": "0000_melodic_omega_red",
+      "when": 1787194011975,
+      "tag": "0000_launch_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1786856037373,
-      "tag": "0001_permissionless_asset_tiers",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786894670031,
-      "tag": "0002_cynical_klaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786895871329,
-      "tag": "0003_milky_speed_demon",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1786914302180,
-      "tag": "0004_unified_asset_quality_pricing",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1786970000000,
-      "tag": "0005_coingecko_checkpoint_locking",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1786971000000,
-      "tag": "0006_simple_submission_states",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1787112000000,
-      "tag": "0007_reset_launch_data",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1787113200000,
-      "tag": "0008_reset_participation_data",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1787114400000,
-      "tag": "0009_restore_competition_assets",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1787115600000,
-      "tag": "0010_remove_legacy_launch_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1787241600000,
-      "tag": "0011_freeze_closed_competition",
+      "when": 1787194011976,
+      "tag": "0001_frozen_competition_rules",
       "breakpoints": true
     }
   ]

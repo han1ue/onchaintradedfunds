@@ -1,3 +1,5 @@
+import type { CompetitionRules } from "./competition";
+
 export type AssetQuality = "high" | "normal";
 
 export type PricingConfig =
@@ -57,6 +59,9 @@ export type CompetitionSummary = {
   endsAt: string;
   minFollowers: number;
   minAccountAgeDays: number;
+  rules: CompetitionRules;
+  rulesHash: string;
+  rulesFrozenAt: string;
   proposalCount: number;
   voteCount: number;
   uniqueVoterCount: number;

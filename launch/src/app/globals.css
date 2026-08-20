@@ -772,6 +772,7 @@ button { color: inherit; }
 .callout.positive { border-color: color-mix(in srgb, var(--green) 42%, var(--border)); background: color-mix(in srgb, var(--green) 5%, var(--card-raised)); color: color-mix(in srgb, var(--green) 70%, var(--text)); }
 .callout.warning { border-color: color-mix(in srgb, var(--gold) 42%, var(--border)); background: color-mix(in srgb, var(--gold) 4%, var(--card-raised)); }
 .callout.danger { border-color: color-mix(in srgb, var(--danger) 42%, var(--border)); background: color-mix(in srgb, var(--danger) 4%, var(--card-raised)); }
+.rulesSnapshot code { overflow-wrap: anywhere; color: var(--text); font-size: .7rem; }
 .proposalPage > .callout { margin: -6px 0 14px; }
 .proposalInvalidPage { min-height: calc(100dvh - 210px); display: grid; place-items: center; }
 .proposalInvalidState { width: min(680px, 100%); display: grid; justify-items: center; padding: clamp(30px, 6vw, 56px); border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--danger) 4%, var(--card-raised)); text-align: center; }

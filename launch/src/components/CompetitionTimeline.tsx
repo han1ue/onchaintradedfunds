@@ -1,22 +1,23 @@
 import { Check, Circle, Clock3 } from "lucide-react";
-import { COMPETITION_RULES, getCompetitionStatus } from "@/lib/competition";
+import { getCompetitionStatus } from "@/lib/competition";
 import type { CompetitionSummary } from "@/lib/types";
 import { SectionCard } from "./ui";
 
 export function CompetitionTimeline({ competition }: { competition: CompetitionSummary }) {
   const status = getCompetitionStatus(competition);
-  const totalDays = COMPETITION_RULES.submissionOnlyDays + COMPETITION_RULES.votingDays;
+  const rules = competition.rules;
+  const totalDays = rules.submissionOnlyDays + rules.votingDays;
   const elapsedDays = status.progressDays;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
-    { title: "Submission week", timing: "Days 1–7", detail: "Create OTF proposals." },
-    { title: "Voting month", timing: "Days 8–37", detail: `Voting opens with ${COMPETITION_RULES.initialVotes} votes. One more unlocks every ${COMPETITION_RULES.voteUnlockIntervalDays} days; OTF submissions stay open.` },
+    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: "Create as many OTF proposals as you want." },
+    { title: "Voting month", timing: `Days ${rules.submissionOnlyDays + 1}–${totalDays}`, detail: `Voting opens with ${rules.initialVotes} votes. ${rules.votesPerUnlock} more unlocks every ${rules.voteUnlockIntervalDays} days; OTF submissions stay open.` },
     { title: "Final results", timing: "After voting", detail: "Votes are reviewed and the final ranking becomes launch order." },
   ];
   const stageCopy = status.stage === "submissions"
-    ? "Submissions are open now. Voting and the first 3 votes come next."
+    ? `Submissions are open now. Voting and the first ${rules.initialVotes} votes come next.`
     : status.stage === "voting"
-      ? `${status.unlockedVotes} of ${COMPETITION_RULES.totalVotes} votes are unlocked now. New OTF submissions still join the board.`
+      ? `${status.unlockedVotes} of ${rules.totalVotes} votes are unlocked now. New OTF submissions still join the board.`
       : status.stage === "review"
         ? "Voting has closed. The final vote and evidence review is underway."
         : status.stage === "final"

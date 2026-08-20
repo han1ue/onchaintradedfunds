@@ -135,7 +135,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   }, [assetAddress, manual, poolAddress]);
 
   function choose(asset: EligibleAsset) {
-    const configuredPriceSource = preferredPricingConfig(asset.pricingConfigs);
+    const configuredPriceSource = asset.quality === "high" ? null : preferredPricingConfig(asset.pricingConfigs);
     onChange(asset.id, null, configuredPriceSource);
     setOpen(false);
     setQuery("");

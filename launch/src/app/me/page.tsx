@@ -13,7 +13,7 @@ import { deleteProposal } from "@/server/actions";
 import { getCompetition } from "@/server/data";
 import { db } from "@/server/db";
 import { ballotAllocations, ballots, proposals, users } from "@/server/db/schema";
-import { COMPETITION_RULES, getCompetitionTiming } from "@/lib/competition";
+import { getCompetitionTiming } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import { getBallotSummary } from "@/server/ballot";
 import { getParticipationEligibility } from "@/server/participation";
@@ -109,7 +109,7 @@ export default async function MePage() {
       <SectionCard><UnlockKeyhole size={19} /><span>Votes unlocked</span><strong>{timing.unlockedVotes}</strong></SectionCard>
       <SectionCard><Vote size={19} /><span>Votes allocated</span><strong>{votesAllocated}</strong></SectionCard>
     </div>
-    {!timing.votingOpen && <SectionCard className="accountVotingGate"><Clock3 size={24} aria-hidden="true" /><div className="accountVotingGateCopy"><strong>Voting opens in</strong><CompetitionCountdown target={timing.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} /><p>Your first {COMPETITION_RULES.initialVotes} votes unlock when submission week ends.</p></div><Button href="/vote" variant="secondary">View voting</Button></SectionCard>}
+    {!timing.votingOpen && <SectionCard className="accountVotingGate"><Clock3 size={24} aria-hidden="true" /><div className="accountVotingGateCopy"><strong>Voting opens in</strong><CompetitionCountdown target={timing.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} /><p>Your first {competition.rules.initialVotes} votes unlock when submission week ends.</p></div><Button href="/vote" variant="secondary">View voting</Button></SectionCard>}
     <SectionCard className="contentCard accountSubmissions"><div className="accountSectionHeading"><h2>Your submissions</h2>{timing.submissionsOpen && <Button href="/submit" variant="secondary">Submit OTF</Button>}</div>{ownProposals.length ? <div className="submissionList">{ownProposals.map((proposal) => {
       const badgeTone = proposal.status === "confirmed" ? "positive" : proposal.status === "deleted" ? "danger" : "warning";
       const identity = <><strong>{proposal.name}</strong><small>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</small></>;

@@ -19,6 +19,9 @@ export async function saveProposalDraft(input: unknown) {
   const parsed = proposalInputSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
+  if (parsed.allocations.length < competition.rules.minAssets) throw new Error("PROPOSAL_ASSET_MINIMUM");
+  if (parsed.allocations.some((allocation) => allocation.weightBps < competition.rules.minAssetWeightBps)) throw new Error("PROPOSAL_WEIGHT_MINIMUM");
+  if (parsed.allocations.reduce((sum, allocation) => sum + allocation.weightBps, 0) !== competition.rules.portfolioWeightBps) throw new Error("PROPOSAL_WEIGHT_TOTAL");
 
   const validatedManualAssets = new Map<string, Awaited<ReturnType<typeof validateUnlistedAsset>>>();
   for (const allocation of parsed.allocations) {
@@ -42,39 +45,47 @@ export async function saveProposalDraft(input: unknown) {
         .where(inArray(eligibleAssets.id, selectedAssetIds))
       : [];
     if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
+    const selectedAssetQuality = new Map(selectedAssets.map((asset) => [asset.id, asset.quality]));
 
     const resolvedAllocations = [];
     for (const allocation of parsed.allocations) {
       if ("assetId" in allocation) {
-        resolvedAllocations.push({ ...allocation, assetId: allocation.assetId, marketId: null as string | null });
+        resolvedAllocations.push({
+          ...allocation,
+          pricingConfig: selectedAssetQuality.get(allocation.assetId) === "high" ? null : allocation.pricingConfig,
+          assetId: allocation.assetId,
+          marketId: null as string | null,
+        });
         continue;
       }
 
       const metadata = allocation.assetMetadata;
+      const validation = validatedManualAssets.get(metadata.contractAddress);
+      const canonical = validation?.asset;
+      if (!canonical) throw new Error("ASSET_VALIDATION_FAILED");
       const manualPricing = allocation.pricingConfig;
       if (!manualPricing || manualPricing.source !== "uniswap-v3") throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
       const findMetadataRow = () => transaction.select({ id: eligibleAssets.id }).from(eligibleAssets)
         .where(and(
           eq(eligibleAssets.network, metadata.network),
-          sql`lower(${eligibleAssets.contractAddress}) = ${metadata.contractAddress}`,
+          sql`lower(${eligibleAssets.contractAddress}) = ${canonical.address}`,
         ))
         .limit(1);
       let [asset] = await findMetadataRow();
       if (!asset) {
         [asset] = await transaction.insert(eligibleAssets).values({
-          symbol: metadata.symbol,
-          name: metadata.name,
-          contractAddress: metadata.contractAddress,
+          symbol: canonical.symbol,
+          name: canonical.name,
+          contractAddress: canonical.address,
           network: metadata.network,
           chainId: metadata.chainId,
-          decimals: metadata.decimals,
+          decimals: canonical.decimals,
           quality: "normal",
           priceSource: "coingecko-usd",
         }).onConflictDoNothing().returning({ id: eligibleAssets.id });
         if (!asset) [asset] = await findMetadataRow();
       }
       if (!asset) throw new Error("ASSET_NOT_FOUND");
-      const validation = validatedManualAssets.get(metadata.contractAddress);
       if (!validation?.marketDetails) throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
       const [existingMarket] = await transaction.select({ id: assetMarkets.id }).from(assetMarkets).where(and(
         eq(assetMarkets.assetId, asset.id),
@@ -230,7 +241,7 @@ export async function deleteProposal(proposalId: string, confirmationName: strin
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
-    )).limit(1);
+    )).limit(1).for("update");
     if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
     if (proposal.name !== confirmationName) throw new Error("PROPOSAL_NAME_MISMATCH");
     const [deleted] = await transaction.update(proposals).set({ status: "deleted", updatedAt: deletedAt }).where(and(

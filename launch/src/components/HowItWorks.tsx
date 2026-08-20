@@ -1,17 +1,19 @@
 import { BadgeCheck, PenLine, ShieldCheck } from "lucide-react";
+import type { CompetitionRules } from "@/lib/competition";
 import type { ParticipationEligibility } from "@/lib/types";
 import { CompetitionCountdown } from "./CompetitionCountdown";
 import { Button, SectionCard } from "./ui";
 
-export function HowItWorks({ eligibility, votingOpen, votingStartsAt, currentTime }: {
+export function HowItWorks({ eligibility, rules, votingOpen, votingStartsAt, currentTime }: {
   eligibility: ParticipationEligibility;
+  rules: CompetitionRules;
   votingOpen: boolean;
   votingStartsAt: string;
   currentTime: string;
 }) {
   const steps = [
     { icon: BadgeCheck, title: "Sign in with X", text: `Use a verified, public account with ${eligibility.minFollowers.toLocaleString()}+ followers.` },
-    { icon: PenLine, title: "Choose the OTFs you support", text: "Voting opens after 7 days. You start with 3 votes and unlock 1 more every 3 voting days, up to 12." },
+    { icon: PenLine, title: "Choose the OTFs you support", text: `Voting opens after ${rules.submissionOnlyDays} days. You start with ${rules.initialVotes} votes and unlock ${rules.votesPerUnlock} more every ${rules.voteUnlockIntervalDays} voting days, up to ${rules.totalVotes}.` },
     { icon: ShieldCheck, title: "Verify the X post", text: "Publish the prepared text from X, then paste its public URL to verify your voting action. One post can cover several votes." }
   ];
   return <SectionCard className="howCard"><div className="cardHeading"><span>How it works</span></div>

@@ -46,7 +46,7 @@ describe("unified asset database schema", () => {
     expect(getTableColumns(voteTranches)).toHaveProperty("acceptedAt");
   });
 
-  it("does not expose retired finalization, snapshot, launch queue, or activity tables", () => {
+  it("does not expose retired finalization, ranking snapshot, launch queue, or activity tables", () => {
     for (const exportName of [
       "activityEvents",
       "finalizationRuns",
@@ -57,8 +57,15 @@ describe("unified asset database schema", () => {
       "launchQueue",
     ]) expect(schema).not.toHaveProperty(exportName);
     expect(getTableColumns(competitions)).not.toHaveProperty("launchStartAt");
-    expect(getTableColumns(competitions)).not.toHaveProperty("rulesFrozenAt");
     expect(getTableColumns(competitions)).not.toHaveProperty("finalizedAt");
+  });
+
+  it("stores a frozen, hashed rules snapshot on the competition", () => {
+    expect(getTableColumns(competitions)).toMatchObject({
+      rules: expect.anything(),
+      rulesHash: expect.anything(),
+      rulesFrozenAt: expect.anything(),
+    });
   });
 
   it("keys price capture runs for cross-instance cron idempotency", () => {

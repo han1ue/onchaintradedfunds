@@ -61,7 +61,8 @@ export async function moderateProposal(proposalId: string, status: "hidden" | "d
     const [before] = await transaction.select({ proposal: proposals }).from(proposals)
       .innerJoin(competitions, eq(competitions.id, proposals.competitionId))
       .where(and(eq(proposals.id, proposalId), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`))
-      .limit(1);
+      .limit(1)
+      .for("update", { of: proposals });
     if (!before) throw new Error("COMPETITION_NOT_OPEN");
     const [after] = await transaction.update(proposals).set({ status: "deleted", moderatedReason: reason, updatedAt: new Date() }).where(eq(proposals.id, proposalId)).returning();
     await transaction.insert(adminActions).values({ adminUserId: session.user.id, action: `proposal.${status}`, targetType: "proposal", targetId: proposalId, reason, before: before.proposal, after });
