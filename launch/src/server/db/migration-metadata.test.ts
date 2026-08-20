@@ -15,10 +15,11 @@ const backfillSnapshot = JSON.parse(readFileSync(
 ));
 
 describe("squashed migration metadata", () => {
-  it("tracks the current baseline and idempotent rules backfill", () => {
+  it("tracks the current baseline, rules backfill, and competition clock reset", () => {
     expect(journal.entries).toEqual([
       expect.objectContaining({ idx: 0, tag: "0000_launch_baseline" }),
       expect.objectContaining({ idx: 1, tag: "0001_frozen_competition_rules" }),
+      expect.objectContaining({ idx: 2, tag: "0002_start_competition_from_zero" }),
     ]);
     expect(snapshot.prevId).toBe("00000000-0000-0000-0000-000000000000");
     expect(backfillSnapshot.prevId).toBe(snapshot.id);

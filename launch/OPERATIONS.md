@@ -34,8 +34,9 @@
   proposal return charts. Market eligibility is captured during one-time asset validation and
   independently revalidated before submission; there is no hourly market-evidence job. Run
   `/api/jobs/x-evidence` daily for public X evidence rechecks.
-- The scheduled X-evidence workflow ends with its September 25, 2026 02:42 UTC run and has an
-  absolute `ends_at` guard. If the competition dates change, update its cron window and cutoff too.
+- The scheduled X-evidence workflow is bounded through September 30, 2026 and has an October 1
+  absolute cutoff. The endpoint uses the database competition window as authority. If the competition
+  dates change, update the workflow cron window and cutoff too.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 

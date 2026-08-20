@@ -48,6 +48,10 @@ type CompetitionWindow = {
 
 export type CompetitionStage = "upcoming" | "submissions" | "voting" | "review" | "final" | "cancelled";
 
+export function isCompetitionUpcoming(startsAt: string | Date, now: Date = new Date()) {
+  return now.getTime() < new Date(startsAt).getTime();
+}
+
 export function getVotingStartsAt(startsAt: string | Date, rules: CompetitionRules = COMPETITION_RULES) {
   return new Date(new Date(startsAt).getTime() + rules.submissionOnlyDays * DAY_MS);
 }

@@ -15,6 +15,13 @@
       "when": 1787194011976,
       "tag": "0001_frozen_competition_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787264188610,
+      "tag": "0002_start_competition_from_zero",
+      "breakpoints": true
     }
   ]
 }

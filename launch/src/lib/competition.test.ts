@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { getCompetitionTiming, getNextVoteUnlockAt, getUnlockedVoteCount, getVotingStartsAt } from "./competition";
+import { getCompetitionTiming, getNextVoteUnlockAt, getUnlockedVoteCount, getVotingStartsAt, isCompetitionUpcoming } from "./competition";
 
 const startsAt = new Date("2026-08-01T00:00:00.000Z");
 
 describe("competition phases", () => {
+  it("gates the UI only while the configured start is in the future", () => {
+    const futureStart = "2026-08-21T12:00:00.000Z";
+
+    expect(isCompetitionUpcoming(futureStart, new Date("2026-08-21T11:59:59.999Z"))).toBe(true);
+    expect(isCompetitionUpcoming(futureStart, new Date("2026-08-21T12:00:00.000Z"))).toBe(false);
+  });
+
   it("keeps the first seven days submission-only", () => {
     expect(getVotingStartsAt(startsAt).toISOString()).toBe("2026-08-08T00:00:00.000Z");
     const timing = getCompetitionTiming({ phase: "open", startsAt, endsAt: "2026-09-07T00:00:00.000Z" }, new Date("2026-08-07T23:59:59.999Z"));

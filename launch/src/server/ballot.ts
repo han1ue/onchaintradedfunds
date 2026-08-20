@@ -3,8 +3,6 @@ import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { buildBallotVotePosts } from "@/lib/ballot-history";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
 import { getUnlockedVoteCount, getVotingStartsAt, type CompetitionRules } from "@/lib/competition";
-import { getProposalVotingStartsAt, isProposalVotingOpen } from "@/lib/proposal-voting";
-import { PublicApiError } from "@/lib/errors";
 import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
 import { ballotActivationSchema, voteAdditionsSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
@@ -41,15 +39,21 @@ async function assertValidDistribution(
     )).orderBy(asc(proposals.id));
   const selected = options.lock ? await query.for("update") : await query;
   if (selected.length !== proposalIds.length) throw new Error("PROPOSAL_NOT_FOUND");
-  const lockedProposal = selected.find((proposal) => !proposal.acceptedAt || !isProposalVotingOpen(proposal.acceptedAt));
-  if (lockedProposal?.acceptedAt) {
-    throw new PublicApiError("PROPOSAL_VOTING_LOCKED", {
-      proposalId: lockedProposal.id,
-      votingStartsAt: getProposalVotingStartsAt(lockedProposal.acceptedAt).toISOString(),
-    });
-  }
-  if (lockedProposal) throw new Error("PROPOSAL_NOT_FOUND");
+  if (selected.some((proposal) => !proposal.acceptedAt)) throw new Error("PROPOSAL_NOT_FOUND");
   return selected;
+}
+
+async function getEntryAssetIds(database: LaunchDatabase, competitionId: string, proposalIds: string[]) {
+  const rows = await database.selectDistinct({ id: eligibleAssets.id })
+    .from(proposalAssets)
+    .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
+    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
+    .where(and(
+      eq(proposals.competitionId, competitionId),
+      eq(proposals.status, "confirmed"),
+      inArray(proposals.id, proposalIds),
+    ));
+  return rows.map((asset) => asset.id);
 }
 
 function totalVotes(allocations: VoteAllocation[]) {
@@ -146,6 +150,9 @@ export async function prepareBallotProof(input: unknown, siteOrigin: string) {
     : [];
   const selectedProposals = await assertValidDistribution(database, competition.id, parsed.additions);
   assertVotesUnlocked(competition.startsAt, competition.rules, totalVotes(previousAllocations), parsed.additions);
+  const preparedAt = new Date();
+  const entryAssetIds = await getEntryAssetIds(database, competition.id, parsed.additions.map((addition) => addition.proposalId));
+  await getNewestPriceCheckpointForAssets(entryAssetIds, preparedAt);
 
   const token = newChallengeToken();
   const tickers = new Map(selectedProposals.map((proposal) => [proposal.id, proposal.ticker]));
@@ -187,16 +194,8 @@ export async function verifyBallotProof(input: unknown) {
   const acceptedAt = new Date();
   await assertValidDistribution(database, competition.id, additions);
   const votedProposalIds = additions.map((addition) => addition.proposalId);
-  const entryAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
-    .from(proposalAssets)
-    .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
-    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
-    .where(and(
-      eq(proposals.competitionId, competition.id),
-      eq(proposals.status, "confirmed"),
-      inArray(proposals.id, votedProposalIds),
-    ));
-  const entryCapture = await getNewestPriceCheckpointForAssets(entryAssets.map((asset) => asset.id), acceptedAt);
+  const entryAssetIds = await getEntryAssetIds(database, competition.id, votedProposalIds);
+  const entryCapture = await getNewestPriceCheckpointForAssets(entryAssetIds, acceptedAt);
   await assertBallotCanAccept(database, competition.id, session.user.id, additions, acceptedAt);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");

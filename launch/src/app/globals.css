@@ -78,6 +78,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
 
+.prelaunchGate {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: clamp(28px, 7vw, 96px);
+}
+.prelaunchGate h1 {
+  max-width: 21ch;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: clamp(2.25rem, 7vw, 5.5rem);
+  font-weight: 700;
+  line-height: .98;
+  letter-spacing: -.04em;
+  text-align: center;
+  text-wrap: balance;
+}
+.prelaunchGate time { color: var(--text); }
+
 .topNav {
   position: sticky; z-index: 30; top: 0; height: 56px;
   border-bottom: 1px solid var(--border);
@@ -307,8 +327,10 @@ button { color: inherit; }
 @keyframes row-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 .footer { width: min(1360px, 100%); min-height: 64px; display: flex; align-items: center; justify-content: space-between; margin: 0 auto; padding: 0 24px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: .7rem; }
-.footer nav { display: flex; gap: 18px; margin-left: auto; }
+.footer nav { display: flex; align-items: center; gap: 18px; margin-left: auto; }
 .footer a:hover { color: var(--text); }
+.footer .footerAdminLink { min-height: 28px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-soft); font-weight: 700; }
+.footer .footerAdminLink:hover { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 6%, transparent); color: var(--teal); }
 .infrastructureStatus { display: flex; align-items: center; gap: 16px; font-size: .64rem; }
 .serviceState { height: 18px; display: inline-flex; align-items: center; gap: 6px; line-height: 1; white-space: nowrap; }
 .serviceDot { width: 7px; height: 7px; display: block; flex: 0 0 7px; border-radius: 50%; background: var(--text-muted); }
@@ -569,8 +591,6 @@ button { color: inherit; }
 .votePanel .cardHeading svg { color: var(--teal); }
 .panelBody { display: grid; gap: 14px; padding: 18px; }
 .panelBody .button { width: 100%; }
-.voteCooldownButton { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.voteCooldownButton svg { flex: 0 0 auto; }
 .ballotCta > div:not(.eligibilityPrompt) { display: grid; gap: 7px; }
 .ballotCta > div:not(.eligibilityPrompt) > strong { font-size: .86rem; }
 .ballotCta > div:not(.eligibilityPrompt) > p { margin: 0; color: var(--text-muted); font-size: .73rem; line-height: 1.55; }
@@ -592,9 +612,7 @@ button { color: inherit; }
 .ballotIdentity strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .ballotIdentity span { color: var(--text-muted); font-size: .66rem; }
 .ballotIdentity small { display: flex; align-items: center; gap: 4px; color: var(--green); font-size: .62rem; }
-.ballotIdentity small.proposalVoteCooldown { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .voteStepper { height: 38px; display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); overflow: hidden; }
-.voteStepper.locked { border-color: var(--border); opacity: .66; }
 .voteStepper button { height: 100%; display: grid; place-items: center; border: 0; background: var(--card-raised); color: var(--teal); cursor: pointer; }
 .voteStepper button:first-child { border-right: 1px solid var(--border); }
 .voteStepper button:last-child { border-left: 1px solid var(--border); }
@@ -769,7 +787,7 @@ button { color: inherit; }
 .inlineLink:hover { text-decoration-color: currentColor; }
 .adminGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .adminModerationLayout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
-.adminModerationCard { display: grid; gap: 18px; }
+.adminModerationCard { display: grid; gap: 18px; padding: 18px; }
 .adminSectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .adminSectionHeading h2 { margin: 0 0 5px; font-size: .98rem; letter-spacing: -.015em; }
 .adminSectionHeading p, .adminAuditNote p, .adminEmptyState p, .adminModerationResult p { margin: 0; color: var(--text-muted); font-size: .75rem; line-height: 1.55; }
