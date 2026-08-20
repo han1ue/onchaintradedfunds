@@ -1,5 +1,6 @@
 export const errorMessages: Record<string, string> = {
   INTERNAL_ERROR: "The service hit an unexpected error. Please try again shortly.",
+  UNAUTHENTICATED: "Sign in with an eligible X account, then try again.",
   X_NOT_VERIFIED: "A verified, public X account is required.",
   PRICING_CONFIG_REQUIRED: "An exact pricing route is required for this unverified asset.",
   FOLLOWER_THRESHOLD: "Your X account must have at least 100 followers to submit or vote.",
@@ -36,7 +37,26 @@ export const errorMessages: Record<string, string> = {
   VOTES_NOT_UNLOCKED: "You tried to cast more votes than are currently unlocked. Wait for the next vote to unlock.",
   ACTION_IN_PROGRESS: "This action is already being processed.",
   COMPETITION_NOT_OPEN: "The competition is not currently open.",
-  PRICE_CHECKPOINT_UNAVAILABLE: "A complete price checkpoint within the allowed freshness window is unavailable. Try again after the next 30-minute checkpoint."
+  PRICE_CHECKPOINT_UNAVAILABLE: "Fresh prices for one or more assets in your selected OTFs are unavailable. Try again after the next 30-minute checkpoint."
+};
+
+export const authErrorMessages: Record<string, { title: string; detail: string }> = {
+  x_signin_cancelled: {
+    title: "X sign-in was cancelled.",
+    detail: "Your account was not changed. Sign in again when you’re ready.",
+  },
+  x_signin_rate_limited: {
+    title: "Too many sign-in attempts.",
+    detail: "Wait ten minutes before trying to sign in with X again.",
+  },
+  x_signin_unavailable: {
+    title: "X sign-in is temporarily unavailable.",
+    detail: "Request protection could not be verified. Please try again shortly.",
+  },
+  x_signin_failed: {
+    title: "X sign-in could not be completed.",
+    detail: "Nothing changed. Check that X is available, then try again.",
+  },
 };
 
 export class PublicApiError extends Error {

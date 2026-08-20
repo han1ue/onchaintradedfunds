@@ -84,13 +84,13 @@ async function fetchCoinGeckoOnchainPrices(assets: PriceAsset[]): Promise<Map<st
   const addresses = [...new Set(assets.map((asset) => asset.contractAddress.toLowerCase()))];
   if (addresses.length === 0) return new Map();
   const attributes = (await getCoinGeckoClient().getTokenPrices(env.COINGECKO_NETWORK_ID, addresses)).data.attributes;
-  const fallbackTimestamp = new Date();
   return new Map(Object.entries(attributes.token_prices).flatMap(([address, bid]) => {
     if (!bid) return [];
     const tradedAt = attributes.last_trade_timestamp?.[address];
+    if (!tradedAt) return [];
     return [[address.toLowerCase(), {
       bid,
-      generatedAt: tradedAt ? new Date(tradedAt * 1_000) : fallbackTimestamp,
+      generatedAt: new Date(tradedAt * 1_000),
     }]];
   }));
 }
@@ -128,10 +128,38 @@ const inFlightCaptures = new Map<string, Promise<PriceCaptureResult>>();
 
 function captureKey(sampledAt: Date, purpose: PriceCaptureOptions["purpose"], assetIds?: string[]) {
   const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
+  if (purpose === "final") {
+    const interval = 30 * 60_000;
+    const bucket = Math.floor(sampledAt.getTime() / interval) * interval;
+    return `final:${new Date(bucket).toISOString()}:${scope}`;
+  }
   if (purpose !== "scoring") return `${purpose}:${sampledAt.toISOString()}:${scope}`;
   const interval = 30 * 60_000;
   const bucket = Math.floor((sampledAt.getTime() + interval / 2) / interval) * interval;
   return `${purpose}:${new Date(bucket).toISOString()}:${scope}`;
+}
+
+async function readCompleteFinalCapture(assetIds?: string[]): Promise<PriceCaptureResult | null> {
+  if (!sqlClient) return null;
+  const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
+  const rows = await sqlClient<{ id: string; sampledAt: string; missingSymbols: string[] }[]>`
+    select id::text, sampled_at as "sampledAt", missing_symbols as "missingSymbols"
+    from price_capture_runs
+    where purpose = 'final' and status = 'complete' and capture_key like ${`final:%:${scope}`}
+    order by sampled_at asc
+    limit 1`;
+  const existing = rows[0];
+  if (!existing) return null;
+  const stored = await sqlClient<{ count: string }[]>`
+    select count(*)::text as count from asset_price_snapshots where capture_run_id = ${existing.id}::uuid`;
+  return {
+    runId: existing.id,
+    sampledAt: new Date(existing.sampledAt),
+    stored: Number(stored[0]?.count ?? 0),
+    complete: true,
+    missing: existing.missingSymbols ?? [],
+    skipped: true,
+  };
 }
 
 async function readExistingCapture(key: string): Promise<PriceCaptureResult | null> {
@@ -190,7 +218,7 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
       : asset.symbol.toUpperCase();
     const quote = priceFetch.quotes.get(`${asset.priceSource}:${identity}`);
     const bid = quote ? Number(quote.bid) : Number.NaN;
-    if (!quote || !Number.isFinite(bid) || bid <= 0) {
+    if (!quote || !Number.isFinite(bid) || bid <= 0 || !isPriceQuoteFresh(quote.generatedAt, sampledAt, PRICE_CAPTURE_QUOTE_FRESHNESS_MS)) {
       missing.push(asset.symbol);
       return [];
     }
@@ -228,12 +256,23 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
 export async function captureAssetPrices(options: PriceCaptureOptions): Promise<PriceCaptureResult> {
   const sampledAt = options.sampledAt ?? new Date();
   const key = captureKey(sampledAt, options.purpose, options.assetIds);
+  if (options.purpose === "final") {
+    const completed = await readCompleteFinalCapture(options.assetIds);
+    if (completed) return completed;
+  }
   const existing = await readExistingCapture(key);
   if (existing) return existing;
   const running = inFlightCaptures.get(key);
   if (running) return running;
   const promise = (async () => {
-    const captured = await withPriceCaptureLock(key, async () => {
+    const lockKey = options.purpose === "final"
+      ? `final:${options.assetIds?.length ? [...options.assetIds].sort().join(",") : "all"}`
+      : key;
+    const captured = await withPriceCaptureLock(lockKey, async () => {
+      if (options.purpose === "final") {
+        const completed = await readCompleteFinalCapture(options.assetIds);
+        if (completed) return completed;
+      }
       const lockedExisting = await readExistingCapture(key);
       if (lockedExisting) return lockedExisting;
       return captureAssetPricesOnce(options, sampledAt, key);
@@ -245,20 +284,28 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
 }
 
 export const PRICE_CHECKPOINT_FRESHNESS_MS = 90 * 60_000;
+export const PRICE_CAPTURE_QUOTE_FRESHNESS_MS = 45 * 60_000;
 
-export async function getNewestCompletePriceCheckpoint(assetIds: string[], acceptedAt: Date) {
-  if (!sqlClient || assetIds.length === 0) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");
+export function isPriceQuoteFresh(quoteGeneratedAt: Date, referenceTime: Date, freshnessMs: number) {
+  const quoteTime = quoteGeneratedAt.getTime();
+  const reference = referenceTime.getTime();
+  return Number.isFinite(quoteTime) && quoteTime >= reference - freshnessMs;
+}
+
+export async function getNewestPriceCheckpointForAssets(assetIds: string[], acceptedAt: Date) {
+  const requiredAssetIds = [...new Set(assetIds)];
+  if (!sqlClient || requiredAssetIds.length === 0) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");
   const rows = await sqlClient<{ id: string; sampledAt: string }[]>`
     select pcr.id::text, pcr.sampled_at as "sampledAt"
     from price_capture_runs pcr
     join asset_price_snapshots aps on aps.capture_run_id = pcr.id
     where pcr.purpose = 'scoring'
-      and pcr.status = 'complete'
       and pcr.sampled_at <= ${acceptedAt.toISOString()}::timestamptz
       and pcr.sampled_at >= ${new Date(acceptedAt.getTime() - PRICE_CHECKPOINT_FRESHNESS_MS).toISOString()}::timestamptz
-      and aps.asset_id in ${sqlClient(assetIds)}
+      and aps.quote_generated_at >= ${new Date(acceptedAt.getTime() - PRICE_CHECKPOINT_FRESHNESS_MS).toISOString()}::timestamptz
+      and aps.asset_id in ${sqlClient(requiredAssetIds)}
     group by pcr.id, pcr.sampled_at
-    having count(distinct aps.asset_id) = ${assetIds.length}
+    having count(distinct aps.asset_id) = ${requiredAssetIds.length}
     order by pcr.sampled_at desc
     limit 1`;
   if (!rows[0]) throw new Error("PRICE_CHECKPOINT_UNAVAILABLE");

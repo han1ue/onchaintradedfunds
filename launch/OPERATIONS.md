@@ -34,12 +34,18 @@
   proposal return charts. Market eligibility is captured during one-time asset validation and
   independently revalidated before submission; there is no hourly market-evidence job. Run
   `/api/jobs/x-evidence` daily for public X evidence rechecks.
+- The scheduled X-evidence workflow ends with its September 25, 2026 02:42 UTC run and has an
+  absolute `ends_at` guard. If the competition dates change, update its cron window and cutoff too.
 - Do not manually alter accepted proposals, valid votes, evidence, or activity events. Use audited administrator actions.
 - If X identity checks or posting are unavailable, new actions remain disabled until the affected X API recovers.
 
 ## After the competition closes
 
 - Database time is authoritative; prices, votes, and OTF submissions stop at `ends_at`.
+- Confirm the first 30-minute price job at or after `ends_at` created a complete `final` capture run.
+  A partial final capture fails the scheduled job and is retried in the next 30-minute bucket.
+- Ranking inputs are database-frozen after `ends_at`; user deletion, moderation, and evidence invalidation
+  cannot alter proposals or ballots after close.
 - Complete the competition-end audit and ranking locally after the competition closes.
 - Preserve the immutable evidence, price checkpoints, valid votes, and accepted proposals as the inputs to that local process.
 

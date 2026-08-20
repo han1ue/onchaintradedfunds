@@ -20,6 +20,19 @@ export async function currentCompetition() {
   return { ...competition, ...COMPETITION_RULES };
 }
 
+export async function priceCapturePurpose(now: Date = new Date()) {
+  const database = requireDb();
+  const [competition] = await database.select({
+    phase: competitions.phase,
+    startsAt: competitions.startsAt,
+    endsAt: competitions.endsAt,
+  }).from(competitions).limit(1);
+  if (!competition || competition.phase === "cancelled" || now < competition.startsAt) return null;
+  if (now < competition.endsAt && competition.phase === "open") return "scoring" as const;
+  if (now >= competition.endsAt) return "final" as const;
+  return null;
+}
+
 export async function requireEligibleActor(options: { votingRequired?: boolean } = {}) {
   const database = requireDb();
   const session = await requireSession();

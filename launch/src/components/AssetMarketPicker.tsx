@@ -3,6 +3,7 @@
 import { BadgeCheck, Check, ChevronDown, CircleAlert, CircleCheck, CircleDot, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssetMarketRequirement, AssetMarketValidationResponse } from "@/lib/asset-market-validation";
+import { errorMessages } from "@/lib/errors";
 import { shortAddress } from "@/lib/format-address";
 import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
@@ -52,6 +53,25 @@ function validationDecision(validation: AssetMarketValidationResponse, approved:
   };
 }
 
+function validationRequestError(code: string) {
+  if (code === "RATE_LIMITED") return {
+    title: "Too many validation requests",
+    detail: errorMessages.RATE_LIMITED,
+  };
+  if (code === "UNAUTHENTICATED" || code === "X_RECONNECT_REQUIRED") return {
+    title: "Sign in required",
+    detail: code === "X_RECONNECT_REQUIRED" ? errorMessages.X_RECONNECT_REQUIRED : errorMessages.UNAUTHENTICATED,
+  };
+  if (code === "RATE_LIMIT_UNAVAILABLE" || code === "ASSET_MARKET_VALIDATION_UNAVAILABLE") return {
+    title: "Validation temporarily unavailable",
+    detail: code === "RATE_LIMIT_UNAVAILABLE" ? errorMessages.RATE_LIMIT_UNAVAILABLE : errorMessages.ASSET_MARKET_VALIDATION_UNAVAILABLE,
+  };
+  return {
+    title: "Validation request failed",
+    detail: errorMessages[code] ?? "Nothing was saved. Check both addresses and try again.",
+  };
+}
+
 export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfig, label, onChange }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -61,6 +81,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   const [poolAddress, setPoolAddress] = useState("");
   const [validation, setValidation] = useState<AssetMarketValidationResponse | null>(null);
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "error">("idle");
+  const [lookupError, setLookupError] = useState<{ title: string; detail: string } | null>(null);
   const selected = assets.find((asset) => asset.id === assetId) ?? null;
   const selectedMetadata = selected ? null : assetMetadata;
   const selectedSymbol = selected?.symbol ?? selectedMetadata?.symbol;
@@ -80,6 +101,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
   useEffect(() => {
     setValidation(null);
+    setLookupError(null);
     if (!manual || !EVM_ADDRESS_PATTERN.test(assetAddress.trim())) {
       setLookupState("idle");
       return;
@@ -102,6 +124,10 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
+          const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message)
+            ? error.message
+            : "ASSET_MARKET_VALIDATION_UNAVAILABLE";
+          setLookupError(validationRequestError(code));
           setLookupState("error");
         });
     }, 450);
@@ -195,7 +221,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         </label>
 
         {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>{hasValidPoolAddress ? "Validating asset and pool" : "Validating token"}</strong><small>{hasValidPoolAddress ? "Checking Robinhood Chain first, then market evidence…" : "Checking token info now; enter a pool address to continue."}</small></div></div>}
-        {lookupState === "error" && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>Validation request unavailable</strong><small>Nothing was saved. Check both addresses and try again.</small></div></div>}
+        {lookupState === "error" && lookupError && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>{lookupError.title}</strong><small>{lookupError.detail}</small></div></div>}
         {detected && <div className={`detectedAsset${detected.decimals === 18 ? "" : " invalid"}`}>
           {detected.decimals === 18 ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
           <div><span>{detected.symbol}</span><strong>{detected.name}</strong><small>{detected.decimals} decimals</small></div>

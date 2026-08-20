@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchAssetPriceQuotes } from "./prices";
+import { fetchAssetPriceQuotes, isPriceQuoteFresh } from "./prices";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,5 +36,18 @@ describe("mixed asset price sources", () => {
     expect(result.quotes.get("robinhood-bid:AAPL")?.bid).toBe("225.25");
     expect(result.quotes.has("coinbase-eth-usd-bid:ETH")).toBe(false);
     expect(result.errors).toEqual([{ source: "coinbase-eth-usd-bid", message: "COINBASE_ETH_USD_503" }]);
+  });
+});
+
+describe("price quote freshness", () => {
+  const reference = new Date("2026-08-20T12:00:00.000Z");
+
+  it("accepts a quote inside the freshness window", () => {
+    expect(isPriceQuoteFresh(new Date("2026-08-20T11:30:00.000Z"), reference, 45 * 60_000)).toBe(true);
+  });
+
+  it("rejects stale and invalid quote timestamps", () => {
+    expect(isPriceQuoteFresh(new Date("2026-08-20T11:14:59.999Z"), reference, 45 * 60_000)).toBe(false);
+    expect(isPriceQuoteFresh(new Date(Number.NaN), reference, 45 * 60_000)).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { buildBallotVotePosts } from "@/lib/ballot-history";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
 import { getUnlockedVoteCount, getVotingStartsAt } from "@/lib/competition";
@@ -14,7 +14,7 @@ import {
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
 import { getXPost, hashXPostText } from "./x";
-import { getNewestCompletePriceCheckpoint } from "./prices";
+import { getNewestPriceCheckpointForAssets } from "./prices";
 import { recheckSubmissionEvidence } from "./admin";
 
 const challengeLifetimeMs = 15 * 60_000;
@@ -182,6 +182,7 @@ export async function verifyBallotProof(input: unknown) {
   const additions = voteAdditionsSchema.parse(challenge.payload.additions);
   const acceptedAt = new Date();
   await assertValidDistribution(database, competition.id, additions);
+  const votedProposalIds = additions.map((addition) => addition.proposalId);
   const entryAssets = await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol })
     .from(proposalAssets)
     .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
@@ -189,9 +190,9 @@ export async function verifyBallotProof(input: unknown) {
     .where(and(
       eq(proposals.competitionId, competition.id),
       eq(proposals.status, "confirmed"),
-      lte(proposals.acceptedAt, acceptedAt),
+      inArray(proposals.id, votedProposalIds),
     ));
-  const entryCapture = await getNewestCompletePriceCheckpoint(entryAssets.map((asset) => asset.id), acceptedAt);
+  const entryCapture = await getNewestPriceCheckpointForAssets(entryAssets.map((asset) => asset.id), acceptedAt);
   await assertBallotCanAccept(database, competition.id, session.user.id, additions, acceptedAt);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
@@ -206,6 +207,12 @@ export async function verifyBallotProof(input: unknown) {
     gt(xActionChallenges.expiresAt, new Date()),
   )).limit(1);
   if (!activeChallenge) throw new Error("CHALLENGE_EXPIRED");
+
+  // Keep the paid remote evidence check last, but outside the transaction so
+  // network latency never holds a pooled database connection or ballot lock.
+  const invalidated = await recheckSubmissionEvidence(competition.id, additions.map((addition) => addition.proposalId), 0);
+  if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
+
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(
       eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt)
@@ -228,10 +235,9 @@ export async function verifyBallotProof(input: unknown) {
     const existingVotes = totalVotes(previousAllocations);
     assertVotesUnlocked(openCompetition.startsAt, existingVotes, additions, acceptedAt);
 
-    // TwitterAPI.io is deliberately last, after every domain check and ballot lock.
+    // External evidence was inspected before opening the transaction. Repeat
+    // proposal state validation on this transaction's connection before writes.
     await assertValidDistribution(transaction, competition.id, additions);
-    const invalidated = await recheckSubmissionEvidence(competition.id, additions.map((addition) => addition.proposalId), 0);
-    if (invalidated > 0) throw new Error("PROPOSAL_POST_NOT_FOUND");
 
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "vote",

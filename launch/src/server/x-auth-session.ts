@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, like, lt, sql } from "drizzle-orm";
 import { sessions, users, verificationTokens } from "./db/schema";
 import { requireDb } from "./db";
 import { getXUserById, userIdentityFromXUser } from "./x";
@@ -17,6 +17,10 @@ export async function resolveXUserForSignIn(existingUser: StoredXUser | undefine
 
 export async function storeXOAuthState(requestToken: string, requestTokenSecret: string, callbackPath: string) {
   const database = requireDb();
+  await database.delete(verificationTokens).where(and(
+    like(verificationTokens.identifier, "x-oauth1:%"),
+    lt(verificationTokens.expires, new Date()),
+  ));
   const expires = new Date(Date.now() + xOAuthStateTtlMs);
   await database.insert(verificationTokens).values({
     identifier: oauthStateIdentifier(requestToken),

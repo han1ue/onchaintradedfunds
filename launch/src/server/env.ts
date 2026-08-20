@@ -26,6 +26,17 @@ const schema = z.object({
 });
 
 export const env = schema.parse(process.env);
+
+if (process.env.NODE_ENV === "production") {
+  const missing = [
+    ["REDIS_URL", env.REDIS_URL],
+    ["NEXT_PUBLIC_TURNSTILE_SITE_KEY", env.NEXT_PUBLIC_TURNSTILE_SITE_KEY],
+    ["TURNSTILE_SECRET_KEY", env.TURNSTILE_SECRET_KEY],
+    ["TURNSTILE_HOSTNAMES", env.TURNSTILE_HOSTNAMES],
+  ].filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length) throw new Error(`PRODUCTION_ABUSE_CONTROLS_REQUIRED:${missing.join(",")}`);
+}
+
 export const isDatabaseConfigured = Boolean(env.DATABASE_URL);
 export const isXConfigured = Boolean(env.AUTH_X_CONSUMER_KEY && env.AUTH_X_CONSUMER_SECRET && env.TWITTERAPI_IO_API_KEY);
 export const adminXIds = new Set((env.ADMIN_X_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));

@@ -8,7 +8,7 @@ import {
   ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, xActionChallenges
 } from "./db/schema";
-import { requireEligibleActor, requireSession } from "./guards";
+import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
 import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
@@ -223,8 +223,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
 export async function deleteProposal(proposalId: string, confirmationName: string) {
   const database = requireDb();
   const session = await requireSession();
-  const [competition] = await database.select().from(competitions).limit(1);
-  if (!competition) throw new Error("COMPETITION_NOT_FOUND");
+  const competition = await currentCompetition();
   const deletedAt = new Date();
   return database.transaction(async (transaction) => {
     const [proposal] = await transaction.select({ name: proposals.name }).from(proposals).where(and(
@@ -239,6 +238,12 @@ export async function deleteProposal(proposalId: string, confirmationName: strin
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
       inArray(proposals.status, ["draft", "confirmed"]),
+      sql`exists (
+        select 1 from ${competitions}
+        where ${competitions.id} = ${proposals.competitionId}
+          and ${competitions.phase} = 'open'
+          and ${competitions.endsAt} > now()
+      )`,
       sql`not exists (
         select 1 from ${ballotAllocations}
         join ${ballots} on ${ballots.id} = ${ballotAllocations.ballotId}

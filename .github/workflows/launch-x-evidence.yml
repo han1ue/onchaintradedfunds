@@ -2,7 +2,10 @@ name: Launch X evidence recheck
 
 on:
   schedule:
-    - cron: "42 2 * * *"
+    # Genesis Competition: 2026-08-19 23:25:39 UTC through 2026-09-25 23:25:39 UTC.
+    # GitHub cron has no year field, so the runtime cutoff below also prevents future-year calls.
+    - cron: "42 2 20-31 8 *"
+    - cron: "42 2 1-25 9 *"
   workflow_dispatch:
 
 permissions:
@@ -19,10 +22,23 @@ jobs:
     env:
       LAUNCH_SITE_URL: ${{ vars.LAUNCH_SITE_URL }}
       CRON_SECRET: ${{ secrets.LAUNCH_CRON_SECRET }}
+      COMPETITION_ENDS_AT: "2026-09-25T23:25:39.285099Z"
     steps:
+      - name: Check competition window
+        id: competition-window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] ||
+             [[ "$(date -u +%s)" -lt "$(date -u -d "$COMPETITION_ENDS_AT" +%s)" ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Validate configuration
+        if: steps.competition-window.outputs.active == 'true'
         run: test -n "$LAUNCH_SITE_URL" && test -n "$CRON_SECRET"
       - name: Recheck public X evidence
+        if: steps.competition-window.outputs.active == 'true'
         run: >-
           curl --fail-with-body --silent --show-error
           --retry 3 --retry-delay 5 --max-time 300

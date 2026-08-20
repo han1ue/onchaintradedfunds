@@ -16,7 +16,7 @@ export default async function VotePage({ searchParams }: { searchParams: Promise
     getParticipationEligibility(session?.user, competition),
     session?.user.id ? getBallotSummary(competition.id, session.user.id) : null,
   ]);
-  const availability = { votingOpen: timing.votingOpen, unlockedVotes: timing.unlockedVotes, votingStartsAt: timing.votingStartsAt.toISOString(), nextVoteUnlockAt: timing.nextVoteUnlockAt?.toISOString() ?? null };
+  const availability = { votingOpen: timing.votingOpen, competitionEnded: timing.stage === "review" || timing.stage === "final" || timing.stage === "cancelled", unlockedVotes: timing.unlockedVotes, votingStartsAt: timing.votingStartsAt.toISOString(), nextVoteUnlockAt: timing.nextVoteUnlockAt?.toISOString() ?? null };
   const forwardedHost = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const forwardedProtocol = requestHeaders.get("x-forwarded-proto") ?? (forwardedHost?.startsWith("localhost") ? "http" : "https");
   const siteUrl = forwardedHost ? `${forwardedProtocol}://${forwardedHost}` : process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001";

@@ -28,7 +28,8 @@ export async function pingRedis() {
   return (await redis.ping()) === "PONG";
 }
 
-const limits = { write: 8, post: 6, verify: 12 } as const;
+const limits = { write: 8, post: 6, verify: 12, oauth: 10, asset: 20 } as const;
+type RateLimitKind = keyof typeof limits;
 const windowSeconds = 10 * 60;
 const incrementWithExpiry = `
   local count = redis.call('INCR', KEYS[1])
@@ -36,9 +37,12 @@ const incrementWithExpiry = `
   return count
 `;
 
-export async function enforceRateLimit(kind: "write" | "post" | "verify", request: Request, actorId?: string) {
+export async function enforceRateLimit(kind: RateLimitKind, request: Request, actorId?: string) {
   const redis = await getRedis().catch(() => { throw new Error("RATE_LIMIT_UNAVAILABLE"); });
-  if (!redis) return;
+  if (!redis) {
+    if (process.env.NODE_ENV === "production") throw new Error("RATE_LIMIT_UNAVAILABLE");
+    return;
+  }
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const secret = env.IP_HASH_SECRET ?? env.AUTH_SECRET ?? "local-development-only";
   const day = new Date().toISOString().slice(0, 10);
@@ -50,7 +54,10 @@ export async function enforceRateLimit(kind: "write" | "post" | "verify", reques
 }
 
 export async function verifyTurnstile(token: string | undefined, request: Request, expectedAction: "submit_otf" | "vote_otf") {
-  if (!env.TURNSTILE_SECRET_KEY) return;
+  if (!env.TURNSTILE_SECRET_KEY) {
+    if (process.env.NODE_ENV === "production") throw new Error("TURNSTILE_FAILED");
+    return;
+  }
   const expectedHostnames = new Set((env.TURNSTILE_HOSTNAMES ?? "").split(",").map((hostname) => hostname.trim()).filter(Boolean));
   if (!token || token.length > 2_048) throw new Error("TURNSTILE_REQUIRED");
   if (!expectedHostnames.size) throw new Error("TURNSTILE_FAILED");

@@ -65,7 +65,7 @@ export default function XpPage() {
 
     <div className="xpAuditNote">
       <ShieldCheck size={20} aria-hidden="true" />
-      <div><strong>Final allocation is deterministic</strong><p>If a performance pool has no eligible score, that pool rolls into participation. Integer rounding uses a deterministic largest-remainder method, and the final 10,000,000 XP snapshot receives a canonical hash.</p></div>
+      <div><strong>XP is calculated after the final audit</strong><p>After the competition closes, the OTF team exports the frozen competition inputs, calculates the allocation, verifies that it totals exactly 10,000,000 XP, and publishes the result. The launch app does not calculate provisional or final XP balances.</p></div>
     </div>
 
     <Callout tone="warning"><span>XP has no guaranteed monetary value. It remains separate from competition ranking and launch order. <Link className="inlineLink" href="/rules#xp-allocation">Read the complete XP rules <ArrowRight size={14} /></Link></span></Callout>

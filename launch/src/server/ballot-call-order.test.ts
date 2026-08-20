@@ -5,14 +5,13 @@ const source = readFileSync(new URL("./ballot.ts", import.meta.url), "utf8");
 const verifyFlow = source.slice(source.indexOf("export async function verifyBallotProof"));
 
 describe("ballot verification call order", () => {
-  it("spends TwitterAPI.io credits only after deterministic vote checks", () => {
+  it("spends TwitterAPI.io credits after deterministic checks but before opening the transaction", () => {
     const paidRecheck = verifyFlow.indexOf("await recheckSubmissionEvidence");
-    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("await getNewestCompletePriceCheckpoint"));
-    expect(paidRecheck).toBeGreaterThan(verifyFlow.lastIndexOf("await assertValidDistribution", paidRecheck));
-    expect(paidRecheck).toBeGreaterThan(verifyFlow.lastIndexOf("await assertBallotCanAccept", paidRecheck));
+    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("await getNewestPriceCheckpointForAssets"));
+    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("await assertValidDistribution"));
+    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("await assertBallotCanAccept"));
     expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("const post = await getXPost"));
-    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("database.transaction"));
-    expect(paidRecheck).toBeGreaterThan(verifyFlow.indexOf("assertVotesUnlocked(openCompetition.startsAt"));
-    expect(paidRecheck).toBeLessThan(verifyFlow.indexOf("transaction.insert(tweetEvidence)"));
+    expect(paidRecheck).toBeLessThan(verifyFlow.indexOf("database.transaction"));
+    expect(verifyFlow.indexOf("await assertValidDistribution(transaction")).toBeGreaterThan(verifyFlow.indexOf("database.transaction"));
   });
 });

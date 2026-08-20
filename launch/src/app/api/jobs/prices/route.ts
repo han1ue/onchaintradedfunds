@@ -1,21 +1,16 @@
 import { apiError, apiOk } from "@/server/api";
 import { assertCron } from "@/server/cron";
 import { captureAssetPrices } from "@/server/prices";
-import { currentCompetition } from "@/server/guards";
+import { priceCapturePurpose } from "@/server/guards";
 
 export async function GET(request: Request) {
   try {
     assertCron(request);
-    try {
-      await currentCompetition();
-    } catch (error) {
-      if (error instanceof Error && error.message === "COMPETITION_NOT_OPEN") {
-        return apiOk({ active: false, prices: null, markets: null });
-      }
-      throw error;
-    }
-    const prices = await captureAssetPrices({ purpose: "scoring" });
-    return apiOk({ active: true, prices });
+    const purpose = await priceCapturePurpose();
+    if (!purpose) return apiOk({ active: false, purpose: null, prices: null });
+    const prices = await captureAssetPrices({ purpose });
+    if (purpose === "final" && !prices.complete) throw new Error("FINAL_PRICE_CHECKPOINT_INCOMPLETE");
+    return apiOk({ active: purpose === "scoring", purpose, prices });
   } catch (error) {
     return apiError(error);
   }

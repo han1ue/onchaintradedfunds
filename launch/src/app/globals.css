@@ -120,6 +120,7 @@ button { color: inherit; }
 .heroStatHitArea:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .compactHero { align-items: center; margin-bottom: 18px; }
 .compactHero h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
+.homePage > .callout { margin-bottom: 18px; }
 .competitionStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 17px; color: var(--text-muted); font-size: .72rem; }
 
 .statusBadge { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
@@ -831,7 +832,7 @@ button { color: inherit; }
 
 @media (max-width: 1120px) {
   .homePage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .homePage > .competitionHero, .homePage > .competitionTimeline { grid-column: 1 / -1; }
+  .homePage > .competitionHero, .homePage > .competitionTimeline, .homePage > .callout { grid-column: 1 / -1; }
   .homePage .boardGrid, .homePage .lowerGrid { display: contents; }
   .homePage .leaderboardCard { grid-column: 1 / -1; order: 1; }
   .homePage .howCard, .homePage .activityPanel { min-width: 0; order: 2; }

@@ -19,11 +19,11 @@ function RankEmblem({ rank, role }: { rank: number; role?: "rowheader" }) {
   </div>;
 }
 
-export function ResponsiveLeaderboard({ entries }: { entries: LeaderboardEntry[] }) {
+export function ResponsiveLeaderboard({ entries, submissionsOpen = true }: { entries: LeaderboardEntry[]; submissionsOpen?: boolean }) {
   if (!entries.length) return <div className="leaderboardEmpty">
     <Trophy size={24} aria-hidden="true" />
-    <div><strong>No OTF proposals yet</strong><p>Create the first OTF to start the leaderboard.</p></div>
-    <Link className="button buttonPrimary" href="/submit">Create OTF</Link>
+    <div><strong>No OTF proposals</strong><p>{submissionsOpen ? "Create the first OTF to start the leaderboard." : "The competition closed without a ranked proposal."}</p></div>
+    {submissionsOpen && <Link className="button buttonPrimary" href="/submit">Create OTF</Link>}
   </div>;
 
   return <div className="leaderboard">
