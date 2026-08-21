@@ -1800,6 +1800,226 @@ button:disabled {
   background: rgb(36 44 55 / 24%);
 }
 
+.assetPriceButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 3px 5px;
+  font: inherit;
+  font-weight: 650;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.assetPriceButton svg {
+  color: var(--text-muted);
+}
+
+.assetPriceButton:hover {
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--accent);
+}
+
+.assetPriceButton:hover svg {
+  color: currentColor;
+}
+
+.assetPriceButton:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.priceDetailsBackdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgb(6 9 13 / 82%);
+  padding: 20px;
+}
+
+.priceDetailsModal {
+  display: grid;
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 40px);
+  gap: 18px;
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--card-raised);
+  box-shadow: 0 24px 72px rgb(0 0 0 / 48%);
+  padding: 22px;
+}
+
+.priceDetailsHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.priceDetailsHeader > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.priceDetailsHeader h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.priceDetailsHeader p {
+  max-width: 68ch;
+  margin: 5px 0 0;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.priceCalculationSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+
+.priceCalculationSummary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.priceCalculationSummary span,
+.priceFormula > span {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.priceCalculationSummary strong {
+  color: var(--text);
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.priceCalculationSummary small,
+.priceFormula small,
+.priceDetailsFootnote {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.priceFormula {
+  display: grid;
+  gap: 6px;
+  border-radius: 8px;
+  background: rgb(var(--accent-rgb) / 7%);
+  padding: 14px 16px;
+}
+
+.priceFormula strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.priceDetailsSections {
+  display: grid;
+  gap: 18px;
+}
+
+.priceDetailsSections > section {
+  display: grid;
+  gap: 8px;
+}
+
+.priceDetailsSections h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.priceDetailsList {
+  display: grid;
+  margin: 0;
+}
+
+.priceDetailsList > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 0;
+}
+
+.priceDetailsList > div:last-child {
+  border-bottom: 0;
+}
+
+.priceDetailsList dt {
+  color: var(--text-muted);
+  font-size: 0.67rem;
+}
+
+.priceDetailsList dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.priceDetailsList a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.priceDetailsList a:hover {
+  text-decoration: underline;
+}
+
+.priceDetailsFootnote {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+@media (max-width: 640px) {
+  .priceDetailsBackdrop {
+    place-items: end center;
+    padding: 10px;
+  }
+
+  .priceDetailsModal {
+    max-height: calc(100dvh - 20px);
+    padding: 18px;
+  }
+
+  .priceCalculationSummary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .priceDetailsList > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 .assetIdentity {
   display: flex;
   align-items: center;

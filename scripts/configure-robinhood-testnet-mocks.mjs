@@ -229,6 +229,7 @@ for (const item of catalog) {
   upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {
     asset,
     source: "ChainlinkDirect",
+    quoteToken: "0x0000000000000000000000000000000000000000",
     primarySource: feed,
     secondarySource: "0x0000000000000000000000000000000000000000",
     primaryMaxStaleness: robinhoodEquityMaxStalenessSeconds,

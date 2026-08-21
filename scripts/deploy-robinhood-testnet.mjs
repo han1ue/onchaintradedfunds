@@ -125,8 +125,8 @@ const suggestedInitialPricingConfigs =
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
 const wethAddress = parseAddress("externalContracts.weth", externalContracts.weth);
-const wethUsdFeedAddress = parseAddress("WETH_USD_FEED_ADDRESS", requiredEnv("WETH_USD_FEED_ADDRESS"));
-const usdgUsdFeedAddress = parseAddress("USDG_USD_FEED_ADDRESS", requiredEnv("USDG_USD_FEED_ADDRESS"));
+const configuredWethUsdFeed = env("WETH_USD_FEED_ADDRESS");
+const configuredUsdgUsdFeed = env("USDG_USD_FEED_ADDRESS");
 const quoteUsdMaxStaleness = Number(env("QUOTE_USD_MAX_STALENESS_SECONDS", "3600"));
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
@@ -165,6 +165,21 @@ console.log(`Balance: ${formatEther(balance)} ETH`);
 if (balance === 0n) {
   throw new Error("Deployer has no testnet ETH for gas.");
 }
+
+const wethUsdFeed = configuredWethUsdFeed
+  ? { address: parseAddress("WETH_USD_FEED_ADDRESS", configuredWethUsdFeed), external: true }
+  : await deployContract({
+      name: "TestnetMockPriceFeed",
+      args: [account.address, 8, 1_625_00000000n, "Synthetic WETH / USD"],
+    });
+const usdgUsdFeed = configuredUsdgUsdFeed
+  ? { address: parseAddress("USDG_USD_FEED_ADDRESS", configuredUsdgUsdFeed), external: true }
+  : await deployContract({
+      name: "TestnetMockPriceFeed",
+      args: [account.address, 8, 1_00000000n, "Synthetic USDG / USD"],
+    });
+const wethUsdFeedAddress = wethUsdFeed.address;
+const usdgUsdFeedAddress = usdgUsdFeed.address;
 
 const assetRegistry = await deployContract({ name: "AssetRegistry", args: [account.address] });
 const rebalanceExecutor = await deployContract({
@@ -218,12 +233,14 @@ const assetMarketRegistry = await deployContract({
 });
 const assetMarketRegistryAbi = contractArtifact("AssetMarketRegistry").abi;
 const quoteTokenRegistrations = await Promise.all([
-  [wethAddress, wethUsdFeedAddress, "WETH"],
-  [usdgAddress, usdgUsdFeedAddress, "USDG"],
-].map(async ([quoteToken, usdFeed, symbol]) => ({
+  [wethAddress, wethUsdFeedAddress, "WETH", wethUsdFeed],
+  [usdgAddress, usdgUsdFeedAddress, "USDG", usdgUsdFeed],
+].map(async ([quoteToken, usdFeed, symbol, feedDeployment]) => ({
   symbol,
   quoteToken,
   usdFeed,
+  feedDeployment,
+  synthetic: !feedDeployment.external,
   maxStaleness: quoteUsdMaxStaleness,
   validationMode: 0,
   allowComposedChainlink: true,
@@ -336,7 +353,6 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 const archivedDeployment = archiveExistingDeployment();
 const deployment = {
   schemaVersion: 5,
-  requiresRedeployment: false,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,

@@ -839,6 +839,9 @@ const uniswapV3FactoryReadAbi = [{
 }] as const;
 
 const uniswapV3PoolDiscoveryAbi = [
+  { type: "function", name: "token0", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "token1", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "fee", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint24" }] },
   {
     type: "function",
     name: "slot0",
@@ -3099,6 +3102,205 @@ function TimelineItem({
   );
 }
 
+function formatPricingDuration(seconds: number): string {
+  if (seconds % 86_400 === 0) return `${seconds / 86_400} day${seconds === 86_400 ? "" : "s"}`;
+  if (seconds % 3_600 === 0) return `${seconds / 3_600} hour${seconds === 3_600 ? "" : "s"}`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  return `${seconds} seconds`;
+}
+
+function oracleValidationLabel(mode: 0 | 1): string {
+  return mode === 1 ? "Robinhood token pause-aware validation" : "Standard Chainlink validation";
+}
+
+function PriceSourceLink({ address, label }: { address: string; label: string }) {
+  return (
+    <a
+      href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`}
+      target="_blank"
+      rel="noreferrer"
+      title={`Open ${label.toLowerCase()} in explorer`}
+    >
+      {shortAddress(address)} <ExternalLink size={11} />
+    </a>
+  );
+}
+
+function PriceDetailsModal({
+  asset,
+  price,
+  config,
+  verified,
+  onClose,
+}: {
+  asset: Allocation;
+  price: CatalogOraclePrice | undefined;
+  config: AssetPricingConfig | undefined;
+  verified: boolean;
+  onClose: () => void;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const primaryIsChainlink = Boolean(config && config.source !== 2);
+  const hasSecondary = Boolean(config && config.source !== 0);
+  const { data: primaryResults } = useReadContracts({
+    contracts: primaryIsChainlink && config ? [
+      { address: config.primarySource, abi: aggregatorV3ReadAbi, functionName: "latestRoundData" as const, chainId: robinhoodChainTestnet.id },
+      { address: config.primarySource, abi: aggregatorV3ReadAbi, functionName: "decimals" as const, chainId: robinhoodChainTestnet.id },
+    ] : [],
+    query: { enabled: primaryIsChainlink },
+  });
+  const { data: secondaryResults } = useReadContracts({
+    contracts: hasSecondary && config ? [
+      { address: config.secondarySource, abi: aggregatorV3ReadAbi, functionName: "latestRoundData" as const, chainId: robinhoodChainTestnet.id },
+      { address: config.secondarySource, abi: aggregatorV3ReadAbi, functionName: "decimals" as const, chainId: robinhoodChainTestnet.id },
+    ] : [],
+    query: { enabled: hasSecondary },
+  });
+  const { data: poolResults } = useReadContracts({
+    contracts: config?.source === 2 ? [
+      { address: config.primarySource, abi: uniswapV3PoolDiscoveryAbi, functionName: "token0" as const, chainId: robinhoodChainTestnet.id },
+      { address: config.primarySource, abi: uniswapV3PoolDiscoveryAbi, functionName: "token1" as const, chainId: robinhoodChainTestnet.id },
+      { address: config.primarySource, abi: uniswapV3PoolDiscoveryAbi, functionName: "fee" as const, chainId: robinhoodChainTestnet.id },
+    ] : [],
+    query: { enabled: config?.source === 2 },
+  });
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
+  function feedReading(results: typeof primaryResults): { value: string; updated: string } | undefined {
+    const round = results?.[0]?.status === "success"
+      ? results[0].result as readonly [bigint, bigint, bigint, bigint, bigint]
+      : undefined;
+    const decimals = results?.[1]?.status === "success" ? results[1].result : undefined;
+    if (!round || typeof decimals !== "number" || round[1] <= 0n) return undefined;
+    return {
+      value: Number(formatUnits(round[1], decimals)).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+      updated: round[3] > 0n ? formatTimestamp(Number(round[3])) : "No update timestamp",
+    };
+  }
+
+  const primaryReading = feedReading(primaryResults);
+  const secondaryReading = feedReading(secondaryResults);
+  const poolToken0 = poolResults?.[0]?.status === "success" ? poolResults[0].result : undefined;
+  const poolToken1 = poolResults?.[1]?.status === "success" ? poolResults[1].result : undefined;
+  const poolFee = poolResults?.[2]?.status === "success" ? Number(poolResults[2].result) : undefined;
+  const quoteLabel = config && config.quoteToken !== zeroAddress
+    ? quoteTokenLabel(config.quoteToken)
+    : "quote token";
+  const formula = !config
+    ? "Pricing configuration unavailable"
+    : config.source === 0
+      ? `${asset.symbol}/USD Chainlink answer`
+      : config.source === 1
+        ? `${asset.symbol}/${quoteLabel} Chainlink answer × ${quoteLabel}/USD Chainlink answer`
+        : `${asset.symbol}/${quoteLabel} 1-hour Uniswap V3 TWAP × ${quoteLabel}/USD Chainlink answer`;
+
+  return (
+    <div className="priceDetailsBackdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section
+        className="priceDetailsModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="price-details-title"
+        aria-describedby="price-details-description"
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+            "button:not([disabled]), a[href]",
+          ));
+          const first = focusable.at(0);
+          const last = focusable.at(-1);
+          if (!first || !last) return;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
+        <header className="priceDetailsHeader">
+          <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} />
+          <div>
+            <h2 id="price-details-title">How {asset.symbol} is priced</h2>
+            <p id="price-details-description">The OTF converts this asset into its USD accounting value using the permanently pinned route below.</p>
+          </div>
+          <button ref={closeButtonRef} className="sunsetDialogClose" type="button" aria-label="Close price details" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="priceCalculationSummary">
+          <div>
+            <span>Current normalized price</span>
+            <strong>{price?.display ?? "Unavailable"}</strong>
+            <small>{price?.updatedAt ? `Latest underlying update ${formatTimestamp(Number(price.updatedAt))}` : "Runtime oracle data is unavailable."}</small>
+          </div>
+          <span className={`stateBadge ${price?.value !== undefined ? "success" : "danger"}`}>
+            {price?.value !== undefined ? "Runtime healthy" : "Runtime unavailable"}
+          </span>
+        </div>
+
+        <div className="priceFormula" aria-label="Price calculation formula">
+          <span>Calculation</span>
+          <strong>{formula}</strong>
+          <small>The final result is normalized to USD. There is no automatic fallback source.</small>
+        </div>
+
+        {config ? (
+          <div className="priceDetailsSections">
+            <section>
+              <h3>Pinned route</h3>
+              <dl className="priceDetailsList">
+                <div><dt>Route</dt><dd>{pricingSourceLabel(config.source)}</dd></div>
+                {config.quoteToken !== zeroAddress ? <div><dt>Quote token</dt><dd>{quoteLabel} · <PriceSourceLink address={config.quoteToken} label="Quote token" /></dd></div> : null}
+                <div><dt>{config.source === 2 ? "Pricing pool" : config.source === 0 ? "Asset/USD feed" : "Asset/quote feed"}</dt><dd><PriceSourceLink address={config.primarySource} label="Primary pricing source" /></dd></div>
+                {hasSecondary ? <div><dt>Quote/USD feed</dt><dd><PriceSourceLink address={config.secondarySource} label="Quote USD feed" /></dd></div> : null}
+                {config.source === 2 && poolToken0 && poolToken1 ? <div><dt>Pool pair</dt><dd><PriceSourceLink address={poolToken0} label="Pool token 0" /> / <PriceSourceLink address={poolToken1} label="Pool token 1" /></dd></div> : null}
+                {config.source === 2 ? <div><dt>Pool fee</dt><dd>{poolFee !== undefined ? `${(poolFee / 10_000).toFixed(2)}% (${poolFee})` : "Loading"}</dd></div> : null}
+                {config.source === 2 ? <div><dt>TWAP window</dt><dd>1 hour of pool observations</dd></div> : null}
+              </dl>
+            </section>
+
+            <section>
+              <h3>Validation</h3>
+              <dl className="priceDetailsList">
+                <div><dt>Configuration</dt><dd><span className={`stateBadge ${verified ? "success" : "warning"}`}>{verified ? "Verified" : "Unverified"}</span></dd></div>
+                <div><dt>Primary rule</dt><dd>{config.source === 2 ? "Canonical V3 factory, exact pair and fee, initialized pool, ≥64 observations, full TWAP history" : oracleValidationLabel(config.primaryValidationMode)}</dd></div>
+                <div><dt>Primary freshness</dt><dd>{formatPricingDuration(config.primaryMaxStaleness)}</dd></div>
+                {hasSecondary ? <div><dt>Quote/USD rule</dt><dd>{oracleValidationLabel(config.secondaryValidationMode)}</dd></div> : null}
+                {hasSecondary ? <div><dt>Quote/USD freshness</dt><dd>{formatPricingDuration(config.secondaryMaxStaleness)}</dd></div> : null}
+              </dl>
+            </section>
+
+            {primaryIsChainlink || hasSecondary ? (
+              <section>
+                <h3>Current Chainlink legs</h3>
+                <dl className="priceDetailsList">
+                  {primaryIsChainlink ? <div><dt>{config.source === 0 ? `${asset.symbol}/USD` : `${asset.symbol}/${quoteLabel}`}</dt><dd>{primaryReading ? `${primaryReading.value} · ${primaryReading.updated}` : "Reading unavailable"}</dd></div> : null}
+                  {hasSecondary ? <div><dt>{quoteLabel}/USD</dt><dd>{secondaryReading ? `${secondaryReading.value} · ${secondaryReading.updated}` : "Reading unavailable"}</dd></div> : null}
+                </dl>
+              </section>
+            ) : null}
+          </div>
+        ) : (
+          <div className="validationSummary warning" role="status"><AlertTriangle size={15} /><div><strong>Pinned configuration unavailable</strong><span>Refresh the OTF data to inspect its pricing route.</span></div></div>
+        )}
+
+        <p className="priceDetailsFootnote">Verified means the pinned identity matches the frontend manifest. Runtime healthy means the current onchain read succeeded. These are separate checks.</p>
+      </section>
+    </div>
+  );
+}
+
 function PortfolioAllocation({
   vault,
   allocations,
@@ -3114,6 +3316,8 @@ function PortfolioAllocation({
   pricingConfigsLoading: boolean;
   onRefresh: () => Promise<unknown>;
 }) {
+  const [selectedPriceAsset, setSelectedPriceAsset] = useState<Allocation>();
+  const priceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const holdingContracts = vault.address && allocations.length
     ? allocations.flatMap((asset) => ([
         {
@@ -3143,7 +3347,26 @@ function PortfolioAllocation({
     },
   });
 
+  const closePriceDetails = useCallback(() => {
+    setSelectedPriceAsset(undefined);
+    window.setTimeout(() => priceTriggerRef.current?.focus(), 0);
+  }, []);
+
   return (
+    <>
+    {selectedPriceAsset ? (
+      <PriceDetailsModal
+        asset={selectedPriceAsset}
+        price={oraclePrices[selectedPriceAsset.address.toLowerCase()]}
+        config={pinnedPricingConfigs[selectedPriceAsset.address.toLowerCase()]}
+        verified={Boolean(pinnedPricingConfigs[selectedPriceAsset.address.toLowerCase()] && isVerifiedPricingConfig(
+          robinhoodChainTestnet.id,
+          selectedPriceAsset.address,
+          pinnedPricingConfigs[selectedPriceAsset.address.toLowerCase()]!,
+        ))}
+        onClose={closePriceDetails}
+      />
+    ) : null}
     <SectionCard
       title="Portfolio allocation"
       subtitle="Token holdings and target vs actual weights"
@@ -3216,7 +3439,15 @@ function PortfolioAllocation({
                     </div>
                   </td>
                   <td className="assetAmount mobileSecondaryAssetDatum" data-label="Amount held">{amountHeld}</td>
-                  <td className="mobileSecondaryAssetDatum" data-label="Price">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
+                  <td className="mobileSecondaryAssetDatum" data-label="Price">
+                    <button className="assetPriceButton" type="button" onClick={(event) => {
+                      priceTriggerRef.current = event.currentTarget;
+                      setSelectedPriceAsset(asset);
+                    }} aria-label={`Explain how ${asset.symbol} price is calculated`}>
+                      <span>{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</span>
+                      <CircleHelp size={13} />
+                    </button>
+                  </td>
                   <td data-label="Pricing">
                     <span className={`stateBadge ${pricingConfigsLoading ? "muted" : pricingVerified ? "success" : "warning"}`}>
                       {pricingConfigsLoading ? "Checking" : pricingVerified ? "Verified" : "Unverified"}
@@ -3244,6 +3475,7 @@ function PortfolioAllocation({
 
       <StrategyChallenge vault={vault} onRefresh={onRefresh} />
     </SectionCard>
+    </>
   );
 }
 
