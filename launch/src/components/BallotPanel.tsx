@@ -38,7 +38,7 @@ function sumVotes(votes: Record<string, number>) {
   return Object.values(votes).reduce((sum, value) => sum + value, 0);
 }
 
-export function BallotPanel({ proposals, ballot, eligibility, rules, availability, focusSlug, turnstileSiteKey, siteUrl, currentTime }: {
+export function BallotPanel({ proposals, ballot, eligibility, rules, availability, focusSlug, turnstileSiteKey, currentTime }: {
   proposals: LeaderboardEntry[];
   ballot: BallotSummary | null;
   eligibility: ParticipationEligibility;
@@ -46,7 +46,6 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
   availability: VoteAvailability;
   focusSlug?: string;
   turnstileSiteKey?: string;
-  siteUrl: string;
   currentTime: string;
 }) {
   const router = useRouter();
@@ -84,7 +83,7 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
     ticker: proposals.find((proposal) => proposal.id === addition.proposalId)?.ticker ?? "OTF",
     votes: addition.votes,
   }));
-  const previewText = buildVotePost(reason, siteUrl, "[verification code]", revealVotes ? addedChoices : []);
+  const previewText = buildVotePost(reason, "[verification code]", revealVotes ? addedChoices : []);
   const disclosurePreviewLabel = revealVotes
     ? addedChoices.length > 0 ? "batch picks included" : "picks appear after selection"
     : "picks not shown";

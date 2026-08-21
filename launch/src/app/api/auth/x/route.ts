@@ -5,7 +5,7 @@ import { enforceRateLimit } from "@/server/rate-limit";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
-  const origin = canonicalXAuthOrigin(requestUrl);
+  const origin = canonicalXAuthOrigin();
   try {
     await enforceRateLimit("oauth", request);
     const callbackUrl = new URL("/api/auth/x/callback", origin).toString();

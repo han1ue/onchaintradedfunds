@@ -31,12 +31,11 @@ function initialRow(asset: EligibleAsset | undefined, weight: string): Row {
   };
 }
 
-export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey, siteUrl }: {
+export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey }: {
   competition: CompetitionSummary;
   assets: EligibleAsset[];
   eligibility: ParticipationEligibility;
   turnstileSiteKey?: string;
-  siteUrl: string;
 }) {
   const verifiedAssets = useMemo(() => assets.filter((asset) => (
     asset.quality === "high"
@@ -79,7 +78,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
     name: name || "Your OTF",
     ticker: ticker || "TICKER",
     slug: slugifyProposalName(name || "Your OTF"),
-  }, siteUrl, "[verification code]");
+  }, "[verification code]");
   const validPostUrl = isValidXPostUrl(postUrl);
 
   useEffect(() => {

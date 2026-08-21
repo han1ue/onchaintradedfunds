@@ -1,10 +1,13 @@
 import { defineConfig } from "drizzle-kit";
 
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required for database tooling.");
+
 export default defineConfig({
   dialect: "postgresql",
   schema: "./src/server/db/schema.ts",
   out: "./drizzle",
-  dbCredentials: { url: process.env.DATABASE_URL ?? "postgres://localhost/otf_launch" },
+  dbCredentials: { url: databaseUrl },
   strict: true,
   verbose: true
 });

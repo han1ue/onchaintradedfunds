@@ -1,3 +1,5 @@
+import { PUBLIC_SITE_ORIGIN, publicSiteUrl } from "@/config/site";
+
 export type XPostProposal = { name: string; ticker: string; slug: string };
 export type VotePostChoice = { ticker: string; votes: number };
 
@@ -5,22 +7,18 @@ export function slugifyProposalName(value: string) {
   return value.toLowerCase().replace(/\s+otf$/i, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-otf";
 }
 
-function proposalUrl(siteUrl: string, slug: string) {
-  return `${siteUrl.replace(/\/$/, "")}/otfs/${slug}`;
-}
-
-export function buildSubmissionPost(reason: string, proposal: XPostProposal, siteUrl: string, challenge?: string) {
+export function buildSubmissionPost(reason: string, proposal: XPostProposal, challenge?: string) {
   const context = reason.trim();
-  return `${context ? `${context}\n\n` : ""}I submitted ${proposal.name} as an OTF proposal to OTF Launch\n${proposalUrl(siteUrl, proposal.slug)}${challenge ? `\n${challenge}` : ""}`;
+  return `${context ? `${context}\n\n` : ""}I submitted ${proposal.name} as an OTF proposal to OTF Launch\n${publicSiteUrl(`/otfs/${proposal.slug}`)}${challenge ? `\n${challenge}` : ""}`;
 }
 
 function voteChoicesLine(choices: VotePostChoice[]) {
   return choices.length ? `\nMy picks: ${choices.map((choice) => `${choice.votes}× $${choice.ticker}`).join(", ")}` : "";
 }
 
-export function buildVotePost(reason: string, siteUrl: string, challenge?: string, choices: VotePostChoice[] = []) {
+export function buildVotePost(reason: string, challenge?: string, choices: VotePostChoice[] = []) {
   const context = reason.trim();
-  return `${context ? `${context}\n\n` : ""}I just voted in the OTF Launch competition.${voteChoicesLine(choices)}\n${siteUrl.replace(/\/$/, "")}/vote${challenge ? `\n${challenge}` : ""}`;
+  return `${context ? `${context}\n\n` : ""}I just voted in the OTF Launch competition.${voteChoicesLine(choices)}\n${PUBLIC_SITE_ORIGIN}/vote${challenge ? `\n${challenge}` : ""}`;
 }
 
 export function buildXIntentUrl(text: string) {

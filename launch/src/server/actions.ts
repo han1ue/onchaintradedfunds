@@ -9,7 +9,6 @@ import {
   assetMarkets, tweetEvidence, users, xActionChallenges
 } from "./db/schema";
 import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
-import { env } from "./env";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
 
@@ -170,7 +169,7 @@ async function prepareProof(proposalId: string, input: unknown) {
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
 
   const token = newChallengeToken();
-  const postText = buildSubmissionPost(reason, proposal, env.NEXT_PUBLIC_SITE_URL, token);
+  const postText = buildSubmissionPost(reason, proposal, token);
   if (approximateXPostLength(postText) > 280) throw new Error("POST_TOO_LONG");
   const [challenge] = await database.insert(xActionChallenges).values({
     action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,

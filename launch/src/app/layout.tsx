@@ -4,6 +4,7 @@ import "@onchaintradedfunds/brand/styles.css";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { PUBLIC_SITE_ORIGIN } from "@/config/site";
 import { PrelaunchGate } from "@/components/PrelaunchGate";
 import { isCompetitionUpcoming } from "@/lib/competition";
 import { getCompetition } from "@/server/data";
@@ -11,7 +12,7 @@ import { getCompetition } from "@/server/data";
 export const metadata: Metadata = {
   title: { default: "OTF Launch Competition", template: "%s · OTF Launch" },
   description: "Propose, verify and rank the next Onchain Traded Funds.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001"),
+  metadataBase: new URL(PUBLIC_SITE_ORIGIN),
   icons: { icon: OTF_FAVICON_DATA_URL }
 };
 

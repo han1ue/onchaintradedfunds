@@ -3,7 +3,6 @@ import { z } from "zod";
 const optionalUrl = z.string().url().optional().or(z.literal(""));
 
 const schema = z.object({
-  NEXT_PUBLIC_SITE_URL: optionalUrl.default("http://localhost:3001"),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
   AUTH_SECRET: z.string().min(32).optional(),
   AUTH_X_CONSUMER_KEY: z.string().optional(),
@@ -12,7 +11,6 @@ const schema = z.object({
   DATABASE_URL: optionalUrl,
   REDIS_URL: z.string().regex(/^rediss?:\/\//).optional().or(z.literal("")),
   TURNSTILE_SECRET_KEY: z.string().optional(),
-  TURNSTILE_HOSTNAMES: z.string().optional(),
   CRON_SECRET: z.string().min(16).optional(),
   IP_HASH_SECRET: z.string().min(16).optional(),
   ADMIN_X_IDS: z.string().optional(),
@@ -32,7 +30,6 @@ if (process.env.NODE_ENV === "production") {
     ["REDIS_URL", env.REDIS_URL],
     ["NEXT_PUBLIC_TURNSTILE_SITE_KEY", env.NEXT_PUBLIC_TURNSTILE_SITE_KEY],
     ["TURNSTILE_SECRET_KEY", env.TURNSTILE_SECRET_KEY],
-    ["TURNSTILE_HOSTNAMES", env.TURNSTILE_HOSTNAMES],
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length) throw new Error(`PRODUCTION_ABUSE_CONTROLS_REQUIRED:${missing.join(",")}`);
 }

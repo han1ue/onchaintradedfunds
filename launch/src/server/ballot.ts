@@ -137,7 +137,7 @@ export async function getBallotSummary(competitionId: string, voterUserId: strin
   };
 }
 
-export async function prepareBallotProof(input: unknown, siteOrigin: string) {
+export async function prepareBallotProof(input: unknown) {
   const parsed = ballotActivationSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor({ votingRequired: true });
@@ -159,7 +159,7 @@ export async function prepareBallotProof(input: unknown, siteOrigin: string) {
   const disclosedChoices = parsed.revealVotes
     ? parsed.additions.map((addition) => ({ ticker: tickers.get(addition.proposalId) ?? "OTF", votes: addition.votes }))
     : [];
-  const postText = buildVotePost(parsed.reason, siteOrigin, token, disclosedChoices);
+  const postText = buildVotePost(parsed.reason, token, disclosedChoices);
   if (approximateXPostLength(postText) > 280) throw new Error("POST_TOO_LONG");
   const [challenge] = await database.insert(xActionChallenges).values({
     action: "vote",

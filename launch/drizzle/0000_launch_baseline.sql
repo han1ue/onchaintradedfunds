@@ -406,7 +406,7 @@ INSERT INTO "eligible_assets" ("symbol", "name", "contract_address", "price_sour
   ('INTC', 'Intel', '0xc72b96e0E48ecd4DC75E1e45396e26300BC39681', 'robinhood-bid', 'high'),
   ('META', 'Meta Platforms', '0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35', 'robinhood-bid', 'high'),
   ('MSFT', 'Microsoft', '0xe93237C50D904957Cf27E7B1133b510C669c2e74', 'robinhood-bid', 'high'),
-  ('MSTR', 'Strategy', '0xec262a75e413fAfD0fD80480274532C79D42da09', 'robinhood-bid', 'high'),
+  ('MSTR', 'Strategy', '0xec262a75e413fAfD0dF80480274532C79D42da09', 'robinhood-bid', 'high'),
   ('MU', 'Micron Technology', '0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD', 'robinhood-bid', 'high'),
   ('NFLX', 'Netflix', '0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8', 'robinhood-bid', 'high'),
   ('NVDA', 'NVIDIA', '0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC', 'robinhood-bid', 'high'),

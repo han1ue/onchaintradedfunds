@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { env } from "./env";
+import { PUBLIC_SITE_ORIGIN } from "@/config/site";
 
 const requestTokenUrl = "https://api.x.com/oauth/request_token";
 const accessTokenUrl = "https://api.x.com/oauth/access_token";
@@ -67,11 +68,8 @@ async function signedPost(url: string, oauthExtra: Record<string, string>, body:
   return new URLSearchParams(await response.text());
 }
 
-export function canonicalXAuthOrigin(requestUrl: URL) {
-  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (productionHost) return `https://${productionHost}`;
-  if (env.NEXT_PUBLIC_SITE_URL && !env.NEXT_PUBLIC_SITE_URL.startsWith("http://localhost")) return new URL(env.NEXT_PUBLIC_SITE_URL).origin;
-  return requestUrl.origin;
+export function canonicalXAuthOrigin() {
+  return PUBLIC_SITE_ORIGIN;
 }
 
 export function sanitizeCallbackPath(value: string | null) {

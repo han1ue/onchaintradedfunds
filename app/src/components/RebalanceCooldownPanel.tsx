@@ -84,10 +84,15 @@ import {
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
-  robinhoodTestnetKnownPricingConfigs,
   robinhoodTestnetV3Venue,
   robinhoodTestnetWethV3Venue,
 } from "@/lib/deployment";
+import {
+  approvedPricingConfigsFor,
+  isVerifiedPricingConfig,
+  pricingConfigsMatch,
+  verifiedAssetFor,
+} from "@/lib/verified-assets";
 import {
   deriveOtfQuality,
   normalizeAssetQuality,
@@ -681,11 +686,11 @@ function useVaultExecutionRoutes(
   }, [enabled, mode, vault.allocations]);
 }
 
-function configuredPricingConfig(asset: string): AssetPricingConfig | undefined {
-  const known = robinhoodTestnetKnownPricingConfigs.find(
-    (record) => record.asset.toLowerCase() === asset.toLowerCase(),
-  );
-  return known?.config as AssetPricingConfig | undefined;
+function configuredPricingConfig(
+  asset: string,
+  chainId = robinhoodChainTestnet.id,
+): AssetPricingConfig | undefined {
+  return approvedPricingConfigsFor(chainId, asset)[0] as AssetPricingConfig | undefined;
 }
 
 function emptyPricingConfig(): AssetPricingConfig {
@@ -704,6 +709,257 @@ function pricingSourceLabel(source: PricingSource): string {
   if (source === 0) return "Chainlink ASSET/USD";
   if (source === 1) return "Chainlink via WETH";
   return "Uniswap V3 TWAP";
+}
+
+const uniswapV3FactoryReadAbi = [{
+  type: "function",
+  name: "getPool",
+  stateMutability: "view",
+  inputs: [
+    { name: "tokenA", type: "address" },
+    { name: "tokenB", type: "address" },
+    { name: "fee", type: "uint24" },
+  ],
+  outputs: [{ name: "pool", type: "address" }],
+}] as const;
+
+const uniswapV3PoolDiscoveryAbi = [
+  {
+    type: "function",
+    name: "slot0",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "observationIndex", type: "uint16" },
+      { name: "observationCardinality", type: "uint16" },
+      { name: "observationCardinalityNext", type: "uint16" },
+      { name: "feeProtocol", type: "uint8" },
+      { name: "unlocked", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "liquidity",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "liquidity", type: "uint128" }],
+  },
+  {
+    type: "function",
+    name: "observe",
+    stateMutability: "view",
+    inputs: [{ name: "secondsAgos", type: "uint32[]" }],
+    outputs: [
+      { name: "tickCumulatives", type: "int56[]" },
+      { name: "secondsPerLiquidityCumulativeX128s", type: "uint160[]" },
+    ],
+  },
+] as const;
+
+const MAINNET_V3_FACTORY = "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA" as const;
+const MAINNET_WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" as const;
+const MAINNET_USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" as const;
+const V3_FEES = [100, 500, 3000, 10_000] as const;
+
+type CompatiblePool = {
+  address: `0x${string}`;
+  fee: number;
+  quoteSymbol: string;
+};
+
+function useCompatibleUniswapV3Pools(chainId: number, assetAddress: string, enabled: boolean) {
+  const network = chainId === robinhoodChain.id
+    ? { factory: MAINNET_V3_FACTORY, quotes: [{ symbol: "WETH", address: MAINNET_WETH }, { symbol: "USDG", address: MAINNET_USDG }] }
+    : chainId === robinhoodChainTestnet.id && robinhoodTestnetAddresses.uniswapV3Factory
+      ? {
+          factory: robinhoodTestnetAddresses.uniswapV3Factory,
+          quotes: [
+            robinhoodTestnetAddresses.weth ? { symbol: "WETH", address: robinhoodTestnetAddresses.weth } : undefined,
+            robinhoodTestnetAddresses.usdg ? { symbol: "USDG", address: robinhoodTestnetAddresses.usdg } : undefined,
+          ].filter((quote): quote is { symbol: string; address: `0x${string}` } => Boolean(quote)),
+        }
+      : undefined;
+  const lookupInputs = enabled && network && isAddress(assetAddress)
+    ? network.quotes.flatMap((quote) => V3_FEES.map((fee) => ({ ...quote, fee })))
+    : [];
+  const { data: poolLookupResults, isLoading: lookupLoading } = useReadContracts({
+    contracts: lookupInputs.map((input) => ({
+      address: network!.factory,
+      abi: uniswapV3FactoryReadAbi,
+      functionName: "getPool" as const,
+      args: [assetAddress as `0x${string}`, input.address, input.fee] as const,
+      chainId,
+    })),
+    query: { enabled: lookupInputs.length > 0 },
+  });
+  const candidates = lookupInputs.flatMap((input, index) => {
+    const result = poolLookupResults?.[index];
+    const address = result?.status === "success" ? result.result : undefined;
+    return address && address !== zeroAddress ? [{ address, fee: input.fee, quoteSymbol: input.symbol }] : [];
+  });
+  const { data: poolStateResults, isLoading: stateLoading } = useReadContracts({
+    contracts: candidates.flatMap((pool) => ([
+      { address: pool.address, abi: uniswapV3PoolDiscoveryAbi, functionName: "slot0" as const, chainId },
+      { address: pool.address, abi: uniswapV3PoolDiscoveryAbi, functionName: "liquidity" as const, chainId },
+      { address: pool.address, abi: uniswapV3PoolDiscoveryAbi, functionName: "observe" as const, args: [[3_600, 0]] as const, chainId },
+    ])),
+    query: { enabled: candidates.length > 0 },
+  });
+  const pools: CompatiblePool[] = candidates.filter((_, index) => {
+    const slotResult = poolStateResults?.[index * 3];
+    const liquidityResult = poolStateResults?.[index * 3 + 1];
+    const observeResult = poolStateResults?.[index * 3 + 2];
+    if (slotResult?.status !== "success" || liquidityResult?.status !== "success" || observeResult?.status !== "success") return false;
+    const slot0 = slotResult.result as readonly [bigint, number, number, number, number, number, boolean];
+    return slot0[0] > 0n && Number(slot0[3]) >= 64 && BigInt(liquidityResult.result as bigint) > 0n;
+  });
+  return { pools, isLoading: lookupLoading || stateLoading };
+}
+
+function PricingConfigurationFields({
+  chainId,
+  assetAddress,
+  config,
+  onChange,
+  disabled = false,
+}: {
+  chainId: number;
+  assetAddress: string;
+  config: AssetPricingConfig;
+  onChange: (config: AssetPricingConfig) => void;
+  disabled?: boolean;
+}) {
+  const [customizing, setCustomizing] = useState(false);
+  const approved = approvedPricingConfigsFor(chainId, assetAddress) as AssetPricingConfig[];
+  const approvedIndex = approved.findIndex((candidate) => pricingConfigsMatch(candidate, config));
+  const verifiedAsset = verifiedAssetFor(chainId, assetAddress);
+  const verified = isVerifiedPricingConfig(chainId, assetAddress, config);
+  const { pools, isLoading: poolsLoading } = useCompatibleUniswapV3Pools(
+    chainId,
+    assetAddress,
+    config.source === 2 && (customizing || approved.length === 0),
+  );
+
+  useEffect(() => setCustomizing(false), [assetAddress, chainId]);
+
+  function commit(next: AssetPricingConfig) {
+    setCustomizing(!isVerifiedPricingConfig(chainId, assetAddress, next));
+    onChange(next);
+  }
+
+  const statusLabel = verified
+    ? "Verified configuration"
+    : verifiedAsset
+      ? "Custom configuration"
+      : "Unverified configuration";
+
+  return (
+    <div className="pricingConfigurationFields">
+      <div className="pricingConfigurationHeader">
+        <span>Pricing configuration</span>
+        <span className={`stateBadge ${verified ? "success" : "warning"}`}>{statusLabel}</span>
+      </div>
+      <label>
+        <span>Approved choice</span>
+        <select
+          value={!customizing && approvedIndex >= 0 ? `approved-${approvedIndex}` : "custom"}
+          disabled={disabled}
+          onChange={(event) => {
+            if (event.target.value === "custom") {
+              setCustomizing(true);
+              return;
+            }
+            const index = Number(event.target.value.replace("approved-", ""));
+            if (approved[index]) {
+              setCustomizing(false);
+              onChange(approved[index]);
+            }
+          }}
+        >
+          {approved.map((choice, index) => (
+            <option key={`${choice.source}-${choice.primarySource}`} value={`approved-${index}`}>
+              {pricingSourceLabel(choice.source)} · {shortAddress(choice.primarySource)}
+            </option>
+          ))}
+          <option value="custom">Customize</option>
+        </select>
+      </label>
+      {customizing || approved.length === 0 ? (
+        <div className="customPricingFields">
+          <label>
+            <span>Pricing source</span>
+            <select
+              value={config.source}
+              disabled={disabled}
+              onChange={(event) => commit({
+                source: Number(event.target.value) as PricingSource,
+                primarySource: zeroAddress,
+                secondarySource: zeroAddress,
+              })}
+            >
+              <option value={0}>Chainlink ASSET/USD</option>
+              <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
+              <option value={2}>Uniswap V3 TWAP</option>
+            </select>
+          </label>
+          {config.source === 2 ? (
+            <>
+              <label>
+                <span>Compatible pools</span>
+                <select
+                  value={pools.some((pool) => pool.address.toLowerCase() === config.primarySource.toLowerCase()) ? config.primarySource : ""}
+                  disabled={disabled || poolsLoading || pools.length === 0}
+                  onChange={(event) => commit({ ...config, primarySource: event.target.value as `0x${string}` })}
+                >
+                  <option value="">{poolsLoading ? "Discovering pools…" : pools.length ? "Choose a pool" : "No compatible pools found"}</option>
+                  {pools.map((pool) => (
+                    <option key={pool.address} value={pool.address}>
+                      {pool.quoteSymbol} · {(pool.fee / 10_000).toFixed(2)}% · {shortAddress(pool.address)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Pool address</span>
+                <input
+                  className={config.primarySource !== zeroAddress && !isAddress(config.primarySource) ? "invalid" : undefined}
+                  value={config.primarySource === zeroAddress ? "" : config.primarySource}
+                  disabled={disabled}
+                  onChange={(event) => commit({ ...config, primarySource: event.target.value.trim() as `0x${string}` })}
+                  placeholder="Select above or enter 0x address"
+                />
+              </label>
+            </>
+          ) : (
+            <label>
+              <span>{config.source === 1 ? "ASSET/WETH Chainlink feed" : "Chainlink feed"}</span>
+              <input
+                className={config.primarySource !== zeroAddress && !isAddress(config.primarySource) ? "invalid" : undefined}
+                value={config.primarySource === zeroAddress ? "" : config.primarySource}
+                disabled={disabled}
+                onChange={(event) => commit({ ...config, primarySource: event.target.value.trim() as `0x${string}` })}
+                placeholder="0x feed address"
+              />
+            </label>
+          )}
+          {config.source === 1 ? (
+            <label>
+              <span>WETH/USD Chainlink feed</span>
+              <input
+                className={config.secondarySource !== zeroAddress && !isAddress(config.secondarySource) ? "invalid" : undefined}
+                value={config.secondarySource === zeroAddress ? "" : config.secondarySource}
+                disabled={disabled}
+                onChange={(event) => commit({ ...config, secondarySource: event.target.value.trim() as `0x${string}` })}
+                placeholder="0x WETH/USD feed"
+              />
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function vaultAddressFromPathname(pathname: string): `0x${string}` | undefined {
@@ -840,6 +1096,33 @@ function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): Catalog
     });
     return prices;
   }, [feeds, priceResults]);
+}
+
+function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
+  const { data, isLoading } = useReadContracts({
+    contracts: enabled && vault.address
+      ? vault.allocations.map((asset) => ({
+          address: vault.address as `0x${string}`,
+          abi: managedOtfVaultAbi,
+          functionName: "pricingConfigForAsset" as const,
+          args: [asset.address as `0x${string}`] as const,
+          chainId: robinhoodChainTestnet.id,
+        }))
+      : [],
+    query: { enabled: enabled && Boolean(vault.address && vault.allocations.length) },
+  });
+  const configs = useMemo(() => Object.fromEntries(vault.allocations.map((asset, index) => {
+    const result = data?.[index];
+    if (result?.status !== "success") return [asset.address.toLowerCase(), undefined];
+    const [configured, source, primarySource, secondarySource] = result.result;
+    return [
+      asset.address.toLowerCase(),
+      configured && (source === 0 || source === 1 || source === 2)
+        ? { source, primarySource, secondarySource } as AssetPricingConfig
+        : undefined,
+    ];
+  })), [data, vault.allocations]);
+  return { configs, isLoading };
 }
 
 function AssetLogo({ logoUrl, symbol, compact = false }: {
@@ -1548,6 +1831,13 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     depositPauseStatusUnavailable,
   };
   const vaultOraclePrices = useVaultPinnedOraclePrices(vault, isTestnet && dataMode === "live");
+  const pinnedPricing = useVaultPinnedPricingConfigs(vault, isTestnet && dataMode === "live");
+  const vaultPricingVerified = pinnedPricing.isLoading
+    ? undefined
+    : vault.allocations.length > 0 && vault.allocations.every((asset) => {
+        const config = pinnedPricing.configs[asset.address.toLowerCase()];
+        return config && isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, config);
+      });
   const activeTab = view === "rwas" ? "RWAs" : "OTFs";
 
   useEffect(() => {
@@ -1639,6 +1929,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             <VaultHeader
               vault={vault}
               canManage={vault.connectedIsManager}
+              pricingVerified={vaultPricingVerified}
               onBack={() => openView("vaults")}
               onManage={() => openView("manage")}
             />
@@ -1648,7 +1939,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
             <div className="dashboardGrid">
               <div className="primaryColumn">
-                <PortfolioAllocation vault={vault} allocations={allocations} oraclePrices={vaultOraclePrices} onRefresh={refetchVaultData} />
+                <PortfolioAllocation
+                  vault={vault}
+                  allocations={allocations}
+                  oraclePrices={vaultOraclePrices}
+                  pinnedPricingConfigs={pinnedPricing.configs}
+                  pricingConfigsLoading={pinnedPricing.isLoading}
+                  onRefresh={refetchVaultData}
+                />
                 <UserActions vault={vault} />
               </div>
 
@@ -2070,11 +2368,13 @@ export function WalletConnectionAction() {
 function VaultHeader({
   vault,
   canManage,
+  pricingVerified,
   onBack,
   onManage,
 }: {
   vault: VaultView;
   canManage: boolean;
+  pricingVerified?: boolean;
   onBack: () => void;
   onManage: () => void;
 }) {
@@ -2115,6 +2415,9 @@ function VaultHeader({
                 {vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}
                 <span className={`stateBadge ${quality === "high" ? "success" : "muted"}`}>
                   {quality === "high" ? "High quality" : "Normal quality"}
+                </span>
+                <span className={`stateBadge ${pricingVerified === undefined ? "muted" : pricingVerified ? "success" : "warning"}`}>
+                  {pricingVerified === undefined ? "Checking pricing" : pricingVerified ? "Verified pricing" : "Unverified pricing"}
                 </span>
               </div>
               <div className="addressLine">
@@ -2536,11 +2839,15 @@ function PortfolioAllocation({
   vault,
   allocations,
   oraclePrices,
+  pinnedPricingConfigs,
+  pricingConfigsLoading,
   onRefresh,
 }: {
   vault: VaultView;
   allocations: Allocation[];
   oraclePrices: CatalogOraclePrices;
+  pinnedPricingConfigs: Record<string, AssetPricingConfig | undefined>;
+  pricingConfigsLoading: boolean;
   onRefresh: () => Promise<unknown>;
 }) {
   const holdingContracts = vault.address && allocations.length
@@ -2607,6 +2914,7 @@ function PortfolioAllocation({
               <th>Asset</th>
               <th>Amount held</th>
               <th>Price</th>
+              <th>Pricing</th>
               <th>Target</th>
               <th>Actual</th>
               <th>Drift</th>
@@ -2628,6 +2936,10 @@ function PortfolioAllocation({
                   : holdingsLoading
                     ? "Loading"
                     : "—";
+              const pinnedConfig = pinnedPricingConfigs[asset.address.toLowerCase()];
+              const pricingVerified = pinnedConfig
+                ? isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, pinnedConfig)
+                : false;
               return (
                 <tr key={asset.address}>
                   <td data-label="Asset">
@@ -2641,6 +2953,12 @@ function PortfolioAllocation({
                   </td>
                   <td className="assetAmount mobileSecondaryAssetDatum" data-label="Amount held">{amountHeld}</td>
                   <td className="mobileSecondaryAssetDatum" data-label="Price">{oraclePrices[asset.address.toLowerCase()]?.display ?? "Loading"}</td>
+                  <td data-label="Pricing">
+                    <span className={`stateBadge ${pricingConfigsLoading ? "muted" : pricingVerified ? "success" : "warning"}`}>
+                      {pricingConfigsLoading ? "Checking" : pricingVerified ? "Verified" : "Unverified"}
+                    </span>
+                    {pinnedConfig ? <small className="pinnedPricingSource">{pricingSourceLabel(pinnedConfig.source)}</small> : null}
+                  </td>
                   <td data-label="Target">{bpsToAllocationPercent(asset.targetWeightBps)}</td>
                   <td className="actualWeight" data-label="Actual">{bpsToAllocationPercent(asset.actualWeightBps)}</td>
                   <td data-label="Drift">
@@ -5899,59 +6217,16 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
               <span className={`stateBadge ${target.quality === "high" ? "success" : "muted"}`}>
                 {target.quality === "high" ? "High quality" : "Normal quality"} · {pricingSourceLabel(target.pricingConfig.source)}
               </span>
-              <label>
-                <span>Pricing source</span>
-                <select
-                  value={target.pricingConfig.source}
-                  disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
-                  onChange={(event) => {
-                    const source = Number(event.target.value) as PricingSource;
-                    const known = configuredPricingConfig(target.address);
-                    const pricingConfig = known?.source === source
-                      ? known
-                      : { source, primarySource: zeroAddress, secondarySource: zeroAddress };
-                    updateTarget(index, {
-                      pricingConfig,
-                      poolAddress: source === 2 ? pricingConfig.primarySource : undefined,
-                    });
-                  }}
-                >
-                  <option value={0}>Chainlink ASSET/USD</option>
-                  <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
-                  <option value={2}>Uniswap V3 TWAP</option>
-                </select>
-              </label>
-              <label>
-                <span>{target.pricingConfig.source === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
-                <input
-                  value={target.pricingConfig.primarySource === zeroAddress ? "" : target.pricingConfig.primarySource}
-                  disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
-                  onChange={(event) => {
-                    const primarySource = event.target.value.trim() as `0x${string}`;
-                    updateTarget(index, {
-                      pricingConfig: { ...target.pricingConfig, primarySource },
-                      poolAddress: target.pricingConfig.source === 2 ? primarySource : undefined,
-                    });
-                  }}
-                  placeholder="0x exact source address"
-                />
-              </label>
-              {target.pricingConfig.source === 1 ? (
-                <label>
-                  <span>WETH/USD Chainlink feed</span>
-                  <input
-                    value={target.pricingConfig.secondarySource === zeroAddress ? "" : target.pricingConfig.secondarySource}
-                    disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
-                    onChange={(event) => updateTarget(index, {
-                      pricingConfig: {
-                        ...target.pricingConfig,
-                        secondarySource: event.target.value.trim() as `0x${string}`,
-                      },
-                    })}
-                    placeholder="0x WETH/USD feed"
-                  />
-                </label>
-              ) : null}
+              <PricingConfigurationFields
+                chainId={robinhoodChainTestnet.id}
+                assetAddress={target.address}
+                config={target.pricingConfig}
+                disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
+                onChange={(pricingConfig) => updateTarget(index, {
+                  pricingConfig,
+                  poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                })}
+              />
               {vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase()) ? (
                 <small>Pricing is already pinned for this constituent and cannot be replaced.</small>
               ) : null}
@@ -5980,38 +6255,21 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   disabled={targetEditorLocked}
                 />
               </label>
-              <label>
-                <span>Pricing source</span>
-                <select
-                  value={manualTargetPricingSource}
-                  onChange={(event) => setManualTargetPricingSource(Number(event.target.value) as PricingSource)}
-                  disabled={targetEditorLocked}
-                >
-                  <option value={0}>Chainlink ASSET/USD</option>
-                  <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
-                  <option value={2}>Uniswap V3 TWAP</option>
-                </select>
-              </label>
-              <label>
-                <span>{manualTargetPricingSource === 2 ? "V3 pricing pool" : manualTargetPricingSource === 1 ? "ASSET/WETH feed" : "ASSET/USD feed"}</span>
-                <input
-                  value={manualTargetPrimarySource}
-                  onChange={(event) => setManualTargetPrimarySource(event.target.value.trim())}
-                  placeholder="0x source address"
-                  disabled={targetEditorLocked}
-                />
-              </label>
-              {manualTargetPricingSource === 1 ? (
-                <label>
-                  <span>WETH/USD feed</span>
-                  <input
-                    value={manualTargetSecondarySource}
-                    onChange={(event) => setManualTargetSecondarySource(event.target.value.trim())}
-                    placeholder="0x WETH/USD feed"
-                    disabled={targetEditorLocked}
-                  />
-                </label>
-              ) : null}
+              <PricingConfigurationFields
+                chainId={robinhoodChainTestnet.id}
+                assetAddress={manualTargetAsset}
+                config={{
+                  source: manualTargetPricingSource,
+                  primarySource: (manualTargetPrimarySource || zeroAddress) as `0x${string}`,
+                  secondarySource: (manualTargetSecondarySource || zeroAddress) as `0x${string}`,
+                }}
+                disabled={targetEditorLocked}
+                onChange={(pricingConfig) => {
+                  setManualTargetPricingSource(pricingConfig.source);
+                  setManualTargetPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
+                  setManualTargetSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
+                }}
+              />
               <button
                 type="button"
                 className="secondaryAction"
@@ -8387,58 +8645,15 @@ function CreateVaultView({
                         <span className={`stateBadge ${asset.quality === "normal" ? "warning" : "success"}`}>
                           {asset.quality === "high" ? "High quality" : "Normal quality"}
                         </span>
-                        <label>
-                          <span>Pricing source</span>
-                          <select
-                            value={asset.pricingConfig.source}
-                            onChange={(event) => {
-                              const source = Number(event.target.value) as PricingSource;
-                              const known = configuredPricingConfig(asset.address);
-                              const pricingConfig = known?.source === source
-                                ? known
-                                : { source, primarySource: zeroAddress, secondarySource: zeroAddress };
-                              updatePortfolio(index, {
-                                pricingConfig,
-                                poolAddress: source === 2 ? pricingConfig.primarySource : undefined,
-                              });
-                            }}
-                          >
-                            <option value={0}>Chainlink ASSET/USD</option>
-                            <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
-                            <option value={2}>Uniswap V3 TWAP</option>
-                          </select>
-                        </label>
-                        <label>
-                          <span>{asset.pricingConfig.source === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
-                          <input
-                            className={asset.pricingConfig.primarySource !== zeroAddress && !isAddress(asset.pricingConfig.primarySource) ? "invalid" : undefined}
-                            value={asset.pricingConfig.primarySource === zeroAddress ? "" : asset.pricingConfig.primarySource}
-                            onChange={(event) => {
-                              const primarySource = event.target.value.trim() as `0x${string}`;
-                              updatePortfolio(index, {
-                                pricingConfig: { ...asset.pricingConfig, primarySource },
-                                poolAddress: asset.pricingConfig.source === 2 ? primarySource : undefined,
-                              });
-                            }}
-                            placeholder="0x exact source address"
-                          />
-                        </label>
-                        {asset.pricingConfig.source === 1 ? (
-                          <label>
-                            <span>WETH/USD Chainlink feed</span>
-                            <input
-                              className={asset.pricingConfig.secondarySource !== zeroAddress && !isAddress(asset.pricingConfig.secondarySource) ? "invalid" : undefined}
-                              value={asset.pricingConfig.secondarySource === zeroAddress ? "" : asset.pricingConfig.secondarySource}
-                              onChange={(event) => updatePortfolio(index, {
-                                pricingConfig: {
-                                  ...asset.pricingConfig,
-                                  secondarySource: event.target.value.trim() as `0x${string}`,
-                                },
-                              })}
-                              placeholder="0x WETH/USD feed"
-                            />
-                          </label>
-                        ) : null}
+                        <PricingConfigurationFields
+                          chainId={robinhoodChainTestnet.id}
+                          assetAddress={asset.address}
+                          config={asset.pricingConfig}
+                          onChange={(pricingConfig) => updatePortfolio(index, {
+                            pricingConfig,
+                            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                          })}
+                        />
                       </div>
                       <label className="assetWeightField">
                         <span>Target weight</span>
@@ -8502,41 +8717,20 @@ function CreateVaultView({
                         placeholder="0x ERC-20 address"
                       />
                     </label>
-                    <label>
-                      <span>Pricing source</span>
-                      <select
-                        value={manualPricingSource}
-                        onChange={(event) => {
-                          setManualPricingSource(Number(event.target.value) as PricingSource);
-                          setManualPrimarySource("");
-                          setManualSecondarySource("");
-                        }}
-                      >
-                        <option value={0}>Chainlink ASSET/USD</option>
-                        <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
-                        <option value={2}>Uniswap V3 TWAP</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>{manualPricingSource === 2 ? "Canonical V3 pool" : "Primary Chainlink feed"}</span>
-                      <input
-                        className={manualPrimarySource && !isAddress(manualPrimarySource) ? "invalid" : undefined}
-                        value={manualPrimarySource}
-                        onChange={(event) => setManualPrimarySource(event.target.value.trim())}
-                        placeholder="0x exact source address"
-                      />
-                    </label>
-                    {manualPricingSource === 1 ? (
-                      <label>
-                        <span>WETH/USD Chainlink feed</span>
-                        <input
-                          className={manualSecondarySource && !isAddress(manualSecondarySource) ? "invalid" : undefined}
-                          value={manualSecondarySource}
-                          onChange={(event) => setManualSecondarySource(event.target.value.trim())}
-                          placeholder="0x WETH/USD feed"
-                        />
-                      </label>
-                    ) : null}
+                    <PricingConfigurationFields
+                      chainId={robinhoodChainTestnet.id}
+                      assetAddress={manualAssetAddress}
+                      config={{
+                        source: manualPricingSource,
+                        primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
+                        secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
+                      }}
+                      onChange={(pricingConfig) => {
+                        setManualPricingSource(pricingConfig.source);
+                        setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
+                        setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
+                      }}
+                    />
                     <button
                       type="button"
                       className="secondaryAction"
@@ -8644,7 +8838,9 @@ function CreateVaultView({
                         <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
                         {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed
-                        <small>{asset.quality === "high" ? "High" : "Normal"} quality · {pricingSourceLabel(asset.pricingConfig.source)} · {shortAssetAddress(asset.address)}</small>
+                        <small>
+                          {isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, asset.pricingConfig) ? "Verified" : "Unverified"} pricing · {pricingSourceLabel(asset.pricingConfig.source)} · {shortAssetAddress(asset.address)}
+                        </small>
                       </span>
                     ))}
                   </div>

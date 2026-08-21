@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { createClient } from "redis";
 import { env } from "./env";
+import { PUBLIC_SITE_HOSTNAME } from "@/config/site";
 
 type LaunchRedisClient = ReturnType<typeof createClient>;
 const globalForRedis = globalThis as unknown as { launchRedis?: LaunchRedisClient; launchRedisPromise?: Promise<LaunchRedisClient> };
@@ -58,7 +59,7 @@ export async function verifyTurnstile(token: string | undefined, request: Reques
     if (process.env.NODE_ENV === "production") throw new Error("TURNSTILE_FAILED");
     return;
   }
-  const expectedHostnames = new Set((env.TURNSTILE_HOSTNAMES ?? "").split(",").map((hostname) => hostname.trim()).filter(Boolean));
+  const expectedHostnames = new Set([PUBLIC_SITE_HOSTNAME]);
   if (!token || token.length > 2_048) throw new Error("TURNSTILE_REQUIRED");
   if (!expectedHostnames.size) throw new Error("TURNSTILE_FAILED");
   const body = new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token });

@@ -4,7 +4,7 @@ import { canonicalXAuthOrigin, exchangeXOAuthToken } from "@/server/x-oauth1";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
-  const origin = canonicalXAuthOrigin(requestUrl);
+  const origin = canonicalXAuthOrigin();
   const requestToken = requestUrl.searchParams.get("oauth_token");
   const verifier = requestUrl.searchParams.get("oauth_verifier");
   if (!requestToken || !verifier || requestUrl.searchParams.has("denied")) {
