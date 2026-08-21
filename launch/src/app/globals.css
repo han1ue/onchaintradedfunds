@@ -170,9 +170,9 @@ button { color: inherit; }
 .timelineHeader strong { font-size: .92rem; }
 .timelineHeader p { margin: 5px 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.45; }
 .timelineHeader > span { flex: 0 0 auto; color: var(--text-muted); font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.timelineProgress { position: relative; height: 9px; overflow: hidden; background: transparent; }
-.timelineProgress::before { content: ""; position: absolute; inset: 3px 0; background: var(--border-strong); }
-.timelineProgressFill { position: absolute; inset: 3px auto 3px 0; background: var(--teal); transition: width .3s ease-out; }
+.timelineProgress { position: relative; height: 13px; overflow: hidden; background: transparent; }
+.timelineProgress::before { content: ""; position: absolute; inset: 4px 0; background: var(--border-strong); }
+.timelineProgressFill { position: absolute; inset: 4px auto 4px 0; background: var(--teal); transition: width .3s ease-out; }
 .timelineProgressThumb { position: absolute; z-index: 1; top: 50%; width: 8px; height: 8px; border: 2px solid var(--card); border-radius: 50%; background: var(--teal); transform: translate(-50%, -50%); transition: left .3s ease-out; }
 .competitionTimeline ol { display: grid; grid-template-columns: 7fr 30fr 10fr; margin: 0; padding: 0; list-style: none; }
 .competitionTimeline li { position: relative; min-width: 0; padding: 15px 18px 17px; }
