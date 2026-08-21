@@ -232,8 +232,9 @@ button { color: inherit; }
 .allocationStrip span { display: block; min-width: 2px; box-shadow: inset -1px 0 rgb(14 18 24 / 52%); }
 .allocationStrip span:last-child { box-shadow: none; }
 .allocationLabels.percentages { margin: 5px 0 0; color: var(--text-muted); }
-.allocationCompactLegend { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 7px; }
-.allocationCompactLegend > span { min-width: 0; display: inline-flex; align-items: baseline; gap: 4px; }
+.allocationCompactLegend { min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-top: 7px; }
+.allocationCompactLegend > span { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
+.allocationCompactLegend i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; }
 .allocationCompactLegend strong { overflow: hidden; color: var(--text-soft); font-size: .6rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .allocationCompactLegend small { flex: 0 0 auto; color: var(--text-muted); font-size: .59rem; font-variant-numeric: tabular-nums; }
 .creator { min-width: 0; display: flex; align-items: center; gap: 7px; padding-right: 12px; color: var(--text-soft); font-size: .72rem; }
@@ -551,7 +552,7 @@ button { color: inherit; }
 .allocationAddress:hover { color: var(--teal); }
 .allocationAddress svg { flex: 0 0 auto; }
 .allocationAddress code { color: inherit; }
-.assetDot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
+.assetDot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
 .portfolioReturns { min-width: 0; }
 .portfolioAllocationSection { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
 .portfolioAllocationSection > h2 { margin-top: 0; }
