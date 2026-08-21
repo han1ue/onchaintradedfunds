@@ -6,6 +6,7 @@ import {
 } from "./verified-assets";
 
 const TESTNET_TSLA = "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E";
+const MAINNET_NFLX = "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8";
 
 describe("frontend asset pricing verification", () => {
   it("matches chain, token, source and every address case-insensitively", () => {
@@ -29,5 +30,12 @@ describe("frontend asset pricing verification", () => {
       primarySource: approved.primarySource,
       secondarySource: ZERO_ADDRESS,
     })).toBe(true);
+  });
+
+  it("supports every approved Mainnet pool choice", () => {
+    const approved = approvedPricingConfigsFor(4663, MAINNET_NFLX);
+    expect(approved).toHaveLength(2);
+    expect(approved.every((config) => isVerifiedPricingConfig(4663, MAINNET_NFLX, config))).toBe(true);
+    expect(isVerifiedPricingConfig(46630, MAINNET_NFLX, approved[0])).toBe(false);
   });
 });

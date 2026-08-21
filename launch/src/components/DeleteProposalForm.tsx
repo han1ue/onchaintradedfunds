@@ -9,11 +9,13 @@ export type DeleteProposalState = { error: string | null; disabledReason?: strin
 export function DeleteProposalForm({
   proposalId,
   proposalName,
+  voteCount,
   action,
   disabledReason,
 }: {
   proposalId: string;
   proposalName: string;
+  voteCount: number;
   action: (state: DeleteProposalState, formData: FormData) => Promise<DeleteProposalState>;
   disabledReason?: string;
 }) {
@@ -45,8 +47,9 @@ export function DeleteProposalForm({
         <h2 id={`delete-${proposalId}-title`}>Delete this OTF?</h2>
         <p>This permanently removes <strong>{proposalName}</strong> from the competition.</p>
         <div className="deleteConfirmationWarning">
-          <strong>Submitting again requires a new X post</strong>
-          <p>If you create another OTF later, you’ll need to publish and verify a new post on X.</p>
+          <strong>This cannot be undone</strong>
+          {voteCount > 0 && <p>{voteCount.toLocaleString()} {voteCount === 1 ? "vote stays" : "votes stay"} spent and cannot be reassigned. {voteCount === 1 ? "It will" : "They will"} not count toward Participation or Performance XP.</p>}
+          <p>Creating another OTF later requires publishing and verifying a new X post.</p>
         </div>
         <label className="deleteConfirmationField">
           <span>Enter <strong>{proposalName}</strong> to confirm</span>

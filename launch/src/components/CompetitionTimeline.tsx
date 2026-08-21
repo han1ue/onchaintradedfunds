@@ -8,6 +8,9 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
   const rules = competition.rules;
   const totalDays = rules.submissionOnlyDays + rules.votingDays;
   const elapsedDays = status.progressDays;
+  const progressPercent = totalDays > 0
+    ? Math.max(0, Math.min(100, elapsedDays / totalDays * 100))
+    : 0;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
     { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: "Create as many OTF proposals as you want." },
@@ -27,7 +30,10 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
             : "The submission week begins when the competition opens.";
 
   return <SectionCard className="competitionTimeline"><div className="timelineHeader"><div><strong>Timeline</strong><p>{stageCopy}</p></div><span>Competition day {status.competitionDay} of {totalDays}</span></div>
-    <div className="timelineProgress" role="progressbar" aria-label="Competition progress" aria-valuemin={0} aria-valuemax={totalDays} aria-valuenow={elapsedDays}><span style={{ width: `${elapsedDays / totalDays * 100}%` }} /></div>
+    <div className="timelineProgress" role="progressbar" aria-label="Competition progress" aria-valuemin={0} aria-valuemax={totalDays} aria-valuenow={elapsedDays}>
+      <span className="timelineProgressFill" style={{ width: `${progressPercent}%` }} />
+      <span className="timelineProgressThumb" style={{ left: `clamp(4px, ${progressPercent}%, calc(100% - 4px))` }} aria-hidden="true" />
+    </div>
     <ol>{phases.map((phase, index) => {
       const state = index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";
       const Icon = state === "complete" ? Check : state === "current" ? Clock3 : Circle;

@@ -17,6 +17,7 @@ import { getCompetitionTiming } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
 import { getBallotSummary } from "@/server/ballot";
 import { getParticipationEligibility } from "@/server/participation";
+import { getVoterProposalPerformance } from "@/server/prices";
 export const metadata = { title: "My profile" };
 
 async function disconnectX() {
@@ -33,23 +34,23 @@ async function deleteOwnProposal(_state: DeleteProposalState, formData: FormData
     await deleteProposal(proposalId, confirmationName);
   } catch (error) {
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
-    if (code === "PROPOSAL_HAS_VOTES") {
-      revalidatePath("/me");
-      return { error: null, disabledReason: errorMessages.PROPOSAL_HAS_VOTES };
-    }
     if (!(code in errorMessages)) console.error("Failed to delete proposal", error);
     return { error: errorMessages[code] ?? errorMessages.INTERNAL_ERROR };
   }
   revalidatePath("/me");
   revalidatePath("/");
   revalidatePath("/leaderboard");
+  revalidatePath("/vote");
   return { error: null };
 }
 
 export default async function MePage() {
   const session = await auth();
   if (!session?.user?.id) return <div className="pageShell contentPage"><SectionCard className="emptyState"><LogIn size={30} /><h1>Sign in with X to view your activity</h1><p>Your proposals, vote distribution and proof history appear here.</p><XSignInButton redirectTo="/me" /></SectionCard></div>;
-  const [identityRows, ownProposals, ownVoteAllocations] = db ? await Promise.all([
+  const competition = await getCompetition();
+  const currentTime = new Date();
+  const performanceAsOf = new Date(Math.min(currentTime.getTime(), new Date(competition.endsAt).getTime()));
+  const [identityRows, ownProposals, ownVoteAllocations, votePerformance] = db ? await Promise.all([
     db.select().from(users).where(eq(users.id, session.user.id)).limit(1),
     db.select({
       id: proposals.id,
@@ -63,7 +64,7 @@ export default async function MePage() {
         join ${ballots} on ${ballots.id} = ${ballotAllocations.ballotId}
         where ${ballotAllocations.proposalId} = ${proposals.id} and ${ballots.status} = 'valid'
       ), 0)::int`,
-    }).from(proposals).where(and(eq(proposals.creatorUserId, session.user.id), ne(proposals.status, "draft"))).orderBy(desc(proposals.createdAt)),
+    }).from(proposals).where(and(eq(proposals.competitionId, competition.id), eq(proposals.creatorUserId, session.user.id), ne(proposals.status, "draft"))).orderBy(desc(proposals.createdAt)),
     db.select({
       proposalId: proposals.id,
       proposalName: proposals.name,
@@ -75,12 +76,11 @@ export default async function MePage() {
     }).from(ballotAllocations)
       .innerJoin(ballots, eq(ballotAllocations.ballotId, ballots.id))
       .innerJoin(proposals, eq(ballotAllocations.proposalId, proposals.id))
-      .where(and(eq(ballots.voterUserId, session.user.id), eq(ballots.status, "valid")))
-      .orderBy(desc(ballotAllocations.updatedAt))
-  ]) : [[], [], []];
+      .where(and(eq(ballots.competitionId, competition.id), eq(ballots.voterUserId, session.user.id), eq(ballots.status, "valid")))
+      .orderBy(desc(ballotAllocations.updatedAt)),
+    getVoterProposalPerformance(competition.id, session.user.id, performanceAsOf),
+  ]) : [[], [], [], []];
   const identity = identityRows[0];
-  const competition = await getCompetition();
-  const currentTime = new Date();
   const timing = getCompetitionTiming(competition, currentTime);
   const [eligibility, ballot] = await Promise.all([
     getParticipationEligibility(session.user, competition),
@@ -92,6 +92,7 @@ export default async function MePage() {
   const username = session.user.xUsername ?? session.user.name ?? "X user";
   const proposedOtfCount = ownProposals.filter((proposal) => proposal.status !== "deleted").length;
   const votesAllocated = ownVoteAllocations.reduce((sum, allocation) => sum + allocation.votes, 0);
+  const performanceByProposal = new Map(votePerformance.map((performance) => [performance.proposalId, performance]));
   return <div className="pageShell contentPage">
     <header className="pageHeader accountHeader">
       <div className="accountTitle">
@@ -113,9 +114,14 @@ export default async function MePage() {
     <SectionCard className="contentCard accountSubmissions"><div className="accountSectionHeading"><h2>Your submissions</h2>{timing.submissionsOpen && <Button href="/submit" variant="secondary">Submit OTF</Button>}</div>{ownProposals.length ? <div className="submissionList">{ownProposals.map((proposal) => {
       const badgeTone = proposal.status === "confirmed" ? "positive" : proposal.status === "deleted" ? "danger" : "warning";
       const identity = <><strong>{proposal.name}</strong><small>${proposal.ticker} · {proposal.votes.toLocaleString()} votes</small></>;
-      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{proposal.status !== "deleted" && <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} action={deleteOwnProposal} disabledReason={!timing.submissionsOpen ? errorMessages.COMPETITION_NOT_OPEN : proposal.votes > 0 ? errorMessages.PROPOSAL_HAS_VOTES : undefined} />}</div></div>;
+      return <div className="submissionRow" key={proposal.id}><div className="submissionIdentity">{proposal.status === "confirmed" ? <Link href={`/otfs/${proposal.slug}`}>{identity}</Link> : identity}</div><div className="submissionRowActions"><StatusBadge tone={badgeTone}>{proposal.status}</StatusBadge>{proposal.status !== "deleted" && <DeleteProposalForm proposalId={proposal.id} proposalName={proposal.name} voteCount={proposal.votes} action={deleteOwnProposal} disabledReason={!timing.submissionsOpen ? errorMessages.COMPETITION_NOT_OPEN : undefined} />}</div></div>;
     })}</div> : <p>{timing.submissionsOpen ? <>No submissions yet. <Link className="inlineLink" href="/submit">Create an OTF</Link>.</> : "You did not submit an OTF before the competition closed."}</p>}</SectionCard>
-    {timing.votingOpen && <><SectionCard className="contentCard"><h2>OTFs you voted on</h2>{ownVoteAllocations.length ? <div className="activityList">{ownVoteAllocations.map((allocation) => <div className="activityRow" key={allocation.proposalId}><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy">{allocation.proposalStatus === "confirmed" ? <Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link> : <strong>{allocation.proposalName}</strong>}<small>${allocation.proposalTicker} · {allocation.votes} locked {allocation.votes === 1 ? "vote" : "votes"}{allocation.proposalStatus === "deleted" ? " · unavailable" : ""}</small></div><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></div>)}</div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
+    {timing.votingOpen && <><SectionCard className="contentCard accountVotes"><div className="accountSectionHeading"><div><h2>OTFs you voted on</h2><p>Vote performance is quantity-weighted from each batch’s entry price checkpoint.</p></div></div>{ownVoteAllocations.length ? <div className="votePerformanceTableWrap"><table className="votePerformanceTable"><thead><tr><th scope="col">OTF</th><th scope="col">Votes</th><th scope="col">Vote performance</th><th scope="col">Last voted</th></tr></thead><tbody>{ownVoteAllocations.map((allocation) => {
+      const performance = performanceByProposal.get(allocation.proposalId);
+      const performanceLabel = allocation.proposalStatus === "deleted" ? "Excluded" : performance?.returnPct == null ? "Pending" : `${performance.returnPct > 0 ? "+" : ""}${performance.returnPct.toFixed(2)}%`;
+      const performanceTone = allocation.proposalStatus === "deleted" ? "excluded" : performance?.returnPct == null ? "pending" : performance.returnPct > 0 ? "positive" : performance.returnPct < 0 ? "negative" : "flat";
+      return <tr key={allocation.proposalId}><td><div className="votePerformanceIdentity"><span className="activityIcon vote" aria-hidden="true"><Vote size={16} /></span><div className="activityCopy">{allocation.proposalStatus === "confirmed" ? <Link href={`/otfs/${allocation.proposalSlug}`}><strong>{allocation.proposalName}</strong></Link> : <strong>{allocation.proposalName}</strong>}<small>${allocation.proposalTicker}{allocation.proposalStatus === "deleted" ? " · unavailable" : ""}<span className="votePerformanceMobileDate"> · {allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></small></div></div></td><td className="votePerformanceVotes">{allocation.votes}</td><td><span className={`votePerformanceValue ${performanceTone}`} title={performance?.latestCheckpointAt ? `Latest price checkpoint: ${new Date(performance.latestCheckpointAt).toLocaleString("en-US")}` : undefined}>{performanceLabel}</span></td><td className="votePerformanceDate"><time dateTime={allocation.updatedAt.toISOString()}>{allocation.updatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time></td></tr>;
+    })}</tbody></table></div> : <p>You haven’t voted on any OTFs yet. <Link className="inlineLink" href="/vote">Cast your unlocked votes</Link>.</p>}</SectionCard>
     <SectionCard className="contentCard accountVoteHistory"><div className="accountSectionHeading"><div><h2>Voting post history</h2><p>Each post records one batch of newly allocated votes.</p></div></div>{votePosts.length ? <ol className="votePostList">{votePosts.map((post, index) => {
       const label = `Vote post ${index + 1}`;
       const statusTone = post.status === "valid" ? "positive" : post.status === "invalid" ? "danger" : "warning";

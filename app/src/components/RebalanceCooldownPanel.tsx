@@ -886,7 +886,7 @@ function PricingConfigurationFields({
           <option value="custom">Customize</option>
         </select>
       </label>
-      {customizing || approved.length === 0 ? (
+      {customizing || !verified ? (
         <div className="customPricingFields">
           <label>
             <span>Pricing source</span>

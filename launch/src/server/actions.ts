@@ -5,7 +5,7 @@ import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyPr
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
-  ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
+  competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, xActionChallenges
 } from "./db/schema";
 import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
@@ -253,14 +253,9 @@ export async function deleteProposal(proposalId: string, confirmationName: strin
         where ${competitions.id} = ${proposals.competitionId}
           and ${competitions.phase} = 'open'
           and ${competitions.endsAt} > now()
-      )`,
-      sql`not exists (
-        select 1 from ${ballotAllocations}
-        join ${ballots} on ${ballots.id} = ${ballotAllocations.ballotId}
-        where ${ballotAllocations.proposalId} = ${proposals.id} and ${ballots.status} = 'valid'
       )`
     )).returning();
-    if (!deleted) throw new Error("PROPOSAL_HAS_VOTES");
+    if (!deleted) throw new Error("PROPOSAL_NOT_FOUND");
     return deleted;
   });
 }

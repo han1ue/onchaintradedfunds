@@ -170,8 +170,10 @@ button { color: inherit; }
 .timelineHeader strong { font-size: .92rem; }
 .timelineHeader p { margin: 5px 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.45; }
 .timelineHeader > span { flex: 0 0 auto; color: var(--text-muted); font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .055em; }
-.timelineProgress { height: 3px; overflow: hidden; background: var(--border-strong); }
-.timelineProgress > span { display: block; height: 100%; background: var(--teal); transition: width .3s ease-out; }
+.timelineProgress { position: relative; height: 9px; overflow: hidden; background: transparent; }
+.timelineProgress::before { content: ""; position: absolute; inset: 3px 0; background: var(--border-strong); }
+.timelineProgressFill { position: absolute; inset: 3px auto 3px 0; background: var(--teal); transition: width .3s ease-out; }
+.timelineProgressThumb { position: absolute; z-index: 1; top: 50%; width: 8px; height: 8px; border: 2px solid var(--card); border-radius: 50%; background: var(--teal); transform: translate(-50%, -50%); transition: left .3s ease-out; }
 .competitionTimeline ol { display: grid; grid-template-columns: 7fr 30fr 10fr; margin: 0; padding: 0; list-style: none; }
 .competitionTimeline li { position: relative; min-width: 0; padding: 15px 18px 17px; }
 .competitionTimeline li + li { border-left: 1px solid var(--border); }
@@ -226,6 +228,8 @@ button { color: inherit; }
 .allocationVisual { min-width: 0; padding-right: 20px; }
 .allocationLabels { display: flex; margin-bottom: 5px; color: var(--text-soft); font-size: .61rem; }
 .allocationLabels span { min-width: 0; overflow: hidden; padding-right: 4px; text-overflow: ellipsis; white-space: nowrap; }
+.allocationLabels.compact { display: grid; gap: 6px; }
+.allocationLabels.compact span { padding: 0; text-align: center; }
 .allocationStrip { display: flex; width: 100%; height: 6px; overflow: hidden; border-radius: 4px; background: var(--muted); }
 .allocationStrip span { display: block; min-width: 2px; box-shadow: inset -1px 0 rgb(14 18 24 / 52%); }
 .allocationStrip span:last-child { box-shadow: none; }
@@ -763,6 +767,23 @@ button { color: inherit; }
 .activityCopy strong { color: var(--text); font-size: .78rem; line-height: 1.35; }
 .activityCopy small { color: var(--text-muted); font-size: .69rem; line-height: 1.4; }
 .activityRow time { flex: 0 0 auto; color: var(--text-muted); font-size: .69rem; white-space: nowrap; }
+.accountVotes .accountSectionHeading { margin-bottom: 4px; }
+.votePerformanceTableWrap { width: 100%; overflow-x: auto; }
+.votePerformanceTable { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.votePerformanceTable th { padding: 9px 8px; border-bottom: 1px solid var(--border-strong); color: var(--text-muted); font-size: .61rem; font-weight: 700; letter-spacing: .05em; text-align: left; text-transform: uppercase; }
+.votePerformanceTable th:first-child, .votePerformanceTable td:first-child { width: auto; padding-left: 0; }
+.votePerformanceTable th:nth-child(2), .votePerformanceTable td:nth-child(2) { width: 72px; text-align: right; }
+.votePerformanceTable th:nth-child(3), .votePerformanceTable td:nth-child(3) { width: 142px; text-align: right; }
+.votePerformanceTable th:last-child, .votePerformanceTable td:last-child { width: 112px; padding-right: 0; text-align: right; }
+.votePerformanceTable td { padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.votePerformanceTable tbody tr:last-child td { border-bottom: 0; }
+.votePerformanceIdentity { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.votePerformanceVotes, .votePerformanceDate { color: var(--text-soft); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.votePerformanceValue { color: var(--text-soft); font-size: .72rem; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.votePerformanceValue.positive { color: var(--positive); }
+.votePerformanceValue.negative { color: var(--danger); }
+.votePerformanceValue.pending, .votePerformanceValue.excluded { color: var(--text-muted); font-weight: 650; }
+.votePerformanceMobileDate { display: none; }
 .accountVoteHistory { margin-top: 12px; }
 .votePostList, .voteTrancheList { margin: 0; padding: 0; list-style: none; }
 .votePostRow { padding: 14px 0; border-top: 1px solid var(--border); }
@@ -953,6 +974,8 @@ button { color: inherit; }
   .xpFormulaRows code { grid-column: 2; justify-self: start; white-space: normal; }
   .activityRow { grid-template-columns: 34px minmax(0, 1fr); }
   .activityRow time { grid-column: 2; }
+  .votePerformanceTable th:last-child, .votePerformanceTable td:last-child { display: none; }
+  .votePerformanceMobileDate { display: inline; }
   .votePostHeader { align-items: flex-start; flex-direction: column; gap: 2px; }
   .votePostHeader time { padding-left: 0; }
   .voteTrancheRow { padding-left: 0; }

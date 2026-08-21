@@ -26,7 +26,6 @@ export const errorMessages: Record<string, string> = {
   TURNSTILE_FAILED: "The verification check expired or failed. Complete it again and retry.",
   X_POST_CHANGED: "The required X post was deleted or changed, so the action is no longer valid.",
   POST_TOO_LONG: "The X post is too long. Shorten your context and try again.",
-  PROPOSAL_HAS_VOTES: "This submission already has votes and can no longer be deleted.",
   PROPOSAL_NAME_MISMATCH: "Enter the exact OTF name to confirm deletion.",
   PROPOSAL_POST_NOT_FOUND: "This OTF’s required X post was deleted and it can no longer receive votes.",
   PROPOSAL_NOT_FOUND: "One or more selected OTFs are no longer available.",

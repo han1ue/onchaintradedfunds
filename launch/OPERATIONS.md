@@ -48,6 +48,7 @@
 - Ranking inputs are database-frozen after `ends_at`; user deletion, moderation, and evidence invalidation
   cannot alter proposals or ballots after close.
 - Complete the competition-end audit and ranking locally after the competition closes.
+- Preserve votes cast for deleted proposals as spent, auditable vote slots, but exclude those votes from launch ranking and every XP allocation, including participation, performance, and creator XP.
 - Preserve the immutable evidence, price checkpoints, valid votes, and accepted proposals as the inputs to that local process.
 
 ## Recovery

@@ -10,11 +10,14 @@ const distributionFlow = ballotSource.slice(
 );
 
 describe("proposal and vote serialization", () => {
-  it("locks a proposal before repeating the deletion eligibility checks", () => {
+  it("locks a proposal before deleting it", () => {
     const proposalLock = deleteFlow.indexOf('.for("update")');
     expect(proposalLock).toBeGreaterThan(-1);
     expect(deleteFlow.indexOf("transaction.update(proposals)")).toBeGreaterThan(proposalLock);
-    expect(deleteFlow.indexOf("not exists (")).toBeGreaterThan(proposalLock);
+    expect(deleteFlow).not.toContain("not exists (");
+    expect(deleteFlow).not.toContain("PROPOSAL_HAS_VOTES");
+    expect(deleteFlow).not.toContain("transaction.update(ballots)");
+    expect(deleteFlow).not.toContain("transaction.delete(ballotAllocations)");
   });
 
   it("locks voting proposals in stable ID order", () => {

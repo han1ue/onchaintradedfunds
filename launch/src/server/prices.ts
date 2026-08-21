@@ -342,3 +342,63 @@ export async function getProposalReturns(
   const points = calculatePortfolioReturns(allocations, rows);
   return { proposedAt, trackingStartedAt: points[0]?.timestamp ?? null, points };
 }
+
+export type VoterProposalPerformance = {
+  proposalId: string;
+  proposalStatus: "draft" | "confirmed" | "deleted";
+  returnPct: number | null;
+  latestCheckpointAt: string | null;
+};
+
+export async function getVoterProposalPerformance(
+  competitionId: string,
+  voterUserId: string,
+  asOf: Date,
+): Promise<VoterProposalPerformance[]> {
+  if (!sqlClient) return [];
+  return sqlClient<VoterProposalPerformance[]>`
+    with tranche_returns as (
+      select vt.id, vt.proposal_id, vt.quantity, p.status as proposal_status,
+        latest.sampled_at as latest_checkpoint_at,
+        case when count(pa.asset_id) = count(entry_price.asset_id)
+          and count(pa.asset_id) = count(current_price.asset_id)
+          then ((sum((pa.weight_bps::numeric / 10000) * (current_price.bid_usd / nullif(entry_price.bid_usd, 0))) - 1) * 100)::float8
+          else null
+        end as return_pct
+      from vote_tranches vt
+      join ballots b on b.id = vt.ballot_id and b.status = 'valid'
+      join tweet_evidence te on te.id = vt.evidence_id and te.status = 'valid'
+      join proposals p on p.id = vt.proposal_id
+      join proposal_assets pa on pa.proposal_id = vt.proposal_id
+      left join lateral (
+        select pcr.id, pcr.sampled_at
+        from price_capture_runs pcr
+        where pcr.purpose = 'scoring'
+          and pcr.sampled_at <= ${asOf.toISOString()}::timestamptz
+          and not exists (
+            select 1 from proposal_assets required
+            where required.proposal_id = vt.proposal_id
+              and not exists (
+                select 1 from asset_price_snapshots available
+                where available.capture_run_id = pcr.id and available.asset_id = required.asset_id
+              )
+          )
+        order by pcr.sampled_at desc
+        limit 1
+      ) latest on true
+      left join asset_price_snapshots entry_price
+        on entry_price.capture_run_id = vt.entry_price_capture_run_id and entry_price.asset_id = pa.asset_id
+      left join asset_price_snapshots current_price
+        on current_price.capture_run_id = latest.id and current_price.asset_id = pa.asset_id
+      where vt.competition_id = ${competitionId}::uuid and vt.voter_user_id = ${voterUserId}
+      group by vt.id, vt.proposal_id, vt.quantity, p.status, latest.sampled_at
+    )
+    select proposal_id::text as "proposalId", proposal_status as "proposalStatus",
+      case when proposal_status = 'confirmed' and count(return_pct) = count(*)
+        then (sum(quantity * return_pct) / sum(quantity))::float8
+        else null
+      end as "returnPct",
+      max(latest_checkpoint_at)::text as "latestCheckpointAt"
+    from tranche_returns
+    group by proposal_id, proposal_status`;
+}
