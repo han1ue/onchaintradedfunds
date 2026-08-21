@@ -34,8 +34,7 @@ Primary security goals:
 - Missed challenge deadlines forfeit challenge-window manager fees, credit 50% to the caller, and leave the rest unminted.
 - Asset eligibility is mechanical rather than administrator-approved: deployed contract, exactly
   18 decimals, no duplicates, exact-transfer accounting, caps, and a valid submitted price source.
-- Every OTF pins its concrete price source; registry changes cannot redirect it and there is no
-  automatic fallback.
+- Every OTF pins its concrete price source and per-leg validation parameters with no automatic fallback.
 - Redemption does not depend on oracle health.
 - The frontend is never a security boundary.
 
@@ -54,10 +53,9 @@ The factory owner can:
   rejected.
 - Start and complete ownership transfer.
 
-The trusted-oracle-route owner can set a `(base, quote) -> feed`, protocol staleness bound, and
-validation mode for future Chainlink selections. The V3 market-registry owner can deprecate a pool
-for future selection. Neither action changes a source already pinned by an OTF, and neither owner
-can approve, block, revoke, or remove an asset.
+The V3 market-registry owner can deprecate a pool for future selection. This does not change a source
+already pinned by an OTF. No protocol role can approve, block, revoke, or remove an asset or
+Chainlink feed.
 
 The fee collector treasury can:
 
@@ -181,20 +179,19 @@ Risk cases:
 - An asset/WETH feed being treated as WETH/asset, or any reliance on mutable `description()` text.
 - A V3 pool from the wrong factory, pair, fee tier, or quote token; an uninitialized pool; inadequate
   observation capacity or history; and manipulation within the configured TWAP window.
-- An owner changing the trusted mapping before a malicious configuration is selected. Mapping
-  changes cannot redirect feeds already pinned in existing OTFs.
+- A creator selecting a mechanically valid feed for the wrong pair. Permissionless contract checks
+  cannot prove semantic pair identity; the frontend manifest is informational, not authorization.
 - Source unavailability. There is no Chainlink-to-TWAP or TWAP-to-Chainlink fallback.
 - Corporate-action handling mismatch or a Robinhood Stock Token reporting `oraclePaused()`.
 - Sequencer downtime. Robinhood recommends an L2 sequencer-uptime check, which is not yet
   implemented and is a production limitation.
 
-Direct and composed Chainlink routes must prove their exact relationships through a trusted onchain
-pair mapping. Chainlink's Robinhood
-[Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry) can prove that a
-proxy is official and active but cannot prove pair orientation; no Robinhood deployment of the
-older pair-addressed Feed Registry is documented. A composed wrapper validates both pinned legs on
+Direct and composed Chainlink routes are permissionless. A composed wrapper validates both pinned legs on
 every read and exposes the older timestamp. Every feed check covers answer, round, timestamp,
-protocol staleness bound, and decimals.
+the creator-selected staleness bound (capped at seven days), and decimals. The frontend marks a
+configuration Verified only when asset, route, and validation modes match its manifest and every
+submitted limit is nonzero and no greater than the manifest maximum. Runtime staleness and pause
+health do not change that informational status.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
 multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token
@@ -233,8 +230,8 @@ Adapter review should verify:
 - It has no hidden privileged behavior.
 - It handles token approvals safely.
 - It does not depend on centralized offchain promises for correctness.
-- It treats `adapterData` as an explicit fee-bearing V3 path, validates exact token endpoints,
-  requires the immutable settlement token exactly once, and never derives execution from a pricing
+- It treats `adapterData` as an explicit fee-bearing V3 path, validates exact token endpoints and
+  every hop, permits arbitrary atomic intermediates, and never derives execution from a pricing
   market ID.
 - It reconciles the router-reported output with observed input/output deltas and clears allowances.
 
@@ -273,10 +270,10 @@ Users therefore provide per-leg maximum inputs, an aggregate maximum settlement 
 deadline. Unspent USDG is refunded atomically. The adapter allowlist is separate from the factory's
 rebalance-adapter allowlist so approval for one authority does not silently grant the other.
 
-For rebalance execution, USDG may appear only as an internal adapter route hop. The vault still
-requires both visible trade endpoints to be current constituents, and output returns through the
-executor directly to the vault. The adapter cannot use USDG as an arbitrary recipient or leave it
-as a new untracked portfolio position through the typed trade call.
+For rebalance execution, any intermediate token may appear only inside the atomic router path. The
+vault still requires both visible trade endpoints to be current constituents, and output returns
+through the executor directly to the vault. No intermediate can remain as a new untracked portfolio
+position through the typed trade call.
 
 ## Frontend Risks
 
@@ -380,10 +377,10 @@ Before any production deployment:
 - Run Foundry unit, fuzz, and invariant tests.
 - Add integration tests with real token and adapter behavior.
 - Verify all Robinhood Chain addresses from official documentation.
-- Verify every trusted Chainlink base/quote/feed relationship, Flags-registry status where
-  available, validation mode, `oraclePaused()` behavior, and staleness expectation.
-- Verify the canonical V3 factory, WETH, USDG, WETH/USDG pool, exact constituent pools and fees,
-  observation cardinality, full TWAP history, and pricing/execution separation.
+- Verify every frontend-manifest Chainlink base/quote/feed relationship, validation mode,
+  `oraclePaused()` behavior, and staleness expectation.
+- Verify the canonical V3 factory, WETH, USDG, exact constituent pools and fees, quote-token/USD
+  feeds, observation cardinality, full TWAP history, and pricing/execution separation.
 - Decide and test the Robinhood sequencer-uptime policy.
 - Test direct/composed/no-fallback pricing and local/global deposit-pause composition.
 - Verify frontend network switching and transaction simulation.

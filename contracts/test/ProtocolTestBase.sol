@@ -8,8 +8,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
-import { OracleRegistry } from "../src/OracleRegistry.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -41,7 +40,6 @@ abstract contract ProtocolTestBase is TestBase {
     MockPriceFeed internal feedB;
     MockPriceFeed internal feedC;
     AssetRegistry internal assetRegistry;
-    OracleRegistry internal oracleRegistry;
     RebalanceExecutor internal executor;
     MockTradeAdapter internal adapter;
     FeeCollector internal collector;
@@ -62,7 +60,6 @@ abstract contract ProtocolTestBase is TestBase {
         feedC = new MockPriceFeed(8, 100_00000000);
 
         assetRegistry = new AssetRegistry(address(this));
-        oracleRegistry = new OracleRegistry(address(this));
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
         collector = new FeeCollector(TREASURY);
@@ -70,15 +67,6 @@ abstract contract ProtocolTestBase is TestBase {
         assetRegistry.registerAsset(address(tokenA));
         assetRegistry.registerAsset(address(tokenB));
         assetRegistry.registerAsset(address(tokenC));
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
-        oracleRegistry.setOracleConfig(
-            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
-        oracleRegistry.setOracleConfig(
-            address(tokenC), feedC, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
@@ -89,7 +77,6 @@ abstract contract ProtocolTestBase is TestBase {
             address(implementation),
             address(collector),
             address(assetRegistry),
-            address(oracleRegistry),
             address(executor),
             1_500
         );
@@ -97,11 +84,7 @@ abstract contract ProtocolTestBase is TestBase {
         factory.setTradeAdapterApproved(address(adapter), true);
         factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
         factory.setPricingResolver(
-            address(
-                new AssetPricingResolver(
-                    oracleRegistry, IAssetMarketRegistry(address(0)), calculator
-                )
-            )
+            address(new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator))
         );
 
         tokenA.mint(address(this), 1_000_000 * ONE);
@@ -248,8 +231,22 @@ abstract contract ProtocolTestBase is TestBase {
     }
 
     function _directPricing(address feed) internal pure returns (AssetPricingConfig memory config) {
+        return _directPricing(feed, OracleValidationMode.RobinhoodStockToken);
+    }
+
+    function _directPricing(address feed, OracleValidationMode validationMode)
+        internal
+        pure
+        returns (AssetPricingConfig memory config)
+    {
         config = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect, primarySource: feed, secondarySource: address(0)
+            source: PricingSource.ChainlinkDirect,
+            primarySource: feed,
+            secondarySource: address(0),
+            primaryMaxStaleness: 25 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: validationMode,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
     }
 

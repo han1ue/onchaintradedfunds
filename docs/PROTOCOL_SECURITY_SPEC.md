@@ -83,21 +83,22 @@ strategy module.
 ### `PortfolioCalculator`
 
 The calculator is stateless. Every security-sensitive vault valuation MUST identify the vault and
-read the concrete normalized feed and parameters pinned in that vault's state. Unbound compatibility
-preview helpers MAY read a trusted registry, but no vault transition may use that live mapping. The
+read the concrete normalized feed and parameters pinned in that vault's state. There is no global
+oracle selection registry or mutable fallback. The
 calculator MUST NOT transfer assets, approve spenders, or mutate vault state.
 
 ### Pricing validation contracts
 
 `AssetPricingResolver` validates a caller-supplied `AssetPricingConfig` when an asset first enters an
 OTF. It MUST support exactly direct Chainlink, composed asset/WETH × WETH/USD Chainlink, and
-Uniswap V3 TWAP. `OracleRegistry` is a trusted base/quote relationship map used only during a new
-Chainlink selection. `AssetMarketRegistry` validates and records canonical V3 pools used during a
+Uniswap V3 TWAP. Chainlink selection is permissionless and MUST mechanically validate each supplied
+feed, nonzero staleness limit (no more than seven days), and validation mode. `AssetMarketRegistry`
+validates and records canonical V3 pools used during a
 new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
 
 The resolver MUST return a concrete normalized feed or V3 wrapper that the OTF pins. Later oracle
-mapping changes and V3 market deprecation MUST NOT redirect or disable an existing pin. None of
-these registries MAY determine asset eligibility, execution paths, or execution fee tiers.
+configuration changes and V3 market deprecation MUST NOT redirect or disable an existing pin. The
+market and discovery registries MUST NOT determine asset eligibility, execution paths, or execution fee tiers.
 
 ### `RebalanceExecutor`
 
@@ -129,9 +130,10 @@ vault's custody and strategy authority boundaries. It MUST:
 - Enforce per-leg and aggregate minimum settlement outputs for atomic settlement-token exits.
 - Never change targets, fees, roles, challenge state, or rebalance state.
 
-An entry adapter MAY use a multi-hop venue path. A rebalance adapter MAY similarly route through
-USDG internally, but the vault-visible rebalance endpoints MUST remain active constituents and the
-final output MUST return to the vault through `RebalanceExecutor`.
+The shared V3 adapter MAY use any valid multi-hop venue path. Entry-router calls still fix one
+endpoint to the router's immutable settlement token and the other to a live constituent. Rebalance
+calls require both visible endpoints to be active constituents, and the final output MUST return to
+the vault through `RebalanceExecutor`.
 
 ## 3. Delegatecall requirements
 
@@ -183,12 +185,11 @@ The protocol owner MAY:
 - Reversibly pause creation and all direct or routed primary deposits globally.
 - Reversibly pause direct or routed primary deposits for one factory-created OTF. The setter MUST
   reject a non-factory target.
-- Transfer registry or factory ownership using their defined controls.
+- Transfer factory or V3 market-registry ownership using their defined controls.
 
-The trusted-oracle-route owner MAY configure an exact `(base, quote) -> feed`, protocol staleness
-bound, and validation mode for future Chainlink selections. The V3 market-registry owner MAY
-deprecate a pool for future selections. Such updates MUST NOT replace or disable an existing OTF's
-pinned source. No protocol role MAY approve, qualify, block, revoke, or remove an asset.
+The V3 market-registry owner MAY deprecate a pool for future selections. Such updates MUST NOT
+replace or disable an existing OTF's pinned source. No protocol role MAY approve, qualify, block,
+revoke, or remove an asset or Chainlink feed.
 
 The protocol owner MUST NOT:
 
@@ -285,8 +286,8 @@ For every successful constrained trade batch:
 15. The executor and adapter retain no unintended portfolio balance.
 16. Adapter data describes an explicit execution route and MUST NOT be decoded as a pricing market
     ID. The route's pools, intermediates, and fee tiers MAY differ from the pinned price source.
-17. A V3 adapter validates the exact path endpoints, requires its immutable settlement token exactly
-    once, reconciles router-reported and observed deltas, and clears its allowance.
+17. A V3 adapter validates the exact path endpoints and every fee-bearing hop, permits arbitrary
+    atomic intermediate tokens, reconciles router-reported and observed deltas, and clears its allowance.
 
 If any final check fails, the complete transaction MUST revert, including token transfers and
 approvals.
@@ -345,7 +346,7 @@ A proposal requires:
 - The previous target's completion bands to be satisfied.
 - Valid portfolio shape, deployed exactly-18-decimal assets, no duplicates, caps, and one aligned
   pricing configuration per proposed asset.
-- A new direct or composed Chainlink configuration that matches every exact trusted pair, or a new
+- A new direct or composed Chainlink configuration that passes per-leg mechanical validation, or a new
   V3 configuration that passes canonical-factory, exact pair/fee, initialization, observation
   capacity, and full-history validation.
 - At least one constituent, with every included target at or above the factory's live protocol-wide
@@ -532,21 +533,22 @@ relationship MUST be checked. Uniswap V4 and every other source type MUST be rej
 
 For direct Chainlink pricing:
 
-- `primarySource` MUST be the trusted feed for the exact `(asset, USD)` pair.
+- `primarySource` MUST be a deployed creator-selected feed intended for `(asset, USD)`.
 - `secondarySource` MUST be zero.
-- Pair identity MUST come from a trusted onchain base/quote mapping, never `description()`.
+- The contract does not prove semantic pair identity and MUST NOT rely on `description()`.
 
 For composed Chainlink pricing:
 
-- `primarySource` MUST be the trusted feed for exact `(asset, WETH)`.
-- `secondarySource` MUST be the trusted feed for exact `(WETH, USD)`.
-- Reversed legs and a correct feed under the wrong pair key MUST revert.
+- `primarySource` is the creator-selected feed intended for `(asset, WETH)`.
+- `secondarySource` is the creator-selected feed intended for `(WETH, USD)`.
+- Contracts MUST mechanically validate both legs but do not prove semantic pair identity.
 - Both feeds, staleness bounds, and validation modes MUST be pinned in the normalized wrapper.
 - Every read MUST validate both legs independently and MUST expose the older leg's timestamp.
 - The multiplication and decimal normalization MUST be overflow-safe and return a nonzero USD price.
 
 Every Chainlink leg MUST reject missing code, nonpositive answers, zero or future timestamps,
-incomplete rounds, answers beyond its protocol-defined staleness bound, and unsupported decimals.
+incomplete rounds, answers beyond its pinned nonzero staleness bound, staleness limits above seven
+days, and unsupported decimals.
 When a leg uses `RobinhoodStockToken` validation, the base token's `oraclePaused()` call MUST be
 available and false. Robinhood equity feeds publish 24/5 and already include the token
 `uiMultiplier()`; the protocol MUST NOT apply it again.
@@ -554,8 +556,12 @@ available and false. Robinhood equity feeds publish 24/5 and already include the
 Chainlink's Robinhood [Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry)
 proves only whether a proxy is currently official and active. It does not prove pair orientation,
 and no Robinhood deployment of the older pair-addressed Feed Registry is documented. Production
-MUST therefore independently verify Flags status where available and maintain the exact trusted
-onchain pair map, or reject Chainlink selection. The current contracts do not consume Flags or an
+MUST therefore independently verify Flags status where available. The frontend manifest provides
+an informational exact asset/feed/mode allowlist without restricting deployment. Unknown assets or
+alternative mechanically valid feeds remain deployable and are Unverified. A shorter nonzero limit
+than the manifest maximum stays Verified but MAY receive an availability warning. Stale data or a
+temporary `oraclePaused()` state MUST disable oracle-dependent operations without changing the
+configuration's Verified status. The current contracts do not consume Flags or an
 L2 sequencer-uptime feed at runtime; both limitations MUST be resolved or explicitly accepted by a
 fresh production review. See [Robinhood's oracle guidance](https://docs.robinhood.com/chain/oracles-and-price-feeds).
 
@@ -563,9 +569,9 @@ For V3 TWAP pricing:
 
 - `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
   exact asset/quote pair and exact onchain fee.
-- The quote MUST be WETH or USDG. If WETH is used, the configured canonical WETH/USDG pool supplies
-  the USD bridge.
-- `secondarySource` MUST be zero.
+- The quote MUST be WETH or USDG.
+- `secondarySource` MUST be the creator-selected quote-token/USD Chainlink feed. Its staleness limit
+  and validation mode MUST be independently validated and pinned.
 - The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
   capacity, and answer the full protocol TWAP-window observation before selection.
 - The concrete pool and normalized wrapper MUST be pinned. Later market deprecation MAY block only
@@ -656,19 +662,19 @@ Every deployment record SHOULD include:
 - Solidity compiler version.
 - Optimizer and IR settings.
 - Chain ID.
-- Factory, implementation, strategy module, calculator, executor, discovery registry, trusted oracle
-  route registry, V3 market registry, pricing resolver, adapter, and treasury addresses.
-- Canonical V3 factory, WETH, USDG, WETH/USDG pool, supported fees, TWAP window, observation
-  capacity, and verified history evidence.
-- Every trusted Chainlink base/quote/feed relationship, staleness bound, validation mode, official
-  Flags status where available, and the source used for that evidence.
+- Factory, implementation, strategy module, calculator, executor, discovery registry, V3 market
+  registry, pricing resolver, adapter, and treasury addresses.
+- Canonical V3 factory, WETH, USDG, supported fees, TWAP window, observation capacity, and verified
+  history evidence.
+- Every frontend-manifest Chainlink base/quote/feed relationship, maximum staleness, validation mode,
+  official Flags status where available, and the source used for that evidence.
 - Every initial per-asset pricing configuration and the concrete normalized feed or pool pinned by
   each created OTF.
 - Runtime code hashes.
 - Test and security-command results.
 - Independent audit report references.
 
-For production, factory, trusted-oracle-route, V3-market, and treasury authority MUST be assigned to
+For production, factory, V3-market, and treasury authority MUST be assigned to
 reviewed multisig or timelocked governance contracts rather than EOAs. Operational and treasury
 signers SHOULD be separated, and all pending administrative changes MUST be monitored.
 

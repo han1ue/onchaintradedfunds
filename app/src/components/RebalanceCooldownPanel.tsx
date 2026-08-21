@@ -84,12 +84,14 @@ import {
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodTestnetAddresses,
+  robinhoodTestnetExecutionBridge,
   robinhoodTestnetV3Venue,
   robinhoodTestnetWethV3Venue,
 } from "@/lib/deployment";
 import {
   approvedPricingConfigsFor,
   isVerifiedPricingConfig,
+  pricingVerification,
   pricingConfigsMatch,
   verifiedAssetFor,
 } from "@/lib/verified-assets";
@@ -134,6 +136,8 @@ export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "
 type DataMode = "live" | "empty" | "unavailable";
 
 const MAX_STRATEGY_RATIONALE_BYTES = 2_048;
+const MAX_ORACLE_STALENESS_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_ORACLE_STALENESS_SECONDS = 25 * 60 * 60;
 
 type Allocation = {
   symbol: string;
@@ -161,6 +165,10 @@ type AssetPricingConfig = {
   source: PricingSource;
   primarySource: `0x${string}`;
   secondarySource: `0x${string}`;
+  primaryMaxStaleness: number;
+  secondaryMaxStaleness: number;
+  primaryValidationMode: 0 | 1;
+  secondaryValidationMode: 0 | 1;
 };
 
 type StrategyTargetAsset = Omit<TargetAsset, "targetWeight"> & {
@@ -401,37 +409,6 @@ const vaultFeeAbi = [
   },
 ] as const;
 
-const factoryDependencyAbi = [
-  {
-    type: "function",
-    name: "oracleRegistry",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-] as const;
-
-const protocolAssetReadAbi = [
-  {
-    type: "function",
-    name: "priceFeedFor",
-    stateMutability: "view",
-    inputs: [{ name: "asset", type: "address" }],
-    outputs: [{ name: "feed", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "oracleConfigFor",
-    stateMutability: "view",
-    inputs: [{ name: "asset", type: "address" }],
-    outputs: [
-      { name: "feed", type: "address" },
-      { name: "maxStaleness", type: "uint32" },
-      { name: "validationMode", type: "uint8" },
-    ],
-  },
-] as const;
-
 const assetPricingResolverAbi = [
   {
     type: "function",
@@ -446,6 +423,10 @@ const assetPricingResolverAbi = [
           { name: "source", type: "uint8" },
           { name: "primarySource", type: "address" },
           { name: "secondarySource", type: "address" },
+          { name: "primaryMaxStaleness", type: "uint32" },
+          { name: "secondaryMaxStaleness", type: "uint32" },
+          { name: "primaryValidationMode", type: "uint8" },
+          { name: "secondaryValidationMode", type: "uint8" },
         ],
       },
     ],
@@ -625,19 +606,39 @@ function configuredEntryRouterAddress(mode: RoutedSettlementMode = "usdg"): `0x$
 }
 
 function configuredEntryAdapterAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
-  return mode === "weth"
-    ? robinhoodTestnetAddresses.registeredUniswapV3AdapterWeth
-    : robinhoodTestnetAddresses.uniswapV3Adapter ?? robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg;
+  void mode;
+  return robinhoodTestnetAddresses.uniswapV3Adapter;
 }
 
 function configuredSettlementTokenAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
   return mode === "weth" ? robinhoodTestnetAddresses.weth : robinhoodTestnetAddresses.usdg;
 }
 
+function configuredExecutionBridgePath(tokenIn: string, tokenOut: string): `0x${string}` | undefined {
+  const { tokenA, tokenB, fee, pool } = robinhoodTestnetExecutionBridge;
+  if (!tokenA || !tokenB || !pool || !fee) return undefined;
+  const matches = (tokenIn.toLowerCase() === tokenA.toLowerCase()
+      && tokenOut.toLowerCase() === tokenB.toLowerCase())
+    || (tokenIn.toLowerCase() === tokenB.toLowerCase()
+      && tokenOut.toLowerCase() === tokenA.toLowerCase());
+  return matches
+    ? encodePacked(
+        ["address", "uint24", "address"],
+        [tokenIn as `0x${string}`, fee, tokenOut as `0x${string}`],
+      )
+    : undefined;
+}
+
 function configuredConstituentFee(asset?: string, mode: RoutedSettlementMode = "usdg"): number {
   const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
   return venue.constituentPools.find((record) => !asset || record.asset.toLowerCase() === asset.toLowerCase())?.fee
+    ?? (mode === "weth"
+      ? robinhoodTestnetV3Venue.constituentPools.find(
+          (record) => !asset || record.asset.toLowerCase() === asset.toLowerCase(),
+        )?.fee
+      : undefined)
     ?? venue.constituentFee
+    ?? (mode === "weth" ? robinhoodTestnetV3Venue.constituentFee : undefined)
     ?? 3000;
 }
 
@@ -645,7 +646,11 @@ function configuredConstituentPool(asset: string, mode: RoutedSettlementMode = "
   const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
   return venue.constituentPools.find(
     (record) => record.asset.toLowerCase() === asset.toLowerCase(),
-  )?.pool;
+  )?.pool ?? (mode === "weth"
+    ? robinhoodTestnetV3Venue.constituentPools.find(
+        (record) => record.asset.toLowerCase() === asset.toLowerCase(),
+      )?.pool
+    : undefined);
 }
 
 type ExecutionRoute = {
@@ -655,13 +660,63 @@ type ExecutionRoute = {
   quoteToken: `0x${string}`;
 };
 
+type PackedV3Path = {
+  path: `0x${string}`;
+  tokens: `0x${string}`[];
+  fees: number[];
+};
+
+function parsePackedV3Path(
+  value: string | undefined,
+  tokenIn: string,
+  tokenOut: string,
+): PackedV3Path | undefined {
+  const path = value?.trim();
+  if (!path || !/^0x[0-9a-fA-F]+$/.test(path) || path.length % 2 !== 0) return undefined;
+  const byteLength = (path.length - 2) / 2;
+  if (byteLength < 43 || (byteLength - 20) % 23 !== 0) return undefined;
+  const hops = (byteLength - 20) / 23;
+  const tokens: `0x${string}`[] = [];
+  const fees: number[] = [];
+  for (let index = 0; index <= hops; index += 1) {
+    const tokenOffset = 2 + index * 46;
+    const token = `0x${path.slice(tokenOffset, tokenOffset + 40)}` as `0x${string}`;
+    if (!isAddress(token) || token === zeroAddress) return undefined;
+    if (tokens.at(-1)?.toLowerCase() === token.toLowerCase()) return undefined;
+    tokens.push(token);
+    if (index === hops) continue;
+    const fee = Number.parseInt(path.slice(tokenOffset + 40, tokenOffset + 46), 16);
+    if (!Number.isInteger(fee) || fee <= 0) return undefined;
+    fees.push(fee);
+  }
+  if (
+    tokens[0]?.toLowerCase() !== tokenIn.toLowerCase()
+      || tokens.at(-1)?.toLowerCase() !== tokenOut.toLowerCase()
+  ) return undefined;
+  return { path: path as `0x${string}`, tokens, fees };
+}
+
+function joinPackedV3Paths(
+  first: `0x${string}` | undefined,
+  second: `0x${string}` | undefined,
+): `0x${string}` | undefined {
+  if (!first) return second;
+  if (!second) return first;
+  return `${first}${second.slice(42)}` as `0x${string}`;
+}
+
 function configuredExecutionRoute(
   asset: string,
   mode: RoutedSettlementMode = "usdg",
 ): ExecutionRoute | undefined {
   const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
   const record = venue.constituentPools
-    .find((candidate) => candidate.asset.toLowerCase() === asset.toLowerCase());
+    .find((candidate) => candidate.asset.toLowerCase() === asset.toLowerCase())
+    ?? (mode === "weth"
+      ? robinhoodTestnetV3Venue.constituentPools.find(
+          (candidate) => candidate.asset.toLowerCase() === asset.toLowerCase(),
+        )
+      : undefined);
   return record ? {
     asset: record.asset,
     pool: record.pool,
@@ -694,15 +749,33 @@ function configuredPricingConfig(
 }
 
 function emptyPricingConfig(): AssetPricingConfig {
-  return { source: 0, primarySource: zeroAddress, secondarySource: zeroAddress };
+  return {
+    source: 0,
+    primarySource: zeroAddress,
+    secondarySource: zeroAddress,
+    primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
+    secondaryMaxStaleness: 0,
+    primaryValidationMode: 0,
+    secondaryValidationMode: 0,
+  };
 }
 
 function pricingConfigIsComplete(config: AssetPricingConfig): boolean {
   if (!isAddress(config.primarySource) || config.primarySource === zeroAddress) return false;
-  if (config.source === 1) {
-    return isAddress(config.secondarySource) && config.secondarySource !== zeroAddress;
+  if (!Number.isInteger(config.primaryMaxStaleness)
+    || config.primaryMaxStaleness <= 0
+    || config.primaryMaxStaleness > MAX_ORACLE_STALENESS_SECONDS) return false;
+  if (config.source === 2 && config.primaryValidationMode !== 0) return false;
+  if (config.source === 1 || config.source === 2) {
+    return isAddress(config.secondarySource)
+      && config.secondarySource !== zeroAddress
+      && Number.isInteger(config.secondaryMaxStaleness)
+      && config.secondaryMaxStaleness > 0
+      && config.secondaryMaxStaleness <= MAX_ORACLE_STALENESS_SECONDS;
   }
-  return config.secondarySource === zeroAddress;
+  return config.secondarySource === zeroAddress
+    && config.secondaryMaxStaleness === 0
+    && config.secondaryValidationMode === 0;
 }
 
 function pricingSourceLabel(source: PricingSource): string {
@@ -835,7 +908,8 @@ function PricingConfigurationFields({
   const approved = approvedPricingConfigsFor(chainId, assetAddress) as AssetPricingConfig[];
   const approvedIndex = approved.findIndex((candidate) => pricingConfigsMatch(candidate, config));
   const verifiedAsset = verifiedAssetFor(chainId, assetAddress);
-  const verified = isVerifiedPricingConfig(chainId, assetAddress, config);
+  const verification = pricingVerification(chainId, assetAddress, config);
+  const verified = verification.verified;
   const { pools, isLoading: poolsLoading } = useCompatibleUniswapV3Pools(
     chainId,
     assetAddress,
@@ -845,7 +919,7 @@ function PricingConfigurationFields({
   useEffect(() => setCustomizing(false), [assetAddress, chainId]);
 
   function commit(next: AssetPricingConfig) {
-    setCustomizing(!isVerifiedPricingConfig(chainId, assetAddress, next));
+    setCustomizing(true);
     onChange(next);
   }
 
@@ -897,6 +971,10 @@ function PricingConfigurationFields({
                 source: Number(event.target.value) as PricingSource,
                 primarySource: zeroAddress,
                 secondarySource: zeroAddress,
+                primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
+                secondaryMaxStaleness: Number(event.target.value) === 0 ? 0 : 60 * 60,
+                primaryValidationMode: 0,
+                secondaryValidationMode: 0,
               })}
             >
               <option value={0}>Chainlink ASSET/USD</option>
@@ -944,17 +1022,81 @@ function PricingConfigurationFields({
               />
             </label>
           )}
-          {config.source === 1 ? (
-            <label>
-              <span>WETH/USD Chainlink feed</span>
-              <input
-                className={config.secondarySource !== zeroAddress && !isAddress(config.secondarySource) ? "invalid" : undefined}
-                value={config.secondarySource === zeroAddress ? "" : config.secondarySource}
-                disabled={disabled}
-                onChange={(event) => commit({ ...config, secondarySource: event.target.value.trim() as `0x${string}` })}
-                placeholder="0x WETH/USD feed"
-              />
-            </label>
+          {config.source === 1 || config.source === 2 ? (
+            <>
+              <label>
+                <span>{config.source === 1 ? "WETH/USD Chainlink feed" : "Pool quote-token/USD Chainlink feed"}</span>
+                <input
+                  className={config.secondarySource !== zeroAddress && !isAddress(config.secondarySource) ? "invalid" : undefined}
+                  value={config.secondarySource === zeroAddress ? "" : config.secondarySource}
+                  disabled={disabled}
+                  onChange={(event) => commit({ ...config, secondarySource: event.target.value.trim() as `0x${string}` })}
+                  placeholder={config.source === 1 ? "0x WETH/USD feed" : "0x quote-token/USD feed"}
+                />
+              </label>
+              <label>
+                <span>{config.source === 1 ? "WETH/USD freshness limit" : "Quote/USD freshness limit"}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_ORACLE_STALENESS_SECONDS}
+                  step={1}
+                  value={config.secondaryMaxStaleness}
+                  disabled={disabled}
+                  onChange={(event) => commit({ ...config, secondaryMaxStaleness: Number(event.target.value) })}
+                />
+                <small>Seconds; maximum 7 days.</small>
+              </label>
+              <label>
+                <span>{config.source === 1 ? "WETH/USD validation" : "Quote/USD validation"}</span>
+                <select
+                  value={config.secondaryValidationMode}
+                  disabled={disabled}
+                  onChange={(event) => commit({
+                    ...config,
+                    secondaryValidationMode: Number(event.target.value) as 0 | 1,
+                  })}
+                >
+                  <option value={0}>Standard Chainlink</option>
+                  <option value={1}>Robinhood token with oracle pause status</option>
+                </select>
+              </label>
+            </>
+          ) : null}
+          <label>
+            <span>{config.source === 1 ? "ASSET/WETH freshness limit" : "Freshness limit"}</span>
+            <input
+              type="number"
+              min={1}
+              max={MAX_ORACLE_STALENESS_SECONDS}
+              step={1}
+              value={config.primaryMaxStaleness}
+              disabled={disabled}
+              onChange={(event) => commit({ ...config, primaryMaxStaleness: Number(event.target.value) })}
+            />
+            <small>Seconds; nonzero and no more than 7 days.</small>
+          </label>
+          <label>
+            <span>Validation mode</span>
+            <select
+              value={config.primaryValidationMode}
+              disabled={disabled || config.source === 2}
+              onChange={(event) => commit({
+                ...config,
+                primaryValidationMode: Number(event.target.value) as 0 | 1,
+              })}
+            >
+              <option value={0}>Standard Chainlink</option>
+              <option value={1}>Robinhood stock token</option>
+            </select>
+            {config.source !== 2 ? (
+              <small>Robinhood mode requires asset.oraclePaused() and rejects oracle-dependent actions while it returns true.</small>
+            ) : null}
+          </label>
+          {verification.availabilityWarning ? (
+            <small className="availabilityWarning">
+              Verified identity with a shorter freshness limit. Oracle-dependent actions may be unavailable more often.
+            </small>
           ) : null}
         </div>
       ) : null}
@@ -1114,11 +1256,29 @@ function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
   const configs = useMemo(() => Object.fromEntries(vault.allocations.map((asset, index) => {
     const result = data?.[index];
     if (result?.status !== "success") return [asset.address.toLowerCase(), undefined];
-    const [configured, source, primarySource, secondarySource] = result.result;
+    const [
+      configured,
+      source,
+      primarySource,
+      secondarySource,
+      ,
+      primaryMaxStaleness,
+      secondaryMaxStaleness,
+      primaryValidationMode,
+      secondaryValidationMode,
+    ] = result.result;
     return [
       asset.address.toLowerCase(),
       configured && (source === 0 || source === 1 || source === 2)
-        ? { source, primarySource, secondarySource } as AssetPricingConfig
+        ? {
+            source,
+            primarySource,
+            secondarySource,
+            primaryMaxStaleness,
+            secondaryMaxStaleness,
+            primaryValidationMode,
+            secondaryValidationMode,
+          } as AssetPricingConfig
         : undefined,
     ];
   })), [data, vault.allocations]);
@@ -1285,6 +1445,12 @@ const protocolErrorMessages = new Map<string, string>(
     ["ERC20NonZeroAllowance(address,address,uint256)", "This token requires its existing approval to be reset before a new approval is set."],
     ["AssetNotContract(address)", "A selected asset address is not a deployed token contract."],
     ["OracleFeedMissing(address)", "A selected token does not have a valid price feed pinned by this OTF."],
+    ["OracleFeedNotContract(address)", "A selected feed address is not a deployed contract."],
+    ["InvalidPricingConfig(address)", "The selected pricing route is incomplete or contains an invalid contract address."],
+    ["InvalidMaxStaleness(uint32)", "Every configured oracle leg needs a freshness limit greater than zero."],
+    ["InvalidMaxStaleness()", "Every configured oracle leg needs a freshness limit greater than zero."],
+    ["MaxStalenessTooHigh(uint32,uint32)", "An oracle freshness limit exceeds the protocol maximum of seven days."],
+    ["InvalidValidationMode(uint8)", "Choose Standard Chainlink or Robinhood stock-token validation."],
     ["InvalidOraclePrice(address,int256)", "A selected token's oracle returned an invalid price."],
     ["InvalidOracleTimestamp(address,uint256)", "A selected token's oracle returned an invalid update time."],
     ["IncompleteOracleRound(address,uint80,uint80)", "A selected token's latest oracle round is incomplete. Try again after the next price update."],
@@ -1473,29 +1639,11 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       refetchInterval: 12_000,
     },
   });
-  const { data: catalogOracleRegistryAddress } = useReadContract({
-    address: factoryAddress,
-    abi: factoryDependencyAbi,
-    functionName: "oracleRegistry",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(factoryAddress) && isTestnet },
-  });
-  const catalogFeedContracts = catalogOracleRegistryAddress
-    ? testnetCreateAssets.map((asset) => ({
-        address: catalogOracleRegistryAddress as `0x${string}`,
-        abi: protocolAssetReadAbi,
-        functionName: "priceFeedFor" as const,
-        args: [asset.address as `0x${string}`],
-        chainId: robinhoodChainTestnet.id,
-      }))
-    : undefined;
-  const { data: catalogFeedResults } = useReadContracts({
-    contracts: catalogFeedContracts,
-    query: { enabled: Boolean(catalogFeedContracts) && isTestnet },
-  });
-  const catalogFeedAddresses = testnetCreateAssets.map((_, index) => {
-    const value = catalogFeedResults?.[index]?.result;
-    return typeof value === "string" && isAddress(value) ? value : undefined;
+  const catalogFeedAddresses = testnetCreateAssets.map((asset) => {
+    const pricing = configuredPricingConfig(asset.address);
+    return pricing?.source === 0 && isAddress(pricing.primarySource)
+      ? pricing.primarySource
+      : undefined;
   });
   const catalogPricesReady = catalogFeedAddresses.every(
     (address): address is `0x${string}` => Boolean(address),
@@ -3249,66 +3397,59 @@ function UserActions({
   const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress(routedSettlementMode);
-  const isRegisteredEntryAdapter = Boolean(
-    entryAdapterAddress && (
-      entryAdapterAddress.toLowerCase() === robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg?.toLowerCase() ||
-      entryAdapterAddress.toLowerCase() === robinhoodTestnetAddresses.registeredUniswapV3AdapterWeth?.toLowerCase()
-    ),
-  );
+  const isRegisteredEntryAdapter = Boolean(entryAdapterAddress);
   const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredEntryAdapter, routedSettlementMode);
   const executionRouteFor = (asset: string) =>
     vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset, routedSettlementMode);
-  const isBaseAsset = (asset: string) =>
-    asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase() ||
-    asset.toLowerCase() === robinhoodTestnetAddresses.usdg?.toLowerCase();
-  const routeFeeFor = (asset: string) => isBaseAsset(asset)
-    ? 100
-    : executionRouteFor(asset)?.fee ?? configuredConstituentFee(asset, routedSettlementMode);
-  const executionPoolFor = (asset: string) => isBaseAsset(asset)
-    ? robinhoodTestnetAddresses.wethUsdgPool
-    : executionRouteFor(asset)?.pool;
+  const routeFeeFor = (asset: string) =>
+    executionRouteFor(asset)?.fee ?? configuredConstituentFee(asset, routedSettlementMode);
+  const executionPoolFor = (asset: string) =>
+    configuredSettlementToken && configuredExecutionBridgePath(asset, configuredSettlementToken)
+      ? robinhoodTestnetExecutionBridge.pool
+      : executionRouteFor(asset)?.pool;
   const routePoolFor = (asset: string) => isRegisteredEntryAdapter
     ? executionPoolFor(asset)
     : configuredConstituentPool(asset, routedSettlementMode);
   const exactInputRouteFor = (asset: string, assetToSettlement = false) => {
     if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
-    if (isBaseAsset(asset)) return assetToSettlement
-      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, configuredSettlementToken])
-      : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, 100, asset as `0x${string}`]);
+    const directBridge = assetToSettlement
+      ? configuredExecutionBridgePath(asset, configuredSettlementToken)
+      : configuredExecutionBridgePath(configuredSettlementToken, asset);
+    if (directBridge) return directBridge;
     const route = executionRouteFor(asset);
     if (!route) return undefined;
+    const assetQuotePath = assetToSettlement
+      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, configuredSettlementToken])
+      : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, route.fee, asset as `0x${string}`]);
     if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
-      return assetToSettlement
-        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, configuredSettlementToken])
-        : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, route.fee, asset as `0x${string}`]);
+      return assetQuotePath;
     }
+    const bridgePath = assetToSettlement
+      ? configuredExecutionBridgePath(route.quoteToken, configuredSettlementToken)
+      : configuredExecutionBridgePath(configuredSettlementToken, route.quoteToken);
+    if (!bridgePath) return undefined;
+    const constituentPath = assetToSettlement
+      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, route.quoteToken])
+      : encodePacked(["address", "uint24", "address"], [route.quoteToken, route.fee, asset as `0x${string}`]);
     return assetToSettlement
-      ? encodePacked(
-          ["address", "uint24", "address", "uint24", "address"],
-          [asset as `0x${string}`, route.fee, route.quoteToken, 100, configuredSettlementToken],
-        )
-      : encodePacked(
-          ["address", "uint24", "address", "uint24", "address"],
-          [configuredSettlementToken, 100, route.quoteToken, route.fee, asset as `0x${string}`],
-        );
+      ? joinPackedV3Paths(constituentPath, bridgePath)
+      : joinPackedV3Paths(bridgePath, constituentPath);
   };
   const exactOutputRouteFor = (asset: string) => {
     if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
-    if (isBaseAsset(asset)) {
-      return encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, configuredSettlementToken]);
-    }
+    const directBridge = configuredExecutionBridgePath(asset, configuredSettlementToken);
+    if (directBridge) return directBridge;
     const route = executionRouteFor(asset);
     if (!route) return undefined;
-    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
-      return encodePacked(
-        ["address", "uint24", "address"],
-        [asset as `0x${string}`, route.fee, configuredSettlementToken],
-      );
-    }
-    return encodePacked(
-      ["address", "uint24", "address", "uint24", "address"],
-      [asset as `0x${string}`, route.fee, route.quoteToken, 100, configuredSettlementToken],
+    const constituentPath = encodePacked(
+      ["address", "uint24", "address"],
+      [asset as `0x${string}`, route.fee, route.quoteToken],
     );
+    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
+      return constituentPath;
+    }
+    const bridgePath = configuredExecutionBridgePath(route.quoteToken, configuredSettlementToken);
+    return joinPackedV3Paths(constituentPath, bridgePath);
   };
   const executionRoutesConfigured = !isRegisteredEntryAdapter || vault.allocations.every(
     (asset) => asset.address.toLowerCase() === configuredSettlementToken?.toLowerCase() ||
@@ -3494,44 +3635,16 @@ function UserActions({
   } catch {
     requestedSettlementAmount = undefined;
   }
-  const { data: usdgDecimalsRead } = useReadContract({
-    address: robinhoodTestnetAddresses.usdg,
-    abi: erc20BalanceAbi,
-    functionName: "decimals",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(robinhoodTestnetAddresses.usdg) },
-  });
-  const usdgDecimals = Number(usdgDecimalsRead ?? 18);
-  const { data: wethUsdgNavQuote } = useReadContract({
-    address: uniswapV3QuoterAddress,
-    abi: uniswapV3QuoterAbi,
-    functionName: "quoteExactInputSingle",
-    args: isWethMode && requestedSettlementAmount && settlementToken && robinhoodTestnetAddresses.usdg
-      ? [{
-          tokenIn: settlementToken,
-          tokenOut: robinhoodTestnetAddresses.usdg,
-          amountIn: requestedSettlementAmount,
-          fee: 100,
-          sqrtPriceLimitX96: 0n,
-        }]
-      : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isWethMode && uniswapV3QuoterAddress && requestedSettlementAmount) },
-  });
-  const quotedUsdgForNav = (wethUsdgNavQuote as readonly [bigint, bigint, number, bigint] | undefined)?.[0];
-  const normalizedSettlementNavValue = requestedSettlementAmount === undefined
+  const settlementSizingSeedValue = requestedSettlementAmount === undefined
     ? undefined
-    : isWethMode
-      ? quotedUsdgForNav === undefined
-        ? undefined
-        : quotedUsdgForNav * 10n ** 18n / 10n ** BigInt(usdgDecimals)
-      : requestedSettlementAmount * 10n ** 18n / 10n ** BigInt(settlementDecimals);
-  const navEstimatedShares = normalizedSettlementNavValue && vault.navPerShareValue
-    ? normalizedSettlementNavValue * 10n ** 18n / vault.navPerShareValue
+    : requestedSettlementAmount * 10n ** 18n / 10n ** BigInt(settlementDecimals);
+  const entrySizingSeedShares = settlementSizingSeedValue && vault.navPerShareValue
+    ? settlementSizingSeedValue * 10n ** 18n / vault.navPerShareValue
     : undefined;
+  const navEstimatedShares = isWethMode ? undefined : entrySizingSeedShares;
   let navRequestedEntryShares: bigint | undefined;
-  if (activeAction === "deposit" && navEstimatedShares && slippageValid) {
-    navRequestedEntryShares = navEstimatedShares * 10_000n / BigInt(10_000 + slippageBps);
+  if (activeAction === "deposit" && entrySizingSeedShares && slippageValid) {
+    navRequestedEntryShares = entrySizingSeedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
   const { data: entryAdapterApproved } = useReadContract({
     address: entryRouterAddress,
@@ -4281,29 +4394,10 @@ function UserActions({
         0n,
       )
     : undefined;
-  const { data: wethRedeemUsdgQuote } = useReadContract({
-    address: uniswapV3QuoterAddress,
-    abi: uniswapV3QuoterAbi,
-    functionName: "quoteExactInputSingle",
-    args: isWethMode && quotedRedeemSettlement && settlementToken && robinhoodTestnetAddresses.usdg
-      ? [{
-          tokenIn: settlementToken,
-          tokenOut: robinhoodTestnetAddresses.usdg,
-          amountIn: quotedRedeemSettlement,
-          fee: 100,
-          sqrtPriceLimitX96: 0n,
-        }]
-      : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isWethMode && uniswapV3QuoterAddress && quotedRedeemSettlement) },
-  });
-  const quotedRedeemUsdg = (wethRedeemUsdgQuote as readonly [bigint, bigint, number, bigint] | undefined)?.[0];
   const normalizedRedeemNavOutput = quotedRedeemSettlement === undefined
     ? undefined
     : isWethMode
-      ? quotedRedeemUsdg === undefined
-        ? undefined
-        : quotedRedeemUsdg * 10n ** 18n / 10n ** BigInt(usdgDecimals)
+      ? undefined
       : quotedRedeemSettlement * 10n ** 18n / 10n ** BigInt(settlementDecimals);
   const redeemBusy = redeemState === "pending" || redeemState === "submitted";
   const marketBusy = marketState === "pending" || marketState === "submitted";
@@ -5767,6 +5861,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [manualTargetPricingSource, setManualTargetPricingSource] = useState<PricingSource>(0);
   const [manualTargetPrimarySource, setManualTargetPrimarySource] = useState("");
   const [manualTargetSecondarySource, setManualTargetSecondarySource] = useState("");
+  const [manualTargetPrimaryMaxStaleness, setManualTargetPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
+  const [manualTargetSecondaryMaxStaleness, setManualTargetSecondaryMaxStaleness] = useState(0);
+  const [manualTargetPrimaryValidationMode, setManualTargetPrimaryValidationMode] = useState<0 | 1>(0);
+  const [manualTargetSecondaryValidationMode, setManualTargetSecondaryValidationMode] = useState<0 | 1>(0);
   const [manualTargetState, setManualTargetState] = useState<TxState>("idle");
   const [manualTargetError, setManualTargetError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
@@ -5826,12 +5924,30 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       if (allocationIndex < 0) return target;
       const pricingResult = activeTargetPricingResults[allocationIndex];
       if (pricingResult?.status !== "success") return target;
-      const [configured, source, primarySource, secondarySource] = pricingResult.result;
+      const [
+        configured,
+        source,
+        primarySource,
+        secondarySource,
+        ,
+        primaryMaxStaleness,
+        secondaryMaxStaleness,
+        primaryValidationMode,
+        secondaryValidationMode,
+      ] = pricingResult.result;
       if (!configured || (source !== 0 && source !== 1 && source !== 2)) return target;
       return {
         ...target,
         quality: assetQualityForAddress(target.address),
-        pricingConfig: { source, primarySource, secondarySource },
+        pricingConfig: {
+          source,
+          primarySource,
+          secondarySource,
+          primaryMaxStaleness,
+          secondaryMaxStaleness,
+          primaryValidationMode: primaryValidationMode as 0 | 1,
+          secondaryValidationMode: secondaryValidationMode as 0 | 1,
+        },
       };
     }));
   }, [activeTargetPricingResults, vault.allocations]);
@@ -6004,9 +6120,13 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     const pricingConfig: AssetPricingConfig = {
       source: manualTargetPricingSource,
       primarySource: manualTargetPrimarySource as `0x${string}`,
-      secondarySource: manualTargetPricingSource === 1 && isAddress(manualTargetSecondarySource)
+      secondarySource: manualTargetPricingSource !== 0 && isAddress(manualTargetSecondarySource)
         ? manualTargetSecondarySource as `0x${string}`
         : zeroAddress,
+      primaryMaxStaleness: manualTargetPrimaryMaxStaleness,
+      secondaryMaxStaleness: manualTargetPricingSource !== 0 ? manualTargetSecondaryMaxStaleness : 0,
+      primaryValidationMode: manualTargetPrimaryValidationMode,
+      secondaryValidationMode: manualTargetPricingSource !== 0 ? manualTargetSecondaryValidationMode : 0,
     };
     if (!pricingConfigIsComplete(pricingConfig)) {
       setManualTargetError("Complete the selected pricing route before validating it.");
@@ -6059,6 +6179,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       setManualTargetAsset("");
       setManualTargetPrimarySource("");
       setManualTargetSecondarySource("");
+      setManualTargetPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
+      setManualTargetSecondaryMaxStaleness(0);
+      setManualTargetPrimaryValidationMode(0);
+      setManualTargetSecondaryValidationMode(0);
       setManualTargetState("confirmed");
       setTxState("idle");
     } catch (error) {
@@ -6262,12 +6386,20 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   source: manualTargetPricingSource,
                   primarySource: (manualTargetPrimarySource || zeroAddress) as `0x${string}`,
                   secondarySource: (manualTargetSecondarySource || zeroAddress) as `0x${string}`,
+                  primaryMaxStaleness: manualTargetPrimaryMaxStaleness,
+                  secondaryMaxStaleness: manualTargetSecondaryMaxStaleness,
+                  primaryValidationMode: manualTargetPrimaryValidationMode,
+                  secondaryValidationMode: manualTargetSecondaryValidationMode,
                 }}
                 disabled={targetEditorLocked}
                 onChange={(pricingConfig) => {
                   setManualTargetPricingSource(pricingConfig.source);
                   setManualTargetPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
                   setManualTargetSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
+                  setManualTargetPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
+                  setManualTargetSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
+                  setManualTargetPrimaryValidationMode(pricingConfig.primaryValidationMode);
+                  setManualTargetSecondaryValidationMode(pricingConfig.secondaryValidationMode);
                 }}
               />
               <button
@@ -6278,7 +6410,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   targetEditorLocked || !vault.connectedIsManager ||
                   manualTargetState === "pending" || manualTargetState === "submitted" ||
                   !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
-                  (manualTargetPricingSource === 1 && !isAddress(manualTargetSecondarySource)) ||
+                  (manualTargetPricingSource !== 0 && !isAddress(manualTargetSecondarySource)) ||
                   protocolMinimumTargetWeightBps === undefined
                 }
               >
@@ -6468,6 +6600,7 @@ function RebalanceTradesPanel({
   const [tradeSize, setTradeSize] = useState<10 | 25 | 50 | 100>(100);
   const [amountInText, setAmountInText] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");
+  const [routeText, setRouteText] = useState("");
   const [txState, setTxState] = useState<TxState>("idle");
   const [txError, setTxError] = useState<string>();
   const { address: connectedAddress } = useAccount();
@@ -6475,47 +6608,18 @@ function RebalanceTradesPanel({
   const { writeContractAsync } = useWriteContract();
   const adapterAddress = configuredEntryAdapterAddress();
   const quoterAddress = configuredUniswapV3QuoterAddress();
-  const settlementToken = configuredSettlementTokenAddress();
-  const constituentFee = configuredConstituentFee();
-  const isRegisteredRebalanceAdapter = Boolean(
-    adapterAddress && adapterAddress.toLowerCase() ===
-      robinhoodTestnetAddresses.registeredUniswapV3AdapterUsdg?.toLowerCase(),
-  );
+  const isRegisteredRebalanceAdapter = Boolean(adapterAddress);
   const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredRebalanceAdapter);
   const executionRouteFor = (asset: string) =>
     vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset);
-  const rebalancePoolFor = (asset: string) => {
-    if (asset.toLowerCase() === settlementToken?.toLowerCase()) return undefined;
-    if (asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase()) {
-      return robinhoodTestnetAddresses.wethUsdgPool;
-    }
-    return isRegisteredRebalanceAdapter
-      ? executionRouteFor(asset)?.pool
-      : configuredConstituentPool(asset);
-  };
-  const registeredRebalancePathFor = (asset: string, assetToSettlement: boolean) => {
-    if (!settlementToken || !isRegisteredRebalanceAdapter) return undefined;
-    if (asset.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase()) {
-      return assetToSettlement
-        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, 100, settlementToken])
-        : encodePacked(["address", "uint24", "address"], [settlementToken, 100, asset as `0x${string}`]);
-    }
+  const rebalancePoolFor = (asset: string) => executionRouteFor(asset)?.pool;
+  const registeredRebalancePathFor = (asset: string, assetToQuote: boolean) => {
+    if (!isRegisteredRebalanceAdapter) return undefined;
     const route = executionRouteFor(asset);
     if (!route) return undefined;
-    if (route.quoteToken.toLowerCase() === settlementToken.toLowerCase()) {
-      return assetToSettlement
-        ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, settlementToken])
-        : encodePacked(["address", "uint24", "address"], [settlementToken, route.fee, asset as `0x${string}`]);
-    }
-    return assetToSettlement
-      ? encodePacked(
-          ["address", "uint24", "address", "uint24", "address"],
-          [asset as `0x${string}`, route.fee, route.quoteToken, 100, settlementToken],
-        )
-      : encodePacked(
-          ["address", "uint24", "address", "uint24", "address"],
-          [settlementToken, 100, route.quoteToken, route.fee, asset as `0x${string}`],
-        );
+    return assetToQuote
+      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, route.quoteToken])
+      : encodePacked(["address", "uint24", "address"], [route.quoteToken, route.fee, asset as `0x${string}`]);
   };
   const hasAllowedTrade = recommendedTrades.length > 0;
 
@@ -6527,6 +6631,7 @@ function RebalanceTradesPanel({
     setTokenIn(recommendedTrades[0]?.sell.address ?? "");
     setTokenOut(recommendedTrades[0]?.buy.address ?? "");
     setTradeSize(100);
+    setRouteText("");
   }, [recommendedTrades, tokenIn, tokenOut]);
 
   const { data: tokenInDecimalsResult } = useReadContract({
@@ -6583,27 +6688,51 @@ function RebalanceTradesPanel({
   }
   const slippageBps = Math.round(Number(slippageText) * 100);
   const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
-  const path = settlementToken ? [tokenIn, settlementToken, tokenOut] : [tokenIn, tokenOut];
-  const registeredSellPath = tokenIn && tokenIn.toLowerCase() !== settlementToken?.toLowerCase()
-    ? registeredRebalancePathFor(tokenIn, true)
+  const sellExecutionRoute = tokenIn ? executionRouteFor(tokenIn) : undefined;
+  const buyExecutionRoute = tokenOut ? executionRouteFor(tokenOut) : undefined;
+  const registeredSellPath = tokenIn ? registeredRebalancePathFor(tokenIn, true) : undefined;
+  const registeredBuyPath = tokenOut ? registeredRebalancePathFor(tokenOut, false) : undefined;
+  const directRebalanceBridge = configuredExecutionBridgePath(tokenIn, tokenOut);
+  const crossQuoteBridge = sellExecutionRoute && buyExecutionRoute
+    ? configuredExecutionBridgePath(sellExecutionRoute.quoteToken, buyExecutionRoute.quoteToken)
     : undefined;
-  const registeredBuyPath = tokenOut && tokenOut.toLowerCase() !== settlementToken?.toLowerCase()
-    ? registeredRebalancePathFor(tokenOut, false)
+  const bridgedConfiguredPath = crossQuoteBridge
+    ? joinPackedV3Paths(joinPackedV3Paths(registeredSellPath, crossQuoteBridge), registeredBuyPath)
     : undefined;
-  const routeValid = path.every((address) => isAddress(address)) && tokenIn !== tokenOut && (
-    !isRegisteredRebalanceAdapter || Boolean(
-      (tokenIn.toLowerCase() === settlementToken?.toLowerCase() || registeredSellPath) &&
-      (tokenOut.toLowerCase() === settlementToken?.toLowerCase() || registeredBuyPath)
-    )
-  );
+  const automaticPackedPath = directRebalanceBridge
+    ?? (sellExecutionRoute?.quoteToken.toLowerCase() === tokenOut.toLowerCase()
+      ? registeredSellPath
+      : buyExecutionRoute?.quoteToken.toLowerCase() === tokenIn.toLowerCase()
+        ? registeredBuyPath
+        : sellExecutionRoute?.quoteToken.toLowerCase() === buyExecutionRoute?.quoteToken.toLowerCase()
+          ? joinPackedV3Paths(registeredSellPath, registeredBuyPath)
+          : bridgedConfiguredPath);
+  const automaticUsesBridge = Boolean(directRebalanceBridge || bridgedConfiguredPath);
+  const customRoute = routeText.trim();
+  const packedRoute = parsePackedV3Path(customRoute || automaticPackedPath, tokenIn, tokenOut);
+  const routeValid = Boolean(packedRoute && tokenIn !== tokenOut);
+  const routeLabel = packedRoute?.tokens.map((token) => {
+    const constituent = vault.allocations.find(
+      (asset) => asset.address.toLowerCase() === token.toLowerCase(),
+    );
+    if (constituent) return constituent.symbol;
+    if (token.toLowerCase() === robinhoodTestnetAddresses.weth?.toLowerCase()) return "WETH";
+    if (token.toLowerCase() === robinhoodTestnetAddresses.usdg?.toLowerCase()) return "USDG";
+    return shortAddress(token);
+  }).join(" → ");
   const inputPool = rebalancePoolFor(tokenIn);
   const outputPool = rebalancePoolFor(tokenOut);
-  const rebalanceLiquidityContracts = [inputPool, outputPool].flatMap((pool) => pool ? [{
+  const rebalancePools = [
+    inputPool,
+    outputPool,
+    automaticUsesBridge ? robinhoodTestnetExecutionBridge.pool : undefined,
+  ].filter((pool, index, pools): pool is `0x${string}` => Boolean(pool) && pools.indexOf(pool) === index);
+  const rebalanceLiquidityContracts = rebalancePools.map((pool) => ({
     address: pool,
     abi: uniswapV3PoolAbi,
     functionName: "liquidity" as const,
     chainId: robinhoodChainTestnet.id,
-  }] : []);
+  }));
   const {
     data: rebalanceLiquidityResults,
     isLoading: rebalanceLiquidityLoading,
@@ -6611,94 +6740,36 @@ function RebalanceTradesPanel({
     contracts: rebalanceLiquidityContracts,
     query: { enabled: rebalanceLiquidityContracts.length > 0 },
   });
-  const requiredPoolCount = [tokenIn, tokenOut].filter(
-    (token) => token && token.toLowerCase() !== settlementToken?.toLowerCase(),
-  ).length;
-  const rebalancePoolsConfigured = requiredPoolCount > 0 && rebalanceLiquidityContracts.length === requiredPoolCount;
-  const rebalanceLiquidityReady = Boolean(
+  const requiredPoolCount = rebalancePools.length;
+  const rebalancePoolsConfigured = Boolean(
+    automaticPackedPath && requiredPoolCount > 0
+      && rebalanceLiquidityContracts.length === requiredPoolCount,
+  );
+  const configuredRouteLiquidityReady = Boolean(
     rebalancePoolsConfigured && rebalanceLiquidityResults?.length === requiredPoolCount
       && rebalanceLiquidityResults.every(
         (result) => result.status === "success" && typeof result.result === "bigint" && result.result > 0n,
       ),
   );
-  const packedPath = routeValid && settlementToken
-    ? encodePacked(
-        ["address", "uint24", "address", "uint24", "address"],
-        [
-          tokenIn as `0x${string}`,
-          constituentFee,
-          settlementToken,
-          constituentFee,
-          tokenOut as `0x${string}`,
-        ],
-      )
-    : undefined;
-  const legacyQuoteEnabled = Boolean(
-    !isRegisteredRebalanceAdapter && quoterAddress && packedPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
+  const routeLiquidityReady = customRoute ? true : configuredRouteLiquidityReady;
+  const quoteEnabled = Boolean(
+    quoterAddress && packedRoute && amountIn && amountIn > 0n && routeLiquidityReady,
   );
   const {
-    data: legacyQuoteResult,
-    error: legacyQuoteError,
-    isLoading: legacyQuoteLoading,
-    refetch: refetchLegacyQuote,
+    data: quoteResult,
+    error: quoteError,
+    isLoading: quoteLoading,
+    refetch: refetchRouteQuote,
   } = useReadContract({
     address: quoterAddress,
     abi: uniswapV3QuoterAbi,
     functionName: "quoteExactInput",
-    args: amountIn && packedPath ? [packedPath, amountIn] : undefined,
+    args: amountIn && packedRoute ? [packedRoute.path, amountIn] : undefined,
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: legacyQuoteEnabled },
+    query: { enabled: quoteEnabled },
   });
-  const registeredSellQuoteEnabled = Boolean(
-    isRegisteredRebalanceAdapter && quoterAddress && registeredSellPath && amountIn && amountIn > 0n && rebalanceLiquidityReady,
-  );
-  const {
-    data: registeredSellQuoteResult,
-    error: registeredSellQuoteError,
-    isLoading: registeredSellQuoteLoading,
-    refetch: refetchRegisteredSellQuote,
-  } = useReadContract({
-    address: quoterAddress,
-    abi: uniswapV3QuoterAbi,
-    functionName: "quoteExactInput",
-    args: amountIn && registeredSellPath ? [registeredSellPath, amountIn] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: registeredSellQuoteEnabled },
-  });
-  const expectedSettlementOut = tokenIn.toLowerCase() === settlementToken?.toLowerCase()
-    ? amountIn
-    : (registeredSellQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
-  const minimumSettlementOut = expectedSettlementOut && slippageValid
-    ? expectedSettlementOut * BigInt(10_000 - slippageBps) / 10_000n
-    : undefined;
-  const registeredBuyQuoteEnabled = Boolean(
-    isRegisteredRebalanceAdapter && quoterAddress && registeredBuyPath && minimumSettlementOut && minimumSettlementOut > 0n && rebalanceLiquidityReady,
-  );
-  const {
-    data: registeredBuyQuoteResult,
-    error: registeredBuyQuoteError,
-    isLoading: registeredBuyQuoteLoading,
-    refetch: refetchRegisteredBuyQuote,
-  } = useReadContract({
-    address: quoterAddress,
-    abi: uniswapV3QuoterAbi,
-    functionName: "quoteExactInput",
-    args: minimumSettlementOut && registeredBuyPath ? [registeredBuyPath, minimumSettlementOut] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: registeredBuyQuoteEnabled },
-  });
-  const legacyQuotedAmountOut = (legacyQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
-  const quotedAmountOut = isRegisteredRebalanceAdapter
-    ? tokenOut.toLowerCase() === settlementToken?.toLowerCase()
-      ? expectedSettlementOut
-      : (registeredBuyQuoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0]
-    : legacyQuotedAmountOut;
-  const quoteError = isRegisteredRebalanceAdapter
-    ? registeredSellQuoteError ?? registeredBuyQuoteError
-    : legacyQuoteError;
-  const quoteLoading = isRegisteredRebalanceAdapter
-    ? registeredSellQuoteLoading || registeredBuyQuoteLoading
-    : legacyQuoteLoading;
+  const quotedAmountOut =
+    (quoteResult as readonly [bigint, readonly bigint[], readonly number[], bigint] | undefined)?.[0];
   const poolMinimumAmountOut = quotedAmountOut && slippageValid
     ? quotedAmountOut * BigInt(10_000 - slippageBps) / 10_000n
     : undefined;
@@ -6870,14 +6941,13 @@ function RebalanceTradesPanel({
     resetTradeState();
   }, [recommendedTradeAmount, resetTradeState, tokenInDecimals, tradeSize]);
 
-  const contractsConfigured = Boolean(adapterAddress && quoterAddress && settlementToken);
+  const contractsConfigured = Boolean(adapterAddress && quoterAddress);
   const busy = txState === "simulating" || txState === "pending" || txState === "submitted";
   const canSubmit = Boolean(
     vault.address && vault.connectedIsManager && connectedAddress && publicClient && contractsConfigured &&
     hasAllowedTrade && amountWithinSellLimit && minAmountOut && routeValid && slippageValid &&
-    rebalanceLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
-    !oracleValueLossTooHigh && !navLossBudgetTooHigh &&
-    (!isRegisteredRebalanceAdapter || minimumSettlementOut),
+    routeLiquidityReady && predictedWeightsReady && !buyWouldMoveFartherFromTarget &&
+    !oracleValueLossTooHigh && !navLossBudgetTooHigh,
   );
 
   async function executeTrade() {
@@ -6885,37 +6955,15 @@ function RebalanceTradesPanel({
     setTxError(undefined);
     try {
       setTxState("simulating");
-      const trades = isRegisteredRebalanceAdapter
-        ? [
-            ...(tokenIn.toLowerCase() === settlementToken?.toLowerCase() ? [] : [{
-              adapter: adapterAddress,
-              tokenIn: tokenIn as `0x${string}`,
-              tokenOut: settlementToken as `0x${string}`,
-              amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
-              minAmountOut: tokenOut.toLowerCase() === settlementToken?.toLowerCase()
-                ? minAmountOut
-                : minimumSettlementOut as bigint,
-              adapterData: registeredSellPath as `0x${string}`,
-            }]),
-            ...(tokenOut.toLowerCase() === settlementToken?.toLowerCase() ? [] : [{
-              adapter: adapterAddress,
-              tokenIn: settlementToken as `0x${string}`,
-              tokenOut: tokenOut as `0x${string}`,
-              amountIn: tokenIn.toLowerCase() === settlementToken?.toLowerCase()
-                ? amountIn
-                : minimumSettlementOut as bigint,
-              minAmountOut,
-              adapterData: registeredBuyPath as `0x${string}`,
-            }]),
-          ]
-        : [{
-            adapter: adapterAddress,
-            tokenIn: tokenIn as `0x${string}`,
-            tokenOut: tokenOut as `0x${string}`,
-            amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
-            minAmountOut,
-            adapterData: encodeAbiParameters([{ type: "address[]" }], [path as `0x${string}`[]]),
-          }];
+      if (!packedRoute) return;
+      const trades = [{
+        adapter: adapterAddress,
+        tokenIn: tokenIn as `0x${string}`,
+        tokenOut: tokenOut as `0x${string}`,
+        amountIn: submitFullRetiringBalance ? maxUint256 : amountIn,
+        minAmountOut,
+        adapterData: packedRoute.path,
+      }];
       await publicClient.simulateContract({
         account: connectedAddress,
         address: vault.address,
@@ -6939,11 +6987,7 @@ function RebalanceTradesPanel({
         refetchTokenInVaultBalance(),
         refetchTokenOutVaultBalance(),
       ]);
-      await Promise.all([
-        refetchLegacyQuote(),
-        refetchRegisteredSellQuote(),
-        refetchRegisteredBuyQuote(),
-      ]);
+      await refetchRouteQuote();
       setTxState("confirmed");
       setAmountInText("");
     } catch (error) {
@@ -6987,6 +7031,7 @@ function RebalanceTradesPanel({
                     setTokenIn(trade.sell.address);
                     setTokenOut(trade.buy.address);
                     setTradeSize(100);
+                    setRouteText("");
                     resetTradeState();
                   }}
                 >
@@ -7054,12 +7099,24 @@ function RebalanceTradesPanel({
           </label>
         </div>
 
-        <div className={`routeToggle ${!settlementToken ? "disabled" : ""}`}>
-          <span>
-            <strong>Routes through USDG</strong>
-            <small>Mixed markets execute atomically as a sell-to-USDG leg followed by a USDG-to-buy-asset leg.</small>
-          </span>
-        </div>
+        <label className="tradeRouteField">
+          <span>Uniswap V3 execution path</span>
+          <textarea
+            rows={3}
+            spellCheck={false}
+            value={routeText}
+            disabled={!hasAllowedTrade}
+            placeholder={automaticPackedPath ?? "No automatic route is configured"}
+            onChange={(event) => {
+              setRouteText(event.target.value.trim());
+              resetTradeState();
+            }}
+          />
+          <small>
+            Leave blank to use the configured route. A custom packed path may use any intermediate
+            tokens, but must begin with the sold asset and end with the purchased asset.
+          </small>
+        </label>
 
         <div className="tradeExecutionQuote">
           <span>Uniswap quote</span>
@@ -7070,7 +7127,7 @@ function RebalanceTradesPanel({
           </strong>
           <span>Quoted slippage vs oracle</span>
           <strong>{formatQuotedSlippage(quotedOracleSlippageBps)}</strong>
-          <small>{`${inputAsset?.symbol ?? "Asset"} -> USDG -> ${outputAsset?.symbol ?? "Asset"}`}</small>
+          <small>{routeLabel ?? "No valid execution path"}</small>
         </div>
 
         <div className="previewBlock tradeWeightPreview">
@@ -7112,11 +7169,14 @@ function RebalanceTradesPanel({
         {!contractsConfigured ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
-        {hasAllowedTrade && contractsConfigured && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Constituent pools are not configured</strong><span>Each selected asset needs its pinned asset/USDG or asset/WETH pool before this rebalance route can be quoted.</span></div></div>
+        {hasAllowedTrade && contractsConfigured && !customRoute && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Default execution pools are not configured</strong><span>The configured route needs execution liquidity for each selected asset before it can be quoted. You may supply another valid packed route.</span></div></div>
         ) : null}
-        {hasAllowedTrade && contractsConfigured && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !rebalanceLiquidityReady ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting constituent liquidity</strong><span>The pinned pools exist, but this route stays disabled until each required pool has active liquidity.</span></div></div>
+        {hasAllowedTrade && contractsConfigured && !customRoute && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !configuredRouteLiquidityReady ? (
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting configured-route liquidity</strong><span>The default execution pools exist, but this route stays disabled until each required pool has active liquidity. You may supply another valid packed route.</span></div></div>
+        ) : null}
+        {hasAllowedTrade && customRoute && !routeValid ? (
+          <div className="validationSummary warning" role="alert"><AlertTriangle size={15} /><div><strong>Execution path does not match this trade</strong><span>Use packed Uniswap V3 bytes beginning with {inputAsset?.symbol ?? "the sold asset"} and ending with {outputAsset?.symbol ?? "the purchased asset"}, with a nonzero fee for every hop.</span></div></div>
         ) : null}
         {hasAllowedTrade && tokenIn === tokenOut ? (
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Select two different assets</strong><span>The sold and purchased constituents cannot be the same token.</span></div></div>
@@ -7755,6 +7815,10 @@ function CreateVaultView({
   const [manualPricingSource, setManualPricingSource] = useState<PricingSource>(0);
   const [manualPrimarySource, setManualPrimarySource] = useState("");
   const [manualSecondarySource, setManualSecondarySource] = useState("");
+  const [manualPrimaryMaxStaleness, setManualPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
+  const [manualSecondaryMaxStaleness, setManualSecondaryMaxStaleness] = useState(0);
+  const [manualPrimaryValidationMode, setManualPrimaryValidationMode] = useState<0 | 1>(0);
+  const [manualSecondaryValidationMode, setManualSecondaryValidationMode] = useState<0 | 1>(0);
   const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
@@ -7795,7 +7859,7 @@ function CreateVaultView({
     },
   });
   const pricingDraftKey = portfolio.map((asset) => (
-    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}`
+    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}:${asset.pricingConfig.primaryMaxStaleness}:${asset.pricingConfig.secondaryMaxStaleness}:${asset.pricingConfig.primaryValidationMode}:${asset.pricingConfig.secondaryValidationMode}`
   )).join("|");
   useEffect(() => {
     let cancelled = false;
@@ -8066,7 +8130,7 @@ function CreateVaultView({
         <section className="sectionCard depositsEmpty">
           <span><Clock3 size={22} /></span>
           <h2>The pinned-pricing stack is not deployed yet</h2>
-          <p>Existing testnet OTFs remain readable. New creation will open after the trusted pair map, pricing resolver, canonical V3 infrastructure, and updated factory are deployed and verified.</p>
+          <p>Existing testnet OTFs remain readable. New creation will open after the permissionless pricing resolver, canonical V3 infrastructure, frontend verification manifest, and updated factory are deployed and verified.</p>
           <button className="secondaryAction" type="button" onClick={onBack}>
             <ArrowLeft size={14} />
             View existing OTFs
@@ -8161,9 +8225,13 @@ function CreateVaultView({
     const pricingConfig: AssetPricingConfig = {
       source: manualPricingSource,
       primarySource: manualPrimarySource as `0x${string}`,
-      secondarySource: manualPricingSource === 1 && isAddress(manualSecondarySource)
+      secondarySource: manualPricingSource !== 0 && isAddress(manualSecondarySource)
         ? manualSecondarySource as `0x${string}`
         : zeroAddress,
+      primaryMaxStaleness: manualPrimaryMaxStaleness,
+      secondaryMaxStaleness: manualPricingSource !== 0 ? manualSecondaryMaxStaleness : 0,
+      primaryValidationMode: manualPrimaryValidationMode,
+      secondaryValidationMode: manualPricingSource !== 0 ? manualSecondaryValidationMode : 0,
     };
     if (!pricingConfigIsComplete(pricingConfig)) {
       setManualRegistrationError("Complete the selected pricing route before validating it.");
@@ -8220,6 +8288,10 @@ function CreateVaultView({
       setManualAssetAddress("");
       setManualPrimarySource("");
       setManualSecondarySource("");
+      setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
+      setManualSecondaryMaxStaleness(0);
+      setManualPrimaryValidationMode(0);
+      setManualSecondaryValidationMode(0);
       setManualRegistrationState("confirmed");
     } catch (error) {
       setManualRegistrationError(errorMessage(error));
@@ -8724,11 +8796,19 @@ function CreateVaultView({
                         source: manualPricingSource,
                         primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
                         secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
+                        primaryMaxStaleness: manualPrimaryMaxStaleness,
+                        secondaryMaxStaleness: manualSecondaryMaxStaleness,
+                        primaryValidationMode: manualPrimaryValidationMode,
+                        secondaryValidationMode: manualSecondaryValidationMode,
                       }}
                       onChange={(pricingConfig) => {
                         setManualPricingSource(pricingConfig.source);
                         setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
                         setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
+                        setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
+                        setManualSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
+                        setManualPrimaryValidationMode(pricingConfig.primaryValidationMode);
+                        setManualSecondaryValidationMode(pricingConfig.secondaryValidationMode);
                       }}
                     />
                     <button
@@ -8741,7 +8821,7 @@ function CreateVaultView({
                         !connectedAddress ||
                         !isAddress(manualAssetAddress) ||
                         !isAddress(manualPrimarySource) ||
-                        (manualPricingSource === 1 && !isAddress(manualSecondarySource))
+                        (manualPricingSource !== 0 && !isAddress(manualSecondarySource))
                       }
                     >
                       {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
@@ -8834,7 +8914,7 @@ function CreateVaultView({
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
                     {portfolio.map((asset, index) => (
-                      <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source === 1 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
+                      <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source !== 0 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
                         <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
                         {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed

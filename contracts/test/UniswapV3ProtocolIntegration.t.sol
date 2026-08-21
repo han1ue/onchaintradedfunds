@@ -4,19 +4,19 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
 import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
-import { UniswapV3Adapter } from "../src/UniswapV3Adapter.sol";
+import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
     MockUniswapV3Router private venue;
-    UniswapV3Adapter private v3Adapter;
+    RegisteredUniswapV3Adapter private v3Adapter;
     OTFEntryRouter private entryRouter;
 
     function setUp() public override {
         super.setUp();
         venue = new MockUniswapV3Router();
-        v3Adapter = new UniswapV3Adapter(address(this), address(venue), address(tokenC), 3000);
+        v3Adapter = new RegisteredUniswapV3Adapter(address(this), address(venue));
         entryRouter = new OTFEntryRouter(address(this), address(factory), address(tokenC));
 
         factory.setTradeAdapterApproved(address(v3Adapter), true);
@@ -40,16 +40,16 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
             settlementIn: required[0],
             minAssetOut: required[0],
             minRefundSettlementRate: ONE,
-            adapterData: abi.encode(_path(address(tokenC), address(tokenA))),
-            refundAdapterData: abi.encode(_path(address(tokenA), address(tokenC)))
+            adapterData: _path(address(tokenC), address(tokenA)),
+            refundAdapterData: _path(address(tokenA), address(tokenC))
         });
         entrySwaps[1] = EntrySwap({
             adapter: address(v3Adapter),
             settlementIn: required[1],
             minAssetOut: required[1],
             minRefundSettlementRate: ONE,
-            adapterData: abi.encode(_path(address(tokenC), address(tokenB))),
-            refundAdapterData: abi.encode(_path(address(tokenB), address(tokenC)))
+            adapterData: _path(address(tokenC), address(tokenB)),
+            refundAdapterData: _path(address(tokenB), address(tokenC))
         });
         uint256 settlementIn = required[0] + required[1];
 
@@ -64,12 +64,12 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         exitSwaps[0] = ExitSwap({
             adapter: address(v3Adapter),
             minSettlementOut: redeemAmounts[0],
-            adapterData: abi.encode(_path(address(tokenA), address(tokenC)))
+            adapterData: _path(address(tokenA), address(tokenC))
         });
         exitSwaps[1] = ExitSwap({
             adapter: address(v3Adapter),
             minSettlementOut: redeemAmounts[1],
-            adapterData: abi.encode(_path(address(tokenB), address(tokenC)))
+            adapterData: _path(address(tokenB), address(tokenC))
         });
         uint256 received = entryRouter.redeemToSettlement(
             address(vault),
@@ -94,10 +94,6 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
         _proposeTarget(vault, assets, weights);
 
-        address[] memory path = new address[](3);
-        path[0] = address(tokenB);
-        path[1] = address(tokenC);
-        path[2] = address(tokenA);
         TradeInstruction[] memory trades = new TradeInstruction[](1);
         trades[0] = TradeInstruction({
             adapter: address(v3Adapter),
@@ -105,7 +101,13 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
             tokenOut: address(tokenA),
             amountIn: 100 * ONE,
             minAmountOut: 99 * ONE,
-            adapterData: abi.encode(path)
+            adapterData: abi.encodePacked(
+                address(tokenB),
+                bytes3(uint24(3_000)),
+                address(tokenC),
+                bytes3(uint24(500)),
+                address(tokenA)
+            )
         });
 
         _refreshPrices();
@@ -117,9 +119,7 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         assertEq(tokenB.allowance(address(v3Adapter), address(venue)), 0);
     }
 
-    function _path(address tokenIn, address tokenOut) private pure returns (address[] memory path) {
-        path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = tokenOut;
+    function _path(address tokenIn, address tokenOut) private pure returns (bytes memory path) {
+        path = abi.encodePacked(tokenIn, bytes3(uint24(3_000)), tokenOut);
     }
 }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
-import { IUniswapV3OraclePool, UniswapV3RoutePriceFeed } from "./UniswapV3RoutePriceFeed.sol";
+import { IUniswapV3OraclePool } from "./UniswapV3RoutePriceFeed.sol";
 
 interface IUniswapV3MarketPool is IUniswapV3OraclePool {
     function factory() external view returns (address);
@@ -32,7 +32,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     struct Market {
         address asset;
         address pool;
-        address priceFeed;
         address quoteToken;
         uint24 fee;
         bool active;
@@ -58,7 +57,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         bytes32 indexed marketId,
         address indexed asset,
         address indexed pool,
-        address priceFeed,
         address quoteToken,
         uint24 fee,
         address registrar
@@ -75,32 +73,22 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     address public immutable uniswapV3Factory;
     address public immutable weth;
     address public immutable usdg;
-    address public immutable wethUsdgPool;
 
     mapping(bytes32 => Market) private _marketFor;
 
-    constructor(
-        address initialOwner,
-        address uniswapV3Factory_,
-        address weth_,
-        address usdg_,
-        address wethUsdgPool_
-    ) {
+    constructor(address initialOwner, address uniswapV3Factory_, address weth_, address usdg_) {
         if (
             initialOwner == address(0) || uniswapV3Factory_ == address(0) || weth_ == address(0)
-                || usdg_ == address(0) || wethUsdgPool_ == address(0)
+                || usdg_ == address(0)
         ) revert ZeroAddress();
         if (uniswapV3Factory_.code.length == 0) revert InvalidDependency(uniswapV3Factory_);
         if (weth_.code.length == 0) revert InvalidDependency(weth_);
         if (usdg_.code.length == 0) revert InvalidDependency(usdg_);
-        if (wethUsdgPool_.code.length == 0) revert InvalidDependency(wethUsdgPool_);
         uniswapV3Factory = uniswapV3Factory_;
         weth = weth_;
         usdg = usdg_;
-        wethUsdgPool = wethUsdgPool_;
         _requireDecimals(weth_, 18);
         _requireDecimals(usdg_, 6);
-        _validatePool(wethUsdgPool_, weth_, usdg_);
         owner = initialOwner;
         emit OwnershipTransferred(address(0), initialOwner);
     }
@@ -118,20 +106,9 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         Market storage existing = _marketFor[marketId];
         if (existing.asset != address(0)) return marketId;
 
-        UniswapV3RoutePriceFeed priceFeed = new UniswapV3RoutePriceFeed(
-            asset, weth, usdg, IUniswapV3OraclePool(pool), IUniswapV3OraclePool(wethUsdgPool)
-        );
-        _marketFor[marketId] = Market({
-            asset: asset,
-            pool: pool,
-            priceFeed: address(priceFeed),
-            quoteToken: quoteToken,
-            fee: fee,
-            active: true
-        });
-        emit MarketRegistered(
-            marketId, asset, pool, address(priceFeed), quoteToken, fee, msg.sender
-        );
+        _marketFor[marketId] =
+            Market({ asset: asset, pool: pool, quoteToken: quoteToken, fee: fee, active: true });
+        emit MarketRegistered(marketId, asset, pool, quoteToken, fee, msg.sender);
     }
 
     function setMarketActive(bytes32 marketId, bool active) external onlyOwner {
@@ -144,10 +121,10 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     function marketFor(bytes32 marketId)
         external
         view
-        returns (address asset, address pool, address priceFeed, uint24 fee, bool active)
+        returns (address asset, address pool, uint24 fee, bool active)
     {
         Market storage market = _marketFor[marketId];
-        return (market.asset, market.pool, market.priceFeed, market.fee, market.active);
+        return (market.asset, market.pool, market.fee, market.active);
     }
 
     function isActiveMarketForAsset(bytes32 marketId, address asset) external view returns (bool) {

@@ -71,10 +71,9 @@ const contractRows = [
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
-  ["Uniswap V3 adapter", "Provides settlement-confined exact-input entry, redemption, and rebalance swaps through configured liquidity."],
+  ["Uniswap V3 adapter", "Executes explicit exact-input paths for entry, redemption, and rebalancing; caller contracts enforce the permitted endpoints."],
   ["AssetRegistry", "Optional permissionless discovery index; vault eligibility never depends on it."],
-  ["OracleRegistry", "Validates trusted Chainlink base/quote pairs and their independent freshness and pause rules."],
-  ["Pricing resolver", "Validates a creator-supplied direct Chainlink, composed Chainlink, or canonical V3 route and resolves the normalized feed pinned by one OTF."],
+  ["Pricing resolver", "Mechanically validates creator-selected direct or composed Chainlink feeds, or a canonical V3 route, and resolves the normalized feed and parameters pinned by one OTF."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
 ] as const;
 
@@ -85,7 +84,7 @@ const safetyRows = [
   ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],
   ["Target weights", "Every included asset must meet the live protocol-wide minimum, initialized at 1% and adjustable by the factory owner; there is no maximum target weight."],
-  ["Oracle freshness", "Every Chainlink leg must satisfy its own enforced staleness and pause rules; V3 pricing uses the fixed protocol TWAP window."],
+  ["Oracle freshness", "Every Chainlink leg must satisfy its own enforced staleness and pause rules; V3 pricing uses the fixed protocol TWAP window plus a pinned quote-token/USD feed."],
   ["Execution", "Every partial batch is atomic, uses approved adapters, clears exact approvals, and must reduce target distance."],
 ] as const;
 
@@ -301,7 +300,7 @@ export default function DocsPage() {
               initializes the vault. Target weights must total <code>10,000 bps</code>.
             </p>
             <ol className="docsSteps">
-              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, exact 18-decimal constituents, trusted Chainlink pairs or canonical V3 history, weight bounds, and cooldown are checked.</p></div></li>
+              <li><span>01</span><div><strong>Validate</strong><p>Factory hard caps, exact 18-decimal constituents, mechanically valid Chainlink feeds or canonical V3 history, weight bounds, and cooldown are checked.</p></div></li>
               <li><span>02</span><div><strong>Fund</strong><p>The exact initial constituent balances move into the new vault.</p></div></li>
               <li><span>03</span><div><strong>Initialize</strong><p>Rules, completed strategy version zero, its target snapshot, and the creation-time cooldown baseline are stored.</p></div></li>
               <li><span>04</span><div><strong>Issue</strong><p>Initial vault shares are minted to the manager.</p></div></li>
@@ -389,8 +388,8 @@ export default function DocsPage() {
               NAV is the sum of every constituent&apos;s oracle-valued balance. NAV per share divides
               that value by the fee-adjusted share supply. Valuation-dependent actions require a
               positive answer from that OTF&apos;s pinned feed within its enforced freshness bound. For
-              Chainlink routes validate every leg independently against its trusted pair mapping,
-              staleness limit, and required pause behavior. V3 routes use the immutable protocol TWAP
+              Chainlink routes validate every creator-selected leg independently against its pinned
+              staleness limit and required pause behavior. V3 routes use the immutable protocol TWAP
               window. A stale or invalid source makes oracle-dependent actions revert; the vault never
               substitutes another feed or pool.
             </p>

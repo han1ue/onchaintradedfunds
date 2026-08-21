@@ -44,7 +44,7 @@ Treat these as explicitly trusted dependencies whose compromise remains a protoc
 
 - Trusted Chainlink pair-map owner and configured base/quote/feed relationships
 - Chainlink proxy implementations and Robinhood Stock Token `oraclePaused()` behavior
-- Canonical V3 factory, WETH, USDG, WETH/USDG bridge pool, and selected pricing pools
+- Canonical V3 factory, WETH, USDG, selected pricing pools, and quote-token/USD feeds
 - Factory owner and approved adapter governance
 - Fee collector treasury
 - Constituent-token and approved adapter implementations
@@ -169,7 +169,7 @@ areas, not as proof of safety.
 - Oracle correctness and corporate-action handling remain external dependencies.
 - Runtime and initcode sizes must be recalculated from the reviewed commit. The security gate blocks
   deployment whenever a production artifact exceeds the EIP-170 or EIP-3860 limit.
-- Robinhood has no documented pair-addressed Chainlink Feed Registry; trusted pair-map governance is
+- Robinhood has no documented pair-addressed Chainlink Feed Registry; semantic pair verification is
   required for new Chainlink selections. Runtime Flags and sequencer checks are not implemented.
 - Robinhood testnet synthetic feeds are noncanonical integration fixtures.
 - Unsupported tokens sent to an OTF are intentionally not manager-recoverable.

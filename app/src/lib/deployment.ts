@@ -16,11 +16,20 @@ type V3VenueDeployment = {
   constituentFee?: unknown;
   constituentPools?: unknown;
 };
+type ExecutionBridgeDeployment = {
+  pool?: unknown;
+  fee?: unknown;
+  tokenA?: unknown;
+  tokenB?: unknown;
+};
 
 const contracts = deployment.contracts as Record<string, ContractDeployment | undefined>;
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
 const v3Venue = (deployment as { v3Venue?: V3VenueDeployment }).v3Venue;
 const wethV3Venue = (deployment as { wethV3Venue?: V3VenueDeployment }).wethV3Venue;
+const executionLiquidity = (deployment as {
+  executionLiquidity?: { wethUsdg?: ExecutionBridgeDeployment };
+}).executionLiquidity;
 function address(value: unknown): Address | undefined {
   return typeof value === "string" && isAddress(value) ? getAddress(value) : undefined;
 }
@@ -55,18 +64,25 @@ export const robinhoodTestnetAddresses = Object.freeze({
   entryRouter: deployedContract("entryRouter"),
   entryRouterWeth: deployedContract("entryRouterWeth"),
   uniswapV3Adapter: deployedContract("uniswapV3Adapter"),
-  registeredUniswapV3AdapterUsdg: deployedContract("registeredUniswapV3AdapterUsdg"),
-  registeredUniswapV3AdapterWeth: deployedContract("registeredUniswapV3AdapterWeth"),
   assetMarketRegistry: deployedContract("assetMarketRegistry"),
   pricingResolver: deployedContract("pricingResolver"),
   v3MarketRegistry: deployedContract("v3MarketRegistry"),
   usdg: address(externalContracts.usdg),
   weth: address(externalContracts.weth),
-  wethUsdgPool: address(externalContracts.wethUsdgPool),
   uniswapV3Factory: address(externalContracts.uniswapV3Factory),
   uniswapV3PositionManager: address(externalContracts.uniswapV3PositionManager),
   uniswapV3SwapRouter: address(externalContracts.uniswapV3SwapRouter),
   uniswapV3Quoter: address(externalContracts.uniswapV3Quoter),
+});
+
+const wethUsdgExecutionBridge = executionLiquidity?.wethUsdg;
+export const robinhoodTestnetExecutionBridge = Object.freeze({
+  pool: address(wethUsdgExecutionBridge?.pool),
+  tokenA: address(wethUsdgExecutionBridge?.tokenA),
+  tokenB: address(wethUsdgExecutionBridge?.tokenB),
+  fee: typeof wethUsdgExecutionBridge?.fee === "number"
+    ? wethUsdgExecutionBridge.fee
+    : Number(wethUsdgExecutionBridge?.fee) || undefined,
 });
 
 export const robinhoodTestnetWethV3Venue = Object.freeze({

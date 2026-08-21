@@ -73,17 +73,6 @@ function upsertByAsset(items, record) {
   else items[index] = { ...items[index], ...record };
 }
 
-function upsertOracleRoute(items, record) {
-  const index = items.findIndex((item) => {
-    const itemBase = item.base ?? item.asset;
-    return itemBase && item.quote
-      && isAddressEqual(itemBase, record.base)
-      && isAddressEqual(item.quote, record.quote);
-  });
-  if (index === -1) items.push(record);
-  else items[index] = { ...items[index], ...record };
-}
-
 const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
 const account = privateKeyToAccount(privateKey);
 const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
@@ -91,14 +80,13 @@ const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (deployment.chainId !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
 }
-if (Number(deployment.schemaVersion) < 3 || deployment.migration?.architecture !== "pinned-pricing-v3") {
+if (Number(deployment.schemaVersion) < 4) {
   throw new Error(
-    "This configurator requires a fresh pinned-pricing-v3 deployment; legacy factory deployments cannot be migrated in place.",
+    "This configurator requires a fresh permissionless-oracle deployment.",
   );
 }
 
 const assetRegistry = getAddress(deployment.contracts.assetRegistry.address);
-const oracleRegistry = getAddress(deployment.contracts.oracleRegistry.address);
 const chain = {
   id: chainId,
   name: "Robinhood Chain Testnet",
@@ -108,15 +96,6 @@ const chain = {
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
 
-const registryOwnerAbi = [
-  {
-    type: "function",
-    name: "owner",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-];
 const feedVersionAbi = [
   {
     type: "function",
@@ -127,7 +106,6 @@ const feedVersionAbi = [
   },
 ];
 const assetRegistryArtifact = artifact("AssetRegistry.sol", "AssetRegistry");
-const oracleRegistryArtifact = artifact("OracleRegistry.sol", "OracleRegistry");
 const mockFeedArtifact = artifact("TestnetMockPriceFeed.sol", "TestnetMockPriceFeed");
 
 async function confirmedWrite({ address, abi, functionName, args = [] }) {
@@ -171,18 +149,7 @@ async function deployMockFeed(symbol) {
 const actualChainId = await publicClient.getChainId();
 if (actualChainId !== chainId) throw new Error(`RPC returned chain ID ${actualChainId}.`);
 
-const [oracleRegistryOwner, usdQuote, balance] = await Promise.all([
-  publicClient.readContract({ address: oracleRegistry, abi: registryOwnerAbi, functionName: "owner" }),
-  publicClient.readContract({
-    address: oracleRegistry,
-    abi: oracleRegistryArtifact.abi,
-    functionName: "usdQuote",
-  }),
-  publicClient.getBalance({ address: account.address }),
-]);
-if (!isAddressEqual(oracleRegistryOwner, account.address)) {
-  throw new Error(`Signer ${account.address} does not own OracleRegistry ${oracleRegistry}.`);
-}
+const balance = await publicClient.getBalance({ address: account.address });
 if (balance === 0n) throw new Error("Configurator account has no testnet ETH for gas.");
 
 console.log(`Configurator: ${account.address}`);
@@ -193,9 +160,7 @@ deployment.oracleDisclaimer =
   "Time-derived synthetic USD drift and bounded pseudo-random movement for Robinhood testnet development; predictable, not Chainlink, not canonical, and not market data.";
 deployment.setupTransactions ??= {};
 deployment.setupTransactions.discoveredAssets ??= [];
-deployment.setupTransactions.trustedOracleRoutes ??= [];
 deployment.setupTransactions.mockPriceFeeds ??= [];
-deployment.trustedOracleRoutes ??= [];
 
 for (const item of catalog) {
   const asset = getAddress(item.asset);
@@ -242,29 +207,6 @@ for (const item of catalog) {
         args: [asset],
       });
 
-  const [configuredFeed, configuredMaxStaleness, configuredValidationMode] = await publicClient.readContract({
-    address: oracleRegistry,
-    abi: oracleRegistryArtifact.abi,
-    functionName: "oracleConfigForPair",
-    args: [asset, usdQuote],
-  });
-  const trustedRoute = isAddressEqual(configuredFeed, feed)
-      && Number(configuredMaxStaleness) === robinhoodEquityMaxStalenessSeconds
-      && Number(configuredValidationMode) === syntheticFeedValidationMode
-    ? { alreadyConfigured: true }
-    : await confirmedWrite({
-        address: oracleRegistry,
-        abi: oracleRegistryArtifact.abi,
-        functionName: "setOracleRoute",
-        args: [
-          asset,
-          usdQuote,
-          feed,
-          robinhoodEquityMaxStalenessSeconds,
-          syntheticFeedValidationMode,
-        ],
-      });
-
   const record = {
     symbol: item.symbol,
     asset,
@@ -276,35 +218,11 @@ for (const item of catalog) {
     volatilityBps: 50,
     feedDeployment,
     assetDiscovery,
-    trustedRoute,
   };
   upsertByAsset(deployment.setupTransactions.mockPriceFeeds, record);
   upsertByAsset(deployment.setupTransactions.discoveredAssets, {
     asset,
     ...assetDiscovery,
-  });
-  upsertOracleRoute(deployment.setupTransactions.trustedOracleRoutes, {
-    base: asset,
-    asset,
-    quote: usdQuote,
-    feed,
-    maxStaleness: robinhoodEquityMaxStalenessSeconds,
-    validationMode: syntheticFeedValidationMode,
-    source: "direct",
-    quoteKind: "USD",
-    synthetic: true,
-    ...trustedRoute,
-  });
-  upsertOracleRoute(deployment.trustedOracleRoutes, {
-    base: asset,
-    asset,
-    quote: usdQuote,
-    quoteKind: "USD",
-    feed,
-    source: "direct",
-    maxStaleness: robinhoodEquityMaxStalenessSeconds,
-    validationMode: syntheticFeedValidationMode,
-    synthetic: true,
   });
   deployment.pricingConfiguration ??= {};
   deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
@@ -313,6 +231,10 @@ for (const item of catalog) {
     source: "ChainlinkDirect",
     primarySource: feed,
     secondarySource: "0x0000000000000000000000000000000000000000",
+    primaryMaxStaleness: robinhoodEquityMaxStalenessSeconds,
+    secondaryMaxStaleness: 0,
+    primaryValidationMode: syntheticFeedValidationMode,
+    secondaryValidationMode: 0,
     synthetic: true,
   });
   deployment.mockCatalogConfiguredAt = new Date().toISOString();

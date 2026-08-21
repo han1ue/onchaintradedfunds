@@ -99,7 +99,6 @@ contract OTFFactory is IAdapterAllowlist {
     address public vaultImplementation;
     address public feeCollector;
     address public assetRegistry;
-    address public oracleRegistry;
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
     uint16 public minTargetWeightBps = 100; // 1%
@@ -122,7 +121,6 @@ contract OTFFactory is IAdapterAllowlist {
         address vaultImplementation_,
         address feeCollector_,
         address assetRegistry_,
-        address oracleRegistry_,
         address rebalanceExecutor_,
         uint16 protocolFeeShareBps_
     ) {
@@ -131,13 +129,12 @@ contract OTFFactory is IAdapterAllowlist {
         }
         if (
             feeCollector_ == address(0) || assetRegistry_ == address(0)
-                || oracleRegistry_ == address(0) || rebalanceExecutor_ == address(0)
+                || rebalanceExecutor_ == address(0)
         ) {
             revert ZeroAddress();
         }
         if (feeCollector_.code.length == 0) revert InvalidDependency(feeCollector_);
         if (assetRegistry_.code.length == 0) revert InvalidDependency(assetRegistry_);
-        if (oracleRegistry_.code.length == 0) revert InvalidDependency(oracleRegistry_);
         if (rebalanceExecutor_.code.length == 0) revert InvalidDependency(rebalanceExecutor_);
         if (protocolFeeShareBps_ > MAX_PROTOCOL_FEE_SHARE_BPS) {
             revert ProtocolFeeShareTooHigh(protocolFeeShareBps_, MAX_PROTOCOL_FEE_SHARE_BPS);
@@ -147,7 +144,6 @@ contract OTFFactory is IAdapterAllowlist {
         vaultImplementation = vaultImplementation_;
         feeCollector = feeCollector_;
         assetRegistry = assetRegistry_;
-        oracleRegistry = oracleRegistry_;
         rebalanceExecutor = rebalanceExecutor_;
         protocolFeeShareBps = protocolFeeShareBps_;
 
@@ -220,7 +216,6 @@ contract OTFFactory is IAdapterAllowlist {
                 address(this),
                 assetRegistry,
                 assetMarketRegistry,
-                oracleRegistry,
                 rebalanceExecutor,
                 feeCollector,
                 protocolFeeShareBps
@@ -391,7 +386,7 @@ contract OTFFactory is IAdapterAllowlist {
         emit OwnershipTransferred(oldOwner, msg.sender);
     }
 
-    function _validateFactoryBounds(VaultInitParams calldata params) internal view {
+    function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
         bytes calldata name = bytes(params.name);
         uint256 nameLength = name.length;
         if (

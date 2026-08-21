@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
+import { IERC20Metadata } from "./interfaces/IERC20.sol";
+import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+import { MathEx } from "./libraries/MathEx.sol";
 import { UniswapV3TwapMath } from "./libraries/UniswapV3TwapMath.sol";
 
 interface IUniswapV3OraclePool {
@@ -16,51 +19,84 @@ interface IUniswapV3OraclePool {
         );
 }
 
-/// @notice Chain-native USDG price feed for an 18-decimal asset quoted in WETH or USDG.
-/// @dev WETH-quoted assets compose their mean tick with WETH/USDG; USDG pairs are direct.
+interface IUniswapV3QuotePauseStatus {
+    function oraclePaused() external view returns (bool);
+}
+
+/// @notice Normalizes an asset/quote-token V3 TWAP through a pinned quote-token/USD feed.
+/// @dev The pool and Chainlink leg are independent and permanently pinned in this feed.
 contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
+    uint8 private constant OUTPUT_DECIMALS = 8;
     uint32 public constant TWAP_WINDOW = 1 hours;
 
     error ZeroAddress();
     error InvalidPoolPair(address pool);
     error InvalidTwapPrice();
+    error FeedNotContract(address feed);
+    error InvalidMaxStaleness();
+    error MaxStalenessTooHigh(uint32 supplied, uint32 maximum);
+    error InvalidOraclePrice(address base, int256 answer);
+    error InvalidOracleTimestamp(address base, uint256 timestamp);
+    error IncompleteOracleRound(address base, uint80 roundId, uint80 answeredInRound);
+    error StaleOraclePrice(address base, uint256 updatedAt, uint256 maxStaleness);
+    error UnsupportedDecimals(address token, uint8 decimals_);
+    error OraclePauseStatusUnavailable(address base);
+    error OraclePaused(address base);
+    error PriceOverflow();
 
     address public immutable asset;
-    address public immutable weth;
-    address public immutable usdg;
     address public immutable quoteToken;
+    uint8 public immutable quoteTokenDecimals;
     IUniswapV3OraclePool public immutable assetQuotePool;
-    IUniswapV3OraclePool public immutable wethUsdgPool;
+    AggregatorV3Interface public immutable quoteUsdFeed;
+    uint32 public immutable quoteUsdMaxStaleness;
+    OracleValidationMode public immutable quoteUsdValidationMode;
 
     constructor(
         address asset_,
-        address weth_,
-        address usdg_,
-        IUniswapV3OraclePool assetWethPool_,
-        IUniswapV3OraclePool wethUsdgPool_
+        address quoteToken_,
+        IUniswapV3OraclePool assetQuotePool_,
+        AggregatorV3Interface quoteUsdFeed_,
+        uint32 quoteUsdMaxStaleness_,
+        OracleValidationMode quoteUsdValidationMode_
     ) {
         if (
-            asset_ == address(0) || weth_ == address(0) || usdg_ == address(0)
-                || address(assetWethPool_) == address(0) || address(wethUsdgPool_) == address(0)
+            asset_ == address(0) || quoteToken_ == address(0)
+                || address(assetQuotePool_) == address(0) || address(quoteUsdFeed_) == address(0)
         ) revert ZeroAddress();
-        bool wethQuoted = _isPair(assetWethPool_, asset_, weth_);
-        bool usdgQuoted = _isPair(assetWethPool_, asset_, usdg_);
-        if (!wethQuoted && !usdgQuoted) revert InvalidPoolPair(address(assetWethPool_));
-        _requirePair(wethUsdgPool_, weth_, usdg_);
+        if (address(assetQuotePool_).code.length == 0) {
+            revert InvalidPoolPair(address(assetQuotePool_));
+        }
+        if (address(quoteUsdFeed_).code.length == 0) {
+            revert FeedNotContract(address(quoteUsdFeed_));
+        }
+        if (!_isPair(assetQuotePool_, asset_, quoteToken_)) {
+            revert InvalidPoolPair(address(assetQuotePool_));
+        }
+        if (quoteUsdMaxStaleness_ == 0) revert InvalidMaxStaleness();
+        if (quoteUsdMaxStaleness_ > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(quoteUsdMaxStaleness_, MAX_ORACLE_STALENESS);
+        }
+        uint8 tokenDecimals = IERC20Metadata(quoteToken_).decimals();
+        if (tokenDecimals > 36) revert UnsupportedDecimals(quoteToken_, tokenDecimals);
+
         asset = asset_;
-        weth = weth_;
-        usdg = usdg_;
-        quoteToken = wethQuoted ? weth_ : usdg_;
-        assetQuotePool = assetWethPool_;
-        wethUsdgPool = wethUsdgPool_;
+        quoteToken = quoteToken_;
+        quoteTokenDecimals = tokenDecimals;
+        assetQuotePool = assetQuotePool_;
+        quoteUsdFeed = quoteUsdFeed_;
+        quoteUsdMaxStaleness = quoteUsdMaxStaleness_;
+        quoteUsdValidationMode = quoteUsdValidationMode_;
+
+        _latestRoundData();
     }
 
     function decimals() external pure returns (uint8) {
-        return 8;
+        return OUTPUT_DECIMALS;
     }
 
     function description() external pure returns (string memory) {
-        return "OTF Uniswap V3 asset/USDG 1h TWAP";
+        return "OTF Uniswap V3 ASSET/QUOTE x QUOTE/USD";
     }
 
     function version() external pure returns (uint256) {
@@ -75,21 +111,9 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         return _latestRoundData();
     }
 
-    function quoteAssetInUsdg() public view returns (uint256 usdgAmount) {
-        int24 assetQuoteTick = _meanTick(assetQuotePool);
-        uint256 quoteAmount = UniswapV3TwapMath.quoteAtTick(assetQuoteTick, 1e18, asset, quoteToken);
-        if (quoteToken == usdg) {
-            if (quoteAmount == 0) revert InvalidTwapPrice();
-            return quoteAmount;
-        }
-        int24 wethUsdgTick = _meanTick(wethUsdgPool);
-        uint256 wethAmount = quoteAmount;
-        if (wethAmount > type(uint128).max) revert InvalidTwapPrice();
-        // The explicit upper-bound check above makes this narrowing cast safe.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint128 wethQuoteAmount = uint128(wethAmount);
-        usdgAmount = UniswapV3TwapMath.quoteAtTick(wethUsdgTick, wethQuoteAmount, weth, usdg);
-        if (usdgAmount == 0) revert InvalidTwapPrice();
+    function quoteAssetInUsd() public view returns (uint256) {
+        (, uint256 quoteUsdAnswer,,, uint8 feedDecimals) = _readQuoteUsd();
+        return _quoteAssetInUsd(quoteUsdAnswer, feedDecimals);
     }
 
     function _latestRoundData()
@@ -103,17 +127,83 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
             uint80 answeredInRound
         )
     {
-        uint256 usdgAmount = quoteAssetInUsdg();
-        // USDG uses six decimals; the feed exposes eight decimals like the incumbent price feeds.
-        uint256 scaled = usdgAmount * 100;
-        if (scaled > uint256(type(int256).max)) revert InvalidTwapPrice();
-        roundId = uint80(block.number);
-        // The explicit upper-bound check above guarantees the signed conversion is safe.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        answer = int256(scaled);
-        startedAt = block.timestamp - TWAP_WINDOW;
-        updatedAt = block.timestamp;
+        uint256 quoteUsdAnswer;
+        uint8 feedDecimals;
+        (roundId, quoteUsdAnswer, startedAt, updatedAt, feedDecimals) = _readQuoteUsd();
+        uint256 normalized = _quoteAssetInUsd(quoteUsdAnswer, feedDecimals);
+        uint256 twapStartedAt = block.timestamp - TWAP_WINDOW;
+        if (twapStartedAt < startedAt) startedAt = twapStartedAt;
         answeredInRound = roundId;
+        // The explicit bound in _quoteAssetInUsd makes this conversion safe.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        answer = int256(normalized);
+    }
+
+    function _quoteAssetInUsd(uint256 quoteUsdAnswer, uint8 feedDecimals)
+        private
+        view
+        returns (uint256 answer)
+    {
+        int24 assetQuoteTick = _meanTick(assetQuotePool);
+        uint256 quoteAmount = UniswapV3TwapMath.quoteAtTick(assetQuoteTick, 1e18, asset, quoteToken);
+        if (quoteAmount == 0) revert InvalidTwapPrice();
+        answer = MathEx.mulDiv(quoteAmount, quoteUsdAnswer, 10 ** uint256(quoteTokenDecimals));
+        if (feedDecimals < OUTPUT_DECIMALS) {
+            uint256 scaleUp = 10 ** uint256(OUTPUT_DECIMALS - feedDecimals);
+            if (answer > type(uint256).max / scaleUp) revert PriceOverflow();
+            answer *= scaleUp;
+        } else if (feedDecimals > OUTPUT_DECIMALS) {
+            answer /= 10 ** uint256(feedDecimals - OUTPUT_DECIMALS);
+        }
+        if (answer == 0 || answer > uint256(type(int256).max)) revert PriceOverflow();
+    }
+
+    function _readQuoteUsd()
+        private
+        view
+        returns (
+            uint80 roundId,
+            uint256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint8 feedDecimals
+        )
+    {
+        if (quoteUsdValidationMode == OracleValidationMode.RobinhoodStockToken) {
+            bool paused;
+            try IUniswapV3QuotePauseStatus(quoteToken).oraclePaused() returns (bool isPaused) {
+                paused = isPaused;
+            } catch {
+                revert OraclePauseStatusUnavailable(quoteToken);
+            }
+            if (paused) revert OraclePaused(quoteToken);
+        }
+
+        int256 signedAnswer;
+        uint80 answeredInRound;
+        (roundId, signedAnswer, startedAt, updatedAt, answeredInRound) =
+            quoteUsdFeed.latestRoundData();
+        if (signedAnswer <= 0) revert InvalidOraclePrice(quoteToken, signedAnswer);
+        // Oracle validity and freshness are necessarily measured against chain time.
+        // forge-lint: disable-next-line(block-timestamp)
+        uint256 currentTimestamp = block.timestamp;
+        if (
+            roundId == 0 || startedAt == 0 || updatedAt == 0 || startedAt > updatedAt
+                || updatedAt > currentTimestamp
+        ) revert InvalidOracleTimestamp(quoteToken, updatedAt);
+        if (answeredInRound < roundId) {
+            revert IncompleteOracleRound(quoteToken, roundId, answeredInRound);
+        }
+        if (currentTimestamp > updatedAt + quoteUsdMaxStaleness) {
+            revert StaleOraclePrice(quoteToken, updatedAt, quoteUsdMaxStaleness);
+        }
+        feedDecimals = quoteUsdFeed.decimals();
+        if (feedDecimals > 36) {
+            revert UnsupportedDecimals(address(quoteUsdFeed), feedDecimals);
+        }
+        // The positive-answer check makes this conversion safe.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        answer = uint256(signedAnswer);
     }
 
     function _meanTick(IUniswapV3OraclePool pool) private view returns (int24 arithmeticMeanTick) {
@@ -126,13 +216,9 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         int56 mean = delta / window;
         if (delta < 0 && delta % window != 0) mean--;
         if (mean < type(int24).min || mean > type(int24).max) revert InvalidTwapPrice();
-        // The explicit int24 bounds check above guarantees this narrowing cast is safe.
+        // The explicit int24 bounds check guarantees this narrowing cast is safe.
         // forge-lint: disable-next-line(unsafe-typecast)
         arithmeticMeanTick = int24(mean);
-    }
-
-    function _requirePair(IUniswapV3OraclePool pool, address first, address second) private view {
-        if (!_isPair(pool, first, second)) revert InvalidPoolPair(address(pool));
     }
 
     function _isPair(IUniswapV3OraclePool pool, address first, address second)

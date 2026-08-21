@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
-import { OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
+import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 
 interface IChainlinkPauseStatus {
@@ -17,6 +17,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     error ZeroAddress();
     error FeedNotContract(address feed);
     error InvalidMaxStaleness();
+    error MaxStalenessTooHigh(uint32 supplied, uint32 maximum);
     error InvalidOraclePrice(address base, int256 answer);
     error InvalidOracleTimestamp(address base, uint256 timestamp);
     error IncompleteOracleRound(address base, uint80 roundId, uint80 answeredInRound);
@@ -57,6 +58,12 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
         }
         if (assetWethMaxStaleness_ == 0 || wethUsdMaxStaleness_ == 0) {
             revert InvalidMaxStaleness();
+        }
+        if (assetWethMaxStaleness_ > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(assetWethMaxStaleness_, MAX_ORACLE_STALENESS);
+        }
+        if (wethUsdMaxStaleness_ > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(wethUsdMaxStaleness_, MAX_ORACLE_STALENESS);
         }
         asset = asset_;
         weth = weth_;

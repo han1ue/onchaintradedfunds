@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IUniswapV3SwapRouter } from "../UniswapV3Adapter.sol";
+import { IUniswapV3SwapRouter } from "../interfaces/IUniswapV3SwapRouter.sol";
 import { SafeTransferLib } from "../libraries/SafeTransferLib.sol";
 
 contract MockUniswapV3Router is IUniswapV3SwapRouter {
@@ -12,17 +12,6 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
 
     function setReportedOutputBonus(uint256 bonus) external {
         reportedOutputBonus = bonus;
-    }
-
-    function exactInputSingle(ExactInputSingleParams calldata params)
-        external
-        payable
-        returns (uint256 amountOut)
-    {
-        require(params.amountIn >= params.amountOutMinimum, "SLIPPAGE");
-        params.tokenIn.safeTransferFrom(msg.sender, address(this), params.amountIn);
-        params.tokenOut.safeTransfer(params.recipient, params.amountIn);
-        return params.amountIn + reportedOutputBonus;
     }
 
     function exactInput(ExactInputParams calldata params)

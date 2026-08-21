@@ -51,7 +51,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 ## Capabilities and Constraints
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
-- OTF creation is permissionless within factory-level validation and registry constraints.
+- OTF creation is permissionless within factory-level mechanical validation and immutable safety constraints.
 - The investor frontend exposes exactly three entry paths—direct RWA basket, official OTF/USDG market, and fixed-USDG constituent routing—and exactly three corresponding exit paths.
 - Every OTF factory transaction creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
@@ -65,9 +65,11 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
   factory-created OTFs without pausing redemptions, transfers, or secondary-market share trading.
 - Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
 - The manager has no arbitrary call or asset-withdrawal surface.
-- Rebalances use current constituents and approved trading adapters, exact temporary approvals, fresh pinned onchain prices, and atomic execution.
+- Rebalances use current constituents and one approved generic V3 adapter, exact temporary approvals,
+  fresh pinned onchain prices, and atomic execution. Explicit execution paths may use arbitrary
+  intermediate tokens without changing the OTF's pinned pricing configuration.
 - Portfolio changes are bounded by immutable limits covering NAV loss and target-weight deviation. Every included asset must meet the factory owner's live protocol-wide minimum target weight, initialized at 1%, with no separate asset-count, maximum-target, or turnover limit.
-- Every OTF uses a fixed seven-day challenge grace period. Oracle freshness and corporate-action pause checks are configured per asset by the protocol registry. Robinhood equity feeds publish 24/5; their current 25-hour limit is measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
+- Every OTF uses a fixed seven-day challenge grace period. Oracle freshness and corporate-action pause checks are selected per leg by the creator, mechanically validated, and permanently pinned by the OTF. Robinhood equity feeds publish 24/5; the frontend currently suggests a 25-hour limit measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
 - Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.

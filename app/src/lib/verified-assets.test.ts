@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approvedPricingConfigsFor,
   isVerifiedPricingConfig,
-  ZERO_ADDRESS,
+  pricingVerification,
 } from "./verified-assets";
 
 const TESTNET_TSLA = "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E";
@@ -26,16 +26,30 @@ describe("frontend asset pricing verification", () => {
       primarySource: "0x1111111111111111111111111111111111111111",
     })).toBe(false);
     expect(isVerifiedPricingConfig(46630, TESTNET_TSLA, {
-      source: 0,
-      primarySource: approved.primarySource,
-      secondarySource: ZERO_ADDRESS,
-    })).toBe(true);
+      ...approved,
+      primaryValidationMode: approved.primaryValidationMode === 0 ? 1 : 0,
+    })).toBe(false);
+    expect(isVerifiedPricingConfig(46630, TESTNET_TSLA, {
+      ...approved,
+      primaryMaxStaleness: 0,
+    })).toBe(false);
   });
 
-  it("supports every approved Mainnet pool choice", () => {
+  it("keeps shorter nonzero limits verified and reports only an availability warning", () => {
+    const approved = approvedPricingConfigsFor(46630, TESTNET_TSLA)[0];
+    const shorter = { ...approved, primaryMaxStaleness: approved.primaryMaxStaleness - 1 };
+    expect(pricingVerification(46630, TESTNET_TSLA, shorter)).toEqual({
+      verified: true,
+      availabilityWarning: true,
+    });
+    expect(isVerifiedPricingConfig(46630, TESTNET_TSLA, {
+      ...approved,
+      primaryMaxStaleness: approved.primaryMaxStaleness + 1,
+    })).toBe(false);
+  });
+
+  it("does not verify legacy V3 pools without a pinned quote/USD feed", () => {
     const approved = approvedPricingConfigsFor(4663, MAINNET_NFLX);
-    expect(approved).toHaveLength(2);
-    expect(approved.every((config) => isVerifiedPricingConfig(4663, MAINNET_NFLX, config))).toBe(true);
-    expect(isVerifiedPricingConfig(46630, MAINNET_NFLX, approved[0])).toBe(false);
+    expect(approved).toHaveLength(0);
   });
 });

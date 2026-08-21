@@ -6,18 +6,14 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
-import { AggregatorV3Interface } from "../src/interfaces/AggregatorV3Interface.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
-import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
-import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
-contract FactoryAndRegistryTest is ProtocolTestBase {
+contract FactoryTest is ProtocolTestBase {
     function testFactoryRejectsZeroDeploymentSalt() public {
         VaultInitParams memory params = _defaultParams();
         params.deploymentSalt = bytes32(0);
@@ -231,30 +227,16 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertEq(vault.CHALLENGE_GRACE_PERIOD(), 7 days);
     }
 
-    function testExistingVaultPinsStalenessAfterRegistryChanges() public {
+    function testVaultPinsCreatorSelectedStaleness() public {
         ManagedOTFVault vault = _createVault();
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
-        oracleRegistry.setOracleConfig(
-            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
-
-        vm.warp(START + 2 hours);
         assertEq(vault.maxStalenessForAsset(address(tokenA)), 25 hours);
         assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
-    function testExistingVaultPinsValidationModeAfterRegistryChanges() public {
+    function testVaultPinsCreatorSelectedValidationMode() public {
         ManagedOTFVault vault = _createVault();
         tokenA.setOraclePaused(true);
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.OraclePaused.selector);
-        vault.totalAssetsValue();
-
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 25 hours, OracleValidationMode.StandardChainlink
-        );
         vm.expectPartialRevert(ManagedOTFVaultStorage.OraclePaused.selector);
         vault.totalAssetsValue();
 
@@ -307,33 +289,6 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertTrue(factory.isTradeAdapterApproved(address(replacement)));
     }
 
-    function testOracleRegistryOwnershipTransferIsEnforced() public {
-        oracleRegistry.beginOwnershipTransfer(ALICE);
-
-        vm.prank(BOB);
-        vm.expectRevert(OracleRegistry.NotPendingOwner.selector);
-        oracleRegistry.acceptOwnershipTransfer();
-
-        vm.prank(ALICE);
-        oracleRegistry.acceptOwnershipTransfer();
-
-        vm.expectRevert(OracleRegistry.NotOwner.selector);
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
-
-        vm.prank(ALICE);
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
-
-        assertEq(oracleRegistry.priceFeedFor(address(tokenA)), address(feedB));
-        (, uint32 maxStaleness, OracleValidationMode validationMode) =
-            oracleRegistry.oracleConfigFor(address(tokenA));
-        assertEq(maxStaleness, 1 hours);
-        assertEq(uint256(validationMode), uint256(OracleValidationMode.RobinhoodStockToken));
-    }
-
     function testFactoryOwnershipTransferRequiresPendingOwner() public {
         factory.beginOwnershipTransfer(ALICE);
         vm.prank(BOB);
@@ -382,34 +337,13 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         vm.expectRevert(AssetRegistry.ZeroAddress.selector);
         new AssetRegistry(address(0));
 
-        vm.expectRevert(OracleRegistry.ZeroAddress.selector);
-        new OracleRegistry(address(0));
-
         vm.expectRevert(RebalanceExecutor.ZeroAddress.selector);
         new RebalanceExecutor(address(0));
     }
 
-    function testRegistriesRejectEOAAssetsAndFeeds() public {
+    function testAssetRegistryRejectsEOAAssets() public {
         vm.expectPartialRevert(AssetRegistry.AssetNotContract.selector);
         assetRegistry.registerAsset(ALICE);
-
-        vm.expectPartialRevert(OracleRegistry.AssetNotContract.selector);
-        oracleRegistry.setOracleConfig(
-            ALICE, feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
-
-        vm.expectPartialRevert(OracleRegistry.FeedNotContract.selector);
-        oracleRegistry.setOracleConfig(
-            address(tokenA),
-            AggregatorV3Interface(ALICE),
-            25 hours,
-            OracleValidationMode.RobinhoodStockToken
-        );
-
-        vm.expectRevert(OracleRegistry.InvalidMaxStaleness.selector);
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 0, OracleValidationMode.RobinhoodStockToken
-        );
     }
 
     function testAssetRegistryRejectsNonEighteenDecimalConstituents() public {
@@ -421,22 +355,9 @@ contract FactoryAndRegistryTest is ProtocolTestBase {
         assertFalse(assetRegistry.isRegisteredAsset(address(sixDecimalToken)));
     }
 
-    function testAssetValuePreservesSubTokenPrecision() public {
-        PortfolioCalculator calculator = new PortfolioCalculator();
-
-        assertEq(calculator.assetValue(address(tokenA), 1, address(oracleRegistry)), 100);
-    }
-
     function testFactoryRejectsNonContractDependencies() public {
         address implementation = factory.vaultImplementation();
         vm.expectPartialRevert(OTFFactory.InvalidDependency.selector);
-        new OTFFactory(
-            implementation,
-            ALICE,
-            address(assetRegistry),
-            address(oracleRegistry),
-            address(executor),
-            1_500
-        );
+        new OTFFactory(implementation, address(collector), address(assetRegistry), ALICE, 1_500);
     }
 }

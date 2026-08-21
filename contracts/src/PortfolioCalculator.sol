@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
-import { IOracleRegistry, OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
+import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 
@@ -34,6 +34,9 @@ contract PortfolioCalculator {
     uint256 private constant PRECISE_BPS = BPS * WEIGHT_PRECISION_SCALE;
 
     error OracleFeedMissing(address asset);
+    error OracleFeedNotContract(address feed);
+    error InvalidMaxStaleness(uint32 supplied);
+    error MaxStalenessTooHigh(uint32 supplied, uint32 maximum);
     error InvalidOraclePrice(address asset, int256 answer);
     error InvalidOracleTimestamp(address asset, uint256 updatedAt);
     error IncompleteOracleRound(address asset, uint80 roundId, uint80 answeredInRound);
@@ -193,58 +196,41 @@ contract PortfolioCalculator {
         }
     }
 
-    function portfolioValue(address vault, address[] calldata assets, address oracleRegistry)
+    function portfolioValue(address vault, address[] calldata assets)
         external
         view
         returns (uint256 nav)
     {
-        (, nav) = _portfolioState(vault, assets, oracleRegistry, false, BPS);
+        (, nav) = _portfolioState(vault, assets, false, BPS);
     }
 
-    function portfolioState(address vault, address[] calldata assets, address oracleRegistry)
+    function portfolioState(address vault, address[] calldata assets)
         external
         view
         returns (uint256[] memory weights, uint256 nav)
     {
-        return _portfolioState(vault, assets, oracleRegistry, true, BPS);
+        return _portfolioState(vault, assets, true, BPS);
     }
 
-    function precisePortfolioState(address vault, address[] calldata assets, address oracleRegistry)
+    function precisePortfolioState(address vault, address[] calldata assets)
         external
         view
         returns (uint256[] memory weights, uint256 nav)
     {
-        return _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
+        return _portfolioState(vault, assets, true, PRECISE_BPS);
     }
 
-    function assetValue(address asset, uint256 rawBalance, address oracleRegistry)
+    function assetValueForVault(address vault, address asset, uint256 rawBalance)
         external
         view
         returns (uint256)
     {
-        return _assetValue(address(0), asset, rawBalance, oracleRegistry);
+        return _assetValue(vault, asset, rawBalance);
     }
 
-    function validateAsset(address asset, address oracleRegistry) external view {
+    function validateAssetForVault(address vault, address asset) external view {
         _tokenDecimals(asset);
-        _validPrice(address(0), asset, oracleRegistry);
-    }
-
-    function assetValueForVault(
-        address vault,
-        address asset,
-        uint256 rawBalance,
-        address oracleRegistry
-    ) external view returns (uint256) {
-        return _assetValue(vault, asset, rawBalance, oracleRegistry);
-    }
-
-    function validateAssetForVault(address vault, address asset, address oracleRegistry)
-        external
-        view
-    {
-        _tokenDecimals(asset);
-        _validPrice(vault, asset, oracleRegistry);
+        _validPrice(vault, asset);
     }
 
     function validatePriceFeed(
@@ -260,11 +246,9 @@ contract PortfolioCalculator {
         address vault,
         address[] calldata assets,
         uint256[] calldata targets,
-        address oracleRegistry,
         uint16 deviationBps
     ) external view returns (bool) {
-        (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
+        (uint256[] memory weights,) = _portfolioState(vault, assets, true, PRECISE_BPS);
         for (uint256 i = 0; i < assets.length; i++) {
             (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
             if (weights[i] < lower || weights[i] > upper) return false;
@@ -276,11 +260,9 @@ contract PortfolioCalculator {
         address vault,
         address[] calldata assets,
         uint256[] calldata targets,
-        address oracleRegistry,
         uint16 deviationBps
     ) external view returns (address[] memory breached) {
-        (uint256[] memory weights,) =
-            _portfolioState(vault, assets, oracleRegistry, true, PRECISE_BPS);
+        (uint256[] memory weights,) = _portfolioState(vault, assets, true, PRECISE_BPS);
         uint256 count;
         for (uint256 i = 0; i < assets.length; i++) {
             (uint256 lower, uint256 upper) = _preciseBand(targets[i], deviationBps);
@@ -299,14 +281,12 @@ contract PortfolioCalculator {
     function _portfolioState(
         address vault,
         address[] calldata assets,
-        address oracleRegistry,
         bool requireNonzero,
         uint256 weightScale
     ) private view returns (uint256[] memory weights, uint256 nav) {
         uint256[] memory values = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            values[i] =
-                _assetValue(vault, assets[i], IERC20(assets[i]).balanceOf(vault), oracleRegistry);
+            values[i] = _assetValue(vault, assets[i], IERC20(assets[i]).balanceOf(vault));
             nav += values[i];
         }
         if (nav == 0) {
@@ -319,20 +299,20 @@ contract PortfolioCalculator {
         }
     }
 
-    function _assetValue(address vault, address asset, uint256 rawBalance, address oracleRegistry)
+    function _assetValue(address vault, address asset, uint256 rawBalance)
         private
         view
         returns (uint256)
     {
         if (rawBalance == 0) return 0;
-        (uint256 price, uint8 priceDecimals) = _validPrice(vault, asset, oracleRegistry);
+        (uint256 price, uint8 priceDecimals) = _validPrice(vault, asset);
         _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
         return MathEx.mulDiv(rawBalance, price, 10 ** uint256(priceDecimals));
     }
 
-    function _validPrice(address vault, address asset, address oracleRegistry)
+    function _validPrice(address vault, address asset)
         private
         view
         returns (uint256 price, uint8 priceDecimals)
@@ -340,14 +320,9 @@ contract PortfolioCalculator {
         AggregatorV3Interface feed;
         uint32 maxStaleness;
         OracleValidationMode validationMode;
-        if (vault != address(0)) {
-            feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
-            maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
-            validationMode = IVaultAssetPriceSources(vault).oracleValidationModeForAsset(asset);
-        } else {
-            (feed, maxStaleness, validationMode) =
-                IOracleRegistry(oracleRegistry).oracleConfigFor(asset);
-        }
+        feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
+        maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
+        validationMode = IVaultAssetPriceSources(vault).oracleValidationModeForAsset(asset);
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         return _readValidPrice(asset, feed, maxStaleness, validationMode);
     }
@@ -358,7 +333,12 @@ contract PortfolioCalculator {
         uint32 maxStaleness,
         OracleValidationMode validationMode
     ) private view returns (uint256 price, uint8 priceDecimals) {
-        if (address(feed) == address(0) || maxStaleness == 0) revert OracleFeedMissing(asset);
+        if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+        if (address(feed).code.length == 0) revert OracleFeedNotContract(address(feed));
+        if (maxStaleness == 0) revert InvalidMaxStaleness(maxStaleness);
+        if (maxStaleness > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
+        }
         if (validationMode == OracleValidationMode.RobinhoodStockToken) {
             bool paused;
             try IOraclePauseStatus(asset).oraclePaused() returns (bool isPaused) {

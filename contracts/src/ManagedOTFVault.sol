@@ -8,7 +8,7 @@ import {
 } from "./ManagedOTFVaultStorage.sol";
 import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
+import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -70,7 +70,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address factory_,
         address assetRegistry_,
         address assetMarketRegistry_,
-        address oracleRegistry_,
         address rebalanceExecutor_,
         address feeCollector_,
         uint16 protocolFeeShareBps_
@@ -95,7 +94,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         feeRecipient = params.feeRecipient;
         assetRegistry = assetRegistry_;
         _assetMarketRegistry = assetMarketRegistry_;
-        oracleRegistry = oracleRegistry_;
         rebalanceExecutor = rebalanceExecutor_;
         feeCollector = feeCollector_;
         creatorFeeBpsPerYear = params.creatorFeeBpsPerYear;
@@ -920,7 +918,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (weight < minimumTargetWeightBps) {
             revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
         }
-        _portfolioCalculator.validateAssetForVault(address(this), asset, oracleRegistry);
+        _portfolioCalculator.validateAssetForVault(address(this), asset);
         for (uint256 j = index + 1; j < assets_.length; j++) {
             if (assets_[j] == asset) revert DuplicateConstituent(asset);
         }
@@ -987,6 +985,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 _pricingSourceForAsset[asset] != uint8(config.source)
                     || _primaryPriceSourceForAsset[asset] != config.primarySource
                     || _secondaryPriceSourceForAsset[asset] != config.secondarySource
+                    || _primaryMaxStalenessForAsset[asset] != config.primaryMaxStaleness
+                    || _secondaryMaxStalenessForAsset[asset] != config.secondaryMaxStaleness
+                    || _primaryOracleValidationModeForAsset[asset]
+                        != uint8(config.primaryValidationMode)
+                    || _secondaryOracleValidationModeForAsset[asset]
+                        != uint8(config.secondaryValidationMode)
             ) revert AssetPricingAlreadyPinned(asset);
             return;
         }
@@ -1019,7 +1023,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _secondaryOracleValidationModeForAsset[asset] = uint8(secondaryMode);
         _pricingConfiguredForAsset[asset] = true;
 
-        _portfolioCalculator.validateAssetForVault(address(this), asset, oracleRegistry);
+        _portfolioCalculator.validateAssetForVault(address(this), asset);
         emit AssetPricingPinned(
             asset,
             config.source,

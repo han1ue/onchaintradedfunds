@@ -3,9 +3,10 @@ pragma solidity ^0.8.24;
 
 import { ChainlinkRoutePriceFeed } from "./ChainlinkRoutePriceFeed.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
+import { IUniswapV3OraclePool, UniswapV3RoutePriceFeed } from "./UniswapV3RoutePriceFeed.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
-import { IOracleRegistry, OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
+import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { AssetPricingConfig, PricingSource } from "./VaultTypes.sol";
 
 interface IAssetPricingResolver {
@@ -30,38 +31,28 @@ interface IAssetPricingResolver {
         );
 }
 
-/// @notice Validates user-supplied oracle identity and resolves a normalized per-vault price feed.
-/// @dev Trusted mappings are consulted only during selection. Returned feeds are pinned by the vault.
+/// @notice Mechanically validates creator-selected pricing and resolves a normalized per-vault feed.
 contract AssetPricingResolver is IAssetPricingResolver {
     error ZeroAddress();
     error InvalidDependency(address dependency);
     error InvalidPricingConfig(address asset);
     error MarketRegistryUnavailable();
-    error PriceFeedMismatch(address asset, address expected, address supplied);
     error InvalidAssetMarket(address asset, bytes32 marketId);
+    error InvalidMaxStaleness(uint32 supplied);
+    error MaxStalenessTooHigh(uint32 supplied, uint32 maximum);
+    error InvalidValidationMode(OracleValidationMode supplied);
 
-    IOracleRegistry public immutable trustedOracles;
     IAssetMarketRegistry public immutable marketRegistry;
     PortfolioCalculator public immutable calculator;
 
-    constructor(
-        IOracleRegistry trustedOracles_,
-        IAssetMarketRegistry marketRegistry_,
-        PortfolioCalculator calculator_
-    ) {
-        if (address(trustedOracles_) == address(0) || address(calculator_) == address(0)) {
-            revert ZeroAddress();
-        }
-        if (address(trustedOracles_).code.length == 0) {
-            revert InvalidDependency(address(trustedOracles_));
-        }
+    constructor(IAssetMarketRegistry marketRegistry_, PortfolioCalculator calculator_) {
+        if (address(calculator_) == address(0)) revert ZeroAddress();
         if (address(marketRegistry_) != address(0) && address(marketRegistry_).code.length == 0) {
             revert InvalidDependency(address(marketRegistry_));
         }
         if (address(calculator_).code.length == 0) {
             revert InvalidDependency(address(calculator_));
         }
-        trustedOracles = trustedOracles_;
         marketRegistry = marketRegistry_;
         calculator = calculator_;
     }
@@ -112,14 +103,10 @@ contract AssetPricingResolver is IAssetPricingResolver {
             revert InvalidPricingConfig(asset);
         }
         if (config.source == PricingSource.ChainlinkDirect) {
-            if (config.secondarySource != address(0)) revert InvalidPricingConfig(asset);
-            AggregatorV3Interface expected;
-            (expected, primaryStaleness, primaryMode) =
-                trustedOracles.oracleConfigForPair(asset, trustedOracles.usdQuote());
-            if (address(expected) != config.primarySource) {
-                revert PriceFeedMismatch(asset, address(expected), config.primarySource);
-            }
-            calculator.validatePriceFeed(asset, expected, primaryStaleness, primaryMode);
+            _requireUnusedSecondary(config, asset);
+            primaryStaleness = config.primaryMaxStaleness;
+            primaryMode = config.primaryValidationMode;
+            _validateLeg(asset, config.primarySource, primaryStaleness, primaryMode);
             return (
                 config.primarySource,
                 bytes32(0),
@@ -134,27 +121,19 @@ contract AssetPricingResolver is IAssetPricingResolver {
             if (config.secondarySource.code.length == 0) revert InvalidPricingConfig(asset);
             _requireMarketRegistry();
             address weth = marketRegistry.weth();
-            AggregatorV3Interface expectedPrimary;
-            AggregatorV3Interface expectedSecondary;
-            (expectedPrimary, primaryStaleness, primaryMode) =
-                trustedOracles.oracleConfigForPair(asset, weth);
-            (expectedSecondary, secondaryStaleness, secondaryMode) =
-                trustedOracles.oracleConfigForPair(weth, trustedOracles.usdQuote());
-            if (address(expectedPrimary) != config.primarySource) {
-                revert PriceFeedMismatch(asset, address(expectedPrimary), config.primarySource);
-            }
-            if (address(expectedSecondary) != config.secondarySource) {
-                revert PriceFeedMismatch(asset, address(expectedSecondary), config.secondarySource);
-            }
-            calculator.validatePriceFeed(asset, expectedPrimary, primaryStaleness, primaryMode);
-            calculator.validatePriceFeed(weth, expectedSecondary, secondaryStaleness, secondaryMode);
+            primaryStaleness = config.primaryMaxStaleness;
+            secondaryStaleness = config.secondaryMaxStaleness;
+            primaryMode = config.primaryValidationMode;
+            secondaryMode = config.secondaryValidationMode;
+            _validateLeg(asset, config.primarySource, primaryStaleness, primaryMode);
+            _validateLeg(weth, config.secondarySource, secondaryStaleness, secondaryMode);
             if (deployWrapper) {
                 normalizedFeed = address(
                     new ChainlinkRoutePriceFeed(
                         asset,
                         weth,
-                        expectedPrimary,
-                        expectedSecondary,
+                        AggregatorV3Interface(config.primarySource),
+                        AggregatorV3Interface(config.secondarySource),
                         primaryStaleness,
                         secondaryStaleness,
                         primaryMode,
@@ -172,24 +151,80 @@ contract AssetPricingResolver is IAssetPricingResolver {
             );
         }
 
-        if (config.secondarySource != address(0)) revert InvalidPricingConfig(asset);
+        if (config.primaryValidationMode != OracleValidationMode.StandardChainlink) {
+            revert InvalidValidationMode(config.primaryValidationMode);
+        }
+        _validateMaxStaleness(config.primaryMaxStaleness);
+        if (config.secondarySource.code.length == 0) revert InvalidPricingConfig(asset);
+        _validateMaxStaleness(config.secondaryMaxStaleness);
         _requireMarketRegistry();
         marketId = marketRegistry.registerV3Market(asset, config.primarySource);
-        (address marketAsset, address pool, address priceFeed,, bool active) =
-            marketRegistry.marketFor(marketId);
-        if (
-            !active || marketAsset != asset || pool != config.primarySource
-                || priceFeed.code.length == 0
-        ) revert InvalidAssetMarket(asset, marketId);
-        primaryStaleness = 2 hours;
+        (address marketAsset, address pool,, bool active) = marketRegistry.marketFor(marketId);
+        if (!active || marketAsset != asset || pool != config.primarySource) {
+            revert InvalidAssetMarket(asset, marketId);
+        }
+        address quoteToken = marketRegistry.quoteTokenFor(marketId);
+        primaryStaleness = config.primaryMaxStaleness;
+        secondaryStaleness = config.secondaryMaxStaleness;
         primaryMode = OracleValidationMode.StandardChainlink;
-        calculator.validatePriceFeed(
-            asset, AggregatorV3Interface(priceFeed), primaryStaleness, primaryMode
+        secondaryMode = config.secondaryValidationMode;
+        _validateLeg(quoteToken, config.secondarySource, secondaryStaleness, secondaryMode);
+        if (deployWrapper) {
+            normalizedFeed = address(
+                new UniswapV3RoutePriceFeed(
+                    asset,
+                    quoteToken,
+                    IUniswapV3OraclePool(pool),
+                    AggregatorV3Interface(config.secondarySource),
+                    secondaryStaleness,
+                    secondaryMode
+                )
+            );
+            calculator.validatePriceFeed(
+                asset, AggregatorV3Interface(normalizedFeed), primaryStaleness, primaryMode
+            );
+        }
+        return (
+            normalizedFeed,
+            marketId,
+            primaryStaleness,
+            secondaryStaleness,
+            primaryMode,
+            secondaryMode
         );
-        return (priceFeed, marketId, primaryStaleness, 0, primaryMode, primaryMode);
     }
 
     function _requireMarketRegistry() private view {
         if (address(marketRegistry) == address(0)) revert MarketRegistryUnavailable();
+    }
+
+    function _validateLeg(
+        address base,
+        address feed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode
+    ) private view {
+        if (feed.code.length == 0) revert InvalidPricingConfig(base);
+        _validateMaxStaleness(maxStaleness);
+        calculator.validatePriceFeed(
+            base, AggregatorV3Interface(feed), maxStaleness, validationMode
+        );
+    }
+
+    function _validateMaxStaleness(uint32 maxStaleness) private pure {
+        if (maxStaleness == 0) revert InvalidMaxStaleness(maxStaleness);
+        if (maxStaleness > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
+        }
+    }
+
+    function _requireUnusedSecondary(AssetPricingConfig calldata config, address asset)
+        private
+        pure
+    {
+        if (
+            config.secondarySource != address(0) || config.secondaryMaxStaleness != 0
+                || config.secondaryValidationMode != OracleValidationMode.StandardChainlink
+        ) revert InvalidPricingConfig(asset);
     }
 }

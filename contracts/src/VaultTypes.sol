@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+
 enum PricingSource {
     ChainlinkDirect,
     ChainlinkAssetWeth,
@@ -9,11 +11,15 @@ enum PricingSource {
 
 /// @notice User-supplied pricing configuration pinned when an asset first enters an OTF.
 /// @dev `primarySource` is the direct feed, asset/WETH feed, or V3 asset/quote pool.
-///      `secondarySource` is only used for the WETH/USD leg of a composed Chainlink route.
+///      `secondarySource` is the quote-token/USD feed for composed Chainlink and V3 routes.
 struct AssetPricingConfig {
     PricingSource source;
     address primarySource;
     address secondarySource;
+    uint32 primaryMaxStaleness;
+    uint32 secondaryMaxStaleness;
+    OracleValidationMode primaryValidationMode;
+    OracleValidationMode secondaryValidationMode;
 }
 
 struct VaultInitParams {

@@ -5,7 +5,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { AssetPricingConfig, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -20,9 +20,6 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         otfToken = new OTFToken(address(this));
         otfFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.registerAsset(address(otfToken));
-        oracleRegistry.setOracleConfig(
-            address(otfToken), otfFeed, 25 hours, OracleValidationMode.StandardChainlink
-        );
         otfToken.approve(address(factory), type(uint256).max);
         factory.configureProtocolToken(address(otfToken), 1_000);
     }
@@ -233,7 +230,8 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.initialPricingConfigs = new AssetPricingConfig[](3);
         params.initialPricingConfigs[0] = _directPricing(address(feedA));
         params.initialPricingConfigs[1] = _directPricing(address(feedB));
-        params.initialPricingConfigs[2] = _directPricing(address(otfFeed));
+        params.initialPricingConfigs[2] =
+            _directPricing(address(otfFeed), OracleValidationMode.StandardChainlink);
 
         uint16 remainingWeight = uint16(10_000 - otfWeightBps);
         params.initialTargetWeightsBps = new uint16[](3);

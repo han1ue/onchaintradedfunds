@@ -4397,6 +4397,12 @@ textarea::placeholder {
   gap: 8px;
 }
 
+.availabilityWarning {
+  grid-column: 1 / -1;
+  color: var(--gold);
+  overflow-wrap: anywhere;
+}
+
 .targetCard .customPricingFields {
   grid-template-columns: 1fr;
 }
@@ -6847,41 +6853,24 @@ input.invalid {
   gap: 12px;
 }
 
-.routeToggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--background);
-  padding: 10px 11px;
-  cursor: pointer;
-}
-
-.routeToggle.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.routeToggle input {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.routeToggle strong,
-.routeToggle small {
+.tradeRouteField,
+.tradeRouteField small {
   display: block;
 }
 
-.routeToggle strong {
-  color: var(--text);
-  font-size: 0.69rem;
+.tradeRouteField textarea {
+  width: 100%;
+  min-height: 76px;
+  margin-top: 6px;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
 }
 
-.routeToggle small {
-  margin-top: 3px;
+.tradeRouteField small {
+  margin-top: 5px;
   color: var(--text-muted);
   font-size: 0.62rem;
   line-height: 1.4;

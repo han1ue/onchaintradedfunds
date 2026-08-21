@@ -3,11 +3,12 @@ pragma solidity ^0.8.24;
 
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
-import { IUniswapV3SwapRouter } from "./UniswapV3Adapter.sol";
+import { IUniswapV3SwapRouter } from "./interfaces/IUniswapV3SwapRouter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
-/// @notice Generic Uniswap V3 adapter for explicit fee-bearing paths through a fixed settlement token.
-/// @dev Execution paths are independent from every oracle pool and pricing registry.
+/// @notice Generic Uniswap V3 adapter for explicit fee-bearing paths.
+/// @dev Callers own endpoint policy. Execution paths are independent from every oracle pool and
+///      pricing registry.
 contract RegisteredUniswapV3Adapter is ITradeAdapter {
     using SafeTransferLib for address;
 
@@ -27,17 +28,14 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
 
     address public owner;
     address public immutable uniswapRouter;
-    address public immutable settlementToken;
     mapping(address => bool) public isCallerApproved;
     bool private _entered;
 
-    constructor(address initialOwner, address uniswapRouter_, address settlementToken_) {
-        if (initialOwner == address(0) || settlementToken_ == address(0)) revert ZeroAddress();
+    constructor(address initialOwner, address uniswapRouter_) {
+        if (initialOwner == address(0)) revert ZeroAddress();
         if (uniswapRouter_.code.length == 0) revert InvalidDependency(uniswapRouter_);
-        if (settlementToken_.code.length == 0) revert InvalidDependency(settlementToken_);
         owner = initialOwner;
         uniswapRouter = uniswapRouter_;
-        settlementToken = settlementToken_;
         emit OwnershipTransferred(address(0), initialOwner);
     }
 
@@ -103,7 +101,7 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         if (amountOut < minAmountOut) revert Slippage(amountOut, minAmountOut);
     }
 
-    function _validatePath(bytes calldata path, address tokenIn, address tokenOut) private view {
+    function _validatePath(bytes calldata path, address tokenIn, address tokenOut) private pure {
         uint256 length = path.length;
         if (length < 43 || (length - 20) % 23 != 0) revert InvalidPath();
         uint256 hops = (length - 20) / 23;
@@ -111,19 +109,13 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
             revert InvalidPath();
         }
 
-        uint256 settlementOccurrences;
         for (uint256 i = 0; i <= hops; i++) {
             address token = _addressAt(path, i * 23);
             if (token == address(0)) revert InvalidPath();
-            if (token == settlementToken) settlementOccurrences++;
             if (i == hops) continue;
             address nextToken = _addressAt(path, (i + 1) * 23);
             if (token == nextToken || _feeAt(path, i * 23 + 20) == 0) revert InvalidPath();
         }
-
-        bool endpointIsSettlement = tokenIn == settlementToken || tokenOut == settlementToken;
-        if (settlementOccurrences != 1) revert InvalidPath();
-        if (!endpointIsSettlement && hops < 2) revert InvalidPath();
     }
 
     function _addressAt(bytes calldata path, uint256 offset) private pure returns (address token) {

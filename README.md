@@ -24,7 +24,7 @@ This repository currently implements the first MVP slice:
 - Fixed minimum rebalance cooldown model.
 - Direct basket vault creation through the factory.
 - Proportional mint and redeem logic.
-- Atomic USDG or WETH entry through separately configured allowlisted routers and registered V3 adapters.
+- Atomic USDG or WETH entry through separately configured allowlisted routers and one shared V3 adapter.
 - Lazy share-based management fee accrual.
 - Optional OTF-token holding rebates and a fixed-supply protocol token.
 - Onchain strategy history binding rationales to target snapshots.
@@ -47,7 +47,6 @@ This repository currently implements the first MVP slice:
 |   |   |-- OTFFactory.sol
 |   |   |-- RebalanceExecutor.sol
 |   |   |-- AssetRegistry.sol
-|   |   |-- OracleRegistry.sol
 |   |   |-- AssetPricingResolver.sol
 |   |   |-- ChainlinkRoutePriceFeed.sol
 |   |   |-- FeeCollector.sol
@@ -72,9 +71,8 @@ flowchart LR
   Factory --> Clone[ManagedOTFVault clone]
   Creator --> Config[Per-asset pricing configuration]
   Config --> Resolver[AssetPricingResolver]
-  Resolver --> OracleRegistry[Trusted Chainlink pair routes]
+  Resolver --> Feeds[Creator-selected Chainlink-compatible feeds]
   Resolver --> V3Registry[Canonical V3 market registry]
-  OracleRegistry --> Feeds[Chainlink-compatible feeds]
   Resolver --> Pinned[Pinned normalized feed or V3 TWAP]
   Clone --> Pinned
   Registry[AssetRegistry discovery index] --> App[Frontend]
@@ -145,8 +143,8 @@ flowchart LR
 
 - Implements exact-input entry, redemption, and rebalance swaps through an explicit fee-bearing V3
   path supplied for that transaction.
-- Uses one immutable settlement token, validates path endpoints and settlement-token occurrence,
-  limits callers, reconciles reported and observed deltas, and clears temporary router approvals.
+- Validates exact path endpoints and every hop, limits callers, reconciles reported and observed
+  deltas, and clears temporary router approvals. Intermediate tokens are unrestricted and atomic.
 - Is independent from the pool, feed, and fee tier pinned for portfolio pricing.
 
 `AssetRegistry`
@@ -155,19 +153,13 @@ flowchart LR
 - Has no owner, quality tier, approval, blocking, revocation, or constituent-eligibility authority.
 - Is never consulted by a vault for pricing, deposits, strategy changes, or redemptions.
 
-`OracleRegistry`
-
-- Stores governance-trusted `(base, quote) -> feed` relationships, freshness bounds, and validation
-  modes used only when a user selects a new Chainlink configuration.
-- Cannot replace a feed already pinned by an OTF. Pair orientation is never inferred from
-  `description()`.
-
 `AssetPricingResolver`
 
 - Accepts a user-supplied direct Chainlink, composed asset/WETH × WETH/USD, or Uniswap V3 TWAP
   configuration when an asset first enters an OTF.
-- Validates trusted Chainlink pair relationships or canonical V3 factory, pair, fee, initialization,
-  observation capacity, and history requirements.
+- Mechanically validates creator-selected Chainlink feeds, per-leg freshness limits and validation
+  modes, or the canonical V3 factory, pair, fee, initialization, observation capacity, history, and
+  independently pinned quote-token/USD feed requirements.
 - Returns a normalized feed that the OTF pins without a fallback source.
 
 `FeeCollector`
@@ -556,20 +548,28 @@ The vault rejects:
 - An enabled `oraclePaused()` flag or an unavailable required pause check.
 - Unsupported token or oracle decimals.
 
-Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts only the trusted
-asset/USD feed. `ChainlinkAssetWeth` accepts only the trusted asset/WETH and WETH/USD legs, checks
-both independently, multiplies them into an 8-decimal USD result, and exposes the older leg's
+Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts any mechanically valid
+asset/USD feed selected by the creator. `ChainlinkAssetWeth` independently accepts and checks the
+creator-selected asset/WETH and WETH/USD legs, including their feed addresses, staleness limits, and
+validation modes, multiplies them into an 8-decimal USD result, and exposes the older leg's
 timestamp. `UniswapV3Twap` accepts an asset/WETH or asset/USDG pool only after canonical-factory,
-exact pair and fee, initialization, observation-capacity, and full-history checks. V4 is not a
-pricing source.
+exact pair and fee, initialization, observation-capacity, and full-history checks, then composes
+that TWAP with the creator-pinned quote-token/USD Chainlink feed. V4 is not a pricing source.
 
-The trusted Chainlink mapping is consulted only when a source is selected. Later mapping changes
-cannot redirect an existing OTF, and no source automatically falls back to another. Every read
+Feed addresses and validation parameters are permanently pinned when selected, and no source
+automatically falls back to another. Every read
 checks positive answers, round completeness, timestamps, protocol staleness bounds, and supported
 decimals. A `RobinhoodStockToken` leg additionally requires the base token's `oraclePaused()` call
 to be available and false. Robinhood equity feeds are 24/5; deployment policy currently allows the
 documented heartbeat plus delivery buffer, after which oracle-dependent operations pause until a
 fresh round arrives. Redemption remains price-independent.
+
+Frontend verification is informational and separate from runtime health. A configuration is
+Verified only when its asset, feed or V3 route, and validation mode exactly match the frontend
+manifest and each submitted staleness limit is nonzero and no greater than that manifest entry's
+maximum. Shorter limits remain Verified with an availability warning. Temporary staleness or
+`oraclePaused()` makes oracle-dependent operations unavailable without changing Verified status.
+Unknown assets and alternative mechanically valid feeds remain deployable and appear Unverified.
 
 Current weights:
 
@@ -725,23 +725,24 @@ DEPLOYER_PRIVATE_KEY=
 ```
 
 Keep that value in the ignored `.env.deploy.local` file. Never add it to the address JSON. The
-deployment script reads its chain, treasury, optional trusted Chainlink pair routes, WETH, USDG,
-canonical WETH/USDG pool, and V3 infrastructure from
-`app/src/config/robinhood-testnet.json`. A V3-only deployment does not require a Chainlink route.
+deployment script reads its chain, treasury, optional frontend pricing suggestions, WETH, USDG,
+and V3 infrastructure from `app/src/config/robinhood-testnet.json`. It does not require a
+WETH/USDG pricing pool. Testnet uses a separately recorded WETH/USDG execution bridge so the two
+entry routers can reuse asset/USDG liquidity; it is not passed to any pricing constructor.
 
 Deploying always recompiles source-only artifacts before broadcasting, targets the Shanghai EVM
-supported by Robinhood Chain Testnet, deploys the pricing resolver and generic settlement adapters,
+supported by Robinhood Chain Testnet, deploys the pricing resolver and one generic execution adapter,
 and updates the shared address configuration only after setup succeeds. Before writing schema
-version 3 it archives the prior JSON; legacy factories and vaults are not upgraded in place:
+version 4 it archives the prior JSON; legacy factories and vaults are not upgraded in place:
 
 ```bash
 corepack pnpm contracts:deploy:robinhood-testnet
 ```
 
-The schema-version-3 manifest exposes `contracts.pricingResolver`, root
-`trustedOracleRoutes[]` records (`base`, `quote`, `quoteKind`, `feed`, `source`, `maxStaleness`, and
-`validationMode`), and root `executionRoutes[]` records (`settlementToken`, generic adapter, entry
-router, and path encoding). `v3Venue.constituentPools` describes execution liquidity only;
+The schema-version-4 manifest exposes `contracts.pricingResolver`, the protocol-wide seven-day
+maximum oracle staleness, one `contracts.uniswapV3Adapter`, and root `executionRoutes[]` records
+(`settlementToken`, shared adapter, entry router, and path encoding). `v3Venue.constituentPools` describes execution liquidity only;
+`executionLiquidity.wethUsdg` is an optional cross-settlement execution bridge;
 `pricingConfiguration.suggestedInitialPricingConfigs` and `suggestedV3PricingConfigs` are separate,
 non-authoritative transaction prefills. Execution records never contain a pricing market ID.
 
@@ -757,11 +758,20 @@ This is a deployment migration, not an in-place upgrade:
 - Legacy address JSON is archived and schema-version-3 configurators reject old factories instead
   of presenting them as migrated.
 
-WETH, USDG, the canonical WETH/USDG pool, and all four V3-compatible addresses are required. Every
+WETH, USDG, and all four V3-compatible addresses are required. Every
 new OTF receives an official OTF/USDG pool during its factory transaction, while constituent pricing
 may independently use direct Chainlink, composed Chainlink, or a canonical asset/WETH or asset/USDG
-TWAP. Robinhood testnet currently points these V3 fields at Synthra; production addresses must be
-verified independently.
+TWAP composed with a pinned quote-token/USD feed. Robinhood testnet currently points these V3 fields
+at Synthra; production addresses must be verified independently.
+
+The testnet execution bridge can be created or checked idempotently with:
+
+```bash
+corepack pnpm contracts:bootstrap:weth-usdg-execution
+```
+
+It seeds immediate swap liquidity only. No observation-cardinality growth or one-hour history is
+required because the pool is never consumed as an oracle.
 
 After the base protocol and mock oracle catalog are configured, deploy the V3 adapter and entry
 router and create the five RWA/USDG pools with:
@@ -770,8 +780,8 @@ router and create the five RWA/USDG pools with:
 corepack pnpm contracts:configure:robinhood-testnet-synthra
 ```
 
-The command is idempotent for a schema-version-3 deployment. It mechanically checks 18-decimal
-assets, uses a trusted direct USD route only to seed a pool price, verifies the canonical factory,
+The command is idempotent for a schema-version-4 deployment. It mechanically checks 18-decimal
+assets, uses the configured frontend direct-USD suggestion only to seed a pool price, verifies the canonical factory,
 pair, fee, and initialization, expands observation capacity toward 64, and tests one hour of TWAP
 history. It records `twapReady` and `twapReadyAt`; a pool remains ineligible for pricing until the
 required observations and full history actually exist. Execution-pool metadata is stored separately
@@ -811,11 +821,11 @@ On Robinhood Chain Mainnet, Chainlink's onchain
 [Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry) is deployed at
 `0xbb601D8e5e568e6464D6D34feE489AA61b8d035A`. `getFlag(proxy)` can prove that a proxy is currently
 official and active; it does not prove base/quote orientation. No Robinhood deployment of the older
-pair-addressed Chainlink Feed Registry is documented, so production must maintain a separately
-trusted onchain pair mapping or reject the route. Feed `description()` is never identity evidence.
+pair-addressed Chainlink Feed Registry is documented, so semantic pair identity remains a creator
+and frontend-manifest responsibility. Feed `description()` is never identity evidence.
 The current [official Robinhood feed directory](https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json)
 predominantly exposes direct tokenized-equity/USD feeds; composed asset/WETH routes remain supported
-only when both exact legs are trusted.
+only when both exact legs are independently reviewed.
 
 Tokenized-equity answers already include the Stock Token `uiMultiplier()` for dividends, splits,
 and other corporate actions; consumers must not multiply by it again. A feed can keep returning a
@@ -921,7 +931,7 @@ Deterministic coverage includes:
   trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
 - Atomic USDG/WETH entry, exact-input minimum-share protection, proportional-only deposits,
   slippage-protected settlement-asset surplus refunds, entry-adapter authorization, expired entry rejection,
-  and Uniswap-compatible direct and USDG-hop adapter behavior.
+  and Uniswap-compatible direct and arbitrary-intermediate adapter behavior.
 - Atomic USDG redemption, exact share approval, per-leg and aggregate minimum outputs, deadline
   enforcement, and complete rollback when an exit adapter or quote is invalid.
 - Canonical vault/module storage, immutable module identity, runtime code-hash integrity,
@@ -941,13 +951,12 @@ history, and immutable factory provenance.
 - No production Robinhood Chain addresses are verified or configured.
 - Asset/WETH or asset/USDG pools are initialized separately from liquidity provisioning. Routed
   entry, redemption, and rebalances require active liquidity; a V3 pricing selection additionally
-  requires the protocol observation capacity and full TWAP history.
+  requires the protocol observation capacity, full TWAP history, and a pinned quote-token/USD feed.
 - RFQ, proprietary AMM, and order-book adapters are not implemented.
 - V3 execution paths and fee tiers are transaction inputs checked by a typed adapter; they are not
   derived from the pricing pool. V4 pricing and V4 execution are intentionally unsupported.
 - Robinhood mainnet has an official Chainlink proxy Flags registry but no documented onchain
-  base/quote Feed Registry. The owner-managed trusted pair map is therefore a security dependency
-  for future Chainlink selections, although it cannot redirect existing pinned sources.
+  base/quote Feed Registry. Permissionless mechanical checks cannot prove semantic pair identity.
 - Robinhood testnet synthetic feeds are noncanonical integration fixtures.
 - The generated ABI package is currently a hand-maintained MVP subset.
 - The contracts are intentionally compact for MVP exploration and have not been gas optimized.
@@ -958,4 +967,4 @@ history, and immutable factory provenance.
 The next safest milestone is an independent smart-contract audit, followed by a testnet
 deployment rehearsal with verified Robinhood Chain addresses, live oracle feeds, and an
 approved generic adapter integration. Production also requires a reviewed Robinhood sequencer-uptime
-policy and an independent verification of every trusted Chainlink pair and canonical V3 dependency.
+policy and an independent verification of every frontend-manifest Chainlink pair and canonical V3 dependency.

@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -195,12 +194,6 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
     function testPinnedStalenessBlocksCorrectiveTradesAndDirectResolution() public {
         ManagedOTFVault vault = _createVault();
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
-        oracleRegistry.setOracleConfig(
-            address(tokenB), feedB, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
         _setPrices(120_00000000, 100_00000000);
         vault.flagOutOfBand();
         vm.warp(block.timestamp + 1 hours + 1);

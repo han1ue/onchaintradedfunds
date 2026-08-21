@@ -5,12 +5,12 @@ import { AssetMarketRegistry } from "../src/AssetMarketRegistry.sol";
 import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
 import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { ChainlinkRoutePriceFeed } from "../src/ChainlinkRoutePriceFeed.sol";
-import { OracleRegistry } from "../src/OracleRegistry.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
 import { UniswapV3RoutePriceFeed } from "../src/UniswapV3RoutePriceFeed.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
+import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
 import { AssetPricingConfig, PricingSource } from "../src/VaultTypes.sol";
@@ -127,7 +127,6 @@ contract PermissionlessAssetMarketsTest is TestBase {
     MockStockToken private secondAsset;
     MockStockToken private weth;
     MockStockToken private usdg;
-    MockPermissionlessV3Pool private bridgePool;
 
     function setUp() public {
         vm.warp(1_700_000_000);
@@ -137,9 +136,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
         weth = new MockStockToken("Wrapped Ether", "WETH", 18);
         usdg = new MockStockToken("Global Dollar", "USDG", 6);
         v3Factory = new MockPermissionlessV3Factory();
-        bridgePool = v3Factory.createPool(address(weth), address(usdg), 100);
         markets = new AssetMarketRegistry(
-            address(this), address(v3Factory), address(weth), address(usdg), address(bridgePool)
+            address(this), address(v3Factory), address(weth), address(usdg)
         );
     }
 
@@ -158,22 +156,23 @@ contract PermissionlessAssetMarketsTest is TestBase {
         assets.registerAsset(address(sixDecimals));
     }
 
-    function testRegistersMultiplePinnedCandidatesAndComposesTwap() public {
+    function testRegistersMultiplePinnedCandidatesWithoutAnchorPool() public {
         MockPermissionlessV3Pool lowFee = v3Factory.createPool(address(asset), address(weth), 500);
         MockPermissionlessV3Pool standardFee =
             v3Factory.createPool(address(asset), address(weth), 3_000);
         lowFee.setTick(-100);
-        bridgePool.setTick(75);
 
         bytes32 first = markets.registerV3Market(address(asset), address(lowFee));
         bytes32 second = markets.registerV3Market(address(asset), address(standardFee));
         assertTrue(first != second);
         assertTrue(markets.isActiveMarketForAsset(first, address(asset)));
         assertTrue(markets.isActiveMarketForAsset(second, address(asset)));
-        (,, address feed,,) = markets.marketFor(first);
-        (, int256 answer,, uint256 updatedAt,) = UniswapV3RoutePriceFeed(feed).latestRoundData();
-        assertGt(uint256(answer), 0);
-        assertEq(updatedAt, block.timestamp);
+        (address marketAsset, address marketPool, uint24 marketFee, bool active) =
+            markets.marketFor(first);
+        assertEq(marketAsset, address(asset));
+        assertEq(marketPool, address(lowFee));
+        assertEq(uint256(marketFee), 500);
+        assertTrue(active);
         assertEq(uint256(lowFee.observationCardinality()), 64);
     }
 
@@ -184,11 +183,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         bytes32 marketId = markets.registerV3Market(address(asset), address(directPool));
         assertEq(markets.quoteTokenFor(marketId), address(usdg));
-        (,, address feed,,) = markets.marketFor(marketId);
-        assertEq(UniswapV3RoutePriceFeed(feed).quoteToken(), address(usdg));
-        (, int256 answer,, uint256 updatedAt,) = UniswapV3RoutePriceFeed(feed).latestRoundData();
-        assertGt(uint256(answer), 0);
-        assertEq(updatedAt, block.timestamp);
+        (, address marketPool,, bool active) = markets.marketFor(marketId);
+        assertEq(marketPool, address(directPool));
+        assertTrue(active);
     }
 
     function testRejectsWrongPairAndRequiresReadyObservationsAtRegistration() public {
@@ -216,13 +213,13 @@ contract PermissionlessAssetMarketsTest is TestBase {
         MockPermissionlessV3Pool executionPool =
             v3Factory.createPool(address(asset), address(weth), 3_000);
         bytes32 pricingMarketId = markets.registerV3Market(address(asset), address(pricingPool));
-        (, address pinnedPool,,,) = markets.marketFor(pricingMarketId);
+        (, address pinnedPool,,) = markets.marketFor(pricingMarketId);
         assertEq(pinnedPool, address(pricingPool));
         assertTrue(address(executionPool) != pinnedPool);
 
         MockUniswapV3Router router = new MockUniswapV3Router();
         RegisteredUniswapV3Adapter adapter =
-            new RegisteredUniswapV3Adapter(address(this), address(router), address(usdg));
+            new RegisteredUniswapV3Adapter(address(this), address(router));
         adapter.setCallerApproved(address(this), true);
 
         usdg.mint(address(adapter), 10 ether);
@@ -247,7 +244,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         );
     }
 
-    function testRegisteredAdaptersSupportBothPoolQuoteTokens() public {
+    function testOneGenericAdapterSupportsAnyValidIntermediateRoute() public {
         MockPermissionlessV3Pool wethQuoted =
             v3Factory.createPool(address(asset), address(weth), 500);
         MockPermissionlessV3Pool usdgQuoted =
@@ -255,20 +252,17 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerV3Market(address(asset), address(wethQuoted));
         markets.registerV3Market(address(secondAsset), address(usdgQuoted));
         MockUniswapV3Router router = new MockUniswapV3Router();
-        RegisteredUniswapV3Adapter usdgAdapter =
-            new RegisteredUniswapV3Adapter(address(this), address(router), address(usdg));
-        RegisteredUniswapV3Adapter wethAdapter =
-            new RegisteredUniswapV3Adapter(address(this), address(router), address(weth));
-        usdgAdapter.setCallerApproved(address(this), true);
-        wethAdapter.setCallerApproved(address(this), true);
+        RegisteredUniswapV3Adapter adapter =
+            new RegisteredUniswapV3Adapter(address(this), address(router));
+        adapter.setCallerApproved(address(this), true);
 
-        usdg.mint(address(usdgAdapter), 2 ether);
-        weth.mint(address(wethAdapter), 1 ether);
+        usdg.mint(address(adapter), 2 ether);
+        weth.mint(address(adapter), 1 ether);
         asset.mint(address(router), 1 ether);
         secondAsset.mint(address(router), 2 ether);
 
         assertEq(
-            usdgAdapter.executeSwap(
+            adapter.executeSwap(
                 address(usdg),
                 address(asset),
                 1 ether,
@@ -296,7 +290,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             )
         );
         assertEq(
-            usdgAdapter.executeSwap(
+            adapter.executeSwap(
                 address(usdg),
                 address(secondAsset),
                 1 ether,
@@ -310,7 +304,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             keccak256(abi.encodePacked(address(usdg), bytes3(uint24(3_000)), address(secondAsset)))
         );
         assertEq(
-            wethAdapter.executeSwap(
+            adapter.executeSwap(
                 address(weth),
                 address(secondAsset),
                 1 ether,
@@ -337,6 +331,24 @@ contract PermissionlessAssetMarketsTest is TestBase {
                 )
             )
         );
+
+        MockStockToken arbitraryIntermediate = new MockStockToken("Route only", "ROUTE", 18);
+        asset.mint(address(adapter), 1 ether);
+        secondAsset.mint(address(router), 1 ether);
+        bytes memory arbitraryPath = abi.encodePacked(
+            address(asset),
+            bytes3(uint24(250)),
+            address(arbitraryIntermediate),
+            bytes3(uint24(750)),
+            address(secondAsset)
+        );
+        assertEq(
+            adapter.executeSwap(
+                address(asset), address(secondAsset), 1 ether, 1 ether, arbitraryPath
+            ),
+            1 ether
+        );
+        assertEq(keccak256(router.lastPath()), keccak256(arbitraryPath));
     }
 
     function testMixedRebalanceSettlesWethAndUsdgQuotedAssetsThroughUsdg() public {
@@ -348,7 +360,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerV3Market(address(secondAsset), address(usdgQuoted));
         MockUniswapV3Router router = new MockUniswapV3Router();
         RegisteredUniswapV3Adapter adapter =
-            new RegisteredUniswapV3Adapter(address(this), address(router), address(usdg));
+            new RegisteredUniswapV3Adapter(address(this), address(router));
         adapter.setCallerApproved(address(this), true);
 
         asset.mint(address(adapter), 1 ether);
@@ -398,14 +410,18 @@ contract PermissionlessAssetMarketsTest is TestBase {
     }
 
     function testResolverPinsReadyV3PoolAndDeprecationDoesNotDisableFeed() public {
-        OracleRegistry oracles = new OracleRegistry(address(this));
         PortfolioCalculator calculator = new PortfolioCalculator();
-        AssetPricingResolver resolver = new AssetPricingResolver(oracles, markets, calculator);
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPermissionlessV3Pool pool = v3Factory.createPool(address(asset), address(weth), 500);
+        MockPriceFeed wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.UniswapV3Twap,
             primarySource: address(pool),
-            secondarySource: address(0)
+            secondarySource: address(wethUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 1 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
 
         (
@@ -421,33 +437,22 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         markets.setMarketActive(marketId, false);
         (, int256 answer,,,) = UniswapV3RoutePriceFeed(normalizedFeed).latestRoundData();
-        assertGt(uint256(answer), 0);
+        assertEq(uint256(answer), 3_000_00000000);
     }
 
-    function testResolverComposesAndPinsTrustedChainlinkLegs() public {
-        OracleRegistry oracles = new OracleRegistry(address(this));
+    function testResolverComposesAndPinsPermissionlessChainlinkLegs() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
-        AssetPricingResolver resolver = new AssetPricingResolver(oracles, markets, calculator);
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
         MockPriceFeed wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
-        oracles.setOracleRoute(
-            address(asset),
-            address(weth),
-            assetWethFeed,
-            4 hours,
-            OracleValidationMode.StandardChainlink
-        );
-        oracles.setOracleRoute(
-            address(weth),
-            oracles.usdQuote(),
-            wethUsdFeed,
-            2 hours,
-            OracleValidationMode.StandardChainlink
-        );
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.ChainlinkAssetWeth,
             primarySource: address(assetWethFeed),
-            secondarySource: address(wethUsdFeed)
+            secondarySource: address(wethUsdFeed),
+            primaryMaxStaleness: 4 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
 
         (
@@ -466,74 +471,62 @@ contract PermissionlessAssetMarketsTest is TestBase {
         (, int256 answer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(answer), 6_000_00000000);
 
-        MockPriceFeed replacementAssetWethFeed = new MockPriceFeed(18, 1 ether);
-        oracles.setOracleRoute(
-            address(asset),
-            address(weth),
-            replacementAssetWethFeed,
-            1 hours,
-            OracleValidationMode.StandardChainlink
-        );
+        new MockPriceFeed(18, 1 ether);
         (, int256 pinnedAnswer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(pinnedAnswer), 6_000_00000000);
     }
 
-    function testResolverRejectsUntrustedDirectFeed() public {
-        OracleRegistry oracles = new OracleRegistry(address(this));
+    function testResolverAcceptsAnyMechanicallyValidDirectFeed() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
-        AssetPricingResolver resolver = new AssetPricingResolver(oracles, markets, calculator);
-        MockPriceFeed trustedFeed = new MockPriceFeed(8, 100_00000000);
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed suppliedFeed = new MockPriceFeed(8, 101_00000000);
-        oracles.setOracleConfig(
-            address(asset), trustedFeed, 25 hours, OracleValidationMode.StandardChainlink
-        );
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
             primarySource: address(suppliedFeed),
-            secondarySource: address(0)
+            secondarySource: address(0),
+            primaryMaxStaleness: 25 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
 
-        vm.expectPartialRevert(AssetPricingResolver.PriceFeedMismatch.selector);
         resolver.validatePricing(address(asset), config);
     }
 
-    function testResolverRejectsReverseStaleInvalidAndPausedChainlinkFeeds() public {
-        OracleRegistry oracles = new OracleRegistry(address(this));
+    function testRobinhoodValidationRequiresOraclePausedFunction() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
-        AssetPricingResolver resolver = new AssetPricingResolver(oracles, markets, calculator);
-        MockPriceFeed reverseFeed = new MockPriceFeed(8, 100_00000000);
-        MockPriceFeed wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
-        oracles.setOracleRoute(
-            address(weth),
-            address(asset),
-            reverseFeed,
-            1 hours,
-            OracleValidationMode.StandardChainlink
-        );
-        oracles.setOracleRoute(
-            address(weth),
-            oracles.usdQuote(),
-            wethUsdFeed,
-            1 hours,
-            OracleValidationMode.StandardChainlink
-        );
-        AssetPricingConfig memory composed = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetWeth,
-            primarySource: address(reverseFeed),
-            secondarySource: address(wethUsdFeed)
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
+        MockReentrantToken tokenWithoutPause =
+            new MockReentrantToken("No pause status", "NOPAUSE", 18);
+        MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
+        AssetPricingConfig memory config = AssetPricingConfig({
+            source: PricingSource.ChainlinkDirect,
+            primarySource: address(feed),
+            secondarySource: address(0),
+            primaryMaxStaleness: 1 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: OracleValidationMode.RobinhoodStockToken,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
-        vm.expectPartialRevert(AssetPricingResolver.PriceFeedMismatch.selector);
-        resolver.validatePricing(address(asset), composed);
+
+        vm.expectPartialRevert(PortfolioCalculator.OraclePauseStatusUnavailable.selector);
+        resolver.validatePricing(address(tokenWithoutPause), config);
+    }
+
+    function testResolverRejectsInvalidStaleAndPausedChainlinkFeeds() public {
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
 
         MockPriceFeed directFeed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory direct = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
             primarySource: address(directFeed),
-            secondarySource: address(0)
+            secondarySource: address(0),
+            primaryMaxStaleness: 1 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
-        oracles.setOracleConfig(
-            address(asset), directFeed, 1 hours, OracleValidationMode.StandardChainlink
-        );
 
         directFeed.setRoundData(
             2, 100_00000000, block.timestamp - 1 hours - 1, block.timestamp - 1 hours - 1, 2
@@ -555,29 +548,29 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         directFeed.setRoundData(6, 100_00000000, block.timestamp, block.timestamp, 6);
         asset.setOraclePaused(true);
-        oracles.setOracleConfig(
-            address(asset), directFeed, 1 hours, OracleValidationMode.RobinhoodStockToken
-        );
+        direct.primaryValidationMode = OracleValidationMode.RobinhoodStockToken;
         vm.expectPartialRevert(PortfolioCalculator.OraclePaused.selector);
         resolver.validatePricing(address(asset), direct);
 
         asset.setOraclePaused(false);
         MockPriceFeed unsupportedDecimals = new MockPriceFeed(37, 100_00000000);
-        oracles.setOracleConfig(
-            address(asset), unsupportedDecimals, 1 hours, OracleValidationMode.StandardChainlink
-        );
         direct.primarySource = address(unsupportedDecimals);
+        direct.primaryValidationMode = OracleValidationMode.StandardChainlink;
         vm.expectPartialRevert(PortfolioCalculator.UnsupportedDecimals.selector);
+        resolver.validatePricing(address(asset), direct);
+
+        direct.primarySource = address(directFeed);
+        direct.primaryMaxStaleness = 0;
+        vm.expectPartialRevert(AssetPricingResolver.InvalidMaxStaleness.selector);
+        resolver.validatePricing(address(asset), direct);
+
+        direct.primaryMaxStaleness = 7 days + 1;
+        vm.expectPartialRevert(AssetPricingResolver.MaxStalenessTooHigh.selector);
         resolver.validatePricing(address(asset), direct);
     }
 
-    function testPortfolioCalculatorUsesPinnedFeedAfterRegistryChanges() public {
-        OracleRegistry oracles = new OracleRegistry(address(this));
-        MockPriceFeed registryFeed = new MockPriceFeed(8, 100_00000000);
+    function testPortfolioCalculatorUsesPinnedFeed() public {
         MockPriceFeed pinnedFeed = new MockPriceFeed(8, 150_00000000);
-        oracles.setOracleConfig(
-            address(asset), registryFeed, 25 hours, OracleValidationMode.StandardChainlink
-        );
 
         MockVaultPriceSources vault = new MockVaultPriceSources(address(assets));
         vault.setPriceFeed(
@@ -585,24 +578,13 @@ contract PermissionlessAssetMarketsTest is TestBase {
         );
         PortfolioCalculator calculator = new PortfolioCalculator();
 
-        uint256 pinnedValue = calculator.assetValueForVault(
-            address(vault), address(asset), 1 ether, address(oracles)
-        );
+        uint256 pinnedValue = calculator.assetValueForVault(address(vault), address(asset), 1 ether);
         assertEq(pinnedValue, 150 ether);
-
-        MockPriceFeed replacementFeed = new MockPriceFeed(8, 200_00000000);
-        oracles.setOracleConfig(
-            address(asset), replacementFeed, 25 hours, OracleValidationMode.StandardChainlink
-        );
-        uint256 valueAfterRegistryChange = calculator.assetValueForVault(
-            address(vault), address(asset), 1 ether, address(oracles)
-        );
-        assertEq(valueAfterRegistryChange, pinnedValue);
 
         vault.setPriceFeed(
             address(asset), address(0), 25 hours, OracleValidationMode.StandardChainlink
         );
         vm.expectPartialRevert(PortfolioCalculator.OracleFeedMissing.selector);
-        calculator.assetValueForVault(address(vault), address(asset), 1 ether, address(oracles));
+        calculator.assetValueForVault(address(vault), address(asset), 1 ether);
     }
 }

@@ -5,6 +5,7 @@ import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
+import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -659,7 +660,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
             }
             if (_pricingConfiguredForAsset[asset]) {
-                _calculator.validateAssetForVault(address(this), asset, oracleRegistry);
+                _calculator.validateAssetForVault(address(this), asset);
             }
             for (uint256 j = i + 1; j < assets_.length; j++) {
                 if (assets_[j] == asset) revert DuplicateConstituent(asset);
@@ -687,12 +688,12 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (!IAdapterAllowlist(factory).isTradeAdapterApproved(trade.adapter)) {
             revert UnapprovedAdapter(trade.adapter);
         }
-        _calculator.validateAssetForVault(address(this), trade.tokenIn, oracleRegistry);
-        _calculator.validateAssetForVault(address(this), trade.tokenOut, oracleRegistry);
+        _calculator.validateAssetForVault(address(this), trade.tokenIn);
+        _calculator.validateAssetForVault(address(this), trade.tokenOut);
     }
 
     function _currentWeightsAndNav() private view returns (uint256[] memory weights, uint256 nav) {
-        return _calculator.portfolioState(address(this), _assets, oracleRegistry);
+        return _calculator.portfolioState(address(this), _assets);
     }
 
     function _currentPreciseWeightsAndNav()
@@ -700,22 +701,18 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         view
         returns (uint256[] memory weights, uint256 nav)
     {
-        return _calculator.precisePortfolioState(address(this), _assets, oracleRegistry);
+        return _calculator.precisePortfolioState(address(this), _assets);
     }
 
     function _isWithinBands(uint16 deviationBps) private view returns (bool) {
         if (!_retiringBalancesAreWithinDust()) return false;
-        return _calculator.isWithinBands(
-            address(this), _assets, _targetWeights(), oracleRegistry, deviationBps
-        );
+        return _calculator.isWithinBands(address(this), _assets, _targetWeights(), deviationBps);
     }
 
     function _breachedAssets(uint16 deviationBps) private view returns (address[] memory) {
         address[] memory retiring = _retiringBreaches();
         if (retiring.length != 0) return retiring;
-        return _calculator.breachedAssets(
-            address(this), _assets, _targetWeights(), oracleRegistry, deviationBps
-        );
+        return _calculator.breachedAssets(address(this), _assets, _targetWeights(), deviationBps);
     }
 
     function _distanceFromTarget(uint256[] memory weights, uint256 targetScale)
@@ -730,7 +727,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     }
 
     function _assetValue(address asset, uint256 rawBalance) private view returns (uint256) {
-        return _calculator.assetValueForVault(address(this), asset, rawBalance, oracleRegistry);
+        return _calculator.assetValueForVault(address(this), asset, rawBalance);
     }
 
     function _replacePortfolio(address[] memory assets_, uint256[] memory weights_) private {
@@ -780,7 +777,15 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             configs[i] = AssetPricingConfig({
                 source: PricingSource(_pricingSourceForAsset[asset]),
                 primarySource: _primaryPriceSourceForAsset[asset],
-                secondarySource: _secondaryPriceSourceForAsset[asset]
+                secondarySource: _secondaryPriceSourceForAsset[asset],
+                primaryMaxStaleness: _primaryMaxStalenessForAsset[asset],
+                secondaryMaxStaleness: _secondaryMaxStalenessForAsset[asset],
+                primaryValidationMode: OracleValidationMode(
+                    _primaryOracleValidationModeForAsset[asset]
+                ),
+                secondaryValidationMode: OracleValidationMode(
+                    _secondaryOracleValidationModeForAsset[asset]
+                )
             });
         }
     }
@@ -793,7 +798,13 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             config.primarySource != address(0)
                 && (uint8(config.source) != _pricingSourceForAsset[asset]
                     || config.primarySource != _primaryPriceSourceForAsset[asset]
-                    || config.secondarySource != _secondaryPriceSourceForAsset[asset])
+                    || config.secondarySource != _secondaryPriceSourceForAsset[asset]
+                    || config.primaryMaxStaleness != _primaryMaxStalenessForAsset[asset]
+                    || config.secondaryMaxStaleness != _secondaryMaxStalenessForAsset[asset]
+                    || uint8(config.primaryValidationMode)
+                        != _primaryOracleValidationModeForAsset[asset]
+                    || uint8(config.secondaryValidationMode)
+                        != _secondaryOracleValidationModeForAsset[asset])
         ) {
             revert AssetPricingAlreadyPinned(asset);
         }

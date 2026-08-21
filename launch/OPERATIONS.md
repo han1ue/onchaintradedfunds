@@ -5,8 +5,8 @@
 - Apply launch-only Drizzle migrations to a backed-up Neon branch.
 - Verify X OAuth callbacks for preview and production URLs.
 - Confirm Redis, Turnstile, cron authorization, CSP, and administrator X IDs.
-- Verify the optional asset-discovery index, trusted Chainlink pair map, V3 market registry, pricing
-  resolver, factory, WETH, USDG, and canonical WETH/USDG pool against deployed bytecode and
+- Verify the optional asset-discovery index, frontend Chainlink manifest, V3 market registry, pricing
+  resolver, factory, WETH, USDG, and canonical V3 dependencies against deployed bytecode and
   transactions. Keep Robinhood Mainnet disabled until this is complete.
 - Configure `COINGECKO_DEMO_API_KEY` and `COINGECKO_NETWORK_ID`. The server calls public GeckoTerminal
   first and uses the Demo API only as a bounded fallback; the key is never sent to the browser. Launch

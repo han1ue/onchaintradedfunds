@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { OracleValidationMode } from "./interfaces/IOracleRegistry.sol";
+import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import {
     PricingSource,
@@ -179,19 +179,18 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     }
 
     function totalAssetsValue() external view onlyDelegateCall returns (uint256 nav) {
-        return _portfolioCalculator.portfolioValue(address(this), _assets, oracleRegistry);
+        return _portfolioCalculator.portfolioValue(address(this), _assets);
     }
 
     function navPerShare() external view onlyDelegateCall returns (uint256) {
         uint256 supply = _previewSupplyAfterAccrual();
         if (supply == 0) return 0;
-        uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets, oracleRegistry);
+        uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets);
         return MathEx.mulDiv(nav, 1e18, supply);
     }
 
     function currentWeightsBps() external view onlyDelegateCall returns (uint16[] memory weights) {
-        (uint256[] memory current,) =
-            _portfolioCalculator.portfolioState(address(this), _assets, oracleRegistry);
+        (uint256[] memory current,) = _portfolioCalculator.portfolioState(address(this), _assets);
         weights = new uint16[](current.length);
         for (uint256 i = 0; i < current.length; i++) {
             weights[i] = uint16(current[i]);
@@ -200,10 +199,10 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
 
     function currentWeight(address token) external view onlyDelegateCall returns (uint256 weight) {
         if (!_containsAsset(token)) revert NotConstituent(token);
-        uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets, oracleRegistry);
+        uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets);
         if (nav == 0) revert ZeroNav();
         uint256 tokenValue = _portfolioCalculator.assetValueForVault(
-            address(this), token, IERC20(token).balanceOf(address(this)), oracleRegistry
+            address(this), token, IERC20(token).balanceOf(address(this))
         );
         return MathEx.mulDiv(tokenValue, BPS, nav);
     }
@@ -483,9 +482,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < _assets.length; i++) {
             weights[i] = targetWeightBps[_assets[i]];
         }
-        return _portfolioCalculator.isWithinBands(
-            address(this), _assets, weights, oracleRegistry, deviationBps
-        );
+        return _portfolioCalculator.isWithinBands(address(this), _assets, weights, deviationBps);
     }
 
     function _band(uint256 target, uint256 deviation)

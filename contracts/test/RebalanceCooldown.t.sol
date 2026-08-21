@@ -10,8 +10,7 @@ import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
-import { OracleRegistry } from "../src/OracleRegistry.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -35,7 +34,6 @@ contract RebalanceCooldownTest is TestBase {
     MockStockToken private tokenA;
     MockStockToken private tokenB;
     AssetRegistry private assetRegistry;
-    OracleRegistry private oracleRegistry;
     RebalanceExecutor private executor;
     MockTradeAdapter private adapter;
     MockPriceFeed private feedA;
@@ -48,7 +46,6 @@ contract RebalanceCooldownTest is TestBase {
         tokenA = new MockStockToken("Mock NVDA", "mNVDA", 18);
         tokenB = new MockStockToken("Mock MSFT", "mMSFT", 18);
         assetRegistry = new AssetRegistry(address(this));
-        oracleRegistry = new OracleRegistry(address(this));
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
 
@@ -56,12 +53,6 @@ contract RebalanceCooldownTest is TestBase {
         assetRegistry.registerAsset(address(tokenB));
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
-        oracleRegistry.setOracleConfig(
-            address(tokenA), feedA, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
-        oracleRegistry.setOracleConfig(
-            address(tokenB), feedB, 25 hours, OracleValidationMode.RobinhoodStockToken
-        );
 
         tokenA.mint(address(this), 10_000 * ONE);
         tokenB.mint(address(this), 10_000 * ONE);
@@ -80,7 +71,6 @@ contract RebalanceCooldownTest is TestBase {
             address(implementation),
             address(collector),
             address(assetRegistry),
-            address(oracleRegistry),
             address(executor),
             1_500
         );
@@ -88,11 +78,7 @@ contract RebalanceCooldownTest is TestBase {
         factory.setTradeAdapterApproved(address(adapter), true);
         factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
         factory.setPricingResolver(
-            address(
-                new AssetPricingResolver(
-                    oracleRegistry, IAssetMarketRegistry(address(0)), calculator
-                )
-            )
+            address(new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator))
         );
 
         tokenA.approve(address(factory), type(uint256).max);
@@ -309,12 +295,20 @@ contract RebalanceCooldownTest is TestBase {
         pricingConfigs[0] = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
             primarySource: address(feedA),
-            secondarySource: address(0)
+            secondarySource: address(0),
+            primaryMaxStaleness: 25 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: OracleValidationMode.RobinhoodStockToken,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
         pricingConfigs[1] = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
             primarySource: address(feedB),
-            secondarySource: address(0)
+            secondarySource: address(0),
+            primaryMaxStaleness: 25 hours,
+            secondaryMaxStaleness: 0,
+            primaryValidationMode: OracleValidationMode.RobinhoodStockToken,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
 
         params = VaultInitParams({

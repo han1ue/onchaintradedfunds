@@ -241,7 +241,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     address public feeRecipient;
     address public feeCollector;
     address public assetRegistry;
-    address public oracleRegistry;
+    // Reserved for a removed dependency pointer in already-deployed clone layouts.
+    address private __removedDependencySlot;
     address public rebalanceExecutor;
 
     uint16 public creatorFeeBpsPerYear;

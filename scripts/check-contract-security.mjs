@@ -120,6 +120,29 @@ assert(
   JSON.stringify(viewLayout) === JSON.stringify(canonicalLayout),
   "view module declares storage outside the canonical layout",
 );
+const removedDependencyIndex = canonicalLayout.findIndex(
+  (entry) => entry.label === "__removedDependencySlot",
+);
+assert(removedDependencyIndex > 0, "removed dependency slot is not reserved in the clone layout");
+assert(
+  canonicalLayout[removedDependencyIndex - 1]?.label === "assetRegistry"
+    && canonicalLayout[removedDependencyIndex + 1]?.label === "rebalanceExecutor",
+  "removed dependency slot moved relative to the deployed clone layout",
+);
+for (const [label, slot] of [
+  ["assetRegistry", "12"],
+  ["__removedDependencySlot", "13"],
+  ["rebalanceExecutor", "14"],
+  ["_pricingConfiguredForAsset", "181"],
+  ["_pendingPricingConfigs", "182"],
+  ["_primaryMaxStalenessForAsset", "183"],
+  ["_primaryOracleValidationModeForAsset", "184"],
+]) {
+  assert(
+    canonicalLayout.some((entry) => entry.label === label && entry.slot === slot),
+    `${label} moved from canonical storage slot ${slot}`,
+  );
+}
 
 const productionContracts = [
   ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
@@ -130,7 +153,6 @@ const productionContracts = [
   ["ManagedOTFVault.sol", "ManagedOTFVault"],
   ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
   ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
-  ["OracleRegistry.sol", "OracleRegistry"],
   ["OTFFactory.sol", "OTFFactory"],
   ["OTFEntryRouter.sol", "OTFEntryRouter"],
   ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
@@ -154,8 +176,9 @@ const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrateg
 const viewModule = artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView");
 const factory = artifact("OTFFactory.sol", "OTFFactory");
 const assetRegistry = artifact("AssetRegistry.sol", "AssetRegistry");
-const oracleRegistry = artifact("OracleRegistry.sol", "OracleRegistry");
 const pricingResolver = artifact("AssetPricingResolver.sol", "AssetPricingResolver");
+const assetMarketRegistry = artifact("AssetMarketRegistry.sol", "AssetMarketRegistry");
+const v3RoutePriceFeed = artifact("UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed");
 const registeredV3Adapter = artifact(
   "RegisteredUniswapV3Adapter.sol",
   "RegisteredUniswapV3Adapter",
@@ -175,10 +198,13 @@ const assetRegistryFunctions = assetRegistry.abi
 const assetRegistryEventNames = assetRegistry.abi
   .filter((item) => item.type === "event")
   .map((item) => item.name);
-const oracleRegistryFunctions = oracleRegistry.abi
+const pricingResolverFunctions = pricingResolver.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
-const pricingResolverFunctions = pricingResolver.abi
+const assetMarketRegistryFunctions = assetMarketRegistry.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const v3RoutePriceFeedFunctions = v3RoutePriceFeed.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 const registeredV3AdapterFunctions = registeredV3Adapter.abi
@@ -304,14 +330,33 @@ assert(
   "permissionless asset discovery view is absent",
 );
 assert(
-  oracleRegistryFunctions.includes("oracleConfigForPair")
-    && oracleRegistryFunctions.includes("setOracleRoute"),
-  "trusted Chainlink pair-route validation surface is absent",
-);
-assert(
   pricingResolverFunctions.includes("validatePricing")
     && pricingResolverFunctions.includes("resolvePricing"),
   "user-supplied pricing resolver surface is absent",
+);
+assert(
+  !pricingResolverFunctions.includes("trustedOracles")
+    && !factoryFunctions.includes("oracleRegistry"),
+  "removed oracle-registry dependency remains in a production ABI",
+);
+const pricingResolverConstructor = pricingResolver.abi.find((item) => item.type === "constructor");
+assert(
+  pricingResolverConstructor?.inputs.length === 2,
+  "pricing resolver constructor still depends on an oracle registry",
+);
+const assetMarketRegistryConstructor = assetMarketRegistry.abi.find(
+  (item) => item.type === "constructor",
+);
+assert(
+  assetMarketRegistryConstructor?.inputs.length === 4
+    && !assetMarketRegistryFunctions.includes("wethUsdgPool"),
+  "V3 pricing still has a deployment-time WETH/USDG pool dependency",
+);
+assert(
+  v3RoutePriceFeedFunctions.includes("quoteUsdFeed")
+    && v3RoutePriceFeedFunctions.includes("quoteAssetInUsd")
+    && !v3RoutePriceFeedFunctions.includes("wethUsdgPool"),
+  "V3 pricing does not pin a quote-token/USD feed independently",
 );
 assert(
   registeredV3AdapterFunctions.includes("executeSwap"),
@@ -320,6 +365,17 @@ assert(
 assert(
   !registeredV3AdapterFunctions.includes("marketIdFromData"),
   "V3 execution remains coupled to a pricing market ID",
+);
+assert(
+  !registeredV3AdapterFunctions.includes("settlementToken"),
+  "generic V3 execution remains coupled to a settlement token",
+);
+const registeredV3AdapterConstructor = registeredV3Adapter.abi.find(
+  (item) => item.type === "constructor",
+);
+assert(
+  registeredV3AdapterConstructor?.inputs.length === 2,
+  "generic V3 adapter constructor has unexpected route-policy dependencies",
 );
 assert(
   factoryFunctions.includes("setVaultDepositsPaused")

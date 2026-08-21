@@ -30,7 +30,6 @@ const { privateKeyToAccount } = accounts;
 
 const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
 const defaultChainId = 46630;
-const usdQuoteAddress = getAddress("0x0000000000000000000000000000000000000348");
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const deploymentArchiveDirectory = join(root, "app", "src", "config", "deployments");
 
@@ -121,27 +120,11 @@ const chainId = Number(deploymentConfig.chainId ?? defaultChainId);
 const protocolFeeShareBps = Number(deploymentConfig.protocolFeeShareBps ?? 1500);
 const account = privateKeyToAccount(privateKey, { nonceManager });
 const treasury = parseAddress("treasury", deploymentConfig.treasury ?? account.address);
-const trustedOracleRoutes = (
-  deploymentConfig.trustedOracleRoutes
-    ?? deploymentConfig.protocolConfig?.trustedOracleRoutes
-    ?? deploymentConfig.setupTransactions?.trustedOracleRoutes
-    ?? []
-).map((record, index) => ({
-  base: parseAddress(`trustedOracleRoutes[${index}].base`, record.base),
-  quote: parseAddress(`trustedOracleRoutes[${index}].quote`, record.quote),
-  feed: parseAddress(`trustedOracleRoutes[${index}].feed`, record.feed),
-  source: record.source ?? "direct",
-  quoteKind: record.quoteKind,
-  maxStaleness: Number(record.maxStaleness),
-  validationMode: Number(record.validationMode ?? 0),
-}));
+const suggestedInitialPricingConfigs =
+  deploymentConfig.pricingConfiguration?.suggestedInitialPricingConfigs ?? [];
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
 const wethAddress = parseAddress("externalContracts.weth", externalContracts.weth);
-const wethUsdgPoolAddress = parseAddress(
-  "externalContracts.wethUsdgPool",
-  externalContracts.wethUsdgPool,
-);
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
   externalContracts.uniswapV3Factory,
@@ -158,66 +141,6 @@ const uniswapV3QuoterAddress = parseAddress(
   "externalContracts.uniswapV3Quoter",
   externalContracts.uniswapV3Quoter,
 );
-const trustedRouteKeys = new Set();
-for (const [index, route] of trustedOracleRoutes.entries()) {
-  if (route.base.toLowerCase() === route.quote.toLowerCase()) {
-    throw new Error(`trustedOracleRoutes[${index}] has identical base and quote.`);
-  }
-  if (!Number.isSafeInteger(route.maxStaleness) || route.maxStaleness <= 0) {
-    throw new Error(`trustedOracleRoutes[${index}].maxStaleness must be a positive integer.`);
-  }
-  if (route.validationMode !== 0 && route.validationMode !== 1) {
-    throw new Error(`trustedOracleRoutes[${index}].validationMode must be 0 or 1.`);
-  }
-  if (route.source !== "direct" && route.source !== "composed") {
-    throw new Error(`trustedOracleRoutes[${index}].source must be direct or composed.`);
-  }
-  const isUsdQuote = route.quote.toLowerCase() === usdQuoteAddress.toLowerCase();
-  const isWethQuote = route.quote.toLowerCase() === wethAddress.toLowerCase();
-  const isWethUsdLeg = route.base.toLowerCase() === wethAddress.toLowerCase() && isUsdQuote;
-  if (
-    (route.source === "direct" && !isUsdQuote)
-      || (route.source === "composed" && !isWethQuote && !isWethUsdLeg)
-  ) {
-    throw new Error(`trustedOracleRoutes[${index}] does not match its direct/composed source.`);
-  }
-  const expectedQuoteKind = isUsdQuote ? "USD" : "WETH";
-  if (route.quoteKind && String(route.quoteKind).toUpperCase() !== expectedQuoteKind) {
-    throw new Error(`trustedOracleRoutes[${index}].quoteKind does not match quote.`);
-  }
-  route.quoteKind = expectedQuoteKind;
-  const routeKey = `${route.base.toLowerCase()}:${route.quote.toLowerCase()}`;
-  if (trustedRouteKeys.has(routeKey)) {
-    throw new Error(`trustedOracleRoutes contains duplicate pair ${route.base}/${route.quote}.`);
-  }
-  trustedRouteKeys.add(routeKey);
-}
-const wethUsdRoute = trustedOracleRoutes.find(
-  (route) => route.base.toLowerCase() === wethAddress.toLowerCase()
-    && route.quote.toLowerCase() === usdQuoteAddress.toLowerCase(),
-);
-const suggestedInitialPricingConfigs = trustedOracleRoutes.flatMap((route) => {
-  if (route.source === "direct" && route.quote.toLowerCase() === usdQuoteAddress.toLowerCase()) {
-    return [{
-      asset: route.base,
-      source: "ChainlinkDirect",
-      primarySource: route.feed,
-      secondarySource: "0x0000000000000000000000000000000000000000",
-    }];
-  }
-  if (
-    route.source === "composed" && route.base.toLowerCase() !== wethAddress.toLowerCase()
-      && route.quote.toLowerCase() === wethAddress.toLowerCase() && wethUsdRoute
-  ) {
-    return [{
-      asset: route.base,
-      source: "ChainlinkAssetWeth",
-      primarySource: route.feed,
-      secondarySource: wethUsdRoute.feed,
-    }];
-  }
-  return [];
-});
 
 const chain = {
   id: chainId,
@@ -241,12 +164,12 @@ if (balance === 0n) {
 }
 
 const assetRegistry = await deployContract({ name: "AssetRegistry", args: [account.address] });
-const oracleRegistry = await deployContract({ name: "OracleRegistry", args: [account.address] });
 const rebalanceExecutor = await deployContract({
   name: "RebalanceExecutor",
   args: [account.address],
 });
 const feeCollector = await deployContract({ name: "FeeCollector", args: [treasury] });
+const otfToken = await deployContract({ name: "OTFToken", args: [treasury] });
 const portfolioCalculator = await deployContract({ name: "PortfolioCalculator" });
 const vaultStrategy = await deployContract({
   name: "ManagedOTFVaultStrategy",
@@ -266,7 +189,6 @@ const factory = await deployContract({
     vaultImplementation.address,
     feeCollector.address,
     assetRegistry.address,
-    oracleRegistry.address,
     rebalanceExecutor.address,
     protocolFeeShareBps,
   ],
@@ -289,20 +211,15 @@ const assetMarketRegistry = await deployContract({
     uniswapV3FactoryAddress,
     wethAddress,
     usdgAddress,
-    wethUsdgPoolAddress,
   ],
 });
 const pricingResolver = await deployContract({
   name: "AssetPricingResolver",
-  args: [oracleRegistry.address, assetMarketRegistry.address, portfolioCalculator.address],
+  args: [assetMarketRegistry.address, portfolioCalculator.address],
 });
-const registeredUniswapV3AdapterUsdg = await deployContract({
+const uniswapV3Adapter = await deployContract({
   name: "RegisteredUniswapV3Adapter",
-  args: [account.address, uniswapV3SwapRouterAddress, usdgAddress],
-});
-const registeredUniswapV3AdapterWeth = await deployContract({
-  name: "RegisteredUniswapV3Adapter",
-  args: [account.address, uniswapV3SwapRouterAddress, wethAddress],
+  args: [account.address, uniswapV3SwapRouterAddress],
 });
 const entryRouterUsdg = await deployContract({
   name: "OTFEntryRouter",
@@ -314,7 +231,6 @@ const entryRouterWeth = await deployContract({
 });
 
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
-const oracleRegistryAbi = contractArtifact("OracleRegistry").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
 const registeredAdapterAbi = contractArtifact("RegisteredUniswapV3Adapter").abi;
 const entryRouterAbi = contractArtifact("OTFEntryRouter").abi;
@@ -327,8 +243,16 @@ const setupTransactions = {
     args: [factory.address],
   }),
   discoveredAssets: [],
-  trustedOracleRoutes: [],
-  approvedAdapters: [],
+  approvedAdapters: [{
+    adapter: uniswapV3Adapter.address,
+    purpose: "generic-rebalance",
+    ...(await writeContract({
+      address: factory.address,
+      abi: factoryAbi,
+      functionName: "setTradeAdapterApproved",
+      args: [uniswapV3Adapter.address, true],
+    })),
+  }],
   settlementEntry: [],
   setOfficialMarketRegistry: await writeContract({
     address: factory.address,
@@ -348,34 +272,25 @@ const setupTransactions = {
     functionName: "setPricingResolver",
     args: [pricingResolver.address],
   }),
+  configureProtocolToken: await writeContract({
+    address: factory.address,
+    abi: factoryAbi,
+    functionName: "configureProtocolToken",
+    // Permanently identify the testnet token while leaving fee rebates disabled.
+    args: [otfToken.address, 0],
+  }),
 };
 
-for (const [adapter, router, settlement] of [
-  [registeredUniswapV3AdapterUsdg, entryRouterUsdg, "USDG"],
-  [registeredUniswapV3AdapterWeth, entryRouterWeth, "WETH"],
+for (const [router, settlement] of [
+  [entryRouterUsdg, "USDG"],
+  [entryRouterWeth, "WETH"],
 ]) {
-  setupTransactions.approvedAdapters.push({
-    adapter: adapter.address,
-    purpose: `rebalance-${settlement.toLowerCase()}`,
-    ...(await writeContract({
-      address: factory.address,
-      abi: factoryAbi,
-      functionName: "setTradeAdapterApproved",
-      args: [adapter.address, true],
-    })),
-  });
   setupTransactions.settlementEntry.push({
     settlement,
-    adapter: adapter.address,
+    adapter: uniswapV3Adapter.address,
     router: router.address,
-    rebalanceExecutorCallerApproval: await writeContract({
-      address: adapter.address,
-      abi: registeredAdapterAbi,
-      functionName: "setCallerApproved",
-      args: [rebalanceExecutor.address, true],
-    }),
     entryRouterCallerApproval: await writeContract({
-      address: adapter.address,
+      address: uniswapV3Adapter.address,
       abi: registeredAdapterAbi,
       functionName: "setCallerApproved",
       args: [router.address, true],
@@ -384,32 +299,21 @@ for (const [adapter, router, settlement] of [
       address: router.address,
       abi: entryRouterAbi,
       functionName: "setEntryAdapterApproved",
-      args: [adapter.address, true],
+      args: [uniswapV3Adapter.address, true],
     }),
   });
 }
 
-for (const route of trustedOracleRoutes) {
-  setupTransactions.trustedOracleRoutes.push({
-    ...route,
-    ...(await writeContract({
-      address: oracleRegistry.address,
-      abi: oracleRegistryAbi,
-      functionName: "setOracleRoute",
-      args: [
-        route.base,
-        route.quote,
-        route.feed,
-        route.maxStaleness,
-        route.validationMode,
-      ],
-    })),
-  });
-}
+setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
+  address: uniswapV3Adapter.address,
+  abi: registeredAdapterAbi,
+  functionName: "setCallerApproved",
+  args: [rebalanceExecutor.address, true],
+});
 
 const archivedDeployment = archiveExistingDeployment();
 const deployment = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -419,9 +323,9 @@ const deployment = {
   protocolFeeShareBps,
   contracts: {
     assetRegistry,
-    oracleRegistry,
     rebalanceExecutor,
     feeCollector,
+    otfToken,
     portfolioCalculator,
     vaultStrategy,
     vaultView,
@@ -430,15 +334,13 @@ const deployment = {
     v3MarketRegistry,
     assetMarketRegistry,
     pricingResolver,
-    registeredUniswapV3AdapterUsdg,
-    registeredUniswapV3AdapterWeth,
+    uniswapV3Adapter,
     entryRouter: entryRouterUsdg,
     entryRouterWeth,
   },
   externalContracts: {
     usdg: usdgAddress,
     weth: wethAddress,
-    wethUsdgPool: wethUsdgPoolAddress,
     uniswapV3Factory: uniswapV3FactoryAddress,
     uniswapV3PositionManager: uniswapV3PositionManagerAddress,
     uniswapV3SwapRouter: uniswapV3SwapRouterAddress,
@@ -455,32 +357,15 @@ const deployment = {
   pricingConfiguration: {
     sources: ["ChainlinkDirect", "ChainlinkAssetWeth", "UniswapV3Twap"],
     vaultInitField: "initialPricingConfigs",
-    trustedOracleRoutes: trustedOracleRoutes.map((route) => ({
-      base: route.base,
-      quote: route.quote,
-      feed: route.feed,
-      source: route.source,
-      quoteKind: route.quoteKind,
-      maxStaleness: route.maxStaleness,
-      validationMode: route.validationMode,
-    })),
     suggestedInitialPricingConfigs,
-    note: "Oracle routes validate a selection only; each vault pins its resolved feed or pool and has no fallback.",
+    maximumOracleStalenessSeconds: 604800,
+    note: "Creators select permissionless feeds. Each OTF permanently pins its feed or pool, staleness limit, and validation mode.",
   },
-  trustedOracleRoutes: trustedOracleRoutes.map((route) => ({
-    base: route.base,
-    quote: route.quote,
-    quoteKind: route.quoteKind,
-    feed: route.feed,
-    source: route.source,
-    maxStaleness: route.maxStaleness,
-    validationMode: route.validationMode,
-  })),
   executionRoutes: [
     {
       settlement: "USDG",
       settlementToken: usdgAddress,
-      adapter: registeredUniswapV3AdapterUsdg.address,
+      adapter: uniswapV3Adapter.address,
       entryRouter: entryRouterUsdg.address,
       pathEncoding: "uniswap-v3-packed",
       pricingIndependent: true,
@@ -488,12 +373,15 @@ const deployment = {
     {
       settlement: "WETH",
       settlementToken: wethAddress,
-      adapter: registeredUniswapV3AdapterWeth.address,
+      adapter: uniswapV3Adapter.address,
       entryRouter: entryRouterWeth.address,
       pathEncoding: "uniswap-v3-packed",
       pricingIndependent: true,
     },
   ],
+  ...(deploymentConfig.executionLiquidity
+    ? { executionLiquidity: deploymentConfig.executionLiquidity }
+    : {}),
   migration: {
     architecture: "pinned-pricing-v3",
     legacyFactoriesCompatible: false,

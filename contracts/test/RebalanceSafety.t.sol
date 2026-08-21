@@ -5,7 +5,7 @@ import { ERC20Base } from "../src/ERC20Base.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleRegistry.sol";
+import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
@@ -34,9 +34,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
             additions[i] = address(asset);
             assetRegistry.registerAsset(address(asset));
-            oracleRegistry.setOracleConfig(
-                address(asset), feed, 25 hours, OracleValidationMode.RobinhoodStockToken
-            );
             additionConfigs[i] = _directPricing(address(feed));
         }
 
