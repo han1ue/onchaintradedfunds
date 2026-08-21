@@ -163,6 +163,7 @@ type TargetAsset = {
 type PricingSource = 0 | 1 | 2;
 type AssetPricingConfig = {
   source: PricingSource;
+  quoteToken: `0x${string}`;
   primarySource: `0x${string}`;
   secondarySource: `0x${string}`;
   primaryMaxStaleness: number;
@@ -421,6 +422,7 @@ const assetPricingResolverAbi = [
         type: "tuple",
         components: [
           { name: "source", type: "uint8" },
+          { name: "quoteToken", type: "address" },
           { name: "primarySource", type: "address" },
           { name: "secondarySource", type: "address" },
           { name: "primaryMaxStaleness", type: "uint32" },
@@ -751,6 +753,7 @@ function configuredPricingConfig(
 function emptyPricingConfig(): AssetPricingConfig {
   return {
     source: 0,
+    quoteToken: zeroAddress,
     primarySource: zeroAddress,
     secondarySource: zeroAddress,
     primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
@@ -767,21 +770,60 @@ function pricingConfigIsComplete(config: AssetPricingConfig): boolean {
     || config.primaryMaxStaleness > MAX_ORACLE_STALENESS_SECONDS) return false;
   if (config.source === 2 && config.primaryValidationMode !== 0) return false;
   if (config.source === 1 || config.source === 2) {
-    return isAddress(config.secondarySource)
+    return isAddress(config.quoteToken)
+      && config.quoteToken !== zeroAddress
+      && isAddress(config.secondarySource)
       && config.secondarySource !== zeroAddress
       && Number.isInteger(config.secondaryMaxStaleness)
       && config.secondaryMaxStaleness > 0
       && config.secondaryMaxStaleness <= MAX_ORACLE_STALENESS_SECONDS;
   }
-  return config.secondarySource === zeroAddress
+  return config.quoteToken === zeroAddress
+    && config.secondarySource === zeroAddress
     && config.secondaryMaxStaleness === 0
     && config.secondaryValidationMode === 0;
 }
 
 function pricingSourceLabel(source: PricingSource): string {
-  if (source === 0) return "Chainlink ASSET/USD";
-  if (source === 1) return "Chainlink via WETH";
-  return "Uniswap V3 TWAP";
+  if (source === 0) return "Direct Chainlink asset/USD";
+  if (source === 1) return "Composed Chainlink asset/quote × quote/USD";
+  return "Uniswap V3 TWAP asset/quote × quote/USD";
+}
+
+const quoteTokenRegistryAbi = [
+  {
+    type: "function", name: "quoteTokens", stateMutability: "view", inputs: [],
+    outputs: [{ name: "", type: "address[]" }],
+  },
+  {
+    type: "function", name: "currentQuoteTokenConfig", stateMutability: "view",
+    inputs: [{ name: "quoteToken", type: "address" }],
+    outputs: [{
+      name: "", type: "tuple", components: [
+        { name: "usdFeed", type: "address" },
+        { name: "maxStaleness", type: "uint32" },
+        { name: "validationMode", type: "uint8" },
+        { name: "enabled", type: "bool" },
+        { name: "allowComposedChainlink", type: "bool" },
+        { name: "allowV3Twap", type: "bool" },
+      ],
+    }],
+  },
+] as const;
+
+type RegisteredQuoteToken = {
+  address: `0x${string}`;
+  usdFeed: `0x${string}`;
+  maxStaleness: number;
+  validationMode: 0 | 1;
+  allowComposedChainlink: boolean;
+  allowV3Twap: boolean;
+};
+
+function quoteTokenLabel(address: string): string {
+  if (robinhoodTestnetAddresses.weth && address.toLowerCase() === robinhoodTestnetAddresses.weth.toLowerCase()) return "WETH";
+  if (robinhoodTestnetAddresses.usdg && address.toLowerCase() === robinhoodTestnetAddresses.usdg.toLowerCase()) return "USDG";
+  return shortAddress(address);
 }
 
 const uniswapV3FactoryReadAbi = [{
@@ -840,18 +882,23 @@ type CompatiblePool = {
   address: `0x${string}`;
   fee: number;
   quoteSymbol: string;
+  quoteToken: `0x${string}`;
 };
 
-function useCompatibleUniswapV3Pools(chainId: number, assetAddress: string, enabled: boolean) {
+function useCompatibleUniswapV3Pools(
+  chainId: number,
+  assetAddress: string,
+  enabled: boolean,
+  registeredQuotes: RegisteredQuoteToken[],
+) {
   const network = chainId === robinhoodChain.id
     ? { factory: MAINNET_V3_FACTORY, quotes: [{ symbol: "WETH", address: MAINNET_WETH }, { symbol: "USDG", address: MAINNET_USDG }] }
     : chainId === robinhoodChainTestnet.id && robinhoodTestnetAddresses.uniswapV3Factory
       ? {
           factory: robinhoodTestnetAddresses.uniswapV3Factory,
-          quotes: [
-            robinhoodTestnetAddresses.weth ? { symbol: "WETH", address: robinhoodTestnetAddresses.weth } : undefined,
-            robinhoodTestnetAddresses.usdg ? { symbol: "USDG", address: robinhoodTestnetAddresses.usdg } : undefined,
-          ].filter((quote): quote is { symbol: string; address: `0x${string}` } => Boolean(quote)),
+          quotes: registeredQuotes.filter((quote) => quote.allowV3Twap).map((quote) => ({
+            symbol: quoteTokenLabel(quote.address), address: quote.address,
+          })),
         }
       : undefined;
   const lookupInputs = enabled && network && isAddress(assetAddress)
@@ -870,7 +917,7 @@ function useCompatibleUniswapV3Pools(chainId: number, assetAddress: string, enab
   const candidates = lookupInputs.flatMap((input, index) => {
     const result = poolLookupResults?.[index];
     const address = result?.status === "success" ? result.result : undefined;
-    return address && address !== zeroAddress ? [{ address, fee: input.fee, quoteSymbol: input.symbol }] : [];
+    return address && address !== zeroAddress ? [{ address, fee: input.fee, quoteSymbol: input.symbol, quoteToken: input.address }] : [];
   });
   const { data: poolStateResults, isLoading: stateLoading } = useReadContracts({
     contracts: candidates.flatMap((pool) => ([
@@ -910,10 +957,45 @@ function PricingConfigurationFields({
   const verifiedAsset = verifiedAssetFor(chainId, assetAddress);
   const verification = pricingVerification(chainId, assetAddress, config);
   const verified = verification.verified;
+  const registryAddress = chainId === robinhoodChainTestnet.id
+    ? robinhoodTestnetAddresses.assetMarketRegistry
+    : undefined;
+  const { data: quoteTokenAddresses } = useReadContract({
+    address: registryAddress,
+    abi: quoteTokenRegistryAbi,
+    functionName: "quoteTokens",
+    chainId,
+    query: { enabled: Boolean(registryAddress) },
+  });
+  const { data: quoteConfigResults } = useReadContracts({
+    contracts: (quoteTokenAddresses ?? []).map((quoteToken) => ({
+      address: registryAddress!,
+      abi: quoteTokenRegistryAbi,
+      functionName: "currentQuoteTokenConfig" as const,
+      args: [quoteToken] as const,
+      chainId,
+    })),
+    query: { enabled: Boolean(registryAddress && quoteTokenAddresses?.length) },
+  });
+  const registeredQuotes: RegisteredQuoteToken[] = (quoteTokenAddresses ?? []).flatMap((address, index) => {
+    const result = quoteConfigResults?.[index];
+    if (result?.status !== "success") return [];
+    const value = result.result;
+    if (!value.enabled) return [];
+    return [{
+      address,
+      usdFeed: value.usdFeed,
+      maxStaleness: Number(value.maxStaleness),
+      validationMode: Number(value.validationMode) as 0 | 1,
+      allowComposedChainlink: value.allowComposedChainlink,
+      allowV3Twap: value.allowV3Twap,
+    }];
+  });
   const { pools, isLoading: poolsLoading } = useCompatibleUniswapV3Pools(
     chainId,
     assetAddress,
     config.source === 2 && (customizing || approved.length === 0),
+    registeredQuotes,
   );
 
   useEffect(() => setCustomizing(false), [assetAddress, chainId]);
@@ -969,6 +1051,7 @@ function PricingConfigurationFields({
               disabled={disabled}
               onChange={(event) => commit({
                 source: Number(event.target.value) as PricingSource,
+                quoteToken: zeroAddress,
                 primarySource: zeroAddress,
                 secondarySource: zeroAddress,
                 primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
@@ -977,11 +1060,36 @@ function PricingConfigurationFields({
                 secondaryValidationMode: 0,
               })}
             >
-              <option value={0}>Chainlink ASSET/USD</option>
-              <option value={1}>Chainlink ASSET/WETH × WETH/USD</option>
-              <option value={2}>Uniswap V3 TWAP</option>
+              <option value={0}>Direct Chainlink asset/USD</option>
+              <option value={1}>Composed Chainlink asset/quote × quote/USD</option>
+              <option value={2}>Uniswap V3 TWAP asset/quote × quote/USD</option>
             </select>
           </label>
+          {config.source === 1 || config.source === 2 ? (
+            <label>
+              <span>Registered quote token</span>
+              <select
+                value={registeredQuotes.some((quote) => quote.address.toLowerCase() === config.quoteToken.toLowerCase()) ? config.quoteToken : ""}
+                disabled={disabled || registeredQuotes.length === 0}
+                onChange={(event) => {
+                  const quote = registeredQuotes.find((candidate) => candidate.address === event.target.value);
+                  if (!quote) return;
+                  commit({
+                    ...config,
+                    quoteToken: quote.address,
+                    secondarySource: quote.usdFeed,
+                    secondaryMaxStaleness: quote.maxStaleness,
+                    secondaryValidationMode: quote.validationMode,
+                  });
+                }}
+              >
+                <option value="">{registeredQuotes.length ? "Choose a quote token" : "No enabled quote tokens"}</option>
+                {registeredQuotes
+                  .filter((quote) => config.source === 1 ? quote.allowComposedChainlink : quote.allowV3Twap)
+                  .map((quote) => <option key={quote.address} value={quote.address}>{quoteTokenLabel(quote.address)}</option>)}
+              </select>
+            </label>
+          ) : null}
           {config.source === 2 ? (
             <>
               <label>
@@ -989,7 +1097,11 @@ function PricingConfigurationFields({
                 <select
                   value={pools.some((pool) => pool.address.toLowerCase() === config.primarySource.toLowerCase()) ? config.primarySource : ""}
                   disabled={disabled || poolsLoading || pools.length === 0}
-                  onChange={(event) => commit({ ...config, primarySource: event.target.value as `0x${string}` })}
+                  onChange={(event) => {
+                    const pool = pools.find((candidate) => candidate.address === event.target.value);
+                    if (!pool) return;
+                    commit({ ...config, primarySource: pool.address, quoteToken: pool.quoteToken });
+                  }}
                 >
                   <option value="">{poolsLoading ? "Discovering pools…" : pools.length ? "Choose a pool" : "No compatible pools found"}</option>
                   {pools.map((pool) => (
@@ -1012,7 +1124,7 @@ function PricingConfigurationFields({
             </>
           ) : (
             <label>
-              <span>{config.source === 1 ? "ASSET/WETH Chainlink feed" : "Chainlink feed"}</span>
+              <span>{config.source === 1 ? "Asset/quote Chainlink feed" : "Asset/USD Chainlink feed"}</span>
               <input
                 className={config.primarySource !== zeroAddress && !isAddress(config.primarySource) ? "invalid" : undefined}
                 value={config.primarySource === zeroAddress ? "" : config.primarySource}
@@ -1025,17 +1137,17 @@ function PricingConfigurationFields({
           {config.source === 1 || config.source === 2 ? (
             <>
               <label>
-                <span>{config.source === 1 ? "WETH/USD Chainlink feed" : "Pool quote-token/USD Chainlink feed"}</span>
+                <span>Quote token/USD Chainlink feed</span>
                 <input
                   className={config.secondarySource !== zeroAddress && !isAddress(config.secondarySource) ? "invalid" : undefined}
                   value={config.secondarySource === zeroAddress ? "" : config.secondarySource}
                   disabled={disabled}
                   onChange={(event) => commit({ ...config, secondarySource: event.target.value.trim() as `0x${string}` })}
-                  placeholder={config.source === 1 ? "0x WETH/USD feed" : "0x quote-token/USD feed"}
+                  placeholder="0x quote-token/USD feed"
                 />
               </label>
               <label>
-                <span>{config.source === 1 ? "WETH/USD freshness limit" : "Quote/USD freshness limit"}</span>
+                <span>Quote/USD freshness limit</span>
                 <input
                   type="number"
                   min={1}
@@ -1048,7 +1160,7 @@ function PricingConfigurationFields({
                 <small>Seconds; maximum 7 days.</small>
               </label>
               <label>
-                <span>{config.source === 1 ? "WETH/USD validation" : "Quote/USD validation"}</span>
+                <span>Quote/USD validation</span>
                 <select
                   value={config.secondaryValidationMode}
                   disabled={disabled}
@@ -1064,7 +1176,7 @@ function PricingConfigurationFields({
             </>
           ) : null}
           <label>
-            <span>{config.source === 1 ? "ASSET/WETH freshness limit" : "Freshness limit"}</span>
+            <span>{config.source === 1 ? "Asset/quote freshness limit" : "Freshness limit"}</span>
             <input
               type="number"
               min={1}
@@ -1259,6 +1371,7 @@ function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
     const [
       configured,
       source,
+      quoteToken,
       primarySource,
       secondarySource,
       ,
@@ -1272,6 +1385,7 @@ function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
       configured && (source === 0 || source === 1 || source === 2)
         ? {
             source,
+            quoteToken,
             primarySource,
             secondarySource,
             primaryMaxStaleness,
@@ -2622,7 +2736,7 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       <MetricCard
         label="NAV / Share"
         value={vault.navPerShare ?? "Oracle read failed"}
-        helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USDG using each asset's active protocol feed or pinned Uniswap V3 TWAP route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
+        helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's pinned pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
       />
       <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
       <MetricCard
@@ -5861,6 +5975,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [txError, setTxError] = useState<string>();
   const [manualTargetAsset, setManualTargetAsset] = useState("");
   const [manualTargetPricingSource, setManualTargetPricingSource] = useState<PricingSource>(0);
+  const [manualTargetQuoteToken, setManualTargetQuoteToken] = useState("");
   const [manualTargetPrimarySource, setManualTargetPrimarySource] = useState("");
   const [manualTargetSecondarySource, setManualTargetSecondarySource] = useState("");
   const [manualTargetPrimaryMaxStaleness, setManualTargetPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
@@ -5929,6 +6044,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       const [
         configured,
         source,
+        quoteToken,
         primarySource,
         secondarySource,
         ,
@@ -5943,6 +6059,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         quality: assetQualityForAddress(target.address),
         pricingConfig: {
           source,
+          quoteToken,
           primarySource,
           secondarySource,
           primaryMaxStaleness,
@@ -6121,6 +6238,9 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     const assetAddress = manualTargetAsset as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualTargetPricingSource,
+      quoteToken: manualTargetPricingSource !== 0 && isAddress(manualTargetQuoteToken)
+        ? manualTargetQuoteToken as `0x${string}`
+        : zeroAddress,
       primarySource: manualTargetPrimarySource as `0x${string}`,
       secondarySource: manualTargetPricingSource !== 0 && isAddress(manualTargetSecondarySource)
         ? manualTargetSecondarySource as `0x${string}`
@@ -6386,6 +6506,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 assetAddress={manualTargetAsset}
                 config={{
                   source: manualTargetPricingSource,
+                  quoteToken: (manualTargetQuoteToken || zeroAddress) as `0x${string}`,
                   primarySource: (manualTargetPrimarySource || zeroAddress) as `0x${string}`,
                   secondarySource: (manualTargetSecondarySource || zeroAddress) as `0x${string}`,
                   primaryMaxStaleness: manualTargetPrimaryMaxStaleness,
@@ -6396,6 +6517,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 disabled={targetEditorLocked}
                 onChange={(pricingConfig) => {
                   setManualTargetPricingSource(pricingConfig.source);
+                  setManualTargetQuoteToken(pricingConfig.quoteToken === zeroAddress ? "" : pricingConfig.quoteToken);
                   setManualTargetPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
                   setManualTargetSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
                   setManualTargetPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
@@ -7815,6 +7937,7 @@ function CreateVaultView({
   );
   const [manualAssetAddress, setManualAssetAddress] = useState("");
   const [manualPricingSource, setManualPricingSource] = useState<PricingSource>(0);
+  const [manualQuoteToken, setManualQuoteToken] = useState("");
   const [manualPrimarySource, setManualPrimarySource] = useState("");
   const [manualSecondarySource, setManualSecondarySource] = useState("");
   const [manualPrimaryMaxStaleness, setManualPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
@@ -8226,6 +8349,9 @@ function CreateVaultView({
     const assetAddress = manualAssetAddress as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualPricingSource,
+      quoteToken: manualPricingSource !== 0 && isAddress(manualQuoteToken)
+        ? manualQuoteToken as `0x${string}`
+        : zeroAddress,
       primarySource: manualPrimarySource as `0x${string}`,
       secondarySource: manualPricingSource !== 0 && isAddress(manualSecondarySource)
         ? manualSecondarySource as `0x${string}`
@@ -8799,6 +8925,7 @@ function CreateVaultView({
                       assetAddress={manualAssetAddress}
                       config={{
                         source: manualPricingSource,
+                        quoteToken: (manualQuoteToken || zeroAddress) as `0x${string}`,
                         primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
                         secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
                         primaryMaxStaleness: manualPrimaryMaxStaleness,
@@ -8808,6 +8935,7 @@ function CreateVaultView({
                       }}
                       onChange={(pricingConfig) => {
                         setManualPricingSource(pricingConfig.source);
+                        setManualQuoteToken(pricingConfig.quoteToken === zeroAddress ? "" : pricingConfig.quoteToken);
                         setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
                         setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
                         setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
@@ -9406,7 +9534,7 @@ function WalletView({
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
                 <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} ticker={position.symbol} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
-                <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USDG using each asset's active protocol feed or pinned Uniswap V3 TWAP route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
+                <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's pinned pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
               </tr>)}</tbody>
             </table></div> : <div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div>}
           </section>

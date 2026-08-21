@@ -8,16 +8,18 @@ export type ApprovedPricingConfig =
       validationMode: 0 | 1;
     }
   | {
-      source: "chainlink-weth";
-      assetWethFeedAddress: string;
-      assetWethMaxStaleness: number;
-      assetWethValidationMode: 0 | 1;
-      wethUsdFeedAddress: string;
-      wethUsdMaxStaleness: number;
-      wethUsdValidationMode: 0 | 1;
+      source: "chainlink-composed";
+      quoteToken: string;
+      assetQuoteFeedAddress: string;
+      assetQuoteMaxStaleness: number;
+      assetQuoteValidationMode: 0 | 1;
+      quoteUsdFeedAddress: string;
+      quoteUsdMaxStaleness: number;
+      quoteUsdValidationMode: 0 | 1;
     }
   | {
       source: "uniswap-v3";
+      quoteToken: string;
       poolAddress: string;
       maxStaleness: number;
       validationMode: 0;
@@ -28,6 +30,7 @@ export type ApprovedPricingConfig =
 
 export type NumericPricingConfig = {
   source: 0 | 1 | 2;
+  quoteToken: string;
   primarySource: string;
   secondarySource: string;
   primaryMaxStaleness: number;
@@ -63,6 +66,7 @@ export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPr
   if (config.source === "chainlink-direct") {
     return {
       source: 0,
+      quoteToken: ZERO_ADDRESS,
       primarySource: config.feedAddress,
       secondarySource: ZERO_ADDRESS,
       primaryMaxStaleness: config.maxStaleness,
@@ -71,19 +75,21 @@ export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPr
       secondaryValidationMode: 0,
     };
   }
-  if (config.source === "chainlink-weth") {
+  if (config.source === "chainlink-composed") {
     return {
       source: 1,
-      primarySource: config.assetWethFeedAddress,
-      secondarySource: config.wethUsdFeedAddress,
-      primaryMaxStaleness: config.assetWethMaxStaleness,
-      secondaryMaxStaleness: config.wethUsdMaxStaleness,
-      primaryValidationMode: config.assetWethValidationMode,
-      secondaryValidationMode: config.wethUsdValidationMode,
+      quoteToken: config.quoteToken,
+      primarySource: config.assetQuoteFeedAddress,
+      secondarySource: config.quoteUsdFeedAddress,
+      primaryMaxStaleness: config.assetQuoteMaxStaleness,
+      secondaryMaxStaleness: config.quoteUsdMaxStaleness,
+      primaryValidationMode: config.assetQuoteValidationMode,
+      secondaryValidationMode: config.quoteUsdValidationMode,
     };
   }
   return {
     source: 2,
+    quoteToken: config.quoteToken,
     primarySource: config.poolAddress,
     secondarySource: config.quoteUsdFeedAddress,
     primaryMaxStaleness: config.maxStaleness,
@@ -99,6 +105,7 @@ export function approvedPricingConfigsFor(chainId: number, tokenAddress: string)
 
 export function pricingConfigsMatch(left: NumericPricingConfig, right: NumericPricingConfig): boolean {
   return left.source === right.source
+    && sameAddress(left.quoteToken, right.quoteToken)
     && sameAddress(left.primarySource, right.primarySource)
     && sameAddress(left.secondarySource, right.secondarySource)
     && left.primaryValidationMode === right.primaryValidationMode

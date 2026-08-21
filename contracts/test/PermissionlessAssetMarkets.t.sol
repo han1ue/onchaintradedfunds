@@ -127,6 +127,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
     MockStockToken private secondAsset;
     MockStockToken private weth;
     MockStockToken private usdg;
+    MockPriceFeed private wethUsdFeed;
+    MockPriceFeed private usdgUsdFeed;
 
     function setUp() public {
         vm.warp(1_700_000_000);
@@ -135,9 +137,19 @@ contract PermissionlessAssetMarketsTest is TestBase {
         secondAsset = new MockStockToken("Second", "SECOND", 18);
         weth = new MockStockToken("Wrapped Ether", "WETH", 18);
         usdg = new MockStockToken("Global Dollar", "USDG", 6);
+        wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
+        usdgUsdFeed = new MockPriceFeed(8, 1_00000000);
         v3Factory = new MockPermissionlessV3Factory();
         markets = new AssetMarketRegistry(
             address(this), address(v3Factory), address(weth), address(usdg)
+        );
+        markets.registerQuoteToken(
+            address(weth), address(wethUsdFeed), 2 hours,
+            OracleValidationMode.StandardChainlink, true, true
+        );
+        markets.registerQuoteToken(
+            address(usdg), address(usdgUsdFeed), 2 hours,
+            OracleValidationMode.StandardChainlink, true, true
         );
     }
 
@@ -413,13 +425,13 @@ contract PermissionlessAssetMarketsTest is TestBase {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPermissionlessV3Pool pool = v3Factory.createPool(address(asset), address(weth), 500);
-        MockPriceFeed wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.UniswapV3Twap,
+            quoteToken: address(weth),
             primarySource: address(pool),
             secondarySource: address(wethUsdFeed),
             primaryMaxStaleness: 2 hours,
-            secondaryMaxStaleness: 1 hours,
+            secondaryMaxStaleness: 2 hours,
             primaryValidationMode: OracleValidationMode.StandardChainlink,
             secondaryValidationMode: OracleValidationMode.StandardChainlink
         });
@@ -444,9 +456,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
-        MockPriceFeed wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetWeth,
+            source: PricingSource.ChainlinkAssetQuote,
+            quoteToken: address(weth),
             primarySource: address(assetWethFeed),
             secondarySource: address(wethUsdFeed),
             primaryMaxStaleness: 4 hours,
@@ -476,12 +488,135 @@ contract PermissionlessAssetMarketsTest is TestBase {
         assertEq(uint256(pinnedAnswer), 6_000_00000000);
     }
 
+    function testRegisteredQuotesSupportUsdgAndAdminAddedTokenWithoutRedirectingPins() public {
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
+
+        MockPriceFeed assetUsdgFeed = new MockPriceFeed(8, 4_00000000);
+        AssetPricingConfig memory usdgComposed = AssetPricingConfig({
+            source: PricingSource.ChainlinkAssetQuote,
+            quoteToken: address(usdg),
+            primarySource: address(assetUsdgFeed),
+            secondarySource: address(usdgUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
+        });
+        (address usdgNormalized,,,,,) = resolver.resolvePricing(address(asset), usdgComposed);
+        (, int256 usdgAnswer,,,) = ChainlinkRoutePriceFeed(usdgNormalized).latestRoundData();
+        assertEq(uint256(usdgAnswer), 4_00000000);
+
+        MockPermissionlessV3Pool usdgPool =
+            v3Factory.createPool(address(secondAsset), address(usdg), 500);
+        AssetPricingConfig memory usdgV3 = AssetPricingConfig({
+            source: PricingSource.UniswapV3Twap,
+            quoteToken: address(usdg),
+            primarySource: address(usdgPool),
+            secondarySource: address(usdgUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
+        });
+        (address usdgV3Feed,,,,,) = resolver.resolvePricing(address(secondAsset), usdgV3);
+        (, int256 usdgV3Answer,,,) = UniswapV3RoutePriceFeed(usdgV3Feed).latestRoundData();
+        assertEq(uint256(usdgV3Answer), 1_00000000);
+    }
+
+    function testAdminAddedQuoteSupportsComposedAndV3WithoutRedirectingPins() public {
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
+
+        MockStockToken thirdQuote = new MockStockToken("Third Quote", "THIRD", 18);
+        MockPriceFeed thirdUsdFeed = new MockPriceFeed(8, 2_00000000);
+        markets.registerQuoteToken(
+            address(thirdQuote), address(thirdUsdFeed), 2 hours,
+            OracleValidationMode.StandardChainlink, true, true
+        );
+        MockPriceFeed assetThirdFeed = new MockPriceFeed(18, 3 ether);
+        AssetPricingConfig memory thirdComposed = AssetPricingConfig({
+            source: PricingSource.ChainlinkAssetQuote,
+            quoteToken: address(thirdQuote),
+            primarySource: address(assetThirdFeed),
+            secondarySource: address(thirdUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
+        });
+        (address pinnedThirdFeed,,,,,) = resolver.resolvePricing(address(asset), thirdComposed);
+        (, int256 thirdAnswer,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
+        assertEq(uint256(thirdAnswer), 6_00000000);
+
+        MockPermissionlessV3Pool thirdPool =
+            v3Factory.createPool(address(secondAsset), address(thirdQuote), 500);
+        AssetPricingConfig memory thirdV3 = AssetPricingConfig({
+            source: PricingSource.UniswapV3Twap,
+            quoteToken: address(thirdQuote),
+            primarySource: address(thirdPool),
+            secondarySource: address(thirdUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
+        });
+        (address thirdV3Feed,,,,,) = resolver.resolvePricing(address(secondAsset), thirdV3);
+        assertTrue(thirdV3Feed.code.length != 0);
+
+        markets.setQuoteTokenEnabled(address(thirdQuote), false);
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
+        resolver.validatePricing(address(asset), thirdComposed);
+        (, int256 stillPinned,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
+        assertEq(uint256(stillPinned), 6_00000000);
+
+        MockPriceFeed replacementThirdUsd = new MockPriceFeed(8, 9_00000000);
+        markets.registerQuoteToken(
+            address(thirdQuote), address(replacementThirdUsd), 1 hours,
+            OracleValidationMode.StandardChainlink, true, true
+        );
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
+        resolver.validatePricing(address(asset), thirdComposed);
+        (, int256 notRedirected,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
+        assertEq(uint256(notRedirected), 6_00000000);
+    }
+
+    function testResolverRejectsUnregisteredDisabledAndMismatchedQuoteConfiguration() public {
+        PortfolioCalculator calculator = new PortfolioCalculator();
+        AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
+        MockStockToken unknownQuote = new MockStockToken("Unknown", "UNKNOWN", 18);
+        MockPriceFeed primary = new MockPriceFeed(18, 1 ether);
+        AssetPricingConfig memory config = AssetPricingConfig({
+            source: PricingSource.ChainlinkAssetQuote,
+            quoteToken: address(unknownQuote),
+            primarySource: address(primary),
+            secondarySource: address(wethUsdFeed),
+            primaryMaxStaleness: 2 hours,
+            secondaryMaxStaleness: 2 hours,
+            primaryValidationMode: OracleValidationMode.StandardChainlink,
+            secondaryValidationMode: OracleValidationMode.StandardChainlink
+        });
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigNotFound.selector);
+        resolver.validatePricing(address(asset), config);
+
+        config.quoteToken = address(weth);
+        config.secondaryMaxStaleness = 1 hours;
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
+        resolver.validatePricing(address(asset), config);
+
+        config.secondaryMaxStaleness = 2 hours;
+        markets.setQuoteTokenEnabled(address(weth), false);
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
+        resolver.validatePricing(address(asset), config);
+    }
+
     function testResolverAcceptsAnyMechanicallyValidDirectFeed() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed suppliedFeed = new MockPriceFeed(8, 101_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: address(suppliedFeed),
             secondarySource: address(0),
             primaryMaxStaleness: 25 hours,
@@ -501,6 +636,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: address(feed),
             secondarySource: address(0),
             primaryMaxStaleness: 1 hours,
@@ -520,6 +656,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         MockPriceFeed directFeed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory direct = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: address(directFeed),
             secondarySource: address(0),
             primaryMaxStaleness: 1 hours,

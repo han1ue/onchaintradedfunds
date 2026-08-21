@@ -5,15 +5,17 @@ import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 
 enum PricingSource {
     ChainlinkDirect,
-    ChainlinkAssetWeth,
+    ChainlinkAssetQuote,
     UniswapV3Twap
 }
 
 /// @notice User-supplied pricing configuration pinned when an asset first enters an OTF.
-/// @dev `primarySource` is the direct feed, asset/WETH feed, or V3 asset/quote pool.
+/// @dev `primarySource` is the direct feed, asset/quote feed, or V3 asset/quote pool.
 ///      `secondarySource` is the quote-token/USD feed for composed Chainlink and V3 routes.
+///      `quoteToken` is zero for direct pricing and explicit for composed and V3 routes.
 struct AssetPricingConfig {
     PricingSource source;
+    address quoteToken;
     address primarySource;
     address secondarySource;
     uint32 primaryMaxStaleness;

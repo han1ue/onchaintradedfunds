@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
+import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { IUniswapV3OraclePool } from "./UniswapV3RoutePriceFeed.sol";
 
 interface IUniswapV3MarketPool is IUniswapV3OraclePool {
@@ -29,6 +30,15 @@ interface IUniswapV3MarketFactory {
 }
 
 contract AssetMarketRegistry is IAssetMarketRegistry {
+    struct QuoteTokenVersion {
+        address usdFeed;
+        uint32 maxStaleness;
+        OracleValidationMode validationMode;
+        bool enabled;
+        bool allowComposedChainlink;
+        bool allowV3Twap;
+    }
+
     struct Market {
         address asset;
         address pool;
@@ -52,6 +62,10 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     error InsufficientObservationCapacity(address pool, uint16 current, uint16 required);
     error InsufficientTwapHistory(address pool, uint32 requiredWindow);
     error MarketNotFound(bytes32 marketId);
+    error InvalidQuoteToken(address quoteToken);
+    error QuoteTokenConfigNotFound(address quoteToken);
+    error QuoteTokenConfigMismatch(address quoteToken);
+    error InvalidMaxStaleness(uint32 supplied);
 
     event MarketRegistered(
         bytes32 indexed marketId,
@@ -62,6 +76,16 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address registrar
     );
     event MarketStatusChanged(bytes32 indexed marketId, bool active);
+    event QuoteTokenRegistered(
+        address indexed quoteToken,
+        uint32 indexed version,
+        address indexed usdFeed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode,
+        bool allowComposedChainlink,
+        bool allowV3Twap
+    );
+    event QuoteTokenStatusChanged(address indexed quoteToken, uint32 indexed version, bool enabled);
     event OwnershipTransferStarted(address indexed owner, address indexed pendingOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
@@ -75,6 +99,9 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     address public immutable usdg;
 
     mapping(bytes32 => Market) private _marketFor;
+    mapping(address => uint32) public currentQuoteTokenVersion;
+    mapping(address => mapping(uint32 => QuoteTokenVersion)) private _quoteTokenVersion;
+    address[] private _quoteTokens;
 
     constructor(address initialOwner, address uniswapV3Factory_, address weth_, address usdg_) {
         if (
@@ -96,6 +123,81 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
         _;
+    }
+
+    function registerQuoteToken(
+        address quoteToken,
+        address usdFeed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode,
+        bool allowComposedChainlink,
+        bool allowV3Twap
+    ) external onlyOwner returns (uint32 version) {
+        if (quoteToken == address(0) || quoteToken.code.length == 0) {
+            revert InvalidQuoteToken(quoteToken);
+        }
+        if (usdFeed == address(0) || usdFeed.code.length == 0) revert InvalidDependency(usdFeed);
+        if (maxStaleness == 0 || maxStaleness > MAX_ORACLE_STALENESS) {
+            revert InvalidMaxStaleness(maxStaleness);
+        }
+        _tokenDecimals(quoteToken);
+        version = currentQuoteTokenVersion[quoteToken] + 1;
+        if (version == 1) _quoteTokens.push(quoteToken);
+        currentQuoteTokenVersion[quoteToken] = version;
+        _quoteTokenVersion[quoteToken][version] = QuoteTokenVersion({
+            usdFeed: usdFeed,
+            maxStaleness: maxStaleness,
+            validationMode: validationMode,
+            enabled: true,
+            allowComposedChainlink: allowComposedChainlink,
+            allowV3Twap: allowV3Twap
+        });
+        emit QuoteTokenRegistered(
+            quoteToken,
+            version,
+            usdFeed,
+            maxStaleness,
+            validationMode,
+            allowComposedChainlink,
+            allowV3Twap
+        );
+    }
+
+    function setQuoteTokenEnabled(address quoteToken, bool enabled) external onlyOwner {
+        uint32 version = currentQuoteTokenVersion[quoteToken];
+        if (version == 0) revert QuoteTokenConfigNotFound(quoteToken);
+        _quoteTokenVersion[quoteToken][version].enabled = enabled;
+        emit QuoteTokenStatusChanged(quoteToken, version, enabled);
+    }
+
+    function quoteTokenConfig(address quoteToken, uint32 version)
+        external
+        view
+        returns (QuoteTokenVersion memory)
+    {
+        return _quoteTokenVersion[quoteToken][version];
+    }
+
+    function quoteTokens() external view returns (address[] memory) {
+        return _quoteTokens;
+    }
+
+    function currentQuoteTokenConfig(address quoteToken)
+        external
+        view
+        returns (QuoteTokenVersion memory)
+    {
+        return _quoteTokenVersion[quoteToken][currentQuoteTokenVersion[quoteToken]];
+    }
+
+    function validateQuoteToken(
+        address quoteToken,
+        address usdFeed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode,
+        bool forV3
+    ) external view {
+        _validateQuoteToken(quoteToken, usdFeed, maxStaleness, validationMode, forV3);
     }
 
     function registerV3Market(address asset, address pool) external returns (bytes32 marketId) {
@@ -162,6 +264,32 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         if (tokenDecimals != 18) revert UnsupportedAssetDecimals(asset, tokenDecimals);
     }
 
+    function _validateQuoteToken(
+        address quoteToken,
+        address usdFeed,
+        uint32 maxStaleness,
+        OracleValidationMode validationMode,
+        bool forV3
+    ) private view {
+        uint32 version = currentQuoteTokenVersion[quoteToken];
+        if (version == 0) revert QuoteTokenConfigNotFound(quoteToken);
+        QuoteTokenVersion storage config = _quoteTokenVersion[quoteToken][version];
+        if (
+            !config.enabled || config.usdFeed != usdFeed || config.maxStaleness != maxStaleness
+                || config.validationMode != validationMode
+                || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)
+        ) revert QuoteTokenConfigMismatch(quoteToken);
+    }
+
+    function _tokenDecimals(address token) private view returns (uint8 tokenDecimals) {
+        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
+            tokenDecimals = decimals_;
+        } catch {
+            revert TokenDecimalsUnavailable(token);
+        }
+        if (tokenDecimals > 36) revert UnsupportedQuoteDecimals(token, tokenDecimals, 36);
+    }
+
     function _requireDecimals(address token, uint8 required) private view {
         uint8 tokenDecimals;
         try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
@@ -222,7 +350,10 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         if (token0 == asset) other = token1;
         else if (token1 == asset) other = token0;
         else revert InvalidPoolPair(pool, asset);
-        if (other != weth && other != usdg) revert InvalidPoolPair(pool, asset);
+        uint32 version = currentQuoteTokenVersion[other];
+        if (version == 0) revert InvalidQuoteToken(other);
+        QuoteTokenVersion storage config = _quoteTokenVersion[other][version];
+        if (!config.enabled || !config.allowV3Twap) revert InvalidQuoteToken(other);
         return other;
     }
 }

@@ -129,6 +129,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         returns (
             bool configured,
             PricingSource source,
+            address quoteToken,
             address primarySource,
             address secondarySource,
             address normalizedPriceFeed,
@@ -140,6 +141,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     {
         configured = _pricingConfiguredForAsset[asset];
         source = PricingSource(_pricingSourceForAsset[asset]);
+        quoteToken = _quoteTokenForAsset[asset];
         primarySource = _primaryPriceSourceForAsset[asset];
         secondarySource = _secondaryPriceSourceForAsset[asset];
         normalizedPriceFeed = _priceFeedForAsset[asset];

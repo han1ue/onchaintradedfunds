@@ -1,5 +1,7 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
+  "requiresRedeployment": true,
+  "redeploymentReason": "The explicit quoteToken pricing ABI and quote-token registry are not deployed at the recorded addresses.",
   "network": "robinhood-testnet",
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
@@ -264,7 +266,7 @@
   "pricingConfiguration": {
     "sources": [
       "ChainlinkDirect",
-      "ChainlinkAssetWeth",
+      "ChainlinkAssetQuote",
       "UniswapV3Twap"
     ],
     "vaultInitField": "initialPricingConfigs",

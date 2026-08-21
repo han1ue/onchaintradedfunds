@@ -301,9 +301,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     address internal _assetMarketRegistry;
     mapping(address => bytes32) internal _marketIdForAsset;
     mapping(address => address) internal _priceFeedForAsset;
-    bytes32[] internal _pendingMarketIds;
 
-    // Version-3 storage. Pricing identity is pinned while an asset remains tracked and is never
+    // Pricing identity is pinned while an asset remains tracked and is never
     // read through a mutable global source after selection. Fully pruned assets release their
     // pricing identity so a later strategy may reintroduce them with a newly validated source.
     // The legacy market fields above retain their original slots.
@@ -318,6 +317,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     AssetPricingConfig[] internal _pendingPricingConfigs;
     mapping(address => uint32) internal _primaryMaxStalenessForAsset;
     mapping(address => uint8) internal _primaryOracleValidationModeForAsset;
+    mapping(address => address) internal _quoteTokenForAsset;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();

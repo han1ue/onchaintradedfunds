@@ -125,6 +125,9 @@ const suggestedInitialPricingConfigs =
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
 const wethAddress = parseAddress("externalContracts.weth", externalContracts.weth);
+const wethUsdFeedAddress = parseAddress("WETH_USD_FEED_ADDRESS", requiredEnv("WETH_USD_FEED_ADDRESS"));
+const usdgUsdFeedAddress = parseAddress("USDG_USD_FEED_ADDRESS", requiredEnv("USDG_USD_FEED_ADDRESS"));
+const quoteUsdMaxStaleness = Number(env("QUOTE_USD_MAX_STALENESS_SECONDS", "3600"));
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
   externalContracts.uniswapV3Factory,
@@ -213,6 +216,25 @@ const assetMarketRegistry = await deployContract({
     usdgAddress,
   ],
 });
+const assetMarketRegistryAbi = contractArtifact("AssetMarketRegistry").abi;
+const quoteTokenRegistrations = await Promise.all([
+  [wethAddress, wethUsdFeedAddress, "WETH"],
+  [usdgAddress, usdgUsdFeedAddress, "USDG"],
+].map(async ([quoteToken, usdFeed, symbol]) => ({
+  symbol,
+  quoteToken,
+  usdFeed,
+  maxStaleness: quoteUsdMaxStaleness,
+  validationMode: 0,
+  allowComposedChainlink: true,
+  allowV3Twap: true,
+  ...(await writeContract({
+    address: assetMarketRegistry.address,
+    abi: assetMarketRegistryAbi,
+    functionName: "registerQuoteToken",
+    args: [quoteToken, usdFeed, quoteUsdMaxStaleness, 0, true, true],
+  })),
+})));
 const pricingResolver = await deployContract({
   name: "AssetPricingResolver",
   args: [assetMarketRegistry.address, portfolioCalculator.address],
@@ -313,7 +335,8 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 
 const archivedDeployment = archiveExistingDeployment();
 const deployment = {
-  schemaVersion: 4,
+  schemaVersion: 5,
+  requiresRedeployment: false,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -355,7 +378,8 @@ const deployment = {
     constituentPools: [],
   },
   pricingConfiguration: {
-    sources: ["ChainlinkDirect", "ChainlinkAssetWeth", "UniswapV3Twap"],
+    sources: ["ChainlinkDirect", "ChainlinkAssetQuote", "UniswapV3Twap"],
+    quoteTokens: quoteTokenRegistrations,
     vaultInitField: "initialPricingConfigs",
     suggestedInitialPricingConfigs,
     maximumOracleStalenessSeconds: 604800,

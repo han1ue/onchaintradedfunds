@@ -9,7 +9,7 @@ interface IChainlinkPauseStatus {
     function oraclePaused() external view returns (bool);
 }
 
-/// @notice Normalizes an ASSET/WETH feed composed with WETH/USD into an 8-decimal USD feed.
+/// @notice Normalizes an ASSET/QUOTE feed composed with QUOTE/USD into an 8-decimal USD feed.
 /// @dev Both pinned legs are validated independently on every read. No fallback source exists.
 contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     uint8 private constant OUTPUT_DECIMALS = 8;
@@ -82,7 +82,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     }
 
     function description() external pure returns (string memory) {
-        return "OTF Chainlink ASSET/WETH x WETH/USD";
+        return "OTF Chainlink ASSET/QUOTE x QUOTE/USD";
     }
 
     function version() external pure returns (uint256) {

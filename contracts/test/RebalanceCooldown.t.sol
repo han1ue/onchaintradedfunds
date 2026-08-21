@@ -294,6 +294,7 @@ contract RebalanceCooldownTest is TestBase {
         AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
         pricingConfigs[0] = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: address(feedA),
             secondarySource: address(0),
             primaryMaxStaleness: 25 hours,
@@ -303,6 +304,7 @@ contract RebalanceCooldownTest is TestBase {
         });
         pricingConfigs[1] = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: address(feedB),
             secondarySource: address(0),
             primaryMaxStaleness: 25 hours,

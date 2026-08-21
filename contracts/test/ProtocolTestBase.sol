@@ -241,6 +241,7 @@ abstract contract ProtocolTestBase is TestBase {
     {
         config = AssetPricingConfig({
             source: PricingSource.ChainlinkDirect,
+            quoteToken: address(0),
             primarySource: feed,
             secondarySource: address(0),
             primaryMaxStaleness: 25 hours,

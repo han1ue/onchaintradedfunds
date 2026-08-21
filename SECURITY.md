@@ -175,8 +175,8 @@ Risk cases:
 
 - A direct feed mapped to the wrong base or quote, including a reversed pair.
 - One spoofed, stale, nonpositive, incomplete, future-dated, or unsupported-decimal leg in a
-  composed asset/WETH × WETH/USD route.
-- An asset/WETH feed being treated as WETH/asset, or any reliance on mutable `description()` text.
+  composed asset/quoteToken × quoteToken/USD route.
+- An asset/quoteToken feed being treated as quoteToken/asset, or any reliance on mutable `description()` text.
 - A V3 pool from the wrong factory, pair, fee tier, or quote token; an uninitialized pool; inadequate
   observation capacity or history; and manipulation within the configured TWAP window.
 - A creator selecting a mechanically valid feed for the wrong pair. Permissionless contract checks
@@ -186,12 +186,19 @@ Risk cases:
 - Sequencer downtime. Robinhood recommends an L2 sequencer-uptime check, which is not yet
   implemented and is a production limitation.
 
-Direct and composed Chainlink routes are permissionless. A composed wrapper validates both pinned legs on
+Direct Chainlink routes and composed primary legs are creator-selected. Composed routes require an
+enabled registered quote token and its exact current quote/USD configuration. A composed wrapper validates both pinned legs on
 every read and exposes the older timestamp. Every feed check covers answer, round, timestamp,
 the creator-selected staleness bound (capped at seven days), and decimals. The frontend marks a
 configuration Verified only when asset, route, and validation modes match its manifest and every
 submitted limit is nonzero and no greater than the manifest maximum. Runtime staleness and pause
 health do not change that informational status.
+
+USD is the accounting unit for every oracle-dependent protocol calculation. WETH and USDG are
+initially registered as peer pricing quote tokens. USDG's settlement and official OTF/USDG market
+roles do not make it the accounting numeraire. Quote-token registration, versioning, or disablement
+affects future selections only; existing normalized wrappers retain their concrete sources. The
+registry cannot prove Chainlink pair semantics from feed descriptions.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
 multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token

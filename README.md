@@ -155,12 +155,20 @@ flowchart LR
 
 `AssetPricingResolver`
 
-- Accepts a user-supplied direct Chainlink, composed asset/WETH × WETH/USD, or Uniswap V3 TWAP
+- Uses USD as the protocol accounting unit for NAV, weights, rebalance checks, challenges, fees,
+  incentives, and oracle-valued loss limits. USDG remains a settlement token and official market pair.
+- Accepts a user-supplied direct Chainlink asset/USD, composed asset/quoteToken × quoteToken/USD, or Uniswap V3 TWAP
   configuration when an asset first enters an OTF.
 - Mechanically validates creator-selected Chainlink feeds, per-leg freshness limits and validation
   modes, or the canonical V3 factory, pair, fee, initialization, observation capacity, history, and
   independently pinned quote-token/USD feed requirements.
 - Returns a normalized feed that the OTF pins without a fallback source.
+
+`AssetMarketRegistry` also owns the versioned pricing quote-token registry. WETH and USDG are the
+initial peer quote tokens. The owner may register future quote tokens or disable a token for future
+selections. Each selection must match the current token/feed/staleness/mode/route permissions, while
+existing OTF wrappers remain permanently pinned and never consult later registry state. Chainlink
+pair semantics cannot be proven from `description()` and remain an offchain frontend/governance duty.
 
 `FeeCollector`
 
@@ -287,8 +295,8 @@ The vault initializer:
 - Validates that every asset is a deployed contract with exactly 18 decimals, that arrays align,
   and that there are no duplicate assets.
 - Resolves and pins each submitted Chainlink route or V3 TWAP configuration. A direct Chainlink
-  route must match the trusted asset/USD pair; a composed route must match both asset/WETH and
-  WETH/USD; a V3 source must be the canonical factory pool for the exact pair and fee.
+  route has no quote token; composed and V3 routes must select an enabled registered quote token
+  and match its pinned quoteToken/USD feed, limits, and validation mode.
 - Validates weight totals equal 10,000 bps.
 - Validates min, max, and count constraints.
 - Validates exact initial balances arrived.
@@ -554,10 +562,10 @@ The vault rejects:
 - Unsupported token or oracle decimals.
 
 Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts any mechanically valid
-asset/USD feed selected by the creator. `ChainlinkAssetWeth` independently accepts and checks the
-creator-selected asset/WETH and WETH/USD legs, including their feed addresses, staleness limits, and
+asset/USD feed selected by the creator. `ChainlinkAssetQuote` independently accepts and checks the
+creator-selected asset/quoteToken and quoteToken/USD legs, including token and feed addresses, staleness limits, and
 validation modes, multiplies them into an 8-decimal USD result, and exposes the older leg's
-timestamp. `UniswapV3Twap` accepts an asset/WETH or asset/USDG pool only after canonical-factory,
+timestamp. `UniswapV3Twap` accepts an asset/registeredQuote pool only after canonical-factory,
 exact pair and fee, initialization, observation-capacity, and full-history checks, then composes
 that TWAP with the creator-pinned quote-token/USD Chainlink feed. V4 is not a pricing source.
 
@@ -766,7 +774,7 @@ This is a deployment migration, not an in-place upgrade:
 
 WETH, USDG, and all four V3-compatible addresses are required. Every
 new OTF receives an official OTF/USDG pool during its factory transaction, while constituent pricing
-may independently use direct Chainlink, composed Chainlink, or a canonical asset/WETH or asset/USDG
+may independently use direct Chainlink, composed Chainlink, or a canonical asset/registeredQuote
 TWAP composed with a pinned quote-token/USD feed. Robinhood testnet currently points these V3 fields
 at Synthra; production addresses must be verified independently.
 
@@ -830,7 +838,7 @@ official and active; it does not prove base/quote orientation. No Robinhood depl
 pair-addressed Chainlink Feed Registry is documented, so semantic pair identity remains a creator
 and frontend-manifest responsibility. Feed `description()` is never identity evidence.
 The current [official Robinhood feed directory](https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json)
-predominantly exposes direct tokenized-equity/USD feeds; composed asset/WETH routes remain supported
+predominantly exposes direct tokenized-equity/USD feeds; composed asset/registeredQuote routes remain supported
 only when both exact legs are independently reviewed.
 
 Tokenized-equity answers already include the Stock Token `uiMultiplier()` for dividends, splits,

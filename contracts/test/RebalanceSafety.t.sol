@@ -485,7 +485,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.currentWeight(address(tokenC)), 5_000);
         assertEq(vault.previewMint(ONE).length, 2);
 
-        (bool oldPricingStillConfigured,,,,,,,,) = vault.pricingConfigForAsset(address(tokenB));
+        (bool oldPricingStillConfigured,,,,,,,,,) = vault.pricingConfigForAsset(address(tokenB));
         assertFalse(oldPricingStillConfigured);
 
         MockPriceFeed replacementFeed = new MockPriceFeed(8, 100_00000000);
@@ -514,7 +514,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         _refreshPrice(replacementFeed);
         vault.activatePendingStrategy();
 
-        (bool readdedPricingConfigured,, address readdedPrimarySource,,,,,,) =
+        (bool readdedPricingConfigured,,, address readdedPrimarySource,,,,,,) =
             vault.pricingConfigForAsset(address(tokenB));
         assertTrue(readdedPricingConfigured);
         assertEq(readdedPrimarySource, address(replacementFeed));
@@ -538,11 +538,11 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.proposeStrategyWithPricing(
             assets, weights, pricingConfigs, "Stage a new asset without pinning before activation."
         );
-        (bool configuredBefore,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
+        (bool configuredBefore,,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
         assertFalse(configuredBefore);
 
         vault.cancelPendingStrategy();
-        (bool configuredAfterCancellation,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
+        (bool configuredAfterCancellation,,,,,,,,,) = vault.pricingConfigForAsset(address(tokenC));
         assertFalse(configuredAfterCancellation);
 
         vault.proposeStrategyWithPricing(
@@ -555,6 +555,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         (
             bool configured,
             PricingSource source,
+            address quoteToken,
             address primarySource,
             address secondarySource,
             address normalizedPriceFeed,
@@ -565,6 +566,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         ) = vault.pricingConfigForAsset(address(tokenC));
         assertTrue(configured);
         assertEq(uint256(source), uint256(PricingSource.ChainlinkDirect));
+        assertEq(quoteToken, address(0));
         assertEq(primarySource, address(feedC));
         assertEq(secondarySource, address(0));
         assertEq(normalizedPriceFeed, address(feedC));

@@ -94,7 +94,7 @@ Attempt to falsify each property:
     spoofed and reversed relationships fail without consulting `description()`.
 17. Every constituent pins its concrete normalized feed or canonical V3 wrapper, registry changes
     cannot redirect it, and no source falls back automatically.
-18. V3 pricing accepts only the canonical factory's exact asset/WETH or asset/USDG pool and fee after
+18. V3 pricing accepts only the canonical factory's exact asset/registeredQuote pool and fee after
     initialization, observation-capacity, and full-history checks; V4 is absent.
 19. Pricing and execution are independent: adapter data is an explicit path, not a market ID, and
     may use different pools and fees while preserving endpoints, settlement, deltas, and allowances.

@@ -36,6 +36,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address indexed asset,
         PricingSource indexed source,
         address indexed priceFeed,
+        address quoteToken,
         address primarySource,
         address secondarySource,
         bytes32 marketId
@@ -223,6 +224,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (
             bool configured,
             PricingSource source,
+            address quoteToken,
             address primarySource,
             address secondarySource,
             address normalizedPriceFeed,
@@ -235,6 +237,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         asset;
         configured;
         source;
+        quoteToken;
         primarySource;
         secondarySource;
         normalizedPriceFeed;
@@ -979,6 +982,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             if (config.primarySource == address(0)) return;
             if (
                 _pricingSourceForAsset[asset] != uint8(config.source)
+                    || _quoteTokenForAsset[asset] != config.quoteToken
                     || _primaryPriceSourceForAsset[asset] != config.primarySource
                     || _secondaryPriceSourceForAsset[asset] != config.secondarySource
                     || _primaryMaxStalenessForAsset[asset] != config.primaryMaxStaleness
@@ -1001,11 +1005,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         ) = _pricingResolver().resolvePricing(asset, config);
 
         _pricingSourceForAsset[asset] = uint8(config.source);
+        _quoteTokenForAsset[asset] = config.quoteToken;
         _primaryPriceSourceForAsset[asset] = config.primarySource;
         _secondaryPriceSourceForAsset[asset] = config.secondarySource;
         _priceFeedForAsset[asset] = normalizedFeed;
         _marketIdForAsset[asset] = marketId;
-        _maxStalenessForAsset[asset] = config.source == PricingSource.ChainlinkAssetWeth
+        _maxStalenessForAsset[asset] = config.source == PricingSource.ChainlinkAssetQuote
             ? (primaryStaleness > secondaryStaleness ? primaryStaleness : secondaryStaleness)
             : primaryStaleness;
         _oracleValidationModeForAsset[asset] = uint8(
@@ -1024,6 +1029,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             asset,
             config.source,
             normalizedFeed,
+            config.quoteToken,
             config.primarySource,
             config.secondarySource,
             marketId
@@ -1054,6 +1060,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         delete _marketIdForAsset[asset];
         delete _priceFeedForAsset[asset];
         delete _pricingSourceForAsset[asset];
+        delete _quoteTokenForAsset[asset];
         delete _primaryPriceSourceForAsset[asset];
         delete _secondaryPriceSourceForAsset[asset];
         delete _maxStalenessForAsset[asset];

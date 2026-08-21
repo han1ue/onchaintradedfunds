@@ -117,21 +117,30 @@ contract AssetPricingResolver is IAssetPricingResolver {
             );
         }
 
-        if (config.source == PricingSource.ChainlinkAssetWeth) {
+        if (config.source == PricingSource.ChainlinkAssetQuote) {
             if (config.secondarySource.code.length == 0) revert InvalidPricingConfig(asset);
             _requireMarketRegistry();
-            address weth = marketRegistry.weth();
             primaryStaleness = config.primaryMaxStaleness;
             secondaryStaleness = config.secondaryMaxStaleness;
             primaryMode = config.primaryValidationMode;
             secondaryMode = config.secondaryValidationMode;
+            address composedQuoteToken = config.quoteToken;
+            marketRegistry.validateQuoteToken(
+                composedQuoteToken,
+                config.secondarySource,
+                secondaryStaleness,
+                secondaryMode,
+                false
+            );
             _validateLeg(asset, config.primarySource, primaryStaleness, primaryMode);
-            _validateLeg(weth, config.secondarySource, secondaryStaleness, secondaryMode);
+            _validateLeg(
+                composedQuoteToken, config.secondarySource, secondaryStaleness, secondaryMode
+            );
             if (deployWrapper) {
                 normalizedFeed = address(
                     new ChainlinkRoutePriceFeed(
                         asset,
-                        weth,
+                        composedQuoteToken,
                         AggregatorV3Interface(config.primarySource),
                         AggregatorV3Interface(config.secondarySource),
                         primaryStaleness,
@@ -164,10 +173,14 @@ contract AssetPricingResolver is IAssetPricingResolver {
             revert InvalidAssetMarket(asset, marketId);
         }
         address quoteToken = marketRegistry.quoteTokenFor(marketId);
+        if (quoteToken != config.quoteToken) revert InvalidPricingConfig(asset);
         primaryStaleness = config.primaryMaxStaleness;
         secondaryStaleness = config.secondaryMaxStaleness;
         primaryMode = OracleValidationMode.StandardChainlink;
         secondaryMode = config.secondaryValidationMode;
+        marketRegistry.validateQuoteToken(
+            quoteToken, config.secondarySource, secondaryStaleness, secondaryMode, true
+        );
         _validateLeg(quoteToken, config.secondarySource, secondaryStaleness, secondaryMode);
         if (deployWrapper) {
             normalizedFeed = address(
@@ -223,7 +236,8 @@ contract AssetPricingResolver is IAssetPricingResolver {
         pure
     {
         if (
-            config.secondarySource != address(0) || config.secondaryMaxStaleness != 0
+            config.quoteToken != address(0) || config.secondarySource != address(0)
+                || config.secondaryMaxStaleness != 0
                 || config.secondaryValidationMode != OracleValidationMode.StandardChainlink
         ) revert InvalidPricingConfig(asset);
     }

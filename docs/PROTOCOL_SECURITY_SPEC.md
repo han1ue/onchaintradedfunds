@@ -90,7 +90,7 @@ calculator MUST NOT transfer assets, approve spenders, or mutate vault state.
 ### Pricing validation contracts
 
 `AssetPricingResolver` validates a caller-supplied `AssetPricingConfig` when an asset first enters an
-OTF. It MUST support exactly direct Chainlink, composed asset/WETH × WETH/USD Chainlink, and
+OTF. It MUST support direct Chainlink asset/USD, composed asset/registeredQuote × registeredQuote/USD Chainlink, and
 Uniswap V3 TWAP. Chainlink selection is permissionless and MUST mechanically validate each supplied
 feed, nonzero staleness limit (no more than seven days), and validation mode. `AssetMarketRegistry`
 validates and records canonical V3 pools used during a
@@ -187,9 +187,11 @@ The protocol owner MAY:
   reject a non-factory target.
 - Transfer factory or V3 market-registry ownership using their defined controls.
 
-The V3 market-registry owner MAY deprecate a pool for future selections. Such updates MUST NOT
-replace or disable an existing OTF's pinned source. No protocol role MAY approve, qualify, block,
-revoke, or remove an asset or Chainlink feed.
+The market-registry owner MAY register a new versioned quote-token/USD configuration, disable a
+quote token for future composed or V3 selections, or deprecate a pool for future selections. Such
+updates MUST NOT replace or disable an existing OTF's pinned source. WETH and USDG are the initial
+peer quote tokens. No protocol role MAY approve, qualify, block, revoke, or remove an asset or
+creator-selected primary Chainlink feed. Pair semantics remain an offchain verification duty.
 
 The protocol owner MUST NOT:
 
@@ -529,7 +531,7 @@ the OTF from the manager's own assets or fee revenue.
 
 ## 9. Oracle requirements
 
-`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetWeth`, and
+`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetQuote`, and
 `UniswapV3Twap`. A zero/default enum value is not sufficient validation: every required address and
 relationship MUST be checked. Uniswap V4 and every other source type MUST be rejected.
 

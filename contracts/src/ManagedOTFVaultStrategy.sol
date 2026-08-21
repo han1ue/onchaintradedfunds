@@ -759,7 +759,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     function _clearPendingStrategy() private {
         delete _pendingAssets;
         delete _pendingTargetWeightsBps;
-        delete _pendingMarketIds;
         delete _pendingPricingConfigs;
         delete _pendingStrategyRationale;
         strategyProposalPending = false;
@@ -778,6 +777,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             if (!_pricingConfiguredForAsset[asset]) continue;
             configs[i] = AssetPricingConfig({
                 source: PricingSource(_pricingSourceForAsset[asset]),
+                quoteToken: _quoteTokenForAsset[asset],
                 primarySource: _primaryPriceSourceForAsset[asset],
                 secondarySource: _secondaryPriceSourceForAsset[asset],
                 primaryMaxStaleness: _primaryMaxStalenessForAsset[asset],
@@ -799,14 +799,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         if (
             config.primarySource != address(0)
                 && (uint8(config.source) != _pricingSourceForAsset[asset]
-                    || config.primarySource != _primaryPriceSourceForAsset[asset]
-                    || config.secondarySource != _secondaryPriceSourceForAsset[asset]
-                    || config.primaryMaxStaleness != _primaryMaxStalenessForAsset[asset]
-                    || config.secondaryMaxStaleness != _secondaryMaxStalenessForAsset[asset]
-                    || uint8(config.primaryValidationMode)
-                        != _primaryOracleValidationModeForAsset[asset]
-                    || uint8(config.secondaryValidationMode)
-                        != _secondaryOracleValidationModeForAsset[asset])
+                    || config.primarySource != _primaryPriceSourceForAsset[asset])
         ) {
             revert AssetPricingAlreadyPinned(asset);
         }

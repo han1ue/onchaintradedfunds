@@ -215,6 +215,7 @@ export const managedOtfVaultAbi = [
         type: "tuple[]",
         components: [
           { name: "source", type: "uint8" },
+          { name: "quoteToken", type: "address" },
           { name: "primarySource", type: "address" },
           { name: "secondarySource", type: "address" },
           { name: "primaryMaxStaleness", type: "uint32" },
@@ -256,6 +257,7 @@ export const managedOtfVaultAbi = [
     outputs: [
       { name: "configured", type: "bool" },
       { name: "source", type: "uint8" },
+      { name: "quoteToken", type: "address" },
       { name: "primarySource", type: "address" },
       { name: "secondarySource", type: "address" },
       { name: "normalizedPriceFeed", type: "address" },
@@ -837,6 +839,7 @@ export const otfFactoryAbi = [
             type: "tuple[]",
             components: [
               { name: "source", type: "uint8" },
+              { name: "quoteToken", type: "address" },
               { name: "primarySource", type: "address" },
               { name: "secondarySource", type: "address" },
               { name: "primaryMaxStaleness", type: "uint32" },
