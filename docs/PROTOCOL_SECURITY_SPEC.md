@@ -329,8 +329,10 @@ revert the share burn, basket transfers, swaps, and approvals atomically.
 
 `proposeStrategy(newTokens, newWeights, rationale)` records a pending target and rationale using
 already-pinned asset pricing. `proposeStrategyWithPricing(newTokens, newWeights, pricingConfigs,
-rationale)` MUST be used when the proposal introduces a previously unpriced asset. Existing assets
-MUST repeat their pinned configuration exactly. Draft ERC-7621 callers MAY instead stage the
+rationale)` MUST be used when the proposal introduces a previously unpriced or fully pruned asset.
+Existing and retiring assets MUST repeat their pinned configuration exactly. Fully pruning an asset
+MUST clear its vault-specific pricing state so a later proposal can reintroduce it with a newly
+validated source. Draft ERC-7621 callers MAY instead stage the
 rationale with `setNextStrategyRationale` and consume it through `rebalance(newTokens, newWeights)`,
 but that two-argument selector MUST NOT introduce a previously unpriced asset. No proposal changes
 the active target, implies that trades ran, or implies that reserves match the proposed target.

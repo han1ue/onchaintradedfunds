@@ -485,6 +485,40 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.currentWeight(address(tokenC)), 5_000);
         assertEq(vault.previewMint(ONE).length, 2);
 
+        (bool oldPricingStillConfigured,,,,,,,,) = vault.pricingConfigForAsset(address(tokenB));
+        assertFalse(oldPricingStillConfigured);
+
+        MockPriceFeed replacementFeed = new MockPriceFeed(8, 100_00000000);
+        vm.warp(vault.nextStrategyChangeTime());
+        _refreshPrices();
+        _refreshPrice(replacementFeed);
+
+        address[] memory readdedAssets = new address[](2);
+        readdedAssets[0] = address(tokenA);
+        readdedAssets[1] = address(tokenB);
+        uint256[] memory readdedWeights = new uint256[](2);
+        readdedWeights[0] = 5_000;
+        readdedWeights[1] = 5_000;
+        AssetPricingConfig[] memory readdedPricing = new AssetPricingConfig[](2);
+        readdedPricing[0] = _directPricing(address(feedA));
+        readdedPricing[1] = _directPricing(address(replacementFeed));
+
+        vault.proposeStrategyWithPricing(
+            readdedAssets,
+            readdedWeights,
+            readdedPricing,
+            "Reintroduce Stock B with a newly validated pricing source."
+        );
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        _refreshPrice(replacementFeed);
+        vault.activatePendingStrategy();
+
+        (bool readdedPricingConfigured,, address readdedPrimarySource,,,,,,) =
+            vault.pricingConfigForAsset(address(tokenB));
+        assertTrue(readdedPricingConfigured);
+        assertEq(readdedPrimarySource, address(replacementFeed));
+
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);
         assertEq(record.turnoverBps, 5_000);
     }

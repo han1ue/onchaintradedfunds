@@ -171,8 +171,8 @@ flowchart LR
 `OTFToken` and the holding rebate
 
 - Provide a fixed-supply, no-privileged-minter OTF protocol token contract.
-- Scale each vault's protocol fee share linearly using its configured OTF target weight, up to an
-  admin-configured full-rebate threshold.
+- Scale each vault's protocol fee share linearly using the lesser of its actual oracle-valued OTF
+  weight and configured OTF target weight, up to an admin-configured full-rebate threshold.
 - Leave protocol fee shares claimable by the treasury, which can redeem them and conduct manual
   buybacks without a dedicated protocol contract.
 - Are specified in [`docs/OTF_TOKEN_AND_FEE_INCENTIVES.md`](./docs/OTF_TOKEN_AND_FEE_INCENTIVES.md).
@@ -272,10 +272,13 @@ The creator grants the factory exact transfer allowances for the initial basket 
 
 1. Validates factory-level hard caps.
 2. Computes a deterministic clone salt from creator, nonce, and initialization parameters.
-3. Deploys the clone.
-4. Transfers exact initial assets to the clone.
-5. Calls `initialize`.
-6. Records the vault and emits `VaultCreated`.
+3. Predicts the clone address and rejects an already-created canonical OTF/USDG pool before doing
+   any deployment, transfer, or initialization work.
+4. Deploys the clone.
+5. Transfers exact initial assets to the clone.
+6. Calls `initialize`.
+7. Creates and initializes the official OTF/USDG pool atomically from NAV per share.
+8. Records the vault and emits `VaultCreated`.
 
 The vault initializer:
 
@@ -393,9 +396,11 @@ function proposeStrategyWithPricing(
 ) external;
 ```
 
-An existing constituent must repeat its pinned configuration exactly; a manager cannot use a
-strategy proposal to replace that asset's price source. A new constituent is mechanically validated
-and its submitted source is resolved before the proposal is accepted.
+An existing or retiring constituent must repeat its pinned configuration exactly; a manager cannot
+use a strategy proposal to replace that asset's price source. Once a retiring constituent reaches
+the dust threshold and is fully pruned, its vault-specific pricing state is cleared. A later strategy
+may reintroduce it with a newly validated source. Every newly introduced or reintroduced constituent
+is mechanically validated and its submitted source is resolved before the proposal is accepted.
 
 Draft ERC-7621 compatibility remains available by staging the rationale before its standard
 two-argument function:
@@ -556,8 +561,9 @@ timestamp. `UniswapV3Twap` accepts an asset/WETH or asset/USDG pool only after c
 exact pair and fee, initialization, observation-capacity, and full-history checks, then composes
 that TWAP with the creator-pinned quote-token/USD Chainlink feed. V4 is not a pricing source.
 
-Feed addresses and validation parameters are permanently pinned when selected, and no source
-automatically falls back to another. Every read
+Feed addresses and validation parameters remain pinned while the asset is tracked, and no source
+automatically falls back to another. Fully pruning an asset clears that pricing identity so a later
+strategy can reintroduce the asset with a newly validated source. Every read
 checks positive answers, round completeness, timestamps, protocol staleness bounds, and supported
 decimals. A `RobinhoodStockToken` leg additionally requires the base token's `oraclePaused()` call
 to be available and false. Robinhood equity feeds are 24/5; deployment policy currently allows the

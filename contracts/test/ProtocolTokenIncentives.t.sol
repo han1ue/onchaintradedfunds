@@ -89,7 +89,23 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
     }
 
-    function testLiveMarketWeightChangesDoNotAffectTargetWeightRebate() public {
+    function testActualWeightBelowTargetReducesRebate() public {
+        ManagedOTFVault vault = _createProtocolTokenVault(500);
+        assertEq(vault.currentWeight(address(otfToken)), 500);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 750);
+
+        uint80 nextRound = otfFeed.roundId() + 1;
+        otfFeed.setRoundData(nextRound, 50_00000000, block.timestamp, block.timestamp, nextRound);
+
+        uint256 actualWeightBps = vault.currentWeight(address(otfToken));
+        assertLt(actualWeightBps, 500);
+        assertEq(
+            vault.effectiveProtocolFeeShareBps(),
+            uint16(uint256(1_500) * (1_000 - actualWeightBps) / 1_000)
+        );
+    }
+
+    function testActualWeightAboveTargetDoesNotExceedTargetRebate() public {
         ManagedOTFVault vault = _createProtocolTokenVault(500);
         assertEq(vault.currentWeight(address(otfToken)), 500);
         assertEq(vault.effectiveProtocolFeeShareBps(), 750);
@@ -100,6 +116,14 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertGt(vault.currentWeight(address(otfToken)), 500);
         assertEq(vault.targetWeightBps(address(otfToken)), 500);
         assertEq(vault.effectiveProtocolFeeShareBps(), 750);
+    }
+
+    function testOracleFailureUsesUnreducedProtocolShare() public {
+        ManagedOTFVault vault = _createProtocolTokenVault(500);
+        uint80 nextRound = otfFeed.roundId() + 1;
+        otfFeed.setRoundData(nextRound, 0, block.timestamp, block.timestamp, nextRound);
+
+        assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
     }
 
     function testTargetChangeCheckpointsOldFeePeriodBeforeApplyingNewTarget() public {

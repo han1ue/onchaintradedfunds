@@ -135,7 +135,7 @@ contract OTFV3MarketRegistryTest is ProtocolTestBase {
         uint256 tokenABalanceBefore = tokenA.balanceOf(address(this));
         uint256 tokenBBalanceBefore = tokenB.balanceOf(address(this));
 
-        vm.expectPartialRevert(OTFV3MarketRegistry.CanonicalPoolAlreadyExists.selector);
+        vm.expectPartialRevert(OTFFactory.PredictedOfficialPoolAlreadyExists.selector);
         factory.createVault(params);
 
         assertEq(factory.creatorNonce(address(this)), nonce);

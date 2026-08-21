@@ -364,18 +364,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    /// @notice Protocol fee share after the OTF target-weight incentive is applied.
-    /// @dev Missing constituents and failed target-weight reads preserve the base fee share.
+    /// @notice Protocol fee share after the actual-and-target OTF weight incentive is applied.
+    /// @dev Missing constituents and failed oracle-valued weight reads preserve the base fee share.
     function effectiveProtocolFeeShareBps() public view returns (uint16 effectiveShareBps) {
-        effectiveShareBps = protocolFeeShareBps;
-        try IProtocolTokenFeePolicy(factory)
-            .effectiveProtocolFeeShareBps(address(this), effectiveShareBps) returns (
-            uint16 configuredShareBps
-        ) {
-            if (configuredShareBps <= BPS) return configuredShareBps;
-        } catch {
-            // Legacy factories and failed target-weight reads preserve the base protocol share.
-        }
+        return IProtocolTokenFeePolicy(factory).effectiveProtocolFeeShareBps(address(this));
     }
 
     function authorizedExecutors() external returns (address[] memory executors) {
@@ -1050,6 +1042,23 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function modulePinAssetPricing(address asset, AssetPricingConfig calldata config) external {
         if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
         _pinAssetPricing(asset, config);
+    }
+
+    /// @dev Strategy module callback. Fully pruned assets release every vault-specific pricing slot.
+    function moduleClearAssetPricing(address asset) external {
+        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
+        delete _marketIdForAsset[asset];
+        delete _priceFeedForAsset[asset];
+        delete _pricingSourceForAsset[asset];
+        delete _primaryPriceSourceForAsset[asset];
+        delete _secondaryPriceSourceForAsset[asset];
+        delete _maxStalenessForAsset[asset];
+        delete _oracleValidationModeForAsset[asset];
+        delete _primaryMaxStalenessForAsset[asset];
+        delete _primaryOracleValidationModeForAsset[asset];
+        delete _secondaryMaxStalenessForAsset[asset];
+        delete _secondaryOracleValidationModeForAsset[asset];
+        delete _pricingConfiguredForAsset[asset];
     }
 
     function _pullExact(address asset, address from, uint256 amount) internal {

@@ -103,6 +103,12 @@ contract OTFV3MarketRegistry {
         _entered = false;
     }
 
+    /// @notice Returns the canonical V3 pool for a prospective or deployed OTF address.
+    function canonicalPool(address vault) external view returns (address pool) {
+        return
+            IUniswapV3FactoryMarket(uniswapV3Factory).getPool(vault, settlementToken, OFFICIAL_FEE);
+    }
+
     function createOfficialPool(address vault)
         external
         onlyOTFFactory

@@ -331,8 +331,9 @@ discarding capped time. Fee-share tests cover:
 - Timely challenge resolution and fee-withdrawal resumption.
 
 The protocol share is a percentage of manager-selected fee shares. It is not a separate annual fee.
-When enabled, a vault's configured OTF target weight reduces that protocol share linearly up to the
-factory-set full-rebate threshold. A missing OTF constituent grants no discount. Protocol shares
+When enabled, the lesser of a vault's actual oracle-valued OTF weight and configured OTF target
+weight reduces that protocol share linearly up to the factory-set full-rebate threshold. A missing
+OTF constituent or failed weight read grants no discount. Protocol shares
 held by `FeeCollector` can only be claimed by its configured treasury,
 which can redeem those shares and perform any approved buybacks manually.
 

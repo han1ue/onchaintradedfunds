@@ -30,9 +30,12 @@ change `protocolTokenFullRebateBps` from the current `minTargetWeightBps` to 10,
 to zero disables the incentive. An enabled threshold cannot be below the mutable constituent
 minimum, and that minimum cannot be raised above an enabled threshold.
 
-For each fee accrual, a vault reads the OTF token's configured target weight. If:
+For each fee accrual, a vault reads both the OTF token's oracle-valued actual weight and configured
+target weight. If:
 
-- `W` is the configured OTF target weight in BPS,
+- `A` is the actual OTF weight in BPS,
+- `G` is the configured OTF target weight in BPS,
+- `W = min(A, G)` is the rebate weight in BPS,
 - `T` is the admin-set full-rebate threshold in BPS, and
 - `P` is the normal protocol share of the manager's AUM fee,
 
@@ -46,11 +49,11 @@ This means a vault at half of the threshold pays half of the normal protocol sha
 or above the threshold pays none of it. All fee shares not sent to the protocol remain with the
 manager's configured fee recipient; the investor's total manager-selected AUM fee does not change.
 
-The calculation uses the manager's active target allocation rather than live portfolio weight. OTF
-follows the same `minTargetWeightBps` rule as every other constituent. If OTF is not a constituent
-or the threshold is disabled, the vault charges the normal protocol share. Other vault workflows
-may independently require fresh oracles for their existing portfolio-band checks; the incentive
-does not weaken or bypass those checks.
+The target caps the rebate, while the actual oracle-valued weight proves the corresponding OTF tokens
+are held. OTF follows the same `minTargetWeightBps` rule as every other constituent. If OTF is not a
+constituent, the threshold is disabled, or its actual weight cannot be read safely, the vault charges
+the normal protocol share. The incentive therefore fails closed when a required portfolio oracle is
+unavailable.
 
 ### Treasury fee claims and manual buybacks
 

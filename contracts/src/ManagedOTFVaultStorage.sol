@@ -19,10 +19,11 @@ interface IProtocolPortfolioLimits {
 }
 
 interface IProtocolTokenFeePolicy {
-    function effectiveProtocolFeeShareBps(address vault, uint16 baseShareBps)
-        external
-        view
-        returns (uint16);
+    function effectiveProtocolFeeShareBps(address vault) external view returns (uint16);
+}
+
+interface IManagedOTFVaultAssetCleanup {
+    function moduleClearAssetPricing(address asset) external;
 }
 
 abstract contract ManagedOTFVaultStorage is ERC20Base {
@@ -302,8 +303,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => address) internal _priceFeedForAsset;
     bytes32[] internal _pendingMarketIds;
 
-    // Version-3 storage. Pricing identity is pinned per asset and never read through a mutable
-    // global source after selection. The legacy market fields above retain their original slots.
+    // Version-3 storage. Pricing identity is pinned while an asset remains tracked and is never
+    // read through a mutable global source after selection. Fully pruned assets release their
+    // pricing identity so a later strategy may reintroduce them with a newly validated source.
+    // The legacy market fields above retain their original slots.
     mapping(address => uint8) internal _pricingSourceForAsset;
     mapping(address => address) internal _primaryPriceSourceForAsset;
     mapping(address => address) internal _secondaryPriceSourceForAsset;
@@ -458,6 +461,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
             uint256 balance = IERC20(asset).balanceOf(address(this));
             if (_isRetiringAsset(asset) && balance <= MAX_RETIRING_DUST) {
                 delete targetWeightBps[asset];
+                IManagedOTFVaultAssetCleanup(address(this)).moduleClearAssetPricing(asset);
                 removed++;
                 if (balance != 0) emit RetiringDustWrittenOff(asset, balance);
                 emit ConstituentRemoved(asset);

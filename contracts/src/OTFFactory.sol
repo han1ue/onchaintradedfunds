@@ -14,11 +14,13 @@ interface IFeeCollectorTreasury {
 }
 
 interface IOfficialMarketRegistry {
+    function canonicalPool(address vault) external view returns (address pool);
     function createOfficialPool(address vault) external returns (address pool);
 }
 
-interface IProtocolTokenTargetWeight {
+interface IProtocolTokenWeight {
     function targetWeightBps(address token) external view returns (uint16 weightBps);
+    function currentWeight(address token) external view returns (uint256 weightBps);
 }
 
 contract OTFFactory is IAdapterAllowlist {
@@ -73,6 +75,7 @@ contract OTFFactory is IAdapterAllowlist {
     error ProtocolTokenAlreadyConfigured();
     error ProtocolTokenNotConfigured();
     error InvalidProtocolTokenThreshold(uint16 thresholdBps);
+    error PredictedOfficialPoolAlreadyExists(address vault, address pool);
 
     event VaultCreated(
         address indexed creator,
@@ -195,6 +198,12 @@ contract OTFFactory is IAdapterAllowlist {
 
         uint256 nonce = creatorNonce[msg.sender];
         bytes32 salt = _salt(msg.sender, nonce, params);
+        address predicted =
+            MinimalClones.predictDeterministicAddress(vaultImplementation, salt, address(this));
+        address existingPool = IOfficialMarketRegistry(marketRegistry).canonicalPool(predicted);
+        if (existingPool != address(0)) {
+            revert PredictedOfficialPoolAlreadyExists(predicted, existingPool);
+        }
         creatorNonce[msg.sender] = nonce + 1;
 
         vault = MinimalClones.cloneDeterministic(vaultImplementation, salt);
@@ -302,9 +311,9 @@ contract OTFFactory is IAdapterAllowlist {
         emit ProtocolTokenFullRebateThresholdChanged(previousThresholdBps, newThresholdBps);
     }
 
-    /// @notice Returns the protocol share after applying the configured OTF target-weight rebate.
-    /// @dev Missing constituents and failed target-weight reads use the configured protocol share.
-    function effectiveProtocolFeeShareBps(address vault, uint16)
+    /// @notice Returns the protocol share after applying the lesser of actual and target OTF weight.
+    /// @dev Missing constituents and failed oracle-valued weight reads use the configured share.
+    function effectiveProtocolFeeShareBps(address vault)
         external
         view
         returns (uint16 effectiveShareBps)
@@ -317,15 +326,25 @@ contract OTFFactory is IAdapterAllowlist {
         }
 
         uint256 targetWeightBps;
-        try IProtocolTokenTargetWeight(vault).targetWeightBps(token) returns (uint16 weightBps) {
+        try IProtocolTokenWeight(vault).targetWeightBps(token) returns (uint16 weightBps) {
             targetWeightBps = weightBps;
         } catch {
             return effectiveShareBps;
         }
+        if (targetWeightBps == 0) return effectiveShareBps;
 
-        if (targetWeightBps >= fullRebateBps) return 0;
+        uint256 actualWeightBps;
+        try IProtocolTokenWeight(vault).currentWeight(token) returns (uint256 weightBps) {
+            actualWeightBps = weightBps;
+        } catch {
+            return effectiveShareBps;
+        }
+
+        uint256 rebateWeightBps =
+            actualWeightBps < targetWeightBps ? actualWeightBps : targetWeightBps;
+        if (rebateWeightBps >= fullRebateBps) return 0;
         uint256 scaledShare =
-            uint256(effectiveShareBps) * (uint256(fullRebateBps) - targetWeightBps) / fullRebateBps;
+            uint256(effectiveShareBps) * (uint256(fullRebateBps) - rebateWeightBps) / fullRebateBps;
         // The scaled share cannot exceed the uint16 protocolFeeShareBps value.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint16(scaledShare);

@@ -1497,6 +1497,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
     ["NavLossBudgetExceeded(uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Reduce the quoted loss or wait for capacity to replenish continuously."],
     ["CanonicalPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
+    ["PredictedOfficialPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
     ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
     ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
     ["AssetMovedAwayFromTarget(address,uint256,uint256)", "This trade moves one asset farther away from its target allocation."],
@@ -1525,6 +1526,7 @@ const protocolErrorMessages = new Map<string, string>(
 );
 
 const canonicalPoolAlreadyExistsSelector = toFunctionSelector("CanonicalPoolAlreadyExists(address,address)");
+const predictedOfficialPoolAlreadyExistsSelector = toFunctionSelector("PredictedOfficialPoolAlreadyExists(address,address)");
 
 function rawErrorText(error: unknown, seen = new Set<unknown>()): string {
   if (error === null || error === undefined || seen.has(error)) return "";
@@ -8367,7 +8369,10 @@ function CreateVaultView({
           params = candidate;
           break;
         } catch (error) {
-          if (!hasErrorSelector(error, canonicalPoolAlreadyExistsSelector)) throw error;
+          if (
+            !hasErrorSelector(error, canonicalPoolAlreadyExistsSelector)
+              && !hasErrorSelector(error, predictedOfficialPoolAlreadyExistsSelector)
+          ) throw error;
         }
       }
       if (!params) {
@@ -10323,7 +10328,7 @@ function ManageVaultsView({
               <div><span>Effective protocol cut</span><strong>{bpsToPercent(vault.effectiveProtocolFeeShareBps)} of accrued fees</strong></div>
               <div><span>Historically forfeited</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
             </div>
-            <p>Pending fees are calculated by simulating a withdrawal at the latest block. The protocol rebate is based on the manager&apos;s active $OTF target allocation, not its live portfolio weight. Changes to protocol rebate parameters take effect for this OTF when its fees are next checkpointed.</p>
+            <p>Pending fees are calculated by simulating a withdrawal at the latest block. The protocol rebate uses the lesser of the live oracle-valued $OTF weight and the manager&apos;s active $OTF target allocation. If the live weight cannot be read safely, the normal protocol share applies. Changes to protocol rebate parameters take effect for this OTF when its fees are next checkpointed.</p>
             {feeAccrualError ? <div className="riskCallout danger"><AlertTriangle size={15} /><div><strong>Fee withdrawal failed</strong><span>{feeAccrualError}</span></div></div> : null}
             <TxStatus state={feeAccrualState} />
             <button

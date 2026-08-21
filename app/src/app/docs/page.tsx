@@ -574,8 +574,9 @@ canProposeStrategy =
               Deposits, redemptions, and fee changes settle the preceding interval first, so a new
               fee rate never applies retroactively. Missed challenge-window fees are skipped rather
               than minted; suspended intervals never accrue later. The protocol rebate uses the
-              manager&apos;s active $OTF target allocation, not its live portfolio weight. Protocol
-              rebate parameter changes use the latest setting when this OTF next checkpoints fees;
+              lesser of the live oracle-valued $OTF weight and the manager&apos;s active $OTF target
+              allocation; failed live-weight reads receive no rebate. Protocol rebate parameter
+              changes use the latest setting when this OTF next checkpoints fees;
               they do not create historical rebate-policy intervals.
             </p>
           </section>
