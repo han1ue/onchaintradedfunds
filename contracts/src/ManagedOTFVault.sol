@@ -444,6 +444,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (lpAmount < minShares) revert InsufficientShares(minShares, lpAmount);
         if (lpAmount == 0) revert InsufficientShares(1, 0);
 
+        // Pull and verify every constituent before minting. This avoids exposing temporarily
+        // unbacked shares during token callbacks; the guard blocks nested vault mutations.
         for (uint256 i = 0; i < _assets.length; i++) {
             _pullExact(_assets[i], msg.sender, amounts[i]);
         }
@@ -503,6 +505,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _accrueFees();
         uint256 supply = totalSupply;
         amountsIn = new uint256[](_assets.length);
+        // Pull and verify every constituent before minting. Any later failure atomically reverts
+        // all transfers, while the guard prevents a token callback from entering the vault again.
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
             uint256 required =

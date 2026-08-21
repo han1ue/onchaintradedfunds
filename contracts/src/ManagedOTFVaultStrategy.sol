@@ -378,6 +378,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 if (amountIn == 0) revert BadTrade(trade.tokenIn, trade.tokenOut, amountIn);
             }
             uint256 valueIn = _assetValue(trade.tokenIn, amountIn);
+            // Grant only the exact input allowance immediately before execution and clear it
+            // afterward. The vault guard blocks callbacks, and a revert rolls back the allowance.
             trade.tokenIn.safeApprove(rebalanceExecutor, 0);
             trade.tokenIn.safeApprove(rebalanceExecutor, amountIn);
             uint256 amountOut = RebalanceExecutor(rebalanceExecutor).executeTrade(trade, amountIn);

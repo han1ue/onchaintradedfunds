@@ -21,6 +21,7 @@ contract RebalanceExecutor {
     error BadTradeTokens();
     error Slippage(uint256 received, uint256 minimum);
     error AdapterOutputMismatch(uint256 reported, uint256 observed);
+    error Reentrancy();
     error TokenTransferMismatch(
         address token, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
@@ -37,10 +38,18 @@ contract RebalanceExecutor {
 
     address public immutable owner;
     address public factory;
+    bool private _entered;
 
     constructor(address initialOwner) {
         if (initialOwner == address(0)) revert ZeroAddress();
         owner = initialOwner;
+    }
+
+    modifier nonReentrant() {
+        if (_entered) revert Reentrancy();
+        _entered = true;
+        _;
+        _entered = false;
     }
 
     function setFactory(address factory_) external {
@@ -54,6 +63,7 @@ contract RebalanceExecutor {
 
     function executeTrade(TradeInstruction calldata instruction, uint256 amountIn)
         external
+        nonReentrant
         returns (uint256 amountOut)
     {
         address factory_ = factory;

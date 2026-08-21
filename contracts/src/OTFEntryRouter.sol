@@ -181,6 +181,8 @@ contract OTFEntryRouter {
             revert SettlementInputMismatch(settlementIn, allocatedSettlement);
         }
 
+        // Fund and verify the complete atomic entry before any swaps or share minting. The
+        // reentrancy guard blocks callbacks, and any later failure reverts the pull and all swaps.
         _pullExact(settlementToken, msg.sender, address(this), settlementIn);
         uint256[] memory availableAmounts = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {

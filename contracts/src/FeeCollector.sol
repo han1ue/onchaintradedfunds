@@ -10,6 +10,7 @@ contract FeeCollector {
     error ZeroAddress();
     error NotTreasury();
     error NotPendingTreasury();
+    error Reentrancy();
 
     event TreasuryTransferStarted(address indexed currentTreasury, address indexed pendingTreasury);
     event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
@@ -17,6 +18,7 @@ contract FeeCollector {
 
     address public treasury;
     address public pendingTreasury;
+    bool private _entered;
 
     constructor(address initialTreasury) {
         if (initialTreasury == address(0)) revert ZeroAddress();
@@ -27,6 +29,13 @@ contract FeeCollector {
     modifier onlyTreasury() {
         if (msg.sender != treasury) revert NotTreasury();
         _;
+    }
+
+    modifier nonReentrant() {
+        if (_entered) revert Reentrancy();
+        _entered = true;
+        _;
+        _entered = false;
     }
 
     function beginTreasuryTransfer(address newTreasury) external onlyTreasury {
@@ -43,13 +52,13 @@ contract FeeCollector {
         emit TreasuryChanged(oldTreasury, msg.sender);
     }
 
-    function claim(address token, uint256 amount) external onlyTreasury {
+    function claim(address token, uint256 amount) external onlyTreasury nonReentrant {
         if (token == address(0)) revert ZeroAddress();
         if (amount != 0) token.safeTransfer(treasury, amount);
         emit TokenClaimed(token, treasury, amount);
     }
 
-    function claimAll(address token) external onlyTreasury returns (uint256 amount) {
+    function claimAll(address token) external onlyTreasury nonReentrant returns (uint256 amount) {
         if (token == address(0)) revert ZeroAddress();
         amount = IERC20(token).balanceOf(address(this));
         if (amount != 0) token.safeTransfer(treasury, amount);
