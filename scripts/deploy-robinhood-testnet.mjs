@@ -125,8 +125,11 @@ const suggestedInitialPricingConfigs =
 const externalContracts = deploymentConfig.externalContracts ?? {};
 const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
 const wethAddress = parseAddress("externalContracts.weth", externalContracts.weth);
-const configuredWethUsdFeed = env("WETH_USD_FEED_ADDRESS");
-const configuredUsdgUsdFeed = env("USDG_USD_FEED_ADDRESS");
+const existingQuoteTokens = deploymentConfig.pricingConfiguration?.quoteTokens ?? [];
+const existingWethQuote = existingQuoteTokens.find((quote) => quote.symbol === "WETH");
+const existingUsdgQuote = existingQuoteTokens.find((quote) => quote.symbol === "USDG");
+const configuredWethUsdFeed = env("WETH_USD_FEED_ADDRESS") ?? existingWethQuote?.usdFeed;
+const configuredUsdgUsdFeed = env("USDG_USD_FEED_ADDRESS") ?? existingUsdgQuote?.usdFeed;
 const quoteUsdMaxStaleness = Number(env("QUOTE_USD_MAX_STALENESS_SECONDS", "3600"));
 const uniswapV3FactoryAddress = parseAddress(
   "externalContracts.uniswapV3Factory",
@@ -167,13 +170,21 @@ if (balance === 0n) {
 }
 
 const wethUsdFeed = configuredWethUsdFeed
-  ? { address: parseAddress("WETH_USD_FEED_ADDRESS", configuredWethUsdFeed), external: true }
+  ? {
+      address: parseAddress("WETH_USD_FEED_ADDRESS", configuredWethUsdFeed),
+      retained: true,
+      synthetic: Boolean(existingWethQuote?.synthetic),
+    }
   : await deployContract({
       name: "TestnetMockPriceFeed",
       args: [account.address, 8, 1_625_00000000n, "Synthetic WETH / USD"],
     });
 const usdgUsdFeed = configuredUsdgUsdFeed
-  ? { address: parseAddress("USDG_USD_FEED_ADDRESS", configuredUsdgUsdFeed), external: true }
+  ? {
+      address: parseAddress("USDG_USD_FEED_ADDRESS", configuredUsdgUsdFeed),
+      retained: true,
+      synthetic: Boolean(existingUsdgQuote?.synthetic),
+    }
   : await deployContract({
       name: "TestnetMockPriceFeed",
       args: [account.address, 8, 1_00000000n, "Synthetic USDG / USD"],
@@ -240,16 +251,15 @@ const quoteTokenRegistrations = await Promise.all([
   quoteToken,
   usdFeed,
   feedDeployment,
-  synthetic: !feedDeployment.external,
+  synthetic: Boolean(feedDeployment.synthetic) || !feedDeployment.retained,
   maxStaleness: quoteUsdMaxStaleness,
-  validationMode: 0,
   allowComposedChainlink: true,
   allowV3Twap: true,
   ...(await writeContract({
     address: assetMarketRegistry.address,
     abi: assetMarketRegistryAbi,
     functionName: "registerQuoteToken",
-    args: [quoteToken, usdFeed, quoteUsdMaxStaleness, 0, true, true],
+    args: [quoteToken, usdFeed, quoteUsdMaxStaleness, true, true],
   })),
 })));
 const pricingResolver = await deployContract({
@@ -394,12 +404,12 @@ const deployment = {
     constituentPools: [],
   },
   pricingConfiguration: {
-    sources: ["ChainlinkDirect", "ChainlinkAssetQuote", "UniswapV3Twap"],
+    sources: ["ChainlinkDirect", "ChainlinkAssetQuote", "UniswapV3Twap", "RobinhoodDirect"],
     quoteTokens: quoteTokenRegistrations,
     vaultInitField: "initialPricingConfigs",
     suggestedInitialPricingConfigs,
     maximumOracleStalenessSeconds: 604800,
-    note: "Creators select permissionless feeds. Each OTF permanently pins its feed or pool, staleness limit, and validation mode.",
+    note: "Creators select Chainlink-compatible, Robinhood, or Uniswap V3 pricing sources. Each OTF permanently pins its feed or pool and staleness limit.",
   },
   executionRoutes: [
     {

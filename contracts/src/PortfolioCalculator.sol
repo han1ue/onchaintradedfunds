@@ -3,9 +3,10 @@ pragma solidity ^0.8.24;
 
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
-import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { MathEx } from "./libraries/MathEx.sol";
+import { PricingSource } from "./VaultTypes.sol";
 
 interface ITargetWeightVault {
     function targetWeightBps(address asset) external view returns (uint16);
@@ -18,10 +19,7 @@ interface IOraclePauseStatus {
 interface IVaultAssetPriceSources {
     function priceFeedForAsset(address asset) external view returns (address);
     function maxStalenessForAsset(address asset) external view returns (uint32);
-    function oracleValidationModeForAsset(address asset)
-        external
-        view
-        returns (OracleValidationMode);
+    function pricingSourceForAsset(address asset) external view returns (PricingSource);
 }
 
 contract PortfolioCalculator {
@@ -237,9 +235,9 @@ contract PortfolioCalculator {
         address base,
         AggregatorV3Interface feed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode
+        bool requireRobinhoodPauseCheck
     ) external view returns (uint256 price, uint8 priceDecimals) {
-        return _readValidPrice(base, feed, maxStaleness, validationMode);
+        return _readValidPrice(base, feed, maxStaleness, requireRobinhoodPauseCheck);
     }
 
     function isWithinBands(
@@ -319,19 +317,20 @@ contract PortfolioCalculator {
     {
         AggregatorV3Interface feed;
         uint32 maxStaleness;
-        OracleValidationMode validationMode;
         feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
         maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
-        validationMode = IVaultAssetPriceSources(vault).oracleValidationModeForAsset(asset);
+        bool requireRobinhoodPauseCheck =
+            IVaultAssetPriceSources(vault).pricingSourceForAsset(asset)
+                == PricingSource.RobinhoodDirect;
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
-        return _readValidPrice(asset, feed, maxStaleness, validationMode);
+        return _readValidPrice(asset, feed, maxStaleness, requireRobinhoodPauseCheck);
     }
 
     function _readValidPrice(
         address asset,
         AggregatorV3Interface feed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode
+        bool requireRobinhoodPauseCheck
     ) private view returns (uint256 price, uint8 priceDecimals) {
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         if (address(feed).code.length == 0) revert OracleFeedNotContract(address(feed));
@@ -339,7 +338,7 @@ contract PortfolioCalculator {
         if (maxStaleness > MAX_ORACLE_STALENESS) {
             revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
         }
-        if (validationMode == OracleValidationMode.RobinhoodStockToken) {
+        if (requireRobinhoodPauseCheck) {
             bool paused;
             try IOraclePauseStatus(asset).oraclePaused() returns (bool isPaused) {
                 paused = isPaused;

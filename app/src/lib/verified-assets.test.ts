@@ -27,7 +27,7 @@ describe("frontend asset pricing verification", () => {
     })).toBe(false);
     expect(isVerifiedPricingConfig(46630, TESTNET_TSLA, {
       ...approved,
-      primaryValidationMode: approved.primaryValidationMode === 0 ? 1 : 0,
+      source: approved.source === 3 ? 0 : 3,
     })).toBe(false);
     expect(isVerifiedPricingConfig(46630, TESTNET_TSLA, {
       ...approved,

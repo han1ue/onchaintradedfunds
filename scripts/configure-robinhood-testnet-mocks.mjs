@@ -25,7 +25,6 @@ const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
-const syntheticFeedValidationMode = 0;
 const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
 const catalog = supportedAssets.assets.flatMap((asset) => {
   const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
@@ -228,14 +227,10 @@ for (const item of catalog) {
   deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
   upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {
     asset,
-    source: "ChainlinkDirect",
+    source: "RobinhoodDirect",
     quoteToken: "0x0000000000000000000000000000000000000000",
     primarySource: feed,
-    secondarySource: "0x0000000000000000000000000000000000000000",
     primaryMaxStaleness: robinhoodEquityMaxStalenessSeconds,
-    secondaryMaxStaleness: 0,
-    primaryValidationMode: syntheticFeedValidationMode,
-    secondaryValidationMode: 0,
     synthetic: true,
   });
   deployment.mockCatalogConfiguredAt = new Date().toISOString();

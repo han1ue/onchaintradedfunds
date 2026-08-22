@@ -8,7 +8,6 @@ import {
 } from "./ManagedOTFVaultStorage.sol";
 import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -229,9 +228,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             address secondarySource,
             address normalizedPriceFeed,
             uint32 primaryMaxStaleness,
-            uint32 secondaryMaxStaleness,
-            OracleValidationMode primaryValidationMode,
-            OracleValidationMode secondaryValidationMode
+            uint32 secondaryMaxStaleness
         )
     {
         asset;
@@ -243,8 +240,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         normalizedPriceFeed;
         primaryMaxStaleness;
         secondaryMaxStaleness;
-        primaryValidationMode;
-        secondaryValidationMode;
         _delegateView();
     }
 
@@ -254,12 +249,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function oracleValidationModeForAsset(address asset)
-        external
-        returns (OracleValidationMode mode)
-    {
+    function pricingSourceForAsset(address asset) external returns (PricingSource source) {
         asset;
-        mode;
+        source;
         _delegateView();
     }
 
@@ -984,13 +976,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 _pricingSourceForAsset[asset] != uint8(config.source)
                     || _quoteTokenForAsset[asset] != config.quoteToken
                     || _primaryPriceSourceForAsset[asset] != config.primarySource
-                    || _secondaryPriceSourceForAsset[asset] != config.secondarySource
                     || _primaryMaxStalenessForAsset[asset] != config.primaryMaxStaleness
-                    || _secondaryMaxStalenessForAsset[asset] != config.secondaryMaxStaleness
-                    || _primaryOracleValidationModeForAsset[asset]
-                        != uint8(config.primaryValidationMode)
-                    || _secondaryOracleValidationModeForAsset[asset]
-                        != uint8(config.secondaryValidationMode)
             ) revert AssetPricingAlreadyPinned(asset);
             return;
         }
@@ -998,30 +984,22 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         (
             address normalizedFeed,
             bytes32 marketId,
+            address secondarySource,
             uint32 primaryStaleness,
-            uint32 secondaryStaleness,
-            OracleValidationMode primaryMode,
-            OracleValidationMode secondaryMode
+            uint32 secondaryStaleness
         ) = _pricingResolver().resolvePricing(asset, config);
 
         _pricingSourceForAsset[asset] = uint8(config.source);
         _quoteTokenForAsset[asset] = config.quoteToken;
         _primaryPriceSourceForAsset[asset] = config.primarySource;
-        _secondaryPriceSourceForAsset[asset] = config.secondarySource;
+        _secondaryPriceSourceForAsset[asset] = secondarySource;
         _priceFeedForAsset[asset] = normalizedFeed;
         _marketIdForAsset[asset] = marketId;
         _maxStalenessForAsset[asset] = config.source == PricingSource.ChainlinkAssetQuote
             ? (primaryStaleness > secondaryStaleness ? primaryStaleness : secondaryStaleness)
             : primaryStaleness;
-        _oracleValidationModeForAsset[asset] = uint8(
-            config.source == PricingSource.ChainlinkDirect
-                ? primaryMode
-                : OracleValidationMode.StandardChainlink
-        );
         _primaryMaxStalenessForAsset[asset] = primaryStaleness;
-        _primaryOracleValidationModeForAsset[asset] = uint8(primaryMode);
         _secondaryMaxStalenessForAsset[asset] = secondaryStaleness;
-        _secondaryOracleValidationModeForAsset[asset] = uint8(secondaryMode);
         _pricingConfiguredForAsset[asset] = true;
 
         _portfolioCalculator.validateAssetForVault(address(this), asset);
@@ -1031,7 +1009,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             normalizedFeed,
             config.quoteToken,
             config.primarySource,
-            config.secondarySource,
+            secondarySource,
             marketId
         );
     }
@@ -1064,11 +1042,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         delete _primaryPriceSourceForAsset[asset];
         delete _secondaryPriceSourceForAsset[asset];
         delete _maxStalenessForAsset[asset];
-        delete _oracleValidationModeForAsset[asset];
         delete _primaryMaxStalenessForAsset[asset];
-        delete _primaryOracleValidationModeForAsset[asset];
         delete _secondaryMaxStalenessForAsset[asset];
-        delete _secondaryOracleValidationModeForAsset[asset];
         delete _pricingConfiguredForAsset[asset];
     }
 

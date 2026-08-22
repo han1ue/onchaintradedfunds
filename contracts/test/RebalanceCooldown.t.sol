@@ -10,7 +10,6 @@ import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
 import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrategyHistory.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -293,24 +292,16 @@ contract RebalanceCooldownTest is TestBase {
 
         AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
         pricingConfigs[0] = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect,
+            source: PricingSource.RobinhoodDirect,
             quoteToken: address(0),
             primarySource: address(feedA),
-            secondarySource: address(0),
-            primaryMaxStaleness: 25 hours,
-            secondaryMaxStaleness: 0,
-            primaryValidationMode: OracleValidationMode.RobinhoodStockToken,
-            secondaryValidationMode: OracleValidationMode.StandardChainlink
+            primaryMaxStaleness: 25 hours
         });
         pricingConfigs[1] = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect,
+            source: PricingSource.RobinhoodDirect,
             quoteToken: address(0),
             primarySource: address(feedB),
-            secondarySource: address(0),
-            primaryMaxStaleness: 25 hours,
-            secondaryMaxStaleness: 0,
-            primaryValidationMode: OracleValidationMode.RobinhoodStockToken,
-            secondaryValidationMode: OracleValidationMode.StandardChainlink
+            primaryMaxStaleness: 25 hours
         });
 
         params = VaultInitParams({

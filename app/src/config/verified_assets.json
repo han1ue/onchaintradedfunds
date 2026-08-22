@@ -5,10 +5,9 @@
     "symbol": "AAPL",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -18,10 +17,9 @@
     "symbol": "AMD",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x943A29E7ae51A4798823ca9eEd2ed533B2A22C72",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -31,10 +29,9 @@
     "symbol": "AMZN",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xD5a1508ceD74c084eBf3cBe853e2C968fB2a651C",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -44,10 +41,9 @@
     "symbol": "ASML",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xB4106147E8cce40b7d46124090d373A71b70f87D",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -57,10 +53,9 @@
     "symbol": "BABA",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x62Cc8F9b5f56a33c9C8A60c8B92779f523c4E984",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -70,10 +65,9 @@
     "symbol": "COIN",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xA3a468A452940B7D6b69991207B508c609a98Ef2",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -83,10 +77,9 @@
     "symbol": "CRCL",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x6652eDf64bA3731C4F2D3ce821A0Fb1f1f6b482a",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -96,10 +89,9 @@
     "symbol": "DELL",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x1C6c8cADBe02E19129c39dDB92281cE4c0bf206b",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -109,10 +101,9 @@
     "symbol": "GME",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x27C71df6A64fB476468EdF256CF72c038baB5B67",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -122,10 +113,9 @@
     "symbol": "GOOGL",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xF6f373a037c30F0e5010d854385cA89185AE638b",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -135,10 +125,9 @@
     "symbol": "INTC",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x3f390C5C24628Ac7C489515402235FeAD71D1913",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -148,10 +137,9 @@
     "symbol": "META",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x7C38C00C30BEe9378381E7B6135d7283356D71b1",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -161,10 +149,9 @@
     "symbol": "MSFT",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x45C3C877C15E6BA2EBB19eA114Ea508d14C1Af2E",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -174,10 +161,9 @@
     "symbol": "MSTR",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x396118bdFB181e6240E74D243F266B061c0edc3D",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -187,10 +173,9 @@
     "symbol": "MU",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x425EEFdCf05ed6526C3cE61Af99429A228a6d596",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -200,10 +185,9 @@
     "symbol": "NVDA",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x379EC4f7C378F34a1B47E4F3cbeBCbAC3E8E9F15",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -213,10 +197,9 @@
     "symbol": "PLTR",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x820ABedFF239034956B7A9d2F0a331f9F075eB4c",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -226,10 +209,9 @@
     "symbol": "QQQ",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x80901d846d5D7B030F26B480776EE3b29374C2ae",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -239,10 +221,9 @@
     "symbol": "SGOV",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xa0DF4ee0fFf975306345875E3548Fcc519577A11",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -252,10 +233,9 @@
     "symbol": "SLV",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x209b73908e92Ae021826eD79609845451Ecba2ce",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -265,10 +245,9 @@
     "symbol": "SNDK",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xfb133Fa4B7b385802B693a293606682Df47109A3",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -278,10 +257,9 @@
     "symbol": "SPCX",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xB265810950ba6c5C0Ff821c9963014a56fD8Bffb",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -291,10 +269,9 @@
     "symbol": "SPY",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x319724394D3A0e3669269846abE664Cd621f9f6A",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -304,10 +281,9 @@
     "symbol": "TSLA",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x4A1166a659A55625345e9515b32adECea5547C38",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -317,10 +293,9 @@
     "symbol": "TSM",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x874cF94aa8eC88Fd9560094dD065f2fB3E41Fc2F",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -330,10 +305,9 @@
     "symbol": "USO",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x75a9c76Ef439e2C7c2E5a34Ab105EcFe3766431c",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -343,10 +317,9 @@
     "symbol": "CLSK",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x810c12D3a554Bc47fd39597Fe3b3AAC4941F50eF",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -358,8 +331,7 @@
       {
         "source": "chainlink-direct",
         "feedAddress": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
-        "maxStaleness": 90000,
-        "validationMode": 0
+        "maxStaleness": 90000
       }
     ]
   },
@@ -369,10 +341,9 @@
     "symbol": "ORCL",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x0e6a64a2B58A6693a531E6c555f3A5d042eEA844",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -382,10 +353,9 @@
     "symbol": "USAR",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xA994d3684e8400A6c8078226925779FdeE682DD9",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -395,10 +365,9 @@
     "symbol": "TSLA",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xFe4682bFc463762DdF7d07805B4c2989Ab0D4606",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -408,10 +377,9 @@
     "symbol": "AMZN",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x3d97BB4Cd4EA14615c8cB3EdA7b47B194E70088a",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -421,10 +389,9 @@
     "symbol": "PLTR",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0xB1e138F936A0b727852b521cf6d723AcCC87d6aA",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -434,10 +401,9 @@
     "symbol": "NFLX",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x8FCD32ee90aF309A6fB642b95170D4A1f9be3Fd8",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   },
@@ -447,10 +413,9 @@
     "symbol": "AMD",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-direct",
+        "source": "robinhood-direct",
         "feedAddress": "0x6A0C8fFaF35770D66657C5B6470a6A1acea4201c",
-        "maxStaleness": 90000,
-        "validationMode": 1
+        "maxStaleness": 90000
       }
     ]
   }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
-import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { IUniswapV3OraclePool } from "./UniswapV3RoutePriceFeed.sol";
 
 interface IUniswapV3MarketPool is IUniswapV3OraclePool {
@@ -33,7 +33,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     struct QuoteTokenVersion {
         address usdFeed;
         uint32 maxStaleness;
-        OracleValidationMode validationMode;
         bool enabled;
         bool allowComposedChainlink;
         bool allowV3Twap;
@@ -81,7 +80,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         uint32 indexed version,
         address indexed usdFeed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode,
         bool allowComposedChainlink,
         bool allowV3Twap
     );
@@ -129,7 +127,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address quoteToken,
         address usdFeed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode,
         bool allowComposedChainlink,
         bool allowV3Twap
     ) external onlyOwner returns (uint32 version) {
@@ -147,7 +144,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         _quoteTokenVersion[quoteToken][version] = QuoteTokenVersion({
             usdFeed: usdFeed,
             maxStaleness: maxStaleness,
-            validationMode: validationMode,
             enabled: true,
             allowComposedChainlink: allowComposedChainlink,
             allowV3Twap: allowV3Twap
@@ -157,7 +153,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             version,
             usdFeed,
             maxStaleness,
-            validationMode,
             allowComposedChainlink,
             allowV3Twap
         );
@@ -185,19 +180,32 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     function currentQuoteTokenConfig(address quoteToken)
         external
         view
-        returns (QuoteTokenVersion memory)
+        returns (
+            address usdFeed,
+            uint32 maxStaleness,
+            bool enabled,
+            bool allowComposedChainlink,
+            bool allowV3Twap
+        )
     {
-        return _quoteTokenVersion[quoteToken][currentQuoteTokenVersion[quoteToken]];
+        QuoteTokenVersion storage config =
+            _quoteTokenVersion[quoteToken][currentQuoteTokenVersion[quoteToken]];
+        return (
+            config.usdFeed,
+            config.maxStaleness,
+            config.enabled,
+            config.allowComposedChainlink,
+            config.allowV3Twap
+        );
     }
 
     function validateQuoteToken(
         address quoteToken,
         address usdFeed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode,
         bool forV3
     ) external view {
-        _validateQuoteToken(quoteToken, usdFeed, maxStaleness, validationMode, forV3);
+        _validateQuoteToken(quoteToken, usdFeed, maxStaleness, forV3);
     }
 
     function registerV3Market(address asset, address pool) external returns (bytes32 marketId) {
@@ -268,7 +276,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address quoteToken,
         address usdFeed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode,
         bool forV3
     ) private view {
         uint32 version = currentQuoteTokenVersion[quoteToken];
@@ -276,7 +283,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         QuoteTokenVersion storage config = _quoteTokenVersion[quoteToken][version];
         if (
             !config.enabled || config.usdFeed != usdFeed || config.maxStaleness != maxStaleness
-                || config.validationMode != validationMode
                 || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)
         ) revert QuoteTokenConfigMismatch(quoteToken);
     }

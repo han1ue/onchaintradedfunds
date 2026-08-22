@@ -133,11 +133,10 @@ for (const [label, slot] of [
   ["assetRegistry", "12"],
   ["__removedDependencySlot", "13"],
   ["rebalanceExecutor", "14"],
-  ["_pricingConfiguredForAsset", "180"],
-  ["_pendingPricingConfigs", "181"],
-  ["_primaryMaxStalenessForAsset", "182"],
-  ["_primaryOracleValidationModeForAsset", "183"],
-  ["_quoteTokenForAsset", "184"],
+  ["_pricingConfiguredForAsset", "178"],
+  ["_pendingPricingConfigs", "179"],
+  ["_primaryMaxStalenessForAsset", "180"],
+  ["_quoteTokenForAsset", "181"],
 ]) {
   assert(
     canonicalLayout.some((entry) => entry.label === label && entry.slot === slot),

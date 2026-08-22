@@ -366,7 +366,7 @@ for (const item of catalog) {
   );
   const configuredFeed = pricing?.primarySource ?? zeroAddress;
   const configuredMaxStaleness = Number(pricing?.primaryMaxStaleness ?? 0);
-  const configuredValidationMode = Number(pricing?.primaryValidationMode ?? 0);
+  const configuredSource = pricing?.source ?? "ChainlinkDirect";
   const assetDecimals = await publicClient.readContract({
     address: asset,
     abi: erc20MetadataAbi,
@@ -385,12 +385,12 @@ for (const item of catalog) {
     || configuredMaxStaleness > 7 * 24 * 60 * 60) {
     throw new Error(`${item.symbol} has an invalid suggested staleness limit.`);
   }
-  if (configuredValidationMode !== 0 && configuredValidationMode !== 1) {
-    throw new Error(`${item.symbol} has an invalid suggested validation mode.`);
+  if (configuredSource !== "ChainlinkDirect" && configuredSource !== "RobinhoodDirect") {
+    throw new Error(`${item.symbol} needs a direct Chainlink-compatible source for pool initialization.`);
   }
   await requireCode(`${item.symbol} price feed`, configuredFeed);
 
-  if (Number(configuredValidationMode) === 1) {
+  if (configuredSource === "RobinhoodDirect") {
     let oraclePaused;
     try {
       oraclePaused = await publicClient.readContract({
@@ -400,7 +400,7 @@ for (const item of catalog) {
       });
     } catch {
       throw new Error(
-        `${item.symbol} requires RobinhoodStockToken validation but oraclePaused() is unavailable.`,
+        `${item.symbol} uses RobinhoodDirect pricing but oraclePaused() is unavailable.`,
       );
     }
     if (oraclePaused) throw new Error(`${item.symbol} reports oraclePaused() == true.`);
@@ -427,7 +427,7 @@ for (const item of catalog) {
     assetDecimals,
     configuredFeed,
     configuredMaxStaleness,
-    configuredValidationMode,
+    configuredSource,
     feedDecimals,
     answer,
     updatedAt,
@@ -537,7 +537,7 @@ for (const item of constituentMarkets) {
     assetDecimals,
     configuredFeed,
     configuredMaxStaleness,
-    configuredValidationMode,
+    configuredSource,
     feedDecimals,
     answer,
     updatedAt,
@@ -669,7 +669,7 @@ for (const item of constituentMarkets) {
     oracleDecimals: feedDecimals,
     oracleUpdatedAt: updatedAt,
     oracleMaxStaleness: configuredMaxStaleness,
-    oracleValidationMode: configuredValidationMode,
+    pricingSource: configuredSource,
     ...evidence,
   });
   console.log(`${item.symbol}/USDG: ${pool} (${liquidity === 0n ? "awaiting liquidity" : "active"})`);
@@ -688,6 +688,6 @@ deployment.v3Venue = {
 deployment.pricingConfiguration ??= {};
 deployment.pricingConfiguration.suggestedV3PricingConfigs = [];
 deployment.pricingConfiguration.v3PricingNote =
-  "Execution pools are not pricing feeds. A V3 pricing configuration must independently pin a mechanically valid quote-token/USD Chainlink feed, staleness limit, and validation mode.";
+  "Execution pools are not pricing feeds. A V3 pricing configuration resolves and pins the registered quote-token/USD Chainlink-compatible feed and staleness limit.";
 saveDeployment(deployment);
 console.log(`Synthra configuration written to ${deploymentPath}`);

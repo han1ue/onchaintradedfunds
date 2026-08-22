@@ -92,7 +92,8 @@ calculator MUST NOT transfer assets, approve spenders, or mutate vault state.
 `AssetPricingResolver` validates a caller-supplied `AssetPricingConfig` when an asset first enters an
 OTF. It MUST support direct Chainlink asset/USD, composed asset/registeredQuote × registeredQuote/USD Chainlink, and
 Uniswap V3 TWAP. Chainlink selection is permissionless and MUST mechanically validate each supplied
-feed, nonzero staleness limit (no more than seven days), and validation mode. `AssetMarketRegistry`
+AggregatorV3-compatible feed and nonzero staleness limit (no more than seven days). Robinhood direct
+pricing is a distinct source that additionally enforces the stock token's pause status. `AssetMarketRegistry`
 validates and records canonical V3 pools used during a
 new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
 
@@ -531,8 +532,8 @@ the OTF from the manager's own assets or fee revenue.
 
 ## 9. Oracle requirements
 
-`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetQuote`, and
-`UniswapV3Twap`. A zero/default enum value is not sufficient validation: every required address and
+`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetQuote`,
+`UniswapV3Twap`, and `RobinhoodDirect`. A zero/default enum value is not sufficient validation: every required address and
 relationship MUST be checked. Uniswap V4 and every other source type MUST be rejected.
 
 For direct Chainlink pricing:
@@ -541,27 +542,29 @@ For direct Chainlink pricing:
 - `secondarySource` MUST be zero.
 - The contract does not prove semantic pair identity and MUST NOT rely on `description()`.
 
+For Robinhood direct pricing, all direct Chainlink requirements apply and the asset's
+`oraclePaused()` call MUST additionally be available and false.
+
 For composed Chainlink pricing:
 
 - `primarySource` is the creator-selected feed intended for `(asset, WETH)`.
 - `secondarySource` is the creator-selected feed intended for `(WETH, USD)`.
 - Contracts MUST mechanically validate both legs but do not prove semantic pair identity.
-- Both feeds, staleness bounds, and validation modes MUST be pinned in the normalized wrapper.
+- Both feeds and staleness bounds MUST be pinned in the normalized wrapper.
 - Every read MUST validate both legs independently and MUST expose the older leg's timestamp.
 - The multiplication and decimal normalization MUST be overflow-safe and return a nonzero USD price.
 
 Every Chainlink leg MUST reject missing code, nonpositive answers, zero or future timestamps,
 incomplete rounds, answers beyond its pinned nonzero staleness bound, staleness limits above seven
 days, and unsupported decimals.
-When a leg uses `RobinhoodStockToken` validation, the base token's `oraclePaused()` call MUST be
-available and false. Robinhood equity feeds publish 24/5 and already include the token
+Robinhood equity feeds publish 24/5 and already include the token
 `uiMultiplier()`; the protocol MUST NOT apply it again.
 
 Chainlink's Robinhood [Flags Contract Registry](https://docs.chain.link/data-feeds/contract-registry)
 proves only whether a proxy is currently official and active. It does not prove pair orientation,
 and no Robinhood deployment of the older pair-addressed Feed Registry is documented. Production
 MUST therefore independently verify Flags status where available. The frontend manifest provides
-an informational exact asset/feed/mode allowlist without restricting deployment. Unknown assets or
+an informational exact asset/feed/source allowlist without restricting deployment. Unknown assets or
 alternative mechanically valid feeds remain deployable and are Unverified. A shorter nonzero limit
 than the manifest maximum stays Verified but MAY receive an availability warning. Stale data or a
 temporary `oraclePaused()` state MUST disable oracle-dependent operations without changing the
@@ -574,8 +577,8 @@ For V3 TWAP pricing:
 - `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
   exact asset/quote pair and exact onchain fee.
 - The quote MUST be WETH or USDG.
-- `secondarySource` MUST be the creator-selected quote-token/USD Chainlink feed. Its staleness limit
-  and validation mode MUST be independently validated and pinned.
+- `secondarySource` MUST be the registry-resolved quote-token/USD Chainlink-compatible feed. Its
+  staleness limit MUST be independently validated and pinned.
 - The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
   capacity, and answer the full protocol TWAP-window observation before selection.
 - The concrete pool and normalized wrapper MUST be pinned. Later market deprecation MAY block only
@@ -670,7 +673,7 @@ Every deployment record SHOULD include:
   registry, pricing resolver, adapter, and treasury addresses.
 - Canonical V3 factory, WETH, USDG, supported fees, TWAP window, observation capacity, and verified
   history evidence.
-- Every frontend-manifest Chainlink base/quote/feed relationship, maximum staleness, validation mode,
+- Every frontend-manifest Chainlink base/quote/feed relationship, maximum staleness, explicit pricing source,
   official Flags status where available, and the source used for that evidence.
 - Every initial per-asset pricing configuration and the concrete normalized feed or pool pinned by
   each created OTF.

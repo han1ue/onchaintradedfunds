@@ -296,7 +296,7 @@ The vault initializer:
   and that there are no duplicate assets.
 - Resolves and pins each submitted Chainlink route or V3 TWAP configuration. A direct Chainlink
   route has no quote token; composed and V3 routes must select an enabled registered quote token
-  and match its pinned quoteToken/USD feed, limits, and validation mode.
+  and match its pinned quoteToken/USD feed and freshness limits.
 - Validates weight totals equal 10,000 bps.
 - Validates min, max, and count constraints.
 - Validates exact initial balances arrived.
@@ -563,23 +563,23 @@ The vault rejects:
 
 Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts any mechanically valid
 asset/USD feed selected by the creator. `ChainlinkAssetQuote` independently accepts and checks the
-creator-selected asset/quoteToken and quoteToken/USD legs, including token and feed addresses, staleness limits, and
-validation modes, multiplies them into an 8-decimal USD result, and exposes the older leg's
+creator-selected asset/quoteToken leg and registry-resolved quoteToken/USD leg, including token and feed addresses and staleness limits,
+multiplies them into an 8-decimal USD result, and exposes the older leg's
 timestamp. `UniswapV3Twap` accepts an asset/registeredQuote pool only after canonical-factory,
 exact pair and fee, initialization, observation-capacity, and full-history checks, then composes
 that TWAP with the creator-pinned quote-token/USD Chainlink feed. V4 is not a pricing source.
 
-Feed addresses and validation parameters remain pinned while the asset is tracked, and no source
+Feed addresses and freshness parameters remain pinned while the asset is tracked, and no source
 automatically falls back to another. Fully pruning an asset clears that pricing identity so a later
 strategy can reintroduce the asset with a newly validated source. Every read
 checks positive answers, round completeness, timestamps, protocol staleness bounds, and supported
-decimals. A `RobinhoodStockToken` leg additionally requires the base token's `oraclePaused()` call
+decimals. A `RobinhoodDirect` source additionally requires the base token's `oraclePaused()` call
 to be available and false. Robinhood equity feeds are 24/5; deployment policy currently allows the
 documented heartbeat plus delivery buffer, after which oracle-dependent operations pause until a
 fresh round arrives. Redemption remains price-independent.
 
 Frontend verification is informational and separate from runtime health. A configuration is
-Verified only when its asset, feed or V3 route, and validation mode exactly match the frontend
+Verified only when its asset, feed or V3 route, and explicit pricing source exactly match the frontend
 manifest and each submitted staleness limit is nonzero and no greater than that manifest entry's
 maximum. Shorter limits remain Verified with an availability warning. Temporary staleness or
 `oraclePaused()` makes oracle-dependent operations unavailable without changing Verified status.
@@ -843,8 +843,8 @@ only when both exact legs are independently reviewed.
 
 Tokenized-equity answers already include the Stock Token `uiMultiplier()` for dividends, splits,
 and other corporate actions; consumers must not multiply by it again. A feed can keep returning a
-value while its Stock Token has `oraclePaused() == true`, so the configured validation mode must
-check that token flag explicitly. See the
+value while its Stock Token has `oraclePaused() == true`, so `RobinhoodDirect` pricing checks that
+token flag explicitly. See the
 [Chainlink tokenized-equity documentation](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
 and [Robinhood oracle guidance](https://docs.robinhood.com/chain/oracles-and-price-feeds). Robinhood
 also recommends an L2 sequencer-uptime check; the current contracts do not implement one, so this is

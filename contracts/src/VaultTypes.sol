@@ -1,27 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
-
 enum PricingSource {
     ChainlinkDirect,
     ChainlinkAssetQuote,
-    UniswapV3Twap
+    UniswapV3Twap,
+    RobinhoodDirect
 }
 
 /// @notice User-supplied pricing configuration pinned when an asset first enters an OTF.
 /// @dev `primarySource` is the direct feed, asset/quote feed, or V3 asset/quote pool.
-///      `secondarySource` is the quote-token/USD feed for composed Chainlink and V3 routes.
 ///      `quoteToken` is zero for direct pricing and explicit for composed and V3 routes.
+///      The resolver loads the quote/USD leg and all of its rules from the admin registry.
 struct AssetPricingConfig {
     PricingSource source;
     address quoteToken;
     address primarySource;
-    address secondarySource;
     uint32 primaryMaxStaleness;
-    uint32 secondaryMaxStaleness;
-    OracleValidationMode primaryValidationMode;
-    OracleValidationMode secondaryValidationMode;
 }
 
 struct VaultInitParams {

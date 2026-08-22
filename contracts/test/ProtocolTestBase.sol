@@ -8,7 +8,6 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
 import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
@@ -231,23 +230,19 @@ abstract contract ProtocolTestBase is TestBase {
     }
 
     function _directPricing(address feed) internal pure returns (AssetPricingConfig memory config) {
-        return _directPricing(feed, OracleValidationMode.RobinhoodStockToken);
+        return _directPricing(feed, PricingSource.RobinhoodDirect);
     }
 
-    function _directPricing(address feed, OracleValidationMode validationMode)
+    function _directPricing(address feed, PricingSource source)
         internal
         pure
         returns (AssetPricingConfig memory config)
     {
         config = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect,
+            source: source,
             quoteToken: address(0),
             primarySource: feed,
-            secondarySource: address(0),
-            primaryMaxStaleness: 25 hours,
-            secondaryMaxStaleness: 0,
-            primaryValidationMode: validationMode,
-            secondaryValidationMode: OracleValidationMode.StandardChainlink
+            primaryMaxStaleness: 25 hours
         });
     }
 

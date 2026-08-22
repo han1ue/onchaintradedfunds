@@ -190,7 +190,7 @@ Direct Chainlink routes and composed primary legs are creator-selected. Composed
 enabled registered quote token and its exact current quote/USD configuration. A composed wrapper validates both pinned legs on
 every read and exposes the older timestamp. Every feed check covers answer, round, timestamp,
 the creator-selected staleness bound (capped at seven days), and decimals. The frontend marks a
-configuration Verified only when asset, route, and validation modes match its manifest and every
+configuration Verified only when asset, route, and explicit pricing source match its manifest and every
 submitted limit is nonzero and no greater than the manifest maximum. Runtime staleness and pause
 health do not change that informational status.
 
@@ -202,7 +202,7 @@ registry cannot prove Chainlink pair semantics from feed descriptions.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
 multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token
-is paused, so `RobinhoodStockToken` validation must require the base token's `oraclePaused()` call
+is paused, so `RobinhoodDirect` pricing must require the base token's `oraclePaused()` call
 to be available and false. See the [official Chainlink guidance](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
 and [Robinhood oracle documentation](https://docs.robinhood.com/chain/oracles-and-price-feeds).
 
@@ -385,7 +385,7 @@ Before any production deployment:
 - Run Foundry unit, fuzz, and invariant tests.
 - Add integration tests with real token and adapter behavior.
 - Verify all Robinhood Chain addresses from official documentation.
-- Verify every frontend-manifest Chainlink base/quote/feed relationship, validation mode,
+- Verify every frontend-manifest Chainlink base/quote/feed relationship, explicit pricing source,
   `oraclePaused()` behavior, and staleness expectation.
 - Verify the canonical V3 factory, WETH, USDG, exact constituent pools and fees, quote-token/USD
   feeds, observation cardinality, full TWAP history, and pricing/execution separation.

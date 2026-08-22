@@ -5,9 +5,8 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { AssetPricingConfig, VaultInitParams } from "../src/VaultTypes.sol";
+import { AssetPricingConfig, PricingSource, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract ProtocolTokenIncentivesTest is ProtocolTestBase {
@@ -255,7 +254,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.initialPricingConfigs[0] = _directPricing(address(feedA));
         params.initialPricingConfigs[1] = _directPricing(address(feedB));
         params.initialPricingConfigs[2] =
-            _directPricing(address(otfFeed), OracleValidationMode.StandardChainlink);
+            _directPricing(address(otfFeed), PricingSource.ChainlinkDirect);
 
         uint16 remainingWeight = uint16(10_000 - otfWeightBps);
         params.initialTargetWeightsBps = new uint16[](3);

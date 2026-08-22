@@ -160,7 +160,7 @@ type TargetAsset = {
   initialAmount: string;
 };
 
-type PricingSource = 0 | 1 | 2;
+type PricingSource = 0 | 1 | 2 | 3;
 type AssetPricingConfig = {
   source: PricingSource;
   quoteToken: `0x${string}`;
@@ -168,8 +168,6 @@ type AssetPricingConfig = {
   secondarySource: `0x${string}`;
   primaryMaxStaleness: number;
   secondaryMaxStaleness: number;
-  primaryValidationMode: 0 | 1;
-  secondaryValidationMode: 0 | 1;
 };
 
 type StrategyTargetAsset = Omit<TargetAsset, "targetWeight"> & {
@@ -424,11 +422,7 @@ const assetPricingResolverAbi = [
           { name: "source", type: "uint8" },
           { name: "quoteToken", type: "address" },
           { name: "primarySource", type: "address" },
-          { name: "secondarySource", type: "address" },
           { name: "primaryMaxStaleness", type: "uint32" },
-          { name: "secondaryMaxStaleness", type: "uint32" },
-          { name: "primaryValidationMode", type: "uint8" },
-          { name: "secondaryValidationMode", type: "uint8" },
         ],
       },
     ],
@@ -758,8 +752,6 @@ function emptyPricingConfig(): AssetPricingConfig {
     secondarySource: zeroAddress,
     primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
     secondaryMaxStaleness: 0,
-    primaryValidationMode: 0,
-    secondaryValidationMode: 0,
   };
 }
 
@@ -768,26 +760,23 @@ function pricingConfigIsComplete(config: AssetPricingConfig): boolean {
   if (!Number.isInteger(config.primaryMaxStaleness)
     || config.primaryMaxStaleness <= 0
     || config.primaryMaxStaleness > MAX_ORACLE_STALENESS_SECONDS) return false;
-  if (config.source === 2 && config.primaryValidationMode !== 0) return false;
   if (config.source === 1 || config.source === 2) {
     return isAddress(config.quoteToken)
       && config.quoteToken !== zeroAddress
-      && isAddress(config.secondarySource)
-      && config.secondarySource !== zeroAddress
-      && Number.isInteger(config.secondaryMaxStaleness)
-      && config.secondaryMaxStaleness > 0
-      && config.secondaryMaxStaleness <= MAX_ORACLE_STALENESS_SECONDS;
+      && registeredQuoteDetailsArePresent(config);
   }
-  return config.quoteToken === zeroAddress
-    && config.secondarySource === zeroAddress
-    && config.secondaryMaxStaleness === 0
-    && config.secondaryValidationMode === 0;
+  return config.quoteToken === zeroAddress;
+}
+
+function registeredQuoteDetailsArePresent(config: AssetPricingConfig): boolean {
+  return isAddress(config.secondarySource) && config.secondarySource !== zeroAddress;
 }
 
 function pricingSourceLabel(source: PricingSource): string {
   if (source === 0) return "Direct Chainlink asset/USD";
   if (source === 1) return "Composed Chainlink asset/quote × quote/USD";
-  return "Uniswap V3 TWAP asset/quote × quote/USD";
+  if (source === 2) return "Uniswap V3 TWAP asset/quote × quote/USD";
+  return "Robinhood direct asset/USD";
 }
 
 const quoteTokenRegistryAbi = [
@@ -802,7 +791,6 @@ const quoteTokenRegistryAbi = [
       name: "", type: "tuple", components: [
         { name: "usdFeed", type: "address" },
         { name: "maxStaleness", type: "uint32" },
-        { name: "validationMode", type: "uint8" },
         { name: "enabled", type: "bool" },
         { name: "allowComposedChainlink", type: "bool" },
         { name: "allowV3Twap", type: "bool" },
@@ -815,7 +803,6 @@ type RegisteredQuoteToken = {
   address: `0x${string}`;
   usdFeed: `0x${string}`;
   maxStaleness: number;
-  validationMode: 0 | 1;
   allowComposedChainlink: boolean;
   allowV3Twap: boolean;
 };
@@ -989,7 +976,6 @@ function PricingConfigurationFields({
       address,
       usdFeed: value.usdFeed,
       maxStaleness: Number(value.maxStaleness),
-      validationMode: Number(value.validationMode) as 0 | 1,
       allowComposedChainlink: value.allowComposedChainlink,
       allowV3Twap: value.allowV3Twap,
     }];
@@ -1058,14 +1044,13 @@ function PricingConfigurationFields({
                 primarySource: zeroAddress,
                 secondarySource: zeroAddress,
                 primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
-                secondaryMaxStaleness: Number(event.target.value) === 0 ? 0 : 60 * 60,
-                primaryValidationMode: 0,
-                secondaryValidationMode: 0,
+                secondaryMaxStaleness: [1, 2].includes(Number(event.target.value)) ? 60 * 60 : 0,
               })}
             >
               <option value={0}>Direct Chainlink asset/USD</option>
               <option value={1}>Composed Chainlink asset/quote × quote/USD</option>
               <option value={2}>Uniswap V3 TWAP asset/quote × quote/USD</option>
+              <option value={3}>Robinhood direct asset/USD</option>
             </select>
           </label>
           {config.source === 1 || config.source === 2 ? (
@@ -1082,7 +1067,6 @@ function PricingConfigurationFields({
                     quoteToken: quote.address,
                     secondarySource: quote.usdFeed,
                     secondaryMaxStaleness: quote.maxStaleness,
-                    secondaryValidationMode: quote.validationMode,
                   });
                 }}
               >
@@ -1138,45 +1122,15 @@ function PricingConfigurationFields({
             </label>
           )}
           {config.source === 1 || config.source === 2 ? (
-            <>
-              <label>
-                <span>Quote token/USD Chainlink feed</span>
-                <input
-                  className={config.secondarySource !== zeroAddress && !isAddress(config.secondarySource) ? "invalid" : undefined}
-                  value={config.secondarySource === zeroAddress ? "" : config.secondarySource}
-                  disabled={disabled}
-                  onChange={(event) => commit({ ...config, secondarySource: event.target.value.trim() as `0x${string}` })}
-                  placeholder="0x quote-token/USD feed"
-                />
-              </label>
-              <label>
-                <span>Quote/USD freshness limit</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_ORACLE_STALENESS_SECONDS}
-                  step={1}
-                  value={config.secondaryMaxStaleness}
-                  disabled={disabled}
-                  onChange={(event) => commit({ ...config, secondaryMaxStaleness: Number(event.target.value) })}
-                />
-                <small>Seconds; maximum 7 days.</small>
-              </label>
-              <label>
-                <span>Quote/USD validation</span>
-                <select
-                  value={config.secondaryValidationMode}
-                  disabled={disabled}
-                  onChange={(event) => commit({
-                    ...config,
-                    secondaryValidationMode: Number(event.target.value) as 0 | 1,
-                  })}
-                >
-                  <option value={0}>Standard Chainlink</option>
-                  <option value={1}>Robinhood token with oracle pause status</option>
-                </select>
-              </label>
-            </>
+            <div className="quoteRegistrySummary">
+              <span>Admin-managed quote/USD configuration</span>
+              <strong>{config.secondarySource !== zeroAddress ? shortAddress(config.secondarySource) : "Choose a quote token"}</strong>
+              <small>
+                {config.secondarySource !== zeroAddress
+                  ? `${formatPricingDuration(config.secondaryMaxStaleness)} · full Chainlink round validation`
+                  : "The registry supplies the Chainlink-compatible feed and freshness limit."}
+              </small>
+            </div>
           ) : null}
           <label>
             <span>{config.source === 1 ? "Asset/quote freshness limit" : "Freshness limit"}</span>
@@ -1191,23 +1145,9 @@ function PricingConfigurationFields({
             />
             <small>Seconds; nonzero and no more than 7 days.</small>
           </label>
-          <label>
-            <span>Validation mode</span>
-            <select
-              value={config.primaryValidationMode}
-              disabled={disabled || config.source === 2}
-              onChange={(event) => commit({
-                ...config,
-                primaryValidationMode: Number(event.target.value) as 0 | 1,
-              })}
-            >
-              <option value={0}>Standard Chainlink</option>
-              <option value={1}>Robinhood stock token</option>
-            </select>
-            {config.source !== 2 ? (
-              <small>Robinhood mode requires asset.oraclePaused() and rejects oracle-dependent actions while it returns true.</small>
-            ) : null}
-          </label>
+          {config.source === 3 ? (
+            <small>Robinhood pricing also requires asset.oraclePaused() and rejects oracle-dependent actions while it returns true.</small>
+          ) : null}
           {verification.availabilityWarning ? (
             <small className="availabilityWarning">
               Verified identity with a shorter freshness limit. Oracle-dependent actions may be unavailable more often.
@@ -1380,12 +1320,10 @@ function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
       ,
       primaryMaxStaleness,
       secondaryMaxStaleness,
-      primaryValidationMode,
-      secondaryValidationMode,
     ] = result.result;
     return [
       asset.address.toLowerCase(),
-      configured && (source === 0 || source === 1 || source === 2)
+      configured && (source === 0 || source === 1 || source === 2 || source === 3)
         ? {
             source,
             quoteToken,
@@ -1393,8 +1331,6 @@ function useVaultPinnedPricingConfigs(vault: VaultView, enabled: boolean) {
             secondarySource,
             primaryMaxStaleness,
             secondaryMaxStaleness,
-            primaryValidationMode,
-            secondaryValidationMode,
           } as AssetPricingConfig
         : undefined,
     ];
@@ -1567,7 +1503,6 @@ const protocolErrorMessages = new Map<string, string>(
     ["InvalidMaxStaleness(uint32)", "Every configured oracle leg needs a freshness limit greater than zero."],
     ["InvalidMaxStaleness()", "Every configured oracle leg needs a freshness limit greater than zero."],
     ["MaxStalenessTooHigh(uint32,uint32)", "An oracle freshness limit exceeds the protocol maximum of seven days."],
-    ["InvalidValidationMode(uint8)", "Choose Standard Chainlink or Robinhood stock-token validation."],
     ["InvalidOraclePrice(address,int256)", "A selected token's oracle returned an invalid price."],
     ["InvalidOracleTimestamp(address,uint256)", "A selected token's oracle returned an invalid update time."],
     ["IncompleteOracleRound(address,uint80,uint80)", "A selected token's latest oracle round is incomplete. Try again after the next price update."],
@@ -1760,7 +1695,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   });
   const catalogFeedAddresses = testnetCreateAssets.map((asset) => {
     const pricing = configuredPricingConfig(asset.address);
-    return pricing?.source === 0 && isAddress(pricing.primarySource)
+    return (pricing?.source === 0 || pricing?.source === 3) && isAddress(pricing.primarySource)
       ? pricing.primarySource
       : undefined;
   });
@@ -3109,10 +3044,6 @@ function formatPricingDuration(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-function oracleValidationLabel(mode: 0 | 1): string {
-  return mode === 1 ? "Robinhood token pause-aware validation" : "Standard Chainlink validation";
-}
-
 function PriceSourceLink({ address, label }: { address: string; label: string }) {
   return (
     <a
@@ -3141,7 +3072,7 @@ function PriceDetailsModal({
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const primaryIsChainlink = Boolean(config && config.source !== 2);
-  const hasSecondary = Boolean(config && config.source !== 0);
+  const hasSecondary = Boolean(config && (config.source === 1 || config.source === 2));
   const { data: primaryResults } = useReadContracts({
     contracts: primaryIsChainlink && config ? [
       { address: config.primarySource, abi: aggregatorV3ReadAbi, functionName: "latestRoundData" as const, chainId: robinhoodChainTestnet.id },
@@ -3196,8 +3127,8 @@ function PriceDetailsModal({
     : "quote token";
   const formula = !config
     ? "Pricing configuration unavailable"
-    : config.source === 0
-      ? `${asset.symbol}/USD Chainlink answer`
+    : config.source === 0 || config.source === 3
+      ? `${asset.symbol}/USD ${config.source === 3 ? "Robinhood" : "Chainlink"} answer`
       : config.source === 1
         ? `${asset.symbol}/${quoteLabel} Chainlink answer × ${quoteLabel}/USD Chainlink answer`
         : `${asset.symbol}/${quoteLabel} 1-hour Uniswap V3 TWAP × ${quoteLabel}/USD Chainlink answer`;
@@ -3262,7 +3193,7 @@ function PriceDetailsModal({
               <dl className="priceDetailsList">
                 <div><dt>Route</dt><dd>{pricingSourceLabel(config.source)}</dd></div>
                 {config.quoteToken !== zeroAddress ? <div><dt>Quote token</dt><dd>{quoteLabel} · <PriceSourceLink address={config.quoteToken} label="Quote token" /></dd></div> : null}
-                <div><dt>{config.source === 2 ? "Pricing pool" : config.source === 0 ? "Asset/USD feed" : "Asset/quote feed"}</dt><dd><PriceSourceLink address={config.primarySource} label="Primary pricing source" /></dd></div>
+                <div><dt>{config.source === 2 ? "Pricing pool" : config.source === 1 ? "Asset/quote feed" : "Asset/USD feed"}</dt><dd><PriceSourceLink address={config.primarySource} label="Primary pricing source" /></dd></div>
                 {hasSecondary ? <div><dt>Quote/USD feed</dt><dd><PriceSourceLink address={config.secondarySource} label="Quote USD feed" /></dd></div> : null}
                 {config.source === 2 && poolToken0 && poolToken1 ? <div><dt>Pool pair</dt><dd><PriceSourceLink address={poolToken0} label="Pool token 0" /> / <PriceSourceLink address={poolToken1} label="Pool token 1" /></dd></div> : null}
                 {config.source === 2 ? <div><dt>Pool fee</dt><dd>{poolFee !== undefined ? `${(poolFee / 10_000).toFixed(2)}% (${poolFee})` : "Loading"}</dd></div> : null}
@@ -3274,9 +3205,9 @@ function PriceDetailsModal({
               <h3>Validation</h3>
               <dl className="priceDetailsList">
                 <div><dt>Configuration</dt><dd><span className={`stateBadge ${verified ? "success" : "warning"}`}>{verified ? "Verified" : "Unverified"}</span></dd></div>
-                <div><dt>Primary rule</dt><dd>{config.source === 2 ? "Canonical V3 factory, exact pair and fee, initialized pool, ≥64 observations, full TWAP history" : oracleValidationLabel(config.primaryValidationMode)}</dd></div>
+                <div><dt>Primary rule</dt><dd>{config.source === 2 ? "Canonical V3 factory, exact pair and fee, initialized pool, ≥64 observations, full TWAP history" : config.source === 3 ? "Full Chainlink round validation plus asset.oraclePaused()" : "Full Chainlink round validation"}</dd></div>
                 <div><dt>Primary freshness</dt><dd>{formatPricingDuration(config.primaryMaxStaleness)}</dd></div>
-                {hasSecondary ? <div><dt>Quote/USD rule</dt><dd>{oracleValidationLabel(config.secondaryValidationMode)}</dd></div> : null}
+                {hasSecondary ? <div><dt>Quote/USD rule</dt><dd>Full Chainlink round validation</dd></div> : null}
                 {hasSecondary ? <div><dt>Quote/USD freshness</dt><dd>{formatPricingDuration(config.secondaryMaxStaleness)}</dd></div> : null}
               </dl>
             </section>
@@ -3285,7 +3216,7 @@ function PriceDetailsModal({
               <section>
                 <h3>Current Chainlink legs</h3>
                 <dl className="priceDetailsList">
-                  {primaryIsChainlink ? <div><dt>{config.source === 0 ? `${asset.symbol}/USD` : `${asset.symbol}/${quoteLabel}`}</dt><dd>{primaryReading ? `${primaryReading.value} · ${primaryReading.updated}` : "Reading unavailable"}</dd></div> : null}
+                  {primaryIsChainlink ? <div><dt>{config.source === 1 ? `${asset.symbol}/${quoteLabel}` : `${asset.symbol}/USD`}</dt><dd>{primaryReading ? `${primaryReading.value} · ${primaryReading.updated}` : "Reading unavailable"}</dd></div> : null}
                   {hasSecondary ? <div><dt>{quoteLabel}/USD</dt><dd>{secondaryReading ? `${secondaryReading.value} · ${secondaryReading.updated}` : "Reading unavailable"}</dd></div> : null}
                 </dl>
               </section>
@@ -6212,8 +6143,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const [manualTargetSecondarySource, setManualTargetSecondarySource] = useState("");
   const [manualTargetPrimaryMaxStaleness, setManualTargetPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
   const [manualTargetSecondaryMaxStaleness, setManualTargetSecondaryMaxStaleness] = useState(0);
-  const [manualTargetPrimaryValidationMode, setManualTargetPrimaryValidationMode] = useState<0 | 1>(0);
-  const [manualTargetSecondaryValidationMode, setManualTargetSecondaryValidationMode] = useState<0 | 1>(0);
   const [manualTargetState, setManualTargetState] = useState<TxState>("idle");
   const [manualTargetError, setManualTargetError] = useState<string>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
@@ -6282,10 +6211,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         ,
         primaryMaxStaleness,
         secondaryMaxStaleness,
-        primaryValidationMode,
-        secondaryValidationMode,
       ] = pricingResult.result;
-      if (!configured || (source !== 0 && source !== 1 && source !== 2)) return target;
+      if (!configured || (source !== 0 && source !== 1 && source !== 2 && source !== 3)) return target;
       return {
         ...target,
         quality: assetQualityForAddress(target.address),
@@ -6296,8 +6223,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           secondarySource,
           primaryMaxStaleness,
           secondaryMaxStaleness,
-          primaryValidationMode: primaryValidationMode as 0 | 1,
-          secondaryValidationMode: secondaryValidationMode as 0 | 1,
         },
       };
     }));
@@ -6470,17 +6395,15 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     const assetAddress = manualTargetAsset as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualTargetPricingSource,
-      quoteToken: manualTargetPricingSource !== 0 && isAddress(manualTargetQuoteToken)
+      quoteToken: (manualTargetPricingSource === 1 || manualTargetPricingSource === 2) && isAddress(manualTargetQuoteToken)
         ? manualTargetQuoteToken as `0x${string}`
         : zeroAddress,
       primarySource: manualTargetPrimarySource as `0x${string}`,
-      secondarySource: manualTargetPricingSource !== 0 && isAddress(manualTargetSecondarySource)
+      secondarySource: (manualTargetPricingSource === 1 || manualTargetPricingSource === 2) && isAddress(manualTargetSecondarySource)
         ? manualTargetSecondarySource as `0x${string}`
         : zeroAddress,
       primaryMaxStaleness: manualTargetPrimaryMaxStaleness,
-      secondaryMaxStaleness: manualTargetPricingSource !== 0 ? manualTargetSecondaryMaxStaleness : 0,
-      primaryValidationMode: manualTargetPrimaryValidationMode,
-      secondaryValidationMode: manualTargetPricingSource !== 0 ? manualTargetSecondaryValidationMode : 0,
+      secondaryMaxStaleness: manualTargetPricingSource === 1 || manualTargetPricingSource === 2 ? manualTargetSecondaryMaxStaleness : 0,
     };
     if (!pricingConfigIsComplete(pricingConfig)) {
       setManualTargetError("Complete the selected pricing route before validating it.");
@@ -6535,8 +6458,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       setManualTargetSecondarySource("");
       setManualTargetPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
       setManualTargetSecondaryMaxStaleness(0);
-      setManualTargetPrimaryValidationMode(0);
-      setManualTargetSecondaryValidationMode(0);
       setManualTargetState("confirmed");
       setTxState("idle");
     } catch (error) {
@@ -6743,8 +6664,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   secondarySource: (manualTargetSecondarySource || zeroAddress) as `0x${string}`,
                   primaryMaxStaleness: manualTargetPrimaryMaxStaleness,
                   secondaryMaxStaleness: manualTargetSecondaryMaxStaleness,
-                  primaryValidationMode: manualTargetPrimaryValidationMode,
-                  secondaryValidationMode: manualTargetSecondaryValidationMode,
                 }}
                 disabled={targetEditorLocked}
                 onChange={(pricingConfig) => {
@@ -6754,8 +6673,6 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   setManualTargetSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
                   setManualTargetPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
                   setManualTargetSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
-                  setManualTargetPrimaryValidationMode(pricingConfig.primaryValidationMode);
-                  setManualTargetSecondaryValidationMode(pricingConfig.secondaryValidationMode);
                 }}
               />
               <button
@@ -6766,7 +6683,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   targetEditorLocked || !vault.connectedIsManager ||
                   manualTargetState === "pending" || manualTargetState === "submitted" ||
                   !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
-                  (manualTargetPricingSource !== 0 && !isAddress(manualTargetSecondarySource)) ||
+                  ((manualTargetPricingSource === 1 || manualTargetPricingSource === 2) && !isAddress(manualTargetSecondarySource)) ||
                   protocolMinimumTargetWeightBps === undefined
                 }
               >
@@ -8174,8 +8091,6 @@ function CreateVaultView({
   const [manualSecondarySource, setManualSecondarySource] = useState("");
   const [manualPrimaryMaxStaleness, setManualPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
   const [manualSecondaryMaxStaleness, setManualSecondaryMaxStaleness] = useState(0);
-  const [manualPrimaryValidationMode, setManualPrimaryValidationMode] = useState<0 | 1>(0);
-  const [manualSecondaryValidationMode, setManualSecondaryValidationMode] = useState<0 | 1>(0);
   const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
@@ -8216,7 +8131,7 @@ function CreateVaultView({
     },
   });
   const pricingDraftKey = portfolio.map((asset) => (
-    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}:${asset.pricingConfig.primaryMaxStaleness}:${asset.pricingConfig.secondaryMaxStaleness}:${asset.pricingConfig.primaryValidationMode}:${asset.pricingConfig.secondaryValidationMode}`
+    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}:${asset.pricingConfig.primaryMaxStaleness}:${asset.pricingConfig.secondaryMaxStaleness}`
   )).join("|");
   useEffect(() => {
     let cancelled = false;
@@ -8581,17 +8496,15 @@ function CreateVaultView({
     const assetAddress = manualAssetAddress as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualPricingSource,
-      quoteToken: manualPricingSource !== 0 && isAddress(manualQuoteToken)
+      quoteToken: (manualPricingSource === 1 || manualPricingSource === 2) && isAddress(manualQuoteToken)
         ? manualQuoteToken as `0x${string}`
         : zeroAddress,
       primarySource: manualPrimarySource as `0x${string}`,
-      secondarySource: manualPricingSource !== 0 && isAddress(manualSecondarySource)
+      secondarySource: (manualPricingSource === 1 || manualPricingSource === 2) && isAddress(manualSecondarySource)
         ? manualSecondarySource as `0x${string}`
         : zeroAddress,
       primaryMaxStaleness: manualPrimaryMaxStaleness,
-      secondaryMaxStaleness: manualPricingSource !== 0 ? manualSecondaryMaxStaleness : 0,
-      primaryValidationMode: manualPrimaryValidationMode,
-      secondaryValidationMode: manualPricingSource !== 0 ? manualSecondaryValidationMode : 0,
+      secondaryMaxStaleness: manualPricingSource === 1 || manualPricingSource === 2 ? manualSecondaryMaxStaleness : 0,
     };
     if (!pricingConfigIsComplete(pricingConfig)) {
       setManualRegistrationError("Complete the selected pricing route before validating it.");
@@ -8650,8 +8563,6 @@ function CreateVaultView({
       setManualSecondarySource("");
       setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
       setManualSecondaryMaxStaleness(0);
-      setManualPrimaryValidationMode(0);
-      setManualSecondaryValidationMode(0);
       setManualRegistrationState("confirmed");
     } catch (error) {
       setManualRegistrationError(errorMessage(error));
@@ -9162,8 +9073,6 @@ function CreateVaultView({
                         secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
                         primaryMaxStaleness: manualPrimaryMaxStaleness,
                         secondaryMaxStaleness: manualSecondaryMaxStaleness,
-                        primaryValidationMode: manualPrimaryValidationMode,
-                        secondaryValidationMode: manualSecondaryValidationMode,
                       }}
                       onChange={(pricingConfig) => {
                         setManualPricingSource(pricingConfig.source);
@@ -9172,8 +9081,6 @@ function CreateVaultView({
                         setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
                         setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
                         setManualSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
-                        setManualPrimaryValidationMode(pricingConfig.primaryValidationMode);
-                        setManualSecondaryValidationMode(pricingConfig.secondaryValidationMode);
                       }}
                     />
                     <button
@@ -9186,7 +9093,7 @@ function CreateVaultView({
                         !connectedAddress ||
                         !isAddress(manualAssetAddress) ||
                         !isAddress(manualPrimarySource) ||
-                        (manualPricingSource !== 0 && !isAddress(manualSecondarySource))
+                        ((manualPricingSource === 1 || manualPricingSource === 2) && !isAddress(manualSecondarySource))
                       }
                     >
                       {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
@@ -9279,7 +9186,7 @@ function CreateVaultView({
                   <div className="subHeader"><span>Initial portfolio</span><small>Total {(totalWeightBps / 100).toFixed(2)}%</small></div>
                   <div className="reviewPortfolio">
                     {portfolio.map((asset, index) => (
-                      <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source !== 0 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
+                      <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source === 1 || asset.pricingConfig.source === 2 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
                         <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
                         {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed

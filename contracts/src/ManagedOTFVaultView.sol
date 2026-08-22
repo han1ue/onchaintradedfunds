@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import {
     PricingSource,
@@ -134,9 +133,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
             address secondarySource,
             address normalizedPriceFeed,
             uint32 primaryMaxStaleness,
-            uint32 secondaryMaxStaleness,
-            OracleValidationMode primaryValidationMode,
-            OracleValidationMode secondaryValidationMode
+            uint32 secondaryMaxStaleness
         )
     {
         configured = _pricingConfiguredForAsset[asset];
@@ -147,22 +144,19 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         normalizedPriceFeed = _priceFeedForAsset[asset];
         primaryMaxStaleness = _primaryMaxStalenessForAsset[asset];
         secondaryMaxStaleness = _secondaryMaxStalenessForAsset[asset];
-        primaryValidationMode = OracleValidationMode(_primaryOracleValidationModeForAsset[asset]);
-        secondaryValidationMode =
-            OracleValidationMode(_secondaryOracleValidationModeForAsset[asset]);
     }
 
     function maxStalenessForAsset(address asset) external view onlyDelegateCall returns (uint32) {
         return _maxStalenessForAsset[asset];
     }
 
-    function oracleValidationModeForAsset(address asset)
+    function pricingSourceForAsset(address asset)
         external
         view
         onlyDelegateCall
-        returns (OracleValidationMode)
+        returns (PricingSource)
     {
-        return OracleValidationMode(_oracleValidationModeForAsset[asset]);
+        return PricingSource(_pricingSourceForAsset[asset]);
     }
 
     function assetCount() external view onlyDelegateCall returns (uint256) {

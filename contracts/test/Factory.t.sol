@@ -233,7 +233,7 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
-    function testVaultPinsCreatorSelectedValidationMode() public {
+    function testVaultPinsRobinhoodSourcePauseCheck() public {
         ManagedOTFVault vault = _createVault();
         tokenA.setOraclePaused(true);
 

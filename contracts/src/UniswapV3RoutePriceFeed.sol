@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
-import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { UniswapV3TwapMath } from "./libraries/UniswapV3TwapMath.sol";
 
@@ -17,10 +17,6 @@ interface IUniswapV3OraclePool {
             int56[] memory tickCumulatives,
             uint160[] memory secondsPerLiquidityCumulativeX128s
         );
-}
-
-interface IUniswapV3QuotePauseStatus {
-    function oraclePaused() external view returns (bool);
 }
 
 /// @notice Normalizes an asset/quote-token V3 TWAP through a pinned quote-token/USD feed.
@@ -40,8 +36,6 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     error IncompleteOracleRound(address base, uint80 roundId, uint80 answeredInRound);
     error StaleOraclePrice(address base, uint256 updatedAt, uint256 maxStaleness);
     error UnsupportedDecimals(address token, uint8 decimals_);
-    error OraclePauseStatusUnavailable(address base);
-    error OraclePaused(address base);
     error PriceOverflow();
 
     address public immutable asset;
@@ -50,15 +44,13 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     IUniswapV3OraclePool public immutable assetQuotePool;
     AggregatorV3Interface public immutable quoteUsdFeed;
     uint32 public immutable quoteUsdMaxStaleness;
-    OracleValidationMode public immutable quoteUsdValidationMode;
 
     constructor(
         address asset_,
         address quoteToken_,
         IUniswapV3OraclePool assetQuotePool_,
         AggregatorV3Interface quoteUsdFeed_,
-        uint32 quoteUsdMaxStaleness_,
-        OracleValidationMode quoteUsdValidationMode_
+        uint32 quoteUsdMaxStaleness_
     ) {
         if (
             asset_ == address(0) || quoteToken_ == address(0)
@@ -86,7 +78,6 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         assetQuotePool = assetQuotePool_;
         quoteUsdFeed = quoteUsdFeed_;
         quoteUsdMaxStaleness = quoteUsdMaxStaleness_;
-        quoteUsdValidationMode = quoteUsdValidationMode_;
 
         _latestRoundData();
     }
@@ -169,16 +160,6 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
             uint8 feedDecimals
         )
     {
-        if (quoteUsdValidationMode == OracleValidationMode.RobinhoodStockToken) {
-            bool paused;
-            try IUniswapV3QuotePauseStatus(quoteToken).oraclePaused() returns (bool isPaused) {
-                paused = isPaused;
-            } catch {
-                revert OraclePauseStatusUnavailable(quoteToken);
-            }
-            if (paused) revert OraclePaused(quoteToken);
-        }
-
         int256 signedAnswer;
         uint80 answeredInRound;
         (roundId, signedAnswer, startedAt, updatedAt, answeredInRound) =

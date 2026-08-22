@@ -1,18 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { OracleValidationMode } from "./IOracleTypes.sol";
-
 interface IAssetMarketRegistry {
     function weth() external view returns (address);
     function usdg() external view returns (address);
     function quoteTokenFor(bytes32 marketId) external view returns (address);
 
+    function currentQuoteTokenConfig(address quoteToken)
+        external
+        view
+        returns (
+            address usdFeed,
+            uint32 maxStaleness,
+            bool enabled,
+            bool allowComposedChainlink,
+            bool allowV3Twap
+        );
+
     function validateQuoteToken(
         address quoteToken,
         address usdFeed,
         uint32 maxStaleness,
-        OracleValidationMode validationMode,
         bool forV3
     ) external view;
 

@@ -3,14 +3,13 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
-import { OracleValidationMode } from "../src/interfaces/IOracleTypes.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockFeeOnTransferToken } from "../src/mocks/MockFeeOnTransferToken.sol";
 import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
+import { PricingSource, TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract VaultHardeningTest is ProtocolTestBase {
@@ -125,7 +124,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), OracleValidationMode.StandardChainlink);
+            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         uint256[] memory emptyMaximums = new uint256[](0);
@@ -153,7 +152,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), OracleValidationMode.StandardChainlink);
+            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         reentrantToken.configureCallback(
@@ -292,7 +291,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), OracleValidationMode.StandardChainlink);
+            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         uint256[] memory amounts = vault.previewMint(ONE);
         reentrantToken.mint(ALICE, amounts[0]);
@@ -370,6 +369,6 @@ contract VaultHardeningTest is ProtocolTestBase {
         params = _defaultParams();
         params.initialAssets[0] = address(taxedToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(taxedFeed), OracleValidationMode.StandardChainlink);
+            _directPricing(address(taxedFeed), PricingSource.ChainlinkDirect);
     }
 }

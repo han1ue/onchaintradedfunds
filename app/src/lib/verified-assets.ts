@@ -2,41 +2,34 @@ import verifiedAssetsData from "../config/verified_assets.json";
 
 export type ApprovedPricingConfig =
   | {
-      source: "chainlink-direct";
+      source: "chainlink-direct" | "robinhood-direct";
       feedAddress: string;
       maxStaleness: number;
-      validationMode: 0 | 1;
     }
   | {
       source: "chainlink-composed";
       quoteToken: string;
       assetQuoteFeedAddress: string;
       assetQuoteMaxStaleness: number;
-      assetQuoteValidationMode: 0 | 1;
       quoteUsdFeedAddress: string;
       quoteUsdMaxStaleness: number;
-      quoteUsdValidationMode: 0 | 1;
     }
   | {
       source: "uniswap-v3";
       quoteToken: string;
       poolAddress: string;
       maxStaleness: number;
-      validationMode: 0;
       quoteUsdFeedAddress: string;
       quoteUsdMaxStaleness: number;
-      quoteUsdValidationMode: 0 | 1;
     };
 
 export type NumericPricingConfig = {
-  source: 0 | 1 | 2;
+  source: 0 | 1 | 2 | 3;
   quoteToken: string;
   primarySource: string;
   secondarySource: string;
   primaryMaxStaleness: number;
   secondaryMaxStaleness: number;
-  primaryValidationMode: 0 | 1;
-  secondaryValidationMode: 0 | 1;
 };
 
 export type PricingVerification = {
@@ -63,16 +56,14 @@ export function verifiedAssetFor(chainId: number, tokenAddress: string): Verifie
 }
 
 export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPricingConfig {
-  if (config.source === "chainlink-direct") {
+  if (config.source === "chainlink-direct" || config.source === "robinhood-direct") {
     return {
-      source: 0,
+      source: config.source === "robinhood-direct" ? 3 : 0,
       quoteToken: ZERO_ADDRESS,
       primarySource: config.feedAddress,
       secondarySource: ZERO_ADDRESS,
       primaryMaxStaleness: config.maxStaleness,
       secondaryMaxStaleness: 0,
-      primaryValidationMode: config.validationMode,
-      secondaryValidationMode: 0,
     };
   }
   if (config.source === "chainlink-composed") {
@@ -83,9 +74,10 @@ export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPr
       secondarySource: config.quoteUsdFeedAddress,
       primaryMaxStaleness: config.assetQuoteMaxStaleness,
       secondaryMaxStaleness: config.quoteUsdMaxStaleness,
-      primaryValidationMode: config.assetQuoteValidationMode,
-      secondaryValidationMode: config.quoteUsdValidationMode,
     };
+  }
+  if (config.source !== "uniswap-v3") {
+    throw new Error(`Unsupported pricing source: ${config.source}`);
   }
   return {
     source: 2,
@@ -94,8 +86,6 @@ export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPr
     secondarySource: config.quoteUsdFeedAddress,
     primaryMaxStaleness: config.maxStaleness,
     secondaryMaxStaleness: config.quoteUsdMaxStaleness,
-    primaryValidationMode: config.validationMode,
-    secondaryValidationMode: config.quoteUsdValidationMode,
   };
 }
 
@@ -108,8 +98,6 @@ export function pricingConfigsMatch(left: NumericPricingConfig, right: NumericPr
     && sameAddress(left.quoteToken, right.quoteToken)
     && sameAddress(left.primarySource, right.primarySource)
     && sameAddress(left.secondarySource, right.secondarySource)
-    && left.primaryValidationMode === right.primaryValidationMode
-    && left.secondaryValidationMode === right.secondaryValidationMode
     && right.primaryMaxStaleness > 0
     && right.primaryMaxStaleness <= left.primaryMaxStaleness
     && (right.source === 1 || right.source === 2

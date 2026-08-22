@@ -2,12 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
-import { MAX_ORACLE_STALENESS, OracleValidationMode } from "./interfaces/IOracleTypes.sol";
+import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
-
-interface IChainlinkPauseStatus {
-    function oraclePaused() external view returns (bool);
-}
 
 /// @notice Normalizes an ASSET/QUOTE feed composed with QUOTE/USD into an 8-decimal USD feed.
 /// @dev Both pinned legs are validated independently on every read. No fallback source exists.
@@ -23,8 +19,6 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     error IncompleteOracleRound(address base, uint80 roundId, uint80 answeredInRound);
     error StaleOraclePrice(address base, uint256 updatedAt, uint256 maxStaleness);
     error UnsupportedFeedDecimals(address feed, uint8 decimals_);
-    error OraclePauseStatusUnavailable(address base);
-    error OraclePaused(address base);
     error PriceOverflow();
 
     address public immutable asset;
@@ -33,8 +27,6 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     AggregatorV3Interface public immutable wethUsdFeed;
     uint32 public immutable assetWethMaxStaleness;
     uint32 public immutable wethUsdMaxStaleness;
-    OracleValidationMode public immutable assetWethValidationMode;
-    OracleValidationMode public immutable wethUsdValidationMode;
 
     constructor(
         address asset_,
@@ -42,9 +34,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
         AggregatorV3Interface assetWethFeed_,
         AggregatorV3Interface wethUsdFeed_,
         uint32 assetWethMaxStaleness_,
-        uint32 wethUsdMaxStaleness_,
-        OracleValidationMode assetWethValidationMode_,
-        OracleValidationMode wethUsdValidationMode_
+        uint32 wethUsdMaxStaleness_
     ) {
         if (
             asset_ == address(0) || weth_ == address(0) || address(assetWethFeed_) == address(0)
@@ -71,8 +61,6 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
         wethUsdFeed = wethUsdFeed_;
         assetWethMaxStaleness = assetWethMaxStaleness_;
         wethUsdMaxStaleness = wethUsdMaxStaleness_;
-        assetWethValidationMode = assetWethValidationMode_;
-        wethUsdValidationMode = wethUsdValidationMode_;
 
         _latestRoundData();
     }
@@ -114,14 +102,14 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint256 assetStartedAt,
             uint256 assetUpdatedAt,
             uint8 assetDecimals
-        ) = _readLeg(asset, assetWethFeed, assetWethMaxStaleness, assetWethValidationMode);
+        ) = _readLeg(asset, assetWethFeed, assetWethMaxStaleness);
         (
             uint80 wethRound,
             uint256 wethUsdAnswer,
             uint256 wethStartedAt,
             uint256 wethUpdatedAt,
             uint8 wethDecimals
-        ) = _readLeg(weth, wethUsdFeed, wethUsdMaxStaleness, wethUsdValidationMode);
+        ) = _readLeg(weth, wethUsdFeed, wethUsdMaxStaleness);
 
         uint256 normalized =
             MathEx.mulDiv(assetWethAnswer, wethUsdAnswer, 10 ** uint256(assetDecimals));
@@ -146,8 +134,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     function _readLeg(
         address base,
         AggregatorV3Interface feed,
-        uint32 maxStaleness,
-        OracleValidationMode validationMode
+        uint32 maxStaleness
     )
         private
         view
@@ -159,16 +146,6 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint8 feedDecimals
         )
     {
-        if (validationMode == OracleValidationMode.RobinhoodStockToken) {
-            bool paused;
-            try IChainlinkPauseStatus(base).oraclePaused() returns (bool isPaused) {
-                paused = isPaused;
-            } catch {
-                revert OraclePauseStatusUnavailable(base);
-            }
-            if (paused) revert OraclePaused(base);
-        }
-
         int256 signedAnswer;
         uint80 answeredInRound;
         (roundId, signedAnswer, startedAt, updatedAt, answeredInRound) = feed.latestRoundData();

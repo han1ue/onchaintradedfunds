@@ -310,13 +310,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => address) internal _primaryPriceSourceForAsset;
     mapping(address => address) internal _secondaryPriceSourceForAsset;
     mapping(address => uint32) internal _maxStalenessForAsset;
-    mapping(address => uint8) internal _oracleValidationModeForAsset;
     mapping(address => uint32) internal _secondaryMaxStalenessForAsset;
-    mapping(address => uint8) internal _secondaryOracleValidationModeForAsset;
     mapping(address => bool) internal _pricingConfiguredForAsset;
     AssetPricingConfig[] internal _pendingPricingConfigs;
     mapping(address => uint32) internal _primaryMaxStalenessForAsset;
-    mapping(address => uint8) internal _primaryOracleValidationModeForAsset;
     mapping(address => address) internal _quoteTokenForAsset;
 
     modifier onlyManager() {

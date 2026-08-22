@@ -5,7 +5,6 @@ import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
-import { OracleValidationMode } from "./interfaces/IOracleTypes.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -779,15 +778,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
                 source: PricingSource(_pricingSourceForAsset[asset]),
                 quoteToken: _quoteTokenForAsset[asset],
                 primarySource: _primaryPriceSourceForAsset[asset],
-                secondarySource: _secondaryPriceSourceForAsset[asset],
-                primaryMaxStaleness: _primaryMaxStalenessForAsset[asset],
-                secondaryMaxStaleness: _secondaryMaxStalenessForAsset[asset],
-                primaryValidationMode: OracleValidationMode(
-                    _primaryOracleValidationModeForAsset[asset]
-                ),
-                secondaryValidationMode: OracleValidationMode(
-                    _secondaryOracleValidationModeForAsset[asset]
-                )
+                primaryMaxStaleness: _primaryMaxStalenessForAsset[asset]
             });
         }
     }
