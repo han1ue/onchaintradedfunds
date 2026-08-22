@@ -326,6 +326,17 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         weights[1] = 50;
         vm.expectPartialRevert(ManagedOTFVaultStorage.AssetWeightTooLow.selector);
         vault.proposeStrategy(assets, weights, "Target below the protocol minimum.");
+
+        assets[0] = address(vault);
+        weights[0] = 5_000;
+        weights[1] = 5_000;
+        AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
+        pricingConfigs[0] = _directPricing(address(feedA), PricingSource.ChainlinkDirect);
+        pricingConfigs[1] = _pricingConfigFor(address(tokenB));
+        vm.expectRevert(ManagedOTFVaultStorage.SelfAssetNotSupported.selector);
+        vault.proposeStrategyWithPricing(
+            assets, weights, pricingConfigs, "The vault cannot hold its own share token."
+        );
     }
 
     function testManagerRemovedConstituentPausesDepositsAndIsPrunedAtZero() public {

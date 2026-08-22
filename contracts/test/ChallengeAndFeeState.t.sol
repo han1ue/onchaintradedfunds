@@ -266,7 +266,8 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.lastFeeAccrualTimestamp(), vault.challengeDeadline());
         assertEq(vault.challengeRewardShares(address(this)), 0);
         assertEq(vault.balanceOf(address(this)), balanceBeforeReward + forfeited / 2);
-        assertEq(vault.totalSupply(), initialSupply + forfeited / 2);
+        assertEq(vault.balanceOf(address(collector)), forfeited - reward);
+        assertEq(vault.totalSupply(), initialSupply + forfeited);
     }
 
     function testOverdueChallengeForfeitureIsOneTimeAndDeadlineBounded() public {

@@ -72,6 +72,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidRoleAddress(address account);
     error InvalidReceiver(address receiver);
     error AssetNotContract(address asset);
+    error SelfAssetNotSupported();
     error InvalidWeightSum(uint256 sum);
     error AssetWeightTooLow(address asset, uint256 weightBps, uint256 minimum);
     error TrackedAssetLimitExceeded();

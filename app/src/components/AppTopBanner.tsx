@@ -10,7 +10,7 @@ function isAppRoute(pathname: string): boolean {
     pathname.startsWith("/otfs") ||
     pathname === "/create" ||
     pathname === "/wallet" ||
-    pathname === "/rwas" ||
+    pathname === "/verified" ||
     pathname === "/liquidity"
   );
 }

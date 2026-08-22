@@ -93,6 +93,7 @@ import {
   isVerifiedPricingConfig,
   pricingVerification,
   pricingConfigsMatch,
+  verifiedAssets,
   verifiedAssetFor,
 } from "@/lib/verified-assets";
 import {
@@ -101,7 +102,6 @@ import {
   primaryDepositsBlocked,
   type AssetQuality,
 } from "@/lib/protocol-ui";
-import supportedAssetCatalog from "@/config/supported-assets.json";
 import {
   formatCooldown,
   formatRelativeAvailability,
@@ -132,7 +132,7 @@ type PositionTradeReceipt = {
   detail: string;
   transactionHash: `0x${string}`;
 };
-export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits" | "rwas";
+export type AppView = "landing" | "detail" | "vaults" | "create" | "created" | "manage" | "deposits" | "verified";
 type DataMode = "live" | "empty" | "unavailable";
 
 const MAX_STRATEGY_RATIONALE_BYTES = 2_048;
@@ -294,18 +294,21 @@ type VaultView = {
   depositPauseStatusUnavailable: boolean;
 };
 
-const navTabs = ["OTFs", "RWAs", "Liquidity"];
+const navTabs = ["OTFs", "Verified", "Liquidity"];
 
-const testnetCreateAssets = supportedAssetCatalog.assets.flatMap((asset) => {
-  const deployment = asset.deployments.find(({ chainId }) => chainId === robinhoodChainTestnet.id);
-  return deployment ? [{
-    symbol: asset.symbol,
-    name: asset.name,
-    address: deployment.contractAddress,
-    logoUrl: asset.logoUrl,
-    quality: asset.quality === "high" ? "high" as const : "normal" as const,
-  }] : [];
-});
+type VerifiedCatalogAsset = {
+  symbol: string;
+  name: string;
+  address: string;
+  decimals?: number;
+  logoUrl?: undefined;
+  quality: "high";
+  metadataLoading: boolean;
+};
+
+const testnetVerifiedAssetRecords = verifiedAssets.filter(
+  (asset) => asset.chainId === robinhoodChainTestnet.id,
+);
 
 const erc20BalanceAbi = [
   {
@@ -438,6 +441,57 @@ const erc20MetadataReadAbi = [
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
 ] as const;
+
+function useVerifiedAssetCatalog(): VerifiedCatalogAsset[] {
+  const chainId = useChainId();
+  const { data, isLoading } = useReadContracts({
+    contracts: testnetVerifiedAssetRecords.flatMap((asset) => ([
+      {
+        address: asset.tokenAddress as `0x${string}`,
+        abi: erc20MetadataReadAbi,
+        functionName: "name" as const,
+        chainId: robinhoodChainTestnet.id,
+      },
+      {
+        address: asset.tokenAddress as `0x${string}`,
+        abi: erc20MetadataReadAbi,
+        functionName: "symbol" as const,
+        chainId: robinhoodChainTestnet.id,
+      },
+      {
+        address: asset.tokenAddress as `0x${string}`,
+        abi: erc20MetadataReadAbi,
+        functionName: "decimals" as const,
+        chainId: robinhoodChainTestnet.id,
+      },
+    ])),
+    query: {
+      enabled: chainId === robinhoodChainTestnet.id,
+      staleTime: 5 * 60_000,
+    },
+  });
+
+  return useMemo(() => testnetVerifiedAssetRecords.map((asset, index) => {
+    const nameResult = data?.[index * 3];
+    const symbolResult = data?.[index * 3 + 1];
+    const decimalsResult = data?.[index * 3 + 2];
+    const symbol = symbolResult?.status === "success"
+      ? String(symbolResult.result).trim().slice(0, 16)
+      : "";
+    const name = nameResult?.status === "success"
+      ? String(nameResult.result).trim().slice(0, 80)
+      : "";
+    return {
+      symbol: symbol || shortAssetAddress(asset.tokenAddress),
+      name: name || (isLoading ? "Loading onchain metadata" : "Name unavailable"),
+      address: asset.tokenAddress,
+      decimals: decimalsResult?.status === "success" ? Number(decimalsResult.result) : undefined,
+      logoUrl: undefined,
+      quality: "high" as const,
+      metadataLoading: isLoading,
+    };
+  }), [data, isLoading]);
+}
 
 const vaultCreatedEventAbi = [
   {
@@ -1219,14 +1273,14 @@ function weightPercentFromValue(value: bigint | undefined, nav: bigint | undefin
   return Number(value * 1_000n / nav) / 10;
 }
 
-function catalogAssetForAddress(address: string) {
-  return testnetCreateAssets.find(
+function catalogAssetForAddress(catalog: VerifiedCatalogAsset[], address: string) {
+  return catalog.find(
     (asset) => asset.address.toLowerCase() === address.toLowerCase(),
   );
 }
 
-function assetQualityForAddress(address: string): AssetQuality {
-  return normalizeAssetQuality(catalogAssetForAddress(address)?.quality);
+function assetQualityForAddress(catalog: VerifiedCatalogAsset[], address: string): AssetQuality {
+  return normalizeAssetQuality(catalogAssetForAddress(catalog, address)?.quality);
 }
 
 function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): CatalogOraclePrices {
@@ -1454,12 +1508,13 @@ function normalizeAllocations(
   assets?: readonly string[],
   weights?: readonly number[] | readonly bigint[],
   currentWeights?: readonly number[] | readonly bigint[],
+  catalog: VerifiedCatalogAsset[] = [],
 ): Allocation[] {
   if (!assets?.length || !weights?.length) return [];
 
   return assets.map((address, index) => {
     const weight = Number(weights[index] ?? 0);
-    const catalogAsset = catalogAssetForAddress(address);
+    const catalogAsset = catalogAssetForAddress(catalog, address);
     return {
       symbol: catalogAsset?.symbol ?? `Asset ${index + 1}`,
       name: catalogAsset?.name ?? "Supported token",
@@ -1651,13 +1706,13 @@ const viewPaths: Record<AppView, string> = {
   created: "/otfs/unconfigured/created",
   manage: "/otfs/unconfigured/manage",
   deposits: "/wallet",
-  rwas: "/rwas",
+  verified: "/verified",
 };
 
 function viewFromPathname(pathname: string): AppView {
   if (pathname === "/create") return "create";
   if (pathname === "/wallet") return "deposits";
-  if (pathname === "/rwas") return "rwas";
+  if (pathname === "/verified") return "verified";
   if (pathname.endsWith("/created")) return "created";
   if (pathname.endsWith("/manage")) return "manage";
   if (pathname.startsWith("/otfs/")) return "detail";
@@ -1670,6 +1725,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
   const isTestnet = chainId === robinhoodChainTestnet.id;
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const [view, setView] = useState<AppView>(initialView);
   const [selectedVaultAddress, setSelectedVaultAddress] = useState<`0x${string}` | undefined>(
     () => typeof window === "undefined" ? undefined : vaultAddressFromPathname(window.location.pathname),
@@ -1881,7 +1937,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         creator: creatorValue && isAddress(creatorValue) ? creatorValue : undefined,
         creatorFeeBps: creatorFee,
         assetCount: vaultAssets?.length ?? 0,
-        quality: deriveOtfQuality((vaultAssets ?? []).map((asset) => assetQualityForAddress(asset))),
+        quality: deriveOtfQuality((vaultAssets ?? []).map((asset) => assetQualityForAddress(testnetCreateAssets, asset))),
         navValue: totalValue,
         nav: formatUsd18(totalValue),
         navPerShare: formatUsd18(shareValue),
@@ -1955,7 +2011,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   );
   const navLossBudgetRecoveryAt = navLossBudget?.[0] ? Number(navLossBudget[0]) : undefined;
   const navLossBudgetUsedBps = Number(navLossBudget?.[1] ?? 0);
-  const allocations = normalizeAllocations(assets, targetWeights, currentWeights);
+  const allocations = normalizeAllocations(assets, targetWeights, currentWeights, testnetCreateAssets);
   const cooldownProgress = progressThroughCooldown(lastStrategyCompletion, nextStrategyChange);
   const connectedIsManager =
     connectedAddress && manager && connectedAddress.toLowerCase() === manager.toLowerCase();
@@ -2040,7 +2096,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         const config = pinnedPricing.configs[asset.address.toLowerCase()];
         return config && isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, config);
       });
-  const activeTab = view === "rwas" ? "RWAs" : "OTFs";
+  const activeTab = view === "verified" ? "Verified" : "OTFs";
 
   useEffect(() => {
     if (dataMode === "live" && data) {
@@ -2092,7 +2148,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   }
 
   function changeView(tab: string) {
-    if (tab === "RWAs") openView("rwas");
+    if (tab === "Verified") openView("verified");
     else if (tab === "Liquidity") window.location.assign("/liquidity");
     else openView("vaults");
   }
@@ -2230,8 +2286,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           />
         ) : null}
 
-        {view === "rwas" ? (
-          <RwaCatalogView isTestnet={isTestnet} oraclePrices={catalogOraclePrices} />
+        {view === "verified" ? (
+          <VerifiedAssetsView isTestnet={isTestnet} oraclePrices={catalogOraclePrices} />
         ) : null}
 
         <footer className="dashboardFooter">
@@ -2580,9 +2636,10 @@ function VaultHeader({
   onBack: () => void;
   onManage: () => void;
 }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const [copied, setCopied] = useState<string | null>(null);
   const quality = deriveOtfQuality(
-    vault.allocations.map((asset) => assetQualityForAddress(asset.address)),
+    vault.allocations.map((asset) => assetQualityForAddress(testnetCreateAssets, asset.address)),
   );
 
   async function copy(value: string | undefined, key: string) {
@@ -3411,6 +3468,7 @@ function PortfolioAllocation({
 }
 
 function StrategyHistoryModule({ vault }: { vault: VaultView }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const [pendingTargets, setPendingTargets] = useState<{ tokens: readonly string[]; weights: readonly bigint[] }>();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const {
@@ -3650,6 +3708,7 @@ function UserActions({
 }: {
   vault: VaultView;
 }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const [activeAction, setActiveAction] = useState<"deposit" | "redeem">("deposit");
   const [settlementMode, setSettlementMode] = useState<RoutedSettlementMode | "rwas">("usdg");
   const [selectedRoute, setSelectedRoute] = useState<"market" | "underlying">();
@@ -3735,7 +3794,7 @@ function UserActions({
       Boolean(exactInputRouteFor(asset.address)),
   );
   const vaultQuality = deriveOtfQuality(
-    vault.allocations.map((asset) => assetQualityForAddress(asset.address)),
+    vault.allocations.map((asset) => assetQualityForAddress(testnetCreateAssets, asset.address)),
   );
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
@@ -6118,6 +6177,7 @@ function PortfolioBandStatus({
 }
 
 function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefresh: () => Promise<unknown> }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const activeTargetsKey = `${vault.address ?? "unconfigured"}|${vault.allocations
     .map((asset) => `${asset.address.toLowerCase()}:${asset.symbol}:${asset.targetWeightBps}`)
     .join("|")}`;
@@ -6126,7 +6186,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      quality: assetQualityForAddress(asset.address),
+      quality: assetQualityForAddress(testnetCreateAssets, asset.address),
       pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
@@ -6186,7 +6246,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      quality: assetQualityForAddress(asset.address),
+      quality: assetQualityForAddress(testnetCreateAssets, asset.address),
       pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
@@ -6215,7 +6275,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       if (!configured || (source !== 0 && source !== 1 && source !== 2 && source !== 3)) return target;
       return {
         ...target,
-        quality: assetQualityForAddress(target.address),
+        quality: assetQualityForAddress(testnetCreateAssets, target.address),
         pricingConfig: {
           source,
           quoteToken,
@@ -6561,7 +6621,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             <div className="targetCard" key={`${target.ticker}-${index}`}>
               <div className="targetCardHeader">
                 <div className="assetSelectWithLogo">
-                  <AssetLogo logoUrl={catalogAssetForAddress(target.address)?.logoUrl} symbol={target.ticker} compact />
+                  <AssetLogo symbol={target.ticker} compact />
                   <select
                     className="targetTicker"
                     value={target.address}
@@ -6728,7 +6788,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         <div className="weightPreviewList">
           {targetChanges.map((target, index) => (
             <div className="weightPreviewRow" key={`${target.ticker}-preview-${index}`}>
-              <span className="assetNameWithLogo"><AssetLogo logoUrl={catalogAssetForAddress(target.address)?.logoUrl} symbol={target.ticker || "Asset"} compact /><strong>{target.ticker || "Asset"}</strong></span>
+              <span className="assetNameWithLogo"><AssetLogo symbol={target.ticker || "Asset"} compact /><strong>{target.ticker || "Asset"}</strong></span>
               <div className="weightTrack" aria-label={`${target.ticker} live holding ${target.current.toFixed(1)}%, active target ${target.activeTarget.toFixed(1)}%, draft target ${Number(target.targetWeight || 0).toFixed(1)}%`}>
                 <span style={{ width: `${Math.min(target.current, 100)}%` }} />
                 <i className="active" style={{ left: `${Math.min(target.activeTarget, 100)}%` }} />
@@ -7795,6 +7855,7 @@ function VaultsDirectory({
   onOpenVault: (address: `0x${string}`) => void;
   onCreateVault: () => void;
 }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const [query, setQuery] = useState("");
 
   if (!isTestnet) {
@@ -7856,7 +7917,7 @@ function VaultsDirectory({
       <div className="directoryMetrics">
         <MetricCard label="Total AUM" value={totalAum} icon={null} />
         <MetricCard label="OTFs" value={String(vaults.length)} icon={null} />
-        <MetricCard label="RWA metadata records" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
+        <MetricCard label="Verified asset records" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
       </div>
 
       {managedVaults.length ? (
@@ -8000,6 +8061,7 @@ function CreateVaultView({
   onBack: () => void;
   onCreated: (address: `0x${string}`, transactionHash: `0x${string}`) => void;
 }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const factoryAddress = configuredFactoryAddress();
   const { data: protocolMinimumTargetWeightResult } = useReadContract({
     address: factoryAddress,
@@ -8084,6 +8146,20 @@ function CreateVaultView({
       };
     }),
   );
+  useEffect(() => {
+    if (testnetCreateAssets.some((asset) => asset.metadataLoading)) return;
+    setPortfolio((current) => current.map((item) => {
+      const metadata = testnetCreateAssets.find(
+        (asset) => asset.address.toLowerCase() === item.address.toLowerCase(),
+      );
+      return metadata ? {
+        ...item,
+        ticker: metadata.symbol,
+        name: metadata.name,
+        quality: metadata.quality,
+      } : item;
+    }));
+  }, [testnetCreateAssets]);
   const [manualAssetAddress, setManualAssetAddress] = useState("");
   const [manualPricingSource, setManualPricingSource] = useState<PricingSource>(0);
   const [manualQuoteToken, setManualQuoteToken] = useState("");
@@ -8955,13 +9031,13 @@ function CreateVaultView({
                       <div className="assetSelectField">
                         <span>Asset</span>
                         <div className="createAssetSearchControl">
-                          <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
+                          <AssetLogo symbol={asset.ticker} compact />
                           <input
                             key={asset.address}
                             className="createAssetSearchInput"
                             list="create-asset-directory"
                             aria-label={`Asset ${index + 1}`}
-                            defaultValue={`${asset.ticker} · ${asset.name ?? catalogAssetForAddress(asset.address)?.name ?? asset.address}`}
+                            defaultValue={`${asset.ticker} · ${asset.name ?? catalogAssetForAddress(testnetCreateAssets, asset.address)?.name ?? asset.address}`}
                             placeholder="Name, symbol, or 0x address"
                             onChange={(event) => {
                               const query = event.target.value.trim().toLowerCase();
@@ -9187,7 +9263,7 @@ function CreateVaultView({
                   <div className="reviewPortfolio">
                     {portfolio.map((asset, index) => (
                       <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source === 1 || asset.pricingConfig.source === 2 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
-                        <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} compact />
+                        <AssetLogo symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
                         {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed
                         <small>
@@ -9231,7 +9307,7 @@ function CreateVaultView({
                       return (
                         <div className="seedApprovalRow" key={asset.address}>
                           <div className="seedApprovalIdentity">
-                            <AssetLogo logoUrl={catalogAssetForAddress(asset.address)?.logoUrl} symbol={asset.ticker} />
+                            <AssetLogo symbol={asset.ticker} />
                             <div>
                               <strong>{asset.ticker}</strong>
                               <small>{asset.initialAmount || "0"} required / {formatWalletTokenBalance(asset.balance, 18)} available</small>
@@ -9704,30 +9780,55 @@ function WalletView({
   );
 }
 
-function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oraclePrices: CatalogOraclePrices }) {
+function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; oraclePrices: CatalogOraclePrices }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   return (
     <div className="appView">
       <AppPageHeader
-        title="RWA metadata"
-        description="Convenient token, quality, execution, and pricing references. This catalog does not authorize OTF constituents."
-        icon={<Landmark size={18} />}
+        title="Verified assets"
+        description="Token identities and pricing routes checked against the app's verification registry. Verification is informational and does not authorize OTF constituents."
+        icon={<ShieldCheck size={18} />}
         actions={isTestnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined}
       />
       {!isTestnet ? (
-        <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet assets are not supported yet</h2><p>Switch on Testnet mode in Settings to inspect the current RWA catalog.</p></section>
+        <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section>
       ) : (
         <section className="sectionCard walletAssets">
-          <div className="directoryPanelHeading"><div><h2>RWA catalog</h2><p>Frontend metadata, execution liquidity, and reference prices.</p></div><span className="stateBadge muted">{testnetCreateAssets.length} records</span></div>
-          <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable">
-            <thead><tr><th>Asset</th><th>Quality</th><th>Token address</th><th>Execution pool</th><th>Reference price</th></tr></thead>
+          <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{testnetCreateAssets.length} verified</span></div>
+          <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable verifiedAssetsTable">
+            <thead><tr><th>Onchain asset</th><th>Status</th><th>Decimals</th><th>Token contract</th><th>Pricing details</th><th>Execution pool</th><th>Reference price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
               const pool = configuredConstituentPool(asset.address);
               const oraclePrice = oraclePrices[asset.address.toLowerCase()];
+              const verification = verifiedAssetFor(robinhoodChainTestnet.id, asset.address);
+              const pricingConfig = verification?.approvedPricingConfigs[0];
+              const pricingSource = pricingConfig?.source === "robinhood-direct"
+                ? "Robinhood direct"
+                : pricingConfig?.source === "chainlink-direct"
+                  ? "Chainlink direct"
+                  : pricingConfig?.source === "chainlink-composed"
+                    ? "Chainlink composed"
+                    : pricingConfig?.source === "uniswap-v3"
+                      ? "Uniswap V3 TWAP"
+                      : "Not configured";
+              const primarySource = pricingConfig
+                ? "feedAddress" in pricingConfig
+                  ? pricingConfig.feedAddress
+                  : "assetQuoteFeedAddress" in pricingConfig
+                    ? pricingConfig.assetQuoteFeedAddress
+                    : pricingConfig.poolAddress
+                : undefined;
+              const primaryMaxStaleness = pricingConfig
+                ? "maxStaleness" in pricingConfig
+                  ? pricingConfig.maxStaleness
+                  : pricingConfig.assetQuoteMaxStaleness
+                : undefined;
               return (
                 <tr key={asset.address}>
-                  <td><div className="rwaAssetIdentity"><AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
-                  <td data-label="Quality"><span className={`stateBadge ${asset.quality === "high" ? "success" : "muted"}`}>{asset.quality === "high" ? "High" : "Normal"}</span></td>
-                  <td data-label="Token address" className="monoValue">
+                  <td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
+                  <td data-label="Status"><span className={`stateBadge ${verification ? "success" : "danger"}`}>{verification ? <><CheckCircle size={11} />Verified</> : "Not verified"}</span></td>
+                  <td data-label="Decimals" className="monoValue">{asset.metadataLoading ? "Loading" : asset.decimals ?? "Unavailable"}</td>
+                  <td data-label="Token contract" className="monoValue">
                     <a
                       className="tableAddressLink"
                       href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`}
@@ -9738,6 +9839,24 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
                       {shortAssetAddress(asset.address)}
                       <ExternalLink size={11} />
                     </a>
+                  </td>
+                  <td data-label="Pricing details">
+                    <div className="verifiedPricingDetails">
+                      <strong>{pricingSource}</strong>
+                      {primarySource ? (
+                        <a
+                          className="tableAddressLink"
+                          href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${primarySource}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Open primary pricing source ${primarySource}`}
+                        >
+                          {shortAssetAddress(primarySource)}
+                          <ExternalLink size={11} />
+                        </a>
+                      ) : <span>No source registered</span>}
+                      {primaryMaxStaleness ? <small>Maximum age {formatCooldown(primaryMaxStaleness)}</small> : null}
+                    </div>
                   </td>
                   <td data-label="Liquidity pool" className="monoValue">
                     {pool ? (
@@ -9751,10 +9870,10 @@ function RwaCatalogView({ isTestnet, oraclePrices }: { isTestnet: boolean; oracl
                         {shortAssetAddress(pool)}
                         <ExternalLink size={11} />
                       </a>
-                    ) : "Not configured"}
+                    ) : <span className="mutedTableValue">Not configured</span>}
                   </td>
                   <td
-                    data-label="Oracle price"
+                    data-label="Reference price"
                     className="monoValue"
                     title={oraclePrice?.updatedAt ? `Updated ${formatTimestamp(Number(oraclePrice.updatedAt))}` : undefined}
                   >
@@ -9865,6 +9984,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
 }
 
 function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
+  const testnetCreateAssets = useVerifiedAssetCatalog();
   const {
     data: recentCountResult,
     isLoading: countLoading,
@@ -9986,7 +10106,7 @@ function RebalanceHistoryPanel({ vault }: { vault: VaultView }) {
       const before = previousWeights.get(address) ?? 0;
       const after = nextWeights.get(address) ?? 0;
       if (before === after) return [];
-      const asset = catalogAssetForAddress(address);
+      const asset = catalogAssetForAddress(testnetCreateAssets, address);
       return [{ address, symbol: asset?.symbol ?? shortAddress(address), logoUrl: asset?.logoUrl, before, after }];
     });
   }

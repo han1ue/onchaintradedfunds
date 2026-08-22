@@ -40,7 +40,6 @@ export type PricingVerification = {
 export type VerifiedAsset = {
   chainId: number;
   tokenAddress: string;
-  symbol: string;
   approvedPricingConfigs: ApprovedPricingConfig[];
 };
 

@@ -487,7 +487,7 @@ If the grace deadline is observed after expiry:
 
 - Manager fees from the challenge window are forfeited.
 - 50% of the forfeited amount becomes a claimable reward for the challenge caller.
-- The remaining 50% is never minted.
+- The remaining 50% is transferred to `FeeCollector` for the protocol treasury.
 
 Forfeiture and reward balances update only when a state-changing transaction first processes an
 overdue challenge; they do not increase automatically with wall-clock time. The forfeiture interval

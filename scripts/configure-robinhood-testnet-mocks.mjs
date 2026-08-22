@@ -21,18 +21,14 @@ const { privateKeyToAccount } = accounts;
 const chainId = 46630;
 const rpcUrl = process.env.RH_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com";
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
-const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets.json");
+const verifiedAssetsPath = join(root, "app", "src", "config", "verified_assets.json");
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
-const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
-const catalog = supportedAssets.assets.flatMap((asset) => {
-  const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
-  return deployment ? [{ symbol: asset.symbol, asset: deployment.contractAddress }] : [];
-});
-if (catalog.length !== supportedAssets.assets.length) {
-  throw new Error(`Every supported asset must define a deployment for chain ${chainId}.`);
-}
+const catalog = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"))
+  .filter((asset) => Number(asset.chainId) === chainId)
+  .map((asset) => ({ asset: asset.tokenAddress }));
+if (!catalog.length) throw new Error(`No verified assets are configured for chain ${chainId}.`);
 
 function requiredEnv(...names) {
   for (const name of names) {
@@ -104,6 +100,13 @@ const feedVersionAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ];
+const erc20MetadataAbi = [{
+  type: "function",
+  name: "symbol",
+  stateMutability: "view",
+  inputs: [],
+  outputs: [{ type: "string" }],
+}];
 const assetRegistryArtifact = artifact("AssetRegistry.sol", "AssetRegistry");
 const mockFeedArtifact = artifact("TestnetMockPriceFeed.sol", "TestnetMockPriceFeed");
 
@@ -163,6 +166,11 @@ deployment.setupTransactions.mockPriceFeeds ??= [];
 
 for (const item of catalog) {
   const asset = getAddress(item.asset);
+  const symbol = String(await publicClient.readContract({
+    address: asset,
+    abi: erc20MetadataAbi,
+    functionName: "symbol",
+  })).trim() || "TOKEN";
   const existing = deployment.setupTransactions.mockPriceFeeds.find(
     (record) => isAddressEqual(record.asset, asset),
   );
@@ -183,12 +191,12 @@ for (const item of catalog) {
   }
 
   if (!feed || !existingCode || existingCode === "0x" || existingVersion !== 2n) {
-    feedDeployment = await deployMockFeed(item.symbol);
+    feedDeployment = await deployMockFeed(symbol);
     feed = feedDeployment.address;
-    console.log(`${item.symbol} self-updating synthetic feed: ${feed}`);
+    console.log(`${symbol} self-updating synthetic feed: ${feed}`);
   } else {
     feedDeployment = { ...feedDeployment, address: feed };
-    console.log(`${item.symbol} self-updating synthetic feed retained: ${feed}`);
+    console.log(`${symbol} self-updating synthetic feed retained: ${feed}`);
   }
 
   const registered = await publicClient.readContract({
@@ -207,7 +215,7 @@ for (const item of catalog) {
       });
 
   const record = {
-    symbol: item.symbol,
+    symbol,
     asset,
     feed,
     decimals: mockDecimals,

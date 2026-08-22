@@ -644,6 +644,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             address asset = assets_[i];
             uint256 weight = weights_[i];
             if (asset == address(0)) revert ZeroAddress();
+            if (asset == address(this)) revert SelfAssetNotSupported();
             if (asset.code.length == 0) revert AssetNotContract(asset);
             uint8 assetDecimals;
             try IERC20Metadata(asset).decimals() returns (uint8 decimals_) {

@@ -5452,6 +5452,40 @@ textarea::placeholder {
   min-width: 860px;
 }
 
+.verifiedAssetsTable {
+  min-width: 1180px;
+}
+
+.verifiedAssetsTable th,
+.verifiedAssetsTable td {
+  vertical-align: middle;
+}
+
+.verifiedPricingDetails {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.verifiedPricingDetails strong {
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.verifiedPricingDetails .tableAddressLink,
+.verifiedPricingDetails span,
+.verifiedPricingDetails small,
+.mutedTableValue {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+}
+
+.verifiedPricingDetails small {
+  line-height: 1.4;
+}
+
 .rwaCatalogTable th:last-child,
 .rwaCatalogTable td:last-child {
   width: auto;

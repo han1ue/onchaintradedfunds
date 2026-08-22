@@ -678,7 +678,7 @@ function LiquidityWorkspace() {
   }
 
   function navigate(tab: string) {
-    if (tab === "RWAs") window.location.assign("/rwas");
+    if (tab === "Verified") window.location.assign("/verified");
     else if (tab === "Liquidity") window.location.assign("/liquidity");
     else window.location.assign("/otfs");
   }

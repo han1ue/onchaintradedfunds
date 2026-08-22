@@ -865,8 +865,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (rewardShares != 0 && caller != address(0)) {
             challengeRewardShares[caller] += rewardShares;
         }
-        uint256 burnedShares = forfeitedShares - rewardShares;
-        if (burnedShares != 0) _burn(address(this), burnedShares);
+        uint256 treasuryShares = forfeitedShares - rewardShares;
+        if (treasuryShares != 0) _transfer(address(this), feeCollector, treasuryShares);
         escrowedManagerFeeShares = 0;
         _challengeFeeAccrualRemainderWad = 0;
         forfeitedManagerFeeShares += forfeitedShares;
@@ -904,6 +904,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     ) internal view {
         address asset = assets_[index];
         if (asset == address(0)) revert ZeroAddress();
+        if (asset == address(this)) revert SelfAssetNotSupported();
         if (asset.code.length == 0) revert AssetNotContract(asset);
         if (weight < minimumTargetWeightBps) {
             revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);

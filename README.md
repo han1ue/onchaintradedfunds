@@ -534,8 +534,8 @@ response window a manager-selected policy. All valid fees earned before the chal
 forfeited later. Natural price movement and constrained trades can both restore the basket. If the
 manager stops the challenge before the deadline, accrued fees are withdrawn normally. If the
 deadline is missed, manager fees from the challenge window are forfeited: 50% becomes a claimable
-reward for the challenge caller and the remaining 50% is never minted. Deposits and proportional
-withdrawals remain enabled.
+reward for the challenge caller and the remaining 50% goes to `FeeCollector`. Deposits and
+proportional withdrawals remain enabled.
 
 ## NAV And Weight Math
 
@@ -639,9 +639,9 @@ Manager shares follow the fee state:
 - `Sunset`: the final fee interval has been checkpointed and no future fees accrue.
 
 Timely restoration lets the manager stop the challenge and withdraw accrued fees. Missing the
-deadline credits 50% of the lost challenge-window fees to the caller and skips minting the rest.
-Fee-rate changes are allowed only while strategy is unlocked and the portfolio is inside completion
-bands, and never apply retroactively.
+deadline credits 50% of the lost challenge-window fees to the caller and sends the rest to
+`FeeCollector`. Fee-rate changes are allowed only while strategy is unlocked and the portfolio is
+inside completion bands, and never apply retroactively.
 
 ## Onchain Strategy History
 

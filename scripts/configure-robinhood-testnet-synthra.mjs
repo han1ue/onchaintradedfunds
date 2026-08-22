@@ -38,16 +38,12 @@ const pricingTwapWindowSeconds = 3_600;
 const targetObservationCardinality = 64;
 const q192 = 1n << 192n;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
-const supportedAssetsPath = join(root, "app", "src", "config", "supported-assets.json");
+const verifiedAssetsPath = join(root, "app", "src", "config", "verified_assets.json");
 const synthraLiquidityUrl = "https://app.synthra.org/#/pools";
-const supportedAssets = JSON.parse(readFileSync(supportedAssetsPath, "utf8"));
-const catalog = supportedAssets.assets.flatMap((asset) => {
-  const deployment = asset.deployments.find((item) => Number(item.chainId) === chainId);
-  return deployment ? [{ symbol: asset.symbol, asset: deployment.contractAddress }] : [];
-});
-if (catalog.length !== supportedAssets.assets.length) {
-  throw new Error(`Every supported asset must define a deployment for chain ${chainId}.`);
-}
+const catalog = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"))
+  .filter((asset) => Number(asset.chainId) === chainId)
+  .map((asset) => ({ asset: asset.tokenAddress }));
+if (!catalog.length) throw new Error(`No verified assets are configured for chain ${chainId}.`);
 
 function requiredEnv(...names) {
   for (const name of names) {
@@ -167,6 +163,7 @@ const ownerAbi = [{
   outputs: [{ type: "address" }],
 }];
 const erc20MetadataAbi = [
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
 ];
 const robinhoodPauseAbi = [
@@ -361,6 +358,11 @@ console.log(`Balance: ${formatEther(balance)} ETH`);
 const constituentMarkets = [];
 for (const item of catalog) {
   const asset = getAddress(item.asset);
+  const symbol = String(await publicClient.readContract({
+    address: asset,
+    abi: erc20MetadataAbi,
+    functionName: "symbol",
+  })).trim() || "TOKEN";
   const pricing = deployment.pricingConfiguration?.suggestedInitialPricingConfigs?.find(
     (candidate) => candidate.asset && isAddressEqual(candidate.asset, asset),
   );
@@ -373,22 +375,22 @@ for (const item of catalog) {
     functionName: "decimals",
   });
   if (assetDecimals !== 18) {
-    throw new Error(`${item.symbol} has ${assetDecimals} decimals; mechanically valid OTF assets require exactly 18.`);
+    throw new Error(`${symbol} has ${assetDecimals} decimals; mechanically valid OTF assets require exactly 18.`);
   }
   if (isAddressEqual(configuredFeed, zeroAddress)) {
     throw new Error(
-      `${item.symbol} has no suggested direct USD feed for pool initialization. This is an operational seed-price requirement, not asset approval.`,
+      `${symbol} has no suggested direct USD feed for pool initialization. This is an operational seed-price requirement, not asset approval.`,
     );
   }
   if (!Number.isSafeInteger(configuredMaxStaleness)
     || configuredMaxStaleness <= 0
     || configuredMaxStaleness > 7 * 24 * 60 * 60) {
-    throw new Error(`${item.symbol} has an invalid suggested staleness limit.`);
+    throw new Error(`${symbol} has an invalid suggested staleness limit.`);
   }
   if (configuredSource !== "ChainlinkDirect" && configuredSource !== "RobinhoodDirect") {
-    throw new Error(`${item.symbol} needs a direct Chainlink-compatible source for pool initialization.`);
+    throw new Error(`${symbol} needs a direct Chainlink-compatible source for pool initialization.`);
   }
-  await requireCode(`${item.symbol} price feed`, configuredFeed);
+  await requireCode(`${symbol} price feed`, configuredFeed);
 
   if (configuredSource === "RobinhoodDirect") {
     let oraclePaused;
@@ -400,10 +402,10 @@ for (const item of catalog) {
       });
     } catch {
       throw new Error(
-        `${item.symbol} uses RobinhoodDirect pricing but oraclePaused() is unavailable.`,
+        `${symbol} uses RobinhoodDirect pricing but oraclePaused() is unavailable.`,
       );
     }
-    if (oraclePaused) throw new Error(`${item.symbol} reports oraclePaused() == true.`);
+    if (oraclePaused) throw new Error(`${symbol} reports oraclePaused() == true.`);
   }
 
   const [feedDecimals, round] = await Promise.all([
@@ -416,13 +418,14 @@ for (const item of catalog) {
     roundId === 0n || answer <= 0n || startedAt === 0n || updatedAt === 0n
       || startedAt > updatedAt || answeredInRound < roundId || feedDecimals > 36
   ) {
-    throw new Error(`${item.symbol} returned invalid oracle round data.`);
+    throw new Error(`${symbol} returned invalid oracle round data.`);
   }
   if (oracleBlock.timestamp < updatedAt || oracleBlock.timestamp - updatedAt > oracleMaxAgeSeconds) {
-    throw new Error(`${item.symbol} oracle data is older than ${oracleMaxAgeSeconds} seconds.`);
+    throw new Error(`${symbol} oracle data is older than ${oracleMaxAgeSeconds} seconds.`);
   }
   constituentMarkets.push({
     ...item,
+    symbol,
     asset,
     assetDecimals,
     configuredFeed,
