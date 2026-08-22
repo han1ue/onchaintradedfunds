@@ -152,11 +152,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             allowV3Twap: allowV3Twap
         });
         emit QuoteTokenConfigured(
-            quoteToken,
-            usdFeed,
-            maxStaleness,
-            allowComposedChainlink,
-            allowV3Twap
+            quoteToken, usdFeed, maxStaleness, allowComposedChainlink, allowV3Twap
         );
     }
 

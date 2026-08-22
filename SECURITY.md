@@ -349,8 +349,8 @@ Rebate-policy changes use the latest configuration when an OTF next checkpoints 
 historical rebate-policy accounting. Strategy activation checkpoints the preceding fee interval
 before replacing the active target weights.
 
-Missed challenge-window fees are not minted to the manager. The challenge caller can claim 50% as
-OTF shares; the remaining 50% is skipped rather than minted and burned.
+Missed challenge-window fees are not transferred to the manager. The challenge caller can claim
+50% of the escrowed OTF shares; the remaining 50% is transferred to `FeeCollector`.
 
 ## ERC-7621 Status
 

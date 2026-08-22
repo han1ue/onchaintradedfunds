@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ITradeAdapter } from "../interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../libraries/SafeTransferLib.sol";
-import { MathEx } from "../libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract MockTradeAdapter is ITradeAdapter {
     using SafeTransferLib for address;
@@ -50,7 +50,7 @@ contract MockTradeAdapter is ITradeAdapter {
         Rate memory rate = rates[_key(tokenIn, tokenOut)];
         if (rate.denominator == 0) revert MissingRate(tokenIn, tokenOut);
 
-        amountOut = MathEx.mulDiv(amountIn, rate.numerator, rate.denominator);
+        amountOut = Math.mulDiv(amountIn, rate.numerator, rate.denominator);
         if (amountOut < minAmountOut) revert Slippage(amountOut, minAmountOut);
 
         tokenOut.safeTransfer(msg.sender, amountOut);
@@ -60,4 +60,3 @@ contract MockTradeAdapter is ITradeAdapter {
         return keccak256(abi.encodePacked(tokenIn, tokenOut));
     }
 }
-

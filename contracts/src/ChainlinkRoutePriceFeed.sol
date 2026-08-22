@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Normalizes an ASSET/QUOTE feed composed with QUOTE/USD into an 8-decimal USD feed.
 /// @dev The asset leg is pinned; the quote/USD leg is read from the registry on every call.
@@ -104,12 +104,10 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint256 wethStartedAt,
             uint256 wethUpdatedAt,
             uint8 wethDecimals
-        ) = _readLeg(
-            quoteToken, AggregatorV3Interface(quoteUsdFeed), quoteUsdMaxStaleness
-        );
+        ) = _readLeg(quoteToken, AggregatorV3Interface(quoteUsdFeed), quoteUsdMaxStaleness);
 
         uint256 normalized =
-            MathEx.mulDiv(assetWethAnswer, wethUsdAnswer, 10 ** uint256(assetDecimals));
+            Math.mulDiv(assetWethAnswer, wethUsdAnswer, 10 ** uint256(assetDecimals));
         if (wethDecimals < OUTPUT_DECIMALS) {
             uint256 scaleUp = 10 ** uint256(OUTPUT_DECIMALS - wethDecimals);
             if (normalized > type(uint256).max / scaleUp) revert PriceOverflow();
@@ -128,11 +126,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
         answer = int256(normalized);
     }
 
-    function _readLeg(
-        address base,
-        AggregatorV3Interface feed,
-        uint32 maxStaleness
-    )
+    function _readLeg(address base, AggregatorV3Interface feed, uint32 maxStaleness)
         private
         view
         returns (
@@ -143,7 +137,9 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint8 feedDecimals
         )
     {
-        if (address(feed).code.length == 0) revert FeedNotContract(address(feed));
+        if (address(feed).code.length == 0) {
+            revert FeedNotContract(address(feed));
+        }
         if (maxStaleness == 0) revert InvalidMaxStaleness();
         if (maxStaleness > MAX_ORACLE_STALENESS) {
             revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);

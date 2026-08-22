@@ -41,9 +41,8 @@ contract TestnetMockPriceFeed is AggregatorV3Interface {
         owner = owner_;
         decimals = decimals_;
         description = description_;
-        _pathSeed = keccak256(
-            abi.encode(block.chainid, address(this), owner_, answer_, description_)
-        );
+        _pathSeed =
+            keccak256(abi.encode(block.chainid, address(this), owner_, answer_, description_));
         _setBaseAnswer(answer_);
     }
 

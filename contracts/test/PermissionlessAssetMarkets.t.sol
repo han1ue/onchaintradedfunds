@@ -106,12 +106,9 @@ contract MockVaultPriceSources {
         assetRegistry = assetRegistry_;
     }
 
-    function setPriceFeed(
-        address asset,
-        address feed,
-        uint32 maxStaleness,
-        PricingSource source
-    ) external {
+    function setPriceFeed(address asset, address feed, uint32 maxStaleness, PricingSource source)
+        external
+    {
         priceFeedForAsset[asset] = feed;
         maxStalenessForAsset[asset] = maxStaleness;
         pricingSourceForAsset[asset] = source;
@@ -142,12 +139,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets = new AssetMarketRegistry(
             address(this), address(v3Factory), address(weth), address(usdg)
         );
-        markets.registerQuoteToken(
-            address(weth), address(wethUsdFeed), 2 hours, true, true
-        );
-        markets.registerQuoteToken(
-            address(usdg), address(usdgUsdFeed), 2 hours, true, true
-        );
+        markets.registerQuoteToken(address(weth), address(wethUsdFeed), 2 hours, true, true);
+        markets.registerQuoteToken(address(usdg), address(usdgUsdFeed), 2 hours, true, true);
     }
 
     function testPermissionlessDiscoveryRegistrationHasNoGovernanceStatus() public {
@@ -429,11 +422,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primaryMaxStaleness: 2 hours
         });
 
-        (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 maxStaleness
-        ) = resolver.resolvePricing(address(asset), config);
+        (address normalizedFeed, bytes32 marketId, uint32 maxStaleness) =
+            resolver.resolvePricing(address(asset), config);
         assertTrue(normalizedFeed.code.length != 0);
         assertTrue(markets.isActiveMarketForAsset(marketId, address(asset)));
         assertEq(uint256(maxStaleness), 2 hours);
@@ -454,11 +444,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primaryMaxStaleness: 4 hours
         });
 
-        (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 primaryStaleness
-        ) = resolver.resolvePricing(address(asset), config);
+        (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness) =
+            resolver.resolvePricing(address(asset), config);
         assertEq(marketId, bytes32(0));
         assertEq(uint256(primaryStaleness), 4 hours);
         (, int256 answer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
@@ -486,6 +473,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockPermissionlessV3Pool usdgPool =
             v3Factory.createPool(address(secondAsset), address(usdg), 500);
+        // Token1 has 18 decimals and token0 has 6, so a whole-token 1:1 price requires a
+        // raw-unit ratio near 1e12 rather than tick zero.
+        usdgPool.setTick(276_324);
         AssetPricingConfig memory usdgV3 = AssetPricingConfig({
             source: PricingSource.UniswapV3Twap,
             quoteToken: address(usdg),
@@ -494,7 +484,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         });
         (address usdgV3Feed,,) = resolver.resolvePricing(address(secondAsset), usdgV3);
         (, int256 usdgV3Answer,,,) = UniswapV3RoutePriceFeed(usdgV3Feed).latestRoundData();
-        assertEq(uint256(usdgV3Answer), 1_00000000);
+        assertApproxEqAbs(uint256(usdgV3Answer), 1_00000000, 10_000);
     }
 
     function testAdminAddedQuoteSupportsComposedAndV3AndUpdatesExistingRoutes() public {
@@ -503,9 +493,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockStockToken thirdQuote = new MockStockToken("Third Quote", "THIRD", 18);
         MockPriceFeed thirdUsdFeed = new MockPriceFeed(8, 2_00000000);
-        markets.registerQuoteToken(
-            address(thirdQuote), address(thirdUsdFeed), 2 hours, true, true
-        );
+        markets.registerQuoteToken(address(thirdQuote), address(thirdUsdFeed), 2 hours, true, true);
         MockPriceFeed assetThirdFeed = new MockPriceFeed(18, 3 ether);
         AssetPricingConfig memory thirdComposed = AssetPricingConfig({
             source: PricingSource.ChainlinkAssetQuote,
@@ -538,8 +526,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerQuoteToken(
             address(thirdQuote), address(replacementThirdUsd), 1 hours, true, true
         );
-        (address replacementNormalized,,) =
-            resolver.resolvePricing(address(asset), thirdComposed);
+        (address replacementNormalized,,) = resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 replacementAnswer,,,) =
             ChainlinkRoutePriceFeed(replacementNormalized).latestRoundData();
         assertEq(uint256(replacementAnswer), 27_00000000);
@@ -672,9 +659,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         uint256 pinnedValue = calculator.assetValueForVault(address(vault), address(asset), 1 ether);
         assertEq(pinnedValue, 150 ether);
 
-        vault.setPriceFeed(
-            address(asset), address(0), 25 hours, PricingSource.ChainlinkDirect
-        );
+        vault.setPriceFeed(address(asset), address(0), 25 hours, PricingSource.ChainlinkDirect);
         vm.expectPartialRevert(PortfolioCalculator.OracleFeedMissing.selector);
         calculator.assetValueForVault(address(vault), address(asset), 1 ether);
     }

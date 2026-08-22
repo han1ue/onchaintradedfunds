@@ -270,6 +270,38 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.totalSupply(), initialSupply + forfeited);
     }
 
+    function testOverdueChallengePreviewsMatchProcessedTreasuryTransfer() public {
+        ManagedOTFVault vault = _createVault();
+        _setPrices(120_00000000, 100_00000000);
+        vault.flagOutOfBand();
+
+        vm.warp(vault.challengeDeadline() + 1);
+        _setPrices(120_00000000, 100_00000000);
+
+        uint256[] memory contribution = new uint256[](2);
+        contribution[0] = 5 * ONE;
+        contribution[1] = 5 * ONE;
+        uint256 contributionBefore = vault.previewContribute(contribution);
+        uint256[] memory mintBefore = vault.previewMint(ONE);
+        uint256[] memory withdrawBefore = vault.previewWithdraw(ONE);
+        uint256[] memory redeemBefore = vault.previewRedeem(ONE);
+        uint256 navPerShareBefore = vault.navPerShare();
+
+        vault.claimChallengeReward();
+
+        assertEq(vault.previewContribute(contribution), contributionBefore);
+        uint256[] memory mintAfter = vault.previewMint(ONE);
+        uint256[] memory withdrawAfter = vault.previewWithdraw(ONE);
+        uint256[] memory redeemAfter = vault.previewRedeem(ONE);
+        assertEq(mintAfter[0], mintBefore[0]);
+        assertEq(mintAfter[1], mintBefore[1]);
+        assertEq(withdrawAfter[0], withdrawBefore[0]);
+        assertEq(withdrawAfter[1], withdrawBefore[1]);
+        assertEq(redeemAfter[0], redeemBefore[0]);
+        assertEq(redeemAfter[1], redeemBefore[1]);
+        assertEq(vault.navPerShare(), navPerShareBefore);
+    }
+
     function testOverdueChallengeForfeitureIsOneTimeAndDeadlineBounded() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);

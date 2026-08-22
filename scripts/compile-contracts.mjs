@@ -5,6 +5,7 @@ import solc from "solc";
 const root = process.cwd();
 const contractsSrc = join(root, "contracts", "src");
 const contractsTest = join(root, "contracts", "test");
+const nodeModules = join(root, "node_modules");
 
 function solidityFiles(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -44,7 +45,20 @@ const input = {
   },
 };
 
-const output = JSON.parse(solc.compile(JSON.stringify(input)));
+function resolveImport(importPath) {
+  if (!importPath.startsWith("@openzeppelin/")) {
+    return { error: `Unsupported external Solidity import: ${importPath}` };
+  }
+
+  const dependencyPath = join(nodeModules, ...importPath.split("/"));
+  try {
+    return { contents: readFileSync(dependencyPath, "utf8") };
+  } catch {
+    return { error: `Solidity dependency not found: ${importPath}` };
+  }
+}
+
+const output = JSON.parse(solc.compile(JSON.stringify(input), { import: resolveImport }));
 const errors = output.errors ?? [];
 for (const diagnostic of errors) {
   const prefix = diagnostic.severity === "error" ? "error" : "warning";

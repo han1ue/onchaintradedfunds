@@ -9,7 +9,7 @@ import {
 import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
     AssetPricingConfig,
@@ -22,7 +22,6 @@ import {
 } from "./VaultTypes.sol";
 
 contract ManagedOTFVault is ManagedOTFVaultStorage {
-    using MathEx for uint256;
     using SafeTransferLib for address;
 
     PortfolioCalculator private immutable _portfolioCalculator;
@@ -503,8 +502,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         // all transfers, while the guard prevents a token callback from entering the vault again.
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            uint256 required =
-                MathEx.mulDivUp(shares, IERC20(asset).balanceOf(address(this)), supply);
+            uint256 required = Math.mulDiv(
+                shares, IERC20(asset).balanceOf(address(this)), supply, Math.Rounding.Ceil
+            );
             if (required > maxAmountsIn[i]) revert AmountTooHigh(asset, required, maxAmountsIn[i]);
             amountsIn[i] = required;
             _pullExact(asset, msg.sender, required);
@@ -719,13 +719,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 }
                 continue;
             }
-            uint256 candidate = MathEx.mulDiv(amounts[i], supply, reserve);
+            uint256 candidate = Math.mulDiv(amounts[i], supply, reserve);
             if (candidate < lpAmount) lpAmount = candidate;
         }
         if (lpAmount == type(uint256).max) return 0;
         for (uint256 i = 0; i < _assets.length; i++) {
             uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            uint256 required = MathEx.mulDivUp(lpAmount, reserve, supply);
+            uint256 required = Math.mulDiv(lpAmount, reserve, supply, Math.Rounding.Ceil);
             if (amounts[i] != required) {
                 revert NonProportionalContribution(_assets[i], amounts[i], required);
             }
@@ -745,7 +745,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            uint256 amount = MathEx.mulDiv(shares, IERC20(asset).balanceOf(address(this)), supply);
+            uint256 amount = Math.mulDiv(shares, IERC20(asset).balanceOf(address(this)), supply);
             if (amount < minimums[i]) {
                 revert InsufficientAmount(i, minimums[i], amount);
             }
@@ -808,7 +808,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (uint256 managerShares, uint256 protocolShares)
     {
         uint16 effectiveShareBps = effectiveProtocolFeeShareBps();
-        protocolShares = MathEx.mulDiv(feeShares, effectiveShareBps, BPS);
+        protocolShares = Math.mulDiv(feeShares, effectiveShareBps, BPS);
         uint256 splitRemainder =
             mulmod(feeShares, effectiveShareBps, BPS) + _protocolFeeSplitRemainderBps;
         if (splitRemainder >= BPS) {
@@ -860,7 +860,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
         uint64 deadline = challengeDeadline;
         uint256 forfeitedShares = escrowedManagerFeeShares;
-        uint256 rewardShares = MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
+        uint256 rewardShares = Math.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
         address caller = challengeCaller;
         if (rewardShares != 0 && caller != address(0)) {
             challengeRewardShares[caller] += rewardShares;
@@ -981,11 +981,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             return;
         }
 
-        (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 primaryStaleness
-        ) = _pricingResolver().resolvePricing(asset, config);
+        (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness) =
+            _pricingResolver().resolvePricing(asset, config);
 
         _pricingSourceForAsset[asset] = uint8(config.source);
         _quoteTokenForAsset[asset] = config.quoteToken;
@@ -998,12 +995,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
         _portfolioCalculator.validateAssetForVault(address(this), asset);
         emit AssetPricingPinned(
-            asset,
-            config.source,
-            normalizedFeed,
-            config.quoteToken,
-            config.primarySource,
-            marketId
+            asset, config.source, normalizedFeed, config.quoteToken, config.primarySource, marketId
         );
     }
 

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IEntryVault {
@@ -257,7 +257,7 @@ contract OTFEntryRouter {
 
             EntrySwap calldata swap = swaps[i];
             uint256 minSettlementOut =
-                MathEx.mulDiv(refund, swap.minRefundSettlementRate, REFUND_RATE_SCALE);
+                Math.mulDiv(refund, swap.minRefundSettlementRate, REFUND_RATE_SCALE);
             _pushExact(assets[i], swap.adapter, refund);
             uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
             uint256 reportedOutput = ITradeAdapter(swap.adapter)
@@ -286,7 +286,7 @@ contract OTFEntryRouter {
         for (uint256 i = 0; i < assets.length; i++) {
             uint256 reserve = IERC20(assets[i]).balanceOf(vault);
             if (reserve == 0) continue;
-            uint256 candidate = MathEx.mulDiv(availableAmounts[i], supply, reserve);
+            uint256 candidate = Math.mulDiv(availableAmounts[i], supply, reserve);
             if (candidate < lower) lower = candidate;
         }
         if (lower == type(uint256).max || lower == 0) {

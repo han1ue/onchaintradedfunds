@@ -79,8 +79,9 @@ Attempt to falsify each property:
    required ERC-7621 and custom events.
 8. Failed operations do not partially mutate balances, approvals, cooldowns, fee state, challenge
    state, or history.
-9. Manager fee escrow is released only on timely compliance and burned after an observed missed
-   deadline; suspended intervals are never accrued retroactively.
+9. Manager fee escrow is released only on timely compliance and split between the challenge caller
+   and protocol treasury after an observed missed deadline; suspended intervals are never accrued
+   retroactively.
 10. Vault and strategy storage layouts are identical and use the same reentrancy slot.
 11. The strategy target and code hash cannot change, and direct module mutation cannot affect
     vault state.

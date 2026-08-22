@@ -5,7 +5,7 @@ import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { PricingSource } from "./VaultTypes.sol";
 
 interface ITargetWeightVault {
@@ -23,8 +23,6 @@ interface IVaultAssetPriceSources {
 }
 
 contract PortfolioCalculator {
-    using MathEx for uint256;
-
     uint256 private constant BPS = 10_000;
     uint256 private constant YEAR = 365 days;
     uint256 private constant WAD = 1e18;
@@ -63,13 +61,17 @@ contract PortfolioCalculator {
         if (nextRecoveryAt < timestamp) nextRecoveryAt = timestamp;
         uint256 usedBefore = nextRecoveryAt == timestamp
             ? 0
-            : MathEx.mulDivUp(nextRecoveryAt - timestamp, maximumLossBps, recoveryPeriod);
+            : Math.mulDiv(
+                nextRecoveryAt - timestamp, maximumLossBps, recoveryPeriod, Math.Rounding.Ceil
+            );
 
         if (batchLossBps != 0) {
             if (maximumLossBps == 0) {
                 revert NavLossBudgetExceeded(0, batchLossBps, 0);
             }
-            nextRecoveryAt += MathEx.mulDivUp(batchLossBps, recoveryPeriod, maximumLossBps);
+            nextRecoveryAt += Math.mulDiv(
+                batchLossBps, recoveryPeriod, maximumLossBps, Math.Rounding.Ceil
+            );
             if (nextRecoveryAt > timestamp + recoveryPeriod) {
                 revert NavLossBudgetExceeded(usedBefore, batchLossBps, maximumLossBps);
             }
@@ -77,7 +79,9 @@ contract PortfolioCalculator {
 
         uint256 usedLossBps = nextRecoveryAt == timestamp
             ? 0
-            : MathEx.mulDivUp(nextRecoveryAt - timestamp, maximumLossBps, recoveryPeriod);
+            : Math.mulDiv(
+                nextRecoveryAt - timestamp, maximumLossBps, recoveryPeriod, Math.Rounding.Ceil
+            );
         packedState = usedLossBps | (nextRecoveryAt << 16);
     }
 
@@ -97,7 +101,9 @@ contract PortfolioCalculator {
                     break;
                 }
             }
-            sumDiff += currentWeights[i].absDiff(targetWeight);
+            sumDiff += currentWeights[i] >= targetWeight
+                ? currentWeights[i] - targetWeight
+                : targetWeight - currentWeights[i];
         }
         for (uint256 i = 0; i < newAssets.length; i++) {
             bool alreadyTracked;
@@ -109,7 +115,7 @@ contract PortfolioCalculator {
             }
             if (!alreadyTracked) sumDiff += newWeights[i] * weightScale;
         }
-        return MathEx.mulDivUp(sumDiff, 1, 2 * weightScale);
+        return Math.mulDiv(sumDiff, 1, 2 * weightScale, Math.Rounding.Ceil);
     }
 
     function effectiveTargetWeights(address vault, address[] calldata assets, address)
@@ -151,17 +157,17 @@ contract PortfolioCalculator {
         // `feeBps` is the exact fraction of post-fee supply owned by fee recipients after one
         // year. Exponentiation gives the composition rule G(a + b) = G(a) * G(b), so callers may
         // checkpoint at arbitrary times without changing the economic rate.
-        uint256 annualGrowthWad = MathEx.mulDiv(BPS, WAD, BPS - feeBps);
+        uint256 annualGrowthWad = Math.mulDiv(BPS, WAD, BPS - feeBps);
         if (elapsed == YEAR) {
             uint256 denominator = BPS - feeBps;
-            uint256 annualSupplyAfter = MathEx.mulDiv(supply, BPS, denominator);
+            uint256 annualSupplyAfter = Math.mulDiv(supply, BPS, denominator);
             uint256 annualFractionalWad =
                 (mulmod(supply, BPS, denominator) * WAD + remainderWad * BPS) / denominator;
             annualSupplyAfter += annualFractionalWad / WAD;
             remainderAfterWad = annualFractionalWad % WAD;
             return (annualSupplyAfter - supply, remainderAfterWad);
         }
-        uint256 exponentWad = MathEx.mulDiv(elapsed, WAD, YEAR);
+        uint256 exponentWad = Math.mulDiv(elapsed, WAD, YEAR);
         if (exponentWad > uint256(type(int256).max)) revert FeeExponentOverflow(exponentWad);
         // The validated fee rate bounds annual growth below int256.max.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -174,9 +180,9 @@ contract PortfolioCalculator {
         // forge-lint: disable-next-line(unsafe-typecast)
         uint256 growthWad = uint256(growthSigned);
 
-        uint256 supplyAfter = MathEx.mulDiv(supply, growthWad, WAD);
+        uint256 supplyAfter = Math.mulDiv(supply, growthWad, WAD);
         uint256 fractionalWad = mulmod(supply, growthWad, WAD);
-        uint256 grownRemainderWad = MathEx.mulDiv(remainderWad, growthWad, WAD);
+        uint256 grownRemainderWad = Math.mulDiv(remainderWad, growthWad, WAD);
         fractionalWad += grownRemainderWad;
         supplyAfter += fractionalWad / WAD;
         remainderAfterWad = fractionalWad % WAD;
@@ -293,7 +299,7 @@ contract PortfolioCalculator {
         }
         weights = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
-            weights[i] = MathEx.mulDiv(values[i], weightScale, nav);
+            weights[i] = Math.mulDiv(values[i], weightScale, nav);
         }
     }
 
@@ -307,7 +313,7 @@ contract PortfolioCalculator {
         _tokenDecimals(asset);
         // Robinhood stock-token feeds already include the ERC-8056 UI multiplier.
         // Applying uiMultiplier() here would count corporate-action scaling twice.
-        return MathEx.mulDiv(rawBalance, price, 10 ** uint256(priceDecimals));
+        return Math.mulDiv(rawBalance, price, 10 ** uint256(priceDecimals));
     }
 
     function _validPrice(address vault, address asset)
@@ -319,9 +325,8 @@ contract PortfolioCalculator {
         uint32 maxStaleness;
         feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
         maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
-        bool requireRobinhoodPauseCheck =
-            IVaultAssetPriceSources(vault).pricingSourceForAsset(asset)
-                == PricingSource.RobinhoodDirect;
+        bool requireRobinhoodPauseCheck = IVaultAssetPriceSources(vault)
+                .pricingSourceForAsset(asset) == PricingSource.RobinhoodDirect;
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         return _readValidPrice(asset, feed, maxStaleness, requireRobinhoodPauseCheck);
     }
@@ -332,7 +337,9 @@ contract PortfolioCalculator {
         uint32 maxStaleness,
         bool requireRobinhoodPauseCheck
     ) private view returns (uint256 price, uint8 priceDecimals) {
-        if (address(feed) == address(0)) revert OracleFeedMissing(asset);
+        if (address(feed) == address(0)) {
+            revert OracleFeedMissing(asset);
+        }
         if (address(feed).code.length == 0) revert OracleFeedNotContract(address(feed));
         if (maxStaleness == 0) revert InvalidMaxStaleness(maxStaleness);
         if (maxStaleness > MAX_ORACLE_STALENESS) {

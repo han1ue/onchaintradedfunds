@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { MathEx } from "./MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Minimal Uniswap V3 TickMath/OracleLibrary quote functions used by OTF TWAP feeds.
 /// @dev Tick constants and rounding behavior match Uniswap V3 core's MIT-licensed TickMath.
@@ -20,13 +20,13 @@ library UniswapV3TwapMath {
         if (sqrtRatioX96 <= type(uint128).max) {
             uint256 ratioX192 = uint256(sqrtRatioX96) * sqrtRatioX96;
             quoteAmount = baseToken < quoteToken
-                ? MathEx.mulDiv(ratioX192, baseAmount, 1 << 192)
-                : MathEx.mulDiv(1 << 192, baseAmount, ratioX192);
+                ? Math.mulDiv(ratioX192, baseAmount, 1 << 192)
+                : Math.mulDiv(1 << 192, baseAmount, ratioX192);
         } else {
-            uint256 ratioX128 = MathEx.mulDiv(sqrtRatioX96, sqrtRatioX96, 1 << 64);
+            uint256 ratioX128 = Math.mulDiv(sqrtRatioX96, sqrtRatioX96, 1 << 64);
             quoteAmount = baseToken < quoteToken
-                ? MathEx.mulDiv(ratioX128, baseAmount, 1 << 128)
-                : MathEx.mulDiv(1 << 128, baseAmount, ratioX128);
+                ? Math.mulDiv(ratioX128, baseAmount, 1 << 128)
+                : Math.mulDiv(1 << 128, baseAmount, ratioX128);
         }
     }
 

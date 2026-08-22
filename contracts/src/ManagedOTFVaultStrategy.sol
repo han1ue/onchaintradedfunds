@@ -6,7 +6,7 @@ import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
     AssetPricingConfig,
@@ -26,7 +26,6 @@ interface IManagedOTFVaultModuleCallbacks {
 }
 
 contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
-    using MathEx for uint256;
     using SafeTransferLib for address;
 
     PortfolioCalculator private immutable _calculator;
@@ -300,7 +299,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256 strategyVersion = _strategyVersions.length;
         uint64 proposedAt = pendingStrategyProposedAt;
         string memory rationale = _pendingStrategyRationale;
-        _strategicNavPerShareBefore = MathEx.mulDiv(navBefore, 1e18, totalSupply);
+        _strategicNavPerShareBefore = Math.mulDiv(navBefore, 1e18, totalSupply);
         _strategicExecutionLossBps = 0;
         // Factory bounds cap turnover at BPS, well below uint16.max.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -386,7 +385,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
             uint256 valueOut = _assetValue(trade.tokenOut, amountOut);
             if (valueIn > valueOut) grossLossValue += valueIn - valueOut;
-            uint256 minimumValue = MathEx.mulDiv(valueIn, BPS - maxNavLossBps, BPS);
+            uint256 minimumValue = Math.mulDiv(valueIn, BPS - maxNavLossBps, BPS);
             if (valueOut < minimumValue) {
                 revert OracleSlippageTooHigh(
                     trade.tokenIn, trade.tokenOut, valueIn, valueOut, maxNavLossBps
@@ -398,7 +397,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
 
         (uint256[] memory weightsAfter, uint256 navAfter) = _currentPreciseWeightsAndNav();
-        uint256 minimumNav = MathEx.mulDiv(navBefore, BPS - maxNavLossBps, BPS);
+        uint256 minimumNav = Math.mulDiv(navBefore, BPS - maxNavLossBps, BPS);
         if (navAfter < minimumNav) {
             revert NavLossTooHigh(navBefore, navAfter, maxNavLossBps);
         }
@@ -413,8 +412,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint256[] memory effectiveTargets = _targetWeights();
         for (uint256 i = 0; i < _assets.length; i++) {
             uint256 target = effectiveTargets[i] * WEIGHT_PRECISION_SCALE;
-            uint256 beforeDeviation = weightsBefore[i].absDiff(target);
-            uint256 afterDeviation = weightsAfter[i].absDiff(target);
+            uint256 beforeDeviation =
+                weightsBefore[i] >= target ? weightsBefore[i] - target : target - weightsBefore[i];
+            uint256 afterDeviation =
+                weightsAfter[i] >= target ? weightsAfter[i] - target : target - weightsAfter[i];
             if (afterDeviation > beforeDeviation) {
                 revert AssetMovedAwayFromTarget(_assets[i], beforeDeviation, afterDeviation);
             }
@@ -422,7 +423,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
         uint256 netLossValue = navBefore > navAfter ? navBefore - navAfter : 0;
         uint256 lossValue = grossLossValue > netLossValue ? grossLossValue : netLossValue;
-        uint256 batchLossBps = lossValue == 0 ? 0 : MathEx.mulDivUp(lossValue, BPS, navBefore);
+        uint256 batchLossBps =
+            lossValue == 0 ? 0 : Math.mulDiv(lossValue, BPS, navBefore, Math.Rounding.Ceil);
         uint16 navLossBudgetUsedBps = _consumeNavLossBudget(batchLossBps);
         if (strategicRebalanceActive) {
             uint256 cumulativeStrategyLossBps = uint256(_strategicExecutionLossBps) + batchLossBps;
@@ -553,7 +555,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         uint64 completedAt = uint64(block.timestamp);
         _pruneRetiringAssetsWithinDust();
         (uint256[] memory actualWeights, uint256 navAfter) = _currentWeightsAndNav();
-        uint256 navPerShareAfter = MathEx.mulDiv(navAfter, 1e18, totalSupply);
+        uint256 navPerShareAfter = Math.mulDiv(navAfter, 1e18, totalSupply);
         uint256 rebalanceId = rebalanceCount;
         uint256 strategyVersion = _strategyVersions.length - 1;
         _strategyVersions[strategyVersion].completedAt = completedAt;
@@ -724,7 +726,8 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
     {
         uint256[] memory targets = _targetWeights();
         for (uint256 i = 0; i < _assets.length; i++) {
-            distance += weights[i].absDiff(targets[i] * targetScale);
+            uint256 target = targets[i] * targetScale;
+            distance += weights[i] >= target ? weights[i] - target : target - weights[i];
         }
     }
 

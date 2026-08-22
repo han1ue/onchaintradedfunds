@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { FeeGrowthMath } from "../src/libraries/FeeGrowthMath.sol";
-import { MathEx } from "../src/libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -187,14 +187,14 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         uint256 annualGrowthWad =
-            feeBps == 0 ? ONE : MathEx.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
-        uint256 exponentWad = MathEx.mulDiv(elapsed, ONE, 365 days);
+            feeBps == 0 ? ONE : Math.mulDiv(10_000, ONE, 10_000 - uint256(feeBps));
+        uint256 exponentWad = Math.mulDiv(elapsed, ONE, 365 days);
         uint256 growthWad = elapsed == 365 days
             ? annualGrowthWad
             : uint256(FeeGrowthMath.powWad(int256(annualGrowthWad), int256(exponentWad)));
         uint256 expectedFeeShares = elapsed == 365 days
-            ? MathEx.mulDiv(100 * ONE, 10_000, 10_000 - uint256(feeBps)) - 100 * ONE
-            : MathEx.mulDiv(100 * ONE, growthWad, ONE) - 100 * ONE;
+            ? Math.mulDiv(100 * ONE, 10_000, 10_000 - uint256(feeBps)) - 100 * ONE
+            : Math.mulDiv(100 * ONE, growthWad, ONE) - 100 * ONE;
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
 
         uint256 actualFeeShares = vault.accrueFees();

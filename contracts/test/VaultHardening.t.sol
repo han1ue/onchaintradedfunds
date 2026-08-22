@@ -13,6 +13,36 @@ import { PricingSource, TradeInstruction, VaultInitParams } from "../src/VaultTy
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract VaultHardeningTest is ProtocolTestBase {
+    function testFullWidthCeilingOverflowCannotMintSharesForZeroAssets() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](1);
+        params.initialAssets[0] = address(tokenA);
+        params.initialPricingConfigs = _pricingConfigsFor(params.initialAssets);
+        params.initialTargetWeightsBps = new uint16[](1);
+        params.initialTargetWeightsBps[0] = 10_000;
+        params.initialAmounts = new uint256[](1);
+        params.initialAmounts[0] = 2 * ONE;
+        params.initialShareSupply = ONE;
+        params.creatorFeeBpsPerYear = 0;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        tokenA.mint(ATTACKER, 3);
+        vm.prank(ATTACKER);
+        assertTrue(tokenA.transfer(address(vault), 3));
+
+        uint256 maliciousShares =
+            57_896_044_618_658_097_624_941_425_576_356_807_489_222_853_968_285_070_785_894_511_051_528_958_641_126;
+        uint256[] memory zeroMaximums = new uint256[](1);
+
+        vm.prank(ATTACKER);
+        vm.expectRevert();
+        vault.mintWithBasket(maliciousShares, ATTACKER, zeroMaximums);
+
+        assertEq(vault.totalSupply(), ONE);
+        assertEq(vault.balanceOf(ATTACKER), 0);
+        assertEq(tokenA.balanceOf(address(vault)), 2 * ONE + 3);
+    }
+
     function testLockedLiquidityPreventsZeroSupplyAndVaultCanContinueOperating() public {
         ManagedOTFVault vault = _createVault();
         uint256 circulatingShares = vault.balanceOf(address(this));

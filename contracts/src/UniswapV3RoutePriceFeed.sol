@@ -5,7 +5,7 @@ import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { UniswapV3TwapMath } from "./libraries/UniswapV3TwapMath.sol";
 
 interface IUniswapV3OraclePool {
@@ -131,7 +131,7 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         int24 assetQuoteTick = _meanTick(assetQuotePool);
         uint256 quoteAmount = UniswapV3TwapMath.quoteAtTick(assetQuoteTick, 1e18, asset, quoteToken);
         if (quoteAmount == 0) revert InvalidTwapPrice();
-        answer = MathEx.mulDiv(quoteAmount, quoteUsdAnswer, 10 ** uint256(quoteTokenDecimals));
+        answer = Math.mulDiv(quoteAmount, quoteUsdAnswer, 10 ** uint256(quoteTokenDecimals));
         if (feedDecimals < OUTPUT_DECIMALS) {
             uint256 scaleUp = 10 ** uint256(OUTPUT_DECIMALS - feedDecimals);
             if (answer > type(uint256).max / scaleUp) revert PriceOverflow();

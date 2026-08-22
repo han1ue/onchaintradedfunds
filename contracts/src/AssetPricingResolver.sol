@@ -21,11 +21,7 @@ interface IAssetPricingResolver {
 
     function resolvePricing(address asset, AssetPricingConfig calldata config)
         external
-        returns (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 primaryStaleness
-        );
+        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness);
 }
 
 /// @notice Mechanically validates creator-selected pricing and resolves a normalized per-vault feed.
@@ -71,22 +67,14 @@ contract AssetPricingResolver is IAssetPricingResolver {
 
     function resolvePricing(address asset, AssetPricingConfig calldata config)
         external
-        returns (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 primaryStaleness
-        )
+        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness)
     {
         return _resolve(asset, config, true);
     }
 
     function _resolve(address asset, AssetPricingConfig calldata config, bool deployWrapper)
         private
-        returns (
-            address normalizedFeed,
-            bytes32 marketId,
-            uint32 primaryStaleness
-        )
+        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness)
     {
         if (asset == address(0) || asset.code.length == 0 || config.primarySource.code.length == 0)
         {
@@ -114,9 +102,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
             (address composedQuoteUsdFeed, uint32 composedQuoteMaxStaleness) =
                 _quoteConfig(composedQuoteToken, false);
             _validateLeg(asset, config.primarySource, primaryStaleness, false);
-            _validateLeg(
-                composedQuoteToken, composedQuoteUsdFeed, composedQuoteMaxStaleness, false
-            );
+            _validateLeg(composedQuoteToken, composedQuoteUsdFeed, composedQuoteMaxStaleness, false);
             if (deployWrapper) {
                 normalizedFeed = address(
                     new ChainlinkRoutePriceFeed(
@@ -147,10 +133,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         if (deployWrapper) {
             normalizedFeed = address(
                 new UniswapV3RoutePriceFeed(
-                    asset,
-                    quoteToken,
-                    IUniswapV3OraclePool(pool),
-                    marketRegistry
+                    asset, quoteToken, IUniswapV3OraclePool(pool), marketRegistry
                 )
             );
             calculator.validatePriceFeed(

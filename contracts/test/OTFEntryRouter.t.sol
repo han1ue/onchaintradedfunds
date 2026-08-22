@@ -145,6 +145,25 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(vault)), 550 * ONE);
     }
 
+    function testFixedSettlementEntryProcessesOverdueTreasuryForfeiture() public {
+        ManagedOTFVault vault = _createVault();
+        feedA.setRoundData(2, 120_00000000, block.timestamp, block.timestamp, 2);
+        vault.flagOutOfBand();
+        vm.warp(vault.challengeDeadline() + 1);
+
+        EntrySwap[] memory swaps = _entrySwaps(50 * ONE, 50 * ONE);
+        vm.startPrank(ALICE);
+        tokenC.approve(address(entryRouter), 100 * ONE);
+        (uint256 shares,) = entryRouter.enterWithSettlement(
+            address(vault), 100 * ONE, ONE, ALICE, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertGt(shares, 0);
+        assertEq(vault.balanceOf(ALICE), shares);
+        assertGt(vault.balanceOf(address(collector)), 0);
+    }
+
     function testFixedSettlementEntryRequiresFullyAllocatedInput() public {
         ManagedOTFVault vault = _createVault();
         EntrySwap[] memory swaps = _entrySwaps(50 * ONE, 40 * ONE);

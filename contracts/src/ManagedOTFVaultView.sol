@@ -5,7 +5,7 @@ import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVa
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     PricingSource,
     RebalanceRecord,
@@ -154,11 +154,9 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         if (PricingSource(_pricingSourceForAsset[asset]) != PricingSource.ChainlinkAssetQuote) {
             return primaryMaxStaleness;
         }
-        (, uint32 quoteMaxStaleness,,,) = IAssetMarketRegistry(_assetMarketRegistry)
-            .quoteTokenConfig(_quoteTokenForAsset[asset]);
-        return primaryMaxStaleness > quoteMaxStaleness
-            ? primaryMaxStaleness
-            : quoteMaxStaleness;
+        (, uint32 quoteMaxStaleness,,,) =
+            IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(_quoteTokenForAsset[asset]);
+        return primaryMaxStaleness > quoteMaxStaleness ? primaryMaxStaleness : quoteMaxStaleness;
     }
 
     function pricingSourceForAsset(address asset)
@@ -193,7 +191,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         uint256 supply = _previewSupplyAfterAccrual();
         if (supply == 0) return 0;
         uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets);
-        return MathEx.mulDiv(nav, 1e18, supply);
+        return Math.mulDiv(nav, 1e18, supply);
     }
 
     function currentWeightsBps() external view onlyDelegateCall returns (uint16[] memory weights) {
@@ -211,7 +209,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         uint256 tokenValue = _portfolioCalculator.assetValueForVault(
             address(this), token, IERC20(token).balanceOf(address(this))
         );
-        return MathEx.mulDiv(tokenValue, BPS, nav);
+        return Math.mulDiv(tokenValue, BPS, nav);
     }
 
     function getWeightBands(address token)
@@ -317,14 +315,14 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
                 }
                 continue;
             }
-            uint256 candidate = MathEx.mulDiv(amounts[i], supply, reserve);
+            uint256 candidate = Math.mulDiv(amounts[i], supply, reserve);
             if (candidate < lpAmount) lpAmount = candidate;
         }
         if (lpAmount == type(uint256).max) return 0;
 
         for (uint256 i = 0; i < _assets.length; i++) {
             uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            uint256 required = MathEx.mulDivUp(lpAmount, reserve, supply);
+            uint256 required = Math.mulDiv(lpAmount, reserve, supply, Math.Rounding.Ceil);
             if (amounts[i] != required) {
                 revert NonProportionalContribution(_assets[i], amounts[i], required);
             }
@@ -341,8 +339,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         if (lpAmount == 0) return amounts;
         uint256 supply = _previewSupplyAfterAccrual();
         for (uint256 i = 0; i < _assets.length; i++) {
-            amounts[i] =
-                MathEx.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), lpAmount, supply);
+            amounts[i] = Math.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), lpAmount, supply);
         }
     }
 
@@ -357,8 +354,9 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         uint256 supply = _previewSupplyAfterAccrual();
         amountsIn = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
-            amountsIn[i] =
-                MathEx.mulDivUp(shares, IERC20(_assets[i]).balanceOf(address(this)), supply);
+            amountsIn[i] = Math.mulDiv(
+                shares, IERC20(_assets[i]).balanceOf(address(this)), supply, Math.Rounding.Ceil
+            );
         }
     }
 
@@ -372,8 +370,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         amountsOut = new uint256[](_assets.length);
         uint256 supply = _previewSupplyAfterAccrual();
         for (uint256 i = 0; i < _assets.length; i++) {
-            amountsOut[i] =
-                MathEx.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), shares, supply);
+            amountsOut[i] = Math.mulDiv(IERC20(_assets[i]).balanceOf(address(this)), shares, supply);
         }
     }
 
@@ -407,8 +404,11 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         uint256 timestamp = block.timestamp;
         uint256 storedRecoveryAt = _navLossBucketRecoveryAt;
         if (storedRecoveryAt > timestamp && maxNavLossBps != 0) {
-            uint256 used = MathEx.mulDivUp(
-                storedRecoveryAt - timestamp, maxNavLossBps, NAV_LOSS_RECOVERY_PERIOD
+            uint256 used = Math.mulDiv(
+                storedRecoveryAt - timestamp,
+                maxNavLossBps,
+                NAV_LOSS_RECOVERY_PERIOD,
+                Math.Rounding.Ceil
             );
             // Bucket usage cannot exceed the configured maximum of 200 BPS.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -463,9 +463,9 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         );
         // forge-lint: disable-next-line(block-timestamp)
         if (challengeActive && block.timestamp > challengeDeadline) {
-            uint256 forfeitedShares = escrowedManagerFeeShares + feeShares;
-            uint256 rewardShares = MathEx.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
-            return supply - escrowedManagerFeeShares + rewardShares;
+            // Existing escrowed shares are already included in totalSupply. Forfeiture only
+            // redistributes them between the challenge caller and treasury; it does not burn them.
+            return supply + feeShares;
         }
         supply += feeShares;
     }

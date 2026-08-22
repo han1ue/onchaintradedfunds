@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
-import { MathEx } from "./libraries/MathEx.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IOTFFactoryMarket {
     function isVault(address vault) external view returns (bool);
@@ -118,29 +118,23 @@ contract OTFV3MarketRegistry {
         if (!IOTFFactoryMarket(otfFactory).isVault(vault)) revert InvalidVault(vault);
         address current = officialPool[vault];
         if (current != address(0)) revert OfficialPoolAlreadySet(vault, current);
-        if (
-            IUniswapV3FactoryMarket(uniswapV3Factory).feeAmountTickSpacing(OFFICIAL_FEE)
-                <= 0
-        ) revert FeeTierUnavailable(OFFICIAL_FEE);
+        if (IUniswapV3FactoryMarket(uniswapV3Factory).feeAmountTickSpacing(OFFICIAL_FEE) <= 0) {
+            revert FeeTierUnavailable(OFFICIAL_FEE);
+        }
 
         uint256 nav = IManagedOTFMarketVault(vault).navPerShare();
         uint160 sqrtPriceX96 = _sqrtPriceX96(vault, nav);
-        (address token0, address token1) = vault < settlementToken
-            ? (vault, settlementToken)
-            : (settlementToken, vault);
+        (address token0, address token1) =
+            vault < settlementToken ? (vault, settlementToken) : (settlementToken, vault);
 
-        address existing = IUniswapV3FactoryMarket(uniswapV3Factory).getPool(
-            token0, token1, OFFICIAL_FEE
-        );
+        address existing =
+            IUniswapV3FactoryMarket(uniswapV3Factory).getPool(token0, token1, OFFICIAL_FEE);
         if (existing != address(0)) revert CanonicalPoolAlreadyExists(vault, existing);
 
         pool = INonfungiblePositionManagerMarket(positionManager)
-            .createAndInitializePoolIfNecessary(
-                token0, token1, OFFICIAL_FEE, sqrtPriceX96
-            );
-        address resolved = IUniswapV3FactoryMarket(uniswapV3Factory).getPool(
-            token0, token1, OFFICIAL_FEE
-        );
+            .createAndInitializePoolIfNecessary(token0, token1, OFFICIAL_FEE, sqrtPriceX96);
+        address resolved =
+            IUniswapV3FactoryMarket(uniswapV3Factory).getPool(token0, token1, OFFICIAL_FEE);
         if (pool == address(0) || pool != resolved) {
             revert PoolResolutionMismatch(pool, resolved);
         }
@@ -150,45 +144,16 @@ contract OTFV3MarketRegistry {
     }
 
     function _sqrtPriceX96(address vault, uint256 nav) private view returns (uint160) {
-        uint256 settlementAmount = MathEx.mulDiv(
-            nav, 10 ** uint256(settlementTokenDecimals), 1e18
-        );
+        uint256 settlementAmount = Math.mulDiv(nav, 10 ** uint256(settlementTokenDecimals), 1e18);
         if (nav == 0 || settlementAmount == 0) revert InvalidInitialPrice(nav);
 
         uint256 amount0 = vault < settlementToken ? 1e18 : settlementAmount;
         uint256 amount1 = vault < settlementToken ? settlementAmount : 1e18;
-        uint256 ratioX192 = MathEx.mulDiv(amount1, Q192, amount0);
-        uint256 result = _sqrt(ratioX192);
+        uint256 ratioX192 = Math.mulDiv(amount1, Q192, amount0);
+        uint256 result = Math.sqrt(ratioX192);
         if (result == 0 || result > type(uint160).max) revert InvalidInitialPrice(nav);
         // The bound above guarantees the narrowed Uniswap price cannot truncate.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint160(result);
-    }
-
-    function _sqrt(uint256 value) private pure returns (uint256 result) {
-        if (value == 0) return 0;
-        result = 2 ** ((MathExLog2.log2(value) + 1) / 2);
-        unchecked {
-            for (uint256 i = 0; i < 7; i++) {
-                result = (result + value / result) >> 1;
-            }
-            uint256 roundedDown = value / result;
-            return result < roundedDown ? result : roundedDown;
-        }
-    }
-}
-
-library MathExLog2 {
-    function log2(uint256 value) internal pure returns (uint256 result) {
-        unchecked {
-            if (value >> 128 > 0) { value >>= 128; result += 128; }
-            if (value >> 64 > 0) { value >>= 64; result += 64; }
-            if (value >> 32 > 0) { value >>= 32; result += 32; }
-            if (value >> 16 > 0) { value >>= 16; result += 16; }
-            if (value >> 8 > 0) { value >>= 8; result += 8; }
-            if (value >> 4 > 0) { value >>= 4; result += 4; }
-            if (value >> 2 > 0) { value >>= 2; result += 2; }
-            if (value >> 1 > 0) result += 1;
-        }
     }
 }
