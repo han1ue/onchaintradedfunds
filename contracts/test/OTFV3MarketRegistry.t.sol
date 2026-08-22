@@ -29,6 +29,10 @@ contract MockV3Pool {
         require(sqrtPriceX96 == 0, "INITIALIZED");
         sqrtPriceX96 = sqrtPriceX96_;
     }
+
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
+        return (sqrtPriceX96, 0, 0, 0, 0, 0, true);
+    }
 }
 
 contract MockV3Factory {
@@ -152,5 +156,21 @@ contract OTFV3MarketRegistryTest is ProtocolTestBase {
         assertEq(address(second), nextPredicted);
         assertTrue(nextPredicted != predicted);
         assertTrue(registry.officialPool(nextPredicted) != address(0));
+    }
+
+    function testPrecreatedUninitializedCanonicalPoolIsAcceptedAndInitialized() public {
+        VaultInitParams memory params = _defaultParams();
+        uint256 nonce = factory.creatorNonce(address(this));
+        address predicted = factory.predictVaultAddress(address(this), nonce, params);
+        address existing = v3Factory.createPool(predicted, address(usdg), 500);
+
+        assertEq(uint256(MockV3Pool(existing).sqrtPriceX96()), 0);
+
+        ManagedOTFVault created = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(address(created), predicted);
+        assertEq(registry.officialPool(predicted), existing);
+        assertGt(uint256(MockV3Pool(existing).sqrtPriceX96()), 0);
+        assertEq(uint256(MockV3Pool(existing).liquidity()), 0);
     }
 }

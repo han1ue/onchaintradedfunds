@@ -30,6 +30,21 @@ interface INonfungiblePositionManagerMarket {
     ) external payable returns (address pool);
 }
 
+interface IUniswapV3PoolMarket {
+    function slot0()
+        external
+        view
+        returns (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext,
+            uint8 feeProtocol,
+            bool unlocked
+        );
+}
+
 /// @notice Creates and records the single canonical Uniswap V3 market for every OTF.
 /// @dev The factory calls this during vault creation. No account can replace or remove a pool.
 contract OTFV3MarketRegistry {
@@ -46,6 +61,7 @@ contract OTFV3MarketRegistry {
     error FeeTierUnavailable(uint24 fee);
     error InvalidInitialPrice(uint256 navPerShare);
     error PoolResolutionMismatch(address returnedPool, address resolvedPool);
+    error PoolInitializationMismatch(uint160 requestedSqrtPriceX96, uint160 actualSqrtPriceX96);
     error Reentrancy();
 
     event OfficialPoolCreated(
@@ -109,6 +125,10 @@ contract OTFV3MarketRegistry {
             IUniswapV3FactoryMarket(uniswapV3Factory).getPool(vault, settlementToken, OFFICIAL_FEE);
     }
 
+    function isInitializedPool(address pool) external view returns (bool initialized) {
+        return _poolSqrtPriceX96(pool) != 0;
+    }
+
     function createOfficialPool(address vault)
         external
         onlyOTFFactory
@@ -129,7 +149,9 @@ contract OTFV3MarketRegistry {
 
         address existing =
             IUniswapV3FactoryMarket(uniswapV3Factory).getPool(token0, token1, OFFICIAL_FEE);
-        if (existing != address(0)) revert CanonicalPoolAlreadyExists(vault, existing);
+        if (existing != address(0) && _poolSqrtPriceX96(existing) != 0) {
+            revert CanonicalPoolAlreadyExists(vault, existing);
+        }
 
         pool = INonfungiblePositionManagerMarket(positionManager)
             .createAndInitializePoolIfNecessary(token0, token1, OFFICIAL_FEE, sqrtPriceX96);
@@ -138,9 +160,17 @@ contract OTFV3MarketRegistry {
         if (pool == address(0) || pool != resolved) {
             revert PoolResolutionMismatch(pool, resolved);
         }
+        uint160 actualSqrtPriceX96 = _poolSqrtPriceX96(pool);
+        if (actualSqrtPriceX96 != sqrtPriceX96) {
+            revert PoolInitializationMismatch(sqrtPriceX96, actualSqrtPriceX96);
+        }
 
         officialPool[vault] = pool;
         emit OfficialPoolCreated(vault, pool, OFFICIAL_FEE, sqrtPriceX96, nav);
+    }
+
+    function _poolSqrtPriceX96(address pool) private view returns (uint160 sqrtPriceX96) {
+        (sqrtPriceX96,,,,,,) = IUniswapV3PoolMarket(pool).slot0();
     }
 
     function _sqrtPriceX96(address vault, uint256 nav) private view returns (uint160) {

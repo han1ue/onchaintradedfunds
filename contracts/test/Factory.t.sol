@@ -59,9 +59,46 @@ contract FactoryTest is ProtocolTestBase {
 
     function testFactoryRejectsCreatorFeeAboveGlobalMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = 9_001;
+        params.creatorFeeBpsPerYear = 2_001;
 
         vm.expectPartialRevert(OTFFactory.CreatorFeeTooHigh.selector);
+        factory.createVault(params);
+    }
+
+    function testFactoryAcceptsInitialShareSupplyAtMaximum() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialShareSupply = 1_000_000_000 * ONE;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.totalSupply(), 1_000_000_000 * ONE);
+        assertEq(factory.MAX_INITIAL_SHARE_SUPPLY(), 1_000_000_000 * ONE);
+    }
+
+    function testFactoryRejectsInitialShareSupplyAboveMaximum() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialShareSupply = 1_000_000_000 * ONE + 1;
+
+        vm.expectPartialRevert(OTFFactory.InitialShareSupplyTooLarge.selector);
+        factory.createVault(params);
+    }
+
+    function testFactoryAcceptsCreatorFeeAtGlobalMaximum() public {
+        VaultInitParams memory params = _defaultParams();
+        params.creatorFeeBpsPerYear = 2_000;
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.creatorFeeBpsPerYear(), 2_000);
+        assertEq(vault.MAX_MANAGER_FEE_BPS_PER_YEAR(), 2_000);
+        assertEq(factory.MAX_CREATOR_FEE_BPS_PER_YEAR(), 2_000);
+    }
+
+    function testFactoryRejectsMoreThanMaximumTrackedAssetsBeforeTransfers() public {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = new address[](101);
+
+        vm.expectRevert(OTFFactory.TrackedAssetLimitExceeded.selector);
         factory.createVault(params);
     }
 

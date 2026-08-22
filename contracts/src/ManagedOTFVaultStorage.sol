@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ERC20Base } from "./ERC20Base.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import {
     AssetPricingConfig,
     RebalanceRecord,
@@ -35,7 +36,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 public constant MAX_TRADE_COUNT = 20;
     uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
-    uint256 internal constant MAX_TRACKED_ASSETS = 100;
+    uint256 internal constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
     /// @notice Time required for a fully consumed NAV-loss budget to replenish.
     uint256 public constant NAV_LOSS_RECOVERY_PERIOD = 7 days;
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
@@ -43,7 +44,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     /// @dev Approved constituents are restricted to 18 decimals, so this is 1e-9 tokens.
     uint256 public constant MAX_RETIRING_DUST = 1_000_000_000;
     uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
-    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR = 9_000;
+    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR =
+        ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
     uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
     uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
     uint256 internal constant RECENT_REBALANCE_CAP = 16;

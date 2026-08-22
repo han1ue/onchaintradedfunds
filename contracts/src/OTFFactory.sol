@@ -5,6 +5,7 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { ManagedOTFVault } from "./ManagedOTFVault.sol";
 import { MinimalClones } from "./libraries/MinimalClones.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { VaultInitParams } from "./VaultTypes.sol";
 
@@ -15,6 +16,7 @@ interface IFeeCollectorTreasury {
 
 interface IOfficialMarketRegistry {
     function canonicalPool(address vault) external view returns (address pool);
+    function isInitializedPool(address pool) external view returns (bool initialized);
     function createOfficialPool(address vault) external returns (address pool);
 }
 
@@ -37,7 +39,9 @@ contract OTFFactory is IAdapterAllowlist {
     using SafeTransferLib for address;
 
     uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
-    uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR = 9_000;
+    uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR =
+        ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
+    uint256 public constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
@@ -45,6 +49,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
+    uint256 public constant MAX_INITIAL_SHARE_SUPPLY = ProtocolConstants.MAX_INITIAL_SHARE_SUPPLY;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 
     error NotOwner();
@@ -52,7 +57,9 @@ contract OTFFactory is IAdapterAllowlist {
     error InvalidImplementation();
     error InvalidDependency(address dependency);
     error InitialShareSupplyTooSmall(uint256 supplied, uint256 minimum);
+    error InitialShareSupplyTooLarge(uint256 supplied, uint256 maximum);
     error CreatorFeeTooHigh(uint16 feeBps, uint16 maximum);
+    error TrackedAssetLimitExceeded();
     error ProtocolFeeShareTooHigh(uint16 shareBps, uint16 maximum);
     error LimitTooHigh();
     error InvalidLimit();
@@ -201,7 +208,10 @@ contract OTFFactory is IAdapterAllowlist {
         address predicted =
             MinimalClones.predictDeterministicAddress(vaultImplementation, salt, address(this));
         address existingPool = IOfficialMarketRegistry(marketRegistry).canonicalPool(predicted);
-        if (existingPool != address(0)) {
+        if (
+            existingPool != address(0)
+                && IOfficialMarketRegistry(marketRegistry).isInitializedPool(existingPool)
+        ) {
             revert PredictedOfficialPoolAlreadyExists(predicted, existingPool);
         }
         creatorNonce[msg.sender] = nonce + 1;
@@ -428,6 +438,12 @@ contract OTFFactory is IAdapterAllowlist {
             revert InitialShareSupplyTooSmall(
                 params.initialShareSupply, MINIMUM_INITIAL_SHARE_SUPPLY
             );
+        }
+        if (params.initialShareSupply > MAX_INITIAL_SHARE_SUPPLY) {
+            revert InitialShareSupplyTooLarge(params.initialShareSupply, MAX_INITIAL_SHARE_SUPPLY);
+        }
+        if (params.initialAssets.length > MAX_TRACKED_ASSETS) {
+            revert TrackedAssetLimitExceeded();
         }
         if (params.initialAssets.length != params.initialTargetWeightsBps.length) {
             revert InvalidArrayLength();

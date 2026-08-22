@@ -884,6 +884,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         view
     {
         if (assets_.length == 0) revert EmptyPortfolio();
+        if (assets_.length > MAX_TRACKED_ASSETS) revert TrackedAssetLimitExceeded();
         if (assets_.length != weights_.length) {
             revert LengthMismatch(assets_.length, weights_.length);
         }

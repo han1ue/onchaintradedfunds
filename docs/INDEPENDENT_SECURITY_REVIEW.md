@@ -33,16 +33,20 @@ Do not review a different optimizer or compiler output as if it were the deploya
 Treat the following as untrusted:
 
 - OTF share holders
-- OTF managers and authorized executors
+- OTF managers and authorized executors for custody, execution, and all mechanically enforced
+  constraints; managers are separately trusted for asset/oracle semantic selection
 - Challenge callers and trade calldata
-- User-supplied `AssetPricingConfig` values and explicit V3 execution paths/fee tiers
+- User-supplied `AssetPricingConfig` values and explicit V3 execution paths/fee tiers are
+  mechanically untrusted; investors explicitly trust the manager's asserted asset/quote/feed
+  relationship
 - Constituent-token callbacks and donated tokens
 - Predictable clone addresses
 - The frontend and indexer
 
 Treat these as explicitly trusted dependencies whose compromise remains a protocol risk:
 
-- Trusted Chainlink pair-map owner and configured base/quote/feed relationships
+- Each OTF manager's selected asset/quote/feed semantics and pricing-source classification
+- Quote-registry governance and its configured quote/USD feed relationships
 - Chainlink proxy implementations and Robinhood Stock Token `oraclePaused()` behavior
 - Canonical V3 factory, WETH, USDG, selected pricing pools, and quote-token/USD feeds
 - Factory owner and approved adapter governance
@@ -170,8 +174,10 @@ areas, not as proof of safety.
 - Oracle correctness and corporate-action handling remain external dependencies.
 - Runtime and initcode sizes must be recalculated from the reviewed commit. The security gate blocks
   deployment whenever a production artifact exceeds the EIP-170 or EIP-3860 limit.
-- Robinhood has no documented pair-addressed Chainlink Feed Registry; semantic pair verification is
-  required for new Chainlink selections. Runtime Flags and sequencer checks are not implemented.
+- Robinhood has no documented pair-addressed Chainlink Feed Registry. Permissionless asset support
+  therefore makes manager-selected asset/oracle semantics an explicit investor trust assumption;
+  the contracts validate mechanics but cannot prove pair identity. Runtime Flags and sequencer
+  checks are not implemented.
 - Robinhood testnet synthetic feeds are noncanonical integration fixtures.
 - Unsupported tokens sent to an OTF are intentionally not manager-recoverable.
 - A funded constituent cannot currently be removed until its tracked reserve is exactly zero.

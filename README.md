@@ -194,6 +194,9 @@ outputs round down.
 Each OTF permanently locks `1_000_000` share wei inside itself at initialization. This prevents
 total supply from reaching zero and keeps minting operational after every circulating share has
 been redeemed. Initial share supply must be greater than the locked amount.
+Initial supply is capped at one billion whole 18-decimal shares (`1e27` raw share units) to prevent
+creation at a pathological scale near the `uint256` arithmetic limit. Later proportional user mints
+are not constrained by this creation-only cap.
 
 Factory seeding, basket minting, redemption, and rebalance execution verify exact token balance
 deltas for both sender and receiver. Fee-on-transfer, sender-taxed, and unexpectedly rebasing
@@ -280,12 +283,14 @@ The creator grants the factory exact transfer allowances for the initial basket 
 
 1. Validates factory-level hard caps.
 2. Computes a deterministic clone salt from creator, nonce, and initialization parameters.
-3. Predicts the clone address and rejects an already-created canonical OTF/USDG pool before doing
-   any deployment, transfer, or initialization work.
+3. Predicts the clone address and rejects an already-initialized canonical OTF/USDG pool before
+   doing any deployment, transfer, or initialization work. A created but uninitialized pool is safe
+   to adopt.
 4. Deploys the clone.
 5. Transfers exact initial assets to the clone.
 6. Calls `initialize`.
-7. Creates and initializes the official OTF/USDG pool atomically from NAV per share.
+7. Creates or adopts an uninitialized official OTF/USDG pool and initializes it atomically from NAV
+   per share.
 8. Records the vault and emits `VaultCreated`.
 
 The vault initializer:
@@ -804,7 +809,8 @@ from suggested `UniswapV3Twap` configurations. The command does not add liquidit
 The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
 OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
 OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fixed 0.05% fee tier,
-initializes a new pool from NAV per share, and records it as the immutable official pool. No
+requires any adopted pool to be uninitialized, initializes it from NAV per share, and records it as
+the immutable official pool. No
 liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
 Uniswap position it creates; the pool association cannot be removed or replaced.
 

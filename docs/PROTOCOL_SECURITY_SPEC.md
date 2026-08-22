@@ -215,13 +215,19 @@ Treasury transfer MUST use the collector's two-step acceptance flow.
 Each OTF has exactly one manager. The manager MAY:
 
 - Select constituents, target weights, and allowed weight bands.
-- Change the annual manager fee from 0 to the 9,000 BPS (90%) protocol maximum.
+- Change the annual manager fee from 0 to the 2,000 BPS (20%) protocol maximum.
 - Add and remove authorized executors.
 - Receive execution permission automatically, remove or restore their own permission, and execute
   constrained trades while authorized.
 - Propose target changes with an inseparable strategy rationale.
 - Supply a valid pricing configuration when proposing a previously unpriced asset.
 - Start manager and fee-recipient transfers.
+
+Permissionless constituent support makes the manager an explicitly trusted economic authority for
+the semantic correspondence between an asset, its quote, its selected feed or pool, and its pricing
+source classification. Contracts MUST validate the configured source mechanically but do not prove
+that it prices the asserted asset. The activation delay is an investor monitoring and exit window,
+not semantic oracle validation.
 
 The manager MUST NOT:
 
@@ -510,18 +516,19 @@ the OTF from the manager's own assets or fee revenue.
 3. Constituent-token callbacks during factory prefunding MUST NOT mint shares, change roles, or
    mutate strategy state at the clone's predicted address.
 4. Initial supply MUST exceed the permanently locked minimum-liquidity shares.
-5. Total supply MUST never return to zero.
-6. Contributions MUST be proportional to current reserves and supply.
-7. Contribution requirements round up.
-8. Withdrawal outputs round down.
-9. User-specified maximum inputs and minimum outputs MUST be enforced.
-10. Sender and receiver balance deltas MUST equal expected amounts.
-11. Fee-on-transfer, sender-taxed, and incompatible rebasing behavior MUST revert.
-12. Tracked-asset donations become backing for all shares and MUST NOT create privileged claims.
-13. Unsupported-token donations are excluded from accounting and cannot be rescued by the manager.
-14. Fee growth MUST compose across time partitions so discretionary checkpoint cadence cannot
+5. Initial supply MUST NOT exceed one billion whole 18-decimal shares (`1e27` raw units).
+6. Total supply MUST never return to zero.
+7. Contributions MUST be proportional to current reserves and supply.
+8. Contribution requirements round up.
+9. Withdrawal outputs round down.
+10. User-specified maximum inputs and minimum outputs MUST be enforced.
+11. Sender and receiver balance deltas MUST equal expected amounts.
+12. Fee-on-transfer, sender-taxed, and incompatible rebasing behavior MUST revert.
+13. Tracked-asset donations become backing for all shares and MUST NOT create privileged claims.
+14. Unsupported-token donations are excluded from accounting and cannot be rescued by the manager.
+15. Fee growth MUST compose across time partitions so discretionary checkpoint cadence cannot
     materially change total fee dilution.
-15. The configured annual rate MUST equal holder dilution over one full 365-day fee year.
+16. The configured annual rate MUST equal holder dilution over one full 365-day fee year.
 16. Contributions, basket mints, withdrawals, redemptions, and reward mints MUST checkpoint normally
     accruing fees against the pre-change supply.
 17. Fee-rate changes MUST close the old-rate interval at the transaction timestamp even if the
@@ -549,7 +556,8 @@ For composed Chainlink pricing:
 
 - `primarySource` is the creator-selected feed intended for `(asset, quoteToken)`.
 - The quote/USD feed and freshness limit MUST be loaded from the registry on every read.
-- Contracts MUST mechanically validate both legs but do not prove semantic pair identity.
+- Contracts MUST mechanically validate both legs but do not prove semantic pair identity; investors
+  explicitly trust the manager's asserted asset/quote/feed relationship.
 - Every read MUST validate both legs independently and MUST expose the older leg's timestamp.
 - The multiplication and decimal normalization MUST be overflow-safe and return a nonzero USD price.
 
