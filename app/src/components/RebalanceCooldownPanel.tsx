@@ -785,7 +785,7 @@ const quoteTokenRegistryAbi = [
     outputs: [{ name: "", type: "address[]" }],
   },
   {
-    type: "function", name: "currentQuoteTokenConfig", stateMutability: "view",
+    type: "function", name: "quoteTokenConfig", stateMutability: "view",
     inputs: [{ name: "quoteToken", type: "address" }],
     outputs: [{
       name: "", type: "tuple", components: [
@@ -961,7 +961,7 @@ function PricingConfigurationFields({
     contracts: (quoteTokenAddresses ?? []).map((quoteToken) => ({
       address: registryAddress!,
       abi: quoteTokenRegistryAbi,
-      functionName: "currentQuoteTokenConfig" as const,
+      functionName: "quoteTokenConfig" as const,
       args: [quoteToken] as const,
       chainId,
     })),
@@ -1123,7 +1123,7 @@ function PricingConfigurationFields({
           )}
           {config.source === 1 || config.source === 2 ? (
             <div className="quoteRegistrySummary">
-              <span>Admin-managed quote/USD configuration</span>
+              <span>Current admin-managed quote/USD configuration</span>
               <strong>{config.secondarySource !== zeroAddress ? shortAddress(config.secondarySource) : "Choose a quote token"}</strong>
               <small>
                 {config.secondarySource !== zeroAddress
@@ -2674,7 +2674,7 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       <MetricCard
         label="NAV / Share"
         value={vault.navPerShare ?? "Oracle read failed"}
-        helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's pinned pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
+        helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's configured pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
       />
       <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
       <MetricCard
@@ -3162,7 +3162,7 @@ function PriceDetailsModal({
           <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} />
           <div>
             <h2 id="price-details-title">How {asset.symbol} is priced</h2>
-            <p id="price-details-description">The OTF converts this asset into its USD accounting value using the permanently pinned route below.</p>
+            <p id="price-details-description">The OTF pins the asset feed or V3 pool and uses the quote token's current admin-managed USD feed.</p>
           </div>
           <button ref={closeButtonRef} className="sunsetDialogClose" type="button" aria-label="Close price details" onClick={onClose}>
             <X size={16} />
@@ -3189,7 +3189,7 @@ function PriceDetailsModal({
         {config ? (
           <div className="priceDetailsSections">
             <section>
-              <h3>Pinned route</h3>
+              <h3>Pricing route</h3>
               <dl className="priceDetailsList">
                 <div><dt>Route</dt><dd>{pricingSourceLabel(config.source)}</dd></div>
                 {config.quoteToken !== zeroAddress ? <div><dt>Quote token</dt><dd>{quoteLabel} · <PriceSourceLink address={config.quoteToken} label="Quote token" /></dd></div> : null}
@@ -9673,7 +9673,7 @@ function WalletView({
               <tbody>{positions.map((position) => <tr key={position.address} role="button" tabIndex={0} onClick={() => onOpenVault(position.address)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpenVault(position.address); }}>
                 <td><div className="directoryVault"><OtfTokenIcon className="directoryVaultIcon" size={34} ticker={position.symbol} /><div><strong>{position.name}</strong><small>{position.symbol}</small></div></div></td>
                 <td data-label="Shares" className="monoValue">{position.displayBalance}</td>
-                <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's pinned pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
+                <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's configured pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
               </tr>)}</tbody>
             </table></div> : <div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div>}
           </section>

@@ -308,9 +308,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     // The legacy market fields above retain their original slots.
     mapping(address => uint8) internal _pricingSourceForAsset;
     mapping(address => address) internal _primaryPriceSourceForAsset;
-    mapping(address => address) internal _secondaryPriceSourceForAsset;
     mapping(address => uint32) internal _maxStalenessForAsset;
-    mapping(address => uint32) internal _secondaryMaxStalenessForAsset;
     mapping(address => bool) internal _pricingConfiguredForAsset;
     AssetPricingConfig[] internal _pendingPricingConfigs;
     mapping(address => uint32) internal _primaryMaxStalenessForAsset;

@@ -50,8 +50,8 @@ Treat these as explicitly trusted dependencies whose compromise remains a protoc
 - Constituent-token and approved adapter implementations
 
 `AssetRegistry` is not trusted: it is an optional ownerless discovery index and no vault may consult
-it for authorization. Oracle and V3 registries validate a new selection only. Their later updates
-must not redirect or disable a concrete source already pinned by an OTF. Chainlink's Robinhood Flags
+it for authorization. The asset feed or V3 pool remains pinned, while the quote-token registry's
+single current USD configuration is intentionally shared by existing and future routes. Chainlink's Robinhood Flags
 registry can prove proxy authenticity/activity but not pair orientation; review the separate trusted
 pair mapping accordingly.
 
@@ -92,8 +92,8 @@ Attempt to falsify each property:
     revocation, or removal state.
 16. A direct Chainlink route matches exact asset/USD; a composed route matches both exact legs;
     spoofed and reversed relationships fail without consulting `description()`.
-17. Every constituent pins its concrete normalized feed or canonical V3 wrapper, registry changes
-    cannot redirect it, and no source falls back automatically.
+17. Every constituent pins its asset feed or canonical V3 pool. Quote-token/USD updates deliberately
+    affect every route using that quote token, and no source falls back automatically.
 18. V3 pricing accepts only the canonical factory's exact asset/registeredQuote pool and fee after
     initialization, observation-capacity, and full-history checks; V4 is absent.
 19. Pricing and execution are independent: adapter data is an explicit path, not a market ID, and
@@ -127,8 +127,8 @@ Analyze more than Solidity control flow:
 - Adapter delisting while an OTF is active
 - Inability to remove a constituent while any reserve remains
 - Manager changes while fees are accrued or escrowed
-- Trusted-pair-map compromise before a new selection, Chainlink Flags inactivity, and the fact that
-  existing pins must not silently change
+- Trusted-pair-map compromise, Chainlink Flags inactivity, and governance risk from a quote/USD
+  update affecting every route using that quote token
 - Composed-route precision/staleness, Robinhood `oraclePaused()` handling, and missing sequencer
   uptime enforcement
 - V3 observation-history readiness and manipulation within the TWAP window

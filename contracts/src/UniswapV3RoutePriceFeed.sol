@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
+import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
@@ -19,8 +20,7 @@ interface IUniswapV3OraclePool {
         );
 }
 
-/// @notice Normalizes an asset/quote-token V3 TWAP through a pinned quote-token/USD feed.
-/// @dev The pool and Chainlink leg are independent and permanently pinned in this feed.
+/// @notice Normalizes an asset/quote-token V3 TWAP through the registry's quote-token/USD feed.
 contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     uint8 private constant OUTPUT_DECIMALS = 8;
     uint32 public constant TWAP_WINDOW = 1 hours;
@@ -42,32 +42,26 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     address public immutable quoteToken;
     uint8 public immutable quoteTokenDecimals;
     IUniswapV3OraclePool public immutable assetQuotePool;
-    AggregatorV3Interface public immutable quoteUsdFeed;
-    uint32 public immutable quoteUsdMaxStaleness;
+    IAssetMarketRegistry public immutable marketRegistry;
 
     constructor(
         address asset_,
         address quoteToken_,
         IUniswapV3OraclePool assetQuotePool_,
-        AggregatorV3Interface quoteUsdFeed_,
-        uint32 quoteUsdMaxStaleness_
+        IAssetMarketRegistry marketRegistry_
     ) {
         if (
             asset_ == address(0) || quoteToken_ == address(0)
-                || address(assetQuotePool_) == address(0) || address(quoteUsdFeed_) == address(0)
+                || address(assetQuotePool_) == address(0) || address(marketRegistry_) == address(0)
         ) revert ZeroAddress();
         if (address(assetQuotePool_).code.length == 0) {
             revert InvalidPoolPair(address(assetQuotePool_));
         }
-        if (address(quoteUsdFeed_).code.length == 0) {
-            revert FeedNotContract(address(quoteUsdFeed_));
+        if (address(marketRegistry_).code.length == 0) {
+            revert FeedNotContract(address(marketRegistry_));
         }
         if (!_isPair(assetQuotePool_, asset_, quoteToken_)) {
             revert InvalidPoolPair(address(assetQuotePool_));
-        }
-        if (quoteUsdMaxStaleness_ == 0) revert InvalidMaxStaleness();
-        if (quoteUsdMaxStaleness_ > MAX_ORACLE_STALENESS) {
-            revert MaxStalenessTooHigh(quoteUsdMaxStaleness_, MAX_ORACLE_STALENESS);
         }
         uint8 tokenDecimals = IERC20Metadata(quoteToken_).decimals();
         if (tokenDecimals > 36) revert UnsupportedDecimals(quoteToken_, tokenDecimals);
@@ -76,8 +70,7 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         quoteToken = quoteToken_;
         quoteTokenDecimals = tokenDecimals;
         assetQuotePool = assetQuotePool_;
-        quoteUsdFeed = quoteUsdFeed_;
-        quoteUsdMaxStaleness = quoteUsdMaxStaleness_;
+        marketRegistry = marketRegistry_;
 
         _latestRoundData();
     }
@@ -162,8 +155,15 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     {
         int256 signedAnswer;
         uint80 answeredInRound;
+        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,,,) =
+            marketRegistry.quoteTokenConfig(quoteToken);
+        if (quoteUsdFeed.code.length == 0) revert FeedNotContract(quoteUsdFeed);
+        if (quoteUsdMaxStaleness == 0) revert InvalidMaxStaleness();
+        if (quoteUsdMaxStaleness > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(quoteUsdMaxStaleness, MAX_ORACLE_STALENESS);
+        }
         (roundId, signedAnswer, startedAt, updatedAt, answeredInRound) =
-            quoteUsdFeed.latestRoundData();
+            AggregatorV3Interface(quoteUsdFeed).latestRoundData();
         if (signedAnswer <= 0) revert InvalidOraclePrice(quoteToken, signedAnswer);
         // Oracle validity and freshness are necessarily measured against chain time.
         // forge-lint: disable-next-line(block-timestamp)
@@ -178,9 +178,9 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
         if (currentTimestamp > updatedAt + quoteUsdMaxStaleness) {
             revert StaleOraclePrice(quoteToken, updatedAt, quoteUsdMaxStaleness);
         }
-        feedDecimals = quoteUsdFeed.decimals();
+        feedDecimals = AggregatorV3Interface(quoteUsdFeed).decimals();
         if (feedDecimals > 36) {
-            revert UnsupportedDecimals(address(quoteUsdFeed), feedDecimals);
+            revert UnsupportedDecimals(quoteUsdFeed, feedDecimals);
         }
         // The positive-answer check makes this conversion safe.
         // forge-lint: disable-next-line(unsafe-typecast)

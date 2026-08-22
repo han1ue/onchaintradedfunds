@@ -187,8 +187,9 @@ Risk cases:
   implemented and is a production limitation.
 
 Direct Chainlink routes and composed primary legs are creator-selected. Composed routes require an
-enabled registered quote token and its exact current quote/USD configuration. A composed wrapper validates both pinned legs on
-every read and exposes the older timestamp. Every feed check covers answer, round, timestamp,
+enabled registered quote token and its exact current quote/USD configuration. A composed wrapper validates both legs on
+every read and exposes the older timestamp. The asset leg is pinned; the quote/USD leg is loaded
+from the registry on every read. Every feed check covers answer, round, timestamp,
 the creator-selected staleness bound (capped at seven days), and decimals. The frontend marks a
 configuration Verified only when asset, route, and explicit pricing source match its manifest and every
 submitted limit is nonzero and no greater than the manifest maximum. Runtime staleness and pause
@@ -196,8 +197,8 @@ health do not change that informational status.
 
 USD is the accounting unit for every oracle-dependent protocol calculation. WETH and USDG are
 initially registered as peer pricing quote tokens. USDG's settlement and official OTF/USDG market
-roles do not make it the accounting numeraire. Quote-token registration, versioning, or disablement
-affects future selections only; existing normalized wrappers retain their concrete sources. The
+roles do not make it the accounting numeraire. Each quote token has one current USD configuration.
+Replacing it updates existing composed and V3 routes; disabling it blocks future selections. The
 registry cannot prove Chainlink pair semantics from feed descriptions.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not

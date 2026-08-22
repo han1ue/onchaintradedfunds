@@ -6,7 +6,7 @@ interface IAssetMarketRegistry {
     function usdg() external view returns (address);
     function quoteTokenFor(bytes32 marketId) external view returns (address);
 
-    function currentQuoteTokenConfig(address quoteToken)
+    function quoteTokenConfig(address quoteToken)
         external
         view
         returns (

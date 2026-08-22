@@ -432,22 +432,18 @@ contract PermissionlessAssetMarketsTest is TestBase {
         (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 maxStaleness,
-            uint32 secondaryStaleness
+            uint32 maxStaleness
         ) = resolver.resolvePricing(address(asset), config);
         assertTrue(normalizedFeed.code.length != 0);
-        assertEq(secondarySource, address(wethUsdFeed));
         assertTrue(markets.isActiveMarketForAsset(marketId, address(asset)));
         assertEq(uint256(maxStaleness), 2 hours);
-        assertEq(uint256(secondaryStaleness), 2 hours);
 
         markets.setMarketActive(marketId, false);
         (, int256 answer,,,) = UniswapV3RoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(answer), 3_000_00000000);
     }
 
-    function testResolverComposesAndPinsPermissionlessChainlinkLegs() public {
+    function testResolverComposesPinnedAssetFeedWithCurrentQuoteFeed() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
@@ -461,14 +457,10 @@ contract PermissionlessAssetMarketsTest is TestBase {
         (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 primaryStaleness,
-            uint32 secondaryStaleness
+            uint32 primaryStaleness
         ) = resolver.resolvePricing(address(asset), config);
         assertEq(marketId, bytes32(0));
-        assertEq(secondarySource, address(wethUsdFeed));
         assertEq(uint256(primaryStaleness), 4 hours);
-        assertEq(uint256(secondaryStaleness), 2 hours);
         (, int256 answer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(answer), 6_000_00000000);
 
@@ -477,7 +469,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         assertEq(uint256(pinnedAnswer), 6_000_00000000);
     }
 
-    function testRegisteredQuotesSupportUsdgAndAdminAddedTokenWithoutRedirectingPins() public {
+    function testRegisteredQuotesSupportUsdg() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
 
@@ -488,7 +480,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(assetUsdgFeed),
             primaryMaxStaleness: 2 hours
         });
-        (address usdgNormalized,,,,) = resolver.resolvePricing(address(asset), usdgComposed);
+        (address usdgNormalized,,) = resolver.resolvePricing(address(asset), usdgComposed);
         (, int256 usdgAnswer,,,) = ChainlinkRoutePriceFeed(usdgNormalized).latestRoundData();
         assertEq(uint256(usdgAnswer), 4_00000000);
 
@@ -500,12 +492,12 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(usdgPool),
             primaryMaxStaleness: 2 hours
         });
-        (address usdgV3Feed,,,,) = resolver.resolvePricing(address(secondAsset), usdgV3);
+        (address usdgV3Feed,,) = resolver.resolvePricing(address(secondAsset), usdgV3);
         (, int256 usdgV3Answer,,,) = UniswapV3RoutePriceFeed(usdgV3Feed).latestRoundData();
         assertEq(uint256(usdgV3Answer), 1_00000000);
     }
 
-    function testAdminAddedQuoteSupportsComposedAndV3WithoutRedirectingPins() public {
+    function testAdminAddedQuoteSupportsComposedAndV3AndUpdatesExistingRoutes() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
 
@@ -521,7 +513,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(assetThirdFeed),
             primaryMaxStaleness: 2 hours
         });
-        (address pinnedThirdFeed,,,,) = resolver.resolvePricing(address(asset), thirdComposed);
+        (address pinnedThirdFeed,,) = resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 thirdAnswer,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
         assertEq(uint256(thirdAnswer), 6_00000000);
 
@@ -533,7 +525,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(thirdPool),
             primaryMaxStaleness: 2 hours
         });
-        (address thirdV3Feed,,,,) = resolver.resolvePricing(address(secondAsset), thirdV3);
+        (address thirdV3Feed,,) = resolver.resolvePricing(address(secondAsset), thirdV3);
         assertTrue(thirdV3Feed.code.length != 0);
 
         markets.setQuoteTokenEnabled(address(thirdQuote), false);
@@ -546,13 +538,22 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerQuoteToken(
             address(thirdQuote), address(replacementThirdUsd), 1 hours, true, true
         );
-        (address replacementNormalized,,,,) =
+        (address replacementNormalized,,) =
             resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 replacementAnswer,,,) =
             ChainlinkRoutePriceFeed(replacementNormalized).latestRoundData();
         assertEq(uint256(replacementAnswer), 27_00000000);
-        (, int256 notRedirected,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
-        assertEq(uint256(notRedirected), 6_00000000);
+        (, int256 updatedExistingRoute,,,) =
+            ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
+        assertEq(uint256(updatedExistingRoute), 27_00000000);
+    }
+
+    function testQuoteFeedReplacementMustAlreadyBeValid() public {
+        MockPriceFeed invalidFeed = new MockPriceFeed(8, 1_00000000);
+        invalidFeed.setRoundData(2, 0, block.timestamp, block.timestamp, 2);
+
+        vm.expectPartialRevert(AssetMarketRegistry.InvalidOraclePrice.selector);
+        markets.registerQuoteToken(address(weth), address(invalidFeed), 1 hours, true, true);
     }
 
     function testResolverRejectsUnregisteredAndDisabledQuoteToken() public {

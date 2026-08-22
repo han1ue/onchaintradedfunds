@@ -2,11 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
+import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 
 /// @notice Normalizes an ASSET/QUOTE feed composed with QUOTE/USD into an 8-decimal USD feed.
-/// @dev Both pinned legs are validated independently on every read. No fallback source exists.
+/// @dev The asset leg is pinned; the quote/USD leg is read from the registry on every call.
 contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     uint8 private constant OUTPUT_DECIMALS = 8;
 
@@ -22,45 +23,37 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     error PriceOverflow();
 
     address public immutable asset;
-    address public immutable weth;
-    AggregatorV3Interface public immutable assetWethFeed;
-    AggregatorV3Interface public immutable wethUsdFeed;
-    uint32 public immutable assetWethMaxStaleness;
-    uint32 public immutable wethUsdMaxStaleness;
+    address public immutable quoteToken;
+    AggregatorV3Interface public immutable assetQuoteFeed;
+    uint32 public immutable assetQuoteMaxStaleness;
+    IAssetMarketRegistry public immutable marketRegistry;
 
     constructor(
         address asset_,
-        address weth_,
-        AggregatorV3Interface assetWethFeed_,
-        AggregatorV3Interface wethUsdFeed_,
-        uint32 assetWethMaxStaleness_,
-        uint32 wethUsdMaxStaleness_
+        address quoteToken_,
+        AggregatorV3Interface assetQuoteFeed_,
+        uint32 assetQuoteMaxStaleness_,
+        IAssetMarketRegistry marketRegistry_
     ) {
         if (
-            asset_ == address(0) || weth_ == address(0) || address(assetWethFeed_) == address(0)
-                || address(wethUsdFeed_) == address(0)
+            asset_ == address(0) || quoteToken_ == address(0)
+                || address(assetQuoteFeed_) == address(0) || address(marketRegistry_) == address(0)
         ) revert ZeroAddress();
-        if (address(assetWethFeed_).code.length == 0) {
-            revert FeedNotContract(address(assetWethFeed_));
+        if (address(assetQuoteFeed_).code.length == 0) {
+            revert FeedNotContract(address(assetQuoteFeed_));
         }
-        if (address(wethUsdFeed_).code.length == 0) {
-            revert FeedNotContract(address(wethUsdFeed_));
+        if (address(marketRegistry_).code.length == 0) {
+            revert FeedNotContract(address(marketRegistry_));
         }
-        if (assetWethMaxStaleness_ == 0 || wethUsdMaxStaleness_ == 0) {
-            revert InvalidMaxStaleness();
-        }
-        if (assetWethMaxStaleness_ > MAX_ORACLE_STALENESS) {
-            revert MaxStalenessTooHigh(assetWethMaxStaleness_, MAX_ORACLE_STALENESS);
-        }
-        if (wethUsdMaxStaleness_ > MAX_ORACLE_STALENESS) {
-            revert MaxStalenessTooHigh(wethUsdMaxStaleness_, MAX_ORACLE_STALENESS);
+        if (assetQuoteMaxStaleness_ == 0) revert InvalidMaxStaleness();
+        if (assetQuoteMaxStaleness_ > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(assetQuoteMaxStaleness_, MAX_ORACLE_STALENESS);
         }
         asset = asset_;
-        weth = weth_;
-        assetWethFeed = assetWethFeed_;
-        wethUsdFeed = wethUsdFeed_;
-        assetWethMaxStaleness = assetWethMaxStaleness_;
-        wethUsdMaxStaleness = wethUsdMaxStaleness_;
+        quoteToken = quoteToken_;
+        assetQuoteFeed = assetQuoteFeed_;
+        assetQuoteMaxStaleness = assetQuoteMaxStaleness_;
+        marketRegistry = marketRegistry_;
 
         _latestRoundData();
     }
@@ -102,14 +95,18 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint256 assetStartedAt,
             uint256 assetUpdatedAt,
             uint8 assetDecimals
-        ) = _readLeg(asset, assetWethFeed, assetWethMaxStaleness);
+        ) = _readLeg(asset, assetQuoteFeed, assetQuoteMaxStaleness);
+        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,,,) =
+            marketRegistry.quoteTokenConfig(quoteToken);
         (
             uint80 wethRound,
             uint256 wethUsdAnswer,
             uint256 wethStartedAt,
             uint256 wethUpdatedAt,
             uint8 wethDecimals
-        ) = _readLeg(weth, wethUsdFeed, wethUsdMaxStaleness);
+        ) = _readLeg(
+            quoteToken, AggregatorV3Interface(quoteUsdFeed), quoteUsdMaxStaleness
+        );
 
         uint256 normalized =
             MathEx.mulDiv(assetWethAnswer, wethUsdAnswer, 10 ** uint256(assetDecimals));
@@ -146,6 +143,11 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint8 feedDecimals
         )
     {
+        if (address(feed).code.length == 0) revert FeedNotContract(address(feed));
+        if (maxStaleness == 0) revert InvalidMaxStaleness();
+        if (maxStaleness > MAX_ORACLE_STALENESS) {
+            revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
+        }
         int256 signedAnswer;
         uint80 answeredInRound;
         (roundId, signedAnswer, startedAt, updatedAt, answeredInRound) = feed.latestRoundData();

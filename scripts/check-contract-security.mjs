@@ -133,10 +133,10 @@ for (const [label, slot] of [
   ["assetRegistry", "12"],
   ["__removedDependencySlot", "13"],
   ["rebalanceExecutor", "14"],
-  ["_pricingConfiguredForAsset", "178"],
-  ["_pendingPricingConfigs", "179"],
-  ["_primaryMaxStalenessForAsset", "180"],
-  ["_quoteTokenForAsset", "181"],
+  ["_pricingConfiguredForAsset", "176"],
+  ["_pendingPricingConfigs", "177"],
+  ["_primaryMaxStalenessForAsset", "178"],
+  ["_quoteTokenForAsset", "179"],
 ]) {
   assert(
     canonicalLayout.some((entry) => entry.label === label && entry.slot === slot),
@@ -353,10 +353,10 @@ assert(
   "V3 pricing still has a deployment-time WETH/USDG pool dependency",
 );
 assert(
-  v3RoutePriceFeedFunctions.includes("quoteUsdFeed")
+  v3RoutePriceFeedFunctions.includes("marketRegistry")
     && v3RoutePriceFeedFunctions.includes("quoteAssetInUsd")
     && !v3RoutePriceFeedFunctions.includes("wethUsdgPool"),
-  "V3 pricing does not pin a quote-token/USD feed independently",
+  "V3 pricing does not read the shared quote-token/USD registry",
 );
 assert(
   registeredV3AdapterFunctions.includes("executeSwap"),

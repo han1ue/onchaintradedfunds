@@ -409,7 +409,7 @@ const deployment = {
     vaultInitField: "initialPricingConfigs",
     suggestedInitialPricingConfigs,
     maximumOracleStalenessSeconds: 604800,
-    note: "Creators select Chainlink-compatible, Robinhood, or Uniswap V3 pricing sources. Each OTF permanently pins its feed or pool and staleness limit.",
+    note: "Each OTF pins its asset feed or V3 pool. Composed and V3 routes read the quote token's single current USD feed from the admin registry.",
   },
   executionRoutes: [
     {

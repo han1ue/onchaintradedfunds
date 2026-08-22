@@ -24,9 +24,7 @@ interface IAssetPricingResolver {
         returns (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 primaryStaleness,
-            uint32 secondaryStaleness
+            uint32 primaryStaleness
         );
 }
 
@@ -63,7 +61,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         external
         returns (uint256 price, uint8 priceDecimals)
     {
-        (address normalizedFeed,,,,) = _resolve(asset, config, true);
+        (address normalizedFeed,,) = _resolve(asset, config, true);
         (, int256 answer,,,) = AggregatorV3Interface(normalizedFeed).latestRoundData();
         // Resolution validates that the normalized answer is positive.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -76,9 +74,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         returns (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 primaryStaleness,
-            uint32 secondaryStaleness
+            uint32 primaryStaleness
         )
     {
         return _resolve(asset, config, true);
@@ -89,9 +85,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         returns (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 primaryStaleness,
-            uint32 secondaryStaleness
+            uint32 primaryStaleness
         )
     {
         if (asset == address(0) || asset.code.length == 0 || config.primarySource.code.length == 0)
@@ -110,41 +104,31 @@ contract AssetPricingResolver is IAssetPricingResolver {
                 primaryStaleness,
                 config.source == PricingSource.RobinhoodDirect
             );
-            return (
-                config.primarySource,
-                bytes32(0),
-                address(0),
-                primaryStaleness,
-                0
-            );
+            return (config.primarySource, bytes32(0), primaryStaleness);
         }
 
         if (config.source == PricingSource.ChainlinkAssetQuote) {
             _requireMarketRegistry();
             primaryStaleness = config.primaryMaxStaleness;
             address composedQuoteToken = config.quoteToken;
-            (secondarySource, secondaryStaleness) = _quoteConfig(composedQuoteToken, false);
+            (address composedQuoteUsdFeed, uint32 composedQuoteMaxStaleness) =
+                _quoteConfig(composedQuoteToken, false);
             _validateLeg(asset, config.primarySource, primaryStaleness, false);
-            _validateLeg(composedQuoteToken, secondarySource, secondaryStaleness, false);
+            _validateLeg(
+                composedQuoteToken, composedQuoteUsdFeed, composedQuoteMaxStaleness, false
+            );
             if (deployWrapper) {
                 normalizedFeed = address(
                     new ChainlinkRoutePriceFeed(
                         asset,
                         composedQuoteToken,
                         AggregatorV3Interface(config.primarySource),
-                        AggregatorV3Interface(secondarySource),
                         primaryStaleness,
-                        secondaryStaleness
+                        marketRegistry
                     )
                 );
             }
-            return (
-                normalizedFeed,
-                bytes32(0),
-                secondarySource,
-                primaryStaleness,
-                secondaryStaleness
-            );
+            return (normalizedFeed, bytes32(0), primaryStaleness);
         }
 
         if (config.source != PricingSource.UniswapV3Twap) revert InvalidPricingConfig(asset);
@@ -158,7 +142,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         address quoteToken = marketRegistry.quoteTokenFor(marketId);
         if (quoteToken != config.quoteToken) revert InvalidPricingConfig(asset);
         primaryStaleness = config.primaryMaxStaleness;
-        (secondarySource, secondaryStaleness) = _quoteConfig(quoteToken, true);
+        (address secondarySource, uint32 secondaryStaleness) = _quoteConfig(quoteToken, true);
         _validateLeg(quoteToken, secondarySource, secondaryStaleness, false);
         if (deployWrapper) {
             normalizedFeed = address(
@@ -166,21 +150,14 @@ contract AssetPricingResolver is IAssetPricingResolver {
                     asset,
                     quoteToken,
                     IUniswapV3OraclePool(pool),
-                    AggregatorV3Interface(secondarySource),
-                    secondaryStaleness
+                    marketRegistry
                 )
             );
             calculator.validatePriceFeed(
                 asset, AggregatorV3Interface(normalizedFeed), primaryStaleness, false
             );
         }
-        return (
-            normalizedFeed,
-            marketId,
-            secondarySource,
-            primaryStaleness,
-            secondaryStaleness
-        );
+        return (normalizedFeed, marketId, primaryStaleness);
     }
 
     function _requireMarketRegistry() private view {
@@ -192,7 +169,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         view
         returns (address usdFeed, uint32 maxStaleness)
     {
-        (usdFeed, maxStaleness,,,) = marketRegistry.currentQuoteTokenConfig(quoteToken);
+        (usdFeed, maxStaleness,,,) = marketRegistry.quoteTokenConfig(quoteToken);
         marketRegistry.validateQuoteToken(quoteToken, usdFeed, maxStaleness, forV3);
     }
 

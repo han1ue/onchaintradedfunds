@@ -97,8 +97,9 @@ pricing is a distinct source that additionally enforces the stock token's pause 
 validates and records canonical V3 pools used during a
 new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
 
-The resolver MUST return a concrete normalized feed or V3 wrapper that the OTF pins. Later oracle
-configuration changes and V3 market deprecation MUST NOT redirect or disable an existing pin. The
+The resolver MUST return a normalized feed or V3 wrapper that pins the creator-selected asset feed
+or pool. The wrapper MUST load the quote token's single current USD configuration from the registry
+on every read. Replacing that configuration therefore updates every route using the quote token. The
 market and discovery registries MUST NOT determine asset eligibility, execution paths, or execution fee tiers.
 
 ### `RebalanceExecutor`
@@ -188,9 +189,9 @@ The protocol owner MAY:
   reject a non-factory target.
 - Transfer factory or V3 market-registry ownership using their defined controls.
 
-The market-registry owner MAY register a new versioned quote-token/USD configuration, disable a
-quote token for future composed or V3 selections, or deprecate a pool for future selections. Such
-updates MUST NOT replace or disable an existing OTF's pinned source. WETH and USDG are the initial
+The market-registry owner MAY configure the single quote-token/USD feed, disable a quote token for
+future composed or V3 selections, or deprecate a pool for future selections. Reconfiguring a quote
+token's feed or freshness limit updates existing routes using it. WETH and USDG are the initial
 peer quote tokens. No protocol role MAY approve, qualify, block, revoke, or remove an asset or
 creator-selected primary Chainlink feed. Pair semantics remain an offchain verification duty.
 
@@ -539,7 +540,6 @@ relationship MUST be checked. Uniswap V4 and every other source type MUST be rej
 For direct Chainlink pricing:
 
 - `primarySource` MUST be a deployed creator-selected feed intended for `(asset, USD)`.
-- `secondarySource` MUST be zero.
 - The contract does not prove semantic pair identity and MUST NOT rely on `description()`.
 
 For Robinhood direct pricing, all direct Chainlink requirements apply and the asset's
@@ -547,10 +547,9 @@ For Robinhood direct pricing, all direct Chainlink requirements apply and the as
 
 For composed Chainlink pricing:
 
-- `primarySource` is the creator-selected feed intended for `(asset, WETH)`.
-- `secondarySource` is the creator-selected feed intended for `(WETH, USD)`.
+- `primarySource` is the creator-selected feed intended for `(asset, quoteToken)`.
+- The quote/USD feed and freshness limit MUST be loaded from the registry on every read.
 - Contracts MUST mechanically validate both legs but do not prove semantic pair identity.
-- Both feeds and staleness bounds MUST be pinned in the normalized wrapper.
 - Every read MUST validate both legs independently and MUST expose the older leg's timestamp.
 - The multiplication and decimal normalization MUST be overflow-safe and return a nonzero USD price.
 
@@ -577,14 +576,14 @@ For V3 TWAP pricing:
 - `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
   exact asset/quote pair and exact onchain fee.
 - The quote MUST be WETH or USDG.
-- `secondarySource` MUST be the registry-resolved quote-token/USD Chainlink-compatible feed. Its
-  staleness limit MUST be independently validated and pinned.
+- The quote-token/USD Chainlink-compatible feed and staleness limit MUST be loaded from the registry
+  on every read.
 - The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
   capacity, and answer the full protocol TWAP-window observation before selection.
 - The concrete pool and normalized wrapper MUST be pinned. Later market deprecation MAY block only
   future selection and MUST NOT affect an existing OTF.
 
-Every source is fail-closed and has no automatic fallback. Pricing registries are consulted only
+Every source is fail-closed and has no automatic fallback. The pricing registry is consulted
 when a source is first selected. The frontend MUST NOT substitute cached/offchain prices for onchain
 enforcement, and database catalog entries or prefills MUST NOT count as validation.
 

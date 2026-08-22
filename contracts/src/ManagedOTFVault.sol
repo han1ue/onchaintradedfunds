@@ -37,7 +37,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address indexed priceFeed,
         address quoteToken,
         address primarySource,
-        address secondarySource,
         bytes32 marketId
     );
 
@@ -984,22 +983,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         (
             address normalizedFeed,
             bytes32 marketId,
-            address secondarySource,
-            uint32 primaryStaleness,
-            uint32 secondaryStaleness
+            uint32 primaryStaleness
         ) = _pricingResolver().resolvePricing(asset, config);
 
         _pricingSourceForAsset[asset] = uint8(config.source);
         _quoteTokenForAsset[asset] = config.quoteToken;
         _primaryPriceSourceForAsset[asset] = config.primarySource;
-        _secondaryPriceSourceForAsset[asset] = secondarySource;
         _priceFeedForAsset[asset] = normalizedFeed;
         _marketIdForAsset[asset] = marketId;
-        _maxStalenessForAsset[asset] = config.source == PricingSource.ChainlinkAssetQuote
-            ? (primaryStaleness > secondaryStaleness ? primaryStaleness : secondaryStaleness)
-            : primaryStaleness;
+        _maxStalenessForAsset[asset] = primaryStaleness;
         _primaryMaxStalenessForAsset[asset] = primaryStaleness;
-        _secondaryMaxStalenessForAsset[asset] = secondaryStaleness;
         _pricingConfiguredForAsset[asset] = true;
 
         _portfolioCalculator.validateAssetForVault(address(this), asset);
@@ -1009,7 +1002,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             normalizedFeed,
             config.quoteToken,
             config.primarySource,
-            secondarySource,
             marketId
         );
     }
@@ -1040,10 +1032,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         delete _pricingSourceForAsset[asset];
         delete _quoteTokenForAsset[asset];
         delete _primaryPriceSourceForAsset[asset];
-        delete _secondaryPriceSourceForAsset[asset];
         delete _maxStalenessForAsset[asset];
         delete _primaryMaxStalenessForAsset[asset];
-        delete _secondaryMaxStalenessForAsset[asset];
         delete _pricingConfiguredForAsset[asset];
     }
 

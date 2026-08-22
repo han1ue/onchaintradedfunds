@@ -159,15 +159,15 @@ flowchart LR
   incentives, and oracle-valued loss limits. USDG remains a settlement token and official market pair.
 - Accepts a user-supplied direct Chainlink asset/USD, composed asset/quoteToken × quoteToken/USD, or Uniswap V3 TWAP
   configuration when an asset first enters an OTF.
-- Mechanically validates creator-selected Chainlink feeds, per-leg freshness limits and validation
-  modes, or the canonical V3 factory, pair, fee, initialization, observation capacity, history, and
-  independently pinned quote-token/USD feed requirements.
-- Returns a normalized feed that the OTF pins without a fallback source.
+- Mechanically validates creator-selected Chainlink feeds and freshness limits, or the canonical V3
+  factory, pair, fee, initialization, observation capacity, and history.
+- Returns a normalized feed that pins the asset feed or pool and reads the current quote-token/USD
+  configuration from the registry without a fallback source.
 
-`AssetMarketRegistry` also owns the versioned pricing quote-token registry. WETH and USDG are the
+`AssetMarketRegistry` also owns the pricing quote-token registry. WETH and USDG are the
 initial peer quote tokens. The owner may register future quote tokens or disable a token for future
-selections. Each selection must match the current token/feed/staleness/mode/route permissions, while
-existing OTF wrappers remain permanently pinned and never consult later registry state. Chainlink
+selections. Each quote token has one current USD feed and freshness limit. Reconfiguring it updates
+every composed and V3 pricing route that uses that quote token. Chainlink
 pair semantics cannot be proven from `description()` and remain an offchain frontend/governance duty.
 
 `FeeCollector`
@@ -567,7 +567,7 @@ creator-selected asset/quoteToken leg and registry-resolved quoteToken/USD leg, 
 multiplies them into an 8-decimal USD result, and exposes the older leg's
 timestamp. `UniswapV3Twap` accepts an asset/registeredQuote pool only after canonical-factory,
 exact pair and fee, initialization, observation-capacity, and full-history checks, then composes
-that TWAP with the creator-pinned quote-token/USD Chainlink feed. V4 is not a pricing source.
+that TWAP with the registry's current quote-token/USD Chainlink feed. V4 is not a pricing source.
 
 Feed addresses and freshness parameters remain pinned while the asset is tracked, and no source
 automatically falls back to another. Fully pruning an asset clears that pricing identity so a later
@@ -775,7 +775,7 @@ This is a deployment migration, not an in-place upgrade:
 WETH, USDG, and all four V3-compatible addresses are required. Every
 new OTF receives an official OTF/USDG pool during its factory transaction, while constituent pricing
 may independently use direct Chainlink, composed Chainlink, or a canonical asset/registeredQuote
-TWAP composed with a pinned quote-token/USD feed. Robinhood testnet currently points these V3 fields
+TWAP composed with the registry's current quote-token/USD feed. Robinhood testnet currently points these V3 fields
 at Synthra; production addresses must be verified independently.
 
 The testnet execution bridge can be created or checked idempotently with:
@@ -965,7 +965,7 @@ history, and immutable factory provenance.
 - No production Robinhood Chain addresses are verified or configured.
 - Asset/WETH or asset/USDG pools are initialized separately from liquidity provisioning. Routed
   entry, redemption, and rebalances require active liquidity; a V3 pricing selection additionally
-  requires the protocol observation capacity, full TWAP history, and a pinned quote-token/USD feed.
+  requires the protocol observation capacity, full TWAP history, and a configured quote-token/USD feed.
 - RFQ, proprietary AMM, and order-book adapters are not implemented.
 - V3 execution paths and fee tiers are transaction inputs checked by a typed adapter; they are not
   derived from the pricing pool. V4 pricing and V4 execution are intentionally unsupported.

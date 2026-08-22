@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
+import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { MathEx } from "./libraries/MathEx.sol";
 import {
     PricingSource,
@@ -140,14 +141,24 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         source = PricingSource(_pricingSourceForAsset[asset]);
         quoteToken = _quoteTokenForAsset[asset];
         primarySource = _primaryPriceSourceForAsset[asset];
-        secondarySource = _secondaryPriceSourceForAsset[asset];
         normalizedPriceFeed = _priceFeedForAsset[asset];
         primaryMaxStaleness = _primaryMaxStalenessForAsset[asset];
-        secondaryMaxStaleness = _secondaryMaxStalenessForAsset[asset];
+        if (source == PricingSource.ChainlinkAssetQuote || source == PricingSource.UniswapV3Twap) {
+            (secondarySource, secondaryMaxStaleness,,,) =
+                IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(quoteToken);
+        }
     }
 
     function maxStalenessForAsset(address asset) external view onlyDelegateCall returns (uint32) {
-        return _maxStalenessForAsset[asset];
+        uint32 primaryMaxStaleness = _maxStalenessForAsset[asset];
+        if (PricingSource(_pricingSourceForAsset[asset]) != PricingSource.ChainlinkAssetQuote) {
+            return primaryMaxStaleness;
+        }
+        (, uint32 quoteMaxStaleness,,,) = IAssetMarketRegistry(_assetMarketRegistry)
+            .quoteTokenConfig(_quoteTokenForAsset[asset]);
+        return primaryMaxStaleness > quoteMaxStaleness
+            ? primaryMaxStaleness
+            : quoteMaxStaleness;
     }
 
     function pricingSourceForAsset(address asset)

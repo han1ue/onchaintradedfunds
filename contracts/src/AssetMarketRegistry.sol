@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
+import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { MAX_ORACLE_STALENESS } from "./interfaces/IOracleTypes.sol";
 import { IUniswapV3OraclePool } from "./UniswapV3RoutePriceFeed.sol";
@@ -30,7 +31,7 @@ interface IUniswapV3MarketFactory {
 }
 
 contract AssetMarketRegistry is IAssetMarketRegistry {
-    struct QuoteTokenVersion {
+    struct QuoteTokenConfig {
         address usdFeed;
         uint32 maxStaleness;
         bool enabled;
@@ -65,6 +66,11 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     error QuoteTokenConfigNotFound(address quoteToken);
     error QuoteTokenConfigMismatch(address quoteToken);
     error InvalidMaxStaleness(uint32 supplied);
+    error InvalidOraclePrice(address quoteToken, int256 answer);
+    error InvalidOracleTimestamp(address quoteToken, uint256 updatedAt);
+    error IncompleteOracleRound(address quoteToken, uint80 roundId, uint80 answeredInRound);
+    error StaleOraclePrice(address quoteToken, uint256 updatedAt, uint32 maxStaleness);
+    error UnsupportedFeedDecimals(address feed, uint8 decimals_);
 
     event MarketRegistered(
         bytes32 indexed marketId,
@@ -75,15 +81,14 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address registrar
     );
     event MarketStatusChanged(bytes32 indexed marketId, bool active);
-    event QuoteTokenRegistered(
+    event QuoteTokenConfigured(
         address indexed quoteToken,
-        uint32 indexed version,
         address indexed usdFeed,
         uint32 maxStaleness,
         bool allowComposedChainlink,
         bool allowV3Twap
     );
-    event QuoteTokenStatusChanged(address indexed quoteToken, uint32 indexed version, bool enabled);
+    event QuoteTokenStatusChanged(address indexed quoteToken, bool enabled);
     event OwnershipTransferStarted(address indexed owner, address indexed pendingOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
@@ -97,8 +102,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     address public immutable usdg;
 
     mapping(bytes32 => Market) private _marketFor;
-    mapping(address => uint32) public currentQuoteTokenVersion;
-    mapping(address => mapping(uint32 => QuoteTokenVersion)) private _quoteTokenVersion;
+    mapping(address => QuoteTokenConfig) private _quoteTokenConfig;
     address[] private _quoteTokens;
 
     constructor(address initialOwner, address uniswapV3Factory_, address weth_, address usdg_) {
@@ -129,7 +133,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         uint32 maxStaleness,
         bool allowComposedChainlink,
         bool allowV3Twap
-    ) external onlyOwner returns (uint32 version) {
+    ) external onlyOwner {
         if (quoteToken == address(0) || quoteToken.code.length == 0) {
             revert InvalidQuoteToken(quoteToken);
         }
@@ -138,19 +142,17 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             revert InvalidMaxStaleness(maxStaleness);
         }
         _tokenDecimals(quoteToken);
-        version = currentQuoteTokenVersion[quoteToken] + 1;
-        if (version == 1) _quoteTokens.push(quoteToken);
-        currentQuoteTokenVersion[quoteToken] = version;
-        _quoteTokenVersion[quoteToken][version] = QuoteTokenVersion({
+        _validateUsdFeed(quoteToken, usdFeed, maxStaleness);
+        if (_quoteTokenConfig[quoteToken].usdFeed == address(0)) _quoteTokens.push(quoteToken);
+        _quoteTokenConfig[quoteToken] = QuoteTokenConfig({
             usdFeed: usdFeed,
             maxStaleness: maxStaleness,
             enabled: true,
             allowComposedChainlink: allowComposedChainlink,
             allowV3Twap: allowV3Twap
         });
-        emit QuoteTokenRegistered(
+        emit QuoteTokenConfigured(
             quoteToken,
-            version,
             usdFeed,
             maxStaleness,
             allowComposedChainlink,
@@ -159,25 +161,17 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     }
 
     function setQuoteTokenEnabled(address quoteToken, bool enabled) external onlyOwner {
-        uint32 version = currentQuoteTokenVersion[quoteToken];
-        if (version == 0) revert QuoteTokenConfigNotFound(quoteToken);
-        _quoteTokenVersion[quoteToken][version].enabled = enabled;
-        emit QuoteTokenStatusChanged(quoteToken, version, enabled);
-    }
-
-    function quoteTokenConfig(address quoteToken, uint32 version)
-        external
-        view
-        returns (QuoteTokenVersion memory)
-    {
-        return _quoteTokenVersion[quoteToken][version];
+        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
+        if (config.usdFeed == address(0)) revert QuoteTokenConfigNotFound(quoteToken);
+        config.enabled = enabled;
+        emit QuoteTokenStatusChanged(quoteToken, enabled);
     }
 
     function quoteTokens() external view returns (address[] memory) {
         return _quoteTokens;
     }
 
-    function currentQuoteTokenConfig(address quoteToken)
+    function quoteTokenConfig(address quoteToken)
         external
         view
         returns (
@@ -188,8 +182,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             bool allowV3Twap
         )
     {
-        QuoteTokenVersion storage config =
-            _quoteTokenVersion[quoteToken][currentQuoteTokenVersion[quoteToken]];
+        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
         return (
             config.usdFeed,
             config.maxStaleness,
@@ -278,9 +271,8 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         uint32 maxStaleness,
         bool forV3
     ) private view {
-        uint32 version = currentQuoteTokenVersion[quoteToken];
-        if (version == 0) revert QuoteTokenConfigNotFound(quoteToken);
-        QuoteTokenVersion storage config = _quoteTokenVersion[quoteToken][version];
+        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
+        if (config.usdFeed == address(0)) revert QuoteTokenConfigNotFound(quoteToken);
         if (
             !config.enabled || config.usdFeed != usdFeed || config.maxStaleness != maxStaleness
                 || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)
@@ -294,6 +286,35 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             revert TokenDecimalsUnavailable(token);
         }
         if (tokenDecimals > 36) revert UnsupportedQuoteDecimals(token, tokenDecimals, 36);
+    }
+
+    function _validateUsdFeed(address quoteToken, address usdFeed, uint32 maxStaleness)
+        private
+        view
+    {
+        AggregatorV3Interface feed = AggregatorV3Interface(usdFeed);
+        (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        ) = feed.latestRoundData();
+        if (answer <= 0) revert InvalidOraclePrice(quoteToken, answer);
+        // forge-lint: disable-next-line(block-timestamp)
+        uint256 currentTimestamp = block.timestamp;
+        if (
+            roundId == 0 || startedAt == 0 || updatedAt == 0 || startedAt > updatedAt
+                || updatedAt > currentTimestamp
+        ) revert InvalidOracleTimestamp(quoteToken, updatedAt);
+        if (answeredInRound < roundId) {
+            revert IncompleteOracleRound(quoteToken, roundId, answeredInRound);
+        }
+        if (currentTimestamp > updatedAt + maxStaleness) {
+            revert StaleOraclePrice(quoteToken, updatedAt, maxStaleness);
+        }
+        uint8 feedDecimals = feed.decimals();
+        if (feedDecimals > 36) revert UnsupportedFeedDecimals(usdFeed, feedDecimals);
     }
 
     function _requireDecimals(address token, uint8 required) private view {
@@ -356,9 +377,8 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         if (token0 == asset) other = token1;
         else if (token1 == asset) other = token0;
         else revert InvalidPoolPair(pool, asset);
-        uint32 version = currentQuoteTokenVersion[other];
-        if (version == 0) revert InvalidQuoteToken(other);
-        QuoteTokenVersion storage config = _quoteTokenVersion[other][version];
+        QuoteTokenConfig storage config = _quoteTokenConfig[other];
+        if (config.usdFeed == address(0)) revert InvalidQuoteToken(other);
         if (!config.enabled || !config.allowV3Twap) revert InvalidQuoteToken(other);
         return other;
     }

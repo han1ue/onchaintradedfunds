@@ -688,6 +688,6 @@ deployment.v3Venue = {
 deployment.pricingConfiguration ??= {};
 deployment.pricingConfiguration.suggestedV3PricingConfigs = [];
 deployment.pricingConfiguration.v3PricingNote =
-  "Execution pools are not pricing feeds. A V3 pricing configuration resolves and pins the registered quote-token/USD Chainlink-compatible feed and staleness limit.";
+  "Execution pools are not pricing feeds. A V3 pricing configuration uses the registered quote token's current Chainlink-compatible USD feed and staleness limit.";
 saveDeployment(deployment);
 console.log(`Synthra configuration written to ${deploymentPath}`);
