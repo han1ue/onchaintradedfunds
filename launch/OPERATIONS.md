@@ -30,8 +30,8 @@
 ## During the competition
 
 - Monitor X API rate limits and spend, OAuth refresh failures, post-publication errors, evidence rechecks, and moderation actions.
-- Run `/api/jobs/prices` every 30 minutes. It stores provider prices for every catalog asset and feeds
-  proposal return charts. Market eligibility is captured during one-time asset validation and
+- Run `/api/jobs/prices` every 30 minutes. While the competition is active, it stores provider prices
+  for assets referenced by confirmed, non-deleted proposals and feeds proposal return charts. Market eligibility is captured during one-time asset validation and
   independently revalidated before submission; there is no hourly market-evidence job. Run
   `/api/jobs/x-evidence` daily for public X evidence rechecks.
 - The scheduled X-evidence workflow is bounded through September 30, 2026 and has an October 1
@@ -43,8 +43,7 @@
 ## After the competition closes
 
 - Database time is authoritative; prices, votes, and OTF submissions stop at `ends_at`.
-- Confirm the first 30-minute price job at or after `ends_at` created a complete `final` capture run.
-  A partial final capture fails the scheduled job and is retried in the next 30-minute bucket.
+- Confirm the price endpoint reports inactive after `ends_at`; no final checkpoint is created.
 - Ranking inputs are database-frozen after `ends_at`; user deletion, moderation, and evidence invalidation
   cannot alter proposals or ballots after close.
 - Complete the competition-end audit and ranking locally after the competition closes.

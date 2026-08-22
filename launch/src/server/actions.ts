@@ -13,6 +13,9 @@ import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
 
 const challengeLifetimeMs = 15 * 60_000;
+type LaunchDatabase = ReturnType<typeof requireDb>;
+type LaunchTransaction = Parameters<Parameters<LaunchDatabase["transaction"]>[0]>[0];
+type UnlistedAssetValidation = Awaited<ReturnType<typeof validateUnlistedAsset>>;
 
 export async function saveProposalDraft(input: unknown) {
   const parsed = proposalInputSchema.parse(input);
@@ -22,7 +25,7 @@ export async function saveProposalDraft(input: unknown) {
   if (parsed.allocations.some((allocation) => allocation.weightBps < competition.rules.minAssetWeightBps)) throw new Error("PROPOSAL_WEIGHT_MINIMUM");
   if (parsed.allocations.reduce((sum, allocation) => sum + allocation.weightBps, 0) !== competition.rules.portfolioWeightBps) throw new Error("PROPOSAL_WEIGHT_TOTAL");
 
-  const validatedManualAssets = new Map<string, Awaited<ReturnType<typeof validateUnlistedAsset>>>();
+  const validatedManualAssets = new Map<string, UnlistedAssetValidation>();
   for (const allocation of parsed.allocations) {
     if (!("assetMetadata" in allocation)) continue;
     if (allocation.pricingConfig?.source !== "uniswap-v3") throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
@@ -40,116 +43,176 @@ export async function saveProposalDraft(input: unknown) {
       "assetId" in allocation ? [allocation.assetId] : []
     ));
     const selectedAssets = selectedAssetIds.length
-      ? await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality }).from(eligibleAssets)
+      ? await transaction.select({
+        id: eligibleAssets.id,
+        quality: eligibleAssets.quality,
+        network: eligibleAssets.network,
+        contractAddress: eligibleAssets.contractAddress,
+      }).from(eligibleAssets)
         .where(inArray(eligibleAssets.id, selectedAssetIds))
       : [];
     if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
-    const selectedAssetQuality = new Map(selectedAssets.map((asset) => [asset.id, asset.quality]));
-
-    const resolvedAllocations = [];
-    for (const allocation of parsed.allocations) {
+    const selectedAssetById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+    const draftAllocations = parsed.allocations.map((allocation) => {
       if ("assetId" in allocation) {
-        resolvedAllocations.push({
-          ...allocation,
-          pricingConfig: selectedAssetQuality.get(allocation.assetId) === "high" ? null : allocation.pricingConfig,
-          assetId: allocation.assetId,
-          marketId: null as string | null,
-        });
-        continue;
+        const asset = selectedAssetById.get(allocation.assetId);
+        if (!asset) throw new Error("ASSET_NOT_FOUND");
+        const pricingConfig = asset.quality === "high" ? null : allocation.pricingConfig;
+        if (asset.quality !== "high" && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
+        return { ...allocation, pricingConfig };
       }
-
-      const metadata = allocation.assetMetadata;
-      const validation = validatedManualAssets.get(metadata.contractAddress);
+      const validation = validatedManualAssets.get(allocation.assetMetadata.contractAddress);
       const canonical = validation?.asset;
       if (!canonical) throw new Error("ASSET_VALIDATION_FAILED");
-      const manualPricing = allocation.pricingConfig;
-      if (!manualPricing || manualPricing.source !== "uniswap-v3") throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
-      const findMetadataRow = () => transaction.select({ id: eligibleAssets.id }).from(eligibleAssets)
-        .where(and(
-          eq(eligibleAssets.network, metadata.network),
-          sql`lower(${eligibleAssets.contractAddress}) = ${canonical.address}`,
-        ))
-        .limit(1);
-      let [asset] = await findMetadataRow();
-      if (!asset) {
-        [asset] = await transaction.insert(eligibleAssets).values({
+      return {
+        ...allocation,
+        assetMetadata: {
+          ...allocation.assetMetadata,
+          contractAddress: canonical.address,
           symbol: canonical.symbol,
           name: canonical.name,
-          contractAddress: canonical.address,
-          network: metadata.network,
-          chainId: metadata.chainId,
-          decimals: canonical.decimals,
-          quality: "normal",
-          priceSource: "coingecko-usd",
-        }).onConflictDoNothing().returning({ id: eligibleAssets.id });
-        if (!asset) [asset] = await findMetadataRow();
-      }
-      if (!asset) throw new Error("ASSET_NOT_FOUND");
-      if (!validation?.marketDetails) throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
-      const [existingMarket] = await transaction.select({ id: assetMarkets.id }).from(assetMarkets).where(and(
-        eq(assetMarkets.assetId, asset.id),
-        sql`lower(${assetMarkets.poolAddress}) = ${manualPricing.poolAddress}`,
-      )).limit(1);
-      const [market] = existingMarket
-        ? [existingMarket]
-        : await transaction.insert(assetMarkets).values({
-          assetId: asset.id,
-          marketId: `uniswap-v3:${metadata.network}:${manualPricing.poolAddress}`,
-          poolAddress: manualPricing.poolAddress,
-          factoryAddress: validation.marketDetails.factoryAddress,
-          quoteTokenAddress: validation.marketDetails.quoteTokenAddress,
-          feeTier: validation.marketDetails.feeTier,
-          poolCreatedAt: validation.marketDetails.poolCreatedAt,
-        }).onConflictDoNothing().returning({ id: assetMarkets.id });
-      if (!market) throw new Error("ASSET_MARKET_NOT_FOUND");
-      resolvedAllocations.push({ ...allocation, assetId: asset.id, marketId: market.id });
-    }
-    if (new Set(resolvedAllocations.map((allocation) => allocation.assetId)).size !== resolvedAllocations.length) {
+          decimals: canonical.decimals as 18,
+        },
+      };
+    });
+    const identities = draftAllocations.map((allocation) => {
+      if ("assetMetadata" in allocation) return `${allocation.assetMetadata.network}:${allocation.assetMetadata.contractAddress}`;
+      const asset = selectedAssetById.get(allocation.assetId);
+      return `${asset?.network}:${asset?.contractAddress.toLowerCase()}`;
+    });
+    if (new Set(identities).size !== identities.length) {
       throw new Error("ASSETS_NOT_UNIQUE");
     }
-    const resolvedAssetRows = await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality })
-      .from(eligibleAssets)
-      .where(inArray(eligibleAssets.id, resolvedAllocations.map((allocation) => allocation.assetId)));
-    const assetQuality = new Map(resolvedAssetRows.map((asset) => [asset.id, asset.quality]));
-    if (resolvedAllocations.some((allocation) => assetQuality.get(allocation.assetId) !== "high" && !allocation.pricingConfig)) {
-      throw new Error("PRICING_CONFIG_REQUIRED");
-    }
 
-    const values = { competitionId: competition.id, creatorUserId: session.user.id, slug: slugifyProposalName(parsed.name), name: parsed.name, ticker: parsed.ticker, thesis: parsed.thesis, updatedAt: new Date() };
+    const values = {
+      competitionId: competition.id,
+      creatorUserId: session.user.id,
+      slug: slugifyProposalName(parsed.name),
+      name: parsed.name,
+      ticker: parsed.ticker,
+      thesis: parsed.thesis,
+      draftAllocations,
+      updatedAt: new Date(),
+    };
     const [proposal] = await transaction.insert(proposals).values(values).returning();
-    await transaction.insert(proposalAssets).values(resolvedAllocations.map((allocation, position) => {
-      const addresses = allocation.pricingConfig ? pricingConfigAddresses(allocation.pricingConfig) : { primaryAddress: null, secondaryAddress: null };
-      return {
-        proposalId: proposal.id,
-        assetId: allocation.assetId,
-        marketId: allocation.marketId ?? null,
-        pricingSource: allocation.pricingConfig?.source ?? null,
-        primaryAddress: addresses.primaryAddress,
-        secondaryAddress: addresses.secondaryAddress,
-        weightBps: allocation.weightBps,
-        position,
-      };
-    }));
     return proposal;
   });
 }
 
-async function revalidateManualProposalAssets(proposalId: string, competitionStartsAt: Date) {
-  const database = requireDb();
-  const rows = await database.select({
-    contractAddress: eligibleAssets.contractAddress,
-    priceSource: eligibleAssets.priceSource,
-    poolAddress: assetMarkets.poolAddress,
-  }).from(proposalAssets)
-    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
-    .leftJoin(assetMarkets, eq(assetMarkets.id, proposalAssets.marketId))
-    .where(eq(proposalAssets.proposalId, proposalId));
-  for (const row of rows) {
-    if (row.priceSource !== "coingecko-usd") continue;
-    if (!row.poolAddress) throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
-    const validation = await validateUnlistedAsset({ assetAddress: row.contractAddress, poolAddress: row.poolAddress, competitionStartsAt });
+async function validateDraftAllocationsForConfirmation(
+  proposal: { name: string; ticker: string; thesis: string; draftAllocations: unknown[] },
+  competitionStartsAt: Date,
+) {
+  const parsed = proposalInputSchema.parse({
+    name: proposal.name,
+    ticker: proposal.ticker,
+    thesis: proposal.thesis,
+    allocations: proposal.draftAllocations,
+  });
+  const validations = new Map<string, UnlistedAssetValidation>();
+  for (const allocation of parsed.allocations) {
+    if (!("assetMetadata" in allocation)) continue;
+    const poolAddress = allocation.pricingConfig?.source === "uniswap-v3" ? allocation.pricingConfig.poolAddress : null;
+    if (!poolAddress) throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
+    const validation = await validateUnlistedAsset({ assetAddress: allocation.assetMetadata.contractAddress, poolAddress, competitionStartsAt });
     if (validation.status !== "pass") throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
+    if (!validation.asset || !validation.marketDetails) throw new Error("ASSET_VALIDATION_FAILED");
+    validations.set(allocation.assetMetadata.contractAddress, validation);
   }
+  return { allocations: parsed.allocations, validations };
+}
+
+async function registerAndLinkProposalAssets(
+  transaction: LaunchTransaction,
+  proposalId: string,
+  prepared: Awaited<ReturnType<typeof validateDraftAllocationsForConfirmation>>,
+) {
+  const selectedAssetIds = prepared.allocations.flatMap((allocation) => "assetId" in allocation ? [allocation.assetId] : []);
+  const selectedAssets = selectedAssetIds.length
+    ? await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality }).from(eligibleAssets)
+      .where(inArray(eligibleAssets.id, selectedAssetIds))
+    : [];
+  if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
+  const selectedAssetQuality = new Map(selectedAssets.map((asset) => [asset.id, asset.quality]));
+  const resolvedAllocations: {
+    assetId: string;
+    marketId: string | null;
+    pricingConfig: (typeof prepared.allocations)[number]["pricingConfig"];
+    weightBps: number;
+  }[] = [];
+
+  for (const allocation of prepared.allocations) {
+    if ("assetId" in allocation) {
+      const pricingConfig = selectedAssetQuality.get(allocation.assetId) === "high" ? null : allocation.pricingConfig;
+      if (selectedAssetQuality.get(allocation.assetId) !== "high" && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
+      resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig, weightBps: allocation.weightBps });
+      continue;
+    }
+
+    const metadata = allocation.assetMetadata;
+    const validation = prepared.validations.get(metadata.contractAddress);
+    const canonical = validation?.asset;
+    const marketDetails = validation?.marketDetails;
+    const manualPricing = allocation.pricingConfig;
+    if (!canonical) throw new Error("ASSET_VALIDATION_FAILED");
+    if (!marketDetails || !manualPricing || manualPricing.source !== "uniswap-v3") throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
+    const findAsset = () => transaction.select({ id: eligibleAssets.id }).from(eligibleAssets).where(and(
+      eq(eligibleAssets.network, metadata.network),
+      sql`lower(${eligibleAssets.contractAddress}) = ${canonical.address}`,
+    )).limit(1);
+    let [asset] = await findAsset();
+    if (!asset) {
+      [asset] = await transaction.insert(eligibleAssets).values({
+        symbol: canonical.symbol,
+        name: canonical.name,
+        contractAddress: canonical.address,
+        network: metadata.network,
+        chainId: metadata.chainId,
+        decimals: canonical.decimals,
+        quality: "normal",
+        priceSource: "coingecko-usd",
+      }).onConflictDoNothing().returning({ id: eligibleAssets.id });
+      if (!asset) [asset] = await findAsset();
+    }
+    if (!asset) throw new Error("ASSET_NOT_FOUND");
+
+    const findMarket = () => transaction.select({ id: assetMarkets.id, assetId: assetMarkets.assetId })
+      .from(assetMarkets)
+      .where(sql`lower(${assetMarkets.poolAddress}) = ${manualPricing.poolAddress}`)
+      .limit(1);
+    let [market] = await findMarket();
+    if (!market) {
+      [market] = await transaction.insert(assetMarkets).values({
+        assetId: asset.id,
+        marketId: `uniswap-v3:${metadata.network}:${manualPricing.poolAddress}`,
+        poolAddress: manualPricing.poolAddress,
+        factoryAddress: marketDetails.factoryAddress,
+        quoteTokenAddress: marketDetails.quoteTokenAddress,
+        feeTier: marketDetails.feeTier,
+        poolCreatedAt: marketDetails.poolCreatedAt,
+      }).onConflictDoNothing().returning({ id: assetMarkets.id, assetId: assetMarkets.assetId });
+      if (!market) [market] = await findMarket();
+    }
+    if (!market || market.assetId !== asset.id) throw new Error("ASSET_MARKET_NOT_FOUND");
+    resolvedAllocations.push({ assetId: asset.id, marketId: market.id, pricingConfig: manualPricing, weightBps: allocation.weightBps });
+  }
+
+  if (new Set(resolvedAllocations.map((allocation) => allocation.assetId)).size !== resolvedAllocations.length) {
+    throw new Error("ASSETS_NOT_UNIQUE");
+  }
+  await transaction.insert(proposalAssets).values(resolvedAllocations.map((allocation, position) => {
+    const addresses = allocation.pricingConfig ? pricingConfigAddresses(allocation.pricingConfig) : { primaryAddress: null, secondaryAddress: null };
+    return {
+      proposalId,
+      assetId: allocation.assetId,
+      marketId: allocation.marketId,
+      pricingSource: allocation.pricingConfig?.source ?? null,
+      primaryAddress: addresses.primaryAddress,
+      secondaryAddress: addresses.secondaryAddress,
+      weightBps: allocation.weightBps,
+      position,
+    };
+  }));
 }
 
 function newChallengeToken() {
@@ -209,7 +272,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof(proposalId, input);
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
-  await revalidateManualProposalAssets(proposal.id, competition.startsAt);
+  const preparedAssets = await validateDraftAllocationsForConfirmation(proposal, competition.startsAt);
   const acceptedAt = new Date();
   const result = await database.transaction(async (transaction) => {
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
@@ -223,7 +286,13 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
       rawText: post.text, rawTextExpiresAt: new Date(Date.now() + 30 * 86_400_000)
     }).returning();
     await transaction.insert(evidenceChecks).values({ evidenceId: evidence.id, status: "valid", reason: "oembed-single-use-challenge" });
-    const [confirmed] = await transaction.update(proposals).set({ status: "confirmed", acceptedAt, updatedAt: acceptedAt }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    await registerAndLinkProposalAssets(transaction, proposal.id, preparedAssets);
+    const [confirmed] = await transaction.update(proposals).set({
+      status: "confirmed",
+      draftAllocations: [],
+      acceptedAt,
+      updatedAt: acceptedAt,
+    }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
     if (!confirmed) throw new Error("PROPOSAL_NOT_FOUND");
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
@@ -243,7 +312,7 @@ export async function deleteProposal(proposalId: string, confirmationName: strin
     )).limit(1).for("update");
     if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
     if (proposal.name !== confirmationName) throw new Error("PROPOSAL_NAME_MISMATCH");
-    const [deleted] = await transaction.update(proposals).set({ status: "deleted", updatedAt: deletedAt }).where(and(
+    const [deleted] = await transaction.update(proposals).set({ status: "deleted", draftAllocations: [], updatedAt: deletedAt }).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),

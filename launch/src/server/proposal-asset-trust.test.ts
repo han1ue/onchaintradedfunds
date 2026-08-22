@@ -21,8 +21,8 @@ describe("proposal asset trust boundaries", () => {
   });
 
   it("keeps high-quality assets on their catalog API source without proposal pricing config", () => {
-    expect(actions).toContain('selectedAssetQuality.get(allocation.assetId) === "high" ? null : allocation.pricingConfig');
-    expect(actions).toContain('assetQuality.get(allocation.assetId) !== "high" && !allocation.pricingConfig');
+    expect(actions).toContain('asset.quality === "high" ? null : allocation.pricingConfig');
+    expect(actions).toContain('asset.quality !== "high" && !pricingConfig');
     expect(submitWizard).toContain('asset?.quality === "high" || pricingConfigComplete(row.pricingConfig)');
     expect(assetPicker).toContain('asset.quality === "high" ? null : preferredPricingConfig(asset.pricingConfigs)');
   });

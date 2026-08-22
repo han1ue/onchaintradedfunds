@@ -240,6 +240,7 @@ export const proposals = pgTable("proposals", {
   ticker: text("ticker").notNull(),
   thesis: text("thesis").notNull(),
   status: proposalStatus("status").default("draft").notNull(),
+  draftAllocations: jsonb("draft_allocations").$type<unknown[]>().default([]).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   moderatedReason: text("moderated_reason"),
   ...timestamps

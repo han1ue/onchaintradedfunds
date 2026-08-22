@@ -9,8 +9,7 @@ export async function GET(request: Request) {
     const purpose = await priceCapturePurpose();
     if (!purpose) return apiOk({ active: false, purpose: null, prices: null });
     const prices = await captureAssetPrices({ purpose });
-    if (purpose === "final" && !prices.complete) throw new Error("FINAL_PRICE_CHECKPOINT_INCOMPLETE");
-    return apiOk({ active: purpose === "scoring", purpose, prices });
+    return apiOk({ active: true, purpose, prices });
   } catch (error) {
     return apiError(error);
   }

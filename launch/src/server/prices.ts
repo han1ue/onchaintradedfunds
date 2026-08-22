@@ -1,9 +1,9 @@
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { PortfolioReturns } from "@/lib/types";
 import { calculatePortfolioReturns } from "@/lib/returns";
 import { requireDb, sqlClient } from "./db";
-import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns } from "./db/schema";
+import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns, proposalAssets, proposals } from "./db/schema";
 import { getCoinGeckoClient } from "./coingecko";
 import { env } from "./env";
 
@@ -205,7 +205,11 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
   if (existing) return existing;
   const assets = options.assetIds
     ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
-    : await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets);
+    : await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource })
+      .from(eligibleAssets)
+      .innerJoin(proposalAssets, eq(proposalAssets.assetId, eligibleAssets.id))
+      .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
+      .where(eq(proposals.status, "confirmed"));
   if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
 
   const typedAssets = assets as PriceAsset[];

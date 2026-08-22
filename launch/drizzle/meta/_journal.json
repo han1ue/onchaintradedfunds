@@ -22,6 +22,13 @@
       "when": 1787264188610,
       "tag": "0002_start_competition_from_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787385600000,
+      "tag": "0003_stage_draft_allocations",
+      "breakpoints": true
     }
   ]
 }

@@ -74,6 +74,7 @@ describe("unified asset database schema", () => {
 
   it("uses only the three user-facing submission states", () => {
     expect(proposalStatus.enumValues).toEqual(["draft", "confirmed", "deleted"]);
+    expect(getTableColumns(proposals)).toHaveProperty("draftAllocations");
     expect(getTableConfig(proposals).indexes.map((index) => index.config.name)).not.toContain("proposal_one_creator_uq");
   });
 

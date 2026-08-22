@@ -31,7 +31,6 @@ export async function priceCapturePurpose(now: Date = new Date()) {
   }).from(competitions).limit(1);
   if (!competition || competition.phase === "cancelled" || now < competition.startsAt) return null;
   if (now < competition.endsAt && competition.phase === "open") return "scoring" as const;
-  if (now >= competition.endsAt) return "final" as const;
   return null;
 }
 
