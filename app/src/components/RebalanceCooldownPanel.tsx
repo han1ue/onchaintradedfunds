@@ -3162,7 +3162,7 @@ function PriceDetailsModal({
           <AssetLogo logoUrl={asset.logoUrl} symbol={asset.symbol} />
           <div>
             <h2 id="price-details-title">How {asset.symbol} is priced</h2>
-            <p id="price-details-description">The OTF pins the asset feed or V3 pool and uses the quote token's current admin-managed USD feed.</p>
+            <p id="price-details-description">The OTF pins the asset feed or V3 pool and uses the quote token’s current admin-managed USD feed.</p>
           </div>
           <button ref={closeButtonRef} className="sunsetDialogClose" type="button" aria-label="Close price details" onClick={onClose}>
             <X size={16} />
