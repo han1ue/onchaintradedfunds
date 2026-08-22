@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { PortfolioReturns } from "@/lib/types";
 import { calculatePortfolioReturns } from "@/lib/returns";
 import { requireDb, sqlClient } from "./db";
-import { assetPriceSnapshots, eligibleAssets, priceCaptureRuns, proposalAssets, proposals } from "./db/schema";
+import { assetPriceSnapshots, assetRegistry, priceCaptureRuns, proposalAssets, proposals } from "./db/schema";
 import { getCoinGeckoClient } from "./coingecko";
 import { env } from "./env";
 
@@ -204,10 +204,10 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
   const existing = await readExistingCapture(key);
   if (existing) return existing;
   const assets = options.assetIds
-    ? await database.select({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource }).from(eligibleAssets).where(inArray(eligibleAssets.id, options.assetIds))
-    : await database.selectDistinct({ id: eligibleAssets.id, symbol: eligibleAssets.symbol, contractAddress: eligibleAssets.contractAddress, priceSource: eligibleAssets.priceSource })
-      .from(eligibleAssets)
-      .innerJoin(proposalAssets, eq(proposalAssets.assetId, eligibleAssets.id))
+    ? await database.select({ id: assetRegistry.id, symbol: assetRegistry.symbol, contractAddress: assetRegistry.contractAddress, priceSource: assetRegistry.priceSource }).from(assetRegistry).where(inArray(assetRegistry.id, options.assetIds))
+    : await database.selectDistinct({ id: assetRegistry.id, symbol: assetRegistry.symbol, contractAddress: assetRegistry.contractAddress, priceSource: assetRegistry.priceSource })
+      .from(assetRegistry)
+      .innerJoin(proposalAssets, eq(proposalAssets.assetId, assetRegistry.id))
       .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
       .where(eq(proposals.status, "confirmed"));
   if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };

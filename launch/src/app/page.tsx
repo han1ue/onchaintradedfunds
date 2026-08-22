@@ -5,7 +5,7 @@ import { CompetitionTimeline } from "@/components/CompetitionTimeline";
 import { ResponsiveLeaderboard } from "@/components/Leaderboard";
 import { Button, Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { auth } from "@/server/auth";
-import { getCompetition, getEligibleAssets, getLeaderboard } from "@/server/data";
+import { getAssetRegistry, getCompetition, getLeaderboard } from "@/server/data";
 import { getParticipationEligibility } from "@/server/participation";
 import { getCompetitionStatus } from "@/lib/competition";
 import { authErrorMessages } from "@/lib/errors";
@@ -16,7 +16,8 @@ function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ voteError?: string; authError?: string }> }) {
   const currentTime = new Date();
   const { voteError, authError } = await searchParams;
-  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getEligibleAssets(), auth()]);
+  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getAssetRegistry(), auth()]);
+  const verifiedAssetCount = assets.filter((asset) => asset.verified).length;
   const eligibility = await getParticipationEligibility(session?.user, competition);
   const status = getCompetitionStatus(competition, currentTime);
   const preview = competition.id.startsWith("preview");
@@ -32,7 +33,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <dl className="heroStats">
           <div className="heroStat"><dt>Votes cast</dt><dd>{competition.voteCount.toLocaleString()}</dd></div>
           <div className="heroStat"><dt>OTF proposals</dt><dd>{competition.proposalCount.toLocaleString()}</dd></div>
-          <div className="heroStat heroStatInteractive"><dt>Verified assets</dt><dd>{assets.length.toLocaleString()}</dd><Link className="heroStatHitArea" href="/assets" aria-label={`View ${assets.length.toLocaleString()} verified assets`} /></div>
+          <div className="heroStat heroStatInteractive"><dt>Verified assets</dt><dd>{verifiedAssetCount.toLocaleString()}</dd><Link className="heroStatHitArea" href="/assets" aria-label={`View ${verifiedAssetCount.toLocaleString()} verified assets in the asset registry`} /></div>
         </dl>
       </div>
     </section>

@@ -1,7 +1,7 @@
-import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "./types";
+import type { AssetRegistryEntry, CompetitionSummary, LeaderboardEntry } from "./types";
 import { COMPETITION_IDENTITY, COMPETITION_RULES, COMPETITION_RULES_HASH, DAY_MS } from "./competition";
 
-export const demoAssets: EligibleAsset[] = [];
+export const demoAssetRegistry: AssetRegistryEntry[] = [];
 
 const colors = [
   "var(--chart-series-1)",

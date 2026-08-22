@@ -1,7 +1,7 @@
-import { ExternalLink, Info } from "lucide-react";
+import { BadgeCheck, ExternalLink, Info } from "lucide-react";
 import { Callout, SectionCard, StatusBadge } from "@/components/ui";
 import { shortAddress } from "@/lib/format-address";
-import { getEligibleAssets, getLatestScoringCheckpointAt } from "@/server/data";
+import { getAssetRegistry, getLatestScoringCheckpointAt } from "@/server/data";
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -29,11 +29,11 @@ function priceSourceLabel(source: "robinhood-bid" | "coinbase-eth-usd-bid" | "co
   return "Robinhood API";
 }
 
-export const metadata = { title: "Verified assets" };
+export const metadata = { title: "Asset registry" };
 
 export default async function AssetsPage() {
   const [assets, latestScoringCheckpointAt] = await Promise.all([
-    getEligibleAssets(),
+    getAssetRegistry(),
     getLatestScoringCheckpointAt(),
   ]);
   const preview = assets.length === 0 && !process.env.DATABASE_URL;
@@ -44,22 +44,20 @@ export default async function AssetsPage() {
   return <div className="pageShell contentPage wideContent">
     <header className="pageHeader rwaDirectoryHeader">
       <div>
-        <h1>Verified assets</h1>
-        <p>These assets have been verified and approved by the OTF team. OTFs composed exclusively of verified assets are eligible for XP.</p>
+        <h1>Asset registry</h1>
+        <p>All assets known to Launch, including their saved performance pricing source. A check identifies verified assets.</p>
       </div>
-      <div className="rwaDirectoryCount"><strong>{assets.length.toLocaleString()}</strong> verified assets {preview && <StatusBadge>Preview data</StatusBadge>}</div>
+      <div className="rwaDirectoryCount"><strong>{assets.length.toLocaleString()}</strong> assets {preview && <StatusBadge>Preview data</StatusBadge>}</div>
     </header>
 
     <SectionCard className="rwaDirectory">
-      {assets.length === 0 ? <Callout tone="danger">No verified assets have been added yet.</Callout> : <>
+      {assets.length === 0 ? <Callout tone="danger">No assets have been added to the registry yet.</Callout> : <>
         <div className="rwaDirectoryHeading"><span>Asset</span><span>Latest price <span className="rwaDirectoryInfo" role="img" tabIndex={0} title={latestPriceTooltip} aria-label={latestPriceTooltip}><Info size={12} aria-hidden="true" /></span></span><span>Token contract</span></div>
         {assets.map((asset) => <div className="rwaDirectoryRow" key={asset.id}>
-          <div className="rwaDirectoryIdentity"><span className="rwaDirectoryMark">{asset.symbol.slice(0, 3)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div>
+          <div className="rwaDirectoryIdentity"><span className="rwaDirectoryMark">{asset.symbol.slice(0, 3)}</span><div><span className="rwaDirectoryTicker">{asset.verified && <BadgeCheck size={14} aria-label="Verified asset" />}<strong>{asset.symbol}</strong></span><small>{asset.name}</small></div></div>
           <div className="rwaDirectoryPrice" data-label="Latest price">
             {asset.latestPriceUsd !== null ? <strong>{formatUsd(asset.latestPriceUsd)}</strong> : <strong>—</strong>}
-            {asset.latestPriceAt
-              ? <small>{priceSourceLabel(asset.priceSource)}</small>
-              : <small>Awaiting first checkpoint</small>}
+            <small>{priceSourceLabel(asset.priceSource)}{asset.latestPriceAt ? "" : " · awaiting first checkpoint"}</small>
           </div>
           {asset.contractAddress === "N/A"
             ? <span className="rwaDirectoryAddress rwaDirectoryAddressUnavailable">N/A</span>

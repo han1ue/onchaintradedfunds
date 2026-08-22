@@ -15,9 +15,8 @@
 - Configure `ROBINHOOD_V3_FACTORY_ADDRESS`, `ROBINHOOD_WETH_ADDRESS`, `ROBINHOOD_USDG_ADDRESS`, and
   `ROBINHOOD_V3_SUPPORTED_FEES`. Unlisted asset validation reads token and pool state from
   `ROBINHOOD_RPC_URL` before making any CoinGecko request.
-- Confirm high-quality/normal labels and pricing prefills are recomputed from live evidence. They are
-  frontend metadata only and MUST NOT be described as an onchain approval, qualification, block, or
-  authorization.
+- Confirm asset-registry pricing and verified-address membership are correct. They are frontend and
+  scoring metadata only and MUST NOT be described as an onchain approval, block, or authorization.
 - Confirm vote activation finds the newest complete saved scoring checkpoint at or before activation
   within the 90-minute freshness window. Missing checkpoints fail closed with
   `PRICE_CHECKPOINT_UNAVAILABLE`; activation never makes provider calls.

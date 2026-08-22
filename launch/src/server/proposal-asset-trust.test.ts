@@ -20,11 +20,11 @@ describe("proposal asset trust boundaries", () => {
     expect(actions).not.toContain("name: metadata.name");
   });
 
-  it("keeps high-quality assets on their catalog API source without proposal pricing config", () => {
-    expect(actions).toContain('asset.quality === "high" ? null : allocation.pricingConfig');
-    expect(actions).toContain('asset.quality !== "high" && !pricingConfig');
-    expect(submitWizard).toContain('asset?.quality === "high" || pricingConfigComplete(row.pricingConfig)');
-    expect(assetPicker).toContain('asset.quality === "high" ? null : preferredPricingConfig(asset.pricingConfigs)');
+  it("keeps verified assets on their registry API source without proposal pricing config", () => {
+    expect(actions).toContain("asset.verified ? null : allocation.pricingConfig");
+    expect(actions).toContain("!asset.verified && !pricingConfig");
+    expect(submitWizard).toContain("asset?.verified || pricingConfigComplete(row.pricingConfig)");
+    expect(assetPicker).toContain("asset.verified ? null : preferredPricingConfig(asset.pricingConfigs)");
   });
 
   it("seeds ETH as canonical WETH and rejects non-address catalog values", () => {

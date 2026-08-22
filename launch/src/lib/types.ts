@@ -1,7 +1,5 @@
 import type { CompetitionRules } from "./competition";
 
-export type AssetQuality = "high" | "normal";
-
 export type PricingConfig =
   | { source: "chainlink-direct"; feedAddress: string }
   | { source: "chainlink-weth"; assetWethFeedAddress: string; wethUsdFeedAddress: string }
@@ -29,7 +27,7 @@ export type Allocation = {
   contractAddress?: string;
   poolAddress?: string | null;
   pricingConfig?: PricingConfig | null;
-  quality?: AssetQuality;
+  verified?: boolean;
   color?: string;
 };
 
@@ -45,7 +43,7 @@ export type LeaderboardEntry = {
   acceptedAt: string;
   uniqueSupporterCount?: number;
   submissionBoost?: boolean;
-  quality?: AssetQuality;
+  verified?: boolean;
   allocations: Allocation[];
   proofUrl?: string;
 };
@@ -67,7 +65,7 @@ export type CompetitionSummary = {
   uniqueVoterCount: number;
 };
 
-export type EligibleAsset = {
+export type AssetRegistryEntry = {
   id: string;
   symbol: string;
   name: string;
@@ -75,7 +73,7 @@ export type EligibleAsset = {
   network: string;
   chainId: number | null;
   decimals: 18;
-  quality: AssetQuality;
+  verified: boolean;
   priceSource: "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
   latestPriceUsd: number | null;
   latestPriceAt: string | null;

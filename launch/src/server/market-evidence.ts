@@ -5,7 +5,7 @@ import {
 } from "@/lib/market-evidence-policy";
 import { getCoinGeckoClient } from "./coingecko";
 import { requireDb } from "./db";
-import { assetEligibilitySnapshots, assetMarkets, competitions, eligibleAssets } from "./db/schema";
+import { assetEligibilitySnapshots, assetMarkets, assetRegistry, competitions } from "./db/schema";
 import { env } from "./env";
 type MarketRow = {
   id: string;
@@ -59,10 +59,10 @@ export async function captureMarketEvidence(sampledAt = new Date()) {
     factoryAddress: assetMarkets.factoryAddress,
     quoteTokenAddress: assetMarkets.quoteTokenAddress,
     feeTier: assetMarkets.feeTier,
-    assetAddress: eligibleAssets.contractAddress,
+    assetAddress: assetRegistry.contractAddress,
   }).from(assetMarkets).innerJoin(
-    eligibleAssets,
-    eq(eligibleAssets.id, assetMarkets.assetId),
+    assetRegistry,
+    eq(assetRegistry.id, assetMarkets.assetId),
   ).where(eq(assetMarkets.active, true));
 
   const results = [];

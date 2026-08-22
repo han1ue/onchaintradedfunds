@@ -5,8 +5,8 @@ import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyPr
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
-  competitions, eligibleAssets, evidenceChecks, proposalAssets, proposals,
-  assetMarkets, tweetEvidence, users, xActionChallenges
+  assetRegistry, competitions, evidenceChecks, proposalAssets, proposals,
+  assetMarkets, tweetEvidence, users, verifiedAssets, xActionChallenges
 } from "./db/schema";
 import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
 import { getXPost, hashXPostText } from "./x";
@@ -44,12 +44,13 @@ export async function saveProposalDraft(input: unknown) {
     ));
     const selectedAssets = selectedAssetIds.length
       ? await transaction.select({
-        id: eligibleAssets.id,
-        quality: eligibleAssets.quality,
-        network: eligibleAssets.network,
-        contractAddress: eligibleAssets.contractAddress,
-      }).from(eligibleAssets)
-        .where(inArray(eligibleAssets.id, selectedAssetIds))
+        id: assetRegistry.id,
+        verified: sql<boolean>`${verifiedAssets.assetAddress} is not null`,
+        network: assetRegistry.network,
+        contractAddress: assetRegistry.contractAddress,
+      }).from(assetRegistry)
+        .leftJoin(verifiedAssets, sql`lower(${verifiedAssets.assetAddress}) = lower(${assetRegistry.contractAddress})`)
+        .where(inArray(assetRegistry.id, selectedAssetIds))
       : [];
     if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
     const selectedAssetById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
@@ -57,8 +58,8 @@ export async function saveProposalDraft(input: unknown) {
       if ("assetId" in allocation) {
         const asset = selectedAssetById.get(allocation.assetId);
         if (!asset) throw new Error("ASSET_NOT_FOUND");
-        const pricingConfig = asset.quality === "high" ? null : allocation.pricingConfig;
-        if (asset.quality !== "high" && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
+        const pricingConfig = asset.verified ? null : allocation.pricingConfig;
+        if (!asset.verified && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
         return { ...allocation, pricingConfig };
       }
       const validation = validatedManualAssets.get(allocation.assetMetadata.contractAddress);
@@ -129,11 +130,15 @@ async function registerAndLinkProposalAssets(
 ) {
   const selectedAssetIds = prepared.allocations.flatMap((allocation) => "assetId" in allocation ? [allocation.assetId] : []);
   const selectedAssets = selectedAssetIds.length
-    ? await transaction.select({ id: eligibleAssets.id, quality: eligibleAssets.quality }).from(eligibleAssets)
-      .where(inArray(eligibleAssets.id, selectedAssetIds))
+    ? await transaction.select({
+      id: assetRegistry.id,
+      verified: sql<boolean>`${verifiedAssets.assetAddress} is not null`,
+    }).from(assetRegistry)
+      .leftJoin(verifiedAssets, sql`lower(${verifiedAssets.assetAddress}) = lower(${assetRegistry.contractAddress})`)
+      .where(inArray(assetRegistry.id, selectedAssetIds))
     : [];
   if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
-  const selectedAssetQuality = new Map(selectedAssets.map((asset) => [asset.id, asset.quality]));
+  const selectedAssetVerification = new Map(selectedAssets.map((asset) => [asset.id, asset.verified]));
   const resolvedAllocations: {
     assetId: string;
     marketId: string | null;
@@ -143,8 +148,8 @@ async function registerAndLinkProposalAssets(
 
   for (const allocation of prepared.allocations) {
     if ("assetId" in allocation) {
-      const pricingConfig = selectedAssetQuality.get(allocation.assetId) === "high" ? null : allocation.pricingConfig;
-      if (selectedAssetQuality.get(allocation.assetId) !== "high" && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
+      const pricingConfig = selectedAssetVerification.get(allocation.assetId) ? null : allocation.pricingConfig;
+      if (!selectedAssetVerification.get(allocation.assetId) && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
       resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig, weightBps: allocation.weightBps });
       continue;
     }
@@ -156,22 +161,21 @@ async function registerAndLinkProposalAssets(
     const manualPricing = allocation.pricingConfig;
     if (!canonical) throw new Error("ASSET_VALIDATION_FAILED");
     if (!marketDetails || !manualPricing || manualPricing.source !== "uniswap-v3") throw new Error("ASSET_MARKET_REQUIREMENTS_NOT_MET");
-    const findAsset = () => transaction.select({ id: eligibleAssets.id }).from(eligibleAssets).where(and(
-      eq(eligibleAssets.network, metadata.network),
-      sql`lower(${eligibleAssets.contractAddress}) = ${canonical.address}`,
+    const findAsset = () => transaction.select({ id: assetRegistry.id }).from(assetRegistry).where(and(
+      eq(assetRegistry.network, metadata.network),
+      sql`lower(${assetRegistry.contractAddress}) = ${canonical.address}`,
     )).limit(1);
     let [asset] = await findAsset();
     if (!asset) {
-      [asset] = await transaction.insert(eligibleAssets).values({
+      [asset] = await transaction.insert(assetRegistry).values({
         symbol: canonical.symbol,
         name: canonical.name,
         contractAddress: canonical.address,
         network: metadata.network,
         chainId: metadata.chainId,
         decimals: canonical.decimals,
-        quality: "normal",
         priceSource: "coingecko-usd",
-      }).onConflictDoNothing().returning({ id: eligibleAssets.id });
+      }).onConflictDoNothing().returning({ id: assetRegistry.id });
       if (!asset) [asset] = await findAsset();
     }
     if (!asset) throw new Error("ASSET_NOT_FOUND");

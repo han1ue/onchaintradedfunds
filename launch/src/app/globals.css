@@ -372,6 +372,8 @@ button { color: inherit; }
 .rwaDirectoryIdentity { min-width: 0; display: flex; align-items: center; gap: 11px; }
 .rwaDirectoryMark { width: 34px; height: 34px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--border)); border-radius: 7px; background: color-mix(in srgb, var(--teal) 8%, var(--card-raised)); color: var(--teal); font-size: .62rem; font-weight: 800; }
 .rwaDirectoryIdentity strong, .rwaDirectoryIdentity small { display: block; }
+.rwaDirectoryTicker { display: flex; align-items: center; gap: 5px; }
+.rwaDirectoryTicker svg { flex: 0 0 auto; color: var(--green); }
 .rwaDirectoryIdentity strong { font-size: .82rem; }
 .rwaDirectoryIdentity small { margin-top: 4px; color: var(--text-muted); font-size: .69rem; }
 .rwaDirectoryPrice { min-width: 0; text-align: right; }

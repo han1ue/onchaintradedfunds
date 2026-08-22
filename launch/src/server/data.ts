@@ -1,6 +1,6 @@
-import { demoAssets, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
+import { demoAssetRegistry, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
 import { COMPETITION_IDENTITY } from "@/lib/competition";
-import type { CompetitionSummary, EligibleAsset, LeaderboardEntry } from "@/lib/types";
+import type { AssetRegistryEntry, CompetitionSummary, LeaderboardEntry } from "@/lib/types";
 import { sqlClient } from "./db";
 import { assertCompetitionRulesSnapshot } from "./competition-rules";
 
@@ -20,18 +20,19 @@ export async function getCompetition(): Promise<CompetitionSummary> {
   return { ...rows[0], rules, minFollowers: rules.minFollowers, minAccountAgeDays: rules.minAccountAgeDays };
 }
 
-export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
-  if (!sqlClient) return demoAssets;
+export async function getAssetRegistry(search = ""): Promise<AssetRegistryEntry[]> {
+  if (!sqlClient) return demoAssetRegistry;
   const query = search.trim().toLowerCase();
-  return sqlClient<EligibleAsset[]>`
+  return sqlClient<AssetRegistryEntry[]>`
     select ea.id::text, ea.symbol, ea.name, ea.contract_address as "contractAddress",
       ea.network, ea.chain_id as "chainId", ea.decimals,
-      case when ea.quality = 'high' then 'high' else 'normal' end as quality,
+      (va.asset_address is not null) as verified,
       ea.price_source as "priceSource", latest.bid_usd::float8 as "latestPriceUsd",
       latest.sampled_at::text as "latestPriceAt",
       coalesce(configs.items, '[]'::json) as "pricingConfigs",
       coalesce(markets.items, '[]'::json) as markets
-    from eligible_assets ea
+    from asset_registry ea
+    left join verified_assets va on lower(va.asset_address) = lower(ea.contract_address)
     left join lateral (
       select aps.bid_usd, aps.sampled_at
       from asset_price_snapshots aps
@@ -76,7 +77,7 @@ export async function getEligibleAssets(search = ""): Promise<EligibleAsset[]> {
     where ${query} = '' or lower(ea.name) like ${`%${query}%`}
       or lower(ea.symbol) like ${`%${query}%`}
       or lower(ea.contract_address) = ${query}
-    order by case when ea.quality = 'high' then 0 else 1 end, ea.symbol
+    order by (va.asset_address is not null) desc, ea.symbol
     limit 100`;
 }
 
@@ -114,14 +115,16 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       (o.accepted_at < (select starts_at from competitions limit 1) + interval '7 days') as "submissionBoost",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
       json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
-      case when exists (
-        select 1 from proposal_assets quality_pa join eligible_assets quality_a on quality_a.id = quality_pa.asset_id
-        where quality_pa.proposal_id = o.id and quality_a.quality <> 'high'
-      ) then 'normal' else 'high' end as quality,
+      not exists (
+        select 1 from proposal_assets verification_pa
+        join asset_registry verification_a on verification_a.id = verification_pa.asset_id
+        left join verified_assets verification_va on lower(verification_va.asset_address) = lower(verification_a.contract_address)
+        where verification_pa.proposal_id = o.id and verification_va.asset_address is null
+      ) as verified,
       coalesce((select json_agg(json_build_object(
         'assetId', pa.asset_id::text, 'symbol', a.symbol, 'name', a.name,
         'contractAddress', a.contract_address,
-        'quality', case when a.quality = 'high' then 'high' else 'normal' end,
+        'verified', (va.asset_address is not null),
         'pricingConfig', case pa.pricing_source
           when 'chainlink-direct' then json_build_object('source', pa.pricing_source, 'feedAddress', pa.primary_address)
           when 'chainlink-weth' then json_build_object('source', pa.pricing_source, 'assetWethFeedAddress', pa.primary_address, 'wethUsdFeedAddress', pa.secondary_address)
@@ -129,7 +132,8 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
           else null end,
         'poolAddress', coalesce(case when pa.pricing_source = 'uniswap-v3' then pa.primary_address end, am.pool_address),
         'weightBps', pa.weight_bps
-      ) order by pa.position) from proposal_assets pa join eligible_assets a on a.id = pa.asset_id
+      ) order by pa.position) from proposal_assets pa join asset_registry a on a.id = pa.asset_id
+        left join verified_assets va on lower(va.asset_address) = lower(a.contract_address)
         left join asset_markets am on am.id = pa.market_id where pa.proposal_id = o.id), '[]') as allocations
     from ordered o order by o.rank`;
   return rows;

@@ -10,7 +10,7 @@ describe("proposal asset registration lifecycle", () => {
   it("stores draft allocations without registering or linking assets", () => {
     const draftFlow = actions.slice(actions.indexOf("export async function saveProposalDraft"), actions.indexOf("async function validateDraftAllocationsForConfirmation"));
     expect(draftFlow).toContain("draftAllocations");
-    expect(draftFlow).not.toContain("transaction.insert(eligibleAssets)");
+    expect(draftFlow).not.toContain("transaction.insert(assetRegistry)");
     expect(draftFlow).not.toContain("transaction.insert(assetMarkets)");
     expect(draftFlow).not.toContain("transaction.insert(proposalAssets)");
   });

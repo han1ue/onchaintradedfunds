@@ -1,5 +1,5 @@
 import { apiError, apiOk } from "@/server/api";
-import { getEligibleAssets } from "@/server/data";
+import { getAssetRegistry } from "@/server/data";
 import { z } from "zod";
 import { assertSameOrigin } from "@/server/api";
 import { requireEligibleActor } from "@/server/guards";
@@ -11,7 +11,7 @@ import { getCompetition } from "@/server/data";
 import { validateUnlistedAsset } from "@/server/unlisted-asset-validation";
 export async function GET(request: Request) {
   try {
-    return apiOk(await getEligibleAssets(new URL(request.url).searchParams.get("q") ?? ""));
+    return apiOk(await getAssetRegistry(new URL(request.url).searchParams.get("q") ?? ""));
   } catch (error) {
     return apiError(error);
   }

@@ -15,12 +15,13 @@ const backfillSnapshot = JSON.parse(readFileSync(
 ));
 
 describe("squashed migration metadata", () => {
-  it("tracks the current baseline, rules backfill, and competition clock reset", () => {
+  it("tracks the current schema migrations", () => {
     expect(journal.entries).toEqual([
       expect.objectContaining({ idx: 0, tag: "0000_launch_baseline" }),
       expect.objectContaining({ idx: 1, tag: "0001_frozen_competition_rules" }),
       expect.objectContaining({ idx: 2, tag: "0002_start_competition_from_zero" }),
       expect.objectContaining({ idx: 3, tag: "0003_stage_draft_allocations" }),
+      expect.objectContaining({ idx: 4, tag: "0004_asset_registry_verification" }),
     ]);
     expect(snapshot.prevId).toBe("00000000-0000-0000-0000-000000000000");
     expect(backfillSnapshot.prevId).toBe(snapshot.id);

@@ -7,7 +7,7 @@ import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-
 import { ballotActivationSchema, voteAdditionsSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
 import {
-  ballotAllocations, ballots, competitions, eligibleAssets, evidenceChecks,
+  assetRegistry, ballotAllocations, ballots, competitions, evidenceChecks,
   proposalAssets, proposals, tweetEvidence, voteTranches, xActionChallenges
 } from "./db/schema";
 import { requireEligibleActor } from "./guards";
@@ -44,10 +44,10 @@ async function assertValidDistribution(
 }
 
 async function getEntryAssetIds(database: LaunchDatabase, competitionId: string, proposalIds: string[]) {
-  const rows = await database.selectDistinct({ id: eligibleAssets.id })
+  const rows = await database.selectDistinct({ id: assetRegistry.id })
     .from(proposalAssets)
     .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
-    .innerJoin(eligibleAssets, eq(eligibleAssets.id, proposalAssets.assetId))
+    .innerJoin(assetRegistry, eq(assetRegistry.id, proposalAssets.assetId))
     .where(and(
       eq(proposals.competitionId, competitionId),
       eq(proposals.status, "confirmed"),

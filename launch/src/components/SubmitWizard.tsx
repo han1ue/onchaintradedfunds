@@ -2,13 +2,13 @@
 
 import { ArrowRight, Check, CheckCircle2, ExternalLink, Plus, Send, ShieldAlert, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { deriveOtfQuality } from "@/lib/asset-quality";
+import { deriveOtfVerified } from "@/lib/asset-verification";
 import { errorMessages } from "@/lib/errors";
 import { shortAddress } from "@/lib/format-address";
 import { normalizeWholeNumberInput } from "@/lib/numeric-input";
 import { preferredPricingConfig, pricingConfigComplete, pricingConfigSummary } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
-import type { CompetitionSummary, EligibleAsset, ParticipationEligibility, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
+import type { AssetRegistryEntry, CompetitionSummary, ParticipationEligibility, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
 import { buildSubmissionPost, isValidXPostUrl, slugifyProposalName } from "@/lib/x-post";
 import { AssetMarketPicker } from "./AssetMarketPicker";
 import { EligibilityAction } from "./EligibilityGate";
@@ -22,24 +22,22 @@ function friendlyError(code: string | undefined, fallback: string) {
   return code ? errorMessages[code] ?? code : fallback;
 }
 
-function initialRow(asset: EligibleAsset | undefined, weight: string): Row {
+function initialRow(asset: AssetRegistryEntry | undefined, weight: string): Row {
   return {
     assetId: asset?.id ?? "",
     assetMetadata: null,
-    pricingConfig: asset && asset.quality !== "high" ? preferredPricingConfig(asset.pricingConfigs) : null,
+    pricingConfig: asset && !asset.verified ? preferredPricingConfig(asset.pricingConfigs) : null,
     weight,
   };
 }
 
 export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey }: {
   competition: CompetitionSummary;
-  assets: EligibleAsset[];
+  assets: AssetRegistryEntry[];
   eligibility: ParticipationEligibility;
   turnstileSiteKey?: string;
 }) {
-  const verifiedAssets = useMemo(() => assets.filter((asset) => (
-    asset.quality === "high"
-  )), [assets]);
+  const verifiedAssets = useMemo(() => assets.filter((asset) => asset.verified), [assets]);
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -59,7 +57,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   const thesisBytes = new TextEncoder().encode(thesis).length;
   const thesisValid = thesis.trim().length > 0 && thesisBytes <= 2048;
   const selectedAssets = rows.map((row) => assets.find((asset) => asset.id === row.assetId));
-  const quality = deriveOtfQuality(rows.map((row, index) => selectedAssets[index]?.quality ?? (row.assetMetadata ? "normal" : undefined)));
+  const verified = deriveOtfVerified(rows.map((row, index) => selectedAssets[index]?.verified ?? (row.assetMetadata ? false : undefined)));
   const rowIdentities = rows.map((row, index) => {
     const selected = selectedAssets[index];
     if (selected) return `${selected.network}:${selected.contractAddress.toLowerCase()}`;
@@ -71,7 +69,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
   const allPricingReady = rows.every((row) => {
     const asset = assets.find((candidate) => candidate.id === row.assetId);
     const assetExists = Boolean(asset || row.assetMetadata);
-    return assetExists && (asset?.quality === "high" || pricingConfigComplete(row.pricingConfig));
+    return assetExists && (asset?.verified || pricingConfigComplete(row.pricingConfig));
   });
   const preview = competition.id.startsWith("preview");
   const postText = buildSubmissionPost(reason, {
@@ -180,7 +178,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       {preview && <Callout tone="warning">Preview data is active because the launch database is not configured. The complete interface is available, but proposals will not be saved.</Callout>}
       {step === 1 && <div className="formStack"><label className="formField"><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="AI Infrastructure OTF" maxLength={80} /><small>Must end in “OTF”.</small></label><label className="formField"><span>Ticker</span><input value={ticker} onChange={(event) => setTicker(normalizeTickerInput(event.target.value))} placeholder="AIX" maxLength={16} /></label><label className="formField"><span>Investment thesis</span><textarea value={thesis} onChange={(event) => setThesis(event.target.value)} placeholder="Explain what this portfolio owns, why it belongs together, and the long-term case…" rows={7} /><small className={`thesisCounter${thesisBytes > 2048 ? " invalid" : ""}`} aria-live="polite">{thesisBytes.toLocaleString()} / 2,048 bytes maximum</small></label></div>}
       {step === 2 && <div className="formStack">{verifiedAssets.length === 0 && <Callout>No verified assets are available yet. Search for a Robinhood Chain contract address; the server will validate its 18-decimal ERC-20 and qualifying Uniswap V3 market.</Callout>}<div><div className="allocationTotal"><span>Portfolio allocation · {rows.length} assets <small>(2 minimum)</small></span><strong className={total === 100 ? "valid" : ""}>{total}%</strong></div><p className="assetDirectoryPrompt">Choose from verified assets; their saved price sources are already configured. If an asset is not listed, enter its contract and pool address. The Add token action stays locked until every observed requirement passes.</p></div><div className="allocationRows"><div className={`allocationColumnHeaders${rows.length > 2 ? " removable" : ""}`}><span>Assets</span><span>Weight</span>{rows.length > 2 && <span aria-hidden="true" />}</div>{rows.map((row, index) => <div className={`allocationInput${rows.length > 2 ? " removable" : ""}`} key={index}><AssetMarketPicker assets={verifiedAssets} assetId={row.assetId} assetMetadata={row.assetMetadata} pricingConfig={row.pricingConfig} label={`Asset ${index + 1}`} onChange={(assetId, assetMetadata, pricingConfig) => updateRow(index, { assetId, assetMetadata, pricingConfig })} /><label className="formField weightField"><span className="srOnly">Asset {index + 1} weight</span><div><input aria-label={`Asset ${index + 1} weight percentage`} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={row.weight} onChange={(event) => updateRow(index, { weight: normalizeWholeNumberInput(event.target.value, 99) })} /><span>%</span></div></label>{rows.length > 2 && <button className="removeButton" type="button" onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove asset ${index + 1}`}><Trash2 size={16} /></button>}</div>)}</div><Callout tone="positive"><strong>Verified-only OTFs get a 100% boost on performance XP.</strong></Callout><Button variant="secondary" onClick={() => setRows((current) => { const asset = verifiedAssets.find((candidate) => !current.some((row) => row.assetId === candidate.id)); return [...current, initialRow(asset, "1")]; })}><Plus size={15} /> Add another asset</Button></div>}
-      {step === 3 && <div className="reviewBlock">{quality === "high" && <div className="reviewBoost"><StatusBadge tone="positive">100% XP boost</StatusBadge></div>}<div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row, index) => { const asset = assets.find((candidate) => candidate.id === row.assetId); const metadata = asset ?? row.assetMetadata; return <li key={`${rowIdentities[index]}:${index}`}><span title={metadata?.contractAddress}>{metadata?.symbol} · {metadata?.contractAddress ? shortAddress(metadata.contractAddress) : ""}{row.pricingConfig ? ` · ${pricingConfigSummary(row.pricingConfig)}` : ""}</span><strong>{row.weight}%</strong></li>; })}</ul></div></div>}
+      {step === 3 && <div className="reviewBlock">{verified && <div className="reviewBoost"><StatusBadge tone="positive">100% XP boost</StatusBadge></div>}<div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row, index) => { const asset = assets.find((candidate) => candidate.id === row.assetId); const metadata = asset ?? row.assetMetadata; return <li key={`${rowIdentities[index]}:${index}`}><span title={metadata?.contractAddress}>{metadata?.symbol} · {metadata?.contractAddress ? shortAddress(metadata.contractAddress) : ""}{row.pricingConfig ? ` · ${pricingConfigSummary(row.pricingConfig)}` : ""}</span><strong>{row.weight}%</strong></li>; })}</ul></div></div>}
       {step === 4 && <div className="proofFlow">{!challenge && <label className="formField"><span>Your context <small>(optional)</small></span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this OTF deserves to launch…" rows={3} maxLength={120} /><small>{reason.length} / 120 characters</small></label>}<div className="xPostPreview"><div><span>{challenge ? "Ready to publish" : "Post preview"}</span><Send size={14} /></div><p>{challenge?.postText ?? postText}</p></div>{!challenge && <><Callout>We’ll add a one-time verification code when you open X. After publishing, return here and paste the post URL below.</Callout><Turnstile siteKey={turnstileSiteKey} action="submit_otf" resetKey={turnstileResetKey} onToken={setTurnstileToken} /></>}{(challenge || !turnstileSiteKey || turnstileToken) && <div className="postAction">{challenge ? <a className="button buttonPrimary" href={challenge.intentUrl} target="_blank" rel="noreferrer">Open X and post <ExternalLink size={14} /></a> : <Button onClick={postSubmission} disabled={busy || preview}>{busy ? "Opening X…" : "Open X and post"} <ExternalLink size={14} /></Button>}<p className="postAssurance">We never post anything on your behalf.</p></div>}<label className="formField"><span>X post URL</span><input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="https://x.com/yourname/status/…" inputMode="url" disabled={!challenge || busy} aria-invalid={postUrl.trim().length > 0 && !validPostUrl} /><small>{challenge ? validPostUrl ? "URL format looks good. We’ll verify the post, author, and verification code when you submit." : "Paste the public X post URL containing the verification code." : "Open X and publish the prepared post first; this field will then be ready."}</small></label></div>}
       {message && <p className="formMessage" role="status">{message}</p>}
     </div>

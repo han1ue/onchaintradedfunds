@@ -93,7 +93,7 @@ export const competitions = pgTable("competitions", {
   check("competition_rules_hash", sql`${table.rulesHash} ~ '^[0-9a-f]{64}$'`)
 ]);
 
-export const eligibleAssets = pgTable("eligible_assets", {
+export const assetRegistry = pgTable("asset_registry", {
   id: uuid("id").defaultRandom().primaryKey(),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
@@ -101,21 +101,25 @@ export const eligibleAssets = pgTable("eligible_assets", {
   network: text("network").default("robinhood-mainnet").notNull(),
   chainId: integer("chain_id"),
   decimals: integer("decimals").default(18).notNull(),
-  quality: text("quality").default("normal").notNull(),
   priceSource: text("price_source").default("robinhood-bid").notNull(),
   ...timestamps
 }, (table) => [
-  index("eligible_asset_symbol_idx").on(sql`upper(${table.symbol})`),
-  uniqueIndex("eligible_asset_network_contract_uq").on(table.network, sql`lower(${table.contractAddress})`),
-  check("eligible_asset_contract_address", sql`${table.contractAddress} ~ '^0x[0-9a-fA-F]{40}$'`),
-  check("eligible_asset_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid', 'coingecko-usd')`),
-  check("eligible_asset_quality", sql`${table.quality} in ('high', 'normal')`),
-  check("eligible_asset_exact_decimals", sql`${table.decimals} = 18`)
+  index("asset_registry_symbol_idx").on(sql`upper(${table.symbol})`),
+  uniqueIndex("asset_registry_network_contract_uq").on(table.network, sql`lower(${table.contractAddress})`),
+  check("asset_registry_contract_address", sql`${table.contractAddress} ~ '^0x[0-9a-fA-F]{40}$'`),
+  check("asset_registry_price_source", sql`${table.priceSource} in ('robinhood-bid', 'coinbase-eth-usd-bid', 'coingecko-usd')`),
+  check("asset_registry_exact_decimals", sql`${table.decimals} = 18`)
+]);
+
+export const verifiedAssets = pgTable("verified_assets", {
+  assetAddress: text("asset_address").primaryKey(),
+}, (table) => [
+  check("verified_asset_address", sql`${table.assetAddress} ~ '^0x[0-9a-fA-F]{40}$'`),
 ]);
 
 export const assetPricingConfigs = pgTable("asset_pricing_configs", {
   id: uuid("id").defaultRandom().primaryKey(),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").notNull().references(() => assetRegistry.id, { onDelete: "cascade" }),
   source: text("source").notNull(),
   primaryAddress: text("primary_address").notNull(),
   secondaryAddress: text("secondary_address"),
@@ -140,7 +144,7 @@ export const assetPricingConfigs = pgTable("asset_pricing_configs", {
 
 export const assetMarkets = pgTable("asset_markets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").notNull().references(() => assetRegistry.id, { onDelete: "cascade" }),
   marketId: text("market_id").notNull().unique(),
   poolAddress: text("pool_address").notNull(),
   factoryAddress: text("factory_address").notNull(),
@@ -220,7 +224,7 @@ export const priceCaptureRuns = pgTable("price_capture_runs", {
 
 export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
   id: uuid("id").defaultRandom().primaryKey(),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").notNull().references(() => assetRegistry.id, { onDelete: "cascade" }),
   sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
   captureRunId: uuid("capture_run_id").references(() => priceCaptureRuns.id, { onDelete: "restrict" }),
   quoteGeneratedAt: timestamp("quote_generated_at", { withTimezone: true }).notNull(),
@@ -255,7 +259,7 @@ export const proposals = pgTable("proposals", {
 
 export const proposalAssets = pgTable("proposal_assets", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
-  assetId: uuid("asset_id").notNull().references(() => eligibleAssets.id, { onDelete: "restrict" }),
+  assetId: uuid("asset_id").notNull().references(() => assetRegistry.id, { onDelete: "restrict" }),
   marketId: uuid("market_id").references(() => assetMarkets.id, { onDelete: "restrict" }),
   pricingSource: text("pricing_source"),
   primaryAddress: text("primary_address"),

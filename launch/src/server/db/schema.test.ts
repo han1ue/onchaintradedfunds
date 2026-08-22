@@ -4,22 +4,22 @@ import { describe, expect, it } from "vitest";
 import * as schema from "./schema";
 import {
   assetPricingConfigs,
+  assetRegistry,
   ballots,
   competitions,
-  eligibleAssets,
   priceCaptureRuns,
   proposalAssets,
   proposals,
   proposalStatus,
   voteStatus,
   voteTranches,
+  verifiedAssets,
 } from "./schema";
 
 describe("unified asset database schema", () => {
-  it("stores only informational high/normal asset quality metadata", () => {
-    const columns = getTableColumns(eligibleAssets);
-    expect(columns).toHaveProperty("quality");
-    expect(columns).not.toHaveProperty("qualityStatus");
+  it("separates asset metadata from address-only verification", () => {
+    expect(getTableColumns(assetRegistry)).not.toHaveProperty("quality");
+    expect(Object.keys(getTableColumns(verifiedAssets))).toEqual(["assetAddress"]);
   });
 
   it("stores reusable configs separately and snapshots exact proposal config addresses", () => {
@@ -35,7 +35,7 @@ describe("unified asset database schema", () => {
     });
   });
 
-  it("has no obsolete quality cohort columns on vote tranches", () => {
+  it("has no obsolete performance cohort columns on vote tranches", () => {
     expect(getTableColumns(voteTranches)).not.toHaveProperty("performanceCohort");
   });
 

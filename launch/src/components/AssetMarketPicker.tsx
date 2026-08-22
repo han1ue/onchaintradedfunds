@@ -7,11 +7,11 @@ import { errorMessages } from "@/lib/errors";
 import { shortAddress } from "@/lib/format-address";
 import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
-import type { EligibleAsset, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
+import type { AssetRegistryEntry, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
 import { Button } from "./ui";
 
 type Props = {
-  assets: EligibleAsset[];
+  assets: AssetRegistryEntry[];
   assetId: string;
   assetMetadata: ProposalAssetMetadata | null;
   pricingConfig: PricingConfig | null;
@@ -86,7 +86,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   const selectedMetadata = selected ? null : assetMetadata;
   const selectedSymbol = selected?.symbol ?? selectedMetadata?.symbol;
   const normalizedQuery = query.trim().toLowerCase();
-  const verifiedAssets = useMemo(() => assets.filter((asset) => asset.quality === "high"), [assets]);
+  const verifiedAssets = useMemo(() => assets.filter((asset) => asset.verified), [assets]);
   const filtered = verifiedAssets.filter((asset) => !normalizedQuery
     || asset.name.toLowerCase().includes(normalizedQuery)
     || asset.symbol.toLowerCase().includes(normalizedQuery)
@@ -134,8 +134,8 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [assetAddress, manual, poolAddress]);
 
-  function choose(asset: EligibleAsset) {
-    const configuredPriceSource = asset.quality === "high" ? null : preferredPricingConfig(asset.pricingConfigs);
+  function choose(asset: AssetRegistryEntry) {
+    const configuredPriceSource = asset.verified ? null : preferredPricingConfig(asset.pricingConfigs);
     onChange(asset.id, null, configuredPriceSource);
     setOpen(false);
     setQuery("");
