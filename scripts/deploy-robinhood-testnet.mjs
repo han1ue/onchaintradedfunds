@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
@@ -31,7 +31,6 @@ const { privateKeyToAccount } = accounts;
 const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
 const defaultChainId = 46630;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
-const deploymentArchiveDirectory = join(root, "app", "src", "config", "deployments");
 
 function env(name, fallback) {
   const value = process.env[name];
@@ -69,15 +68,6 @@ function deploymentPayload(result) {
     (_key, value) => (typeof value === "bigint" ? value.toString() : value),
     2,
   );
-}
-
-function archiveExistingDeployment() {
-  if (!existsSync(deploymentPath)) return undefined;
-  const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
-  mkdirSync(deploymentArchiveDirectory, { recursive: true });
-  const archivePath = join(deploymentArchiveDirectory, `robinhood-testnet-${timestamp}.json`);
-  copyFileSync(deploymentPath, archivePath);
-  return relative(root, archivePath).replaceAll("\\", "/");
 }
 
 async function deployContract({ name, args = [], gas }) {
@@ -360,7 +350,6 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
   args: [rebalanceExecutor.address, true],
 });
 
-const archivedDeployment = archiveExistingDeployment();
 const deployment = {
   schemaVersion: 5,
   network: "robinhood-testnet",
@@ -435,7 +424,6 @@ const deployment = {
   migration: {
     architecture: "pinned-pricing-v3",
     legacyFactoriesCompatible: false,
-    priorDeploymentArchive: archivedDeployment,
   },
   setupTransactions,
 };

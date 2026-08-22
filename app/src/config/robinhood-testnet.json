@@ -232,8 +232,7 @@
   },
   "migration": {
     "architecture": "pinned-pricing-v3",
-    "legacyFactoriesCompatible": false,
-    "priorDeploymentArchive": "app/src/config/deployments/robinhood-testnet-2026-08-22T16-28-04-710Z.json"
+    "legacyFactoriesCompatible": false
   },
   "setupTransactions": {
     "setExecutorFactory": {
