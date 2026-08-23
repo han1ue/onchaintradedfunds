@@ -30,7 +30,7 @@ export function apiError(error: unknown, fallback = "INTERNAL_ERROR") {
   const rawCode = error instanceof Error ? error.message : fallback;
   const code = /^[A-Z0-9_]+$/.test(rawCode) ? rawCode : fallback;
   if (code === fallback && rawCode !== fallback) console.error("API request failed", error);
-  const status = code === "UNAUTHENTICATED" ? 401 : code === "FORBIDDEN" ? 403 : code.includes("NOT_FOUND") ? 404 : code === "DATABASE_NOT_CONFIGURED" || code === "X_UNAVAILABLE" || code === "RATE_LIMIT_UNAVAILABLE" || code === "ASSET_MARKET_VALIDATION_UNAVAILABLE" ? 503 : code === "RATE_LIMITED" ? 429 : 400;
+  const status = code === "UNAUTHENTICATED" ? 401 : code === "FORBIDDEN" ? 403 : code.includes("NOT_FOUND") ? 404 : code === "DATABASE_NOT_CONFIGURED" || code === "X_UNAVAILABLE" || code === "RATE_LIMIT_UNAVAILABLE" || code === "ASSET_MARKET_VALIDATION_UNAVAILABLE" || code === "CHALLENGE_RESULT_UNAVAILABLE" ? 503 : code === "RATE_LIMITED" ? 429 : 400;
   return NextResponse.json({ error: { code, ...(error instanceof PublicApiError ? { metadata: error.metadata } : {}) } }, { status: code === fallback ? 500 : status });
 }
 

@@ -29,6 +29,8 @@ export const errorMessages: Record<string, string> = {
   PROOF_TEXT_MISMATCH: "This post does not exactly match the prepared text. Publish the prepared text without adding, removing, or changing anything.",
   PROOF_MISMATCH: "Paste a valid public x.com post URL.",
   CHALLENGE_EXPIRED: "This verification code expired. Prepare a new X post and try again.",
+  CHALLENGE_NOT_FOUND: "That verification attempt could not be found.",
+  CHALLENGE_RESULT_UNAVAILABLE: "The completed verification result is temporarily unavailable. Check your profile before trying again.",
   DRAFT_EXPIRED: "This draft expired after 24 hours. Remove it from your profile and create a new draft.",
   X_RATE_LIMITED: "X is temporarily rate limited. Please try again shortly.",
   RATE_LIMITED: "Too many attempts. Please wait ten minutes and try again.",

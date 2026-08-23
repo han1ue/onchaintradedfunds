@@ -318,6 +318,8 @@ export const xActionChallenges = pgTable("x_action_challenges", {
   payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  resultBallotId: uuid("result_ballot_id"),
+  resultSlug: text("result_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("x_action_challenge_lookup_idx").on(table.userId, table.proposalId, table.expiresAt)]);
 

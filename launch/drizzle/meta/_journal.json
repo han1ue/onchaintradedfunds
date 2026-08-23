@@ -57,6 +57,13 @@
       "when": 1787518665258,
       "tag": "0007_launch_data_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787519169205,
+      "tag": "0008_challenge_results",
+      "breakpoints": true
     }
   ]
 }

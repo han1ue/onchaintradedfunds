@@ -436,7 +436,10 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     ));
     const proposalLimit = openCompetition.rules.maxProposalsPerAccount;
     if (proposalLimit !== null && confirmedCount >= proposalLimit) throw new Error("PROPOSAL_LIMIT_REACHED");
-    const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
+    const [consumed] = await transaction.update(xActionChallenges).set({
+      consumedAt: acceptedAt,
+      resultSlug: proposal.slug,
+    }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,

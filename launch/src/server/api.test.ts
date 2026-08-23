@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PUBLIC_LIST_LIMIT, MAX_PUBLIC_LIST_LIMIT, parsePublicListQuery } from "./api";
+import { apiError, DEFAULT_PUBLIC_LIST_LIMIT, MAX_PUBLIC_LIST_LIMIT, parsePublicListQuery } from "./api";
 
 describe("public list query validation", () => {
   it("uses the bounded default and parses a stable rank cursor", () => {
@@ -20,5 +20,11 @@ describe("public list query validation", () => {
 
   it.each(["0", "-1", "1.5", "next"])("rejects invalid cursor %s", (cursor) => {
     expect(() => parsePublicListQuery(new Request(`https://launch.example/api/v1/leaderboard?cursor=${cursor}`))).toThrow("INVALID_QUERY");
+  });
+});
+
+describe("public API error status", () => {
+  it("marks an unavailable stored challenge result as retryable", () => {
+    expect(apiError(new Error("CHALLENGE_RESULT_UNAVAILABLE")).status).toBe(503);
   });
 });

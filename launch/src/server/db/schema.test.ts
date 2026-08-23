@@ -15,6 +15,7 @@ import {
   voteStatus,
   voteTranches,
   verifiedAssets,
+  xActionChallenges,
 } from "./schema";
 
 describe("unified asset database schema", () => {
@@ -87,5 +88,16 @@ describe("unified asset database schema", () => {
 
   it("uses only persisted aggregate ballot states", () => {
     expect(voteStatus.enumValues).toEqual(["valid", "invalid"]);
+  });
+
+  it("stores only compact terminal references on X action challenges", () => {
+    expect(getTableColumns(xActionChallenges)).toMatchObject({
+      action: expect.anything(),
+      proposalId: expect.anything(),
+      consumedAt: expect.anything(),
+      resultBallotId: expect.anything(),
+      resultSlug: expect.anything(),
+    });
+    expect(getTableColumns(xActionChallenges)).not.toHaveProperty("resultPayload");
   });
 });

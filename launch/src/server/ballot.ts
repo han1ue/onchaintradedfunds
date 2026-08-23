@@ -291,6 +291,13 @@ export async function verifyBallotProof(input: unknown) {
       acceptedAt,
       entryPriceCaptureRunId: entryCapture.runId,
     })));
+    const [recordedResult] = await transaction.update(xActionChallenges).set({
+      resultBallotId: ballot.id,
+    }).where(and(
+      eq(xActionChallenges.id, challenge.id),
+      eq(xActionChallenges.consumedAt, acceptedAt),
+    )).returning({ id: xActionChallenges.id });
+    if (!recordedResult) throw new Error("CHALLENGE_RESULT_UNAVAILABLE");
     return {
       action: "ballot" as const,
       ballotId: ballot.id,
