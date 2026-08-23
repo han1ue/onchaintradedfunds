@@ -31,12 +31,13 @@ export const COMPETITION_RULES = {
   votesPerUnlock: 1,
   voteUnlockIntervalDays: 3,
   totalVotes: 12,
-  maxProposalsPerAccount: null,
+  maxProposalsPerAccount: 10,
   eligibilityAllowlistBypasses: ["verified", "minFollowers"],
 } as const satisfies CompetitionRules;
-export const COMPETITION_RULES_HASH = "5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9";
+export const COMPETITION_RULES_HASH = "4b63532c5d7b50d30209b760eace59027e77942adc70a9996420f655457ce0f2";
 
 export const DAY_MS = 86_400_000;
+export const PROPOSAL_DRAFT_TTL_MS = DAY_MS;
 export const COMPETITION_PROGRESS_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 type CompetitionWindow = {

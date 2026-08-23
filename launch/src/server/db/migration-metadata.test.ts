@@ -13,6 +13,14 @@ const backfillSnapshot = JSON.parse(readFileSync(
   new URL("../../../drizzle/meta/0001_snapshot.json", import.meta.url),
   "utf8",
 ));
+const registrySnapshot = JSON.parse(readFileSync(
+  new URL("../../../drizzle/meta/0004_snapshot.json", import.meta.url),
+  "utf8",
+));
+const lifecycleSnapshot = JSON.parse(readFileSync(
+  new URL("../../../drizzle/meta/0005_snapshot.json", import.meta.url),
+  "utf8",
+));
 
 describe("squashed migration metadata", () => {
   it("tracks the current schema migrations", () => {
@@ -22,9 +30,13 @@ describe("squashed migration metadata", () => {
       expect.objectContaining({ idx: 2, tag: "0002_start_competition_from_zero" }),
       expect.objectContaining({ idx: 3, tag: "0003_stage_draft_allocations" }),
       expect.objectContaining({ idx: 4, tag: "0004_asset_registry_verification" }),
+      expect.objectContaining({ idx: 5, tag: "0005_proposal_lifecycle" }),
     ]);
     expect(snapshot.prevId).toBe("00000000-0000-0000-0000-000000000000");
     expect(backfillSnapshot.prevId).toBe(snapshot.id);
+    expect(lifecycleSnapshot.prevId).toBe(registrySnapshot.id);
+    expect(lifecycleSnapshot.enums["public.proposal_status"].values).toEqual(["draft", "confirmed", "expired", "deleted"]);
+    expect(lifecycleSnapshot.tables["public.proposals"].columns).toHaveProperty("draft_expires_at");
     expect(Object.keys(snapshot.tables)).toHaveLength(20);
     expect(Object.keys(backfillSnapshot.tables)).toHaveLength(20);
   });

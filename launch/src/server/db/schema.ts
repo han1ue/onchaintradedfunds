@@ -22,7 +22,7 @@ const timestamps = {
 };
 
 export const competitionPhase = pgEnum("competition_phase", ["draft", "scheduled", "open", "auditing", "final", "cancelled"]);
-export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "deleted"]);
+export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "expired", "deleted"]);
 export const voteStatus = pgEnum("vote_status", ["valid", "invalid"]);
 export const evidenceStatus = pgEnum("evidence_status", ["pending", "valid", "invalid", "unavailable"]);
 export const evidenceAction = pgEnum("evidence_action", ["submission", "vote"]);
@@ -245,13 +245,15 @@ export const proposals = pgTable("proposals", {
   thesis: text("thesis").notNull(),
   status: proposalStatus("status").default("draft").notNull(),
   draftAllocations: jsonb("draft_allocations").$type<unknown[]>().default([]).notNull(),
+  draftExpiresAt: timestamp("draft_expires_at", { withTimezone: true }),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   moderatedReason: text("moderated_reason"),
   ...timestamps
 }, (table) => [
-  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug).where(sql`${table.status} <> 'deleted'`),
-  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`).where(sql`${table.status} <> 'deleted'`),
-  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`).where(sql`${table.status} <> 'deleted'`),
+  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug).where(sql`${table.status} in ('draft', 'confirmed')`),
+  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`).where(sql`${table.status} in ('draft', 'confirmed')`),
+  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`).where(sql`${table.status} in ('draft', 'confirmed')`),
+  index("proposal_draft_expiry_idx").on(table.draftExpiresAt).where(sql`${table.status} = 'draft'`),
   check("proposal_ticker_format", sql`${table.ticker} ~ '^[A-Z0-9][A-Z0-9-]{0,15}$'`),
   check("proposal_name_suffix", sql`${table.name} like '% OTF'`),
   check("proposal_thesis_nonempty", sql`octet_length(${table.thesis}) between 1 and 2048`)

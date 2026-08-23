@@ -13,7 +13,7 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
     : 0;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const phases = [
-    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: "Create as many OTF proposals as you want." },
+    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: `Confirm up to ${rules.maxProposalsPerAccount} OTF proposals per account.` },
     { title: "Voting month", timing: `Days ${rules.submissionOnlyDays + 1}–${totalDays}`, detail: `Voting opens with ${rules.initialVotes} votes. ${rules.votesPerUnlock} more unlocks every ${rules.voteUnlockIntervalDays} days; OTF submissions stay open.` },
     { title: "Final results", timing: "After voting", detail: "Votes are reviewed and the final ranking becomes launch order." },
   ];

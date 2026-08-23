@@ -31,6 +31,18 @@ export type Allocation = {
   color?: string;
 };
 
+export type ProposalDraft = {
+  id: string;
+  name: string;
+  ticker: string;
+  thesis: string;
+  draftExpiresAt: string;
+  allocations: Array<({ assetId: string } | { assetMetadata: ProposalAssetMetadata }) & {
+    pricingConfig?: PricingConfig | null;
+    weightBps: number;
+  }>;
+};
+
 export type LeaderboardEntry = {
   id: string;
   slug: string;
@@ -110,7 +122,7 @@ export type VotePostTranche = {
   proposalName: string;
   proposalSlug: string;
   proposalTicker: string;
-  proposalStatus: "draft" | "confirmed" | "deleted";
+  proposalStatus: "draft" | "confirmed" | "expired" | "deleted";
   votes: number;
   acceptedAt: string;
   createdAt: string;

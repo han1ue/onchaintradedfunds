@@ -737,6 +737,7 @@ button { color: inherit; }
 .submissionIdentity strong { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .submissionIdentity small { color: var(--text-muted); font-size: .66rem; }
 .submissionRowActions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.resumeDraftButton { min-height: 32px; padding: 0 8px; }
 .deleteSubmissionButton { min-height: 32px; padding: 0 8px; color: var(--danger); }
 .deleteSubmissionButton:hover { background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .deleteSubmissionUnavailable { position: relative; display: inline-flex; border-radius: 6px; outline: none; }

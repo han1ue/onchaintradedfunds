@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { PROPOSAL_DRAFT_TTL_MS } from "@/lib/competition";
+import type { ProposalDraft } from "@/lib/types";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
@@ -8,7 +10,7 @@ import {
   assetRegistry, competitions, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, verifiedAssets, xActionChallenges
 } from "./db/schema";
-import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
+import { requireEligibleActor, requireSession } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
 
@@ -17,8 +19,70 @@ type LaunchDatabase = ReturnType<typeof requireDb>;
 type LaunchTransaction = Parameters<Parameters<LaunchDatabase["transaction"]>[0]>[0];
 type UnlistedAssetValidation = Awaited<ReturnType<typeof validateUnlistedAsset>>;
 
-export async function saveProposalDraft(input: unknown) {
+function validProposalId(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function expireStaleDrafts(
+  database: Pick<LaunchDatabase, "execute">,
+  now: Date,
+  scope: { competitionId?: string; userId?: string } = {},
+) {
+  await database.execute(sql`
+    update ${proposals}
+    set ${proposals.status} = 'expired', ${proposals.updatedAt} = ${now}
+    where ${proposals.status} = 'draft'
+      and ${proposals.draftExpiresAt} is not null
+      and ${proposals.draftExpiresAt} <= ${now}
+      ${scope.competitionId ? sql`and ${proposals.competitionId} = ${scope.competitionId}` : sql``}
+      ${scope.userId ? sql`and ${proposals.creatorUserId} = ${scope.userId}` : sql``}
+  `);
+}
+
+export async function expireProposalDrafts(competitionId: string, userId: string, now: Date = new Date()) {
+  await expireStaleDrafts(requireDb(), now, { competitionId, userId });
+}
+
+export async function getProposalDraftForResume(proposalId: string): Promise<ProposalDraft | null> {
+  if (!validProposalId(proposalId)) return null;
+  const database = requireDb();
+  const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
+  const [proposal] = await database.select({
+    id: proposals.id,
+    name: proposals.name,
+    ticker: proposals.ticker,
+    thesis: proposals.thesis,
+    draftAllocations: proposals.draftAllocations,
+    draftExpiresAt: proposals.draftExpiresAt,
+  }).from(proposals).where(and(
+    eq(proposals.id, proposalId),
+    eq(proposals.competitionId, competition.id),
+    eq(proposals.creatorUserId, session.user.id),
+    eq(proposals.status, "draft"),
+    gt(proposals.draftExpiresAt, now),
+  )).limit(1);
+  if (!proposal?.draftExpiresAt) return null;
+  const parsed = proposalInputSchema.parse({
+    name: proposal.name,
+    ticker: proposal.ticker,
+    thesis: proposal.thesis,
+    allocations: proposal.draftAllocations,
+  });
+  return {
+    id: proposal.id,
+    name: parsed.name,
+    ticker: parsed.ticker,
+    thesis: parsed.thesis,
+    draftExpiresAt: proposal.draftExpiresAt.toISOString(),
+    allocations: parsed.allocations,
+  };
+}
+
+export async function saveProposalDraft(input: unknown, existingDraftId?: string) {
   const parsed = proposalInputSchema.parse(input);
+  if (existingDraftId && !validProposalId(existingDraftId)) throw new Error("PROPOSAL_NOT_FOUND");
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
   if (parsed.allocations.length < competition.rules.minAssets) throw new Error("PROPOSAL_ASSET_MINIMUM");
@@ -85,6 +149,8 @@ export async function saveProposalDraft(input: unknown) {
       throw new Error("ASSETS_NOT_UNIQUE");
     }
 
+    const now = new Date();
+    await expireStaleDrafts(transaction, now, { competitionId: competition.id, userId: session.user.id });
     const values = {
       competitionId: competition.id,
       creatorUserId: session.user.id,
@@ -93,9 +159,24 @@ export async function saveProposalDraft(input: unknown) {
       ticker: parsed.ticker,
       thesis: parsed.thesis,
       draftAllocations,
-      updatedAt: new Date(),
+      updatedAt: now,
     };
-    const [proposal] = await transaction.insert(proposals).values(values).returning();
+    if (existingDraftId) {
+      const [existing] = await transaction.select({ id: proposals.id }).from(proposals).where(and(
+        eq(proposals.id, existingDraftId),
+        eq(proposals.competitionId, competition.id),
+        eq(proposals.creatorUserId, session.user.id),
+        eq(proposals.status, "draft"),
+        gt(proposals.draftExpiresAt, now),
+      )).limit(1).for("update");
+      if (!existing) throw new Error("DRAFT_EXPIRED");
+      const [proposal] = await transaction.update(proposals).set(values).where(eq(proposals.id, existing.id)).returning();
+      return proposal;
+    }
+    const [proposal] = await transaction.insert(proposals).values({
+      ...values,
+      draftExpiresAt: new Date(now.getTime() + PROPOSAL_DRAFT_TTL_MS),
+    }).returning();
     return proposal;
   });
 }
@@ -227,11 +308,14 @@ async function prepareProof(proposalId: string, input: unknown) {
   const { reason } = xPostActionSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
   const [proposal] = await database.select().from(proposals).where(and(
     eq(proposals.id, proposalId),
     eq(proposals.competitionId, competition.id),
     eq(proposals.creatorUserId, session.user.id),
-    eq(proposals.status, "draft")
+    eq(proposals.status, "draft"),
+    gt(proposals.draftExpiresAt, now),
   )).limit(1);
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
 
@@ -251,8 +335,11 @@ async function loadVerifiedProof(proposalId: string, input: unknown) {
   const parsed = proof.data;
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
   const [proposal] = await database.select().from(proposals).where(and(
-    eq(proposals.id, proposalId), eq(proposals.competitionId, competition.id)
+    eq(proposals.id, proposalId), eq(proposals.competitionId, competition.id),
+    eq(proposals.status, "draft"), gt(proposals.draftExpiresAt, now),
   )).limit(1);
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
   const [challenge] = await database.select().from(xActionChallenges).where(and(
@@ -279,10 +366,19 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const preparedAssets = await validateDraftAllocationsForConfirmation(proposal, competition.startsAt);
   const acceptedAt = new Date();
   const result = await database.transaction(async (transaction) => {
+    const [openCompetition] = await transaction.select({ id: competitions.id, rules: competitions.rules }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1).for("update");
+    if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
+    const [{ confirmedCount }] = await transaction.select({
+      confirmedCount: sql<number>`count(*)::int`,
+    }).from(proposals).where(and(
+      eq(proposals.competitionId, competition.id),
+      eq(proposals.creatorUserId, session.user.id),
+      eq(proposals.status, "confirmed"),
+    ));
+    const proposalLimit = openCompetition.rules.maxProposalsPerAccount;
+    if (proposalLimit !== null && confirmedCount >= proposalLimit) throw new Error("PROPOSAL_LIMIT_REACHED");
     const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
     if (!consumed) throw new Error("CHALLENGE_EXPIRED");
-    const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
-    if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
       xPostId: post.id, xAuthorId: user.xUserId, xAuthorUsername: user.xUsername, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
@@ -294,9 +390,10 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     const [confirmed] = await transaction.update(proposals).set({
       status: "confirmed",
       draftAllocations: [],
+      draftExpiresAt: null,
       acceptedAt,
       updatedAt: acceptedAt,
-    }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"), gt(proposals.draftExpiresAt, acceptedAt))).returning();
     if (!confirmed) throw new Error("PROPOSAL_NOT_FOUND");
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
@@ -306,27 +403,25 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
 export async function deleteProposal(proposalId: string, confirmationName: string) {
   const database = requireDb();
   const session = await requireSession();
-  const competition = await currentCompetition();
   const deletedAt = new Date();
   return database.transaction(async (transaction) => {
-    const [proposal] = await transaction.select({ name: proposals.name }).from(proposals).where(and(
+    const [competition] = await transaction.select({ id: competitions.id, phase: competitions.phase, endsAt: competitions.endsAt })
+      .from(competitions).limit(1).for("update");
+    if (!competition) throw new Error("COMPETITION_NOT_OPEN");
+    await expireStaleDrafts(transaction, deletedAt, { competitionId: competition.id, userId: session.user.id });
+    const [proposal] = await transaction.select({ name: proposals.name, status: proposals.status }).from(proposals).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
     )).limit(1).for("update");
     if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
     if (proposal.name !== confirmationName) throw new Error("PROPOSAL_NAME_MISMATCH");
+    if (proposal.status === "confirmed" && (competition.phase !== "open" || competition.endsAt <= deletedAt)) throw new Error("COMPETITION_NOT_OPEN");
     const [deleted] = await transaction.update(proposals).set({ status: "deleted", draftAllocations: [], updatedAt: deletedAt }).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
-      inArray(proposals.status, ["draft", "confirmed"]),
-      sql`exists (
-        select 1 from ${competitions}
-        where ${competitions.id} = ${proposals.competitionId}
-          and ${competitions.phase} = 'open'
-          and ${competitions.endsAt} > now()
-      )`
+      inArray(proposals.status, ["draft", "confirmed", "expired"]),
     )).returning();
     if (!deleted) throw new Error("PROPOSAL_NOT_FOUND");
     return deleted;

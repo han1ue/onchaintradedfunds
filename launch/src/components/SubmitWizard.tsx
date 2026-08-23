@@ -8,7 +8,7 @@ import { shortAddress } from "@/lib/format-address";
 import { normalizeWholeNumberInput } from "@/lib/numeric-input";
 import { preferredPricingConfig, pricingConfigComplete, pricingConfigSummary } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
-import type { AssetRegistryEntry, CompetitionSummary, ParticipationEligibility, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
+import type { AssetRegistryEntry, CompetitionSummary, ParticipationEligibility, PricingConfig, ProposalAssetMetadata, ProposalDraft } from "@/lib/types";
 import { buildSubmissionPost, isValidXPostUrl, slugifyProposalName } from "@/lib/x-post";
 import { AssetMarketPicker } from "./AssetMarketPicker";
 import { EligibilityAction } from "./EligibilityGate";
@@ -31,25 +31,37 @@ function initialRow(asset: AssetRegistryEntry | undefined, weight: string): Row 
   };
 }
 
-export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKey }: {
+function draftRows(draft: ProposalDraft | null, assets: AssetRegistryEntry[]): Row[] {
+  if (!draft) return [initialRow(assets.filter((asset) => asset.verified)[0], "50"), initialRow(assets.filter((asset) => asset.verified)[1], "50")];
+  return draft.allocations.map((allocation) => ({
+    assetId: "assetId" in allocation ? allocation.assetId : "",
+    assetMetadata: "assetMetadata" in allocation ? allocation.assetMetadata : null,
+    pricingConfig: allocation.pricingConfig ?? null,
+    weight: String(allocation.weightBps / 100),
+  }));
+}
+
+export function SubmitWizard({ competition, assets, eligibility, initialDraft = null, confirmedProposalCount, turnstileSiteKey }: {
   competition: CompetitionSummary;
   assets: AssetRegistryEntry[];
   eligibility: ParticipationEligibility;
+  initialDraft?: ProposalDraft | null;
+  confirmedProposalCount: number;
   turnstileSiteKey?: string;
 }) {
   const verifiedAssets = useMemo(() => assets.filter((asset) => asset.verified), [assets]);
-  const [step, setStep] = useState(1);
-  const [name, setName] = useState("");
-  const [ticker, setTicker] = useState("");
-  const [thesis, setThesis] = useState("");
+  const [step, setStep] = useState(initialDraft ? 4 : 1);
+  const [name, setName] = useState(initialDraft?.name ?? "");
+  const [ticker, setTicker] = useState(initialDraft?.ticker ?? "");
+  const [thesis, setThesis] = useState(initialDraft?.thesis ?? "");
   const [reason, setReason] = useState("");
-  const [rows, setRows] = useState<Row[]>([initialRow(verifiedAssets[0], "50"), initialRow(verifiedAssets[1], "50")]);
+  const [rows, setRows] = useState<Row[]>(() => draftRows(initialDraft, assets));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [challenge, setChallenge] = useState<Challenge | null>(null);
-  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const [postUrl, setPostUrl] = useState("");
   const [successSlug, setSuccessSlug] = useState<string | null>(null);
   const [redirectSeconds, setRedirectSeconds] = useState(5);
@@ -72,6 +84,8 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
     return assetExists && (asset?.verified || pricingConfigComplete(row.pricingConfig));
   });
   const preview = competition.id.startsWith("preview");
+  const proposalLimit = competition.rules.maxProposalsPerAccount;
+  const atProposalLimit = proposalLimit !== null && confirmedProposalCount >= proposalLimit;
   const postText = buildSubmissionPost(reason, {
     name: name || "Your OTF",
     ticker: ticker || "TICKER",
@@ -127,6 +141,11 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       const verifyJson = await verifyResponse.json();
       setBusy(false);
       if (!verifyResponse.ok) {
+        if (verifyJson.error?.code === "CHALLENGE_EXPIRED") {
+          setChallenge(null);
+          setPostUrl("");
+          setTurnstileResetKey((current) => current + 1);
+        }
         setMessage(friendlyError(verifyJson.error?.code, "The X post could not be verified"));
         return;
       }
@@ -137,6 +156,7 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        draftId,
         name,
         ticker: normalizeTickerInput(ticker),
         thesis,
@@ -176,6 +196,8 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
     <div className="progressSteps">{["Basics", "Portfolio", "Review", "X post"].map((label, index) => <div className={step >= index + 1 ? "active" : ""} key={label}><span>{step > index + 1 ? <Check size={13} /> : index + 1}</span><strong>{label}</strong></div>)}</div>
     <div className="wizardBody">
       {preview && <Callout tone="warning">Preview data is active because the launch database is not configured. The complete interface is available, but proposals will not be saved.</Callout>}
+      {initialDraft && <Callout><strong>Draft resumed.</strong> This is the same saved draft. It expires {new Date(initialDraft.draftExpiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.</Callout>}
+      {atProposalLimit && <Callout tone="warning"><strong>Proposal limit reached.</strong> You have {confirmedProposalCount} of {proposalLimit} confirmed proposals. Delete a confirmed proposal before confirming another.</Callout>}
       {step === 1 && <div className="formStack"><label className="formField"><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="AI Infrastructure OTF" maxLength={80} /><small>Must end in “OTF”.</small></label><label className="formField"><span>Ticker</span><input value={ticker} onChange={(event) => setTicker(normalizeTickerInput(event.target.value))} placeholder="AIX" maxLength={16} /></label><label className="formField"><span>Investment thesis</span><textarea value={thesis} onChange={(event) => setThesis(event.target.value)} placeholder="Explain what this portfolio owns, why it belongs together, and the long-term case…" rows={7} /><small className={`thesisCounter${thesisBytes > 2048 ? " invalid" : ""}`} aria-live="polite">{thesisBytes.toLocaleString()} / 2,048 bytes maximum</small></label></div>}
       {step === 2 && <div className="formStack">{verifiedAssets.length === 0 && <Callout>No verified assets are available yet. Search for a Robinhood Chain contract address; the server will validate its 18-decimal ERC-20 and qualifying Uniswap V3 market.</Callout>}<div><div className="allocationTotal"><span>Portfolio allocation · {rows.length} assets <small>(2 minimum)</small></span><strong className={total === 100 ? "valid" : ""}>{total}%</strong></div><p className="assetDirectoryPrompt">Choose from verified assets; their saved price sources are already configured. If an asset is not listed, enter its contract and pool address. The Add token action stays locked until every observed requirement passes.</p></div><div className="allocationRows"><div className={`allocationColumnHeaders${rows.length > 2 ? " removable" : ""}`}><span>Assets</span><span>Weight</span>{rows.length > 2 && <span aria-hidden="true" />}</div>{rows.map((row, index) => <div className={`allocationInput${rows.length > 2 ? " removable" : ""}`} key={index}><AssetMarketPicker assets={verifiedAssets} assetId={row.assetId} assetMetadata={row.assetMetadata} pricingConfig={row.pricingConfig} label={`Asset ${index + 1}`} onChange={(assetId, assetMetadata, pricingConfig) => updateRow(index, { assetId, assetMetadata, pricingConfig })} /><label className="formField weightField"><span className="srOnly">Asset {index + 1} weight</span><div><input aria-label={`Asset ${index + 1} weight percentage`} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} value={row.weight} onChange={(event) => updateRow(index, { weight: normalizeWholeNumberInput(event.target.value, 99) })} /><span>%</span></div></label>{rows.length > 2 && <button className="removeButton" type="button" onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove asset ${index + 1}`}><Trash2 size={16} /></button>}</div>)}</div><Callout tone="positive"><strong>Verified-only OTFs get a 100% boost on performance XP.</strong></Callout><Button variant="secondary" onClick={() => setRows((current) => { const asset = verifiedAssets.find((candidate) => !current.some((row) => row.assetId === candidate.id)); return [...current, initialRow(asset, "1")]; })}><Plus size={15} /> Add another asset</Button></div>}
       {step === 3 && <div className="reviewBlock">{verified && <div className="reviewBoost"><StatusBadge tone="positive">100% XP boost</StatusBadge></div>}<div><span>Name</span><strong>{name}</strong></div><div><span>Ticker</span><strong>${ticker}</strong></div><div><span>Thesis</span><p>{thesis}</p></div><div><span>Portfolio</span><ul>{rows.map((row, index) => { const asset = assets.find((candidate) => candidate.id === row.assetId); const metadata = asset ?? row.assetMetadata; return <li key={`${rowIdentities[index]}:${index}`}><span title={metadata?.contractAddress}>{metadata?.symbol} · {metadata?.contractAddress ? shortAddress(metadata.contractAddress) : ""}{row.pricingConfig ? ` · ${pricingConfigSummary(row.pricingConfig)}` : ""}</span><strong>{row.weight}%</strong></li>; })}</ul></div></div>}
@@ -183,5 +205,5 @@ export function SubmitWizard({ competition, assets, eligibility, turnstileSiteKe
       {message && <p className="formMessage" role="status">{message}</p>}
     </div>
     <div className="wizardFooter"><Button variant="secondary" onClick={() => challenge ? setChallenge(null) : setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}>{challenge ? "Start again" : "Back"}</Button>{step < 4 ? <Button onClick={() => setStep((current) => current + 1)} disabled={step === 1 ? !name.endsWith(" OTF") || ticker.length < 1 || !thesisValid : step === 2 ? !allAssetsSelected || !allPricingReady || total !== 100 || !assetsUnique : false}>Continue</Button> : <Button onClick={postSubmission} disabled={busy || preview || !challenge || !draftId || !validPostUrl}>{busy ? "Submitting…" : "Submit OTF"}</Button>}</div>
-  </SectionCard><aside><SectionCard className="sideNote"><strong>Before you create an OTF</strong><ul><li>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>You can submit as many OTF proposals as you want.</li><li>Choose at least {competition.rules.minAssets} 18-decimal assets.</li><li>Verified assets already include an approved saved price source.</li><li>Unlisted assets require a canonical Uniswap V3 pool plus passing liquidity, verified market-cap, age, GT, honeypot, and locked-liquidity evidence.</li><li>Weights must total exactly {competition.rules.portfolioWeightBps / 100}%.</li><li>You can delete a submission while submissions are open. Votes already cast stay spent but become ineligible for XP.</li></ul></SectionCard></aside></div>;
+  </SectionCard><aside><SectionCard className="sideNote"><strong>Before you create an OTF</strong><ul><li>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers.</li><li>You have {confirmedProposalCount} of {proposalLimit ?? "unlimited"} confirmed proposals in this competition.</li><li>Choose at least {competition.rules.minAssets} 18-decimal assets.</li><li>Verified assets already include an approved saved price source.</li><li>Unlisted assets require a canonical Uniswap V3 pool plus passing liquidity, verified market-cap, age, GT, honeypot, and locked-liquidity evidence.</li><li>Weights must total exactly {competition.rules.portfolioWeightBps / 100}%.</li><li>You can delete a submission while submissions are open. Votes already cast stay spent but become ineligible for XP.</li></ul></SectionCard></aside></div>;
 }

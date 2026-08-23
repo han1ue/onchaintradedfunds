@@ -349,7 +349,7 @@ export async function getProposalReturns(
 
 export type VoterProposalPerformance = {
   proposalId: string;
-  proposalStatus: "draft" | "confirmed" | "deleted";
+  proposalStatus: "draft" | "confirmed" | "expired" | "deleted";
   returnPct: number | null;
   latestCheckpointAt: string | null;
 };
