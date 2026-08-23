@@ -50,6 +50,13 @@
       "when": 1787518502559,
       "tag": "0006_price_capture_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787518665258,
+      "tag": "0007_launch_data_invariants",
+      "breakpoints": true
     }
   ]
 }

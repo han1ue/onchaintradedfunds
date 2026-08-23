@@ -271,7 +271,10 @@ export async function verifyBallotProof(input: unknown) {
         updatedAt: acceptedAt,
       }).where(eq(ballots.id, existing.id)).returning()
       : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, followerCount: user.followersCount, status: "valid" }).returning();
-    if (existing && !isUpdate) await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
+    if (existing && !isUpdate) {
+      await transaction.delete(voteTranches).where(eq(voteTranches.ballotId, ballot.id));
+      await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
+    }
     await transaction.insert(ballotAllocations)
       .values(additions.map((addition) => ({ ballotId: ballot.id, ...addition, updatedAt: acceptedAt })))
       .onConflictDoUpdate({

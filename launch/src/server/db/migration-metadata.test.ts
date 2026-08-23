@@ -25,6 +25,10 @@ const priceSnapshot = JSON.parse(readFileSync(
   new URL("../../../drizzle/meta/0006_snapshot.json", import.meta.url),
   "utf8",
 ));
+const invariantSnapshot = JSON.parse(readFileSync(
+  new URL("../../../drizzle/meta/0007_snapshot.json", import.meta.url),
+  "utf8",
+));
 
 describe("squashed migration metadata", () => {
   it("tracks the current schema migrations", () => {
@@ -36,11 +40,13 @@ describe("squashed migration metadata", () => {
       expect.objectContaining({ idx: 4, tag: "0004_asset_registry_verification" }),
       expect.objectContaining({ idx: 5, tag: "0005_proposal_lifecycle" }),
       expect.objectContaining({ idx: 6, tag: "0006_price_capture_hardening" }),
+      expect.objectContaining({ idx: 7, tag: "0007_launch_data_invariants" }),
     ]);
     expect(snapshot.prevId).toBe("00000000-0000-0000-0000-000000000000");
     expect(backfillSnapshot.prevId).toBe(snapshot.id);
     expect(lifecycleSnapshot.prevId).toBe(registrySnapshot.id);
     expect(priceSnapshot.prevId).toBe(lifecycleSnapshot.id);
+    expect(invariantSnapshot.prevId).toBe(priceSnapshot.id);
     expect(lifecycleSnapshot.enums["public.proposal_status"].values).toEqual(["draft", "confirmed", "expired", "deleted"]);
     expect(lifecycleSnapshot.tables["public.proposals"].columns).toHaveProperty("draft_expires_at");
     expect(priceSnapshot.tables["public.price_capture_runs"].columns).toHaveProperty("ambiguous_symbols");
