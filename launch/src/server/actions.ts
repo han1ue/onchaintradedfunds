@@ -13,6 +13,7 @@ import {
 import { requireEligibleActor, requireSession } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
+import { validateExistingAssetSelection, type ConfirmedExistingAssetSelection } from "./proposal-asset-confirmation";
 
 const challengeLifetimeMs = 15 * 60_000;
 type LaunchDatabase = ReturnType<typeof requireDb>;
@@ -182,6 +183,7 @@ export async function saveProposalDraft(input: unknown, existingDraftId?: string
 }
 
 async function validateDraftAllocationsForConfirmation(
+  database: LaunchDatabase,
   proposal: { name: string; ticker: string; thesis: string; draftAllocations: unknown[] },
   competitionStartsAt: Date,
 ) {
@@ -192,8 +194,43 @@ async function validateDraftAllocationsForConfirmation(
     allocations: proposal.draftAllocations,
   });
   const validations = new Map<string, UnlistedAssetValidation>();
+  const selectedAssetIds = parsed.allocations.flatMap((allocation) => "assetId" in allocation ? [allocation.assetId] : []);
+  const selectedAssets = selectedAssetIds.length
+    ? await database.select({
+      id: assetRegistry.id,
+      contractAddress: assetRegistry.contractAddress,
+      verified: sql<boolean>`${verifiedAssets.assetAddress} is not null`,
+    }).from(assetRegistry)
+      .leftJoin(verifiedAssets, sql`lower(${verifiedAssets.assetAddress}) = lower(${assetRegistry.contractAddress})`)
+      .where(inArray(assetRegistry.id, selectedAssetIds))
+    : [];
+  if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
+  const selectedAssetById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+  const unverifiedAssetIds = selectedAssets.filter((asset) => !asset.verified).map((asset) => asset.id);
+  const storedMarkets = unverifiedAssetIds.length
+    ? await database.select({
+      id: assetMarkets.id,
+      assetId: assetMarkets.assetId,
+      poolAddress: assetMarkets.poolAddress,
+      active: assetMarkets.active,
+    }).from(assetMarkets).where(and(
+      inArray(assetMarkets.assetId, unverifiedAssetIds),
+      eq(assetMarkets.active, true),
+    ))
+    : [];
+  const existingSelections = new Map<string, ConfirmedExistingAssetSelection>();
   for (const allocation of parsed.allocations) {
-    if (!("assetMetadata" in allocation)) continue;
+    if ("assetId" in allocation) {
+      const asset = selectedAssetById.get(allocation.assetId);
+      if (!asset) throw new Error("ASSET_NOT_FOUND");
+      existingSelections.set(allocation.assetId, await validateExistingAssetSelection(
+        allocation,
+        asset,
+        storedMarkets,
+        competitionStartsAt,
+      ));
+      continue;
+    }
     const poolAddress = allocation.pricingConfig?.source === "uniswap-v3" ? allocation.pricingConfig.poolAddress : null;
     if (!poolAddress) throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
     const validation = await validateUnlistedAsset({ assetAddress: allocation.assetMetadata.contractAddress, poolAddress, competitionStartsAt });
@@ -201,7 +238,7 @@ async function validateDraftAllocationsForConfirmation(
     if (!validation.asset || !validation.marketDetails) throw new Error("ASSET_VALIDATION_FAILED");
     validations.set(allocation.assetMetadata.contractAddress, validation);
   }
-  return { allocations: parsed.allocations, validations };
+  return { allocations: parsed.allocations, validations, existingSelections };
 }
 
 async function registerAndLinkProposalAssets(
@@ -229,9 +266,31 @@ async function registerAndLinkProposalAssets(
 
   for (const allocation of prepared.allocations) {
     if ("assetId" in allocation) {
-      const pricingConfig = selectedAssetVerification.get(allocation.assetId) ? null : allocation.pricingConfig;
-      if (!selectedAssetVerification.get(allocation.assetId) && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
-      resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig, weightBps: allocation.weightBps });
+      if (selectedAssetVerification.get(allocation.assetId)) {
+        resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig: null, weightBps: allocation.weightBps });
+        continue;
+      }
+      const preparedSelection = prepared.existingSelections.get(allocation.assetId);
+      if (!preparedSelection?.marketId || preparedSelection.pricingConfig?.source !== "uniswap-v3") {
+        throw new Error("ASSET_MARKET_NOT_FOUND");
+      }
+      const [storedMarket] = await transaction.select({
+        id: assetMarkets.id,
+        poolAddress: assetMarkets.poolAddress,
+      }).from(assetMarkets).where(and(
+        eq(assetMarkets.id, preparedSelection.marketId),
+        eq(assetMarkets.assetId, allocation.assetId),
+        eq(assetMarkets.active, true),
+      )).limit(1);
+      if (!storedMarket || storedMarket.poolAddress.toLowerCase() !== preparedSelection.pricingConfig.poolAddress.toLowerCase()) {
+        throw new Error("ASSET_MARKET_NOT_FOUND");
+      }
+      resolvedAllocations.push({
+        assetId: allocation.assetId,
+        marketId: storedMarket.id,
+        pricingConfig: { source: "uniswap-v3", poolAddress: storedMarket.poolAddress },
+        weightBps: allocation.weightBps,
+      });
       continue;
     }
 
@@ -363,7 +422,7 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof(proposalId, input);
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
-  const preparedAssets = await validateDraftAllocationsForConfirmation(proposal, competition.startsAt);
+  const preparedAssets = await validateDraftAllocationsForConfirmation(database, proposal, competition.startsAt);
   const acceptedAt = new Date();
   const result = await database.transaction(async (transaction) => {
     const [openCompetition] = await transaction.select({ id: competitions.id, rules: competitions.rules }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1).for("update");

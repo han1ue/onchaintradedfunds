@@ -24,7 +24,13 @@ describe("proposal asset trust boundaries", () => {
     expect(actions).toContain("asset.verified ? null : allocation.pricingConfig");
     expect(actions).toContain("!asset.verified && !pricingConfig");
     expect(submitWizard).toContain("asset?.verified || pricingConfigComplete(row.pricingConfig)");
-    expect(assetPicker).toContain("asset.verified ? null : preferredPricingConfig(asset.pricingConfigs)");
+    expect(assetPicker).toContain("asset.verified ? null : preferredActiveMarketPricingConfig(asset.markets)");
+  });
+
+  it("offers reused unverified registry assets with their server-returned active pool", () => {
+    expect(submitWizard).toContain("<AssetMarketPicker assets={assets}");
+    expect(assetPicker).toContain("asset.verified || preferredActiveMarketPricingConfig(asset.markets)");
+    expect(assetPicker).toContain("Saved pool ·");
   });
 
   it("seeds ETH as canonical WETH and rejects non-address catalog values", () => {

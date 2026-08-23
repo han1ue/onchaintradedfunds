@@ -34,6 +34,13 @@ export function preferredPricingConfig(configs: readonly KnownPricingConfig[]): 
   return known ? clonePricingConfig(known) : null;
 }
 
+export function preferredActiveMarketPricingConfig(
+  markets: readonly { active: boolean; poolAddress: string }[],
+): Extract<PricingConfig, { source: "uniswap-v3" }> | null {
+  const market = markets.find((candidate) => candidate.active);
+  return market ? { source: "uniswap-v3", poolAddress: market.poolAddress } : null;
+}
+
 export function configForSource(configs: readonly KnownPricingConfig[], source: PricingSource): PricingConfig {
   const known = configs.find((config) => config.active && config.source === source);
   return known ? clonePricingConfig(known) : emptyPricingConfig(source);

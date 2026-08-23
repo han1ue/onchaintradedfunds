@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssetMarketRequirement, AssetMarketValidationResponse } from "@/lib/asset-market-validation";
 import { errorMessages } from "@/lib/errors";
 import { shortAddress } from "@/lib/format-address";
-import { EVM_ADDRESS_PATTERN, preferredPricingConfig } from "@/lib/pricing-config";
+import { EVM_ADDRESS_PATTERN, preferredActiveMarketPricingConfig } from "@/lib/pricing-config";
 import { normalizeTickerInput } from "@/lib/ticker";
 import type { AssetRegistryEntry, PricingConfig, ProposalAssetMetadata } from "@/lib/types";
 import { Button } from "./ui";
@@ -86,8 +86,10 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   const selectedMetadata = selected ? null : assetMetadata;
   const selectedSymbol = selected?.symbol ?? selectedMetadata?.symbol;
   const normalizedQuery = query.trim().toLowerCase();
-  const verifiedAssets = useMemo(() => assets.filter((asset) => asset.verified), [assets]);
-  const filtered = verifiedAssets.filter((asset) => !normalizedQuery
+  const selectableAssets = useMemo(() => assets.filter((asset) => (
+    asset.verified || preferredActiveMarketPricingConfig(asset.markets)
+  )), [assets]);
+  const filtered = selectableAssets.filter((asset) => !normalizedQuery
     || asset.name.toLowerCase().includes(normalizedQuery)
     || asset.symbol.toLowerCase().includes(normalizedQuery)
     || asset.contractAddress.toLowerCase() === normalizedQuery);
@@ -135,7 +137,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   }, [assetAddress, manual, poolAddress]);
 
   function choose(asset: AssetRegistryEntry) {
-    const configuredPriceSource = asset.verified ? null : preferredPricingConfig(asset.pricingConfigs);
+    const configuredPriceSource = asset.verified ? null : preferredActiveMarketPricingConfig(asset.markets);
     onChange(asset.id, null, configuredPriceSource);
     setOpen(false);
     setQuery("");
@@ -178,14 +180,14 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity">
-          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
+          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected?.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
           <small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small>
         </span>
-      </> : <span className="assetPickerPlaceholder">Choose a verified asset</span>}
+      </> : <span className="assetPickerPlaceholder">Choose an asset</span>}
       <ChevronDown size={15} aria-hidden="true" />
     </button>
     {open && <div className="assetPickerMenu">
-      <label className="assetPickerSearch"><Search size={15} aria-hidden="true" /><span className="srOnly">Search verified assets</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ticker, or contract address" /></label>
+      <label className="assetPickerSearch"><Search size={15} aria-hidden="true" /><span className="srOnly">Search assets</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ticker, or contract address" /></label>
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
           <span className="assetPickerIdentity">
@@ -196,15 +198,15 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><strong>{asset.symbol}</strong><BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /></span>
+            <span className="assetPickerTicker"><strong>{asset.symbol}</strong>{asset.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
             <small>{asset.name}</small>
-            <code>{asset.network} · {shortAddress(asset.contractAddress)}</code>
+            <code>{asset.verified ? `${asset.network} · ${shortAddress(asset.contractAddress)}` : `Saved pool · ${shortAddress(preferredActiveMarketPricingConfig(asset.markets)?.poolAddress ?? "")}`}</code>
           </span>
           <span className="assetPickerOptionStatus">
             {asset.id === assetId && <Check size={15} aria-hidden="true" />}
           </span>
         </button>)}
-        {filtered.length === 0 && <div className="assetPickerEmpty"><strong>No verified asset found</strong><p>Add another Robinhood Chain token by contract address. Server-side validation checks its ERC-20, canonical pool, and current market evidence before it can enter the portfolio.</p><Button variant="secondary" onClick={openManualAsset}>{EVM_ADDRESS_PATTERN.test(query.trim()) ? "Continue with this address" : "Add by contract address"}</Button></div>}
+        {filtered.length === 0 && <div className="assetPickerEmpty"><strong>No configured asset found</strong><p>Add another Robinhood Chain token by contract address. Server-side validation checks its ERC-20, canonical pool, and current market evidence before it can enter the portfolio.</p><Button variant="secondary" onClick={openManualAsset}>{EVM_ADDRESS_PATTERN.test(query.trim()) ? "Continue with this address" : "Add by contract address"}</Button></div>}
       </div>
     </div>}
 
