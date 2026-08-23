@@ -16,10 +16,12 @@ function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ voteError?: string; authError?: string }> }) {
   const currentTime = new Date();
   const { voteError, authError } = await searchParams;
-  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getAssetRegistry(), auth()]);
+  const [competition, leaderboardPage, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getAssetRegistry(), auth()]);
+  const leaderboard = leaderboardPage.entries;
   const verifiedAssetCount = assets.filter((asset) => asset.verified).length;
   const eligibility = await getParticipationEligibility(session?.user, competition);
   const status = getCompetitionStatus(competition, currentTime);
+  const competitionEnded = status.stage === "review" || status.stage === "final" || status.stage === "cancelled";
   const preview = competition.id.startsWith("preview");
   const leaderboardPreview = leaderboard.slice(0, 5);
   const recentProposals = selectRecentProposals(leaderboard);
@@ -45,12 +47,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <ResponsiveLeaderboard entries={leaderboardPreview} submissionsOpen={status.submissionsOpen} />
         <div className="cardFooter leaderboardPreviewFooter"><span>{preview ? "Preview data shown — not final." : `Last updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span><Link href="/leaderboard">See full leaderboard <ArrowRight size={14} /></Link></div>
       </SectionCard>
-      <HowItWorks eligibility={eligibility} rules={competition.rules} votingOpen={status.votingOpen} votingStartsAt={status.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} />
+      <HowItWorks eligibility={eligibility} rules={competition.rules} stage={status.stage} votingStartsAt={status.votingStartsAt.toISOString()} currentTime={currentTime.toISOString()} />
     </div>
     <div className="lowerGrid">
-      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.rules.minFollowers.toLocaleString()} followers.</li><li>Submit as many OTF proposals as you want; proposals cannot be edited after creation.</li><li>Voting starts after the {competition.rules.submissionOnlyDays}-day submission week with {competition.rules.initialVotes} unlocked votes.</li><li>{competition.rules.votesPerUnlock} vote unlocks every {competition.rules.voteUnlockIntervalDays} voting days, up to {competition.rules.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
+      <SectionCard className="rulesPanel"><div className="cardHeading"><span>Competition rules</span><FileCheck2 size={18} /></div><ul><li>Use a verified, public X account with at least {competition.rules.minFollowers.toLocaleString()} followers.</li><li>Confirm up to {competition.rules.maxProposalsPerAccount} OTF proposals per account; deleting one frees its slot.</li><li>{competitionEnded ? `Voting opened after the ${competition.rules.submissionOnlyDays}-day submission week and is now closed.` : `Voting starts after the ${competition.rules.submissionOnlyDays}-day submission week with ${competition.rules.initialVotes} unlocked votes.`}</li><li>{competition.rules.votesPerUnlock} vote unlocks every {competition.rules.voteUnlockIntervalDays} voting days, up to {competition.rules.totalVotes}; cast votes are final.</li><li>Each voting action requires a new public X post, and one post can verify several votes.</li></ul><Link href="/rules">View all rules <ArrowRight size={14} /></Link></SectionCard>
       <SectionCard className="activityPanel"><div className="cardHeading"><span>Recent activity</span><History size={18} /></div><div className="participationActivity">{recentProposals.length ? recentProposals.map((proposal) => <div key={proposal.id}><Layers3 size={16} /><span className="activitySentence"><a href={`https://x.com/${encodeURIComponent(proposal.creator.username)}`} target="_blank" rel="noreferrer">@{proposal.creator.username}</a><span>proposed</span><Link href={`/otfs/${proposal.slug}`}>{proposal.name}</Link></span></div>) : <div><Layers3 size={16} /><span>No recent proposals yet.</span></div>}</div></SectionCard>
     </div>
   </div>;
 }
-

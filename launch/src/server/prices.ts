@@ -22,14 +22,14 @@ const coinbaseTickerSchema = z.object({
 
 export type AssetPriceSource = "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
 
-type PriceAsset = {
+export type PriceAsset = {
   id: string;
   symbol: string;
   contractAddress: string;
   priceSource: AssetPriceSource;
 };
 
-type SourceQuote = {
+export type SourceQuote = {
   bid: string;
   generatedAt: Date;
 };
@@ -49,8 +49,9 @@ export type PriceCaptureResult = {
   runId: string | null;
   sampledAt: Date;
   stored: number;
-  complete: boolean;
-  missing: string[];
+  status: "complete" | "partial";
+  missingAssets: string[];
+  ambiguousAssets: string[];
   skipped?: boolean;
 };
 
@@ -126,6 +127,16 @@ export async function fetchAssetPriceQuotes(assets: PriceAsset[]): Promise<Price
 
 const inFlightCaptures = new Map<string, Promise<PriceCaptureResult>>();
 
+export function getAmbiguousNonAddressPriceAssetIds(assets: readonly PriceAsset[]) {
+  const assetsByIdentity = new Map<string, string[]>();
+  for (const asset of assets) {
+    if (asset.priceSource === "coingecko-usd") continue;
+    const identity = `${asset.priceSource}:${asset.symbol.toUpperCase()}`;
+    assetsByIdentity.set(identity, [...(assetsByIdentity.get(identity) ?? []), asset.id]);
+  }
+  return new Set([...assetsByIdentity.values()].filter((assetIds) => assetIds.length > 1).flat());
+}
+
 function captureKey(sampledAt: Date, purpose: PriceCaptureOptions["purpose"], assetIds?: string[]) {
   const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
   if (purpose === "final") {
@@ -142,8 +153,9 @@ function captureKey(sampledAt: Date, purpose: PriceCaptureOptions["purpose"], as
 async function readCompleteFinalCapture(assetIds?: string[]): Promise<PriceCaptureResult | null> {
   if (!sqlClient) return null;
   const scope = assetIds?.length ? [...assetIds].sort().join(",") : "all";
-  const rows = await sqlClient<{ id: string; sampledAt: string; missingSymbols: string[] }[]>`
-    select id::text, sampled_at as "sampledAt", missing_symbols as "missingSymbols"
+  const rows = await sqlClient<{ id: string; sampledAt: string; missingSymbols: string[]; ambiguousSymbols: string[] }[]>`
+    select id::text, sampled_at as "sampledAt", missing_symbols as "missingSymbols",
+      ambiguous_symbols as "ambiguousSymbols"
     from price_capture_runs
     where purpose = 'final' and status = 'complete' and capture_key like ${`final:%:${scope}`}
     order by sampled_at asc
@@ -156,16 +168,18 @@ async function readCompleteFinalCapture(assetIds?: string[]): Promise<PriceCaptu
     runId: existing.id,
     sampledAt: new Date(existing.sampledAt),
     stored: Number(stored[0]?.count ?? 0),
-    complete: true,
-    missing: existing.missingSymbols ?? [],
+    status: "complete",
+    missingAssets: existing.missingSymbols ?? [],
+    ambiguousAssets: existing.ambiguousSymbols ?? [],
     skipped: true,
   };
 }
 
 async function readExistingCapture(key: string): Promise<PriceCaptureResult | null> {
   if (!sqlClient) return null;
-  const rows = await sqlClient<{ id: string; sampledAt: string; status: "complete" | "partial"; missingSymbols: string[] }[]>`
-    select id::text, sampled_at as "sampledAt", status, missing_symbols as "missingSymbols"
+  const rows = await sqlClient<{ id: string; sampledAt: string; status: "complete" | "partial"; missingSymbols: string[]; ambiguousSymbols: string[] }[]>`
+    select id::text, sampled_at as "sampledAt", status, missing_symbols as "missingSymbols",
+      ambiguous_symbols as "ambiguousSymbols"
     from price_capture_runs where capture_key = ${key} limit 1`;
   const existing = rows[0];
   if (!existing) return null;
@@ -175,8 +189,9 @@ async function readExistingCapture(key: string): Promise<PriceCaptureResult | nu
     runId: existing.id,
     sampledAt: new Date(existing.sampledAt),
     stored: Number(stored[0]?.count ?? 0),
-    complete: existing.status === "complete",
-    missing: existing.missingSymbols ?? [],
+    status: existing.status,
+    missingAssets: existing.missingSymbols ?? [],
+    ambiguousAssets: existing.ambiguousSymbols ?? [],
     skipped: true,
   };
 }
@@ -210,20 +225,27 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
       .innerJoin(proposalAssets, eq(proposalAssets.assetId, assetRegistry.id))
       .innerJoin(proposals, eq(proposals.id, proposalAssets.proposalId))
       .where(eq(proposals.status, "confirmed"));
-  if (assets.length === 0) return { runId: null, sampledAt, stored: 0, complete: true, missing: [] as string[] };
+  if (assets.length === 0) return { runId: null, sampledAt, stored: 0, status: "complete", missingAssets: [], ambiguousAssets: [] };
 
   const typedAssets = assets as PriceAsset[];
   const priceFetch = await fetchAssetPriceQuotes(typedAssets);
   if (priceFetch.errors.length) console.error("Price source capture failed", { errors: priceFetch.errors });
-  const missing: string[] = [];
+  const ambiguousAssetIds = getAmbiguousNonAddressPriceAssetIds(typedAssets);
+  const missingAssets: string[] = [];
+  const ambiguousAssets: string[] = [];
   const values = typedAssets.flatMap((asset) => {
     const identity = asset.priceSource === "coingecko-usd"
       ? asset.contractAddress.toLowerCase()
       : asset.symbol.toUpperCase();
+    if (ambiguousAssetIds.has(asset.id)) {
+      missingAssets.push(asset.symbol);
+      ambiguousAssets.push(asset.symbol);
+      return [];
+    }
     const quote = priceFetch.quotes.get(`${asset.priceSource}:${identity}`);
     const bid = quote ? Number(quote.bid) : Number.NaN;
     if (!quote || !Number.isFinite(bid) || bid <= 0 || !isPriceQuoteFresh(quote.generatedAt, sampledAt, PRICE_CAPTURE_QUOTE_FRESHNESS_MS)) {
-      missing.push(asset.symbol);
+      missingAssets.push(asset.symbol);
       return [];
     }
     return [{
@@ -236,14 +258,18 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
   });
 
   const provider = [...new Set(typedAssets.map((asset) => asset.priceSource))].sort().join("+");
+  const missingSymbols = [...new Set(missingAssets)].sort();
+  const ambiguousSymbols = [...new Set(ambiguousAssets)].sort();
+  const status = missingSymbols.length ? "partial" : "complete";
 
   const [run, stored] = await database.transaction(async (transaction) => {
     const [captureRun] = await transaction.insert(priceCaptureRuns).values({
       sampledAt,
       captureKey: key,
-      status: missing.length ? "partial" : "complete",
+      status,
       requestedAssetIds: assets.map((asset) => asset.id),
-      missingSymbols: missing,
+      missingSymbols,
+      ambiguousSymbols,
       provider,
       purpose,
     }).onConflictDoNothing({ target: priceCaptureRuns.captureKey }).returning({ id: priceCaptureRuns.id });
@@ -253,8 +279,8 @@ async function captureAssetPricesOnce(options: PriceCaptureOptions, sampledAt: D
       : [];
     return [captureRun, captured] as const;
   });
-  if (missing.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols: missing, provider });
-  return { runId: run.id, sampledAt, stored: stored.length, complete: missing.length === 0, missing };
+  if (missingSymbols.length) console.error("Price capture missing proposal assets", { captureRunId: run.id, missingSymbols, ambiguousSymbols, provider });
+  return { runId: run.id, sampledAt, stored: stored.length, status, missingAssets: missingSymbols, ambiguousAssets: ambiguousSymbols };
 }
 
 export async function captureAssetPrices(options: PriceCaptureOptions): Promise<PriceCaptureResult> {
@@ -281,7 +307,7 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
       if (lockedExisting) return lockedExisting;
       return captureAssetPricesOnce(options, sampledAt, key);
     });
-    return captured ?? { runId: null, sampledAt, stored: 0, complete: false, missing: [], skipped: true };
+    return captured ?? { runId: null, sampledAt, stored: 0, status: "partial", missingAssets: [], ambiguousAssets: [], skipped: true };
   })().finally(() => inFlightCaptures.delete(key));
   inFlightCaptures.set(key, promise);
   return promise;
@@ -289,11 +315,14 @@ export async function captureAssetPrices(options: PriceCaptureOptions): Promise<
 
 export const PRICE_CHECKPOINT_FRESHNESS_MS = 90 * 60_000;
 export const PRICE_CAPTURE_QUOTE_FRESHNESS_MS = 45 * 60_000;
+export const PRICE_CAPTURE_FUTURE_CLOCK_SKEW_ALLOWANCE_MS = 5 * 60_000;
 
 export function isPriceQuoteFresh(quoteGeneratedAt: Date, referenceTime: Date, freshnessMs: number) {
   const quoteTime = quoteGeneratedAt.getTime();
   const reference = referenceTime.getTime();
-  return Number.isFinite(quoteTime) && quoteTime >= reference - freshnessMs;
+  return Number.isFinite(quoteTime)
+    && quoteTime >= reference - freshnessMs
+    && quoteTime <= reference + PRICE_CAPTURE_FUTURE_CLOCK_SKEW_ALLOWANCE_MS;
 }
 
 export async function getNewestPriceCheckpointForAssets(assetIds: string[], acceptedAt: Date) {
@@ -349,7 +378,7 @@ export async function getProposalReturns(
 
 export type VoterProposalPerformance = {
   proposalId: string;
-  proposalStatus: "draft" | "confirmed" | "deleted";
+  proposalStatus: "draft" | "confirmed" | "expired" | "deleted";
   returnPct: number | null;
   latestCheckpointAt: string | null;
 };

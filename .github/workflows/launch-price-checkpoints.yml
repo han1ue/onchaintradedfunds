@@ -23,9 +23,27 @@ jobs:
       - name: Validate configuration
         run: test -n "$LAUNCH_SITE_URL" && test -n "$CRON_SECRET"
       - name: Capture asset prices
-        run: >-
-          curl --fail-with-body --silent --show-error
-          --retry 3 --retry-delay 5 --max-time 30
-          --header "Authorization: Bearer $CRON_SECRET"
-          --header "Accept: application/json"
-          "${LAUNCH_SITE_URL}/api/jobs/prices"
+        shell: bash
+        run: |
+          response="$(curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 5 --max-time 30 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Accept: application/json" \
+            "${LAUNCH_SITE_URL}/api/jobs/prices")"
+          echo "$response"
+
+          status="$(jq -r '.data.prices.status // "inactive"' <<<"$response")"
+          if [[ "$status" == "partial" ]]; then
+            missing="$(jq -r '.data.prices.missingAssets | join(", ")' <<<"$response")"
+            ambiguous="$(jq -r '.data.prices.ambiguousAssets | join(", ")' <<<"$response")"
+            warning="Partial price checkpoint. Missing assets: ${missing:-unknown}."
+            if [[ -n "$ambiguous" ]]; then
+              warning+=" Ambiguous provider identities: $ambiguous."
+            fi
+            echo "::warning title=Partial price checkpoint::$warning"
+            {
+              echo "### Partial price checkpoint"
+              echo
+              echo "$warning"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

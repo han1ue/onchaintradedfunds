@@ -1,8 +1,36 @@
 import { demoAssetRegistry, demoCompetition, demoLeaderboard } from "@/lib/demo-data";
 import { COMPETITION_IDENTITY } from "@/lib/competition";
-import type { AssetRegistryEntry, CompetitionSummary, LeaderboardEntry } from "@/lib/types";
+import type { AssetRegistryEntry, CompetitionSummary, LaunchOrderPage, LeaderboardEntry, LeaderboardPage } from "@/lib/types";
 import { sqlClient } from "./db";
 import { assertCompetitionRulesSnapshot } from "./competition-rules";
+import { DEFAULT_PUBLIC_LIST_LIMIT, MAX_PUBLIC_LIST_LIMIT } from "./api";
+
+type RankedListOptions = { limit?: number; cursor?: number; search?: string };
+
+function normalizeRankedListOptions(options: RankedListOptions = {}) {
+  const limit = options.limit ?? DEFAULT_PUBLIC_LIST_LIMIT;
+  const cursor = options.cursor ?? 0;
+  const search = options.search?.trim().toLowerCase() ?? "";
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PUBLIC_LIST_LIMIT) throw new Error("INVALID_QUERY");
+  if (!Number.isInteger(cursor) || cursor < 0) throw new Error("INVALID_QUERY");
+  if (search.length > 100) throw new Error("INVALID_QUERY");
+  return { limit, cursor, search };
+}
+
+export function paginateRankedEntries(entries: LeaderboardEntry[], options: RankedListOptions = {}): LeaderboardPage {
+  const { limit, cursor, search } = normalizeRankedListOptions(options);
+  const matching = entries.filter((entry) => entry.rank > cursor && (!search
+    || entry.name.toLowerCase().includes(search)
+    || entry.ticker.toLowerCase().includes(search)
+    || entry.slug.toLowerCase().includes(search)
+    || entry.thesis.toLowerCase().includes(search)
+    || entry.creator.username.toLowerCase().includes(search)
+    || entry.creator.displayName.toLowerCase().includes(search)));
+  const page = matching.slice(0, limit + 1);
+  const hasMore = page.length > limit;
+  const pageEntries = hasMore ? page.slice(0, limit) : page;
+  return { entries: pageEntries, nextCursor: hasMore ? String(pageEntries.at(-1)!.rank) : null };
+}
 
 export async function getCompetition(): Promise<CompetitionSummary> {
   if (!sqlClient) return demoCompetition;
@@ -90,13 +118,14 @@ export async function getLatestScoringCheckpointAt(): Promise<string | null> {
   return rows[0]?.sampledAt ?? null;
 }
 
-export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
-  if (!sqlClient) return demoLeaderboard;
+export async function getLeaderboard(options: RankedListOptions = {}): Promise<LeaderboardPage> {
+  const { limit, cursor, search } = normalizeRankedListOptions(options);
+  if (!sqlClient) return paginateRankedEntries(demoLeaderboard, { limit, cursor, search });
   const rows = await sqlClient<LeaderboardEntry[]>`
     with ranked as (
       select p.id, p.creator_user_id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, u.display_name as creator_name,
-        u.profile_image_url as creator_profile_image_url,
+        u.profile_image_url as creator_profile_image_url, u.verified as creator_verified,
         coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
       from proposals p join users u on u.id = p.creator_user_id
       left join ballot_allocations ba on ba.proposal_id = p.id
@@ -112,9 +141,8 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
         join ballots vb on vb.id = vt.ballot_id and vb.status = 'valid'
         join tweet_evidence ve on ve.id = vt.evidence_id and ve.status = 'valid'
         where vt.proposal_id = o.id and vt.voter_user_id <> o.creator_user_id) as "uniqueSupporterCount",
-      (o.accepted_at < (select starts_at from competitions limit 1) + interval '7 days') as "submissionBoost",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
-      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
+      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url, 'verified', o.creator_verified) as creator,
       not exists (
         select 1 from proposal_assets verification_pa
         join asset_registry verification_a on verification_a.id = verification_pa.asset_id
@@ -135,13 +163,70 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       ) order by pa.position) from proposal_assets pa join asset_registry a on a.id = pa.asset_id
         left join verified_assets va on lower(va.asset_address) = lower(a.contract_address)
         left join asset_markets am on am.id = pa.market_id where pa.proposal_id = o.id), '[]') as allocations
-    from ordered o order by o.rank`;
-  return rows;
+    from ordered o
+    where o.rank > ${cursor}
+      and (${search} = ''
+        or lower(o.name) like ${`%${search}%`}
+        or lower(o.ticker) like ${`%${search}%`}
+        or lower(o.slug) like ${`%${search}%`}
+        or lower(o.thesis) like ${`%${search}%`}
+        or lower(o.x_username) like ${`%${search}%`}
+        or lower(o.creator_name) like ${`%${search}%`})
+    order by o.rank
+    limit ${limit + 1}`;
+  const hasMore = rows.length > limit;
+  const entries = hasMore ? rows.slice(0, limit) : rows;
+  return { entries, nextCursor: hasMore ? String(entries.at(-1)!.rank) : null };
 }
 
 export async function getProposal(slug: string) {
-  const leaderboard = await getLeaderboard();
-  return leaderboard.find((proposal) => proposal.slug === slug) ?? null;
+  if (!sqlClient) return demoLeaderboard.find((proposal) => proposal.slug === slug) ?? null;
+  const rows = await sqlClient<LeaderboardEntry[]>`
+    with ranked as (
+      select p.id, p.creator_user_id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
+        u.x_user_id, u.x_username, u.display_name as creator_name,
+        u.profile_image_url as creator_profile_image_url, u.verified as creator_verified,
+        coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
+      from proposals p join users u on u.id = p.creator_user_id
+      left join ballot_allocations ba on ba.proposal_id = p.id
+      left join ballots b on b.id = ba.ballot_id
+      where p.status = 'confirmed' and p.competition_id = (select id from competitions limit 1)
+      group by p.id, u.id
+    ), ordered as (
+      select *, row_number() over (order by votes desc, accepted_at asc, id asc)::int as rank from ranked
+    )
+    select o.id::text, o.slug, o.rank, o.name, o.ticker, o.thesis, o.votes,
+      o.accepted_at as "acceptedAt",
+      (select count(distinct vt.voter_user_id)::int from vote_tranches vt
+        join ballots vb on vb.id = vt.ballot_id and vb.status = 'valid'
+        join tweet_evidence ve on ve.id = vt.evidence_id and ve.status = 'valid'
+        where vt.proposal_id = o.id and vt.voter_user_id <> o.creator_user_id) as "uniqueSupporterCount",
+      (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
+      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url, 'verified', o.creator_verified) as creator,
+      not exists (
+        select 1 from proposal_assets verification_pa
+        join asset_registry verification_a on verification_a.id = verification_pa.asset_id
+        left join verified_assets verification_va on lower(verification_va.asset_address) = lower(verification_a.contract_address)
+        where verification_pa.proposal_id = o.id and verification_va.asset_address is null
+      ) as verified,
+      coalesce((select json_agg(json_build_object(
+        'assetId', pa.asset_id::text, 'symbol', a.symbol, 'name', a.name,
+        'contractAddress', a.contract_address,
+        'verified', (va.asset_address is not null),
+        'pricingConfig', case pa.pricing_source
+          when 'chainlink-direct' then json_build_object('source', pa.pricing_source, 'feedAddress', pa.primary_address)
+          when 'chainlink-weth' then json_build_object('source', pa.pricing_source, 'assetWethFeedAddress', pa.primary_address, 'wethUsdFeedAddress', pa.secondary_address)
+          when 'uniswap-v3' then json_build_object('source', pa.pricing_source, 'poolAddress', pa.primary_address)
+          else null end,
+        'poolAddress', coalesce(case when pa.pricing_source = 'uniswap-v3' then pa.primary_address end, am.pool_address),
+        'weightBps', pa.weight_bps
+      ) order by pa.position) from proposal_assets pa join asset_registry a on a.id = pa.asset_id
+        left join verified_assets va on lower(va.asset_address) = lower(a.contract_address)
+        left join asset_markets am on am.id = pa.market_id where pa.proposal_id = o.id), '[]') as allocations
+    from ordered o
+    where o.slug = ${slug}
+    limit 1`;
+  return rows[0] ?? null;
 }
 
 export async function getInvalidProposal(slug: string) {
@@ -169,7 +254,33 @@ export async function getInvalidProposal(slug: string) {
   return rows[0] ?? null;
 }
 
-export async function getPublicLaunchOrder() {
-  const leaderboard = await getLeaderboard();
-  return leaderboard.map(({ rank, slug, name, ticker }) => ({ rank, slug, name, ticker }));
+export async function getPublicLaunchOrder(options: RankedListOptions = {}): Promise<LaunchOrderPage> {
+  const { limit, cursor, search } = normalizeRankedListOptions(options);
+  if (!sqlClient) {
+    const page = paginateRankedEntries(demoLeaderboard, { limit, cursor, search });
+    return { entries: page.entries.map(({ rank, slug, name, ticker }) => ({ rank, slug, name, ticker })), nextCursor: page.nextCursor };
+  }
+  const rows = await sqlClient<{ rank: number; slug: string; name: string; ticker: string }[]>`
+    with ranked as (
+      select p.id, p.slug, p.name, p.ticker, p.accepted_at,
+        coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
+      from proposals p
+      left join ballot_allocations ba on ba.proposal_id = p.id
+      left join ballots b on b.id = ba.ballot_id
+      where p.status = 'confirmed' and p.competition_id = (select id from competitions limit 1)
+      group by p.id
+    ), ordered as (
+      select *, row_number() over (order by votes desc, accepted_at asc, id asc)::int as rank from ranked
+    )
+    select rank, slug, name, ticker from ordered
+    where rank > ${cursor}
+      and (${search} = ''
+        or lower(name) like ${`%${search}%`}
+        or lower(ticker) like ${`%${search}%`}
+        or lower(slug) like ${`%${search}%`})
+    order by rank
+    limit ${limit + 1}`;
+  const hasMore = rows.length > limit;
+  const entries = hasMore ? rows.slice(0, limit) : rows;
+  return { entries, nextCursor: hasMore ? String(entries.at(-1)!.rank) : null };
 }

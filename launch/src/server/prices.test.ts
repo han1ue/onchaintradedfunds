@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchAssetPriceQuotes, isPriceQuoteFresh } from "./prices";
+import { fetchAssetPriceQuotes, getAmbiguousNonAddressPriceAssetIds, isPriceQuoteFresh } from "./prices";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -49,5 +49,24 @@ describe("price quote freshness", () => {
   it("rejects stale and invalid quote timestamps", () => {
     expect(isPriceQuoteFresh(new Date("2026-08-20T11:14:59.999Z"), reference, 45 * 60_000)).toBe(false);
     expect(isPriceQuoteFresh(new Date(Number.NaN), reference, 45 * 60_000)).toBe(false);
+  });
+
+  it("allows no more than five minutes of future clock skew", () => {
+    expect(isPriceQuoteFresh(new Date("2026-08-20T12:05:00.000Z"), reference, 45 * 60_000)).toBe(true);
+    expect(isPriceQuoteFresh(new Date("2026-08-20T12:05:00.001Z"), reference, 45 * 60_000)).toBe(false);
+  });
+});
+
+describe("provider price identities", () => {
+  it("marks every non-address asset sharing a provider and symbol as ambiguous", () => {
+    const ambiguous = getAmbiguousNonAddressPriceAssetIds([
+      { id: "aapl-one", symbol: "AAPL", contractAddress: "0x0000000000000000000000000000000000000001", priceSource: "robinhood-bid" },
+      { id: "aapl-two", symbol: "aapl", contractAddress: "0x0000000000000000000000000000000000000002", priceSource: "robinhood-bid" },
+      { id: "aapl-other-source", symbol: "AAPL", contractAddress: "0x0000000000000000000000000000000000000003", priceSource: "coinbase-eth-usd-bid" },
+      { id: "address-one", symbol: "DUP", contractAddress: "0x0000000000000000000000000000000000000004", priceSource: "coingecko-usd" },
+      { id: "address-two", symbol: "DUP", contractAddress: "0x0000000000000000000000000000000000000005", priceSource: "coingecko-usd" },
+    ]);
+
+    expect([...ambiguous].sort()).toEqual(["aapl-one", "aapl-two"]);
   });
 });

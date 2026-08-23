@@ -8,12 +8,14 @@ import {
   ballots,
   competitions,
   priceCaptureRuns,
+  assetPriceSnapshots,
   proposalAssets,
   proposals,
   proposalStatus,
   voteStatus,
   voteTranches,
   verifiedAssets,
+  xActionChallenges,
 } from "./schema";
 
 describe("unified asset database schema", () => {
@@ -70,15 +72,32 @@ describe("unified asset database schema", () => {
 
   it("keys price capture runs for cross-instance cron idempotency", () => {
     expect(getTableColumns(priceCaptureRuns)).toHaveProperty("captureKey");
+    expect(getTableColumns(priceCaptureRuns)).toHaveProperty("ambiguousSymbols");
   });
 
-  it("uses only the three user-facing submission states", () => {
-    expect(proposalStatus.enumValues).toEqual(["draft", "confirmed", "deleted"]);
+  it("stores USD price snapshots at hardened precision", () => {
+    expect(getTableColumns(assetPriceSnapshots).bidUsd.getSQLType()).toBe("numeric(38, 18)");
+  });
+
+  it("persists draft expiry separately from confirmed and deleted proposals", () => {
+    expect(proposalStatus.enumValues).toEqual(["draft", "confirmed", "expired", "deleted"]);
     expect(getTableColumns(proposals)).toHaveProperty("draftAllocations");
+    expect(getTableColumns(proposals)).toHaveProperty("draftExpiresAt");
     expect(getTableConfig(proposals).indexes.map((index) => index.config.name)).not.toContain("proposal_one_creator_uq");
   });
 
   it("uses only persisted aggregate ballot states", () => {
     expect(voteStatus.enumValues).toEqual(["valid", "invalid"]);
+  });
+
+  it("stores only compact terminal references on X action challenges", () => {
+    expect(getTableColumns(xActionChallenges)).toMatchObject({
+      action: expect.anything(),
+      proposalId: expect.anything(),
+      consumedAt: expect.anything(),
+      resultBallotId: expect.anything(),
+      resultSlug: expect.anything(),
+    });
+    expect(getTableColumns(xActionChallenges)).not.toHaveProperty("resultPayload");
   });
 });

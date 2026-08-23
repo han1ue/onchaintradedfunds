@@ -6,13 +6,13 @@ import { getXUserById, userIdentityFromXUser } from "./x";
 import { openXOAuthState, sealXOAuthState, xOAuthStateTtlMs } from "./x-oauth1";
 
 const oauthStateIdentifier = (requestToken: string) => `x-oauth1:${requestToken}`;
-type StoredXUser = { id: string; xUsername: string };
+type StoredXUser = { id: string };
 type XProfileFetcher = typeof getXUserById;
 
-export async function resolveXUserForSignIn(existingUser: StoredXUser | undefined, xUserId: string, fetchProfile: XProfileFetcher = getXUserById) {
-  if (existingUser) return { kind: "existing" as const, userId: existingUser.id, username: existingUser.xUsername };
+export async function resolveXUserForSignIn(existingUser: StoredXUser | undefined, xUserId: string, screenName: string, fetchProfile: XProfileFetcher = getXUserById) {
+  if (existingUser) return { kind: "existing" as const, userId: existingUser.id, username: screenName };
   const fetchedProfile = await fetchProfile(xUserId);
-  return { kind: "new" as const, identity: userIdentityFromXUser(fetchedProfile.profile, fetchedProfile.providerProfile) };
+  return { kind: "new" as const, identity: { ...userIdentityFromXUser(fetchedProfile.profile, fetchedProfile.providerProfile), xUsername: screenName } };
 }
 
 export async function storeXOAuthState(requestToken: string, requestTokenSecret: string, callbackPath: string) {
@@ -38,16 +38,19 @@ export async function consumeXOAuthState(requestToken: string) {
   return openXOAuthState(record.token);
 }
 
-export async function findOrCreateXUser(xUserId: string) {
+export async function findOrCreateXUser(xUserId: string, screenName: string) {
   const database = requireDb();
   return database.transaction(async (transaction) => {
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${xUserId}))`);
-    const [existingUser] = await transaction.select({ id: users.id, xUsername: users.xUsername }).from(users)
+    const [existingUser] = await transaction.select({ id: users.id }).from(users)
       .where(eq(users.xUserId, xUserId))
       .limit(1);
     // Cost invariant: the paid profile API is creation-only. Never fetch before this existing-user check.
-    const resolved = await resolveXUserForSignIn(existingUser, xUserId);
-    if (resolved.kind === "existing") return { userId: resolved.userId, username: resolved.username };
+    const resolved = await resolveXUserForSignIn(existingUser, xUserId, screenName);
+    if (resolved.kind === "existing") {
+      await transaction.update(users).set({ xUsername: resolved.username, updatedAt: new Date() }).where(eq(users.id, resolved.userId));
+      return { userId: resolved.userId, username: resolved.username };
+    }
     const [createdUser] = await transaction.insert(users).values(resolved.identity).returning({ id: users.id });
     return { userId: createdUser.id, username: resolved.identity.xUsername };
   });

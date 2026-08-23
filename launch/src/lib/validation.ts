@@ -51,6 +51,26 @@ export const proposalInputSchema = z.object({
   })
 });
 
+export function parseProposalInput(input: unknown) {
+  const result = proposalInputSchema.safeParse(input);
+  if (result.success) return result.data;
+  const issues = result.error.issues;
+  if (issues.some((issue) => issue.path[0] === "allocations" && issue.path.length === 1 && issue.code === "too_small")) {
+    throw new Error("PROPOSAL_ASSET_MINIMUM");
+  }
+  if (issues.some((issue) => issue.path.includes("weightBps") && issue.code === "too_small")) {
+    throw new Error("PROPOSAL_WEIGHT_MINIMUM");
+  }
+  if (issues.some((issue) => issue.message === "Assets must be unique")) throw new Error("ASSETS_NOT_UNIQUE");
+  if (issues.some((issue) => issue.message === "Weights must total 100%")) throw new Error("WEIGHTS_NOT_100");
+  if (issues.some((issue) => issue.path[0] === "name")) throw new Error("PROPOSAL_NAME_INVALID");
+  if (issues.some((issue) => issue.path[0] === "ticker")) throw new Error("PROPOSAL_TICKER_INVALID");
+  if (issues.some((issue) => issue.path[0] === "thesis")) throw new Error("PROPOSAL_THESIS_INVALID");
+  if (issues.some((issue) => issue.path.includes("pricingConfig"))) throw new Error("PRICING_CONFIG_INVALID");
+  if (issues.some((issue) => issue.path.includes("assetMetadata") || issue.path.includes("assetId"))) throw new Error("ASSET_METADATA_INVALID");
+  throw new Error("INVALID_PROPOSAL");
+}
+
 export const xPostReasonSchema = z.string().trim().max(120, "Keep your context to 120 characters or fewer");
 
 export const xPostActionSchema = z.object({

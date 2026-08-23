@@ -1,3 +1,10 @@
-import { apiError, apiOk } from "@/server/api";
+import { apiError, apiOk, parsePublicListQuery } from "@/server/api";
 import { getLeaderboard } from "@/server/data";
-export async function GET() { try { return apiOk(await getLeaderboard()); } catch (error) { return apiError(error); } }
+export async function GET(request: Request) {
+  try {
+    const { limit, cursor, q } = parsePublicListQuery(request);
+    return apiOk(await getLeaderboard({ limit, cursor, search: q }));
+  } catch (error) {
+    return apiError(error);
+  }
+}

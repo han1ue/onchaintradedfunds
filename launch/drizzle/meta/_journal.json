@@ -36,6 +36,34 @@
       "when": 1787404112926,
       "tag": "0004_asset_registry_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787515843417,
+      "tag": "0005_proposal_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787518502559,
+      "tag": "0006_price_capture_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787518665258,
+      "tag": "0007_launch_data_invariants",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787519169205,
+      "tag": "0008_challenge_results",
+      "breakpoints": true
     }
   ]
 }

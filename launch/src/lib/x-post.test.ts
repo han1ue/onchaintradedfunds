@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approximateXPostLength, buildSubmissionPost, buildVotePost, isValidXPostUrl, slugifyProposalName } from "./x-post";
+import { approximateXPostLength, buildSubmissionPost, buildVotePost, isValidXPostUrl, normalizeXPostText, slugifyProposalName } from "./x-post";
 
 const proposal = { name: "AI Infrastructure OTF", ticker: "AIX", slug: "ai-infrastructure-otf" };
 
@@ -29,5 +29,12 @@ describe("X post templates", () => {
     expect(isValidXPostUrl("https://x.com/otf/status/not-a-number")).toBe(false);
     expect(isValidXPostUrl("https://x.com/otf")).toBe(false);
     expect(isValidXPostUrl("https://x.com.evil.test/otf/status/1234567890")).toBe(false);
+  });
+  it("normalizes only line endings and surrounding whitespace for evidence matching", () => {
+    const prepared = "I just voted in the OTF Launch competition.\nhttps://launch.onchaintradedfunds.com/vote\nOTF-ABC123";
+    expect(normalizeXPostText(`  ${prepared.replaceAll("\n", "\r\n")}\r\n`)).toBe(prepared);
+    expect(normalizeXPostText("OTF-ABC123")).not.toBe(prepared);
+    expect(normalizeXPostText(`${prepared}\nExtra text`)).not.toBe(prepared);
+    expect(normalizeXPostText(prepared.replace("I just voted", "I voted"))).not.toBe(prepared);
   });
 });

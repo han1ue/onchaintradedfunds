@@ -22,7 +22,7 @@ const timestamps = {
 };
 
 export const competitionPhase = pgEnum("competition_phase", ["draft", "scheduled", "open", "auditing", "final", "cancelled"]);
-export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "deleted"]);
+export const proposalStatus = pgEnum("proposal_status", ["draft", "confirmed", "expired", "deleted"]);
 export const voteStatus = pgEnum("vote_status", ["valid", "invalid"]);
 export const evidenceStatus = pgEnum("evidence_status", ["pending", "valid", "invalid", "unavailable"]);
 export const evidenceAction = pgEnum("evidence_action", ["submission", "vote"]);
@@ -212,6 +212,7 @@ export const priceCaptureRuns = pgTable("price_capture_runs", {
   status: text("status").notNull(),
   requestedAssetIds: uuid("requested_asset_ids").array().notNull(),
   missingSymbols: text("missing_symbols").array().default(sql`ARRAY[]::text[]`).notNull(),
+  ambiguousSymbols: text("ambiguous_symbols").array().default(sql`ARRAY[]::text[]`).notNull(),
   provider: text("provider").default("robinhood-bid").notNull(),
   purpose: text("purpose").default("scoring").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
@@ -228,7 +229,7 @@ export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
   sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
   captureRunId: uuid("capture_run_id").references(() => priceCaptureRuns.id, { onDelete: "restrict" }),
   quoteGeneratedAt: timestamp("quote_generated_at", { withTimezone: true }).notNull(),
-  bidUsd: numeric("bid_usd", { precision: 24, scale: 8 }).notNull(),
+  bidUsd: numeric("bid_usd", { precision: 38, scale: 18 }).notNull(),
   twapWindowSeconds: integer("twap_window_seconds").default(0).notNull()
 }, (table) => [
   uniqueIndex("asset_price_snapshot_run_asset_uq").on(table.captureRunId, table.assetId),
@@ -245,13 +246,15 @@ export const proposals = pgTable("proposals", {
   thesis: text("thesis").notNull(),
   status: proposalStatus("status").default("draft").notNull(),
   draftAllocations: jsonb("draft_allocations").$type<unknown[]>().default([]).notNull(),
+  draftExpiresAt: timestamp("draft_expires_at", { withTimezone: true }),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   moderatedReason: text("moderated_reason"),
   ...timestamps
 }, (table) => [
-  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug).where(sql`${table.status} <> 'deleted'`),
-  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`).where(sql`${table.status} <> 'deleted'`),
-  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`).where(sql`${table.status} <> 'deleted'`),
+  uniqueIndex("proposal_competition_slug_uq").on(table.competitionId, table.slug).where(sql`${table.status} in ('draft', 'confirmed')`),
+  uniqueIndex("proposal_competition_name_uq").on(table.competitionId, sql`lower(${table.name})`).where(sql`${table.status} in ('draft', 'confirmed')`),
+  uniqueIndex("proposal_competition_ticker_uq").on(table.competitionId, sql`lower(${table.ticker})`).where(sql`${table.status} in ('draft', 'confirmed')`),
+  index("proposal_draft_expiry_idx").on(table.draftExpiresAt).where(sql`${table.status} = 'draft'`),
   check("proposal_ticker_format", sql`${table.ticker} ~ '^[A-Z0-9][A-Z0-9-]{0,15}$'`),
   check("proposal_name_suffix", sql`${table.name} like '% OTF'`),
   check("proposal_thesis_nonempty", sql`octet_length(${table.thesis}) between 1 and 2048`)
@@ -315,6 +318,8 @@ export const xActionChallenges = pgTable("x_action_challenges", {
   payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  resultBallotId: uuid("result_ballot_id"),
+  resultSlug: text("result_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("x_action_challenge_lookup_idx").on(table.userId, table.proposalId, table.expiresAt)]);
 

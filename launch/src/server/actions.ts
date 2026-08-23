@@ -1,24 +1,89 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { PROPOSAL_DRAFT_TTL_MS } from "@/lib/competition";
+import type { ProposalDraft } from "@/lib/types";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
-import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
-import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
+import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, normalizeXPostText, slugifyProposalName } from "@/lib/x-post";
+import { parseProposalInput, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
   assetRegistry, competitions, evidenceChecks, proposalAssets, proposals,
   assetMarkets, tweetEvidence, users, verifiedAssets, xActionChallenges
 } from "./db/schema";
-import { currentCompetition, requireEligibleActor, requireSession } from "./guards";
+import { requireEligibleActor, requireSession } from "./guards";
 import { getXPost, hashXPostText } from "./x";
 import { validateUnlistedAsset } from "./unlisted-asset-validation";
+import { validateExistingAssetSelection, type ConfirmedExistingAssetSelection } from "./proposal-asset-confirmation";
 
 const challengeLifetimeMs = 15 * 60_000;
 type LaunchDatabase = ReturnType<typeof requireDb>;
 type LaunchTransaction = Parameters<Parameters<LaunchDatabase["transaction"]>[0]>[0];
 type UnlistedAssetValidation = Awaited<ReturnType<typeof validateUnlistedAsset>>;
 
-export async function saveProposalDraft(input: unknown) {
-  const parsed = proposalInputSchema.parse(input);
+function validProposalId(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function expireStaleDrafts(
+  database: Pick<LaunchDatabase, "execute">,
+  now: Date,
+  scope: { competitionId?: string; userId?: string } = {},
+) {
+  await database.execute(sql`
+    update ${proposals}
+    set ${proposals.status} = 'expired', ${proposals.updatedAt} = ${now}
+    where ${proposals.status} = 'draft'
+      and ${proposals.draftExpiresAt} is not null
+      and ${proposals.draftExpiresAt} <= ${now}
+      ${scope.competitionId ? sql`and ${proposals.competitionId} = ${scope.competitionId}` : sql``}
+      ${scope.userId ? sql`and ${proposals.creatorUserId} = ${scope.userId}` : sql``}
+  `);
+}
+
+export async function expireProposalDrafts(competitionId: string, userId: string, now: Date = new Date()) {
+  await expireStaleDrafts(requireDb(), now, { competitionId, userId });
+}
+
+export async function getProposalDraftForResume(proposalId: string): Promise<ProposalDraft | null> {
+  if (!validProposalId(proposalId)) return null;
+  const database = requireDb();
+  const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
+  const [proposal] = await database.select({
+    id: proposals.id,
+    name: proposals.name,
+    ticker: proposals.ticker,
+    thesis: proposals.thesis,
+    draftAllocations: proposals.draftAllocations,
+    draftExpiresAt: proposals.draftExpiresAt,
+  }).from(proposals).where(and(
+    eq(proposals.id, proposalId),
+    eq(proposals.competitionId, competition.id),
+    eq(proposals.creatorUserId, session.user.id),
+    eq(proposals.status, "draft"),
+    gt(proposals.draftExpiresAt, now),
+  )).limit(1);
+  if (!proposal?.draftExpiresAt) return null;
+  const parsed = parseProposalInput({
+    name: proposal.name,
+    ticker: proposal.ticker,
+    thesis: proposal.thesis,
+    allocations: proposal.draftAllocations,
+  });
+  return {
+    id: proposal.id,
+    name: parsed.name,
+    ticker: parsed.ticker,
+    thesis: parsed.thesis,
+    draftExpiresAt: proposal.draftExpiresAt.toISOString(),
+    allocations: parsed.allocations,
+  };
+}
+
+export async function saveProposalDraft(input: unknown, existingDraftId?: string) {
+  const parsed = parseProposalInput(input);
+  if (existingDraftId && !validProposalId(existingDraftId)) throw new Error("PROPOSAL_NOT_FOUND");
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
   if (parsed.allocations.length < competition.rules.minAssets) throw new Error("PROPOSAL_ASSET_MINIMUM");
@@ -85,6 +150,8 @@ export async function saveProposalDraft(input: unknown) {
       throw new Error("ASSETS_NOT_UNIQUE");
     }
 
+    const now = new Date();
+    await expireStaleDrafts(transaction, now, { competitionId: competition.id, userId: session.user.id });
     const values = {
       competitionId: competition.id,
       creatorUserId: session.user.id,
@@ -93,26 +160,77 @@ export async function saveProposalDraft(input: unknown) {
       ticker: parsed.ticker,
       thesis: parsed.thesis,
       draftAllocations,
-      updatedAt: new Date(),
+      updatedAt: now,
     };
-    const [proposal] = await transaction.insert(proposals).values(values).returning();
+    if (existingDraftId) {
+      const [existing] = await transaction.select({ id: proposals.id }).from(proposals).where(and(
+        eq(proposals.id, existingDraftId),
+        eq(proposals.competitionId, competition.id),
+        eq(proposals.creatorUserId, session.user.id),
+        eq(proposals.status, "draft"),
+        gt(proposals.draftExpiresAt, now),
+      )).limit(1).for("update");
+      if (!existing) throw new Error("DRAFT_EXPIRED");
+      const [proposal] = await transaction.update(proposals).set(values).where(eq(proposals.id, existing.id)).returning();
+      return proposal;
+    }
+    const [proposal] = await transaction.insert(proposals).values({
+      ...values,
+      draftExpiresAt: new Date(now.getTime() + PROPOSAL_DRAFT_TTL_MS),
+    }).returning();
     return proposal;
   });
 }
 
 async function validateDraftAllocationsForConfirmation(
+  database: LaunchDatabase,
   proposal: { name: string; ticker: string; thesis: string; draftAllocations: unknown[] },
   competitionStartsAt: Date,
 ) {
-  const parsed = proposalInputSchema.parse({
+  const parsed = parseProposalInput({
     name: proposal.name,
     ticker: proposal.ticker,
     thesis: proposal.thesis,
     allocations: proposal.draftAllocations,
   });
   const validations = new Map<string, UnlistedAssetValidation>();
+  const selectedAssetIds = parsed.allocations.flatMap((allocation) => "assetId" in allocation ? [allocation.assetId] : []);
+  const selectedAssets = selectedAssetIds.length
+    ? await database.select({
+      id: assetRegistry.id,
+      contractAddress: assetRegistry.contractAddress,
+      verified: sql<boolean>`${verifiedAssets.assetAddress} is not null`,
+    }).from(assetRegistry)
+      .leftJoin(verifiedAssets, sql`lower(${verifiedAssets.assetAddress}) = lower(${assetRegistry.contractAddress})`)
+      .where(inArray(assetRegistry.id, selectedAssetIds))
+    : [];
+  if (selectedAssets.length !== selectedAssetIds.length) throw new Error("ASSET_NOT_FOUND");
+  const selectedAssetById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+  const unverifiedAssetIds = selectedAssets.filter((asset) => !asset.verified).map((asset) => asset.id);
+  const storedMarkets = unverifiedAssetIds.length
+    ? await database.select({
+      id: assetMarkets.id,
+      assetId: assetMarkets.assetId,
+      poolAddress: assetMarkets.poolAddress,
+      active: assetMarkets.active,
+    }).from(assetMarkets).where(and(
+      inArray(assetMarkets.assetId, unverifiedAssetIds),
+      eq(assetMarkets.active, true),
+    ))
+    : [];
+  const existingSelections = new Map<string, ConfirmedExistingAssetSelection>();
   for (const allocation of parsed.allocations) {
-    if (!("assetMetadata" in allocation)) continue;
+    if ("assetId" in allocation) {
+      const asset = selectedAssetById.get(allocation.assetId);
+      if (!asset) throw new Error("ASSET_NOT_FOUND");
+      existingSelections.set(allocation.assetId, await validateExistingAssetSelection(
+        allocation,
+        asset,
+        storedMarkets,
+        competitionStartsAt,
+      ));
+      continue;
+    }
     const poolAddress = allocation.pricingConfig?.source === "uniswap-v3" ? allocation.pricingConfig.poolAddress : null;
     if (!poolAddress) throw new Error("UNLISTED_ASSET_MARKET_REQUIRED");
     const validation = await validateUnlistedAsset({ assetAddress: allocation.assetMetadata.contractAddress, poolAddress, competitionStartsAt });
@@ -120,7 +238,7 @@ async function validateDraftAllocationsForConfirmation(
     if (!validation.asset || !validation.marketDetails) throw new Error("ASSET_VALIDATION_FAILED");
     validations.set(allocation.assetMetadata.contractAddress, validation);
   }
-  return { allocations: parsed.allocations, validations };
+  return { allocations: parsed.allocations, validations, existingSelections };
 }
 
 async function registerAndLinkProposalAssets(
@@ -148,9 +266,31 @@ async function registerAndLinkProposalAssets(
 
   for (const allocation of prepared.allocations) {
     if ("assetId" in allocation) {
-      const pricingConfig = selectedAssetVerification.get(allocation.assetId) ? null : allocation.pricingConfig;
-      if (!selectedAssetVerification.get(allocation.assetId) && !pricingConfig) throw new Error("PRICING_CONFIG_REQUIRED");
-      resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig, weightBps: allocation.weightBps });
+      if (selectedAssetVerification.get(allocation.assetId)) {
+        resolvedAllocations.push({ assetId: allocation.assetId, marketId: null, pricingConfig: null, weightBps: allocation.weightBps });
+        continue;
+      }
+      const preparedSelection = prepared.existingSelections.get(allocation.assetId);
+      if (!preparedSelection?.marketId || preparedSelection.pricingConfig?.source !== "uniswap-v3") {
+        throw new Error("ASSET_MARKET_NOT_FOUND");
+      }
+      const [storedMarket] = await transaction.select({
+        id: assetMarkets.id,
+        poolAddress: assetMarkets.poolAddress,
+      }).from(assetMarkets).where(and(
+        eq(assetMarkets.id, preparedSelection.marketId),
+        eq(assetMarkets.assetId, allocation.assetId),
+        eq(assetMarkets.active, true),
+      )).limit(1);
+      if (!storedMarket || storedMarket.poolAddress.toLowerCase() !== preparedSelection.pricingConfig.poolAddress.toLowerCase()) {
+        throw new Error("ASSET_MARKET_NOT_FOUND");
+      }
+      resolvedAllocations.push({
+        assetId: allocation.assetId,
+        marketId: storedMarket.id,
+        pricingConfig: { source: "uniswap-v3", poolAddress: storedMarket.poolAddress },
+        weightBps: allocation.weightBps,
+      });
       continue;
     }
 
@@ -227,11 +367,14 @@ async function prepareProof(proposalId: string, input: unknown) {
   const { reason } = xPostActionSchema.parse(input);
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
   const [proposal] = await database.select().from(proposals).where(and(
     eq(proposals.id, proposalId),
     eq(proposals.competitionId, competition.id),
     eq(proposals.creatorUserId, session.user.id),
-    eq(proposals.status, "draft")
+    eq(proposals.status, "draft"),
+    gt(proposals.draftExpiresAt, now),
   )).limit(1);
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
 
@@ -251,8 +394,11 @@ async function loadVerifiedProof(proposalId: string, input: unknown) {
   const parsed = proof.data;
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
+  const now = new Date();
+  await expireStaleDrafts(database, now, { competitionId: competition.id, userId: session.user.id });
   const [proposal] = await database.select().from(proposals).where(and(
-    eq(proposals.id, proposalId), eq(proposals.competitionId, competition.id)
+    eq(proposals.id, proposalId), eq(proposals.competitionId, competition.id),
+    eq(proposals.status, "draft"), gt(proposals.draftExpiresAt, now),
   )).limit(1);
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
   const [challenge] = await database.select().from(xActionChallenges).where(and(
@@ -264,7 +410,7 @@ async function loadVerifiedProof(proposalId: string, input: unknown) {
   if (!user) throw new Error("X_RECONNECT_REQUIRED");
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
-  if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
+  if (normalizeXPostText(post.text) !== normalizeXPostText(challenge.postText)) throw new Error("PROOF_TEXT_MISMATCH");
   return { database, session, competition, proposal, challenge, user, post };
 }
 
@@ -276,13 +422,25 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
   const context = await loadVerifiedProof(proposalId, input);
   const { database, session, competition, proposal, challenge, user, post } = context;
   if (proposal.creatorUserId !== session.user.id || proposal.status !== "draft") throw new Error("PROPOSAL_NOT_FOUND");
-  const preparedAssets = await validateDraftAllocationsForConfirmation(proposal, competition.startsAt);
+  const preparedAssets = await validateDraftAllocationsForConfirmation(database, proposal, competition.startsAt);
   const acceptedAt = new Date();
   const result = await database.transaction(async (transaction) => {
-    const [consumed] = await transaction.update(xActionChallenges).set({ consumedAt: acceptedAt }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
-    if (!consumed) throw new Error("CHALLENGE_EXPIRED");
-    const [openCompetition] = await transaction.select({ id: competitions.id }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1);
+    const [openCompetition] = await transaction.select({ id: competitions.id, rules: competitions.rules }).from(competitions).where(and(eq(competitions.id, competition.id), eq(competitions.phase, "open"), sql`${competitions.endsAt} > now()`)).limit(1).for("update");
     if (!openCompetition) throw new Error("COMPETITION_NOT_OPEN");
+    const [{ confirmedCount }] = await transaction.select({
+      confirmedCount: sql<number>`count(*)::int`,
+    }).from(proposals).where(and(
+      eq(proposals.competitionId, competition.id),
+      eq(proposals.creatorUserId, session.user.id),
+      eq(proposals.status, "confirmed"),
+    ));
+    const proposalLimit = openCompetition.rules.maxProposalsPerAccount;
+    if (proposalLimit !== null && confirmedCount >= proposalLimit) throw new Error("PROPOSAL_LIMIT_REACHED");
+    const [consumed] = await transaction.update(xActionChallenges).set({
+      consumedAt: acceptedAt,
+      resultSlug: proposal.slug,
+    }).where(and(eq(xActionChallenges.id, challenge.id), isNull(xActionChallenges.consumedAt), gt(xActionChallenges.expiresAt, acceptedAt))).returning({ id: xActionChallenges.id });
+    if (!consumed) throw new Error("CHALLENGE_EXPIRED");
     const [evidence] = await transaction.insert(tweetEvidence).values({
       action: "submission", competitionId: competition.id, userId: session.user.id, proposalId: proposal.id,
       xPostId: post.id, xAuthorId: user.xUserId, xAuthorUsername: user.xUsername, postUrl: post.postUrl, postedAt: acceptedAt, editHistoryIds: [post.id],
@@ -294,9 +452,10 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
     const [confirmed] = await transaction.update(proposals).set({
       status: "confirmed",
       draftAllocations: [],
+      draftExpiresAt: null,
       acceptedAt,
       updatedAt: acceptedAt,
-    }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"))).returning();
+    }).where(and(eq(proposals.id, proposal.id), eq(proposals.status, "draft"), gt(proposals.draftExpiresAt, acceptedAt))).returning();
     if (!confirmed) throw new Error("PROPOSAL_NOT_FOUND");
     return { action: "submission" as const, proposalId: proposal.id, slug: proposal.slug, postUrl: evidence.postUrl };
   });
@@ -306,27 +465,25 @@ export async function verifyProposalProof(proposalId: string, input: unknown) {
 export async function deleteProposal(proposalId: string, confirmationName: string) {
   const database = requireDb();
   const session = await requireSession();
-  const competition = await currentCompetition();
   const deletedAt = new Date();
   return database.transaction(async (transaction) => {
-    const [proposal] = await transaction.select({ name: proposals.name }).from(proposals).where(and(
+    const [competition] = await transaction.select({ id: competitions.id, phase: competitions.phase, endsAt: competitions.endsAt })
+      .from(competitions).limit(1).for("update");
+    if (!competition) throw new Error("COMPETITION_NOT_OPEN");
+    await expireStaleDrafts(transaction, deletedAt, { competitionId: competition.id, userId: session.user.id });
+    const [proposal] = await transaction.select({ name: proposals.name, status: proposals.status }).from(proposals).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
     )).limit(1).for("update");
     if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
     if (proposal.name !== confirmationName) throw new Error("PROPOSAL_NAME_MISMATCH");
+    if (proposal.status === "confirmed" && (competition.phase !== "open" || competition.endsAt <= deletedAt)) throw new Error("COMPETITION_NOT_OPEN");
     const [deleted] = await transaction.update(proposals).set({ status: "deleted", draftAllocations: [], updatedAt: deletedAt }).where(and(
       eq(proposals.id, proposalId),
       eq(proposals.competitionId, competition.id),
       eq(proposals.creatorUserId, session.user.id),
-      inArray(proposals.status, ["draft", "confirmed"]),
-      sql`exists (
-        select 1 from ${competitions}
-        where ${competitions.id} = ${proposals.competitionId}
-          and ${competitions.phase} = 'open'
-          and ${competitions.endsAt} > now()
-      )`
+      inArray(proposals.status, ["draft", "confirmed", "expired"]),
     )).returning();
     if (!deleted) throw new Error("PROPOSAL_NOT_FOUND");
     return deleted;

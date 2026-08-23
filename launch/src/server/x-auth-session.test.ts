@@ -4,9 +4,9 @@ import { resolveXUserForSignIn } from "./x-auth-session";
 describe("X sign-in profile lookup", () => {
   it("never calls TwitterAPI.io for an existing X user", async () => {
     const fetchProfile = vi.fn();
-    const result = await resolveXUserForSignIn({ id: "user-1", xUsername: "stored_handle" }, "42", fetchProfile);
+    const result = await resolveXUserForSignIn({ id: "user-1" }, "42", "current_handle", fetchProfile);
 
-    expect(result).toEqual({ kind: "existing", userId: "user-1", username: "stored_handle" });
+    expect(result).toEqual({ kind: "existing", userId: "user-1", username: "current_handle" });
     expect(fetchProfile).not.toHaveBeenCalled();
   });
 
@@ -33,9 +33,10 @@ describe("X sign-in profile lookup", () => {
       },
     });
 
-    const result = await resolveXUserForSignIn(undefined, "42", fetchProfile);
+    const result = await resolveXUserForSignIn(undefined, "42", "oauth_handle", fetchProfile);
 
     expect(result.kind).toBe("new");
+    expect(result.kind === "new" && result.identity.xUsername).toBe("oauth_handle");
     expect(fetchProfile).toHaveBeenCalledTimes(1);
     expect(fetchProfile).toHaveBeenCalledWith("42");
   });

@@ -31,6 +31,18 @@ export type Allocation = {
   color?: string;
 };
 
+export type ProposalDraft = {
+  id: string;
+  name: string;
+  ticker: string;
+  thesis: string;
+  draftExpiresAt: string;
+  allocations: Array<({ assetId: string } | { assetMetadata: ProposalAssetMetadata }) & {
+    pricingConfig?: PricingConfig | null;
+    weightBps: number;
+  }>;
+};
+
 export type LeaderboardEntry = {
   id: string;
   slug: string;
@@ -38,14 +50,25 @@ export type LeaderboardEntry = {
   name: string;
   ticker: string;
   thesis: string;
-  creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null };
+  creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null; verified: boolean };
   votes: number;
   acceptedAt: string;
   uniqueSupporterCount?: number;
-  submissionBoost?: boolean;
   verified?: boolean;
   allocations: Allocation[];
   proofUrl?: string;
+};
+
+export type LeaderboardPage = {
+  entries: LeaderboardEntry[];
+  nextCursor: string | null;
+};
+
+export type LaunchOrderEntry = Pick<LeaderboardEntry, "rank" | "slug" | "name" | "ticker">;
+
+export type LaunchOrderPage = {
+  entries: LaunchOrderEntry[];
+  nextCursor: string | null;
 };
 
 export type CompetitionSummary = {
@@ -110,7 +133,7 @@ export type VotePostTranche = {
   proposalName: string;
   proposalSlug: string;
   proposalTicker: string;
-  proposalStatus: "draft" | "confirmed" | "deleted";
+  proposalStatus: "draft" | "confirmed" | "expired" | "deleted";
   votes: number;
   acceptedAt: string;
   createdAt: string;

@@ -10,9 +10,9 @@ const policySurfaces = [
 ].map((url) => readFileSync(url, "utf8"));
 
 describe("OTF submission policy copy", () => {
-  it("consistently states that eligible accounts may submit unlimited proposals", () => {
+  it("consistently states the configured confirmed-proposal limit", () => {
     const combined = policySurfaces.join("\n");
-    expect(combined).not.toMatch(/(?:one|1) OTF (?:proposal )?per X account/i);
-    expect(combined.match(/as many OTF proposals as/g)).toHaveLength(policySurfaces.length);
+    expect(combined).not.toMatch(/as many OTF proposals as|unlimited proposals/i);
+    for (const surface of policySurfaces) expect(surface).toContain("maxProposalsPerAccount");
   });
 });

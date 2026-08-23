@@ -28,15 +28,19 @@ export function ResponsiveLeaderboard({ entries, submissionsOpen = true }: { ent
 
   return <div className="leaderboard">
     <div className="leaderboardHeader"><span>Rank</span><span>OTF</span><span>Portfolio</span><span>Creator</span><span>Votes</span></div>
-    {entries.map((entry) => <Link className="leaderboardRow" href={`/otfs/${entry.slug}`} aria-label={`View ${entry.name} proposal details`} key={entry.id}>
-      <RankEmblem rank={entry.rank} />
-      <div className="otfIdentity">
-        <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
-        <div><div className="otfTitleLine"><span className="otfName">{entry.name}</span>{entry.verified && <StatusBadge tone="positive">Verified</StatusBadge>}</div><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
-      </div>
-      <AllocationStrip allocations={entry.allocations} showPercentages compactSummary />
-      <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
-      <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong></div>
-    </Link>)}
+    <ol className="leaderboardList" role="list">
+      {entries.map((entry) => <li className="leaderboardItem" key={entry.id}>
+        <Link className="leaderboardRow" href={`/otfs/${entry.slug}`}>
+          <RankEmblem rank={entry.rank} />
+          <div className="otfIdentity">
+            <OtfTokenIcon className="leaderboardOtfIcon" ticker={entry.ticker} size={40} />
+            <div><div className="otfTitleLine"><span className="otfName">{entry.name}</span>{entry.verified && <StatusBadge tone="positive">Verified</StatusBadge>}</div><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
+          </div>
+          <AllocationStrip allocations={entry.allocations} showPercentages compactSummary />
+          <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span>{entry.creator.verified && <BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" />}</div>
+          <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong></div>
+        </Link>
+      </li>)}
+    </ol>
   </div>;
 }

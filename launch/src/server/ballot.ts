@@ -3,7 +3,7 @@ import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { buildBallotVotePosts } from "@/lib/ballot-history";
 import type { BallotSummary, VoteAllocation } from "@/lib/types";
 import { getUnlockedVoteCount, getVotingStartsAt, type CompetitionRules } from "@/lib/competition";
-import { approximateXPostLength, buildVotePost, buildXIntentUrl } from "@/lib/x-post";
+import { approximateXPostLength, buildVotePost, buildXIntentUrl, normalizeXPostText } from "@/lib/x-post";
 import { ballotActivationSchema, voteAdditionsSchema, xPostProofSchema } from "@/lib/validation";
 import { db, requireDb } from "./db";
 import {
@@ -199,7 +199,7 @@ export async function verifyBallotProof(input: unknown) {
   await assertBallotCanAccept(database, competition.id, session.user.id, additions, acceptedAt);
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
-  if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
+  if (normalizeXPostText(post.text) !== normalizeXPostText(challenge.postText)) throw new Error("PROOF_TEXT_MISMATCH");
 
   // Repeat free checks immediately before reserving the ballot transaction.
   await assertValidDistribution(database, competition.id, additions);
@@ -271,7 +271,10 @@ export async function verifyBallotProof(input: unknown) {
         updatedAt: acceptedAt,
       }).where(eq(ballots.id, existing.id)).returning()
       : await transaction.insert(ballots).values({ competitionId: competition.id, voterUserId: session.user.id, followerCount: user.followersCount, status: "valid" }).returning();
-    if (existing && !isUpdate) await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
+    if (existing && !isUpdate) {
+      await transaction.delete(voteTranches).where(eq(voteTranches.ballotId, ballot.id));
+      await transaction.delete(ballotAllocations).where(eq(ballotAllocations.ballotId, ballot.id));
+    }
     await transaction.insert(ballotAllocations)
       .values(additions.map((addition) => ({ ballotId: ballot.id, ...addition, updatedAt: acceptedAt })))
       .onConflictDoUpdate({
@@ -288,6 +291,13 @@ export async function verifyBallotProof(input: unknown) {
       acceptedAt,
       entryPriceCaptureRunId: entryCapture.runId,
     })));
+    const [recordedResult] = await transaction.update(xActionChallenges).set({
+      resultBallotId: ballot.id,
+    }).where(and(
+      eq(xActionChallenges.id, challenge.id),
+      eq(xActionChallenges.consumedAt, acceptedAt),
+    )).returning({ id: xActionChallenges.id });
+    if (!recordedResult) throw new Error("CHALLENGE_RESULT_UNAVAILABLE");
     return {
       action: "ballot" as const,
       ballotId: ballot.id,
