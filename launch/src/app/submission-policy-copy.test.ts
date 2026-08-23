@@ -10,9 +10,9 @@ const policySurfaces = [
 ].map((url) => readFileSync(url, "utf8"));
 
 describe("OTF submission policy copy", () => {
-  it("consistently states the configured confirmed-proposal limit", () => {
+  it("consistently reflects the frozen competition proposal limit", () => {
     const combined = policySurfaces.join("\n");
-    expect(combined).not.toMatch(/as many OTF proposals as|unlimited proposals/i);
+    expect(combined).toMatch(/as many OTF proposals as/i);
     for (const surface of policySurfaces) expect(surface).toContain("maxProposalsPerAccount");
   });
 });

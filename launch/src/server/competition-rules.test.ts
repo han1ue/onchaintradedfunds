@@ -16,7 +16,10 @@ describe("competition rules snapshot", () => {
     expect(baseline).toContain("\"maxProposalsPerAccount\":null");
     expect(backfill).toContain("\"maxProposalsPerAccount\":null");
     expect(backfill).toContain('ADD COLUMN IF NOT EXISTS "rules"');
-    expect(lifecycle).toContain("Refusing to alter a live competition containing real participant data");
+    expect(lifecycle).toContain("AND NOT EXISTS (SELECT 1 FROM \"proposals\"");
+    expect(lifecycle).toContain("AND NOT EXISTS (SELECT 1 FROM \"tweet_evidence\"");
+    expect(lifecycle).toContain("AND NOT EXISTS (SELECT 1 FROM \"ballots\"");
+    expect(lifecycle).toContain("AND NOT EXISTS (SELECT 1 FROM \"vote_tranches\"");
     expect(baseline).toContain("OLD.\"phase\" IN ('open', 'auditing', 'final', 'cancelled')");
     expect(baseline).toContain("RAISE EXCEPTION 'Competition rules are frozen'");
   });

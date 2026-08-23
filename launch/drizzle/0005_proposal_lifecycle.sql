@@ -43,18 +43,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM "competitions" WHERE "rules_hash" <> '4b63532c5d7b50d30209b760eace59027e77942adc70a9996420f655457ce0f2' AND "rules_hash" <> '5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9') THEN
     RAISE EXCEPTION 'Refusing to replace an unrecognized competition rules snapshot';
   END IF;
-  IF EXISTS (
-    SELECT 1 FROM "competitions" c
-    WHERE c."rules_hash" = '5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9'
-      AND (
-        EXISTS (SELECT 1 FROM "proposals" p WHERE p."competition_id" = c."id" AND p."status" = 'confirmed')
-        OR EXISTS (SELECT 1 FROM "tweet_evidence" te WHERE te."competition_id" = c."id")
-        OR EXISTS (SELECT 1 FROM "ballots" b WHERE b."competition_id" = c."id")
-        OR EXISTS (SELECT 1 FROM "vote_tranches" vt WHERE vt."competition_id" = c."id")
-      )
-  ) THEN
-    RAISE EXCEPTION 'Refusing to alter a live competition containing real participant data; create a new competition rules snapshot';
-  END IF;
 END;
 $$;--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "protect_competition_singleton"() RETURNS trigger AS $$
@@ -70,7 +58,15 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;--> statement-breakpoint
-UPDATE "competitions" SET "rules" = jsonb_set("rules", '{maxProposalsPerAccount}', '10'::jsonb), "rules_hash" = '4b63532c5d7b50d30209b760eace59027e77942adc70a9996420f655457ce0f2', "updated_at" = CURRENT_TIMESTAMP WHERE "rules_hash" = '5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9';--> statement-breakpoint
+UPDATE "competitions" c
+SET "rules" = jsonb_set(c."rules", '{maxProposalsPerAccount}', '10'::jsonb),
+  "rules_hash" = '4b63532c5d7b50d30209b760eace59027e77942adc70a9996420f655457ce0f2',
+  "updated_at" = CURRENT_TIMESTAMP
+WHERE c."rules_hash" = '5df25ba08c24842420a2523d327f81dabd673f8fad50b2a415b685d86ea3dfb9'
+  AND NOT EXISTS (SELECT 1 FROM "proposals" p WHERE p."competition_id" = c."id" AND p."status" = 'confirmed')
+  AND NOT EXISTS (SELECT 1 FROM "tweet_evidence" te WHERE te."competition_id" = c."id")
+  AND NOT EXISTS (SELECT 1 FROM "ballots" b WHERE b."competition_id" = c."id")
+  AND NOT EXISTS (SELECT 1 FROM "vote_tranches" vt WHERE vt."competition_id" = c."id");--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "protect_competition_singleton"() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'The singleton competition cannot be deleted'; END IF;

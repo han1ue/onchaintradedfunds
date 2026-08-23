@@ -39,9 +39,9 @@ describe("confirmed proposal cap", () => {
     expect(confirm).toBeGreaterThan(limit);
   });
 
-  it("refuses to rewrite rules over participant data", () => {
-    expect(migration).toContain("real participant data");
-    expect(migration).toContain("vote_tranches");
-    expect(migration).toContain("tweet_evidence");
+  it("preserves frozen rules when participant data exists", () => {
+    for (const table of ["proposals", "tweet_evidence", "ballots", "vote_tranches"]) {
+      expect(migration).toContain(`AND NOT EXISTS (SELECT 1 FROM "${table}"`);
+    }
   });
 });

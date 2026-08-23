@@ -14,7 +14,7 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const cancelled = status.stage === "cancelled";
   const phases = [
-    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: cancelled ? "Submissions are closed." : `Confirm up to ${rules.maxProposalsPerAccount} OTF proposals per account.` },
+    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: cancelled ? "Submissions are closed." : rules.maxProposalsPerAccount === null ? "Confirm as many OTF proposals as you want." : `Confirm up to ${rules.maxProposalsPerAccount} OTF proposals per account.` },
     { title: "Voting month", timing: `Days ${rules.submissionOnlyDays + 1}–${totalDays}`, detail: cancelled ? "Voting is closed and no more votes can be cast." : `Voting opens with ${rules.initialVotes} votes. ${rules.votesPerUnlock} more unlocks every ${rules.voteUnlockIntervalDays} days; OTF submissions stay open.` },
     { title: "Final results", timing: "After voting", detail: cancelled ? "The cancelled competition will not produce a launch order." : "Votes are reviewed and the final ranking becomes launch order." },
   ];
