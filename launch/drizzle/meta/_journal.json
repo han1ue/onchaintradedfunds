@@ -43,6 +43,13 @@
       "when": 1787515843417,
       "tag": "0005_proposal_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787518502559,
+      "tag": "0006_price_capture_hardening",
+      "breakpoints": true
     }
   ]
 }
