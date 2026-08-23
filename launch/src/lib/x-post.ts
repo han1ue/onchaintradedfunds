@@ -3,6 +3,10 @@ import { PUBLIC_SITE_ORIGIN, publicSiteUrl } from "@/config/site";
 export type XPostProposal = { name: string; ticker: string; slug: string };
 export type VotePostChoice = { ticker: string; votes: number };
 
+export function normalizeXPostText(text: string) {
+  return text.replace(/\r\n?/g, "\n").trim();
+}
+
 export function slugifyProposalName(value: string) {
   return value.toLowerCase().replace(/\s+otf$/i, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-otf";
 }

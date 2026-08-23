@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   try {
     const state = await consumeXOAuthState(requestToken);
     const identity = await exchangeXOAuthToken(requestToken, state.requestTokenSecret, verifier);
-    const user = await findOrCreateXUser(identity.xUserId);
+    const user = await findOrCreateXUser(identity.xUserId, identity.screenName);
     const session = await createXSession(user.userId);
     const response = NextResponse.redirect(new URL(state.callbackPath, origin));
     const secure = new URL(origin).protocol === "https:";

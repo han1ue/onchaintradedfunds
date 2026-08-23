@@ -3,7 +3,7 @@ import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { PROPOSAL_DRAFT_TTL_MS } from "@/lib/competition";
 import type { ProposalDraft } from "@/lib/types";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
-import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, slugifyProposalName } from "@/lib/x-post";
+import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, normalizeXPostText, slugifyProposalName } from "@/lib/x-post";
 import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
@@ -351,7 +351,7 @@ async function loadVerifiedProof(proposalId: string, input: unknown) {
   if (!user) throw new Error("X_RECONNECT_REQUIRED");
   const post = await getXPost(parsed.postUrl);
   if (post.username.toLowerCase() !== user.xUsername.toLowerCase()) throw new Error("PROOF_AUTHOR_MISMATCH");
-  if (!post.text.includes(challenge.token)) throw new Error("PROOF_CODE_MISSING");
+  if (normalizeXPostText(post.text) !== normalizeXPostText(challenge.postText)) throw new Error("PROOF_TEXT_MISMATCH");
   return { database, session, competition, proposal, challenge, user, post };
 }
 
