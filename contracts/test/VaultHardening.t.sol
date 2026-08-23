@@ -154,7 +154,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
+            _directPricing(address(reentrantFeed), PricingSource.Chainlink);
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         uint256[] memory emptyMaximums = new uint256[](0);
@@ -182,7 +182,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
+            _directPricing(address(reentrantFeed), PricingSource.Chainlink);
         address predicted =
             factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         reentrantToken.configureCallback(
@@ -321,7 +321,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         VaultInitParams memory params = _defaultParams();
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(reentrantFeed), PricingSource.ChainlinkDirect);
+            _directPricing(address(reentrantFeed), PricingSource.Chainlink);
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         uint256[] memory amounts = vault.previewMint(ONE);
         reentrantToken.mint(ALICE, amounts[0]);
@@ -399,6 +399,6 @@ contract VaultHardeningTest is ProtocolTestBase {
         params = _defaultParams();
         params.initialAssets[0] = address(taxedToken);
         params.initialPricingConfigs[0] =
-            _directPricing(address(taxedFeed), PricingSource.ChainlinkDirect);
+            _directPricing(address(taxedFeed), PricingSource.Chainlink);
     }
 }

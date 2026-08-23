@@ -81,8 +81,8 @@ contract AssetPricingResolver is IAssetPricingResolver {
             revert InvalidPricingConfig(asset);
         }
         if (
-            config.source == PricingSource.ChainlinkDirect
-                || config.source == PricingSource.RobinhoodDirect
+            config.source == PricingSource.Chainlink
+                || config.source == PricingSource.ChainlinkRobinhood
         ) {
             _requireUnusedSecondary(config, asset);
             primaryStaleness = config.primaryMaxStaleness;
@@ -90,12 +90,12 @@ contract AssetPricingResolver is IAssetPricingResolver {
                 asset,
                 config.primarySource,
                 primaryStaleness,
-                config.source == PricingSource.RobinhoodDirect
+                config.source == PricingSource.ChainlinkRobinhood
             );
             return (config.primarySource, bytes32(0), primaryStaleness);
         }
 
-        if (config.source == PricingSource.ChainlinkAssetQuote) {
+        if (config.source == PricingSource.ChainlinkComposed) {
             _requireMarketRegistry();
             primaryStaleness = config.primaryMaxStaleness;
             address composedQuoteToken = config.quoteToken;

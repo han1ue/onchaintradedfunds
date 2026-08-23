@@ -566,8 +566,8 @@ The vault rejects:
 - An enabled `oraclePaused()` flag or an unavailable required pause check.
 - Unsupported token or oracle decimals.
 
-Each OTF pins one normalized price source per asset. `ChainlinkDirect` accepts any mechanically valid
-asset/USD feed selected by the creator. `ChainlinkAssetQuote` independently accepts and checks the
+Each OTF pins one normalized price source per asset. `Chainlink` accepts any mechanically valid
+asset/USD feed selected by the creator. `ChainlinkComposed` independently accepts and checks the
 creator-selected asset/quoteToken leg and registry-resolved quoteToken/USD leg, including token and feed addresses and staleness limits,
 multiplies them into an 8-decimal USD result, and exposes the older leg's
 timestamp. `UniswapV3Twap` accepts an asset/registeredQuote pool only after canonical-factory,
@@ -578,7 +578,7 @@ Feed addresses and freshness parameters remain pinned while the asset is tracked
 automatically falls back to another. Fully pruning an asset clears that pricing identity so a later
 strategy can reintroduce the asset with a newly validated source. Every read
 checks positive answers, round completeness, timestamps, protocol staleness bounds, and supported
-decimals. A `RobinhoodDirect` source additionally requires the base token's `oraclePaused()` call
+decimals. A `ChainlinkRobinhood` source additionally requires the base token's `oraclePaused()` call
 to be available and false. Robinhood equity feeds are 24/5; deployment policy currently allows the
 documented heartbeat plus delivery buffer, after which oracle-dependent operations pause until a
 fresh round arrives. Redemption remains price-independent.
@@ -849,7 +849,7 @@ only when both exact legs are independently reviewed.
 
 Tokenized-equity answers already include the Stock Token `uiMultiplier()` for dividends, splits,
 and other corporate actions; consumers must not multiply by it again. A feed can keep returning a
-value while its Stock Token has `oraclePaused() == true`, so `RobinhoodDirect` pricing checks that
+value while its Stock Token has `oraclePaused() == true`, so `ChainlinkRobinhood` pricing checks that
 token flag explicitly. See the
 [Chainlink tokenized-equity documentation](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
 and [Robinhood oracle guidance](https://docs.robinhood.com/chain/oracles-and-price-feeds). Robinhood

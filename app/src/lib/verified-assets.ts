@@ -2,7 +2,7 @@ import verifiedAssetsData from "../config/verified_assets.json";
 
 export type ApprovedPricingConfig =
   | {
-      source: "chainlink-direct" | "robinhood-direct";
+      source: "chainlink" | "chainlink-robinhood";
       feedAddress: string;
       maxStaleness: number;
     }
@@ -55,9 +55,9 @@ export function verifiedAssetFor(chainId: number, tokenAddress: string): Verifie
 }
 
 export function toNumericPricingConfig(config: ApprovedPricingConfig): NumericPricingConfig {
-  if (config.source === "chainlink-direct" || config.source === "robinhood-direct") {
+  if (config.source === "chainlink" || config.source === "chainlink-robinhood") {
     return {
-      source: config.source === "robinhood-direct" ? 3 : 0,
+      source: config.source === "chainlink-robinhood" ? 3 : 0,
       quoteToken: ZERO_ADDRESS,
       primarySource: config.feedAddress,
       secondarySource: ZERO_ADDRESS,

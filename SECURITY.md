@@ -203,7 +203,7 @@ registry cannot prove Chainlink pair semantics from feed descriptions.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
 multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token
-is paused, so `RobinhoodDirect` pricing must require the base token's `oraclePaused()` call
+is paused, so `ChainlinkRobinhood` pricing must require the base token's `oraclePaused()` call
 to be available and false. See the [official Chainlink guidance](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
 and [Robinhood oracle documentation](https://docs.robinhood.com/chain/oracles-and-price-feeds).
 

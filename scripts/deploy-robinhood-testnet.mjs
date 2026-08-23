@@ -393,7 +393,7 @@ const deployment = {
     constituentPools: [],
   },
   pricingConfiguration: {
-    sources: ["ChainlinkDirect", "ChainlinkAssetQuote", "UniswapV3Twap", "RobinhoodDirect"],
+    sources: ["chainlink", "chainlink-composed", "uniswap-v3", "chainlink-robinhood"],
     quoteTokens: quoteTokenRegistrations,
     vaultInitField: "initialPricingConfigs",
     suggestedInitialPricingConfigs,

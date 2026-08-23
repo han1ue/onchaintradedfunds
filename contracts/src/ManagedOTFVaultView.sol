@@ -143,7 +143,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         primarySource = _primaryPriceSourceForAsset[asset];
         normalizedPriceFeed = _priceFeedForAsset[asset];
         primaryMaxStaleness = _primaryMaxStalenessForAsset[asset];
-        if (source == PricingSource.ChainlinkAssetQuote || source == PricingSource.UniswapV3Twap) {
+        if (source == PricingSource.ChainlinkComposed || source == PricingSource.UniswapV3Twap) {
             (secondarySource, secondaryMaxStaleness,,,) =
                 IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(quoteToken);
         }
@@ -151,7 +151,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
 
     function maxStalenessForAsset(address asset) external view onlyDelegateCall returns (uint32) {
         uint32 primaryMaxStaleness = _maxStalenessForAsset[asset];
-        if (PricingSource(_pricingSourceForAsset[asset]) != PricingSource.ChainlinkAssetQuote) {
+        if (PricingSource(_pricingSourceForAsset[asset]) != PricingSource.ChainlinkComposed) {
             return primaryMaxStaleness;
         }
         (, uint32 quoteMaxStaleness,,,) =

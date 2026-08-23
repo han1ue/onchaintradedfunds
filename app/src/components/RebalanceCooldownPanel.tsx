@@ -827,10 +827,10 @@ function registeredQuoteDetailsArePresent(config: AssetPricingConfig): boolean {
 }
 
 function pricingSourceLabel(source: PricingSource): string {
-  if (source === 0) return "Direct Chainlink asset/USD";
-  if (source === 1) return "Composed Chainlink asset/quote × quote/USD";
-  if (source === 2) return "Uniswap V3 TWAP asset/quote × quote/USD";
-  return "Robinhood direct asset/USD";
+  if (source === 0) return "Chainlink";
+  if (source === 1) return "Chainlink Composed";
+  if (source === 2) return "Uniswap V3 TWAP";
+  return "Chainlink Robinhood";
 }
 
 const quoteTokenRegistryAbi = [
@@ -1101,10 +1101,10 @@ function PricingConfigurationFields({
                 secondaryMaxStaleness: [1, 2].includes(Number(event.target.value)) ? 60 * 60 : 0,
               })}
             >
-              <option value={0}>Direct Chainlink asset/USD</option>
-              <option value={1}>Composed Chainlink asset/quote × quote/USD</option>
-              <option value={2}>Uniswap V3 TWAP asset/quote × quote/USD</option>
-              <option value={3}>Robinhood direct asset/USD</option>
+              <option value={0}>Chainlink</option>
+              <option value={1}>Chainlink Composed</option>
+              <option value={2}>Uniswap V3 TWAP</option>
+              <option value={3}>Chainlink Robinhood</option>
             </select>
           </label>
           {config.source === 1 || config.source === 2 ? (
@@ -6829,7 +6829,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             <span>{incumbentPricingReadFailed
               ? "Refresh the OTF before proposing targets. Existing source addresses are never replaced with frontend defaults."
               : incumbentPricingReadsReady
-                ? "Choose direct Chainlink, Chainlink via WETH, or an initialized canonical V3 TWAP pool. Trading routes are configured independently."
+                ? "Choose Chainlink, Chainlink Composed, or an initialized canonical Uniswap V3 TWAP pool. Trading routes are configured independently."
                 : "The exact onchain tuples for every incumbent constituent must load before this proposal can be signed."}</span>
           </div></div>
         ) : null}
@@ -8389,7 +8389,7 @@ function CreateVaultView({
     allSeedAmountsReady ? null : "Wait for valid oracle prices before continuing.",
     pricingConfigsReady
       ? null
-      : "Every constituent needs a complete direct Chainlink, composed Chainlink, or V3 TWAP pricing configuration.",
+      : "Every constituent needs a complete Chainlink, Chainlink Composed, or Uniswap V3 TWAP pricing configuration.",
     portfolio.length === 0 || totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
@@ -9785,7 +9785,7 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
   return (
     <div className="appView">
       <AppPageHeader
-        title="Verified assets"
+        title="Verified Assets"
         description="Token identities and pricing routes checked against the app's verification registry. Verification is informational and does not authorize OTF constituents."
         icon={<ShieldCheck size={18} />}
         actions={isTestnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined}
@@ -9796,18 +9796,18 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
         <section className="sectionCard walletAssets">
           <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{testnetCreateAssets.length} verified</span></div>
           <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable verifiedAssetsTable">
-            <thead><tr><th>Onchain asset</th><th>Status</th><th>Decimals</th><th>Token contract</th><th>Pricing details</th><th>Execution pool</th><th>Reference price</th></tr></thead>
+            <thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th><th>Pricing details</th><th>Execution pool</th><th>Reference price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
               const pool = configuredConstituentPool(asset.address);
               const oraclePrice = oraclePrices[asset.address.toLowerCase()];
               const verification = verifiedAssetFor(robinhoodChainTestnet.id, asset.address);
               const pricingConfig = verification?.approvedPricingConfigs[0];
-              const pricingSource = pricingConfig?.source === "robinhood-direct"
-                ? "Robinhood direct"
-                : pricingConfig?.source === "chainlink-direct"
-                  ? "Chainlink direct"
+              const pricingSource = pricingConfig?.source === "chainlink-robinhood"
+                ? "Chainlink Robinhood"
+                : pricingConfig?.source === "chainlink"
+                  ? "Chainlink"
                   : pricingConfig?.source === "chainlink-composed"
-                    ? "Chainlink composed"
+                    ? "Chainlink Composed"
                     : pricingConfig?.source === "uniswap-v3"
                       ? "Uniswap V3 TWAP"
                       : "Not configured";
@@ -9826,7 +9826,6 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
-                  <td data-label="Status"><span className={`stateBadge ${verification ? "success" : "danger"}`}>{verification ? <><CheckCircle size={11} />Verified</> : "Not verified"}</span></td>
                   <td data-label="Decimals" className="monoValue">{asset.metadataLoading ? "Loading" : asset.decimals ?? "Unavailable"}</td>
                   <td data-label="Token contract" className="monoValue">
                     <a

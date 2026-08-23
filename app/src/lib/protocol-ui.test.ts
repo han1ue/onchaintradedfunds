@@ -14,10 +14,11 @@ describe("protocol UI policy", () => {
     expect(deriveOtfQuality([])).toBe("normal");
   });
 
-  it("supports exactly the three requested pricing routes and no V4", () => {
+  it("supports exactly the four requested pricing routes and no V4", () => {
     expect(SUPPORTED_PRICING_SOURCES).toEqual([
-      "chainlink-direct",
-      "chainlink-weth",
+      "chainlink-robinhood",
+      "chainlink",
+      "chainlink-composed",
       "uniswap-v3",
     ]);
     expect(SUPPORTED_PRICING_SOURCES).not.toContain("uniswap-v4");

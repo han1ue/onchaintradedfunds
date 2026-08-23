@@ -438,7 +438,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
         AssetPricingConfig memory config = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetQuote,
+            source: PricingSource.ChainlinkComposed,
             quoteToken: address(weth),
             primarySource: address(assetWethFeed),
             primaryMaxStaleness: 4 hours
@@ -462,7 +462,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockPriceFeed assetUsdgFeed = new MockPriceFeed(8, 4_00000000);
         AssetPricingConfig memory usdgComposed = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetQuote,
+            source: PricingSource.ChainlinkComposed,
             quoteToken: address(usdg),
             primarySource: address(assetUsdgFeed),
             primaryMaxStaleness: 2 hours
@@ -496,7 +496,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerQuoteToken(address(thirdQuote), address(thirdUsdFeed), 2 hours, true, true);
         MockPriceFeed assetThirdFeed = new MockPriceFeed(18, 3 ether);
         AssetPricingConfig memory thirdComposed = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetQuote,
+            source: PricingSource.ChainlinkComposed,
             quoteToken: address(thirdQuote),
             primarySource: address(assetThirdFeed),
             primaryMaxStaleness: 2 hours
@@ -549,7 +549,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         MockStockToken unknownQuote = new MockStockToken("Unknown", "UNKNOWN", 18);
         MockPriceFeed primary = new MockPriceFeed(18, 1 ether);
         AssetPricingConfig memory config = AssetPricingConfig({
-            source: PricingSource.ChainlinkAssetQuote,
+            source: PricingSource.ChainlinkComposed,
             quoteToken: address(unknownQuote),
             primarySource: address(primary),
             primaryMaxStaleness: 2 hours
@@ -568,7 +568,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
         MockPriceFeed suppliedFeed = new MockPriceFeed(8, 101_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect,
+            source: PricingSource.Chainlink,
             quoteToken: address(0),
             primarySource: address(suppliedFeed),
             primaryMaxStaleness: 25 hours
@@ -584,7 +584,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             new MockReentrantToken("No pause status", "NOPAUSE", 18);
         MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
-            source: PricingSource.RobinhoodDirect,
+            source: PricingSource.ChainlinkRobinhood,
             quoteToken: address(0),
             primarySource: address(feed),
             primaryMaxStaleness: 1 hours
@@ -600,7 +600,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockPriceFeed directFeed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory direct = AssetPricingConfig({
-            source: PricingSource.ChainlinkDirect,
+            source: PricingSource.Chainlink,
             quoteToken: address(0),
             primarySource: address(directFeed),
             primaryMaxStaleness: 1 hours
@@ -626,14 +626,14 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         directFeed.setRoundData(6, 100_00000000, block.timestamp, block.timestamp, 6);
         asset.setOraclePaused(true);
-        direct.source = PricingSource.RobinhoodDirect;
+        direct.source = PricingSource.ChainlinkRobinhood;
         vm.expectPartialRevert(PortfolioCalculator.OraclePaused.selector);
         resolver.validatePricing(address(asset), direct);
 
         asset.setOraclePaused(false);
         MockPriceFeed unsupportedDecimals = new MockPriceFeed(37, 100_00000000);
         direct.primarySource = address(unsupportedDecimals);
-        direct.source = PricingSource.ChainlinkDirect;
+        direct.source = PricingSource.Chainlink;
         vm.expectPartialRevert(PortfolioCalculator.UnsupportedDecimals.selector);
         resolver.validatePricing(address(asset), direct);
 
@@ -652,14 +652,14 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockVaultPriceSources vault = new MockVaultPriceSources(address(assets));
         vault.setPriceFeed(
-            address(asset), address(pinnedFeed), 25 hours, PricingSource.ChainlinkDirect
+            address(asset), address(pinnedFeed), 25 hours, PricingSource.Chainlink
         );
         PortfolioCalculator calculator = new PortfolioCalculator();
 
         uint256 pinnedValue = calculator.assetValueForVault(address(vault), address(asset), 1 ether);
         assertEq(pinnedValue, 150 ether);
 
-        vault.setPriceFeed(address(asset), address(0), 25 hours, PricingSource.ChainlinkDirect);
+        vault.setPriceFeed(address(asset), address(0), 25 hours, PricingSource.Chainlink);
         vm.expectPartialRevert(PortfolioCalculator.OracleFeedMissing.selector);
         calculator.assetValueForVault(address(vault), address(asset), 1 ether);
     }

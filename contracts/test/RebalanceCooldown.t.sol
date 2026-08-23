@@ -292,13 +292,13 @@ contract RebalanceCooldownTest is TestBase {
 
         AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
         pricingConfigs[0] = AssetPricingConfig({
-            source: PricingSource.RobinhoodDirect,
+            source: PricingSource.ChainlinkRobinhood,
             quoteToken: address(0),
             primarySource: address(feedA),
             primaryMaxStaleness: 25 hours
         });
         pricingConfigs[1] = AssetPricingConfig({
-            source: PricingSource.RobinhoodDirect,
+            source: PricingSource.ChainlinkRobinhood,
             quoteToken: address(0),
             primarySource: address(feedB),
             primaryMaxStaleness: 25 hours

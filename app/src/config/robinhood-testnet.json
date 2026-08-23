@@ -117,10 +117,10 @@
   },
   "pricingConfiguration": {
     "sources": [
-      "ChainlinkDirect",
-      "ChainlinkAssetQuote",
-      "UniswapV3Twap",
-      "RobinhoodDirect"
+      "chainlink",
+      "chainlink-composed",
+      "uniswap-v3",
+      "chainlink-robinhood"
     ],
     "quoteTokens": [
       {
@@ -162,7 +162,7 @@
     "suggestedInitialPricingConfigs": [
       {
         "asset": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
-        "source": "RobinhoodDirect",
+        "source": "chainlink-robinhood",
         "quoteToken": "0x0000000000000000000000000000000000000000",
         "primarySource": "0xeC94d42128127eb55CCFC28E70c5DdB5a52f7791",
         "primaryMaxStaleness": 90000,
@@ -170,7 +170,7 @@
       },
       {
         "asset": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
-        "source": "RobinhoodDirect",
+        "source": "chainlink-robinhood",
         "quoteToken": "0x0000000000000000000000000000000000000000",
         "primarySource": "0x0188C647866b1df0B9DA16e6D1A6727ab50E03fC",
         "primaryMaxStaleness": 90000,
@@ -178,7 +178,7 @@
       },
       {
         "asset": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
-        "source": "RobinhoodDirect",
+        "source": "chainlink-robinhood",
         "quoteToken": "0x0000000000000000000000000000000000000000",
         "primarySource": "0xe26DB4aefE67e0D74fD0f661B4F1241B962B49D2",
         "primaryMaxStaleness": 90000,
@@ -186,7 +186,7 @@
       },
       {
         "asset": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
-        "source": "RobinhoodDirect",
+        "source": "chainlink-robinhood",
         "quoteToken": "0x0000000000000000000000000000000000000000",
         "primarySource": "0x414419B70A1c89a24B695DFD0c91c12d41b68967",
         "primaryMaxStaleness": 90000,
@@ -194,7 +194,7 @@
       },
       {
         "asset": "0x71178BAc73cBeb415514eB542a8995b82669778d",
-        "source": "RobinhoodDirect",
+        "source": "chainlink-robinhood",
         "quoteToken": "0x0000000000000000000000000000000000000000",
         "primarySource": "0xFf4585e97CDD77dECfF0428A238bd82fDE515d62",
         "primaryMaxStaleness": 90000,

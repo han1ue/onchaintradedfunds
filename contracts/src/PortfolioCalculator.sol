@@ -326,7 +326,7 @@ contract PortfolioCalculator {
         feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
         maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
         bool requireRobinhoodPauseCheck = IVaultAssetPriceSources(vault)
-                .pricingSourceForAsset(asset) == PricingSource.RobinhoodDirect;
+                .pricingSourceForAsset(asset) == PricingSource.ChainlinkRobinhood;
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         return _readValidPrice(asset, feed, maxStaleness, requireRobinhoodPauseCheck);
     }

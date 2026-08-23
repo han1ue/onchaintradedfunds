@@ -235,7 +235,7 @@ for (const item of catalog) {
   deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
   upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {
     asset,
-    source: "RobinhoodDirect",
+    source: "chainlink-robinhood",
     quoteToken: "0x0000000000000000000000000000000000000000",
     primarySource: feed,
     primaryMaxStaleness: robinhoodEquityMaxStalenessSeconds,

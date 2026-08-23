@@ -21,7 +21,8 @@ export function primaryDepositsBlocked(input: {
 }
 
 export const SUPPORTED_PRICING_SOURCES = Object.freeze([
-  "chainlink-direct",
-  "chainlink-weth",
+  "chainlink-robinhood",
+  "chainlink",
+  "chainlink-composed",
   "uniswap-v3",
 ] as const);

@@ -73,13 +73,13 @@ const contractRows = [
   ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
   ["Uniswap V3 adapter", "Executes explicit exact-input paths for entry, redemption, and rebalancing; caller contracts enforce the permitted endpoints."],
   ["AssetRegistry", "Optional permissionless discovery index; vault eligibility never depends on it."],
-  ["Pricing resolver", "Mechanically validates creator-selected direct or composed Chainlink feeds, or a canonical V3 route, and resolves the normalized feed and parameters pinned by one OTF."],
+  ["Pricing resolver", "Mechanically validates creator-selected Chainlink, Chainlink Composed, or canonical Uniswap V3 TWAP routes and resolves the normalized feed and parameters pinned by one OTF."],
   ["FeeCollector", "Receives the protocol portion of creator-selected management fees."],
 ] as const;
 
 const safetyRows = [
   ["Asset quality", "High and normal are frontend-only metadata labels. They never gate onchain inclusion, submissions, or rewards."],
-  ["Pinned pricing", "Each OTF pins exactly one validated direct Chainlink, composed Chainlink, or Uniswap V3 TWAP route per constituent, with no fallback."],
+  ["Pinned pricing", "Each OTF pins exactly one validated Chainlink, Chainlink Composed, or Uniswap V3 TWAP route per constituent, with no fallback."],
   ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
   ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],
   ["Weight bands", "Wider challenge bands trigger accountability; narrower completion bands prove restoration."],

@@ -540,8 +540,8 @@ the OTF from the manager's own assets or fee revenue.
 
 ## 9. Oracle requirements
 
-`PricingSource` MUST contain exactly `ChainlinkDirect`, `ChainlinkAssetQuote`,
-`UniswapV3Twap`, and `RobinhoodDirect`. A zero/default enum value is not sufficient validation: every required address and
+`PricingSource` MUST contain exactly `Chainlink`, `ChainlinkComposed`,
+`UniswapV3Twap`, and `ChainlinkRobinhood`. A zero/default enum value is not sufficient validation: every required address and
 relationship MUST be checked. Uniswap V4 and every other source type MUST be rejected.
 
 For direct Chainlink pricing:

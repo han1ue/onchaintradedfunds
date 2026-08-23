@@ -331,7 +331,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         weights[0] = 5_000;
         weights[1] = 5_000;
         AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](2);
-        pricingConfigs[0] = _directPricing(address(feedA), PricingSource.ChainlinkDirect);
+        pricingConfigs[0] = _directPricing(address(feedA), PricingSource.Chainlink);
         pricingConfigs[1] = _pricingConfigFor(address(tokenB));
         vm.expectRevert(ManagedOTFVaultStorage.SelfAssetNotSupported.selector);
         vault.proposeStrategyWithPricing(
@@ -573,7 +573,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             uint32 secondaryMaxStaleness
         ) = vault.pricingConfigForAsset(address(tokenC));
         assertTrue(configured);
-        assertEq(uint256(source), uint256(PricingSource.RobinhoodDirect));
+        assertEq(uint256(source), uint256(PricingSource.ChainlinkRobinhood));
         assertEq(quoteToken, address(0));
         assertEq(primarySource, address(feedC));
         assertEq(secondarySource, address(0));

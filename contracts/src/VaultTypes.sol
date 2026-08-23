@@ -2,10 +2,10 @@
 pragma solidity ^0.8.24;
 
 enum PricingSource {
-    ChainlinkDirect,
-    ChainlinkAssetQuote,
+    Chainlink,
+    ChainlinkComposed,
     UniswapV3Twap,
-    RobinhoodDirect
+    ChainlinkRobinhood
 }
 
 /// @notice User-supplied pricing configuration pinned when an asset first enters an OTF.

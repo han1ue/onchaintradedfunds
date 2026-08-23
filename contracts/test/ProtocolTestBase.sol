@@ -230,7 +230,7 @@ abstract contract ProtocolTestBase is TestBase {
     }
 
     function _directPricing(address feed) internal pure returns (AssetPricingConfig memory config) {
-        return _directPricing(feed, PricingSource.RobinhoodDirect);
+        return _directPricing(feed, PricingSource.ChainlinkRobinhood);
     }
 
     function _directPricing(address feed, PricingSource source)

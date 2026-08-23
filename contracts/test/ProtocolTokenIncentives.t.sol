@@ -254,7 +254,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.initialPricingConfigs[0] = _directPricing(address(feedA));
         params.initialPricingConfigs[1] = _directPricing(address(feedB));
         params.initialPricingConfigs[2] =
-            _directPricing(address(otfFeed), PricingSource.ChainlinkDirect);
+            _directPricing(address(otfFeed), PricingSource.Chainlink);
 
         uint16 remainingWeight = uint16(10_000 - otfWeightBps);
         params.initialTargetWeightsBps = new uint16[](3);

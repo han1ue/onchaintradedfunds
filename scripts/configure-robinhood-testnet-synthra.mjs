@@ -368,7 +368,7 @@ for (const item of catalog) {
   );
   const configuredFeed = pricing?.primarySource ?? zeroAddress;
   const configuredMaxStaleness = Number(pricing?.primaryMaxStaleness ?? 0);
-  const configuredSource = pricing?.source ?? "ChainlinkDirect";
+  const configuredSource = pricing?.source ?? "chainlink";
   const assetDecimals = await publicClient.readContract({
     address: asset,
     abi: erc20MetadataAbi,
@@ -387,12 +387,12 @@ for (const item of catalog) {
     || configuredMaxStaleness > 7 * 24 * 60 * 60) {
     throw new Error(`${symbol} has an invalid suggested staleness limit.`);
   }
-  if (configuredSource !== "ChainlinkDirect" && configuredSource !== "RobinhoodDirect") {
+  if (configuredSource !== "chainlink" && configuredSource !== "chainlink-robinhood") {
     throw new Error(`${symbol} needs a direct Chainlink-compatible source for pool initialization.`);
   }
   await requireCode(`${symbol} price feed`, configuredFeed);
 
-  if (configuredSource === "RobinhoodDirect") {
+  if (configuredSource === "chainlink-robinhood") {
     let oraclePaused;
     try {
       oraclePaused = await publicClient.readContract({
@@ -402,7 +402,7 @@ for (const item of catalog) {
       });
     } catch {
       throw new Error(
-        `${symbol} uses RobinhoodDirect pricing but oraclePaused() is unavailable.`,
+        `${symbol} uses chainlink-robinhood pricing but oraclePaused() is unavailable.`,
       );
     }
     if (oraclePaused) throw new Error(`${symbol} reports oraclePaused() == true.`);
