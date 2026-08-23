@@ -37,7 +37,7 @@ export function ResponsiveLeaderboard({ entries, submissionsOpen = true }: { ent
             <div><div className="otfTitleLine"><span className="otfName">{entry.name}</span>{entry.verified && <StatusBadge tone="positive">Verified</StatusBadge>}</div><p title={entry.thesis}>{truncateText(entry.thesis, LEADERBOARD_THESIS_LIMIT)}</p></div>
           </div>
           <AllocationStrip allocations={entry.allocations} showPercentages compactSummary />
-          <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span><BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" /></div>
+          <div className="creator"><XProfileImage src={entry.creator.profileImageUrl} username={entry.creator.username} /><span>@{entry.creator.username}</span>{entry.creator.verified && <BadgeCheck className="xVerifiedBadge" size={15} aria-label="Verified X account" />}</div>
           <div className="voteTotal"><strong>{entry.votes.toLocaleString()}</strong></div>
         </Link>
       </li>)}

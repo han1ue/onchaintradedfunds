@@ -4,7 +4,7 @@ import { PROPOSAL_DRAFT_TTL_MS } from "@/lib/competition";
 import type { ProposalDraft } from "@/lib/types";
 import { pricingConfigAddresses } from "@/lib/pricing-config";
 import { approximateXPostLength, buildSubmissionPost, buildXIntentUrl, normalizeXPostText, slugifyProposalName } from "@/lib/x-post";
-import { proposalInputSchema, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
+import { parseProposalInput, xPostActionSchema, xPostProofSchema } from "@/lib/validation";
 import { requireDb } from "./db";
 import {
   assetRegistry, competitions, evidenceChecks, proposalAssets, proposals,
@@ -65,7 +65,7 @@ export async function getProposalDraftForResume(proposalId: string): Promise<Pro
     gt(proposals.draftExpiresAt, now),
   )).limit(1);
   if (!proposal?.draftExpiresAt) return null;
-  const parsed = proposalInputSchema.parse({
+  const parsed = parseProposalInput({
     name: proposal.name,
     ticker: proposal.ticker,
     thesis: proposal.thesis,
@@ -82,7 +82,7 @@ export async function getProposalDraftForResume(proposalId: string): Promise<Pro
 }
 
 export async function saveProposalDraft(input: unknown, existingDraftId?: string) {
-  const parsed = proposalInputSchema.parse(input);
+  const parsed = parseProposalInput(input);
   if (existingDraftId && !validProposalId(existingDraftId)) throw new Error("PROPOSAL_NOT_FOUND");
   const database = requireDb();
   const { session, competition } = await requireEligibleActor();
@@ -187,7 +187,7 @@ async function validateDraftAllocationsForConfirmation(
   proposal: { name: string; ticker: string; thesis: string; draftAllocations: unknown[] },
   competitionStartsAt: Date,
 ) {
-  const parsed = proposalInputSchema.parse({
+  const parsed = parseProposalInput({
     name: proposal.name,
     ticker: proposal.ticker,
     thesis: proposal.thesis,

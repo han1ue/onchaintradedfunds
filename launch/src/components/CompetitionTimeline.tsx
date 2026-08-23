@@ -12,10 +12,11 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
     ? Math.max(0, Math.min(100, elapsedDays / totalDays * 100))
     : 0;
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
+  const cancelled = status.stage === "cancelled";
   const phases = [
-    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: `Confirm up to ${rules.maxProposalsPerAccount} OTF proposals per account.` },
-    { title: "Voting month", timing: `Days ${rules.submissionOnlyDays + 1}–${totalDays}`, detail: `Voting opens with ${rules.initialVotes} votes. ${rules.votesPerUnlock} more unlocks every ${rules.voteUnlockIntervalDays} days; OTF submissions stay open.` },
-    { title: "Final results", timing: "After voting", detail: "Votes are reviewed and the final ranking becomes launch order." },
+    { title: "Submission week", timing: `Days 1–${rules.submissionOnlyDays}`, detail: cancelled ? "Submissions are closed." : `Confirm up to ${rules.maxProposalsPerAccount} OTF proposals per account.` },
+    { title: "Voting month", timing: `Days ${rules.submissionOnlyDays + 1}–${totalDays}`, detail: cancelled ? "Voting is closed and no more votes can be cast." : `Voting opens with ${rules.initialVotes} votes. ${rules.votesPerUnlock} more unlocks every ${rules.voteUnlockIntervalDays} days; OTF submissions stay open.` },
+    { title: "Final results", timing: "After voting", detail: cancelled ? "The cancelled competition will not produce a launch order." : "Votes are reviewed and the final ranking becomes launch order." },
   ];
   const stageCopy = status.stage === "submissions"
     ? `Submissions are open now. Voting and the first ${rules.initialVotes} votes come next.`
@@ -35,9 +36,9 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
       <span className="timelineProgressThumb" style={{ left: `clamp(4px, ${progressPercent}%, calc(100% - 4px))` }} aria-hidden="true" />
     </div>
     <ol>{phases.map((phase, index) => {
-      const state = index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";
+      const state = cancelled ? "cancelled" : index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";
       const Icon = state === "complete" ? Check : state === "current" ? Clock3 : Circle;
-      return <li className={state} key={phase.title}><div className="timelineMarker"><Icon size={14} /><span>{state === "complete" ? "Complete" : state === "current" ? "Now" : "Next"}</span></div><strong>{phase.title}</strong><small>{phase.timing}</small><p>{phase.detail}</p></li>;
+      return <li className={state} key={phase.title}><div className="timelineMarker"><Icon size={14} /><span>{state === "cancelled" ? "Ended" : state === "complete" ? "Complete" : state === "current" ? "Now" : "Next"}</span></div><strong>{phase.title}</strong><small>{phase.timing}</small><p>{phase.detail}</p></li>;
     })}</ol>
   </SectionCard>;
 }

@@ -212,6 +212,7 @@ export const priceCaptureRuns = pgTable("price_capture_runs", {
   status: text("status").notNull(),
   requestedAssetIds: uuid("requested_asset_ids").array().notNull(),
   missingSymbols: text("missing_symbols").array().default(sql`ARRAY[]::text[]`).notNull(),
+  ambiguousSymbols: text("ambiguous_symbols").array().default(sql`ARRAY[]::text[]`).notNull(),
   provider: text("provider").default("robinhood-bid").notNull(),
   purpose: text("purpose").default("scoring").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
@@ -228,7 +229,7 @@ export const assetPriceSnapshots = pgTable("asset_price_snapshots", {
   sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
   captureRunId: uuid("capture_run_id").references(() => priceCaptureRuns.id, { onDelete: "restrict" }),
   quoteGeneratedAt: timestamp("quote_generated_at", { withTimezone: true }).notNull(),
-  bidUsd: numeric("bid_usd", { precision: 24, scale: 8 }).notNull(),
+  bidUsd: numeric("bid_usd", { precision: 38, scale: 18 }).notNull(),
   twapWindowSeconds: integer("twap_window_seconds").default(0).notNull()
 }, (table) => [
   uniqueIndex("asset_price_snapshot_run_asset_uq").on(table.captureRunId, table.assetId),

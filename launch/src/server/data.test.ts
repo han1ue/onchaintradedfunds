@@ -15,7 +15,7 @@ function proposal(rank: number): LeaderboardEntry {
     name: `Proposal ${rank} OTF`,
     ticker: `OTF${rank}`,
     thesis: `Thesis ${rank}`,
-    creator: { xId: `x-${rank}`, username: `creator${rank}`, displayName: `Creator ${rank}` },
+    creator: { xId: `x-${rank}`, username: `creator${rank}`, displayName: `Creator ${rank}`, verified: false },
     votes: 200 - rank,
     acceptedAt: new Date(Date.UTC(2026, 7, 1, 0, rank)).toISOString(),
     allocations: [],

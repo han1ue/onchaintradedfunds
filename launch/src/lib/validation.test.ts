@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ballotActivationSchema, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteAdditionsSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
+import { ballotActivationSchema, parseProposalInput, parseXPostId, pricingConfigSchema, proposalAssetMetadataSchema, proposalInputSchema, rankEntries, voteAdditionsSchema, xPostProofSchema, xPostReasonSchema } from "./validation";
 import { normalizeTickerInput } from "./ticker";
 
 const assetA = "11111111-1111-4111-8111-111111111111";
@@ -40,6 +40,14 @@ describe("proposal validation", () => {
   });
   it("rejects allocations that do not total 100%", () => {
     expect(() => proposalInputSchema.parse({ name: "Compute OTF", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 6000), allocation(assetB, 3000)] })).toThrow(/100%/);
+  });
+  it("maps minimum-weight validation to a public error code", () => {
+    expect(() => parseProposalInput({
+      name: "Compute OTF",
+      ticker: "CMP",
+      thesis: "A long-term thesis for compute infrastructure.",
+      allocations: [allocation(assetA, 0), allocation(assetB, 10_000)],
+    })).toThrow("PROPOSAL_WEIGHT_MINIMUM");
   });
   it("rejects duplicate assets and names without the OTF suffix", () => {
     expect(() => proposalInputSchema.parse({ name: "Compute", ticker: "CMP", thesis: "A long-term thesis for compute infrastructure.", allocations: [allocation(assetA, 5000), allocation(assetA, 5000)] })).toThrow();

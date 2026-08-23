@@ -50,11 +50,10 @@ export type LeaderboardEntry = {
   name: string;
   ticker: string;
   thesis: string;
-  creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null };
+  creator: { xId: string; username: string; displayName: string; profileImageUrl?: string | null; verified: boolean };
   votes: number;
   acceptedAt: string;
   uniqueSupporterCount?: number;
-  submissionBoost?: boolean;
   verified?: boolean;
   allocations: Allocation[];
   proofUrl?: string;

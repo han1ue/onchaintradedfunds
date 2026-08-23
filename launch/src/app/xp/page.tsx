@@ -47,7 +47,7 @@ export default function XpPage() {
       <div className="xpFormulaRows">
         <article>
           <TrendingUp size={20} aria-hidden="true" />
-          <div><h3>Performance · 5,250,000 XP</h3><p>Each eligible vote tranche is scored by vote quantity, its confirmed OTF&apos;s relative portfolio return, and how long the tranche was active. Verified and non-verified OTFs compete in separate pools; deleted OTFs are excluded.</p></div>
+          <div><h3>Performance · 5,250,000 XP</h3><p>Each eligible vote tranche is scored by vote quantity, its confirmed OTF&apos;s relative portfolio return, and how long the tranche was active. Verified OTFs compete for a pool that is 100% larger—3.5M versus 1.75M—but individual awards depend on relative score within the applicable pool. Deleted OTFs are excluded.</p></div>
           <code>votes × percentile² × maturity</code>
         </article>
         <article>

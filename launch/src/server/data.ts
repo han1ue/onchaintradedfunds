@@ -125,7 +125,7 @@ export async function getLeaderboard(options: RankedListOptions = {}): Promise<L
     with ranked as (
       select p.id, p.creator_user_id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, u.display_name as creator_name,
-        u.profile_image_url as creator_profile_image_url,
+        u.profile_image_url as creator_profile_image_url, u.verified as creator_verified,
         coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
       from proposals p join users u on u.id = p.creator_user_id
       left join ballot_allocations ba on ba.proposal_id = p.id
@@ -141,9 +141,8 @@ export async function getLeaderboard(options: RankedListOptions = {}): Promise<L
         join ballots vb on vb.id = vt.ballot_id and vb.status = 'valid'
         join tweet_evidence ve on ve.id = vt.evidence_id and ve.status = 'valid'
         where vt.proposal_id = o.id and vt.voter_user_id <> o.creator_user_id) as "uniqueSupporterCount",
-      (o.accepted_at < (select starts_at from competitions limit 1) + interval '7 days') as "submissionBoost",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
-      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
+      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url, 'verified', o.creator_verified) as creator,
       not exists (
         select 1 from proposal_assets verification_pa
         join asset_registry verification_a on verification_a.id = verification_pa.asset_id
@@ -186,7 +185,7 @@ export async function getProposal(slug: string) {
     with ranked as (
       select p.id, p.creator_user_id, p.slug, p.name, p.ticker, p.thesis, p.accepted_at,
         u.x_user_id, u.x_username, u.display_name as creator_name,
-        u.profile_image_url as creator_profile_image_url,
+        u.profile_image_url as creator_profile_image_url, u.verified as creator_verified,
         coalesce(sum(case when b.status = 'valid' then ba.votes else 0 end), 0)::int as votes
       from proposals p join users u on u.id = p.creator_user_id
       left join ballot_allocations ba on ba.proposal_id = p.id
@@ -202,9 +201,8 @@ export async function getProposal(slug: string) {
         join ballots vb on vb.id = vt.ballot_id and vb.status = 'valid'
         join tweet_evidence ve on ve.id = vt.evidence_id and ve.status = 'valid'
         where vt.proposal_id = o.id and vt.voter_user_id <> o.creator_user_id) as "uniqueSupporterCount",
-      (o.accepted_at < (select starts_at from competitions limit 1) + interval '7 days') as "submissionBoost",
       (select te.post_url from tweet_evidence te where te.proposal_id = o.id and te.action = 'submission' and te.status = 'valid' limit 1) as "proofUrl",
-      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url) as creator,
+      json_build_object('xId', o.x_user_id, 'username', o.x_username, 'displayName', o.creator_name, 'profileImageUrl', o.creator_profile_image_url, 'verified', o.creator_verified) as creator,
       not exists (
         select 1 from proposal_assets verification_pa
         join asset_registry verification_a on verification_a.id = verification_pa.asset_id

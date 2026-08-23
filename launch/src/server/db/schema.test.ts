@@ -8,6 +8,7 @@ import {
   ballots,
   competitions,
   priceCaptureRuns,
+  assetPriceSnapshots,
   proposalAssets,
   proposals,
   proposalStatus,
@@ -70,6 +71,11 @@ describe("unified asset database schema", () => {
 
   it("keys price capture runs for cross-instance cron idempotency", () => {
     expect(getTableColumns(priceCaptureRuns)).toHaveProperty("captureKey");
+    expect(getTableColumns(priceCaptureRuns)).toHaveProperty("ambiguousSymbols");
+  });
+
+  it("stores USD price snapshots at hardened precision", () => {
+    expect(getTableColumns(assetPriceSnapshots).bidUsd.getSQLType()).toBe("numeric(38, 18)");
   });
 
   it("persists draft expiry separately from confirmed and deleted proposals", () => {

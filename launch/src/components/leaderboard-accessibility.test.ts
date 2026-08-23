@@ -20,6 +20,7 @@ const entry: LeaderboardEntry = {
     username: "ada",
     displayName: "Ada",
     profileImageUrl: null,
+    verified: true,
   },
   votes: 1234,
   acceptedAt: "2026-08-01T00:00:00.000Z",
