@@ -194,7 +194,7 @@ outputs round down.
 Each OTF permanently locks `1_000_000` share wei inside itself at initialization. This prevents
 total supply from reaching zero and keeps minting operational after every circulating share has
 been redeemed. Initial share supply must be greater than the locked amount.
-Initial supply is capped at one billion whole 18-decimal shares (`1e27` raw share units) to prevent
+Initial supply is capped at one million whole 18-decimal shares (`1e24` raw share units) to prevent
 creation at a pathological scale near the `uint256` arithmetic limit. Later proportional user mints
 are not constrained by this creation-only cap.
 

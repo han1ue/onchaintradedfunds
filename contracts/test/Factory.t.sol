@@ -67,17 +67,17 @@ contract FactoryTest is ProtocolTestBase {
 
     function testFactoryAcceptsInitialShareSupplyAtMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.initialShareSupply = 1_000_000_000 * ONE;
+        params.initialShareSupply = 1_000_000 * ONE;
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.totalSupply(), 1_000_000_000 * ONE);
-        assertEq(factory.MAX_INITIAL_SHARE_SUPPLY(), 1_000_000_000 * ONE);
+        assertEq(vault.totalSupply(), 1_000_000 * ONE);
+        assertEq(factory.MAX_INITIAL_SHARE_SUPPLY(), 1_000_000 * ONE);
     }
 
     function testFactoryRejectsInitialShareSupplyAboveMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.initialShareSupply = 1_000_000_000 * ONE + 1;
+        params.initialShareSupply = 1_000_000 * ONE + 1;
 
         vm.expectPartialRevert(OTFFactory.InitialShareSupplyTooLarge.selector);
         factory.createVault(params);

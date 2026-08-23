@@ -516,7 +516,7 @@ the OTF from the manager's own assets or fee revenue.
 3. Constituent-token callbacks during factory prefunding MUST NOT mint shares, change roles, or
    mutate strategy state at the clone's predicted address.
 4. Initial supply MUST exceed the permanently locked minimum-liquidity shares.
-5. Initial supply MUST NOT exceed one billion whole 18-decimal shares (`1e27` raw units).
+5. Initial supply MUST NOT exceed one million whole 18-decimal shares (`1e24` raw units).
 6. Total supply MUST never return to zero.
 7. Contributions MUST be proportional to current reserves and supply.
 8. Contribution requirements round up.
