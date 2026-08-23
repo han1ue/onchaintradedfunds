@@ -1,10 +1,12 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Minimal Uniswap V3 TickMath/OracleLibrary quote functions used by OTF TWAP feeds.
-/// @dev Tick constants and rounding behavior match Uniswap V3 core's MIT-licensed TickMath.
+/// @dev Derived from the GPL-2.0-or-later Uniswap V3 TickMath and OracleLibrary implementations:
+///      https://github.com/Uniswap/v3-core/blob/main/contracts/libraries/TickMath.sol
+///      https://github.com/Uniswap/v3-periphery/blob/main/contracts/libraries/OracleLibrary.sol
 library UniswapV3TwapMath {
     error InvalidTick(int24 tick);
 

@@ -651,9 +651,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         MockPriceFeed pinnedFeed = new MockPriceFeed(8, 150_00000000);
 
         MockVaultPriceSources vault = new MockVaultPriceSources(address(assets));
-        vault.setPriceFeed(
-            address(asset), address(pinnedFeed), 25 hours, PricingSource.Chainlink
-        );
+        vault.setPriceFeed(address(asset), address(pinnedFeed), 25 hours, PricingSource.Chainlink);
         PortfolioCalculator calculator = new PortfolioCalculator();
 
         uint256 pinnedValue = calculator.assetValueForVault(address(vault), address(asset), 1 ether);

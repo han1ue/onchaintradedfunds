@@ -82,25 +82,33 @@ import {
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
+import { robinhoodTestnetAddresses } from "@/lib/deployment";
 import {
-  robinhoodTestnetAddresses,
-  robinhoodTestnetExecutionBridge,
-  robinhoodTestnetV3Venue,
-  robinhoodTestnetWethV3Venue,
-} from "@/lib/deployment";
+  selectExecutionRoute,
+  selectV3Pool,
+  useDiscoveredV3Pools,
+  type DiscoveredExecutionRoute,
+  type V3TokenPair,
+} from "@/lib/v3-execution-routes";
 import {
   approvedPricingConfigsFor,
   isVerifiedPricingConfig,
   pricingVerification,
   pricingConfigsMatch,
+  type ApprovedPricingConfig,
   verifiedAssets,
   verifiedAssetFor,
 } from "@/lib/verified-assets";
 import {
+  DEFAULT_CHALLENGE_DEVIATION_BPS,
+  DEFAULT_COMPLETION_DEVIATION_BPS,
   deriveOtfQuality,
   normalizeAssetQuality,
+  percentToBps,
   primaryDepositsBlocked,
+  weightBandValidationError,
   type AssetQuality,
+  type WeightBandLimits,
 } from "@/lib/protocol-ui";
 import {
   formatCooldown,
@@ -664,52 +672,6 @@ function configuredSettlementTokenAddress(mode: RoutedSettlementMode = "usdg"): 
   return mode === "weth" ? robinhoodTestnetAddresses.weth : robinhoodTestnetAddresses.usdg;
 }
 
-function configuredExecutionBridgePath(tokenIn: string, tokenOut: string): `0x${string}` | undefined {
-  const { tokenA, tokenB, fee, pool } = robinhoodTestnetExecutionBridge;
-  if (!tokenA || !tokenB || !pool || !fee) return undefined;
-  const matches = (tokenIn.toLowerCase() === tokenA.toLowerCase()
-      && tokenOut.toLowerCase() === tokenB.toLowerCase())
-    || (tokenIn.toLowerCase() === tokenB.toLowerCase()
-      && tokenOut.toLowerCase() === tokenA.toLowerCase());
-  return matches
-    ? encodePacked(
-        ["address", "uint24", "address"],
-        [tokenIn as `0x${string}`, fee, tokenOut as `0x${string}`],
-      )
-    : undefined;
-}
-
-function configuredConstituentFee(asset?: string, mode: RoutedSettlementMode = "usdg"): number {
-  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
-  return venue.constituentPools.find((record) => !asset || record.asset.toLowerCase() === asset.toLowerCase())?.fee
-    ?? (mode === "weth"
-      ? robinhoodTestnetV3Venue.constituentPools.find(
-          (record) => !asset || record.asset.toLowerCase() === asset.toLowerCase(),
-        )?.fee
-      : undefined)
-    ?? venue.constituentFee
-    ?? (mode === "weth" ? robinhoodTestnetV3Venue.constituentFee : undefined)
-    ?? 3000;
-}
-
-function configuredConstituentPool(asset: string, mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
-  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
-  return venue.constituentPools.find(
-    (record) => record.asset.toLowerCase() === asset.toLowerCase(),
-  )?.pool ?? (mode === "weth"
-    ? robinhoodTestnetV3Venue.constituentPools.find(
-        (record) => record.asset.toLowerCase() === asset.toLowerCase(),
-      )?.pool
-    : undefined);
-}
-
-type ExecutionRoute = {
-  asset: string;
-  pool: `0x${string}`;
-  fee: number;
-  quoteToken: `0x${string}`;
-};
-
 type PackedV3Path = {
   path: `0x${string}`;
   tokens: `0x${string}`[];
@@ -755,40 +717,36 @@ function joinPackedV3Paths(
   return `${first}${second.slice(42)}` as `0x${string}`;
 }
 
-function configuredExecutionRoute(
-  asset: string,
-  mode: RoutedSettlementMode = "usdg",
-): ExecutionRoute | undefined {
-  const venue = mode === "weth" ? robinhoodTestnetWethV3Venue : robinhoodTestnetV3Venue;
-  const record = venue.constituentPools
-    .find((candidate) => candidate.asset.toLowerCase() === asset.toLowerCase())
-    ?? (mode === "weth"
-      ? robinhoodTestnetV3Venue.constituentPools.find(
-          (candidate) => candidate.asset.toLowerCase() === asset.toLowerCase(),
-        )
-      : undefined);
-  return record ? {
-    asset: record.asset,
-    pool: record.pool,
-    fee: record.fee,
-    quoteToken: record.quoteToken,
-  } : undefined;
+function packedExecutionRoute(
+  route: DiscoveredExecutionRoute,
+  assetToSettlement: boolean,
+): `0x${string}` {
+  const assetQuotePath = assetToSettlement
+    ? encodePacked(
+        ["address", "uint24", "address"],
+        [route.asset, route.assetPool.fee, route.quoteToken],
+      )
+    : encodePacked(
+        ["address", "uint24", "address"],
+        [route.quoteToken, route.assetPool.fee, route.asset],
+      );
+  if (!route.bridgePool) return assetQuotePath;
+  const bridgePath = assetToSettlement
+    ? encodePacked(
+        ["address", "uint24", "address"],
+        [route.quoteToken, route.bridgePool.fee, route.settlementToken],
+      )
+    : encodePacked(
+        ["address", "uint24", "address"],
+        [route.settlementToken, route.bridgePool.fee, route.quoteToken],
+      );
+  return assetToSettlement
+    ? joinPackedV3Paths(assetQuotePath, bridgePath)!
+    : joinPackedV3Paths(bridgePath, assetQuotePath)!;
 }
 
-function useVaultExecutionRoutes(
-  vault: VaultView,
-  enabled: boolean,
-  mode: RoutedSettlementMode = "usdg",
-) {
-  return useMemo(() => {
-    const routes = new Map<string, ExecutionRoute>();
-    if (!enabled) return routes;
-    vault.allocations.forEach((asset) => {
-      const route = configuredExecutionRoute(asset.address, mode);
-      if (route) routes.set(asset.address.toLowerCase(), route);
-    });
-    return routes;
-  }, [enabled, mode, vault.allocations]);
+function executionRoutePools(route: DiscoveredExecutionRoute | undefined) {
+  return route ? [route.assetPool, route.bridgePool].filter(Boolean) : [];
 }
 
 function configuredPricingConfig(
@@ -1537,10 +1495,6 @@ function txStateLabel(state: TxState): { label: string; tone: "muted" | "info" |
   return { label: "Idle", tone: "muted" };
 }
 
-function percentToBps(value: string | number): number {
-  return Math.round(Number(value || 0) * 100);
-}
-
 const protocolErrorMessages = new Map<string, string>(
   [
     ["SafeTransferFailed()", "A token transfer failed. Check the token balance and try again."],
@@ -1584,6 +1538,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["InvalidDeploymentSalt()", "A secure deployment salt could not be generated. Retry the creation."],
     ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
+    ["InvalidWeightBands(uint16,uint16)", "The proposed weight bands do not satisfy the factory's current policy."],
     ["ZeroShares()", "Enter a share amount greater than zero."],
     ["ZeroSettlementInput()", "Enter a USDG amount greater than zero."],
     ["ZeroAmount()", "Enter an amount greater than zero."],
@@ -2710,11 +2665,8 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
   const officialPool = officialPoolResult && officialPoolResult !== zeroAddress
     ? officialPoolResult as `0x${string}`
     : undefined;
-  const poolUsesSynthra = robinhoodTestnetV3Venue.provider === "synthra";
-  const poolVenueUrl = officialPool
-    ? poolUsesSynthra && vault.address
-      ? `/liquidity?vault=${vault.address}`
-      : `https://app.uniswap.org/explore/pools/ethereum/${officialPool}`
+  const poolVenueUrl = officialPool && vault.address
+    ? `/liquidity?vault=${vault.address}`
     : undefined;
   const portfolioState = vault.sunset
     ? "Sunset"
@@ -2738,11 +2690,9 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
         label="Liquidity Pool"
         value={officialPoolLoading ? "Resolving..." : shortAddress(officialPool)}
         href={poolVenueUrl}
-        external={!poolUsesSynthra}
+        external={false}
         linkLabel={officialPool
-          ? poolUsesSynthra
-            ? `Add or remove liquidity in pool ${officialPool}`
-            : `Open pool ${officialPool} on Uniswap`
+          ? `Add or remove liquidity in pool ${officialPool}`
           : undefined}
       />
       <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.sunset || vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
@@ -2965,6 +2915,66 @@ function ValueHelp({ text }: { text: string }) {
       </button>
       <span className="valueHelpTooltip" id={tooltipId} role="tooltip">{text}</span>
     </span>
+  );
+}
+
+function PriceSourceAddress({ address, label }: { address: string; label: string }) {
+  return (
+    <a
+      className="priceSourceAddress"
+      href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`}
+      target="_blank"
+      rel="noreferrer"
+      title={`Open ${label.toLowerCase()} ${address}`}
+    >
+      {shortAssetAddress(address)}
+      <ExternalLink size={11} aria-hidden="true" />
+    </a>
+  );
+}
+
+function PriceSourcePill({ config, assetSymbol }: { config: ApprovedPricingConfig; assetSymbol: string }) {
+  const label = config.source === "chainlink-robinhood"
+    ? "Chainlink Robinhood"
+    : config.source === "chainlink"
+      ? "Chainlink"
+      : config.source === "chainlink-composed"
+        ? "Chainlink Composed"
+        : "Uniswap V3 TWAP";
+
+  return (
+    <details className="priceSourcePill">
+      <summary aria-label={`${label} price source details for ${assetSymbol}`}>
+        <span>{label}</span>
+        <CircleHelp size={12} aria-hidden="true" />
+      </summary>
+      <div className="priceSourcePopover">
+        <strong>{label}</strong>
+        {"feedAddress" in config ? (
+          <dl>
+            <div><dt>Price feed</dt><dd><PriceSourceAddress address={config.feedAddress} label="Price feed" /></dd></div>
+            <div><dt>Maximum price age</dt><dd>{formatCooldown(config.maxStaleness)}</dd></div>
+          </dl>
+        ) : "assetQuoteFeedAddress" in config ? (
+          <dl>
+            <div><dt>Asset / quote feed</dt><dd><PriceSourceAddress address={config.assetQuoteFeedAddress} label="Asset quote feed" /></dd></div>
+            <div><dt>Maximum feed age</dt><dd>{formatCooldown(config.assetQuoteMaxStaleness)}</dd></div>
+            <div><dt>Quote token</dt><dd><PriceSourceAddress address={config.quoteToken} label="Quote token" /></dd></div>
+            <div><dt>Quote / USD feed</dt><dd><PriceSourceAddress address={config.quoteUsdFeedAddress} label="Quote USD feed" /></dd></div>
+            <div><dt>Maximum quote age</dt><dd>{formatCooldown(config.quoteUsdMaxStaleness)}</dd></div>
+          </dl>
+        ) : (
+          <dl>
+            <div><dt>TWAP pool</dt><dd><PriceSourceAddress address={config.poolAddress} label="TWAP pool" /></dd></div>
+            <div><dt>TWAP window</dt><dd>1 hour</dd></div>
+            <div><dt>Maximum price age</dt><dd>{formatCooldown(config.maxStaleness)}</dd></div>
+            <div><dt>Quote token</dt><dd><PriceSourceAddress address={config.quoteToken} label="Quote token" /></dd></div>
+            <div><dt>Quote / USD feed</dt><dd><PriceSourceAddress address={config.quoteUsdFeedAddress} label="Quote USD feed" /></dd></div>
+            <div><dt>Maximum quote age</dt><dd>{formatCooldown(config.quoteUsdMaxStaleness)}</dd></div>
+          </dl>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -3736,60 +3746,45 @@ function UserActions({
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress(routedSettlementMode);
   const isRegisteredEntryAdapter = Boolean(entryAdapterAddress);
-  const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredEntryAdapter, routedSettlementMode);
-  const executionRouteFor = (asset: string) =>
-    vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset, routedSettlementMode);
-  const routeFeeFor = (asset: string) =>
-    executionRouteFor(asset)?.fee ?? configuredConstituentFee(asset, routedSettlementMode);
-  const executionPoolFor = (asset: string) =>
-    configuredSettlementToken && configuredExecutionBridgePath(asset, configuredSettlementToken)
-      ? robinhoodTestnetExecutionBridge.pool
-      : executionRouteFor(asset)?.pool;
-  const routePoolFor = (asset: string) => isRegisteredEntryAdapter
-    ? executionPoolFor(asset)
-    : configuredConstituentPool(asset, routedSettlementMode);
+  const executionDiscoveryPairs = useMemo<V3TokenPair[]>(() => {
+    const quotes = [robinhoodTestnetAddresses.usdg, robinhoodTestnetAddresses.weth]
+      .filter((address): address is `0x${string}` => Boolean(address));
+    return [
+      ...vault.allocations.flatMap((asset) => quotes.map((quote) => ({
+        tokenA: asset.address,
+        tokenB: quote,
+      }))),
+      ...(quotes.length === 2 ? [{ tokenA: quotes[0], tokenB: quotes[1] }] : []),
+    ];
+  }, [vault.allocations]);
+  const {
+    pools: discoveredExecutionPools,
+    isLoading: executionRouteDiscoveryLoading,
+    isError: executionRouteDiscoveryError,
+    discoveryComplete: executionRouteDiscoveryComplete,
+  } = useDiscoveredV3Pools(executionDiscoveryPairs, isRegisteredEntryAdapter && isLive);
+  const alternateSettlementToken = routedSettlementMode === "weth"
+    ? robinhoodTestnetAddresses.usdg
+    : robinhoodTestnetAddresses.weth;
+  const executionRouteFor = (asset: string) => configuredSettlementToken
+    ? selectExecutionRoute(
+        discoveredExecutionPools,
+        asset,
+        configuredSettlementToken,
+        alternateSettlementToken,
+      )
+    : undefined;
   const exactInputRouteFor = (asset: string, assetToSettlement = false) => {
     if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
-    const directBridge = assetToSettlement
-      ? configuredExecutionBridgePath(asset, configuredSettlementToken)
-      : configuredExecutionBridgePath(configuredSettlementToken, asset);
-    if (directBridge) return directBridge;
     const route = executionRouteFor(asset);
-    if (!route) return undefined;
-    const assetQuotePath = assetToSettlement
-      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, configuredSettlementToken])
-      : encodePacked(["address", "uint24", "address"], [configuredSettlementToken, route.fee, asset as `0x${string}`]);
-    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
-      return assetQuotePath;
-    }
-    const bridgePath = assetToSettlement
-      ? configuredExecutionBridgePath(route.quoteToken, configuredSettlementToken)
-      : configuredExecutionBridgePath(configuredSettlementToken, route.quoteToken);
-    if (!bridgePath) return undefined;
-    const constituentPath = assetToSettlement
-      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, route.quoteToken])
-      : encodePacked(["address", "uint24", "address"], [route.quoteToken, route.fee, asset as `0x${string}`]);
-    return assetToSettlement
-      ? joinPackedV3Paths(constituentPath, bridgePath)
-      : joinPackedV3Paths(bridgePath, constituentPath);
+    return route ? packedExecutionRoute(route, assetToSettlement) : undefined;
   };
   const exactOutputRouteFor = (asset: string) => {
     if (!isRegisteredEntryAdapter || !configuredSettlementToken) return undefined;
-    const directBridge = configuredExecutionBridgePath(asset, configuredSettlementToken);
-    if (directBridge) return directBridge;
     const route = executionRouteFor(asset);
-    if (!route) return undefined;
-    const constituentPath = encodePacked(
-      ["address", "uint24", "address"],
-      [asset as `0x${string}`, route.fee, route.quoteToken],
-    );
-    if (route.quoteToken.toLowerCase() === configuredSettlementToken.toLowerCase()) {
-      return constituentPath;
-    }
-    const bridgePath = configuredExecutionBridgePath(route.quoteToken, configuredSettlementToken);
-    return joinPackedV3Paths(constituentPath, bridgePath);
+    return route ? packedExecutionRoute(route, true) : undefined;
   };
-  const executionRoutesConfigured = !isRegisteredEntryAdapter || vault.allocations.every(
+  const executionRoutesDiscovered = !isRegisteredEntryAdapter || vault.allocations.every(
     (asset) => asset.address.toLowerCase() === configuredSettlementToken?.toLowerCase() ||
       Boolean(exactInputRouteFor(asset.address)),
   );
@@ -3821,7 +3816,7 @@ function UserActions({
     setMarketError(undefined);
   }, [activeAction, vault.sunset]);
   const entryContractsConfigured = Boolean(
-    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress && executionRoutesConfigured,
+    entryRouterAddress && entryAdapterAddress && uniswapV3QuoterAddress,
   );
   const parsedSlippage = Number(maxSlippage);
   const slippageBps = Number.isFinite(parsedSlippage)
@@ -3860,98 +3855,53 @@ function UserActions({
     : configuredSettlementToken;
   const exactOutputQuoteContract = (asset: string, amountOut: bigint) => {
     const path = exactOutputRouteFor(asset);
-    return path ? {
+    if (!path || !uniswapV3QuoterAddress) throw new Error("Execution route unavailable");
+    return {
       address: uniswapV3QuoterAddress as `0x${string}`,
       abi: uniswapV3QuoterAbi,
       functionName: "quoteExactOutput" as const,
       args: [path, amountOut] as const,
       chainId: robinhoodChainTestnet.id,
-    } : {
-      address: uniswapV3QuoterAddress as `0x${string}`,
-      abi: uniswapV3QuoterAbi,
-      functionName: "quoteExactOutputSingle" as const,
-      args: [{
-        tokenIn: settlementToken as `0x${string}`,
-        tokenOut: asset as `0x${string}`,
-        amountOut,
-        fee: routeFeeFor(asset),
-        sqrtPriceLimitX96: 0n,
-      }] as const,
-      chainId: robinhoodChainTestnet.id,
     };
   };
   const exactInputQuoteContract = (asset: string, amountIn: bigint, assetToSettlement = false) => {
     const path = exactInputRouteFor(asset, assetToSettlement);
-    return path ? {
+    if (!path || !uniswapV3QuoterAddress) throw new Error("Execution route unavailable");
+    return {
       address: uniswapV3QuoterAddress as `0x${string}`,
       abi: uniswapV3QuoterAbi,
       functionName: "quoteExactInput" as const,
       args: [path, amountIn] as const,
       chainId: robinhoodChainTestnet.id,
-    } : {
-      address: uniswapV3QuoterAddress as `0x${string}`,
-      abi: uniswapV3QuoterAbi,
-      functionName: "quoteExactInputSingle" as const,
-      args: [{
-        tokenIn: (assetToSettlement ? asset : settlementToken) as `0x${string}`,
-        tokenOut: (assetToSettlement ? settlementToken : asset) as `0x${string}`,
-        amountIn,
-        fee: routeFeeFor(asset),
-        sqrtPriceLimitX96: 0n,
-      }] as const,
-      chainId: robinhoodChainTestnet.id,
     };
   };
-  const constituentLiquidityContracts = vault.allocations.flatMap((asset) => {
-    const pool = routePoolFor(asset.address);
-    return pool ? [{
-      address: pool,
-      abi: uniswapV3PoolAbi,
-      functionName: "liquidity" as const,
-      chainId: robinhoodChainTestnet.id,
-    }] : [];
-  });
-  const {
-    data: constituentLiquidityResults,
-    isLoading: constituentLiquidityLoading,
-  } = useReadContracts({
-    contracts: constituentLiquidityContracts,
-    query: {
-      enabled: constituentLiquidityContracts.length > 0,
-      refetchOnWindowFocus: true,
-    },
-  });
-  let constituentLiquidityIndex = 0;
+  const constituentLiquidityLoading = executionRouteDiscoveryLoading;
   const constituentPoolStates = vault.allocations.map((asset) => {
-    const pool = routePoolFor(asset.address);
-    const result = pool ? constituentLiquidityResults?.[constituentLiquidityIndex++] : undefined;
+    const isSettlement = asset.address.toLowerCase() === settlementToken?.toLowerCase();
+    const route = isSettlement ? undefined : executionRouteFor(asset.address);
+    const pools = executionRoutePools(route);
     return {
       asset: asset.address,
-      pool,
-      liquidity: result?.result as bigint | undefined,
-      readFailed: result?.status === "failure",
+      isSettlement,
+      route,
+      pools,
+      readFailed: pools.some((pool) => pool?.readFailed),
+      ready: isSettlement || Boolean(route && pools.every(
+        (pool) => pool?.liquidity !== undefined && pool.liquidity > 0n && !pool.readFailed,
+      )),
     };
   });
-  const constituentPoolsConfigured = Boolean(
-    settlementToken && vault.allocations.every((asset) =>
-      asset.address.toLowerCase() === settlementToken.toLowerCase()
-        || Boolean(routePoolFor(asset.address)),
-    ),
+  const constituentRoutesDiscovered = Boolean(
+    settlementToken && executionRouteDiscoveryComplete && executionRoutesDiscovered,
   );
-  const constituentPoolsReady = Boolean(
-    settlementToken && vault.allocations.every((asset) => {
-      if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return true;
-      const state = constituentPoolStates.find(
-        (item) => item.asset.toLowerCase() === asset.address.toLowerCase(),
-      );
-      return state?.pool && state.liquidity !== undefined && state.liquidity > 0n && !state.readFailed;
-    }),
+  const constituentRoutesReady = Boolean(
+    settlementToken && constituentPoolStates.every((state) => state.ready),
   );
   const constituentLiquidityReadFailed = constituentPoolStates.some(
-    (state) => state.pool && state.readFailed,
-  );
+    (state) => state.readFailed,
+  ) || executionRouteDiscoveryError;
   const emptyConstituentPoolSymbols = constituentPoolStates.flatMap((state) => {
-    if (!state.pool || state.liquidity !== 0n) return [];
+    if (state.isSettlement || !state.route || state.ready) return [];
     const allocation = vault.allocations.find(
       (asset) => asset.address.toLowerCase() === state.asset.toLowerCase(),
     );
@@ -4015,7 +3965,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteEntry },
   });
-  const entryQuoteContracts = canQuoteEntry && constituentPoolsReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
+  const entryQuoteContracts = canQuoteEntry && constituentRoutesReady && previewEntryAmounts && settlementToken && uniswapV3QuoterAddress
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = previewEntryAmounts[index];
@@ -4108,7 +4058,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteAdjustedEntry },
   });
-  const adjustedEntryQuoteContracts = canQuoteAdjustedEntry && constituentPoolsReady && adjustedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
+  const adjustedEntryQuoteContracts = canQuoteAdjustedEntry && constituentRoutesReady && adjustedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = adjustedPreviewEntryAmounts[index];
@@ -4176,7 +4126,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canQuoteRefinedEntry },
   });
-  const refinedEntryQuoteContracts = canQuoteRefinedEntry && constituentPoolsReady && refinedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
+  const refinedEntryQuoteContracts = canQuoteRefinedEntry && constituentRoutesReady && refinedPreviewEntryAmounts && settlementToken && uniswapV3QuoterAddress
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountOut = refinedPreviewEntryAmounts[index];
@@ -4266,7 +4216,7 @@ function UserActions({
     chainId: robinhoodChainTestnet.id,
     query: { enabled: canPreviewRedeem },
   });
-  const redeemQuoteContracts = previewRedeemAmounts && settlementToken && constituentPoolsReady && uniswapV3QuoterAddress && redeemSlippageValid
+  const redeemQuoteContracts = previewRedeemAmounts && settlementToken && constituentRoutesReady && uniswapV3QuoterAddress && redeemSlippageValid
     ? vault.allocations.flatMap((asset, index) => {
         if (asset.address.toLowerCase() === settlementToken.toLowerCase()) return [];
         const amountIn = previewRedeemAmounts[index];
@@ -4784,10 +4734,10 @@ function UserActions({
   );
   const underlyingRouteAvailable = entryContractsConfigured &&
     entryAdapterApproved !== false &&
-    constituentPoolsReady &&
+    constituentRoutesReady &&
     (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
-    entryContractsConfigured && constituentPoolsConfigured && constituentLiquidityLoading,
+    entryContractsConfigured && constituentRoutesDiscovered && constituentLiquidityLoading,
   );
   const underlyingQuoteReady = activeAction === "deposit"
     ? entryQuoteReady
@@ -5663,15 +5613,15 @@ function UserActions({
                       ? "Deposits paused for this OTF"
                     : activeAction === "deposit" && depositsPausedForAssetRemoval
                       ? "Paused while an asset is removed"
-                    : !constituentPoolsConfigured
-                      ? "Constituent pools not configured"
-                      : constituentLiquidityLoading
-                        ? "Checking constituent liquidity"
+                    : constituentLiquidityLoading
+                      ? "Discovering V3 liquidity routes"
+                      : !constituentRoutesDiscovered
+                        ? "No V3 route found for every constituent"
                       : constituentLiquidityReadFailed
                         ? "Could not verify constituent liquidity"
                       : emptyConstituentPoolSymbols.length
                         ? `${emptyConstituentPoolSymbols.join(", ")} pool${emptyConstituentPoolSymbols.length === 1 ? " has" : "s have"} no active liquidity`
-                      : !constituentPoolsReady
+                      : !constituentRoutesReady
                         ? "Constituent liquidity unavailable"
                     : underlyingQuoteProblem
                       ? underlyingQuoteProblem.title
@@ -6046,7 +5996,7 @@ function UserActions({
               <span>
                 {activeAction === "deposit"
                   ? `The OTF receives only a proportional basket. Surplus tokens are sold back under your slippage limit and refunded as ${settlementSymbol}.`
-                  : `Underlying execution uses the pinned constituent pools. Final ${settlementSymbol} depends on live liquidity and price impact.`}
+                  : `Underlying execution uses live V3 pools discovered from the canonical factory. Final ${settlementSymbol} depends on liquidity and price impact.`}
               </span>
             </div>
           </div>
@@ -6942,17 +6892,36 @@ function RebalanceTradesPanel({
   const adapterAddress = configuredEntryAdapterAddress();
   const quoterAddress = configuredUniswapV3QuoterAddress();
   const isRegisteredRebalanceAdapter = Boolean(adapterAddress);
-  const vaultExecutionRoutes = useVaultExecutionRoutes(vault, isRegisteredRebalanceAdapter);
-  const executionRouteFor = (asset: string) =>
-    vaultExecutionRoutes.get(asset.toLowerCase()) ?? configuredExecutionRoute(asset);
-  const rebalancePoolFor = (asset: string) => executionRouteFor(asset)?.pool;
-  const registeredRebalancePathFor = (asset: string, assetToQuote: boolean) => {
+  const rebalanceSettlementToken = robinhoodTestnetAddresses.usdg;
+  const rebalanceAlternateQuote = robinhoodTestnetAddresses.weth;
+  const rebalanceDiscoveryPairs = useMemo<V3TokenPair[]>(() => {
+    const quotes = [rebalanceSettlementToken, rebalanceAlternateQuote]
+      .filter((address): address is `0x${string}` => Boolean(address));
+    return [
+      ...vault.allocations.flatMap((asset) => quotes.map((quote) => ({
+        tokenA: asset.address,
+        tokenB: quote,
+      }))),
+      ...(quotes.length === 2 ? [{ tokenA: quotes[0], tokenB: quotes[1] }] : []),
+      ...(isAddress(tokenIn) && isAddress(tokenOut) ? [{ tokenA: tokenIn, tokenB: tokenOut }] : []),
+    ];
+  }, [rebalanceAlternateQuote, rebalanceSettlementToken, tokenIn, tokenOut, vault.allocations]);
+  const {
+    pools: discoveredRebalancePools,
+    isLoading: rebalanceRouteDiscoveryLoading,
+  } = useDiscoveredV3Pools(rebalanceDiscoveryPairs, isRegisteredRebalanceAdapter);
+  const executionRouteFor = (asset: string) => rebalanceSettlementToken
+    ? selectExecutionRoute(
+        discoveredRebalancePools,
+        asset,
+        rebalanceSettlementToken,
+        rebalanceAlternateQuote,
+      )
+    : undefined;
+  const registeredRebalancePathFor = (asset: string, assetToSettlement: boolean) => {
     if (!isRegisteredRebalanceAdapter) return undefined;
     const route = executionRouteFor(asset);
-    if (!route) return undefined;
-    return assetToQuote
-      ? encodePacked(["address", "uint24", "address"], [asset as `0x${string}`, route.fee, route.quoteToken])
-      : encodePacked(["address", "uint24", "address"], [route.quoteToken, route.fee, asset as `0x${string}`]);
+    return route ? packedExecutionRoute(route, assetToSettlement) : undefined;
   };
   const hasAllowedTrade = recommendedTrades.length > 0;
 
@@ -7025,22 +6994,22 @@ function RebalanceTradesPanel({
   const buyExecutionRoute = tokenOut ? executionRouteFor(tokenOut) : undefined;
   const registeredSellPath = tokenIn ? registeredRebalancePathFor(tokenIn, true) : undefined;
   const registeredBuyPath = tokenOut ? registeredRebalancePathFor(tokenOut, false) : undefined;
-  const directRebalanceBridge = configuredExecutionBridgePath(tokenIn, tokenOut);
-  const crossQuoteBridge = sellExecutionRoute && buyExecutionRoute
-    ? configuredExecutionBridgePath(sellExecutionRoute.quoteToken, buyExecutionRoute.quoteToken)
+  const directRebalancePool = tokenIn && tokenOut
+    ? selectV3Pool(discoveredRebalancePools, tokenIn, tokenOut)
     : undefined;
-  const bridgedConfiguredPath = crossQuoteBridge
-    ? joinPackedV3Paths(joinPackedV3Paths(registeredSellPath, crossQuoteBridge), registeredBuyPath)
+  const directRebalanceReady = Boolean(
+    directRebalancePool?.liquidity !== undefined
+      && directRebalancePool.liquidity > 0n
+      && !directRebalancePool.readFailed,
+  );
+  const directRebalancePath = directRebalancePool && directRebalanceReady
+    ? encodePacked(
+        ["address", "uint24", "address"],
+        [tokenIn as `0x${string}`, directRebalancePool.fee, tokenOut as `0x${string}`],
+      )
     : undefined;
-  const automaticPackedPath = directRebalanceBridge
-    ?? (sellExecutionRoute?.quoteToken.toLowerCase() === tokenOut.toLowerCase()
-      ? registeredSellPath
-      : buyExecutionRoute?.quoteToken.toLowerCase() === tokenIn.toLowerCase()
-        ? registeredBuyPath
-        : sellExecutionRoute?.quoteToken.toLowerCase() === buyExecutionRoute?.quoteToken.toLowerCase()
-          ? joinPackedV3Paths(registeredSellPath, registeredBuyPath)
-          : bridgedConfiguredPath);
-  const automaticUsesBridge = Boolean(directRebalanceBridge || bridgedConfiguredPath);
+  const settlementRebalancePath = joinPackedV3Paths(registeredSellPath, registeredBuyPath);
+  const automaticPackedPath = directRebalancePath ?? settlementRebalancePath;
   const customRoute = routeText.trim();
   const packedRoute = parsePackedV3Path(customRoute || automaticPackedPath, tokenIn, tokenOut);
   const routeValid = Boolean(packedRoute && tokenIn !== tokenOut);
@@ -7053,36 +7022,20 @@ function RebalanceTradesPanel({
     if (token.toLowerCase() === robinhoodTestnetAddresses.usdg?.toLowerCase()) return "USDG";
     return shortAddress(token);
   }).join(" → ");
-  const inputPool = rebalancePoolFor(tokenIn);
-  const outputPool = rebalancePoolFor(tokenOut);
-  const rebalancePools = [
-    inputPool,
-    outputPool,
-    automaticUsesBridge ? robinhoodTestnetExecutionBridge.pool : undefined,
-  ].filter((pool, index, pools): pool is `0x${string}` => Boolean(pool) && pools.indexOf(pool) === index);
-  const rebalanceLiquidityContracts = rebalancePools.map((pool) => ({
-    address: pool,
-    abi: uniswapV3PoolAbi,
-    functionName: "liquidity" as const,
-    chainId: robinhoodChainTestnet.id,
-  }));
-  const {
-    data: rebalanceLiquidityResults,
-    isLoading: rebalanceLiquidityLoading,
-  } = useReadContracts({
-    contracts: rebalanceLiquidityContracts,
-    query: { enabled: rebalanceLiquidityContracts.length > 0 },
-  });
-  const requiredPoolCount = rebalancePools.length;
+  const rebalancePools = (directRebalancePath
+    ? [directRebalancePool]
+    : [...executionRoutePools(sellExecutionRoute), ...executionRoutePools(buyExecutionRoute)])
+    .filter((pool, index, pools) => pool && pools.findIndex(
+      (candidate) => candidate?.address.toLowerCase() === pool.address.toLowerCase(),
+    ) === index);
+  const rebalanceLiquidityLoading = rebalanceRouteDiscoveryLoading;
   const rebalancePoolsConfigured = Boolean(
-    automaticPackedPath && requiredPoolCount > 0
-      && rebalanceLiquidityContracts.length === requiredPoolCount,
+    automaticPackedPath && rebalancePools.length > 0,
   );
   const configuredRouteLiquidityReady = Boolean(
-    rebalancePoolsConfigured && rebalanceLiquidityResults?.length === requiredPoolCount
-      && rebalanceLiquidityResults.every(
-        (result) => result.status === "success" && typeof result.result === "bigint" && result.result > 0n,
-      ),
+    rebalancePoolsConfigured && rebalancePools.every(
+      (pool) => pool?.liquidity !== undefined && pool.liquidity > 0n && !pool.readFailed,
+    ),
   );
   const routeLiquidityReady = customRoute ? true : configuredRouteLiquidityReady;
   const quoteEnabled = Boolean(
@@ -7446,7 +7399,7 @@ function RebalanceTradesPanel({
             }}
           />
           <small>
-            Leave blank to use the configured route. A custom packed path may use any intermediate
+            Leave blank to use the discovered route. A custom packed path may use any intermediate
             tokens, but must begin with the sold asset and end with the purchased asset.
           </small>
         </label>
@@ -7503,10 +7456,10 @@ function RebalanceTradesPanel({
           <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Trading adapter not configured</strong><span>Deploy and configure the approved Uniswap adapter before submitting rebalance trades.</span></div></div>
         ) : null}
         {hasAllowedTrade && contractsConfigured && !customRoute && !rebalanceLiquidityLoading && !rebalancePoolsConfigured ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Default execution pools are not configured</strong><span>The configured route needs execution liquidity for each selected asset before it can be quoted. You may supply another valid packed route.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>No automatic V3 route found</strong><span>The canonical factory did not return a usable liquid route for this asset pair. You may supply another valid packed route.</span></div></div>
         ) : null}
         {hasAllowedTrade && contractsConfigured && !customRoute && rebalancePoolsConfigured && !rebalanceLiquidityLoading && !configuredRouteLiquidityReady ? (
-          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting configured-route liquidity</strong><span>The default execution pools exist, but this route stays disabled until each required pool has active liquidity. You may supply another valid packed route.</span></div></div>
+          <div className="validationSummary warning"><AlertTriangle size={15} /><div><strong>Awaiting discovered-route liquidity</strong><span>The discovered pools exist, but this route stays disabled until each required pool has active liquidity. You may supply another valid packed route.</span></div></div>
         ) : null}
         {hasAllowedTrade && customRoute && !routeValid ? (
           <div className="validationSummary warning" role="alert"><AlertTriangle size={15} /><div><strong>Execution path does not match this trade</strong><span>Use packed Uniswap V3 bytes beginning with {inputAsset?.symbol ?? "the sold asset"} and ending with {outputAsset?.symbol ?? "the purchased asset"}, with a nonzero fee for every hop.</span></div></div>
@@ -8073,6 +8026,28 @@ function CreateVaultView({
   const protocolMinimumTargetWeightBps = protocolMinimumTargetWeightResult === undefined
     ? undefined
     : Number(protocolMinimumTargetWeightResult);
+  const weightBandPolicyContracts = factoryAddress ? ([
+    { address: factoryAddress, abi: otfFactoryAbi, functionName: "minCompletionDeviationBps" },
+    { address: factoryAddress, abi: otfFactoryAbi, functionName: "maxCompletionDeviationBps" },
+    { address: factoryAddress, abi: otfFactoryAbi, functionName: "minChallengeDeviationGapBps" },
+    { address: factoryAddress, abi: otfFactoryAbi, functionName: "maxChallengeDeviationBps" },
+  ] as const) : undefined;
+  const {
+    data: weightBandPolicyResults,
+    isLoading: weightBandPolicyLoading,
+    isError: weightBandPolicyReadFailed,
+  } = useReadContracts({
+    contracts: weightBandPolicyContracts,
+    query: { enabled: Boolean(isTestnet && factoryAddress), refetchInterval: 12_000 },
+  });
+  const weightBandLimits: WeightBandLimits | undefined = weightBandPolicyResults?.length === 4 && weightBandPolicyResults.every(
+    (result) => result.status === "success",
+  ) ? {
+      minCompletionDeviationBps: Number(weightBandPolicyResults[0].result),
+      maxCompletionDeviationBps: Number(weightBandPolicyResults[1].result),
+      minChallengeDeviationGapBps: Number(weightBandPolicyResults[2].result),
+      maxChallengeDeviationBps: Number(weightBandPolicyResults[3].result),
+    } : undefined;
   const {
     data: protocolDepositsPausedResult,
     isLoading: protocolDepositsPauseLoading,
@@ -8082,7 +8057,7 @@ function CreateVaultView({
     abi: otfFactoryAbi,
     functionName: "depositsPaused",
     chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(isTestnet && factoryAddress) },
+    query: { enabled: Boolean(isTestnet && factoryAddress), refetchInterval: 12_000 },
   });
   const protocolDepositsPaused = Boolean(protocolDepositsPausedResult);
   const protocolDepositsPauseUnavailable = Boolean(isTestnet && factoryAddress) && (
@@ -8128,8 +8103,8 @@ function CreateVaultView({
     initialShares: "100",
     initialPortfolioValue: "5",
     maxNavLoss: "0.5",
-    maxDeviation: "2",
-    challengeDeviation: "5",
+    maxDeviation: String(DEFAULT_COMPLETION_DEVIATION_BPS / 100),
+    challengeDeviation: String(DEFAULT_CHALLENGE_DEVIATION_BPS / 100),
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
     testnetCreateAssets.map((asset) => {
@@ -8252,7 +8227,7 @@ function CreateVaultView({
   const steps = [
     { label: "Basics", description: "Identity and roles" },
     { label: "Portfolio", description: "Assets and weights" },
-    { label: "Safety", description: "Immutable limits" },
+    { label: "Safety", description: "Portfolio limits" },
     { label: "Review", description: "Confirm deployment" },
   ];
   const totalWeight = portfolio.reduce((sum, asset) => sum + Number(asset.targetWeight || 0), 0);
@@ -8334,6 +8309,11 @@ function CreateVaultView({
   const initialRationaleValid =
     initialRationaleBytes > 0 &&
     initialRationaleBytes <= MAX_STRATEGY_RATIONALE_BYTES;
+  const completionDeviationBps = percentToBps(draft.maxDeviation);
+  const challengeDeviationBps = percentToBps(draft.challengeDeviation);
+  const weightBandIssue = weightBandLimits
+    ? weightBandValidationError(completionDeviationBps, challengeDeviationBps, weightBandLimits)
+    : "Wait for the factory weight-band policy to load.";
   const normalizedOtfName = draft.name.trim();
   const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
   const hasNormalQualityConstituent = portfolio.some((asset) => asset.quality === "normal");
@@ -8363,8 +8343,7 @@ function CreateVaultView({
     Number(draft.initialShares) >= 1 &&
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxNavLoss) <= 2 &&
-    Number(draft.maxDeviation) > 0 &&
-    Number(draft.challengeDeviation) > Number(draft.maxDeviation);
+    !weightBandIssue;
   const safetyValid = remainingSafetyLimitsValid;
   const basicsIssues = [
     otfNameValid ? null : "Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').",
@@ -8396,6 +8375,9 @@ function CreateVaultView({
     Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.maxNavLoss) <= 2 ? null : "Maximum NAV loss cannot exceed the 2% protocol ceiling.",
     Number(draft.initialShares) >= 1 ? null : "Initial supply must be at least 1 whole share.",
+    weightBandPolicyLoading ? "Loading the current factory weight-band policy." : null,
+    weightBandPolicyReadFailed ? "The factory weight-band policy could not be read. Try again before creating the OTF." : null,
+    weightBandIssue,
     remainingSafetyLimitsValid ? null : "Review the remaining safety limits and enter positive values.",
   ].filter((issue): issue is string => Boolean(issue));
   const allIssues = [...basicsIssues, ...portfolioIssues, ...safetyIssues];
@@ -8451,7 +8433,7 @@ function CreateVaultView({
       <div className="appView">
         <AppPageHeader
           title="Create OTF"
-          description="Deploy an onchain traded fund with immutable safety bounds."
+          description="Deploy an onchain traded fund with enforceable portfolio limits."
           icon={<FilePlus2 size={18} />}
         />
         <section className="sectionCard depositsEmpty">
@@ -8829,7 +8811,7 @@ function CreateVaultView({
     <div className="appView">
       <AppPageHeader
         title="Create OTF"
-        description="Deploy an onchain traded fund with immutable safety bounds."
+        description="Deploy an onchain traded fund with enforceable portfolio limits."
         icon={<FilePlus2 size={18} />}
       />
 
@@ -8858,7 +8840,7 @@ function CreateVaultView({
           })}
           <div className="createNotice">
             <LockKeyhole size={14} />
-            <span>Portfolio limits and the change unlock become immutable after deployment.</span>
+            <span>Weight bands remain manager-configurable within current factory policy; the change unlock is fixed.</span>
           </div>
         </aside>
 
@@ -9203,8 +9185,8 @@ function CreateVaultView({
                   <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
                   <label><span>Seven-day NAV-loss budget</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued execution loss with capacity replenishing linearly over seven days. Protocol maximum: 2%.</small></label>
-                  <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={10} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>Every asset must enter this distance from its target to complete. Protocol range: above 0% to 10%.</small></label>
-                  <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={0.01} max={25} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>Defines when an out-of-band portfolio can be challenged. Must exceed the completion band; protocol maximum: 25%.</small></label>
+                  <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={weightBandLimits ? weightBandLimits.minCompletionDeviationBps / 100 : undefined} max={weightBandLimits ? weightBandLimits.maxCompletionDeviationBps / 100 : undefined} step={0.01} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>{weightBandLimits ? `Every asset must enter this distance from its target to complete. Current factory range: ${bpsToPercent(weightBandLimits.minCompletionDeviationBps)}–${bpsToPercent(weightBandLimits.maxCompletionDeviationBps)}.` : "Loading the current factory range."}</small></label>
+                  <label><span>Challenge band</span><div className="inputWithSuffix"><input type="number" min={weightBandLimits ? (completionDeviationBps + weightBandLimits.minChallengeDeviationGapBps) / 100 : undefined} max={weightBandLimits ? weightBandLimits.maxChallengeDeviationBps / 100 : undefined} step={0.01} value={draft.challengeDeviation} onChange={(event) => updateDraft("challengeDeviation", event.target.value)} /><span>+/- %</span></div><small>{weightBandLimits ? `Must be at least ${bpsToPercent(weightBandLimits.minChallengeDeviationGapBps)} wider than completion and no more than ${bpsToPercent(weightBandLimits.maxChallengeDeviationBps)}.` : "Loading the current factory range."}</small></label>
                 </div>
                 <div className="executionPolicy createGuarantees">
                   <ShieldCheck size={14} />
@@ -9414,7 +9396,7 @@ function CreateVaultView({
                 ) : null}
                 <div className="riskCallout warning">
                   <LockKeyhole size={15} />
-                  <div><strong>Review immutable settings carefully</strong><span>The manager cannot weaken safety limits or shorten the portfolio change unlock after deployment.</span></div>
+                  <div><strong>Review the settings carefully</strong><span>The manager may update weight bands within current factory policy but cannot shorten the portfolio change unlock.</span></div>
                 </div>
                 <TxStatus state={deployState} />
                 {deployError ? (
@@ -9796,33 +9778,11 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
         <section className="sectionCard walletAssets">
           <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{testnetCreateAssets.length} verified</span></div>
           <div className="directoryTableWrap"><table className="directoryTable rwaCatalogTable verifiedAssetsTable">
-            <thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th><th>Pricing details</th><th>Execution pool</th><th>Reference price</th></tr></thead>
+            <thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th><th>Price sources</th><th>Reference price</th></tr></thead>
             <tbody>{testnetCreateAssets.map((asset) => {
-              const pool = configuredConstituentPool(asset.address);
               const oraclePrice = oraclePrices[asset.address.toLowerCase()];
               const verification = verifiedAssetFor(robinhoodChainTestnet.id, asset.address);
-              const pricingConfig = verification?.approvedPricingConfigs[0];
-              const pricingSource = pricingConfig?.source === "chainlink-robinhood"
-                ? "Chainlink Robinhood"
-                : pricingConfig?.source === "chainlink"
-                  ? "Chainlink"
-                  : pricingConfig?.source === "chainlink-composed"
-                    ? "Chainlink Composed"
-                    : pricingConfig?.source === "uniswap-v3"
-                      ? "Uniswap V3 TWAP"
-                      : "Not configured";
-              const primarySource = pricingConfig
-                ? "feedAddress" in pricingConfig
-                  ? pricingConfig.feedAddress
-                  : "assetQuoteFeedAddress" in pricingConfig
-                    ? pricingConfig.assetQuoteFeedAddress
-                    : pricingConfig.poolAddress
-                : undefined;
-              const primaryMaxStaleness = pricingConfig
-                ? "maxStaleness" in pricingConfig
-                  ? pricingConfig.maxStaleness
-                  : pricingConfig.assetQuoteMaxStaleness
-                : undefined;
+              const priceSources = verification?.approvedPricingConfigs ?? [];
               return (
                 <tr key={asset.address}>
                   <td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
@@ -9839,37 +9799,18 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
                       <ExternalLink size={11} />
                     </a>
                   </td>
-                  <td data-label="Pricing details">
-                    <div className="verifiedPricingDetails">
-                      <strong>{pricingSource}</strong>
-                      {primarySource ? (
-                        <a
-                          className="tableAddressLink"
-                          href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${primarySource}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Open primary pricing source ${primarySource}`}
-                        >
-                          {shortAssetAddress(primarySource)}
-                          <ExternalLink size={11} />
-                        </a>
-                      ) : <span>No source registered</span>}
-                      {primaryMaxStaleness ? <small>Maximum age {formatCooldown(primaryMaxStaleness)}</small> : null}
+                  <td data-label="Price sources">
+                    <div className="verifiedPriceSources">
+                      {priceSources.length
+                        ? priceSources.map((config, index) => (
+                          <PriceSourcePill
+                            key={`${config.source}-${index}`}
+                            config={config}
+                            assetSymbol={asset.symbol}
+                          />
+                        ))
+                        : <span className="mutedTableValue">Not configured</span>}
                     </div>
-                  </td>
-                  <td data-label="Liquidity pool" className="monoValue">
-                    {pool ? (
-                      <a
-                        className="tableAddressLink"
-                        href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${pool}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Open ${asset.symbol} / USDG liquidity pool ${pool}`}
-                      >
-                        {shortAssetAddress(pool)}
-                        <ExternalLink size={11} />
-                      </a>
-                    ) : <span className="mutedTableValue">Not configured</span>}
                   </td>
                   <td
                     data-label="Reference price"
@@ -9890,7 +9831,6 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
 
 function ShareMarketPanel({ vault }: { vault: VaultView }) {
   const registry = configuredV3MarketRegistryAddress();
-  const settlementToken = configuredSettlementTokenAddress();
   const { data: officialPoolResult, isLoading: poolLoading } = useReadContract({
     address: registry,
     abi: otfV3MarketRegistryAbi,
@@ -9911,17 +9851,12 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
   });
   const liquidityAvailable = typeof liquidity === "bigint" && liquidity > 0n;
   const checking = poolLoading || (Boolean(pool) && liquidityLoading);
-  const testnetUsesSynthra = robinhoodTestnetV3Venue.provider === "synthra";
-  const addLiquidityUrl = testnetUsesSynthra
-    ? vault.address ? `/liquidity?vault=${vault.address}` : "/liquidity"
-    : vault.address && settlementToken
-      ? `https://app.uniswap.org/positions/create/v3?currencyA=${vault.address}&currencyB=${settlementToken}&fee=500`
-      : "https://app.uniswap.org/positions/create";
+  const addLiquidityUrl = vault.address ? `/liquidity?vault=${vault.address}` : "/liquidity";
 
   return (
     <SectionCard
       title={`${vault.symbol} liquidity pool`}
-      subtitle={`${testnetUsesSynthra ? "Synthra" : "Uniswap"} V3 market for ${vault.symbol}`}
+      subtitle={`V3 market for ${vault.symbol}`}
       icon={<Droplets size={15} />}
       action={
         <span className={`stateBadge ${liquidityAvailable ? "success" : "muted"}`}>
@@ -9967,8 +9902,8 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
               <Info size={15} />
               <div><strong>Permissionless liquidity</strong><span>Any wallet can supply OTF shares and USDG. Each resulting Uniswap position belongs to the supplying wallet and does not use assets held by the OTF portfolio.</span></div>
             </div>
-            <a className="primaryAction" href={addLiquidityUrl} target={testnetUsesSynthra ? undefined : "_blank"} rel={testnetUsesSynthra ? undefined : "noreferrer"}>
-              <Droplets size={14} />{testnetUsesSynthra ? "Manage liquidity" : "Add liquidity on Uniswap"}{testnetUsesSynthra ? null : <ExternalLink size={12} />}
+            <a className="primaryAction" href={addLiquidityUrl}>
+              <Droplets size={14} />Manage liquidity
             </a>
           </>
         ) : registry && !poolLoading ? (
@@ -10217,6 +10152,14 @@ function ManageVaultsView({
   const [feeTransferError, setFeeTransferError] = useState<string>();
   const [executorState, setExecutorState] = useState<TxState>("idle");
   const [executorError, setExecutorError] = useState<string>();
+  const [completionBandPercent, setCompletionBandPercent] = useState(
+    () => String(vault.maxWeightDeviationBps / 100),
+  );
+  const [challengeBandPercent, setChallengeBandPercent] = useState(
+    () => String(vault.challengeWeightDeviationBps / 100),
+  );
+  const [weightBandState, setWeightBandState] = useState<TxState>("idle");
+  const [weightBandError, setWeightBandError] = useState<string>();
   const [sunsetConfirmationOpen, setSunsetConfirmationOpen] = useState(false);
   const [sunsetConfirmation, setSunsetConfirmation] = useState("");
   const [sunsetState, setSunsetState] = useState<TxState>("idle");
@@ -10226,6 +10169,34 @@ function ManageVaultsView({
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
+  const managerWeightBandPolicyContracts = vault.factoryAddress ? ([
+    { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "minCompletionDeviationBps" },
+    { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "maxCompletionDeviationBps" },
+    { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "minChallengeDeviationGapBps" },
+    { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "maxChallengeDeviationBps" },
+  ] as const) : undefined;
+  const {
+    data: managerWeightBandPolicyResults,
+    isLoading: managerWeightBandPolicyLoading,
+    isError: managerWeightBandPolicyReadFailed,
+  } = useReadContracts({
+    contracts: managerWeightBandPolicyContracts,
+    query: {
+      enabled: Boolean(vault.enabled && vault.factoryAddress && !vault.sunset),
+      refetchInterval: 12_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const managerWeightBandLimits: WeightBandLimits | undefined =
+    managerWeightBandPolicyResults?.length === 4
+    && managerWeightBandPolicyResults.every((result) => result.status === "success")
+      ? {
+          minCompletionDeviationBps: Number(managerWeightBandPolicyResults[0].result),
+          maxCompletionDeviationBps: Number(managerWeightBandPolicyResults[1].result),
+          minChallengeDeviationGapBps: Number(managerWeightBandPolicyResults[2].result),
+          maxChallengeDeviationBps: Number(managerWeightBandPolicyResults[3].result),
+        }
+      : undefined;
   const {
     data: feeWithdrawalPreview,
     isLoading: feeWithdrawalPreviewLoading,
@@ -10246,6 +10217,14 @@ function ManageVaultsView({
     : pendingManagerFeeShares !== undefined
       ? `${formatWalletTokenBalance(pendingManagerFeeShares, 18)} ${vault.symbol}`
       : "Preview unavailable";
+  useEffect(() => {
+    setCompletionBandPercent(String(vault.maxWeightDeviationBps / 100));
+    setChallengeBandPercent(String(vault.challengeWeightDeviationBps / 100));
+  }, [vault.address, vault.challengeWeightDeviationBps, vault.maxWeightDeviationBps]);
+  useEffect(() => {
+    setWeightBandError(undefined);
+    setWeightBandState("idle");
+  }, [vault.address]);
   const managerValid = isAddress(managerTarget)
     && !/^0x0{40}$/i.test(managerTarget)
     && managerTarget.toLowerCase() !== vault.manager?.toLowerCase()
@@ -10261,8 +10240,42 @@ function ManageVaultsView({
   const managerTransferBusy = managerTransferState === "pending" || managerTransferState === "submitted";
   const feeTransferBusy = feeTransferState === "pending" || feeTransferState === "submitted";
   const executorBusy = executorState === "pending" || executorState === "submitted";
+  const weightBandBusy = weightBandState === "simulating"
+    || weightBandState === "pending"
+    || weightBandState === "submitted";
   const sunsetBusy = sunsetState === "pending" || sunsetState === "submitted";
   const sunsetCooldownRemaining = useLiveCountdown(vault.nextStrategyChange);
+  const proposedCompletionBandBps = percentToBps(completionBandPercent);
+  const proposedChallengeBandBps = percentToBps(challengeBandPercent);
+  const weightBandInputError = managerWeightBandLimits
+    ? weightBandValidationError(
+        proposedCompletionBandBps,
+        proposedChallengeBandBps,
+        managerWeightBandLimits,
+      )
+    : undefined;
+  const weightBandsChanged = proposedCompletionBandBps !== vault.maxWeightDeviationBps
+    || proposedChallengeBandBps !== vault.challengeWeightDeviationBps;
+  const weightBandBlockers = [
+    sunsetCooldownRemaining > 0
+      ? `Wait for the strategy cooldown to finish in ${formatCooldown(sunsetCooldownRemaining)}.`
+      : undefined,
+    vault.challengeActive ? "Resolve the active challenge first." : undefined,
+    vault.strategyProposalPending ? "Cancel or activate the pending strategy proposal first." : undefined,
+    vault.strategicRebalanceActive ? "Complete the active strategic rebalance first." : undefined,
+    !vault.withinCompletionBands ? "Return the portfolio to its current completion bands first." : undefined,
+  ].filter((reason): reason is string => Boolean(reason));
+  const weightBandPolicyUnavailable = !managerWeightBandPolicyLoading
+    && (managerWeightBandPolicyReadFailed || !managerWeightBandLimits);
+  const canUpdateWeightBands = Boolean(
+    vault.enabled
+    && vault.connectedIsManager
+    && managerWeightBandLimits
+    && !weightBandInputError
+    && weightBandsChanged
+    && weightBandBlockers.length === 0
+    && !weightBandBusy,
+  );
   const sunsetBlockers = [
     sunsetCooldownRemaining > 0
       ? `Wait for the strategy cooldown to finish in ${formatCooldown(sunsetCooldownRemaining)}, on ${formatTimestamp(vault.nextStrategyChange)}.`
@@ -10416,6 +10429,40 @@ function ManageVaultsView({
       "The fee-recipient update reverted.",
       () => setFeeTarget(""),
     );
+  }
+
+  async function updateWeightBands() {
+    if (
+      !vault.address || !connectedAddress || !publicClient || !canUpdateWeightBands
+      || proposedCompletionBandBps > 10_000 || proposedChallengeBandBps > 10_000
+    ) return;
+    setWeightBandError(undefined);
+    try {
+      setWeightBandState("simulating");
+      await publicClient.simulateContract({
+        account: connectedAddress,
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "setWeightBands",
+        args: [proposedCompletionBandBps, proposedChallengeBandBps],
+      });
+      setWeightBandState("pending");
+      const hash = await writeContractAsync({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "setWeightBands",
+        args: [proposedCompletionBandBps, proposedChallengeBandBps],
+        chainId: robinhoodChainTestnet.id,
+      });
+      setWeightBandState("submitted");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The weight-band update reverted.");
+      await onRefresh();
+      setWeightBandState("confirmed");
+    } catch (error) {
+      setWeightBandError(errorMessage(error));
+      setWeightBandState("reverted");
+    }
   }
 
   async function setExecutorAuthorization(executor: string, authorized: boolean) {
@@ -10613,6 +10660,65 @@ function ManageVaultsView({
       {activeOperation !== "targets" && activeOperation !== "rebalance" && activeOperation !== "liquidity" ? <div className="manageGrid">
         {activeOperation === "roles" ? (
           <>
+        {vault.connectedIsManager ? (
+        <SectionCard title="Update weight bands" subtitle="Change completion and challenge thresholds within current factory policy" icon={<Scale size={15} />} action={<span className="stateBadge muted">Manager only</span>}>
+          <div className="operationFlow">
+            <div className="accrualSummary">
+              <div><span>Current completion</span><strong>{bpsToPercent(vault.maxWeightDeviationBps)}</strong></div>
+              <div><span>Current challenge</span><strong>{bpsToPercent(vault.challengeWeightDeviationBps)}</strong></div>
+              <div><span>Factory completion range</span><strong>{managerWeightBandLimits ? `${bpsToPercent(managerWeightBandLimits.minCompletionDeviationBps)}–${bpsToPercent(managerWeightBandLimits.maxCompletionDeviationBps)}` : "Loading"}</strong></div>
+              <div><span>Factory challenge policy</span><strong>{managerWeightBandLimits ? `+${bpsToPercent(managerWeightBandLimits.minChallengeDeviationGapBps)} gap · ${bpsToPercent(managerWeightBandLimits.maxChallengeDeviationBps)} max` : "Loading"}</strong></div>
+            </div>
+            <div className="formGrid twoColumns">
+              <label>
+                <span>Completion band</span>
+                <div className="inputWithSuffix">
+                  <input
+                    className={weightBandInputError ? "invalid" : undefined}
+                    type="number"
+                    min={managerWeightBandLimits ? managerWeightBandLimits.minCompletionDeviationBps / 100 : undefined}
+                    max={managerWeightBandLimits ? managerWeightBandLimits.maxCompletionDeviationBps / 100 : undefined}
+                    step={0.01}
+                    value={completionBandPercent}
+                    onChange={(event) => setCompletionBandPercent(event.target.value)}
+                    disabled={weightBandBusy || !managerWeightBandLimits}
+                  />
+                  <span>+/- %</span>
+                </div>
+                <small>Every constituent must be within this fixed portfolio-weight distance to complete.</small>
+              </label>
+              <label>
+                <span>Challenge band</span>
+                <div className="inputWithSuffix">
+                  <input
+                    className={weightBandInputError ? "invalid" : undefined}
+                    type="number"
+                    min={managerWeightBandLimits ? (proposedCompletionBandBps + managerWeightBandLimits.minChallengeDeviationGapBps) / 100 : undefined}
+                    max={managerWeightBandLimits ? managerWeightBandLimits.maxChallengeDeviationBps / 100 : undefined}
+                    step={0.01}
+                    value={challengeBandPercent}
+                    onChange={(event) => setChallengeBandPercent(event.target.value)}
+                    disabled={weightBandBusy || !managerWeightBandLimits}
+                  />
+                  <span>+/- %</span>
+                </div>
+                <small>A challenge may start when any constituent exceeds this fixed portfolio-weight distance.</small>
+              </label>
+            </div>
+            {managerWeightBandPolicyLoading ? <div className="inlineEmptyState"><Loader2 className="spin" size={16} /><div><strong>Loading factory policy</strong><span>Reading the current weight-band limits before enabling this update.</span></div></div> : null}
+            {weightBandPolicyUnavailable ? <div className="validationSummary danger" role="alert"><RefreshCw size={15} /><div><strong>Factory policy unavailable</strong><span>The update stays disabled until all four current limits can be read.</span></div></div> : null}
+            {weightBandInputError ? <div className="validationSummary warning" role="status"><AlertTriangle size={15} /><div><strong>Review the proposed bands</strong><span>{weightBandInputError}</span></div></div> : null}
+            {weightBandBlockers.length ? <div className="validationSummary warning" role="status"><Clock3 size={15} /><div><strong>Weight-band update locked</strong><span>{weightBandBlockers.join(" ")}</span></div></div> : null}
+            {!weightBandsChanged && managerWeightBandLimits ? <p>Enter a different completion or challenge value to submit an update.</p> : null}
+            {weightBandError ? <div className="validationSummary danger" role="alert"><XCircle size={15} /><div><strong>Weight-band update failed</strong><span>{weightBandError}</span></div></div> : null}
+            <TxStatus state={weightBandState} />
+            <button className="primaryAction" type="button" disabled={!canUpdateWeightBands} onClick={updateWeightBands}>
+              {weightBandBusy ? <Loader2 className="spin" size={14} /> : <Scale size={14} />}
+              {weightBandState === "simulating" ? "Validating update" : weightBandBusy ? "Confirming update" : "Update weight bands"}
+            </button>
+          </div>
+        </SectionCard>
+        ) : null}
         <SectionCard title="Manager transfer" subtitle="Transfer strategy authority immediately" icon={<KeyRound size={15} />} action={<span className="stateBadge danger">Immediate</span>}>
           <div className="operationFlow">
             <div className="roleCurrent"><span>Current manager</span><strong>{shortAddress(vault.manager)}</strong></div>
@@ -10737,6 +10843,7 @@ function ManageVaultsView({
             <div><CheckCircle size={14} /><span><strong>May authorize constrained executors</strong><small>{vault.authorizedExecutors.length} currently authorized; all are cleared on manager transfer.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May execute partial maintenance trades</strong><small>Every batch must reduce target deviation and satisfy oracle, adapter, slippage, and NAV-loss limits.</small></span></div>
             <div><CheckCircle size={14} /><span><strong>May propose targets with a rationale</strong><small>The rationale becomes permanent only when those targets activate.</small></span></div>
+            <div><CheckCircle size={14} /><span><strong>May update weight bands</strong><small>New completion and challenge values must satisfy the factory&apos;s current policy.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot withdraw portfolio assets</strong><small>No arbitrary manager-call or asset-transfer path exists.</small></span></div>
             <div><XCircle size={14} /><span><strong>Cannot shorten the change unlock</strong><small>The configured delay is permanently immutable.</small></span></div>
           </div>

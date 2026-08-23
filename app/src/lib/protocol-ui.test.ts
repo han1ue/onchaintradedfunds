@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_CHALLENGE_DEVIATION_BPS,
+  DEFAULT_COMPLETION_DEVIATION_BPS,
   deriveOtfQuality,
   normalizeAssetQuality,
+  percentToBps,
   primaryDepositsBlocked,
   SUPPORTED_PRICING_SOURCES,
+  weightBandValidationError,
 } from "./protocol-ui";
 
 describe("protocol UI policy", () => {
@@ -30,5 +34,26 @@ describe("protocol UI policy", () => {
     expect(primaryDepositsBlocked({ ...open, globalPause: true })).toBe(true);
     expect(primaryDepositsBlocked({ ...open, localPause: true })).toBe(true);
     expect(primaryDepositsBlocked({ ...open, pauseStatusAvailable: false })).toBe(true);
+  });
+
+  it("uses the requested creation defaults and converts fixed portfolio percentages to bps", () => {
+    expect(DEFAULT_COMPLETION_DEVIATION_BPS).toBe(100);
+    expect(DEFAULT_CHALLENGE_DEVIATION_BPS).toBe(250);
+    expect(percentToBps("0.25")).toBe(25);
+    expect(percentToBps("1")).toBe(100);
+    expect(percentToBps("2.5")).toBe(250);
+  });
+
+  it("validates weight bands against supplied factory limits", () => {
+    const limits = {
+      minCompletionDeviationBps: 25,
+      maxCompletionDeviationBps: 500,
+      minChallengeDeviationGapBps: 25,
+      maxChallengeDeviationBps: 1_500,
+    };
+    expect(weightBandValidationError(25, 50, limits)).toBeUndefined();
+    expect(weightBandValidationError(500, 1_500, limits)).toBeUndefined();
+    expect(weightBandValidationError(24, 250, limits)).toContain("Completion");
+    expect(weightBandValidationError(100, 124, limits)).toContain("Challenge");
   });
 });

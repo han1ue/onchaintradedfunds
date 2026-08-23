@@ -14,6 +14,7 @@
     "launch:test": "corepack pnpm --filter @onchaintradedfunds/launch test",
     "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",
+    "contracts:coverage": "node scripts/check-contract-coverage.mjs",
     "lint": "corepack pnpm -r lint",
     "typecheck": "corepack pnpm -r typecheck",
     "build": "corepack pnpm -r build"

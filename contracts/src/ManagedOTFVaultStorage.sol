@@ -13,6 +13,10 @@ import {
 
 interface IProtocolPortfolioLimits {
     function minTargetWeightBps() external view returns (uint16);
+    function minCompletionDeviationBps() external view returns (uint16);
+    function maxCompletionDeviationBps() external view returns (uint16);
+    function minChallengeDeviationGapBps() external view returns (uint16);
+    function maxChallengeDeviationBps() external view returns (uint16);
     function depositsPaused() external view returns (bool);
     function vaultDepositsPaused(address vault) external view returns (bool);
     function pricingResolver() external view returns (address);
@@ -46,8 +50,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
     uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR =
         ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
-    uint16 public constant MAX_COMPLETION_DEVIATION_BPS = 1_000;
-    uint16 public constant MAX_BAND_DEVIATION_BPS = 2_500;
     uint256 internal constant RECENT_REBALANCE_CAP = 16;
     uint256 internal constant RECENT_EXECUTION_CAP = 16;
     bytes4 internal constant ERC165_INTERFACE_ID = 0x01ffc9a7;

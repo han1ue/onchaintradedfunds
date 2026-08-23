@@ -161,8 +161,17 @@ FOUNDRY_INVARIANT_RUNS=512 FOUNDRY_INVARIANT_DEPTH=128 \
   forge test --match-contract ProtocolInvariantTest
 ```
 
-Coverage under `via_ir` may produce imprecise source-anchor warnings. Use it to find missing test
-areas, not as proof of safety.
+Run coverage from the repository root on Linux:
+
+```bash
+corepack pnpm contracts:coverage
+```
+
+The wrapper uses Foundry's `--ir-minimum` workaround because ordinary coverage disables IR and this
+project then exceeds the Solidity stack limit. It rejects a failed or incomplete report. Coverage
+under `via_ir` can still produce imprecise source anchors, so use the summary to find missing test
+areas, not as proof of safety. The pinned Foundry v1.7.1/Solar analyzer cannot reliably resolve this
+project's OpenZeppelin imports on Windows; use the pinned Linux CI workflow.
 
 ## Known limitations
 

@@ -107,7 +107,7 @@ flowchart LR
 - ERC-1046 `tokenURI()` metadata with an embedded dark-theme OTF SVG image.
 - Custodian of tracked underlying assets.
 - Proportional mint and redemption engine.
-- Manager-controlled rebalance engine with immutable safety bounds.
+- Manager-controlled rebalance engine with enforceable, factory-policy-bounded safety limits.
 - Onchain strategy-rationale and target-history source.
 - No arbitrary manager call surface.
 - Delegates strategy-only calls to a fixed `ManagedOTFVaultStrategy` module.
@@ -699,7 +699,7 @@ The current dashboard shows:
 - Target asset allocation.
 - Strategy history with target changes, rationale, and lifecycle state.
 - Manager and fee recipient.
-- Immutable safety limits.
+- Current safety limits and factory-policy-bounded manager controls.
 - Manager action readiness.
 
 Asset quality is intentionally frontend-only. `High quality` and `Normal` are live-derived labels
@@ -746,8 +746,9 @@ DEPLOYER_PRIVATE_KEY=
 Keep that value in the ignored `.env.deploy.local` file. Never add it to the address JSON. The
 deployment script reads its chain, treasury, optional frontend pricing suggestions, WETH, USDG,
 and V3 infrastructure from `app/src/config/robinhood-testnet.json`. It does not require a
-WETH/USDG pricing pool. Testnet uses a separately recorded WETH/USDG execution bridge so the two
-entry routers can reuse asset/USDG liquidity; it is not passed to any pricing constructor.
+WETH/USDG pricing pool. When WETH/USDG execution liquidity exists, the frontend discovers it from
+the canonical V3 factory so the two entry routers can reuse asset/USDG liquidity; it is not passed
+to any pricing constructor or stored in the deployment manifest.
 
 Deploying always recompiles source-only artifacts before broadcasting, targets the Shanghai EVM
 supported by Robinhood Chain Testnet, deploys the pricing resolver and one generic execution adapter,
@@ -760,8 +761,8 @@ corepack pnpm contracts:deploy:robinhood-testnet
 
 The schema-version-4 manifest exposes `contracts.pricingResolver`, the protocol-wide seven-day
 maximum oracle staleness, one `contracts.uniswapV3Adapter`, and root `executionRoutes[]` records
-(`settlementToken`, shared adapter, entry router, and path encoding). `v3Venue.constituentPools` describes execution liquidity only;
-`executionLiquidity.wethUsdg` is an optional cross-settlement execution bridge;
+(`settlementToken`, shared adapter, entry router, and path encoding). Execution pool addresses are
+discovered at runtime from the canonical V3 factory across the supported fee tiers;
 `pricingConfiguration.suggestedInitialPricingConfigs` and `suggestedV3PricingConfigs` are separate,
 non-authoritative transaction prefills. Execution records never contain a pricing market ID.
 
@@ -789,8 +790,9 @@ The testnet execution bridge can be created or checked idempotently with:
 corepack pnpm contracts:bootstrap:weth-usdg-execution
 ```
 
-It seeds immediate swap liquidity only. No observation-cardinality growth or one-hour history is
-required because the pool is never consumed as an oracle.
+It seeds immediate swap liquidity only. The resulting address is derived from the V3 factory when
+needed and is not written into the deployment manifest. No observation-cardinality growth or
+one-hour history is required because the pool is never consumed as an oracle.
 
 After the base protocol and mock oracle catalog are configured, deploy the V3 adapter and entry
 router and create the five RWA/USDG pools with:
@@ -802,9 +804,9 @@ corepack pnpm contracts:configure:robinhood-testnet-synthra
 The command is idempotent for a schema-version-4 deployment. It mechanically checks 18-decimal
 assets, uses the configured frontend direct-USD suggestion only to seed a pool price, verifies the canonical factory,
 pair, fee, and initialization, expands observation capacity toward 64, and tests one hour of TWAP
-history. It records `twapReady` and `twapReadyAt`; a pool remains ineligible for pricing until the
-required observations and full history actually exist. Execution-pool metadata is stored separately
-from suggested `UniswapV3Twap` configurations. The command does not add liquidity.
+history. A pool remains ineligible for pricing until the required observations and full history
+actually exist. Pool addresses are resolved from the factory rather than persisted beside suggested
+`UniswapV3Twap` configurations. The command does not add liquidity.
 
 The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
 OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
@@ -900,7 +902,7 @@ forge build
 forge test
 forge test --match-contract ProtocolFuzzTest -vv
 forge test --match-contract ProtocolInvariantTest -vv
-forge coverage --report summary
+corepack pnpm contracts:coverage
 ```
 
 `contracts:security` forces a clean production build and enforces warning-free Foundry and Solhint
@@ -910,6 +912,14 @@ delegation surfaces.
 The security gate recalculates every production runtime and initcode size from fresh artifacts.
 Deployment remains blocked whenever any implementation exceeds the EIP-170 or EIP-3860 limit; do
 not rely on byte counts copied from an earlier architecture.
+
+The Solidity CI workflow pins Ubuntu 24.04, Node.js 22.18.0, pnpm 11.17.0, Foundry v1.7.1, and
+Solidity 0.8.30. It runs formatting, the security gate, the full suite, 10,000-case fuzzing,
+512-by-128 stateful invariants, and coverage. Coverage uses Foundry's `--ir-minimum` mode because
+non-IR coverage compilation exceeds the Solidity stack limit. Treat its source mapping as an
+advisory gap-finding signal, not proof of safety. The wrapper intentionally fails on Windows with a
+clear message because the pinned Foundry/Solar release cannot reliably resolve the project's
+OpenZeppelin imports there; use the Linux CI workflow or another Linux environment.
 
 ## Tests
 

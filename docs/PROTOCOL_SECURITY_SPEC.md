@@ -189,11 +189,13 @@ The protocol owner MAY:
   reject a non-factory target.
 - Transfer factory or V3 market-registry ownership using their defined controls.
 
-The market-registry owner MAY configure the single quote-token/USD feed, disable a quote token for
-future composed or V3 selections, or deprecate a pool for future selections. Reconfiguring a quote
-token's feed or freshness limit updates existing routes using it. WETH and USDG are the initial
-peer quote tokens. No protocol role MAY approve, qualify, block, revoke, or remove an asset or
-creator-selected primary Chainlink feed. Pair semantics remain an offchain verification duty.
+The market-registry owner MAY register a quote token, configure its single quote-token/USD feed and
+source permissions, disable it for future composed or V3 selections, or deprecate a pool for future
+selections. Reconfiguring a quote token's feed or freshness limit updates existing routes using it.
+WETH and USDG are the initial peer quote tokens, and additional owner-registered quote tokens MAY be
+used when the applicable composed-Chainlink or V3 permission is enabled. No protocol role MAY
+approve, qualify, block, revoke, or remove an asset or creator-selected primary Chainlink feed. Pair
+semantics remain an offchain verification duty.
 
 The protocol owner MUST NOT:
 
@@ -583,7 +585,7 @@ For V3 TWAP pricing:
 
 - `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
   exact asset/quote pair and exact onchain fee.
-- The quote MUST be WETH or USDG.
+- The quote MUST be an enabled owner-registered quote token whose `allowV3Twap` permission is true.
 - The quote-token/USD Chainlink-compatible feed and staleness limit MUST be loaded from the registry
   on every read.
 - The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
@@ -640,6 +642,8 @@ forge build
 forge test
 forge test --match-contract ProtocolFuzzTest -vv
 forge test --match-contract ProtocolInvariantTest -vv
+cd ..
+corepack pnpm contracts:coverage
 ```
 
 `contracts:security` MUST verify:
@@ -678,8 +682,9 @@ Every deployment record SHOULD include:
 - Chain ID.
 - Factory, implementation, strategy module, calculator, executor, discovery registry, V3 market
   registry, pricing resolver, adapter, and treasury addresses.
-- Canonical V3 factory, WETH, USDG, supported fees, TWAP window, observation capacity, and verified
-  history evidence.
+- Canonical V3 factory, initial WETH and USDG dependencies, every enabled quote token and its source
+  permissions, quote-token/USD feed, freshness limit, supported pool fees, TWAP window, observation
+  capacity, and verified history evidence.
 - Every frontend-manifest Chainlink base/quote/feed relationship, maximum staleness, explicit pricing source,
   official Flags status where available, and the source used for that evidence.
 - Every initial per-asset pricing configuration and the concrete normalized feed or pool pinned by

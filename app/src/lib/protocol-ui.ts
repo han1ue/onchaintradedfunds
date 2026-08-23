@@ -1,5 +1,41 @@
 export type AssetQuality = "high" | "normal";
 
+export type WeightBandLimits = {
+  minCompletionDeviationBps: number;
+  maxCompletionDeviationBps: number;
+  minChallengeDeviationGapBps: number;
+  maxChallengeDeviationBps: number;
+};
+
+export const DEFAULT_COMPLETION_DEVIATION_BPS = 100;
+export const DEFAULT_CHALLENGE_DEVIATION_BPS = 250;
+
+export function percentToBps(value: string | number): number {
+  const percentage = Number(value || 0);
+  return Number.isFinite(percentage) ? Math.round(percentage * 100) : 0;
+}
+
+export function weightBandValidationError(
+  completionDeviationBps: number,
+  challengeDeviationBps: number,
+  limits: WeightBandLimits,
+): string | undefined {
+  if (
+    completionDeviationBps < limits.minCompletionDeviationBps
+    || completionDeviationBps > limits.maxCompletionDeviationBps
+  ) {
+    return `Completion must be between ${limits.minCompletionDeviationBps / 100}% and ${limits.maxCompletionDeviationBps / 100}%.`;
+  }
+  const minimumChallenge = completionDeviationBps + limits.minChallengeDeviationGapBps;
+  if (
+    challengeDeviationBps < minimumChallenge
+    || challengeDeviationBps > limits.maxChallengeDeviationBps
+  ) {
+    return `Challenge must be at least ${minimumChallenge / 100}% for this completion band and no more than ${limits.maxChallengeDeviationBps / 100}%.`;
+  }
+  return undefined;
+}
+
 export function normalizeAssetQuality(value: unknown): AssetQuality {
   return value === "high" ? "high" : "normal";
 }

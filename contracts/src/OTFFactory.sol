@@ -44,8 +44,6 @@ contract OTFFactory is IAdapterAllowlist {
     uint256 public constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
-    uint16 public constant GLOBAL_MAX_WEIGHT_DEVIATION_BPS = 1_000;
-    uint16 public constant GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS = 2_500;
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
     uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
@@ -94,6 +92,12 @@ contract OTFFactory is IAdapterAllowlist {
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event ProtocolFeeShareUpdated(uint16 previousShareBps, uint16 newShareBps);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
+    event WeightBandLimitsUpdated(
+        uint16 minCompletionDeviationBps,
+        uint16 maxCompletionDeviationBps,
+        uint16 minChallengeDeviationGapBps,
+        uint16 maxChallengeDeviationBps
+    );
     event OfficialMarketRegistryConfigured(address indexed registry);
     event AssetMarketRegistryConfigured(address indexed registry);
     event PricingResolverConfigured(address indexed resolver);
@@ -112,6 +116,10 @@ contract OTFFactory is IAdapterAllowlist {
     address public rebalanceExecutor;
     uint16 public protocolFeeShareBps;
     uint16 public minTargetWeightBps = 100; // 1%
+    uint16 public minCompletionDeviationBps = 25;
+    uint16 public maxCompletionDeviationBps = 500;
+    uint16 public minChallengeDeviationGapBps = 25;
+    uint16 public maxChallengeDeviationBps = 1_500;
     address public officialMarketRegistry;
     address public assetMarketRegistry;
     address public pricingResolver;
@@ -285,6 +293,30 @@ contract OTFFactory is IAdapterAllowlist {
         emit MinimumTargetWeightUpdated(previousMinimumBps, newMinimumBps);
     }
 
+    function setWeightBandLimits(
+        uint16 newMinCompletionDeviationBps,
+        uint16 newMaxCompletionDeviationBps,
+        uint16 newMinChallengeDeviationGapBps,
+        uint16 newMaxChallengeDeviationBps
+    ) external onlyOwner {
+        _validateWeightBandLimits(
+            newMinCompletionDeviationBps,
+            newMaxCompletionDeviationBps,
+            newMinChallengeDeviationGapBps,
+            newMaxChallengeDeviationBps
+        );
+        minCompletionDeviationBps = newMinCompletionDeviationBps;
+        maxCompletionDeviationBps = newMaxCompletionDeviationBps;
+        minChallengeDeviationGapBps = newMinChallengeDeviationGapBps;
+        maxChallengeDeviationBps = newMaxChallengeDeviationBps;
+        emit WeightBandLimitsUpdated(
+            newMinCompletionDeviationBps,
+            newMaxCompletionDeviationBps,
+            newMinChallengeDeviationGapBps,
+            newMaxChallengeDeviationBps
+        );
+    }
+
     /// @notice Reversibly pauses new OTF creation and primary deposits across every factory OTF.
     /// @dev Redemptions, share transfers, and secondary-market trading remain available.
     function setDepositsPaused(bool paused) external onlyOwner {
@@ -415,7 +447,7 @@ contract OTFFactory is IAdapterAllowlist {
         emit OwnershipTransferred(oldOwner, msg.sender);
     }
 
-    function _validateFactoryBounds(VaultInitParams calldata params) internal pure {
+    function _validateFactoryBounds(VaultInitParams calldata params) internal view {
         bytes calldata name = bytes(params.name);
         uint256 nameLength = name.length;
         if (
@@ -458,13 +490,36 @@ contract OTFFactory is IAdapterAllowlist {
             revert CreatorFeeTooHigh(params.creatorFeeBpsPerYear, MAX_CREATOR_FEE_BPS_PER_YEAR);
         }
         if (params.maxNavLossBps > GLOBAL_MAX_NAV_LOSS_BPS) revert LimitTooHigh();
-        if (params.maxWeightDeviationBps == 0) revert InvalidLimit();
-        if (params.maxWeightDeviationBps > GLOBAL_MAX_WEIGHT_DEVIATION_BPS) {
-            revert LimitTooHigh();
-        }
+        _validateWeightBands(params.maxWeightDeviationBps, params.challengeWeightDeviationBps);
+    }
+
+    function _validateWeightBandLimits(
+        uint16 minimumCompletion,
+        uint16 maximumCompletion,
+        uint16 minimumChallengeGap,
+        uint16 maximumChallenge
+    ) private pure {
         if (
-            params.challengeWeightDeviationBps <= params.maxWeightDeviationBps
-                || params.challengeWeightDeviationBps > GLOBAL_MAX_CHALLENGE_WEIGHT_DEVIATION_BPS
+            minimumCompletion == 0 || minimumCompletion > maximumCompletion
+                || minimumChallengeGap == 0 || maximumCompletion > 10_000
+                || minimumChallengeGap > 10_000 || maximumChallenge > 10_000
+                || uint256(maximumCompletion) + uint256(minimumChallengeGap)
+                    > uint256(maximumChallenge)
+        ) {
+            revert InvalidLimit();
+        }
+    }
+
+    function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps)
+        private
+        view
+    {
+        if (
+            completionDeviationBps < minCompletionDeviationBps
+                || completionDeviationBps > maxCompletionDeviationBps
+                || uint256(challengeDeviationBps)
+                    < uint256(completionDeviationBps) + uint256(minChallengeDeviationGapBps)
+                || challengeDeviationBps > maxChallengeDeviationBps
         ) {
             revert InvalidLimit();
         }

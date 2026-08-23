@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowDownToLine, ArrowLeft, CheckCircle, Droplets, ExternalLink, Loader2, MinusCircle, PlusCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   encodeFunctionData,
   formatUnits,
@@ -25,7 +25,8 @@ import {
 } from "wagmi";
 import { Providers } from "@/app/providers";
 import { robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetV3Venue } from "@/lib/deployment";
+import { robinhoodTestnetAddresses } from "@/lib/deployment";
+import { selectV3Pool, useDiscoveredV3Pools, type V3TokenPair } from "@/lib/v3-execution-routes";
 import { TopNav, WalletConnectionAction } from "./RebalanceCooldownPanel";
 
 const MIN_TICK = -887272;
@@ -310,7 +311,22 @@ function LiquidityWorkspace() {
   const settlementToken = robinhoodTestnetAddresses.usdg;
   const otfFactory = robinhoodTestnetAddresses.factory;
   const marketRegistry = robinhoodTestnetAddresses.v3MarketRegistry;
-  const configuredMarkets = robinhoodTestnetV3Venue.constituentPools;
+  const constituentAssets = useMemo(
+    () => Object.keys(assetNames).filter((asset) => isAddress(asset)).map((asset) => getAddress(asset)),
+    [],
+  );
+  const constituentDiscoveryPairs = useMemo<V3TokenPair[]>(() => settlementToken
+    ? constituentAssets.map((asset) => ({ tokenA: asset, tokenB: settlementToken }))
+    : [], [constituentAssets, settlementToken]);
+  const { pools: discoveredPools } = useDiscoveredV3Pools(
+    constituentDiscoveryPairs,
+    Boolean(v3Factory && settlementToken),
+  );
+  const configuredMarkets = constituentAssets.flatMap((asset) => {
+    if (!settlementToken) return [];
+    const pool = selectV3Pool(discoveredPools, asset, settlementToken);
+    return pool ? [{ asset, pool: pool.address, fee: pool.fee, quoteToken: settlementToken }] : [];
+  });
   const initialVault = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("vault") ?? "";
   const [marketChoice, setMarketChoice] = useState(initialVault && isAddress(initialVault) ? "otf" : configuredMarkets[0]?.asset ?? "otf");
   const [otfAddress, setOtfAddress] = useState(initialVault);

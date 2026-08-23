@@ -384,14 +384,6 @@ const deployment = {
     uniswapV3SwapRouter: uniswapV3SwapRouterAddress,
     uniswapV3Quoter: uniswapV3QuoterAddress,
   },
-  v3Venue: {
-    provider: "synthra",
-    liquidityUrl: "https://app.synthra.org/#/pools",
-    settlementToken: usdgAddress,
-    constituentFee: 3000,
-    poolInitializationMaxOracleAgeSeconds: 3600,
-    constituentPools: [],
-  },
   pricingConfiguration: {
     sources: ["chainlink", "chainlink-composed", "uniswap-v3", "chainlink-robinhood"],
     quoteTokens: quoteTokenRegistrations,
@@ -418,9 +410,6 @@ const deployment = {
       pricingIndependent: true,
     },
   ],
-  ...(deploymentConfig.executionLiquidity
-    ? { executionLiquidity: deploymentConfig.executionLiquidity }
-    : {}),
   migration: {
     architecture: "pinned-pricing-v3",
     legacyFactoriesCompatible: false,

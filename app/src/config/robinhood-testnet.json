@@ -107,14 +107,6 @@
     "uniswapV3SwapRouter": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
     "uniswapV3Quoter": "0x231606c321A99DE81e28fE48B07a93F1ba49e713"
   },
-  "v3Venue": {
-    "provider": "synthra",
-    "liquidityUrl": "https://app.synthra.org/#/pools",
-    "settlementToken": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
-    "constituentFee": 3000,
-    "poolInitializationMaxOracleAgeSeconds": 3600,
-    "constituentPools": []
-  },
   "pricingConfiguration": {
     "sources": [
       "chainlink",
@@ -222,14 +214,6 @@
       "pricingIndependent": true
     }
   ],
-  "executionLiquidity": {
-    "wethUsdg": {
-      "pool": "0xFF8789F34290f889fE0A201f2c90f5894DD6503d",
-      "tokenA": "0x33e4191705c386532ba27cBF171Db86919200B94",
-      "tokenB": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
-      "fee": 100
-    }
-  },
   "migration": {
     "architecture": "pinned-pricing-v3",
     "legacyFactoriesCompatible": false

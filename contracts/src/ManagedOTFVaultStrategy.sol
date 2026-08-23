@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
+import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
@@ -604,12 +604,18 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
 
     function _validateWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_)
         private
-        pure
+        view
     {
+        IProtocolPortfolioLimits policy = IProtocolPortfolioLimits(factory);
+        uint16 minimumCompletion = policy.minCompletionDeviationBps();
+        uint16 maximumCompletion = policy.maxCompletionDeviationBps();
+        uint16 minimumChallengeGap = policy.minChallengeDeviationGapBps();
+        uint16 maximumChallenge = policy.maxChallengeDeviationBps();
         if (
-            completionDeviationBps == 0 || completionDeviationBps > MAX_COMPLETION_DEVIATION_BPS
-                || challengeDeviationBps_ <= completionDeviationBps
-                || challengeDeviationBps_ > MAX_BAND_DEVIATION_BPS
+            completionDeviationBps < minimumCompletion || completionDeviationBps > maximumCompletion
+                || uint256(challengeDeviationBps_)
+                    < uint256(completionDeviationBps) + uint256(minimumChallengeGap)
+                || challengeDeviationBps_ > maximumChallenge
         ) {
             revert InvalidWeightBands(completionDeviationBps, challengeDeviationBps_);
         }

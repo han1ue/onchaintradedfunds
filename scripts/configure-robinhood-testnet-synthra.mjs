@@ -39,7 +39,6 @@ const targetObservationCardinality = 64;
 const q192 = 1n << 192n;
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const verifiedAssetsPath = join(root, "app", "src", "config", "verified_assets.json");
-const synthraLiquidityUrl = "https://app.synthra.org/#/pools";
 const catalog = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"))
   .filter((asset) => Number(asset.chainId) === chainId)
   .map((asset) => ({ asset: asset.tokenAddress }));
@@ -533,18 +532,12 @@ for (const [action, caller] of [
 }
 saveDeployment(deployment);
 
-const poolRecords = [];
 for (const item of constituentMarkets) {
   const {
     asset,
     assetDecimals,
-    configuredFeed,
-    configuredMaxStaleness,
-    configuredSource,
     feedDecimals,
     answer,
-    updatedAt,
-    observedAtBlock,
   } = item;
 
   const requestedSqrtPriceX96 = sqrtPriceX96({
@@ -563,13 +556,12 @@ for (const item of constituentMarkets) {
     functionName: "getPool",
     args: [asset, settlementToken, poolFee],
   });
-  let evidence;
   const poolWasMissing = isAddressEqual(pool, zeroAddress);
   const existingSlot0 = poolWasMissing
     ? undefined
     : await publicClient.readContract({ address: pool, abi: poolAbi, functionName: "slot0" });
   if (poolWasMissing || existingSlot0?.[0] === 0n) {
-    evidence = await confirmedWrite({
+    await confirmedWrite({
       address: positionManager,
       abi: positionManagerAbi,
       functionName: "createAndInitializePoolIfNecessary",
@@ -581,24 +573,6 @@ for (const item of constituentMarkets) {
       functionName: "getPool",
       args: [asset, settlementToken, poolFee],
     });
-    evidence = {
-      ...evidence,
-      initialization: poolWasMissing ? "created" : "initialized",
-    };
-  } else {
-    const priorRecord = deployment.v3Venue?.constituentPools?.find(
-      (record) => record.symbol === item.symbol && isAddressEqual(record.asset, asset),
-    );
-    evidence = {
-      ...(priorRecord?.transactionHash ? {
-        transactionHash: priorRecord.transactionHash,
-        blockNumber: priorRecord.blockNumber,
-        gasUsed: priorRecord.gasUsed,
-        initialization: priorRecord.initialization,
-      } : {}),
-      alreadyConfigured: true,
-      observedAtBlock,
-    };
   }
   if (isAddressEqual(pool, zeroAddress)) throw new Error(`${item.symbol}/USDG pool was not created.`);
 
@@ -616,9 +590,8 @@ for (const item of constituentMarkets) {
       || resolvedFee !== poolFee || slot0[0] === 0n
   ) throw new Error(`${item.symbol}/USDG pool failed post-creation verification.`);
 
-  let cardinalityExpansion = { alreadyConfigured: true };
   if (Number(slot0[4]) < targetObservationCardinality) {
-    cardinalityExpansion = await confirmedWrite({
+    await confirmedWrite({
       address: pool,
       abi: poolAbi,
       functionName: "increaseObservationCardinalityNext",
@@ -646,48 +619,12 @@ for (const item of constituentMarkets) {
   } catch {
     twapReady = false;
   }
-  const poolBlock = await publicClient.getBlock();
-  const twapReadyAt = twapReady
-    ? poolBlock.timestamp
-    : poolBlock.timestamp + BigInt(pricingTwapWindowSeconds);
-
-  poolRecords.push({
-    symbol: item.symbol,
-    asset,
-    pool: getAddress(pool),
-    fee: poolFee,
-    initializedSqrtPriceX96: verifiedSlot0[0],
-    activeLiquidity: liquidity,
-    canonicalFactory: getAddress(resolvedFactory),
-    observationCardinality: verifiedSlot0[3],
-    observationCardinalityNext: verifiedSlot0[4],
-    requiredObservationCardinality: targetObservationCardinality,
-    pricingTwapWindowSeconds,
-    twapReady,
-    twapReadyAt,
-    twapReadyAtIsEstimate: !twapReady,
-    cardinalityExpansion,
-    oracleFeed: getAddress(configuredFeed),
-    oracleAnswer: answer,
-    oracleDecimals: feedDecimals,
-    oracleUpdatedAt: updatedAt,
-    oracleMaxStaleness: configuredMaxStaleness,
-    pricingSource: configuredSource,
-    ...evidence,
-  });
   console.log(`${item.symbol}/USDG: ${pool} (${liquidity === 0n ? "awaiting liquidity" : "active"})`);
 }
 
-deployment.v3Venue = {
-  provider: "synthra",
-  purpose: "execution-liquidity",
-  liquidityUrl: synthraLiquidityUrl,
-  settlementToken,
-  constituentFee: poolFee,
-  poolInitializationMaxOracleAgeSeconds: Number(oracleMaxAgeSeconds),
-  constituentPools: poolRecords,
-  configuredAt: new Date().toISOString(),
-};
+delete deployment.v3Venue;
+delete deployment.wethV3Venue;
+delete deployment.executionLiquidity;
 deployment.pricingConfiguration ??= {};
 deployment.pricingConfiguration.suggestedV3PricingConfigs = [];
 deployment.pricingConfiguration.v3PricingNote =

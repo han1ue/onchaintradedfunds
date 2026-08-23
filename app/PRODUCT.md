@@ -10,7 +10,7 @@ web
 
 The primary users are investors evaluating, acquiring, monitoring, and redeeming positions in transparent onchain portfolios backed by tokenized stock assets. They need to understand what each OTF owns, how it has performed, what rules constrain it, who manages it, whether its oracle data is healthy, and when its portfolio may next change.
 
-The secondary users are creators and managers who launch and operate OTFs. They need to define an initial thesis and allocation, configure permanent safety bounds, monitor their products, accrue fees, and propose target changes with a rationale that satisfies the protocol's rules.
+The secondary users are creators and managers who launch and operate OTFs. They need to define an initial thesis and allocation, configure policy-bounded safety limits, monitor their products, accrue fees, and propose target changes with a rationale that satisfies the protocol's rules.
 
 ## Product Purpose
 
@@ -22,7 +22,7 @@ For the MVP, success means making the complete OTF lifecycle understandable and 
 
 ## Positioning
 
-OTF combines human portfolio management with enforceable onchain limits. Managers may change a portfolio only through a narrow atomic rebalance path constrained by current constituents and approved adapters, fresh per-OTF pinned prices, immutable portfolio limits, NAV-loss protection, target-weight checks, and a minimum cooldown. Strategy turnover is recorded for disclosure rather than capped.
+OTF combines human portfolio management with enforceable onchain limits. Managers may change a portfolio only through a narrow atomic rebalance path constrained by current constituents and approved adapters, fresh per-OTF pinned prices, factory-policy-bounded weight bands, NAV-loss protection, target-weight checks, and a minimum cooldown. Strategy turnover is recorded for disclosure rather than capped.
 
 This makes each managed portfolio independently inspectable and mechanically bounded. The protocol's position is evolutionary: it rebuilds familiar fund ownership and management mechanics as transparent, programmable onchain infrastructure rather than presenting itself as an attack on traditional ETFs.
 
@@ -39,7 +39,7 @@ Investors use the web application with an EVM wallet to:
 
 Creators and managers use the application to:
 
-- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, creator fee, and permanent safety limits.
+- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, creator fee, and policy-bounded safety limits.
 - Open the immutable official OTF/USDG pool and add wallet-funded liquidity without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Propose target changes with a required rationale that becomes permanent when the strategy activates.
@@ -51,7 +51,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 ## Capabilities and Constraints
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
-- OTF creation is permissionless within factory-level mechanical validation and immutable safety constraints.
+- OTF creation is permissionless within factory-level mechanical validation and enforceable safety constraints.
 - The investor frontend exposes exactly three entry paths—direct RWA basket, official OTF/USDG market, and fixed-USDG constituent routing—and exactly three corresponding exit paths.
 - Every OTF factory transaction rejects an occupied predicted market address before deploying, then atomically creates one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
@@ -68,7 +68,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Rebalances use current constituents and one approved generic V3 adapter, exact temporary approvals,
   fresh pinned onchain prices, and atomic execution. Explicit execution paths may use arbitrary
   intermediate tokens without changing the OTF's pinned pricing configuration.
-- Portfolio changes are bounded by immutable limits covering NAV loss and target-weight deviation. Every included asset must meet the factory owner's live protocol-wide minimum target weight, initialized at 1%, with no separate asset-count, maximum-target, or turnover limit.
+- Portfolio changes are bounded by enforceable limits covering NAV loss and target-weight deviation. Managers may update completion and challenge bands within the factory owner's live protocol-wide policy. Every included asset must meet the live minimum target weight, initialized at 1%, with no separate asset-count, maximum-target, or turnover limit.
 - Every OTF uses a fixed seven-day challenge grace period. Oracle freshness and corporate-action pause checks are selected per leg by the creator, mechanically validated, and pinned while the asset remains tracked. Fully pruning an asset clears its pricing state so a later strategy can reintroduce it with a newly validated source. Robinhood equity feeds publish 24/5; the frontend currently suggests a 25-hour limit measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when a rebalance completes inside its target bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.

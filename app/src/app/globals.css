@@ -5453,7 +5453,7 @@ textarea::placeholder {
 }
 
 .verifiedAssetsTable {
-  min-width: 1180px;
+  min-width: 980px;
 }
 
 .verifiedAssetsTable th,
@@ -5461,29 +5461,135 @@ textarea::placeholder {
   vertical-align: middle;
 }
 
-.verifiedPricingDetails {
-  display: grid;
-  justify-items: end;
-  gap: 3px;
-  min-width: 150px;
+.verifiedPriceSources {
+  display: flex;
+  min-width: 170px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
-.verifiedPricingDetails strong {
-  color: var(--text);
-  font-size: 0.7rem;
+.priceSourcePill {
+  position: relative;
+  color: var(--text-soft);
+}
+
+.priceSourcePill > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid color-mix(in srgb, var(--teal) 28%, var(--border));
+  border-radius: 999px;
+  padding: 4px 8px 4px 10px;
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--teal) 9%, var(--card));
+  font-size: 0.66rem;
   font-weight: 650;
+  line-height: 1;
+  cursor: help;
+  list-style: none;
 }
 
-.verifiedPricingDetails .tableAddressLink,
-.verifiedPricingDetails span,
-.verifiedPricingDetails small,
+.priceSourcePill > summary::-webkit-details-marker {
+  display: none;
+}
+
+.priceSourcePill > summary:hover,
+.priceSourcePill > summary:focus-visible,
+.priceSourcePill[open] > summary {
+  border-color: color-mix(in srgb, var(--teal) 52%, var(--border));
+  background: color-mix(in srgb, var(--teal) 15%, var(--card));
+  outline: none;
+}
+
+.priceSourcePopover {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 270px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 11px 12px;
+  color: var(--text-soft);
+  background: var(--card-raised);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 24%);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.priceSourcePill:hover .priceSourcePopover,
+.priceSourcePill:focus-within .priceSourcePopover,
+.priceSourcePill[open] .priceSourcePopover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.verifiedAssetsTable tbody tr:nth-last-child(-n + 2) .priceSourcePopover {
+  top: auto;
+  bottom: calc(100% + 7px);
+}
+
+.priceSourcePopover > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.priceSourcePopover dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.priceSourcePopover dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.priceSourcePopover dt,
+.priceSourcePopover dd {
+  margin: 0;
+  font-size: 0.65rem;
+  line-height: 1.35;
+}
+
+.priceSourcePopover dt {
+  color: var(--text-muted);
+}
+
+.priceSourcePopover dd {
+  color: var(--text-soft);
+  text-align: right;
+}
+
+.priceSourceAddress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  text-decoration: none;
+}
+
+.priceSourceAddress:hover,
+.priceSourceAddress:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
 .mutedTableValue {
   color: var(--text-muted);
   font-size: 0.64rem;
-}
-
-.verifiedPricingDetails small {
-  line-height: 1.4;
 }
 
 .rwaCatalogTable th:last-child,

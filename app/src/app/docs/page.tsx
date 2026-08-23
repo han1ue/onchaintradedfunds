@@ -151,7 +151,7 @@ export default function DocsPage() {
               <article>
                 <Scale size={17} />
                 <strong>Bounded management</strong>
-                <span>Managers act within immutable portfolio and execution limits.</span>
+                <span>Managers act within enforceable portfolio and execution limits.</span>
               </article>
             </div>
           </section>

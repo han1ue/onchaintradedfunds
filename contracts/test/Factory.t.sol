@@ -142,8 +142,8 @@ contract FactoryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
-        params.maxWeightDeviationBps = 1_001;
-        vm.expectRevert(OTFFactory.LimitTooHigh.selector);
+        params.maxWeightDeviationBps = 501;
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
     }
 
@@ -254,7 +254,7 @@ contract FactoryTest is ProtocolTestBase {
         factory.createVault(params);
 
         params = _defaultParams();
-        params.challengeWeightDeviationBps = 2_501;
+        params.challengeWeightDeviationBps = 1_501;
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
         factory.createVault(params);
     }

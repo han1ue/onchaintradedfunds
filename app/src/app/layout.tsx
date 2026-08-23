@@ -7,7 +7,7 @@ import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
-  description: "Managed onchain traded funds with immutable portfolio safety limits.",
+  description: "Managed onchain traded funds with enforceable portfolio safety limits.",
   icons: { icon: OTF_FAVICON_DATA_URL },
 };
 
