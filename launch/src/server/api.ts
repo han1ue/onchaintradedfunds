@@ -1,5 +1,26 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { PublicApiError } from "@/lib/errors";
+
+export const DEFAULT_PUBLIC_LIST_LIMIT = 50;
+export const MAX_PUBLIC_LIST_LIMIT = 100;
+
+const publicListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_PUBLIC_LIST_LIMIT).default(DEFAULT_PUBLIC_LIST_LIMIT),
+  cursor: z.string().regex(/^[1-9]\d*$/).transform(Number).optional(),
+  q: z.string().trim().max(100).default(""),
+});
+
+export function parsePublicListQuery(request: Request) {
+  const url = new URL(request.url);
+  const parsed = publicListQuerySchema.safeParse({
+    limit: url.searchParams.get("limit") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
+    q: url.searchParams.get("q") ?? undefined,
+  });
+  if (!parsed.success) throw new Error("INVALID_QUERY");
+  return parsed.data;
+}
 
 export function apiOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json({ data }, init);

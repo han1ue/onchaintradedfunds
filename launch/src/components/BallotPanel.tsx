@@ -1,13 +1,14 @@
 "use client";
 
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import { CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Send, ShieldAlert, Vote } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, ExternalLink, LockKeyhole, Minus, Plus, Search, Send, ShieldAlert, Vote } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { getCommittedBallotState } from "@/lib/ballot-state";
 import type { CompetitionRules } from "@/lib/competition";
 import { errorMessages } from "@/lib/errors";
-import type { BallotSummary, LeaderboardEntry, ParticipationEligibility } from "@/lib/types";
+import type { BallotSummary, LeaderboardEntry, LeaderboardPage, ParticipationEligibility } from "@/lib/types";
 import { buildVotePost } from "@/lib/x-post";
 import { CompetitionCountdown } from "./CompetitionCountdown";
 import { EligibilityAction } from "./EligibilityGate";
@@ -22,6 +23,8 @@ type VoteAvailability = {
   votingStartsAt: string;
   nextVoteUnlockAt: string | null;
 };
+
+const PAGE_SIZE = 50;
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -38,8 +41,9 @@ function sumVotes(votes: Record<string, number>) {
   return Object.values(votes).reduce((sum, value) => sum + value, 0);
 }
 
-export function BallotPanel({ proposals, ballot, eligibility, rules, availability, focusSlug, turnstileSiteKey, currentTime }: {
-  proposals: LeaderboardEntry[];
+export function BallotPanel({ initialPage, totalProposalCount, ballot, eligibility, rules, availability, focusSlug, turnstileSiteKey, currentTime }: {
+  initialPage: LeaderboardPage;
+  totalProposalCount: number;
   ballot: BallotSummary | null;
   eligibility: ParticipationEligibility;
   rules: CompetitionRules;
@@ -49,18 +53,28 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
   currentTime: string;
 }) {
   const router = useRouter();
+  const initialProposals = initialPage.entries;
+  const [proposals, setProposals] = useState(initialProposals);
+  const [knownProposals, setKnownProposals] = useState<Record<string, LeaderboardEntry>>(
+    Object.fromEntries(initialProposals.map((proposal) => [proposal.id, proposal])),
+  );
+  const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
+  const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
   const initialCommittedState = useMemo(() => getCommittedBallotState(
-    proposals.map((proposal) => proposal.id),
+    [...new Set([...initialProposals.map((proposal) => proposal.id), ...(ballot?.allocations.map((allocation) => allocation.proposalId) ?? [])])],
     ballot,
-  ), [ballot, proposals]);
+  ), [ballot, initialProposals]);
   const initialAdditions = useMemo(() => {
-    const values = Object.fromEntries(proposals.map((proposal) => [proposal.id, 0])) as Record<string, number>;
+    const values = Object.fromEntries(initialProposals.map((proposal) => [proposal.id, 0])) as Record<string, number>;
     if (ballot?.status !== "valid" && focusSlug && availability.unlockedVotes > 0) {
-      const focused = proposals.find((proposal) => proposal.slug === focusSlug);
+      const focused = initialProposals.find((proposal) => proposal.slug === focusSlug);
       if (focused) values[focused.id] = 1;
     }
     return values;
-  }, [availability.unlockedVotes, ballot?.status, focusSlug, proposals]);
+  }, [availability.unlockedVotes, ballot?.status, focusSlug, initialProposals]);
   const [additions, setAdditions] = useState<Record<string, number>>(initialAdditions);
   const [committedVotes, setCommittedVotes] = useState<Record<string, number>>(initialCommittedState.committedVotes);
   const [castTotal, setCastTotal] = useState(initialCommittedState.castTotal);
@@ -73,14 +87,14 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [revealVotes, setRevealVotes] = useState(false);
-  const voteAdditions = proposals
-    .map((proposal) => ({ proposalId: proposal.id, votes: additions[proposal.id] ?? 0 }))
-    .filter(({ votes }) => votes > 0);
+  const voteAdditions = Object.entries(additions)
+    .filter(([, votes]) => votes > 0)
+    .map(([proposalId, votes]) => ({ proposalId, votes }));
   const newVotes = voteAdditions.reduce((sum, addition) => sum + addition.votes, 0);
   const total = castTotal + newVotes;
   const unlockedRemaining = Math.max(0, availability.unlockedVotes - castTotal);
   const addedChoices = voteAdditions.map((addition) => ({
-    ticker: proposals.find((proposal) => proposal.id === addition.proposalId)?.ticker ?? "OTF",
+    ticker: knownProposals[addition.proposalId]?.ticker ?? "OTF",
     votes: addition.votes,
   }));
   const previewText = buildVotePost(reason, "[verification code]", revealVotes ? addedChoices : []);
@@ -97,6 +111,74 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
       if (nextTotal > availability.unlockedVotes) return current;
       return { ...current, [proposalId]: nextValue };
     });
+  }
+
+  function mergeKnown(next: LeaderboardEntry[]) {
+    setKnownProposals((current) => ({ ...current, ...Object.fromEntries(next.map((proposal) => [proposal.id, proposal])) }));
+  }
+
+  async function fetchProposalPage(search: string, cursor: string | null) {
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (search) params.set("q", search);
+    if (cursor) params.set("cursor", cursor);
+    const response = await fetch(`/api/v1/leaderboard?${params.toString()}`);
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !json?.data) throw new Error("PROPOSAL_LIST_LOAD_FAILED");
+    return json.data as LeaderboardPage;
+  }
+
+  async function applySearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const search = query.trim();
+    setListLoading(true);
+    setListError(null);
+    try {
+      const page = await fetchProposalPage(search, null);
+      mergeKnown(page.entries);
+      setProposals(page.entries);
+      setNextCursor(page.nextCursor);
+      setAppliedQuery(search);
+    } catch {
+      setListError("Search could not be loaded. Your vote selections are unchanged.");
+    } finally {
+      setListLoading(false);
+    }
+  }
+
+  async function clearSearch() {
+    setQuery("");
+    setListLoading(true);
+    setListError(null);
+    try {
+      const page = await fetchProposalPage("", null);
+      mergeKnown(page.entries);
+      setProposals(page.entries);
+      setNextCursor(page.nextCursor);
+      setAppliedQuery("");
+    } catch {
+      setListError("The proposal list could not be reloaded. Your vote selections are unchanged.");
+    } finally {
+      setListLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    if (!nextCursor) return;
+    setListLoading(true);
+    setListError(null);
+    try {
+      const page = await fetchProposalPage(appliedQuery, nextCursor);
+      mergeKnown(page.entries);
+      setProposals((current) => {
+        const seen = new Set(current.map((proposal) => proposal.id));
+        return [...current, ...page.entries.filter((proposal) => !seen.has(proposal.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } catch {
+      setListError("More proposals could not be loaded. Your vote selections are unchanged.");
+    } finally {
+      setListLoading(false);
+    }
   }
 
   async function request(action: "prepare" | "verify") {
@@ -130,12 +212,13 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
         }
       }
       if (action === "verify") {
-        setCommittedVotes((current) => Object.fromEntries(Object.entries(current).map(([proposalId, votes]) => [
-          proposalId,
-          votes + (additions[proposalId] ?? 0),
-        ])));
+        setCommittedVotes((current) => {
+          const next = { ...current };
+          for (const addition of voteAdditions) next[addition.proposalId] = (next[addition.proposalId] ?? 0) + addition.votes;
+          return next;
+        });
         setCastTotal(total);
-        setAdditions(Object.fromEntries(proposals.map((proposal) => [proposal.id, 0])));
+        setAdditions((current) => Object.fromEntries(Object.keys(current).map((proposalId) => [proposalId, 0])));
         setChallenge(null);
         setPostUrl("");
         setReason("");
@@ -165,7 +248,7 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
 
   if (availability.competitionEnded) return <SectionCard className="emptyState phaseBlocked"><LockKeyhole size={28} /><h2>Voting is closed</h2><p>The competition has ended. Cast votes and proposal records are locked for the final audit.</p></SectionCard>;
   if (!availability.votingOpen) return <SectionCard className="emptyState phaseBlocked"><CalendarClock size={28} /><h2>Voting opens in</h2><CompetitionCountdown target={availability.votingStartsAt} currentTime={currentTime} /><p>Three votes unlock at {formatDateTime(availability.votingStartsAt)}. Until then, the first week is reserved for OTF submissions.</p><Button href="/submit">Create an OTF</Button></SectionCard>;
-  if (!proposals.length) return <SectionCard className="emptyState ballotEmptyState"><Vote size={28} /><h2>No OTF proposals available</h2><p>Your unlocked votes remain available until proposals join the competition.</p><Button href="/submit">Create the first OTF</Button></SectionCard>;
+  if (totalProposalCount === 0) return <SectionCard className="emptyState ballotEmptyState"><Vote size={28} /><h2>No OTF proposals available</h2><p>Your unlocked votes remain available until proposals join the competition.</p><Button href="/submit">Create the first OTF</Button></SectionCard>;
   if (!eligibility.eligible) return <SectionCard className="eligibilityBlocked"><ShieldAlert size={28} aria-hidden="true" /><h2>Eligible X account required</h2><p>Use a verified, public X account with at least {eligibility.minFollowers.toLocaleString()} followers to cast up to {rules.totalVotes} votes.</p><EligibilityAction eligibility={eligibility} action="vote" callbackUrl="/vote" autoOpen>{eligibility.connected ? "Use another X account" : "Sign in to vote"}</EligibilityAction></SectionCard>;
 
   const actionPanel = <SectionCard className="ballotAction ballotActionWide">
@@ -175,7 +258,8 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
   </SectionCard>;
 
   return <div className="ballotLayout"><SectionCard className="ballotCard"><div className="ballotToolbar"><div><span>Your vote ledger</span><small>Cast votes are permanent. Add newly unlocked votes at any time.</small></div><div className={`ballotTotal${newVotes > 0 ? " valid" : ""}`} aria-label={`${total} of ${availability.unlockedVotes} votes selected`}><strong>{total} / {availability.unlockedVotes}</strong></div></div>
-    <div className="ballotRows">{proposals.map((proposal) => {
+    <form className="listSearch ballotListSearch" role="search" onSubmit={applySearch}><label htmlFor="ballot-search">Search proposals</label><div><Search size={16} aria-hidden="true" /><input id="ballot-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, ticker, creator, or thesis" maxLength={100} disabled={Boolean(challenge)} /><Button type="submit" variant="secondary" disabled={listLoading || Boolean(challenge)}>Search</Button>{appliedQuery && <Button type="button" variant="ghost" onClick={clearSearch} disabled={listLoading || Boolean(challenge)}>Clear</Button>}</div></form>
+    <div className="ballotRows">{proposals.length === 0 && appliedQuery ? <div className="ballotSearchEmpty"><strong>No matching proposals</strong><p>Try a ticker, OTF name, creator, or a broader phrase.</p></div> : proposals.map((proposal) => {
       const committed = committedVotes[proposal.id] ?? 0;
       const addition = additions[proposal.id] ?? 0;
       const value = committed + addition;
@@ -190,6 +274,8 @@ export function BallotPanel({ proposals, ballot, eligibility, rules, availabilit
         </div>
       </div>;
     })}</div>
+    <div className="listPagination ballotPagination" aria-live="polite"><span>{appliedQuery ? `${proposals.length} matching ${proposals.length === 1 ? "proposal" : "proposals"} shown` : `${proposals.length} of ${totalProposalCount} proposals shown`}</span>{nextCursor && <Button type="button" variant="secondary" onClick={loadMore} disabled={listLoading || Boolean(challenge)}>{listLoading ? "Loading…" : "Load more"}</Button>}</div>
+    {listError && <p className="listLoadError" role="alert">{listError}</p>}
   </SectionCard><aside className="ballotRail"><SectionCard className="ballotSummary"><div className="ballotSummaryStatus"><div className="ballotSummaryCount"><span>Remaining votes</span><strong className={unlockedRemaining === 0 ? "complete" : ""}>{unlockedRemaining}</strong></div><p>{availability.nextVoteUnlockAt ? `Next vote unlocks ${formatDateTime(availability.nextVoteUnlockAt)}.` : `All ${rules.totalVotes} votes are unlocked. No vote is added on the final voting day.`}</p></div><div className="voteUnlockTrack" role="progressbar" aria-label="Votes unlocked" aria-valuemin={0} aria-valuemax={rules.totalVotes} aria-valuenow={availability.unlockedVotes}><span style={{ width: `${availability.unlockedVotes / rules.totalVotes * 100}%` }} /></div><small>{availability.unlockedVotes} of {rules.totalVotes} unlocked</small></SectionCard></aside>
     <div className="ballotActionArea">{actionPanel}</div>
   </div>;

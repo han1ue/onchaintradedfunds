@@ -16,7 +16,8 @@ function daysRemaining(endsAt: string) { return Math.max(0, Math.ceil((new Date(
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ voteError?: string; authError?: string }> }) {
   const currentTime = new Date();
   const { voteError, authError } = await searchParams;
-  const [competition, leaderboard, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getAssetRegistry(), auth()]);
+  const [competition, leaderboardPage, assets, session] = await Promise.all([getCompetition(), getLeaderboard(), getAssetRegistry(), auth()]);
+  const leaderboard = leaderboardPage.entries;
   const verifiedAssetCount = assets.filter((asset) => asset.verified).length;
   const eligibility = await getParticipationEligibility(session?.user, competition);
   const status = getCompetitionStatus(competition, currentTime);

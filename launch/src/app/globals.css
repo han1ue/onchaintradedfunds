@@ -203,6 +203,16 @@ button { color: inherit; }
 .leaderboardEmpty strong { display: block; font-size: .92rem; }
 .leaderboardEmpty p { margin: 5px 0 0; color: var(--text-muted); font-size: .75rem; }
 .leaderboardEmpty .button { margin-top: 2px; }
+.listSearch { display: grid; gap: 7px; padding: 12px 18px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--card-raised) 44%, transparent); }
+.listSearch > label { color: var(--text-muted); font-size: .63rem; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
+.listSearch > div { display: flex; align-items: center; gap: 8px; }
+.listSearch > div > svg { flex: 0 0 auto; color: var(--text-muted); }
+.listSearch input { width: 100%; min-width: 0; height: 36px; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; font-size: .76rem; }
+.listSearch input::placeholder { color: var(--text-muted); }
+.listSearch input:focus { border-color: var(--teal); outline: 2px solid rgb(var(--accent-rgb) / 16%); outline-offset: 0; }
+.listPagination { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 18px; border-top: 1px solid var(--border); }
+.listPagination > span { color: var(--text-muted); font-size: .69rem; font-variant-numeric: tabular-nums; }
+.listLoadError { margin: 0; padding: 0 18px 12px; color: var(--danger); font-size: .71rem; line-height: 1.45; }
 .leaderboardRow { min-height: 102px; padding: 12px 16px; border-bottom: 1px solid var(--border); animation: row-enter .32s both; cursor: pointer; }
 .leaderboardItem:nth-child(2) .leaderboardRow { animation-delay: 45ms; }
 .leaderboardItem:nth-child(3) .leaderboardRow { animation-delay: 90ms; }
@@ -619,6 +629,10 @@ button { color: inherit; }
 .ballotRows { display: grid; }
 .ballotRow { min-height: 70px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 122px; gap: 12px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--border); }
 .ballotRow:last-child { border-bottom: 0; }
+.ballotSearchEmpty { min-height: 150px; display: grid; place-content: center; gap: 5px; padding: 24px; text-align: center; }
+.ballotSearchEmpty strong { font-size: .84rem; }
+.ballotSearchEmpty p { margin: 0; color: var(--text-muted); font-size: .72rem; }
+.ballotPagination { border-top: 1px solid var(--border); }
 .ballotIdentity { min-width: 0; display: grid; gap: 3px; }
 .ballotIdentity strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .ballotIdentity span { color: var(--text-muted); font-size: .66rem; }
@@ -979,6 +993,8 @@ button { color: inherit; }
   .ballotPendingAction { grid-template-columns: 1fr; }
   .ballotPendingAction .button { width: 100%; }
   .ballotToolbar { align-items: flex-start; }
+  .listSearch > div { flex-wrap: wrap; }
+  .listSearch input { flex: 1 1 calc(100% - 28px); }
   .progressSteps { padding: 0 14px; }
   .progressSteps strong { display: none; }
   .progressSteps > div { justify-content: flex-start; }
@@ -1049,6 +1065,10 @@ button { color: inherit; }
   .returnsRanges { width: 100%; justify-content: flex-start; }
   .returnsFootnote { align-items: flex-start; flex-direction: column; gap: 4px; }
   .ballotToolbar { padding: 12px; }
+  .listSearch { padding: 11px 12px; }
+  .listSearch .button { flex: 1 1 auto; }
+  .listPagination { align-items: stretch; flex-direction: column; padding: 11px 12px; }
+  .listPagination .button { width: 100%; }
   .ballotRow { grid-template-columns: 38px minmax(0, 1fr); gap: 9px; padding: 11px 12px; }
   .voteStepper { grid-column: 1 / -1; width: 100%; justify-self: stretch; }
 }

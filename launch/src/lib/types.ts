@@ -60,6 +60,18 @@ export type LeaderboardEntry = {
   proofUrl?: string;
 };
 
+export type LeaderboardPage = {
+  entries: LeaderboardEntry[];
+  nextCursor: string | null;
+};
+
+export type LaunchOrderEntry = Pick<LeaderboardEntry, "rank" | "slug" | "name" | "ticker">;
+
+export type LaunchOrderPage = {
+  entries: LaunchOrderEntry[];
+  nextCursor: string | null;
+};
+
 export type CompetitionSummary = {
   id: string;
   slug: string;
