@@ -29,6 +29,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "pendingManager",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "sunset",
     stateMutability: "view",
     inputs: [],
@@ -588,6 +595,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
+    name: "acceptOwnership",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "setFeeRecipient",
     stateMutability: "nonpayable",
     inputs: [{ name: "newFeeRecipient", type: "address" }],
@@ -607,9 +621,55 @@ export const managedOtfVaultAbi = [
       { indexed: false, name: "proposedAt", type: "uint64" },
     ],
   },
+  {
+    type: "event",
+    name: "OwnershipTransferStarted",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
+    ],
+  },
 ] as const;
 
 export const otfEntryRouterAbi = [
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "pendingOwner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "transferOwnership",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "acceptOwnership",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
   {
     type: "function",
     name: "settlementToken",
@@ -685,6 +745,103 @@ export const otfEntryRouterAbi = [
       { indexed: false, name: "settlementIn", type: "uint256" },
       { indexed: false, name: "shares", type: "uint256" },
       { indexed: false, name: "settlementRefunded", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferStarted",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
+    ],
+  },
+] as const;
+
+export const registeredUniswapV3AdapterAbi = [
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "pendingOwner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "transferOwnership",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "acceptOwnership",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "setCallerApproved",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "caller", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isCallerApproved",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "executeSwap",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenIn", type: "address" },
+      { name: "tokenOut", type: "address" },
+      { name: "amountIn", type: "uint256" },
+      { name: "minAmountOut", type: "uint256" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferStarted",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "previousOwner", type: "address" },
+      { indexed: true, name: "newOwner", type: "address" },
     ],
   },
 ] as const;

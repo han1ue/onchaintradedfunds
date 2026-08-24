@@ -3,10 +3,12 @@ import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   deriveOtfQuality,
+  FRONTEND_MAX_TRACKED_ASSETS,
   normalizeAssetQuality,
   percentToBps,
   primaryDepositsBlocked,
   SUPPORTED_PRICING_SOURCES,
+  trackedAssetUnionCount,
   weightBandValidationError,
 } from "./protocol-ui";
 
@@ -42,6 +44,22 @@ describe("protocol UI policy", () => {
     expect(percentToBps("0.25")).toBe(25);
     expect(percentToBps("1")).toBe(100);
     expect(percentToBps("2.5")).toBe(250);
+  });
+
+  it("caps the frontend at 20 tracked assets and counts the strategy union", () => {
+    expect(FRONTEND_MAX_TRACKED_ASSETS).toBe(20);
+    expect(trackedAssetUnionCount(
+      ["0xAa", "0xBb", "0xCc"],
+      ["0xaa", "0xDD"],
+    )).toBe(4);
+    expect(trackedAssetUnionCount(
+      Array.from({ length: 20 }, (_, index) => `0x${index.toString(16)}`),
+      ["0x0"],
+    )).toBe(20);
+    expect(trackedAssetUnionCount(
+      Array.from({ length: 20 }, (_, index) => `0x${index.toString(16)}`),
+      ["0x14"],
+    )).toBe(21);
   });
 
   it("validates weight bands against supplied factory limits", () => {

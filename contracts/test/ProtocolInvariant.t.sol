@@ -446,6 +446,8 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
             vault, tokenA, tokenB, feedA, feedB, adapter, address(this)
         );
         vault.transferOwnership(address(handler));
+        vm.prank(address(handler));
+        vault.acceptOwnership();
 
         bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = handler.mintBasket.selector;

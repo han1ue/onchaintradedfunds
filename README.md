@@ -265,7 +265,7 @@ The following operations do not update `lastCompletedStrategyTimestamp`:
 
 - Staging a rationale for a future ERC-7621 proposal.
 - Fee accrual.
-- Immediate manager transfer.
+- Manager-transfer nomination or acceptance.
 - Immediate fee-recipient update.
 - Proportional minting.
 - Proportional redemption.
@@ -433,8 +433,8 @@ strategic target remains unfinished.
 After the notice period, `activatePendingStrategy()` revalidates assets, prices, fee and
 challenge state, makes the target active, and emits the standard
 `Rebalanced(newTokens, newWeights)` plus `TargetWeightsActivated`. Activation performs no trades.
-Only the manager may activate or cancel the proposal. Manager transfer automatically cancels a
-pending proposal.
+Only the manager may activate or cancel the proposal. A manager-transfer nomination leaves the
+proposal untouched; acceptance automatically cancels a proposal authored under the old manager.
 
 The manager or an authorized executor performs one or more partial batches through:
 
@@ -472,8 +472,10 @@ When a successful strategic trade batch brings every constituent inside the narr
 bands, the vault completes the strategic rebalance atomically, emits
 `StrategicRebalanceCompleted`, and updates `lastCompletedStrategyTimestamp`. An active strategy does
 not itself lock manager fees; only a challenge escrows them, and sunset stops future accrual.
-Anyone may still call `completeStrategicRebalance()` when no trade is needed or
-natural price movement reaches the bands.
+When no challenge is active, a successful trade, activation, or permissionless
+`completeStrategicRebalance()` call completes the strategy once every weight is inside the wider
+challenge bands. This lets natural price movement finish an unchallenged strategy. An active
+challenge continues to require the tighter completion bands before it can resolve.
 
 Retained rebalance protections:
 
@@ -486,7 +488,9 @@ Retained rebalance protections:
 - Protocol-wide minimum target weight initialized at 1%, with a permanent 0.1% hard floor; the
   factory owner may adjust it but never below that floor. An enabled OTF full-rebate threshold must
   remain at or above the current minimum.
-- At most 100 tracked assets, including zero-target assets awaiting manager-directed removal.
+- At most 100 tracked assets onchain, including zero-target assets awaiting manager-directed
+  removal. The frontend applies a lower 20-asset safety cap to creation and to the full tracked union
+  of strategy proposals.
 - Fresh onchain prices.
 - Atomicity of each partial trade transaction.
 - No arbitrary manager calls.
@@ -500,9 +504,10 @@ executor addresses. The manager may also remove or restore their own trade-execu
 
 Executors can only call the constrained trade-batch function. They cannot change strategy,
 permissions, fees, ownership, or adapters and cannot direct assets to arbitrary recipients.
-All executor authorizations are cleared on manager transfer, then the new manager is added as the
-sole authorized executor. Executors receive no bounty or
-reimbursement from vault assets.
+Ownership transfer is two-step. The active manager nominates a pending manager and remains fully in
+control until that address accepts. Acceptance checkpoints fees, cancels manager-specific pending
+strategy and rationale state, clears every prior executor authorization, and records the new manager
+as the sole authorized executor. Executors receive no bounty or reimbursement from vault assets.
 
 ### OTF Sunset And Emergency Deposit Pauses
 
@@ -913,7 +918,7 @@ Deployment remains blocked whenever any implementation exceeds the EIP-170 or EI
 not rely on byte counts copied from an earlier architecture.
 
 The Solidity CI workflow pins Ubuntu 24.04, Node.js 22.18.0, pnpm 11.17.0, Foundry v1.7.1, and
-Solidity 0.8.30. It runs formatting, the security gate, the full suite, 10,000-case fuzzing,
+Solidity 0.8.36. It runs formatting, the security gate, the full suite, 10,000-case fuzzing,
 512-by-128 stateful invariants, and coverage. Coverage uses Foundry's `--ir-minimum` mode because
 non-IR coverage compilation exceeds the Solidity stack limit. Treat its source mapping as an
 advisory gap-finding signal, not proof of safety. The wrapper intentionally fails on Windows with a
@@ -957,7 +962,7 @@ Test coverage includes:
 - Challenge breaches, natural and traded recovery, deadline forfeiture, caller rewards,
   fee resumption, and deposits and withdrawals during challenge states.
 - Authorized executor success, strategy isolation, unsupported-token and adapter rejection,
-  trade-size enforcement, recipient confinement, and executor clearing on manager transfer.
+  trade-size enforcement, recipient confinement, and executor clearing on manager-transfer acceptance.
 - Atomic USDG/WETH entry, exact-input minimum-share protection, proportional-only deposits,
   slippage-protected settlement-asset surplus refunds, entry-adapter authorization, expired entry rejection,
   and Uniswap-compatible direct and arbitrary-intermediate adapter behavior.

@@ -137,6 +137,7 @@ for (const [label, slot] of [
   ["_pendingPricingConfigs", "177"],
   ["_primaryMaxStalenessForAsset", "178"],
   ["_quoteTokenForAsset", "179"],
+  ["pendingManager", "180"],
 ]) {
   assert(
     canonicalLayout.some((entry) => entry.label === label && entry.slot === slot),

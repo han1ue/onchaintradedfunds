@@ -60,10 +60,17 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         onlyManager
         nonReentrant
     {
-        if (newOwner == address(0)) revert ZeroAddress();
         if (newOwner == address(this)) revert InvalidRoleAddress(newOwner);
-        _accrueViaVault();
+        pendingManager = newOwner;
+        emit OwnershipTransferStarted(manager, newOwner);
+    }
 
+    function acceptOwnership() external onlyDelegateCall nonReentrant {
+        address newManager = pendingManager;
+        if (newManager == address(0) || msg.sender != newManager) {
+            revert OwnableUnauthorizedAccount(msg.sender);
+        }
+        _accrueViaVault();
         address oldManager = manager;
         if (strategyProposalPending) {
             _clearPendingStrategy();
@@ -71,12 +78,13 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         }
         delete _nextStrategyRationale;
         _clearExecutors();
-        manager = newOwner;
-        authorizedExecutor[newOwner] = true;
-        _authorizedExecutors.push(newOwner);
-        _executorIndexPlusOne[newOwner] = 1;
-        emit OwnershipTransferred(oldManager, newOwner);
-        emit ManagerTransferred(oldManager, newOwner);
+        manager = newManager;
+        authorizedExecutor[newManager] = true;
+        _authorizedExecutors.push(newManager);
+        _executorIndexPlusOne[newManager] = 1;
+        pendingManager = address(0);
+        emit OwnershipTransferred(oldManager, newManager);
+        emit ManagerTransferred(oldManager, newManager);
     }
 
     function setFeeRecipient(address newFeeRecipient)
@@ -327,6 +335,10 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
         emit StrategyVersionActivated(
             strategyVersion, msg.sender, proposedAt, activatedAt, rationale
         );
+        if (_isWithinBands(challengeWeightDeviationBps)) {
+            _completeStrategicRebalance();
+            _resumeFeeClock();
+        }
     }
 
     function cancelPendingStrategy() external onlyDelegateCall onlyManager {
@@ -461,14 +473,13 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             uint32(currentStrategyVersion)
         );
 
-        if ((challengeActive || strategicRebalanceActive) && _isWithinBands(maxWeightDeviationBps))
-        {
-            if (challengeActive) {
+        if (challengeActive) {
+            if (_isWithinBands(maxWeightDeviationBps)) {
                 _resolveOutOfBandChallenge();
-            } else {
-                _completeStrategicRebalance();
-                _resumeFeeClock();
             }
+        } else if (strategicRebalanceActive && _isWithinBands(challengeWeightDeviationBps)) {
+            _completeStrategicRebalance();
+            _resumeFeeClock();
         }
         _pruneRetiringAssetsWithinDust();
     }
@@ -481,7 +492,7 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultStorage {
             return;
         }
         _accrueViaVault();
-        if (!_isWithinBands(maxWeightDeviationBps)) revert TargetBandsNotReached();
+        if (!_isWithinBands(challengeWeightDeviationBps)) revert TargetBandsNotReached();
         _completeStrategicRebalance();
         _resumeFeeClock();
     }

@@ -21,6 +21,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
     error StaleOraclePrice(address base, uint256 updatedAt, uint256 maxStaleness);
     error UnsupportedFeedDecimals(address feed, uint8 decimals_);
     error PriceOverflow();
+    error HistoricalRoundDataUnsupported(uint80 requestedRound);
 
     address public immutable asset;
     address public immutable quoteToken;
@@ -70,8 +71,12 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
         return 1;
     }
 
-    function getRoundData(uint80) external view returns (uint80, int256, uint256, uint256, uint80) {
-        return _latestRoundData();
+    function getRoundData(uint80 requestedRound)
+        external
+        pure
+        returns (uint80, int256, uint256, uint256, uint80)
+    {
+        revert HistoricalRoundDataUnsupported(requestedRound);
     }
 
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {

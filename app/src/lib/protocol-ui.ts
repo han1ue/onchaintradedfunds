@@ -9,6 +9,16 @@ export type WeightBandLimits = {
 
 export const DEFAULT_COMPLETION_DEVIATION_BPS = 100;
 export const DEFAULT_CHALLENGE_DEVIATION_BPS = 250;
+export const FRONTEND_MAX_TRACKED_ASSETS = 20;
+
+export function trackedAssetUnionCount(
+  currentAssets: readonly string[],
+  proposedAssets: readonly string[],
+): number {
+  return new Set(
+    [...currentAssets, ...proposedAssets].map((asset) => asset.trim().toLowerCase()),
+  ).size;
+}
 
 export function percentToBps(value: string | number): number {
   const percentage = Number(value || 0);

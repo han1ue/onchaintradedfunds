@@ -18,7 +18,7 @@ The frontend is not an authorization or accounting boundary and should be review
 
 ## Build assumptions
 
-- Solidity compiler: exactly `0.8.30`
+- Solidity compiler: exactly `0.8.36`
 - IR pipeline: enabled
 - Optimizer: enabled with one run
 - EVM runtime limit: 24,576 bytes

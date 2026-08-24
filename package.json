@@ -20,7 +20,7 @@
     "build": "corepack pnpm -r build"
   },
   "devDependencies": {
-    "solc": "0.8.30",
+    "solc": "0.8.36",
     "solhint": "6.2.3"
   },
   "dependencies": {

@@ -7,7 +7,7 @@ import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { ChainlinkRoutePriceFeed } from "../src/ChainlinkRoutePriceFeed.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
-import { UniswapV3RoutePriceFeed } from "../src/UniswapV3RoutePriceFeed.sol";
+import { IUniswapV3OraclePool, UniswapV3RoutePriceFeed } from "../src/UniswapV3RoutePriceFeed.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
@@ -452,6 +452,87 @@ contract PermissionlessAssetMarketsTest is TestBase {
         new MockPriceFeed(18, 1 ether);
         (, int256 pinnedAnswer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(pinnedAnswer), 6_000_00000000);
+    }
+
+    function testProductionRouteFeedsRejectHistoricalRoundRequests() public {
+        MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
+        ChainlinkRoutePriceFeed chainlinkRoute = new ChainlinkRoutePriceFeed(
+            address(asset), address(weth), assetWethFeed, 1 hours, markets
+        );
+        MockPermissionlessV3Pool pool =
+            v3Factory.createPool(address(secondAsset), address(weth), 500);
+        UniswapV3RoutePriceFeed v3Route = new UniswapV3RoutePriceFeed(
+            address(secondAsset), address(weth), IUniswapV3OraclePool(address(pool)), markets
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ChainlinkRoutePriceFeed.HistoricalRoundDataUnsupported.selector, uint80(42)
+            )
+        );
+        chainlinkRoute.getRoundData(42);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniswapV3RoutePriceFeed.HistoricalRoundDataUnsupported.selector, uint80(7)
+            )
+        );
+        v3Route.getRoundData(7);
+
+        (, int256 chainlinkAnswer,,,) = chainlinkRoute.latestRoundData();
+        (, int256 v3Answer,,,) = v3Route.latestRoundData();
+        assertTrue(chainlinkAnswer > 0);
+        assertTrue(v3Answer > 0);
+    }
+
+    function testChainlinkRouteLatestRoundRetainsAllOracleValidation() public {
+        MockPriceFeed assetWethFeed = new MockPriceFeed(18, 2 ether);
+        ChainlinkRoutePriceFeed route = new ChainlinkRoutePriceFeed(
+            address(asset), address(weth), assetWethFeed, 1 hours, markets
+        );
+
+        assetWethFeed.setRoundData(2, 0, block.timestamp, block.timestamp, 2);
+        vm.expectPartialRevert(ChainlinkRoutePriceFeed.InvalidOraclePrice.selector);
+        route.latestRoundData();
+
+        assetWethFeed.setRoundData(3, 2 ether, block.timestamp, block.timestamp + 1, 3);
+        vm.expectPartialRevert(ChainlinkRoutePriceFeed.InvalidOracleTimestamp.selector);
+        route.latestRoundData();
+
+        assetWethFeed.setRoundData(4, 2 ether, block.timestamp, block.timestamp, 3);
+        vm.expectPartialRevert(ChainlinkRoutePriceFeed.IncompleteOracleRound.selector);
+        route.latestRoundData();
+
+        assetWethFeed.setRoundData(
+            5, 2 ether, block.timestamp - 1 hours - 1, block.timestamp - 1 hours - 1, 5
+        );
+        vm.expectPartialRevert(ChainlinkRoutePriceFeed.StaleOraclePrice.selector);
+        route.latestRoundData();
+    }
+
+    function testUniswapRouteLatestRoundRetainsAllOracleValidation() public {
+        MockPermissionlessV3Pool pool =
+            v3Factory.createPool(address(secondAsset), address(weth), 500);
+        UniswapV3RoutePriceFeed route = new UniswapV3RoutePriceFeed(
+            address(secondAsset), address(weth), IUniswapV3OraclePool(address(pool)), markets
+        );
+
+        wethUsdFeed.setRoundData(2, 0, block.timestamp, block.timestamp, 2);
+        vm.expectPartialRevert(UniswapV3RoutePriceFeed.InvalidOraclePrice.selector);
+        route.latestRoundData();
+
+        wethUsdFeed.setRoundData(3, 3_000_00000000, block.timestamp, block.timestamp + 1, 3);
+        vm.expectPartialRevert(UniswapV3RoutePriceFeed.InvalidOracleTimestamp.selector);
+        route.latestRoundData();
+
+        wethUsdFeed.setRoundData(4, 3_000_00000000, block.timestamp, block.timestamp, 3);
+        vm.expectPartialRevert(UniswapV3RoutePriceFeed.IncompleteOracleRound.selector);
+        route.latestRoundData();
+
+        wethUsdFeed.setRoundData(
+            5, 3_000_00000000, block.timestamp - 2 hours - 1, block.timestamp - 2 hours - 1, 5
+        );
+        vm.expectPartialRevert(UniswapV3RoutePriceFeed.StaleOraclePrice.selector);
+        route.latestRoundData();
     }
 
     function testRegisteredQuotesSupportUsdg() public {

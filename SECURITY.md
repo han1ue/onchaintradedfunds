@@ -102,8 +102,10 @@ A vault manager cannot:
 
 The manager is automatically recorded as an authorized executor and can remove or restore that
 permission. Additional authorized executors use the same constrained partial-trade path. They
-cannot change strategy, fees, ownership, recipients, adapters, or executor permissions. Manager
-transfer clears the previous executor set and records the new manager as the sole executor.
+cannot change strategy, fees, ownership, recipients, adapters, or executor permissions. A manager
+transfer is only effective after the nominated address accepts; acceptance checkpoints fees, clears
+the previous executor set and manager-specific pending state, and records the new manager as the
+sole executor.
 
 ## Rebalance Risks
 
@@ -122,8 +124,10 @@ inside its target bands for 14 days, with no active challenge and while the port
 inside its completion bands. Every partial trade transaction is atomic. If a trade fails, slippage
 is too high, an oracle is invalid, the cumulative execution loss would exceed the linearly
 replenishing NAV-loss budget, or the batch moves any holding farther from target, that transaction
-reverts while the activated strategic target remains active. Consumed capacity returns
-continuously over seven days; profitable execution does not restore it.
+reverts while the activated strategic target remains active. When no challenge is active, an
+activated strategy completes inside the wider challenge bands; an active challenge requires the
+tighter completion bands. Consumed capacity returns continuously over seven days; profitable
+execution does not restore it.
 
 Changing the protocol-wide minimum target weight is not retroactive: it does not invalidate an
 active portfolio or create a challenge. Existing and new vaults apply the live minimum when they
@@ -145,7 +149,7 @@ contract cannot know the offchain time at which drift originally occurred; the g
 when `flagOutOfBand()` succeeds.
 
 Corrective trade batches automatically resolve an active challenge when their final fresh
-oracle-valued weights are inside every completion band. Natural price movement can instead be
+oracle-valued weights are inside every tighter completion band. Natural price movement can instead be
 resolved through the permissionless resolution call. A deadline is considered missed when an
 onchain state transition observes it after expiry. Deposits and proportional withdrawals remain
 available during active and overdue challenges.

@@ -145,6 +145,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error InvalidPricingConfig(address asset);
     error PriceFeedMismatch(address asset, address expected, address supplied);
     error AssetPricingAlreadyPinned(address asset);
+    error OwnableUnauthorizedAccount(address account);
 
     enum FeeState {
         Accruing,
@@ -157,6 +158,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         address indexed factory, address indexed manager, address indexed feeRecipient
     );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
     event StrategyRationaleLocked(
         uint256 indexed strategyVersion, address indexed manager, string rationale
@@ -318,6 +320,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     AssetPricingConfig[] internal _pendingPricingConfigs;
     mapping(address => uint32) internal _primaryMaxStalenessForAsset;
     mapping(address => address) internal _quoteTokenForAsset;
+
+    // Version-3 storage. Appended for the two-step manager-transfer flow.
+    address public pendingManager;
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();

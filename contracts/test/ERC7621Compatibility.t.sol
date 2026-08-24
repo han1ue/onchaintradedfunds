@@ -221,6 +221,8 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         vault.setExecutor(ALICE, true);
 
         vault.transferOwnership(BOB);
+        vm.prank(BOB);
+        vault.acceptOwnership();
 
         assertEq(vault.owner(), BOB);
         assertEq(vault.manager(), BOB);

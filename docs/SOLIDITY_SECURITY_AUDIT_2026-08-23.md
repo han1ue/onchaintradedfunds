@@ -4,7 +4,7 @@
 **Audit date:** 2026-08-23  
 **Reviewed contracts commit:** `7a2d86506ba4f059db1610f6a7a1413275024fdf`  
 **Scope:** `contracts/src/**/*.sol`, `contracts/test/**/*.sol`, Foundry configuration, contract security gates, and the protocol security specifications  
-**Audit-remediation status:** M-02 and L-05 are resolved by removing pool creation from the factory; I-04 and I-05 fixed; I-06 partially fixed.
+**Audit-remediation status:** M-02, L-04, L-05, I-01, I-04, and I-05 are resolved; M-03 is accepted with a 20-asset frontend mitigation; L-02 and I-06 are partially resolved; L-03 is accepted.
 **Overall status:** **Not production-ready until the Medium findings and documented deployment blockers are resolved and re-reviewed**
 
 ## Executive summary
@@ -60,11 +60,11 @@ This was a source-level and local execution review. It was not formal verificati
 | --- | --- | --- | --- |
 | M-01 | Medium | Empty or thin V3 pools remain valid price oracles | Accepted |
 | M-02 | Medium | Deterministic pool squatting could censor vault creation | Resolved |
-| M-03 | Medium | The 100-asset bound is not safely executable on the target chain | Accepted |
+| M-03 | Medium | The 100-asset bound is not safely executable on the target chain | Accepted with frontend mitigation |
 | L-01 | Low | Absolute bands can treat a missing positive-target asset as compliant | Accepted |
-| L-02 | Low | Activated strategies have no timeout or terminal recovery path | Open |
-| L-03 | Low | Rebalance instructions have no expiry or strategy-version binding | Open |
-| L-04 | Low | Manager, router, and adapter authority transfers are one-step | Open |
+| L-02 | Low | Activated strategies have no timeout or terminal recovery path | Partially resolved |
+| L-03 | Low | Rebalance instructions have no expiry or strategy-version binding | Accepted |
+| L-04 | Low | Manager, router, and adapter authority transfers are one-step | Resolved |
 | L-05 | Low | OTF/USDG initialization assumed USDG was exactly $1 | Resolved |
 
 ## Owner disposition
@@ -78,7 +78,12 @@ the identified risk is knowingly retained; it does not mean the audit considers 
 | M-02 | Fixed by removing pool handling from vault creation and removing deterministic clone prediction |
 | M-03 | Accepted with a lower frontend cap and transaction gas estimation; the contract still accepts the documented upper bound |
 | L-01 | Accepted; a positive target at or below the absolute deviation may intentionally have a zero lower bound |
+| L-02 | Partially remediated by allowing unchallenged completion inside the wider challenge bands; no timeout or forced terminal state was added |
+| L-03 | Accepted; trade deadlines and strategy-version binding were intentionally not added |
+| L-04 | Fixed with two-step ownership for the router, adapter, and clone-compatible vault manager flow |
+| I-01 | Fixed by explicitly rejecting historical round requests in normalized route feeds |
 | I-02 | Accepted as an intentional economic-policy design |
+| I-03 | Fixed by upgrading the exact compiler pin to Solidity 0.8.36, retaining OpenZeppelin Contracts 5.6.1, and rerunning release gates |
 | I-04 | Fixed by correcting the SPDX identifier and Uniswap TickMath/OracleLibrary attribution; executable math is unchanged |
 | I-05 | Fixed by aligning the normative V3 quote-token requirement and deployment evidence with enabled owner-registered quote tokens |
 | I-06 | Partially fixed with stronger invariants, independent differentials, adversarial-token tests, and pinned Linux CI; live canonical/fork coverage remains open |
@@ -168,6 +173,7 @@ The implemented resolution removes market-registry coupling from `OTFFactory`, d
 ## M-03 — The 100-asset bound is not safely executable on the target chain
 
 **Severity:** Medium  
+**Status:** Accepted with frontend mitigation
 **Category:** Gas-bound liveness  
 **Affected code:**
 
@@ -213,6 +219,12 @@ Failed activation is atomic and the manager can cancel the pending proposal, so 
 - Replace the entry router's repeated full previews with a direct bound plus a small, fixed number of correction previews.
 - Add gas-regression tests for direct, Robinhood, composed, and V3 portfolios against a configured percentage of the live `getMaxTxGasLimit()` value.
 
+The accepted remediation leaves the Solidity maximum at 100 and adds a frontend-only maximum of 20
+tracked assets. Creation rejects more than 20 assets. Strategy proposals count the unique union of
+currently tracked and proposed assets, including existing zero-target retiring assets, and block
+simulation and submission above 20. This materially reduces risk for frontend users but does not
+remove the accepted onchain liveness risk for direct callers.
+
 ---
 
 ## L-01 — Absolute bands can treat a missing positive-target asset as compliant
@@ -257,6 +269,7 @@ The parameters and actual holdings are public and holders receive the activation
 ## L-02 — Activated strategies have no timeout or terminal recovery path
 
 **Severity:** Low  
+**Status:** Partially resolved after the reviewed commit
 **Category:** Governance liveness / fee alignment  
 **Affected code:**
 
@@ -286,11 +299,19 @@ An oracle failure, frozen constituent, or unavailable market can also make the i
 - Prefer a forced-sunset or explicitly incomplete terminal state over blindly rolling back targets after assets, pricing, or retiring balances may have changed.
 - Test that every activated strategy has a terminal path and cannot earn fees indefinitely while incomplete.
 
+The agreed remediation reduces the reachable incomplete region without adding a timeout. An
+unchallenged strategy can now complete inside the wider challenge bands through activation, a
+successful trade, or the permissionless completion function. An active challenge still requires the
+tighter completion bands. Deposits and proportional redemptions remain independent of completion
+and oracle availability. The original frozen-market, invalid-oracle, or outside-wider-band timeout
+risk remains; this finding is therefore only partially resolved.
+
 ---
 
 ## L-03 — Rebalance instructions have no expiry or strategy-version binding
 
 **Severity:** Low  
+**Status:** Accepted
 **Category:** Stale intent  
 **Affected code:**
 
@@ -316,6 +337,7 @@ The version binding is stronger than a deadline alone. Add expired and wrong-ver
 ## L-04 — Manager, router, and adapter authority transfers are one-step
 
 **Severity:** Low  
+**Status:** Resolved after the reviewed commit
 **Category:** Operational access control  
 **Affected code:**
 
@@ -332,6 +354,12 @@ The factory, market registry, and fee collector already use safer two-step flows
 ### Recommendation
 
 Use `pendingOwner` / `pendingManager` plus explicit acceptance and cancellation. For manager transfer, preserve the current manager and executor configuration until acceptance, then perform executor cleanup atomically. Any vault storage change must pass the existing canonical layout checks and requires fresh review.
+
+`OTFEntryRouter` and `RegisteredUniswapV3Adapter` now use OpenZeppelin `Ownable2Step` while preserving
+constructor owner initialization. The clone vault appends `pendingManager` to canonical storage and
+implements nomination, zero-address cancellation, replacement, and pending-manager-only acceptance.
+Acceptance checkpoints fees, clears manager-specific pending strategy and rationale state, replaces
+the executor set with the new manager, and emits the ownership and manager-transfer events atomically.
 
 ---
 
@@ -359,7 +387,10 @@ The contract initializer was deleted with the market registry. The frontend does
 
 ### I-01 — `getRoundData()` ignores the requested round
 
-`ChainlinkRoutePriceFeed.sol:73-74` and `UniswapV3RoutePriceFeed.sol:90-92` return latest data for every requested round ID. Internal production code only calls `latestRoundData()`, so no internal exploit was identified. External AggregatorV3 consumers can nevertheless mistake current data for historical data. Implement historical semantics or revert with an explicit unsupported-round error.
+**Status:** Fixed
+`ChainlinkRoutePriceFeed` and `UniswapV3RoutePriceFeed` now revert every `getRoundData(uint80)` call
+with `HistoricalRoundDataUnsupported(requestedRound)`. `latestRoundData()` remains unchanged and its
+price, timestamp, round-completeness, and staleness validation is covered by focused regressions.
 
 ### I-02 — Challenge rewards are capturable by a manager affiliate by design
 
@@ -369,10 +400,36 @@ This is an economic-policy disclosure rather than a Solidity authorization vulne
 
 ### I-03 — Compiler, dependency, and code-size release hygiene
 
-- The repository exactly pins Solidity 0.8.30. Solidity 0.8.36 is current and includes two Medium compiler security fixes. The affected constructs—mutually recursive internal functions using the new spilling path and custom storage layout near the storage end—were not found here. Upgrade and re-run every layout, bytecode, gas, and test gate as a separately reviewed change. See the official [Solidity 0.8.36 announcement](https://www.soliditylang.org/blog/2026/07/09/solidity-0.8.36-release-announcement/) and [Solidity security guidance](https://docs.soliditylang.org/en/latest/security-considerations.html).
-- OpenZeppelin Contracts 5.6.1 is exactly pinned, while 5.7.0 is currently marked latest. Production only imports `Math`, and no affected usage was identified. Treat the upgrade as hygiene, not an active vulnerability; see [OpenZeppelin releases](https://github.com/OpenZeppelin/openzeppelin-contracts/releases).
-- `ManagedOTFVaultStrategy` is approximately 24,096 bytes, leaving only about 480 bytes below EIP-170. Add a warning threshold below the hard limit and continue modularization before adding features.
-- Post-audit verification of the current shared worktree, which includes concurrent production changes outside this remediation, measured `ManagedOTFVaultStrategy` at 24,208 bytes: only 368 bytes below EIP-170. Compiler upgrades and further features can therefore cross the deployment limit even when source-level behavior is correct.
+**Status:** Fixed
+The repository now exactly pins Solidity 0.8.36 while retaining Shanghai, the existing optimizer
+settings, and `via_ir`. OpenZeppelin Contracts remains exactly pinned to 5.6.1: npm release metadata
+checked on 2026-08-24 reported 5.6.1 as `latest` and 5.7.0 as `dev`, so no prerelease dependency was
+adopted. The lockfile and pinned CI compiler assertion were refreshed.
+
+The Solidity 0.8.36 security build produced these runtime sizes against the 24,576-byte EIP-170
+limit:
+
+| Production contract | Runtime bytes | Remaining margin |
+| --- | ---: | ---: |
+| `AssetMarketRegistry` | 5,925 | 18,651 |
+| `AssetPricingResolver` | 18,702 | 5,874 |
+| `AssetRegistry` | 501 | 24,075 |
+| `ChainlinkRoutePriceFeed` | 2,513 | 22,063 |
+| `FeeCollector` | 1,253 | 23,323 |
+| `ManagedOTFVault` | 21,991 | 2,585 |
+| `ManagedOTFVaultStrategy` | 24,501 | 75 |
+| `ManagedOTFVaultView` | 16,353 | 8,223 |
+| `OTFFactory` | 10,984 | 13,592 |
+| `OTFEntryRouter` | 9,813 | 14,763 |
+| `OTFToken` | 2,898 | 21,678 |
+| `PortfolioCalculator` | 7,900 | 16,676 |
+| `RegisteredUniswapV3Adapter` | 2,813 | 21,763 |
+| `RebalanceExecutor` | 3,092 | 21,484 |
+| `UniswapV3RoutePriceFeed` | 5,197 | 19,379 |
+
+All 15 production runtime and initialization bytecodes passed the existing EIP-170 and EIP-3860
+gates without raising or bypassing a limit. `ManagedOTFVaultStrategy` has only 75 bytes of runtime
+margin and remains a significant release constraint.
 
 ### I-04 — Uniswap-derived source has inconsistent licensing metadata
 
@@ -407,16 +464,16 @@ The remaining gaps are:
 | Check | Result |
 | --- | --- |
 | Forge version | 1.7.1 |
-| Compiler | Solidity 0.8.30, exact pin, optimizer, `via_ir`, Shanghai |
-| Full suite | 282 / 282 passed; 0 failed; 0 skipped |
+| Compiler | Solidity 0.8.36, exact pin, optimizer, `via_ir`, Shanghai |
+| Full suite | 287 / 287 passed; 0 failed; 0 skipped |
 | Strong fuzz | 12 tests × 10,000 runs passed |
 | Strong invariants | 9 invariants × 512 runs × depth 128; 589,824 handler actions passed |
 | Solhint | Passed with zero warnings |
 | `forge lint src --deny warnings` | Passed |
 | Full formatting | Passed |
-| Storage layouts | 71 canonical entries match across vault, strategy, and view modules |
+| Storage layouts | 72 canonical entries match across vault, strategy, and view modules |
 | ABI / ERC-7621 security assertions | Passed |
-| Bytecode gates | All 16 listed production contracts passed EIP-170 and EIP-3860 limits |
+| Bytecode gates | All 15 production contracts passed EIP-170 and EIP-3860 limits; smallest runtime margin is 75 bytes |
 | Coverage | Pinned fail-closed Linux command added; first CI result pending, so no numeric claim is made |
 | Advanced analyzers | Slither, Aderyn, Mythril, Echidna, Medusa, Certora, Halmos, and Semgrep were unavailable |
 
@@ -456,16 +513,15 @@ These are already substantially disclosed by the repository, but they remain par
 
 1. Fix M-01 and add a real Uniswap manipulation regression before permitting any V3 pricing source.
 2. Re-review the resolved factory/market decoupling before deployment.
-3. Replace the 100-asset limit with measured source-specific caps and predeploy/cache route wrappers.
-4. Resolve the weight-band and strategy-timeout design issues; the transition invariants are now strengthened, but thin-liquidity and callback state models remain open.
-5. Add trade expiry/version binding and two-step role transfers.
-6. Correct AggregatorV3 round semantics.
-7. Run the new pinned Linux Solidity CI and retain its coverage evidence; add canonical/fork integration tests and stateful thin-liquidity/callback models.
-8. Resolve or formally accept the Flags/sequencer, governance, token-freeze, and economic-model risks.
-9. Re-run the full security gate and commission a focused independent re-review of every remediation before mainnet deployment.
+3. Treat M-03 as retained for direct onchain callers; the 20-asset frontend cap is a mitigation, not a protocol-level resolution.
+4. Resolve or formally accept the remaining L-02 timeout/terminal-state risk. The wider unchallenged completion rule reduces, but does not eliminate, the incomplete-strategy region.
+5. Treat L-03 trade expiry/version binding as an accepted stale-intent risk unless the owner disposition changes.
+6. Run the pinned Linux Solidity CI and retain its coverage evidence; add canonical/fork integration tests and stateful thin-liquidity/callback models.
+7. Resolve or formally accept the Flags/sequencer, governance, token-freeze, and economic-model risks.
+8. Commission a focused independent re-review of every remediation before mainnet deployment, with particular attention to the 75-byte strategy runtime margin.
 
 ## Final assessment
 
-The contracts demonstrate thoughtful custody controls, constrained execution, fail-closed oracle validation, careful fee math, and unusually strong local testing. They are not yet using the best available practices in V3 oracle economic security, target-chain gas-bound design, strategy terminal-state handling, administrative transfer safety, or release automation.
+The contracts demonstrate thoughtful custody controls, constrained execution, fail-closed oracle validation, careful fee math, two-step administrative transfers, and unusually strong local testing. The compiler and release gates are current, but the code is not yet using the best available practices in V3 oracle economic security, target-chain gas-bound design, or strategy terminal-state handling. The strategy module's 75-byte EIP-170 margin also leaves very little room for future changes.
 
 The current code should not be represented as production-safe. After the Medium findings and deployment blockers are resolved, the project should undergo a focused remediation review plus live dependency and deployment verification.

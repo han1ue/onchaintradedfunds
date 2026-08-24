@@ -5,14 +5,15 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { IUniswapV3SwapRouter } from "./interfaces/IUniswapV3SwapRouter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @notice Generic Uniswap V3 adapter for explicit fee-bearing paths.
 /// @dev Callers own endpoint policy. Execution paths are independent from every oracle pool and
 ///      pricing registry.
-contract RegisteredUniswapV3Adapter is ITradeAdapter {
+contract RegisteredUniswapV3Adapter is ITradeAdapter, Ownable2Step {
     using SafeTransferLib for address;
 
-    error NotOwner();
     error UnauthorizedCaller(address caller);
     error ZeroAddress();
     error InvalidDependency(address dependency);
@@ -24,24 +25,14 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
     error Reentrancy();
 
     event CallerApprovalChanged(address indexed caller, bool approved);
-    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
-    address public owner;
     address public immutable uniswapRouter;
     mapping(address => bool) public isCallerApproved;
     bool private _entered;
 
-    constructor(address initialOwner, address uniswapRouter_) {
-        if (initialOwner == address(0)) revert ZeroAddress();
+    constructor(address initialOwner, address uniswapRouter_) Ownable(initialOwner) {
         if (uniswapRouter_.code.length == 0) revert InvalidDependency(uniswapRouter_);
-        owner = initialOwner;
         uniswapRouter = uniswapRouter_;
-        emit OwnershipTransferred(address(0), initialOwner);
-    }
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
     }
 
     modifier onlyApprovedCaller() {
@@ -60,13 +51,6 @@ contract RegisteredUniswapV3Adapter is ITradeAdapter {
         if (caller == address(0)) revert ZeroAddress();
         isCallerApproved[caller] = approved;
         emit CallerApprovalChanged(caller, approved);
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-        address oldOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(oldOwner, newOwner);
     }
 
     function executeSwap(

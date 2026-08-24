@@ -77,7 +77,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         weights[1] = 4_950;
         _proposeTarget(vault, assets, weights);
 
-        assertTrue(vault.strategicRebalanceActive());
+        assertFalse(vault.strategicRebalanceActive());
         assertFalse(vault.isWithinTargetBands());
         assertFalse(vault.challengeActive());
 
@@ -531,6 +531,102 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         _setPrices(105_00000001, 95_00000000);
         assertFalse(vault.isWithinChallengeBands());
+    }
+
+    function testUnchallengedStrategyCompletesPermissionlesslyInsideWiderBands() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        _proposeTarget(vault, assets, weights);
+        assertTrue(vault.strategicRebalanceActive());
+
+        _setPrices(138_00000000, 100_00000000);
+        assertTrue(vault.isWithinChallengeBands());
+        assertFalse(vault.isWithinTargetBands());
+
+        vm.prank(ALICE);
+        vault.completeStrategicRebalance();
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertEq(vault.rebalanceCount(), 1);
+    }
+
+    function testSuccessfulTradeAutomaticallyCompletesInsideWiderBands() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        _proposeTarget(vault, assets, weights);
+
+        TradeInstruction[] memory trades =
+            _singleTrade(address(tokenB), address(tokenA), 80 * ONE, 80 * ONE);
+        vault.executeRebalanceTrades(trades);
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertFalse(vault.isWithinTargetBands());
+        assertTrue(vault.isWithinChallengeBands());
+    }
+
+    function testActivationCompletesWhenNewTargetsAlreadyMeetWiderBands() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets,) = _equalPortfolio();
+        uint16[] memory weights = new uint16[](2);
+        weights[0] = 5_200;
+        weights[1] = 4_800;
+
+        _proposeTarget(vault, assets, weights);
+
+        assertFalse(vault.strategicRebalanceActive());
+        assertEq(vault.rebalanceCount(), 1);
+    }
+
+    function testChallengedStrategyRequiresTightBandsBeforeResolution() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        _proposeTarget(vault, assets, weights);
+        vault.flagOutOfBand();
+
+        _setPrices(138_00000000, 100_00000000);
+        assertTrue(vault.isWithinChallengeBands());
+        assertFalse(vault.isWithinTargetBands());
+        vm.prank(ALICE);
+        vm.expectRevert(ManagedOTFVaultStorage.TargetBandsNotReached.selector);
+        vault.completeStrategicRebalance();
+        assertTrue(vault.challengeActive());
+        assertTrue(vault.strategicRebalanceActive());
+
+        _setPrices(150_00000000, 100_00000000);
+        vm.prank(ALICE);
+        vault.completeStrategicRebalance();
+        assertFalse(vault.challengeActive());
+        assertFalse(vault.strategicRebalanceActive());
+    }
+
+    function testCompletedStrategyCanLaterBeChallengedOutsideWiderBands() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        _proposeTarget(vault, assets, weights);
+        _setPrices(138_00000000, 100_00000000);
+        vault.completeStrategicRebalance();
+
+        _setPrices(100_00000000, 100_00000000);
+        vm.prank(BOB);
+        vault.flagOutOfBand();
+
+        assertTrue(vault.challengeActive());
+        assertEq(vault.challengeCaller(), BOB);
+    }
+
+    function testDepositsAndProportionalRedemptionsRemainOracleIndependent() public {
+        ManagedOTFVault vault = _createVault();
+        feedA.setRoundData(2, 0, START, START, 2);
+        feedB.setRoundData(2, 0, START, START, 2);
+
+        _mintForAlice(vault, 5 * ONE);
+        uint256[] memory minimums = new uint256[](2);
+        vm.prank(ALICE);
+        vault.redeem(ONE, ALICE, ALICE, minimums);
+
+        assertEq(vault.balanceOf(ALICE), 4 * ONE);
+        assertGt(tokenA.balanceOf(ALICE), 0);
+        assertGt(tokenB.balanceOf(ALICE), 0);
     }
 
     function _setPrices(int256 priceA, int256 priceB) private {

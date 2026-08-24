@@ -246,9 +246,10 @@ of whether the manager or an executor submitted a trade.
 
 ### Authorized executor
 
-The manager MUST be authorized automatically at OTF initialization and after manager transfer. The
-manager MAY remove or restore their own executor permission and MAY authorize multiple additional
-executors, subject to the protocol cap.
+The manager MUST be authorized automatically at OTF initialization and after an accepted manager
+transfer. A transfer nomination MUST NOT change the active manager or executor set. The manager MAY
+remove or restore their own executor permission and MAY authorize multiple additional executors,
+subject to the protocol cap.
 
 An executor MAY only call `executeRebalanceTrades` and permissionless functions available to any
 address. It MUST NOT:
@@ -260,8 +261,8 @@ address. It MUST NOT:
 - make arbitrary calls or approvals.
 - receive a bounty or reimbursement from OTF assets.
 
-All prior executor authorizations MUST be cleared whenever the manager changes through either
-ownership transfer path. The new manager MUST then become the sole authorized executor.
+All prior executor authorizations MUST be cleared atomically when a nominated manager accepts
+ownership. The new manager MUST then become the sole authorized executor.
 
 ### Share holder
 
@@ -386,8 +387,9 @@ After the deadline, only the manager MAY call `activatePendingStrategy()`. Activ
 revalidate mechanical asset requirements, pinned-source freshness, portfolio shape, challenge state, fee state,
 and completion bands before changing the active target. It emits the standard `Rebalanced` event
 and `TargetWeightsActivated`, appends the canonical strategy version and target snapshot, but
-performs no trades. Only the manager may cancel a pending proposal, and manager transfer MUST
-cancel any proposal authored under the previous authority without appending history.
+performs no trades. Only the manager may cancel a pending proposal. Manager-transfer nomination
+MUST leave the proposal untouched; acceptance MUST cancel any proposal authored under the previous
+authority without appending history.
 
 ### Trade execution
 
@@ -416,14 +418,17 @@ protocol risk acceptance.
 
 ### Completion
 
-`StrategicRebalanceCompleted` MUST be emitted only after actual oracle-valued portfolio weights are
-inside every completion band and every zero-target constituent has a raw balance no greater than
-`MAX_RETIRING_DUST`. A successful strategic trade batch that reaches those conditions MUST prune
-zero-target constituents and complete atomically after all final trade safety checks. Permissionless
-explicit completion remains available when no trade is required or natural price movement restores
-the portfolio. Completion marks the activated strategy version complete and is the only point that
-updates `lastCompletedStrategyTimestamp`;
-proposals, failed trades, and partial trades MUST NOT update it.
+When no challenge is active, `StrategicRebalanceCompleted` MAY be emitted once actual oracle-valued
+portfolio weights are inside every wider challenge band and every zero-target constituent has a raw
+balance no greater than `MAX_RETIRING_DUST`. Activation and a successful strategic trade batch MUST
+complete automatically when those conditions are reached. Permissionless explicit completion MUST
+remain available when no trade is required or natural price movement restores the portfolio.
+
+When a challenge is active, resolution MUST continue to require every weight to be inside the
+tighter completion bands. A successful resolving trade MUST prune zero-target constituents and
+complete atomically after all final trade safety checks. Completion marks the activated strategy
+version complete and is the only point that updates `lastCompletedStrategyTimestamp`; proposals,
+failed trades, partial trades, deposits, and redemptions MUST NOT update it or invoke completion.
 
 An active strategy alone MUST NOT suspend accrual or manager-fee withdrawals. A proven challenge
 breach escrows challenge-window fees; timely recovery releases them to the manager. Sunset
@@ -441,10 +446,10 @@ scheduled equity-market weekends and typical holiday closures while keeping OTFs
 stateDiagram-v2
     [*] --> Normal
     Normal --> Challenged: Fresh prices prove a challenge-band breach
-    Challenged --> Normal: Timely restoration inside completion bands
+    Challenged --> Normal: Timely restoration inside tighter completion bands
     Challenged --> Overdue: Seven-day protocol period expires
     Overdue --> Suspended: State change forfeits challenge-window fees once
-    Suspended --> Normal: Late restoration inside completion bands
+    Suspended --> Normal: Late restoration inside tighter completion bands
 ```
 
 During a challenge:
@@ -452,7 +457,7 @@ During a challenge:
 - Target changes are locked.
 - Manager-fee withdrawals are locked while the challenge is active.
 - Corrective constrained trades remain available and MUST resolve the challenge atomically when
-  their final fresh oracle-valued weights are inside every completion band.
+  their final fresh oracle-valued weights are inside every tighter completion band.
 - Natural price recovery MAY restore compliance.
 - Contributions and withdrawals remain available.
 
@@ -486,7 +491,7 @@ Starting a challenge MUST first crystallize the entire valid fee interval throug
 start timestamp. This applies whether `flagOutOfBand()` or a manager fee-withdrawal attempt detects
 the breach. Previously earned or minted fees MUST NOT be included in later challenge forfeiture.
 
-If the portfolio is restored inside every completion band on or before the deadline, the challenge
+If the portfolio is restored inside every tighter completion band on or before the deadline, the challenge
 caller MUST receive no reward. The manager receives the full unminted fee interval from challenge
 start through timely resolution, and the fee timestamp MUST prevent any interval from being minted
 twice.

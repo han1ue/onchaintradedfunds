@@ -254,13 +254,19 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(vault.balanceOf(receiver), amount);
     }
 
-    function testFuzzManagerTransferImmediatelyChangesAuthority(address nextManager) public {
+    function testFuzzManagerTransferChangesAuthorityOnlyAfterAcceptance(address nextManager)
+        public
+    {
         vm.assume(nextManager != address(0));
         vm.assume(nextManager != address(this));
         vm.assume(nextManager != ATTACKER);
         ManagedOTFVault vault = _createVault();
 
         vault.transferOwnership(nextManager);
+        assertEq(vault.manager(), address(this));
+        assertEq(vault.pendingManager(), nextManager);
+        vm.prank(nextManager);
+        vault.acceptOwnership();
         assertEq(vault.manager(), nextManager);
 
         vm.prank(ATTACKER);
@@ -269,6 +275,8 @@ contract ProtocolFuzzTest is ProtocolTestBase {
 
         vm.prank(nextManager);
         vault.transferOwnership(ATTACKER);
+        vm.prank(ATTACKER);
+        vault.acceptOwnership();
         assertEq(vault.manager(), ATTACKER);
     }
 }

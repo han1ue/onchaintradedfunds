@@ -5,6 +5,8 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IEntryVault {
@@ -41,10 +43,9 @@ struct ExitSwap {
     bytes adapterData;
 }
 
-contract OTFEntryRouter {
+contract OTFEntryRouter is Ownable2Step {
     using SafeTransferLib for address;
 
-    error NotOwner();
     error ZeroAddress();
     error InvalidDependency(address dependency);
     error InvalidVault(address vault);
@@ -69,7 +70,6 @@ contract OTFEntryRouter {
     error Reentrancy();
 
     event EntryAdapterApprovalChanged(address indexed adapter, bool approved);
-    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event EnteredWithSettlement(
         address indexed payer,
         address indexed receiver,
@@ -86,29 +86,22 @@ contract OTFEntryRouter {
         uint256 settlementReceived
     );
 
-    address public owner;
     address public immutable factory;
     address public immutable settlementToken;
     mapping(address => bool) public isEntryAdapterApproved;
     bool private _entered;
     uint256 private constant REFUND_RATE_SCALE = 1e18;
 
-    constructor(address initialOwner, address factory_, address settlementToken_) {
-        if (initialOwner == address(0) || factory_ == address(0) || settlementToken_ == address(0))
-        {
+    constructor(address initialOwner, address factory_, address settlementToken_)
+        Ownable(initialOwner)
+    {
+        if (factory_ == address(0) || settlementToken_ == address(0)) {
             revert ZeroAddress();
         }
         if (factory_.code.length == 0) revert InvalidDependency(factory_);
         if (settlementToken_.code.length == 0) revert InvalidDependency(settlementToken_);
-        owner = initialOwner;
         factory = factory_;
         settlementToken = settlementToken_;
-        emit OwnershipTransferred(address(0), initialOwner);
-    }
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
     }
 
     modifier nonReentrant() {
@@ -124,13 +117,6 @@ contract OTFEntryRouter {
         }
         isEntryAdapterApproved[adapter] = approved;
         emit EntryAdapterApprovalChanged(adapter, approved);
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-        address oldOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(oldOwner, newOwner);
     }
 
     /// @notice Spends a fixed settlement amount and mints the largest proportional OTF basket.

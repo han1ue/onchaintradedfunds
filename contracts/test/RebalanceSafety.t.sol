@@ -732,6 +732,8 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         vault.setExecutor(ALICE, true);
         vault.transferOwnership(BOB);
+        vm.prank(BOB);
+        vault.acceptOwnership();
 
         assertFalse(vault.authorizedExecutor(ALICE));
         assertFalse(vault.authorizedExecutor(address(this)));

@@ -101,9 +101,11 @@ import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   deriveOtfQuality,
+  FRONTEND_MAX_TRACKED_ASSETS,
   normalizeAssetQuality,
   percentToBps,
   primaryDepositsBlocked,
+  trackedAssetUnionCount,
   weightBandValidationError,
   type AssetQuality,
   type WeightBandLimits,
@@ -6240,6 +6242,11 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   const weightsValid = weightSumValid && targetMinimumValid;
   const addressesValid = targets.length > 0 && targets.every((asset) => isAddress(asset.address));
   const targetsUnique = new Set(targets.map((asset) => asset.address.toLowerCase())).size === targets.length;
+  const trackedUnionCount = trackedAssetUnionCount(
+    vault.allocations.map((asset) => asset.address),
+    targets.map((asset) => asset.address),
+  );
+  const trackedUnionWithinFrontendCap = trackedUnionCount <= FRONTEND_MAX_TRACKED_ASSETS;
   const normalQualityTargets = targets.filter((asset) => asset.quality === "normal");
   const targetPricingValid = incumbentPricingReadsReady && targets.every(
     (asset) => pricingConfigIsComplete(asset.pricingConfig),
@@ -6266,6 +6273,21 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
           : !vault.withinCompletionBands
             ? "New target proposals resume after every constituent returns within its completion band."
             : "New target proposals are temporarily unavailable. Refresh the onchain data to check again.";
+  const selectedTargetAddresses = new Set(targets.map((target) => target.address.toLowerCase()));
+  const nextAvailableTargetAsset = testnetCreateAssets.find(
+    (asset) => !selectedTargetAddresses.has(asset.address.toLowerCase()),
+  );
+  const indexedTargetWouldExceedCap = nextAvailableTargetAsset
+    ? trackedAssetUnionCount(
+        vault.allocations.map((asset) => asset.address),
+        [...targets.map((asset) => asset.address), nextAvailableTargetAsset.address],
+      ) > FRONTEND_MAX_TRACKED_ASSETS
+    : false;
+  const manualTargetWouldExceedCap = isAddress(manualTargetAsset)
+    && trackedAssetUnionCount(
+      vault.allocations.map((asset) => asset.address),
+      [...targets.map((asset) => asset.address), manualTargetAsset],
+    ) > FRONTEND_MAX_TRACKED_ASSETS;
 
   function formatDraftWeight(weightBps: number) {
     return (weightBps / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
@@ -6344,20 +6366,27 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
   }
 
   function addTarget() {
-    const selectedAddresses = new Set(targets.map((target) => target.address.toLowerCase()));
-    const nextAsset = testnetCreateAssets.find((asset) => !selectedAddresses.has(asset.address.toLowerCase()));
-    if (!nextAsset) return;
+    const nextAsset = nextAvailableTargetAsset;
+    if (!nextAsset || indexedTargetWouldExceedCap) return;
     const pricingConfig = configuredPricingConfig(nextAsset.address) ?? emptyPricingConfig();
-    setTargets((current) => [...current, {
-      ticker: nextAsset.symbol,
-      name: nextAsset.name,
-      address: nextAsset.address,
-      poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-      quality: nextAsset.quality,
-      pricingConfig,
-      targetWeight: "",
-      initialAmount: "",
-    }]);
+    setTargets((current) => {
+      if (
+        trackedAssetUnionCount(
+          vault.allocations.map((asset) => asset.address),
+          [...current.map((asset) => asset.address), nextAsset.address],
+        ) > FRONTEND_MAX_TRACKED_ASSETS
+      ) return current;
+      return [...current, {
+        ticker: nextAsset.symbol,
+        name: nextAsset.name,
+        address: nextAsset.address,
+        poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+        quality: nextAsset.quality,
+        pricingConfig,
+        targetWeight: "",
+        initialAmount: "",
+      }];
+    });
     setTxState("idle");
   }
 
@@ -6367,6 +6396,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
       protocolMinimumTargetWeightBps === undefined
     ) return;
+    if (manualTargetWouldExceedCap) {
+      setManualTargetError(`This proposal would track more than the ${FRONTEND_MAX_TRACKED_ASSETS}-asset frontend safety cap. Remove a newly proposed asset or wait for a retiring asset to be pruned.`);
+      return;
+    }
     const assetAddress = manualTargetAsset as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualTargetPricingSource,
@@ -6407,6 +6440,12 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
 
       const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
       setTargets((current) => {
+        if (
+          trackedAssetUnionCount(
+            vault.allocations.map((asset) => asset.address),
+            [...current.map((asset) => asset.address), assetAddress],
+          ) > FRONTEND_MAX_TRACKED_ASSETS
+        ) return current;
         const existingWeights = distributeWeight(
           10_000 - protocolMinimumTargetWeightBps,
           current.map((target) => Math.max(0, Math.round(Number(target.targetWeight || 0) * 100))),
@@ -6445,7 +6484,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     if (
       !vault.address || !vault.connectedIsManager || !publicClient || !weightsValid ||
       !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid ||
-      !targetPricingValid || !incumbentPricingReadsReady
+      !targetPricingValid || !incumbentPricingReadsReady || !trackedUnionWithinFrontendCap
     ) return;
     setTxError(undefined);
     try {
@@ -6529,7 +6568,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       <div className="builderBlock">
         <div className="subHeader">
           <span>Target weights</span>
-          <small className={weightsValid ? "successText" : "warningText"}>Total: {totalWeight.toFixed(1)}%</small>
+          <small className={weightsValid && trackedUnionWithinFrontendCap ? "successText" : "warningText"}>Tracked union: {trackedUnionCount} / {FRONTEND_MAX_TRACKED_ASSETS} · Total: {totalWeight.toFixed(1)}%</small>
         </div>
         <div className="targetCardGrid">
           {targets.map((target, index) => (
@@ -6607,7 +6646,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             </div>
           ))}
         </div>
-        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targetEditorLocked || targets.length >= testnetCreateAssets.length}>
+        <button className="ghostAction addAssetAction" type="button" onClick={addTarget} disabled={targetEditorLocked || !nextAvailableTargetAsset || indexedTargetWouldExceedCap}>
           <Plus size={13} />
           Add asset
         </button>
@@ -6659,7 +6698,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                   manualTargetState === "pending" || manualTargetState === "submitted" ||
                   !isAddress(manualTargetAsset) || !isAddress(manualTargetPrimarySource) ||
                   ((manualTargetPricingSource === 1 || manualTargetPricingSource === 2) && !isAddress(manualTargetSecondarySource)) ||
-                  protocolMinimumTargetWeightBps === undefined
+                  protocolMinimumTargetWeightBps === undefined || manualTargetWouldExceedCap
                 }
               >
                 {manualTargetState === "pending" || manualTargetState === "submitted"
@@ -6738,6 +6777,12 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         {!targetsUnique ? (
           <div className="riskCallout danger"><XCircle size={15} /><div><strong>Each asset may appear only once</strong><span>Select a different supported asset or remove the duplicate.</span></div></div>
         ) : null}
+        {!trackedUnionWithinFrontendCap ? (
+          <div className="riskCallout danger"><XCircle size={15} /><div><strong>Tracked union exceeds the frontend safety cap</strong><span>This proposal would track {trackedUnionCount} unique assets, including zero-target retiring assets. Remove newly proposed assets until the union is {FRONTEND_MAX_TRACKED_ASSETS} or fewer.</span></div></div>
+        ) : null}
+        {trackedUnionCount === FRONTEND_MAX_TRACKED_ASSETS ? (
+          <div className="riskCallout warning"><AlertTriangle size={15} /><div><strong>Frontend tracked-asset cap reached</strong><span>The tracked union includes current holdings and zero-target retiring assets. Remove or fully prune one before adding a new asset beyond this {FRONTEND_MAX_TRACKED_ASSETS}-asset safety cap.</span></div></div>
+        ) : null}
         {!targetPricingValid ? (
           <div className="riskCallout danger"><XCircle size={15} /><div>
             <strong>{incumbentPricingReadFailed ? "Pinned pricing could not be loaded" : incumbentPricingReadsReady ? "Every constituent needs a complete pricing configuration" : "Loading pinned pricing"}</strong>
@@ -6788,7 +6833,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         </> : <button
             className="primaryAction"
             type="button"
-            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !targetsChanged || !rationaleValid || !targetPricingValid || txState === "pending" || txState === "submitted" || txState === "simulating"}
+            disabled={!vault.connectedIsManager || !vault.canProposeStrategy || !weightsValid || !addressesValid || !targetsUnique || !trackedUnionWithinFrontendCap || !targetsChanged || !rationaleValid || !targetPricingValid || txState === "pending" || txState === "submitted" || txState === "simulating"}
             onClick={submitTargets}
           >
             <RefreshCw size={14} />
@@ -8200,6 +8245,7 @@ function CreateVaultView({
   const totalWeightBps = targetWeightBps.reduce((sum, weight) => sum + weight, 0);
   const totalWeightValid = totalWeightBps === 10_000;
   const portfolioAssetsUnique = new Set(portfolio.map((asset) => asset.address.toLowerCase())).size === portfolio.length;
+  const portfolioWithinFrontendAssetCap = portfolio.length <= FRONTEND_MAX_TRACKED_ASSETS;
   let initialPortfolioValue: bigint | undefined;
   try {
     initialPortfolioValue = Number(draft.initialPortfolioValue) > 0
@@ -8290,6 +8336,7 @@ function CreateVaultView({
     isAddress(draft.feeRecipient);
   const portfolioValid =
     portfolio.length >= 2 &&
+    portfolioWithinFrontendAssetCap &&
     portfolioAssetsUnique &&
     protocolMinimumTargetWeightBps !== undefined &&
     portfolio.every(
@@ -8324,6 +8371,9 @@ function CreateVaultView({
   ].filter((issue): issue is string => Boolean(issue));
   const portfolioIssues = [
     portfolio.length >= 2 ? null : "Select at least two assets to continue.",
+    portfolioWithinFrontendAssetCap
+      ? null
+      : `Remove ${portfolio.length - FRONTEND_MAX_TRACKED_ASSETS} asset${portfolio.length - FRONTEND_MAX_TRACKED_ASSETS === 1 ? "" : "s"}. The frontend safety cap is ${FRONTEND_MAX_TRACKED_ASSETS} tracked assets per OTF.`,
     portfolioAssetsUnique ? null : "Each contract address can appear only once.",
     protocolMinimumTargetWeightBps !== undefined ? null : "Wait for the protocol target minimum to load.",
     protocolMinimumTargetWeightBps === undefined || portfolio.every((asset) => percentToBps(asset.targetWeight) >= protocolMinimumTargetWeightBps)
@@ -8479,9 +8529,13 @@ function CreateVaultView({
   }
 
   function addPortfolioAsset() {
-    if (!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined) return;
+    if (
+      !nextAvailableAsset || protocolMinimumTargetWeightBps === undefined
+      || portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS
+    ) return;
     const pricingConfig = configuredPricingConfig(nextAvailableAsset.address) ?? emptyPricingConfig();
     setPortfolio((current) => {
+      if (current.length >= FRONTEND_MAX_TRACKED_ASSETS) return current;
       if (current.length === 0) {
         return [{
           ticker: nextAvailableAsset.symbol,
@@ -8516,6 +8570,10 @@ function CreateVaultView({
       !publicClient || !connectedAddress || !pricingResolverAddress ||
       !isAddress(manualAssetAddress) || !isAddress(manualPrimarySource)
     ) return;
+    if (portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS) {
+      setManualRegistrationError(`Remove an asset before adding another. The frontend safety cap is ${FRONTEND_MAX_TRACKED_ASSETS} tracked assets per OTF.`);
+      return;
+    }
     const assetAddress = manualAssetAddress as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualPricingSource,
@@ -8565,6 +8623,7 @@ function CreateVaultView({
         },
       }));
       setPortfolio((current) => {
+        if (current.length >= FRONTEND_MAX_TRACKED_ASSETS) return current;
         const minimum = protocolMinimumTargetWeightBps ?? 500;
         const existingWeights = distributePortfolioWeight(10_000 - minimum, current);
         return [
@@ -8596,6 +8655,9 @@ function CreateVaultView({
   function vaultInitParams() {
     if (!isAddress(draft.manager) || !isAddress(draft.feeRecipient)) {
       throw new Error("Manager and fee-recipient addresses must be valid.");
+    }
+    if (portfolio.length > FRONTEND_MAX_TRACKED_ASSETS) {
+      throw new Error(`OTF creation is limited to ${FRONTEND_MAX_TRACKED_ASSETS} assets by the frontend safety cap.`);
     }
     const initialAssets = portfolio.map((asset) => {
       if (!isAddress(asset.address)) throw new Error(`${asset.ticker || "Asset"} has an invalid token address.`);
@@ -8931,9 +8993,9 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Search by name, symbol, or contract address. Contract address and network are the canonical identity.</span>
+                    <span>Search by name, symbol, or contract address. Contract address and network are the canonical identity. The frontend safety cap is {FRONTEND_MAX_TRACKED_ASSETS} assets.</span>
                   </div>
-                  <span className={`stateBadge ${totalWeightValid ? "success" : "danger"}`}>Total {totalWeight.toFixed(1)}%</span>
+                  <span className={`stateBadge ${totalWeightValid && portfolioWithinFrontendAssetCap ? "success" : "danger"}`}>{portfolio.length} / {FRONTEND_MAX_TRACKED_ASSETS} assets · Total {totalWeight.toFixed(1)}%</span>
                 </div>
                 <label className="initialPortfolioValueField">
                   <span>Initial portfolio value</span>
@@ -9047,11 +9109,17 @@ function CreateVaultView({
                   className="secondaryAction"
                   type="button"
                   onClick={addPortfolioAsset}
-                  disabled={!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined}
+                  disabled={!nextAvailableAsset || protocolMinimumTargetWeightBps === undefined || portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS}
                 >
                   <Plus size={14} />
                   Add asset
                 </button>
+                {portfolio.length === FRONTEND_MAX_TRACKED_ASSETS ? (
+                  <div className="validationSummary warning" role="status">
+                    <AlertTriangle size={15} />
+                    <div><strong>Frontend asset cap reached</strong><span>Remove an asset before adding another. This creation flow is limited to {FRONTEND_MAX_TRACKED_ASSETS} assets for transaction safety.</span></div>
+                  </div>
+                ) : null}
                 <div className="manualAssetRegistration">
                   <div className="manualAssetRegistrationIntro">
                     <div>
@@ -9101,6 +9169,7 @@ function CreateVaultView({
                         !isAddress(manualAssetAddress) ||
                         !isAddress(manualPrimarySource) ||
                         ((manualPricingSource === 1 || manualPricingSource === 2) && !isAddress(manualSecondarySource))
+                        || portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS
                       }
                     >
                       {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
@@ -10099,6 +10168,21 @@ function ManageVaultsView({
   const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { writeContractAsync } = useWriteContract();
+  const { data: pendingManagerResult } = useReadContract({
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "pendingManager",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(vault.enabled && vault.address), refetchInterval: 12_000 },
+  });
+  const pendingManager = isAddress(pendingManagerResult ?? "")
+    && pendingManagerResult !== zeroAddress
+    ? pendingManagerResult
+    : undefined;
+  const connectedIsPendingManager = Boolean(
+    connectedAddress && pendingManager
+    && connectedAddress.toLowerCase() === pendingManager.toLowerCase(),
+  );
   const managerWeightBandPolicyContracts = vault.factoryAddress ? ([
     { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "minCompletionDeviationBps" },
     { address: vault.factoryAddress, abi: otfFactoryAbi, functionName: "maxCompletionDeviationBps" },
@@ -10325,21 +10409,37 @@ function ManageVaultsView({
     }
   }
 
-  async function transferManager() {
-    if (!vault.address || !vault.connectedIsManager || !managerValid) return;
+  async function transferManager(newManager: `0x${string}`) {
+    if (!vault.address || !vault.connectedIsManager) return;
     const vaultAddress = vault.address;
     await runRoleWrite(
       () => writeContractAsync({
         address: vaultAddress,
         abi: managedOtfVaultAbi,
         functionName: "transferOwnership",
-        args: [managerTarget as `0x${string}`],
+        args: [newManager],
         chainId: robinhoodChainTestnet.id,
       }),
       setManagerTransferState,
       setManagerTransferError,
       "The manager transfer reverted.",
       () => setManagerTarget(""),
+    );
+  }
+
+  async function acceptManagerOwnership() {
+    if (!vault.address || !connectedIsPendingManager) return;
+    const vaultAddress = vault.address;
+    await runRoleWrite(
+      () => writeContractAsync({
+        address: vaultAddress,
+        abi: managedOtfVaultAbi,
+        functionName: "acceptOwnership",
+        chainId: robinhoodChainTestnet.id,
+      }),
+      setManagerTransferState,
+      setManagerTransferError,
+      "Accepting the manager transfer reverted.",
     );
   }
 
@@ -10649,25 +10749,35 @@ function ManageVaultsView({
           </div>
         </SectionCard>
         ) : null}
-        <SectionCard title="Manager transfer" subtitle="Transfer strategy authority immediately" icon={<KeyRound size={15} />} action={<span className="stateBadge danger">Immediate</span>}>
+        <SectionCard title="Manager transfer" subtitle="Nominate a new manager, then wait for their acceptance" icon={<KeyRound size={15} />} action={<span className="stateBadge muted">Two step</span>}>
           <div className="operationFlow">
             <div className="roleCurrent"><span>Current manager</span><strong>{shortAddress(vault.manager)}</strong></div>
+            {pendingManager ? <div className="roleCurrent"><span>Pending manager</span><strong>{shortAddress(pendingManager)}</strong></div> : null}
             <label className="fieldLabel">New manager address</label>
             <input className={!managerValid && managerTarget ? "invalid" : ""} value={managerTarget} onChange={(event) => setManagerTarget(event.target.value)} placeholder="0x..." disabled={!vault.enabled || !vault.connectedIsManager} />
-            <div className="riskCallout danger managerTransferWarning">
-              <AlertTriangle size={17} />
+            <div className="riskCallout warning managerTransferWarning">
+              <KeyRound size={17} />
               <div>
-                <strong>You cannot undo this transfer from your current wallet</strong>
-                <span>You will immediately lose every manager permission. The new manager can change the manager fee within the protocol cap, redirect its fee recipient, change strategy, and appoint executors.</span>
+                <strong>The current manager remains active until acceptance</strong>
+                <span>Nominating another address does not change strategy authority, executors, fees, or pending strategy state. The current manager may replace or cancel the nomination.</span>
               </div>
             </div>
-            <p>All current executors are cleared, then the new manager is added automatically as the sole executor.</p>
+            <p>On acceptance, accrued fees are checkpointed, pending manager strategy state is cancelled, all current executors are cleared, and the new manager becomes the sole executor.</p>
             {managerTransferError ? <div className="validationSummary danger" role="alert"><AlertTriangle size={15} /><div><strong>Manager transfer failed</strong><span>{managerTransferError}</span></div></div> : null}
             <TxStatus state={managerTransferState} />
-            {vault.connectedIsManager ? <button className="dangerAction" type="button" disabled={!managerValid || managerTransferBusy} onClick={transferManager}>
-              <UserCog size={14} />
-              {managerTransferBusy ? "Confirming transfer" : "Transfer manager now"}
-            </button> : null}
+            <div className="builderActions">
+              {vault.connectedIsManager && pendingManager ? <button className="secondaryAction" type="button" disabled={managerTransferBusy} onClick={() => transferManager(zeroAddress)}>
+                <XCircle size={14} /> Cancel nomination
+              </button> : null}
+              {vault.connectedIsManager ? <button className="primaryAction" type="button" disabled={!managerValid || managerTransferBusy} onClick={() => transferManager(managerTarget as `0x${string}`)}>
+                <UserCog size={14} />
+                {managerTransferBusy ? "Confirming nomination" : pendingManager ? "Replace nomination" : "Nominate manager"}
+              </button> : null}
+              {connectedIsPendingManager ? <button className="primaryAction" type="button" disabled={managerTransferBusy} onClick={acceptManagerOwnership}>
+                <CheckCircle size={14} />
+                {managerTransferBusy ? "Accepting transfer" : "Accept manager role"}
+              </button> : null}
+            </div>
           </div>
         </SectionCard>
 

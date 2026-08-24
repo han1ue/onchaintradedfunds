@@ -7,6 +7,7 @@ import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MinimumIgnoringTradeAdapter is ITradeAdapter {
     using SafeTransferLib for address;
@@ -273,8 +274,34 @@ contract OTFEntryRouterTest is ProtocolTestBase {
 
     function testOnlyOwnerCanApproveEntryAdapters() public {
         vm.prank(ATTACKER);
-        vm.expectRevert(OTFEntryRouter.NotOwner.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ATTACKER)
+        );
         entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
+    }
+
+    function testRouterOwnershipTransferRequiresPendingOwnerAcceptance() public {
+        entryRouter.transferOwnership(ALICE);
+
+        assertEq(entryRouter.owner(), address(this));
+        assertEq(entryRouter.pendingOwner(), ALICE);
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), false);
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ATTACKER)
+        );
+        entryRouter.acceptOwnership();
+
+        vm.prank(ALICE);
+        entryRouter.acceptOwnership();
+        assertEq(entryRouter.owner(), ALICE);
+        assertEq(entryRouter.pendingOwner(), address(0));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
+        );
+        entryRouter.setEntryAdapterApproved(address(exitAdapter), true);
     }
 
     function testEntryAdapterCanBeRevokedAfterItsCodeDisappears() public {

@@ -325,17 +325,80 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vault.setNextStrategyRationale(oversized);
     }
 
-    function testManagerTransferIsImmediateAndAccruesFees() public {
+    function testManagerNominationPreservesOldManagerAndCanBeCancelledOrReplaced() public {
         ManagedOTFVault vault = _createVault();
-        vm.warp(START + 1 days);
         vault.transferOwnership(ALICE);
 
-        assertGt(vault.totalSupply(), 100 * ONE);
-        assertEq(vault.manager(), ALICE);
+        assertEq(vault.owner(), address(this));
+        assertEq(vault.manager(), address(this));
+        assertEq(vault.pendingManager(), ALICE);
+        assertTrue(vault.authorizedExecutor(address(this)));
+        vault.setNextStrategyRationale("Old manager remains active.");
+
+        vault.transferOwnership(address(0));
+        assertEq(vault.pendingManager(), address(0));
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ManagedOTFVaultStorage.OwnableUnauthorizedAccount.selector, ALICE
+            )
+        );
+        vault.acceptOwnership();
+
+        vault.transferOwnership(ALICE);
+        vault.transferOwnership(BOB);
+        assertEq(vault.pendingManager(), BOB);
+    }
+
+    function testPendingManagerAcceptanceAccruesFeesAndCleansManagerState() public {
+        ManagedOTFVault vault = _createVault();
+        IManagedOTFStrategyHistory history = IManagedOTFStrategyHistory(address(vault));
+        vault.setExecutor(ALICE, true);
+
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        vm.warp(START + 14 days);
+        _refreshPrices();
+        vault.proposeStrategyWithPricing(
+            assets,
+            _uint256Weights(weights),
+            _pricingConfigsFor(assets),
+            "Pending strategy owned by the old manager."
+        );
+        assertTrue(vault.strategyProposalPending());
+
+        vault.transferOwnership(BOB);
+        uint256 supplyBeforeAcceptance = vault.totalSupply();
+        vm.warp(block.timestamp + 1 days);
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ManagedOTFVaultStorage.OwnableUnauthorizedAccount.selector, ATTACKER
+            )
+        );
+        vault.acceptOwnership();
+        assertEq(vault.manager(), address(this));
+        assertTrue(vault.strategyProposalPending());
+
+        vm.prank(BOB);
+        vault.acceptOwnership();
+
+        assertGt(vault.totalSupply(), supplyBeforeAcceptance);
+        assertEq(vault.owner(), BOB);
+        assertEq(vault.manager(), BOB);
+        assertEq(vault.pendingManager(), address(0));
+        assertFalse(vault.strategyProposalPending());
+        assertEq(history.pendingStrategyRationale(), "");
+        assertEq(history.nextStrategyRationale(), "");
+        assertFalse(vault.authorizedExecutor(address(this)));
+        assertFalse(vault.authorizedExecutor(ALICE));
+        assertTrue(vault.authorizedExecutor(BOB));
+        assertEq(vault.authorizedExecutors().length, 1);
+        assertEq(vault.authorizedExecutors()[0], BOB);
 
         vm.expectRevert(ManagedOTFVaultStorage.NotManager.selector);
         vault.setNextStrategyRationale("Old manager cannot stage.");
-        vm.prank(ALICE);
+        vm.prank(BOB);
         vault.setNextStrategyRationale("New manager rationale.");
     }
 

@@ -5,8 +5,13 @@ import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.so
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
 import { TestBase } from "./TestBase.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract RegisteredUniswapV3AdapterTest is TestBase {
+    address private constant ALICE = address(0xA11CE);
+    address private constant BOB = address(0xB0B);
+    address private constant ATTACKER = address(0xBAD);
+
     MockStockToken private tokenIn;
     MockStockToken private intermediate;
     MockStockToken private tokenOut;
@@ -77,6 +82,30 @@ contract RegisteredUniswapV3AdapterTest is TestBase {
             1 ether,
             abi.encodePacked(address(tokenIn), bytes3(uint24(500)), address(tokenOut))
         );
+    }
+
+    function testAdapterOwnershipTransferRequiresPendingOwnerAcceptance() public {
+        adapter.transferOwnership(ALICE);
+
+        assertEq(adapter.owner(), address(this));
+        assertEq(adapter.pendingOwner(), ALICE);
+        adapter.setCallerApproved(BOB, true);
+
+        vm.prank(ATTACKER);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ATTACKER)
+        );
+        adapter.acceptOwnership();
+
+        vm.prank(ALICE);
+        adapter.acceptOwnership();
+        assertEq(adapter.owner(), ALICE);
+        assertEq(adapter.pendingOwner(), address(0));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
+        );
+        adapter.setCallerApproved(BOB, false);
     }
 
     function testSlippageAndReportedOutputMismatchRevertAtomically() public {

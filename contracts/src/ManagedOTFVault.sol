@@ -154,6 +154,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
+    function acceptOwnership() external {
+        _delegateStrategy();
+    }
+
     // ERC-7621 views
 
     function getConstituents()
