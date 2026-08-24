@@ -65,12 +65,12 @@ const sectionGroups: readonly DocsSectionGroup[] = [
 ];
 
 const contractRows = [
-  ["OTFFactory", "Creates deterministic vault clones, applies protocol-wide limits, and records vault ownership."],
+  ["OTFFactory", "Creates vault clones, applies protocol-wide limits, and records vault ownership."],
   ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
   ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
-  ["OTFEntryRouter", "Atomically converts a fixed USDG input into the largest proportional OTF basket, with minimum-share protection and slippage-protected USDG refunds."],
+  ["OTFEntryRouter", "Atomically converts a fixed supported settlement input into the largest proportional OTF basket, with minimum-share protection and slippage-protected refunds."],
   ["Uniswap V3 adapter", "Executes explicit exact-input paths for entry, redemption, and rebalancing; caller contracts enforce the permitted endpoints."],
   ["AssetRegistry", "Optional permissionless discovery index; vault eligibility never depends on it."],
   ["Pricing resolver", "Mechanically validates creator-selected Chainlink, Chainlink Composed, or canonical Uniswap V3 TWAP routes and resolves the normalized feed and parameters pinned by one OTF."],
@@ -296,7 +296,7 @@ export default function DocsPage() {
               The creator selects a manager, fee recipient, constituent assets, an exact supported pricing configuration for each asset, target weights, fee,
               challenge and completion bands, and safety
               limits. The factory validates these
-              parameters, deploys a deterministic clone, transfers the exact initial basket, and
+              parameters, deploys a minimal proxy clone, transfers the exact initial basket, and
               initializes the vault. Target weights must total <code>10,000 bps</code>.
             </p>
             <ol className="docsSteps">
@@ -328,8 +328,8 @@ export default function DocsPage() {
               <div>
                 <strong>Three ways to enter</strong>
                 <span>
-                  Supply the proportional RWA basket, buy existing shares from the OTF/USDG pool,
-                  or supply a fixed USDG or WETH amount through its settlement router. Routed entry
+                  Supply the proportional RWA basket, buy existing shares from a discovered OTF/USDG
+                  or OTF/WETH market, or supply a fixed USDG or WETH amount through its settlement router. Routed entry
                   shows estimated shares and a slippage-protected minimum before signing.
                 </span>
               </div>
@@ -359,8 +359,8 @@ export default function DocsPage() {
               <div>
                 <strong>Three ways to exit</strong>
                 <span>
-                  Receive the proportional RWA basket, sell shares into the OTF/USDG pool, or redeem
-                  through the settlement router for USDG. Routed redemption enforces per-leg and
+                  Receive the proportional RWA basket, sell shares into a discovered supported market, or redeem
+                  through the settlement router for USDG or WETH. Routed redemption enforces per-leg and
                   aggregate slippage minimums and reverts every action if a leg fails.
                 </span>
               </div>

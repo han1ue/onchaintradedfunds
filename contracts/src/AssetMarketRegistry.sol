@@ -98,26 +98,15 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     address public owner;
     address public pendingOwner;
     address public immutable uniswapV3Factory;
-    address public immutable weth;
-    address public immutable usdg;
 
     mapping(bytes32 => Market) private _marketFor;
     mapping(address => QuoteTokenConfig) private _quoteTokenConfig;
     address[] private _quoteTokens;
 
-    constructor(address initialOwner, address uniswapV3Factory_, address weth_, address usdg_) {
-        if (
-            initialOwner == address(0) || uniswapV3Factory_ == address(0) || weth_ == address(0)
-                || usdg_ == address(0)
-        ) revert ZeroAddress();
+    constructor(address initialOwner, address uniswapV3Factory_) {
+        if (initialOwner == address(0) || uniswapV3Factory_ == address(0)) revert ZeroAddress();
         if (uniswapV3Factory_.code.length == 0) revert InvalidDependency(uniswapV3Factory_);
-        if (weth_.code.length == 0) revert InvalidDependency(weth_);
-        if (usdg_.code.length == 0) revert InvalidDependency(usdg_);
         uniswapV3Factory = uniswapV3Factory_;
-        weth = weth_;
-        usdg = usdg_;
-        _requireDecimals(weth_, 18);
-        _requireDecimals(usdg_, 6);
         owner = initialOwner;
         emit OwnershipTransferred(address(0), initialOwner);
     }

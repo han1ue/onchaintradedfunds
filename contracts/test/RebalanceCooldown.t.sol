@@ -14,7 +14,6 @@ import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockOfficialMarketRegistry } from "../src/mocks/MockOfficialMarketRegistry.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import {
@@ -75,7 +74,6 @@ contract RebalanceCooldownTest is TestBase {
         );
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
-        factory.setOfficialMarketRegistry(address(new MockOfficialMarketRegistry()));
         factory.setPricingResolver(
             address(new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator))
         );

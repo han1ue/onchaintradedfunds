@@ -181,6 +181,20 @@ const usdgUsdFeed = configuredUsdgUsdFeed
     });
 const wethUsdFeedAddress = wethUsdFeed.address;
 const usdgUsdFeedAddress = usdgUsdFeed.address;
+const supportedMarketAssets = [
+  {
+    symbol: "USDG",
+    token: usdgAddress,
+    usdFeed: usdgUsdFeedAddress,
+    feedDeployment: usdgUsdFeed,
+  },
+  {
+    symbol: "WETH",
+    token: wethAddress,
+    usdFeed: wethUsdFeedAddress,
+    feedDeployment: wethUsdFeed,
+  },
+];
 
 const assetRegistry = await deployContract({ name: "AssetRegistry", args: [account.address] });
 const rebalanceExecutor = await deployContract({
@@ -213,35 +227,17 @@ const factory = await deployContract({
   ],
 });
 
-const v3MarketRegistry = await deployContract({
-  name: "OTFV3MarketRegistry",
-  args: [
-    factory.address,
-    usdgAddress,
-    uniswapV3FactoryAddress,
-    uniswapV3PositionManagerAddress,
-  ],
-});
-
 const assetMarketRegistry = await deployContract({
   name: "AssetMarketRegistry",
-  args: [
-    account.address,
-    uniswapV3FactoryAddress,
-    wethAddress,
-    usdgAddress,
-  ],
+  args: [account.address, uniswapV3FactoryAddress],
 });
 const assetMarketRegistryAbi = contractArtifact("AssetMarketRegistry").abi;
-const quoteTokenRegistrations = await Promise.all([
-  [wethAddress, wethUsdFeedAddress, "WETH", wethUsdFeed],
-  [usdgAddress, usdgUsdFeedAddress, "USDG", usdgUsdFeed],
-].map(async ([quoteToken, usdFeed, symbol, feedDeployment]) => ({
-  symbol,
-  quoteToken,
-  usdFeed,
-  feedDeployment,
-  synthetic: Boolean(feedDeployment.synthetic) || !feedDeployment.retained,
+const quoteTokenRegistrations = await Promise.all(supportedMarketAssets.map(async (marketAsset) => ({
+  symbol: marketAsset.symbol,
+  quoteToken: marketAsset.token,
+  usdFeed: marketAsset.usdFeed,
+  feedDeployment: marketAsset.feedDeployment,
+  synthetic: Boolean(marketAsset.feedDeployment.synthetic) || !marketAsset.feedDeployment.retained,
   maxStaleness: quoteUsdMaxStaleness,
   allowComposedChainlink: true,
   allowV3Twap: true,
@@ -249,7 +245,7 @@ const quoteTokenRegistrations = await Promise.all([
     address: assetMarketRegistry.address,
     abi: assetMarketRegistryAbi,
     functionName: "registerQuoteToken",
-    args: [quoteToken, usdFeed, quoteUsdMaxStaleness, true, true],
+    args: [marketAsset.token, marketAsset.usdFeed, quoteUsdMaxStaleness, true, true],
   })),
 })));
 const pricingResolver = await deployContract({
@@ -260,14 +256,19 @@ const uniswapV3Adapter = await deployContract({
   name: "RegisteredUniswapV3Adapter",
   args: [account.address, uniswapV3SwapRouterAddress],
 });
-const entryRouterUsdg = await deployContract({
-  name: "OTFEntryRouter",
-  args: [account.address, factory.address, usdgAddress],
-});
-const entryRouterWeth = await deployContract({
-  name: "OTFEntryRouter",
-  args: [account.address, factory.address, wethAddress],
-});
+const settlementRoutes = [];
+for (const marketAsset of supportedMarketAssets) {
+  settlementRoutes.push({
+    ...marketAsset,
+    router: await deployContract({
+      name: "OTFEntryRouter",
+      args: [account.address, factory.address, marketAsset.token],
+    }),
+  });
+}
+const entryRouteUsdg = settlementRoutes.find((route) => route.symbol === "USDG");
+const entryRouteWeth = settlementRoutes.find((route) => route.symbol === "WETH");
+if (!entryRouteUsdg || !entryRouteWeth) throw new Error("Supported market routes are incomplete.");
 
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
@@ -293,12 +294,6 @@ const setupTransactions = {
     })),
   }],
   settlementEntry: [],
-  setOfficialMarketRegistry: await writeContract({
-    address: factory.address,
-    abi: factoryAbi,
-    functionName: "setOfficialMarketRegistry",
-    args: [v3MarketRegistry.address],
-  }),
   setAssetMarketRegistry: await writeContract({
     address: factory.address,
     abi: factoryAbi,
@@ -320,22 +315,19 @@ const setupTransactions = {
   }),
 };
 
-for (const [router, settlement] of [
-  [entryRouterUsdg, "USDG"],
-  [entryRouterWeth, "WETH"],
-]) {
+for (const route of settlementRoutes) {
   setupTransactions.settlementEntry.push({
-    settlement,
+    settlement: route.symbol,
     adapter: uniswapV3Adapter.address,
-    router: router.address,
+    router: route.router.address,
     entryRouterCallerApproval: await writeContract({
       address: uniswapV3Adapter.address,
       abi: registeredAdapterAbi,
       functionName: "setCallerApproved",
-      args: [router.address, true],
+      args: [route.router.address, true],
     }),
     routerAdapterApproval: await writeContract({
-      address: router.address,
+      address: route.router.address,
       abi: entryRouterAbi,
       functionName: "setEntryAdapterApproved",
       args: [uniswapV3Adapter.address, true],
@@ -351,7 +343,7 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 });
 
 const deployment = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -369,12 +361,11 @@ const deployment = {
     vaultView,
     vaultImplementation,
     factory,
-    v3MarketRegistry,
     assetMarketRegistry,
     pricingResolver,
     uniswapV3Adapter,
-    entryRouter: entryRouterUsdg,
-    entryRouterWeth,
+    entryRouter: entryRouteUsdg.router,
+    entryRouterWeth: entryRouteWeth.router,
   },
   externalContracts: {
     usdg: usdgAddress,
@@ -392,26 +383,16 @@ const deployment = {
     maximumOracleStalenessSeconds: 604800,
     note: "Each OTF pins its asset feed or V3 pool. Composed and V3 routes read the quote token's single current USD feed from the admin registry.",
   },
-  executionRoutes: [
-    {
-      settlement: "USDG",
-      settlementToken: usdgAddress,
-      adapter: uniswapV3Adapter.address,
-      entryRouter: entryRouterUsdg.address,
-      pathEncoding: "uniswap-v3-packed",
-      pricingIndependent: true,
-    },
-    {
-      settlement: "WETH",
-      settlementToken: wethAddress,
-      adapter: uniswapV3Adapter.address,
-      entryRouter: entryRouterWeth.address,
-      pathEncoding: "uniswap-v3-packed",
-      pricingIndependent: true,
-    },
-  ],
+  executionRoutes: settlementRoutes.map((route) => ({
+    settlement: route.symbol,
+    settlementToken: route.token,
+    adapter: uniswapV3Adapter.address,
+    entryRouter: route.router.address,
+    pathEncoding: "uniswap-v3-packed",
+    pricingIndependent: true,
+  })),
   migration: {
-    architecture: "pinned-pricing-v3",
+    architecture: "decoupled-otf-markets",
     legacyFactoriesCompatible: false,
   },
   setupTransactions,

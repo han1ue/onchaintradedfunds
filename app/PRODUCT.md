@@ -33,14 +33,14 @@ Investors use the web application with an EVM wallet to:
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
 - Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, strategy history, safety limits, cooldown state, and return history.
 - Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
-- Enter by supplying the exact proportional RWA basket, buying shares from the OTF/USDG market, or routing a fixed USDG amount through constituent pools with minimum-share protection.
-- Exit by receiving the proportional RWA basket, selling shares into the OTF/USDG market, or routing a redemption through constituent pools with minimum-USDG protection.
+- Enter by supplying the exact proportional RWA basket, buying shares from an available OTF market, or routing a fixed supported settlement asset through constituent pools with minimum-share protection.
+- Exit by receiving the proportional RWA basket, selling shares into an available OTF market, or routing a redemption through constituent pools with minimum-settlement protection.
 - Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
 
 Creators and managers use the application to:
 
 - Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, creator fee, and policy-bounded safety limits.
-- Open the immutable official OTF/USDG pool and add wallet-funded liquidity without using portfolio assets.
+- Discover supported OTF quote markets and open the network liquidity venue to create pools or manage wallet-funded positions without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Propose target changes with a required rationale that becomes permanent when the strategy activates.
 - Accrue creator fees without counting the action as a portfolio change.
@@ -52,10 +52,11 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
 - OTF creation is permissionless within factory-level mechanical validation and enforceable safety constraints.
-- The investor frontend exposes exactly three entry paths—direct RWA basket, official OTF/USDG market, and fixed-USDG constituent routing—and exactly three corresponding exit paths.
-- Every OTF factory transaction atomically creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Existing initialized canonical pools are adopted unchanged; the association cannot be removed, replaced, or changed by the manager.
-- Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
-- The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
+- The investor frontend exposes exactly three entry paths—direct RWA basket, an available OTF market, and constituent routing from a supported settlement asset—and exactly three corresponding exit paths.
+- OTF creation is independent of Uniswap pool creation. Supported market assets come from the deployment's shared quote-and-execution configuration; the UI discovers every standard V3 fee tier and links to Synthra on testnet or Uniswap on mainnet.
+- Uniswap pools remain permissionless protocol infrastructure. A pool created by another wallet is discovered and shown rather than treated as an OTF-owned or trusted market.
+- Pool creation, initial-price selection, position creation, liquidity changes, and fee collection all happen on the external venue. Any wallet may supply liquidity without using OTF-held portfolio assets and owns the resulting position.
+- A direct secondary-market route remains disabled until its discovered pool reports active liquidity.
 - Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
 - A manager may irreversibly sunset an OTF after its strategy cooldown finishes and while no
   challenge, proposal, or rebalance is active. Sunset

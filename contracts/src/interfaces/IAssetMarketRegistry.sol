@@ -2,8 +2,6 @@
 pragma solidity ^0.8.24;
 
 interface IAssetMarketRegistry {
-    function weth() external view returns (address);
-    function usdg() external view returns (address);
     function quoteTokenFor(bytes32 marketId) external view returns (address);
 
     function quoteTokenConfig(address quoteToken)

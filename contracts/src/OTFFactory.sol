@@ -14,10 +14,6 @@ interface IFeeCollectorTreasury {
     function pendingTreasury() external view returns (address);
 }
 
-interface IOfficialMarketRegistry {
-    function createOfficialPool(address vault) external returns (address pool);
-}
-
 interface IProtocolTokenWeight {
     function targetWeightBps(address token) external view returns (uint16 weightBps);
     function currentWeight(address token) external view returns (uint256 weightBps);
@@ -67,8 +63,6 @@ contract OTFFactory is IAdapterAllowlist {
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
-    error OfficialMarketRegistryNotConfigured();
-    error OfficialMarketRegistryLocked();
     error AssetMarketRegistryLocked();
     error PricingResolverLocked();
     error PricingResolverNotConfigured();
@@ -78,13 +72,7 @@ contract OTFFactory is IAdapterAllowlist {
     error ProtocolTokenNotConfigured();
     error InvalidProtocolTokenThreshold(uint16 thresholdBps);
 
-    event VaultCreated(
-        address indexed creator,
-        address indexed vault,
-        uint256 indexed nonce,
-        string name,
-        string symbol
-    );
+    event VaultCreated(address indexed creator, address indexed vault, string name, string symbol);
     event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event ProtocolFeeShareUpdated(uint16 previousShareBps, uint16 newShareBps);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
@@ -94,7 +82,6 @@ contract OTFFactory is IAdapterAllowlist {
         uint16 minChallengeDeviationGapBps,
         uint16 maxChallengeDeviationBps
     );
-    event OfficialMarketRegistryConfigured(address indexed registry);
     event AssetMarketRegistryConfigured(address indexed registry);
     event PricingResolverConfigured(address indexed resolver);
     event DepositsPauseChanged(bool paused);
@@ -116,7 +103,6 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public maxCompletionDeviationBps = 500;
     uint16 public minChallengeDeviationGapBps = 25;
     uint16 public maxChallengeDeviationBps = 1_500;
-    address public officialMarketRegistry;
     address public assetMarketRegistry;
     address public pricingResolver;
     address public protocolToken;
@@ -125,7 +111,6 @@ contract OTFFactory is IAdapterAllowlist {
 
     address[] private _vaults;
     mapping(address => address) public creatorOf;
-    mapping(address => uint256) public creatorNonce;
     mapping(address => bool) public isVault;
     mapping(address => bool) public isTradeAdapterApproved;
     mapping(address => bool) public vaultDepositsPaused;
@@ -203,15 +188,9 @@ contract OTFFactory is IAdapterAllowlist {
     {
         if (depositsPaused) revert DepositsPaused();
         if (pricingResolver == address(0)) revert PricingResolverNotConfigured();
-        address marketRegistry = officialMarketRegistry;
-        if (marketRegistry == address(0)) revert OfficialMarketRegistryNotConfigured();
         _validateFactoryBounds(params);
 
-        uint256 nonce = creatorNonce[msg.sender];
-        bytes32 salt = _salt(msg.sender, nonce, params);
-        creatorNonce[msg.sender] = nonce + 1;
-
-        vault = MinimalClones.cloneDeterministic(vaultImplementation, salt);
+        vault = MinimalClones.clone(vaultImplementation);
         ManagedOTFVault(vault).bindFactory();
 
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
@@ -235,19 +214,7 @@ contract OTFFactory is IAdapterAllowlist {
                 protocolFeeShareBps
             );
 
-        IOfficialMarketRegistry(marketRegistry).createOfficialPool(vault);
-
-        emit VaultCreated(msg.sender, vault, nonce, params.name, params.symbol);
-    }
-
-    function predictVaultAddress(address creator, uint256 nonce, VaultInitParams calldata params)
-        external
-        view
-        returns (address)
-    {
-        return MinimalClones.predictDeterministicAddress(
-            vaultImplementation, _salt(creator, nonce, params), address(this)
-        );
+        emit VaultCreated(msg.sender, vault, params.name, params.symbol);
     }
 
     function setTradeAdapterApproved(address adapter, bool approved) external onlyOwner {
@@ -389,17 +356,6 @@ contract OTFFactory is IAdapterAllowlist {
         return OTF_TOKEN_METADATA_URI;
     }
 
-    /// @notice Configures the official market registry before the first OTF is created.
-    /// @dev It becomes permanently locked as soon as a vault exists.
-    function setOfficialMarketRegistry(address registry) external onlyOwner {
-        if (_vaults.length != 0) revert OfficialMarketRegistryLocked();
-        if (registry == address(0) || registry.code.length == 0) {
-            revert InvalidDependency(registry);
-        }
-        officialMarketRegistry = registry;
-        emit OfficialMarketRegistryConfigured(registry);
-    }
-
     /// @notice Configures the canonical V3 pricing registry before the first OTF is created.
     /// @dev Direct-Chainlink-only deployments may leave this dependency unset.
     function setAssetMarketRegistry(address registry) external onlyOwner {
@@ -527,13 +483,5 @@ contract OTFFactory is IAdapterAllowlist {
         if (senderDelta != amount || receiverDelta != amount) {
             revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
         }
-    }
-
-    function _salt(address creator, uint256 nonce, VaultInitParams calldata params)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(creator, nonce, keccak256(abi.encode(params))));
     }
 }

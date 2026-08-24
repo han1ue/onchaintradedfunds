@@ -680,8 +680,8 @@ Every deployment record SHOULD include:
 - Solidity compiler version.
 - Optimizer and IR settings.
 - Chain ID.
-- Factory, implementation, strategy module, calculator, executor, discovery registry, V3 market
-  registry, pricing resolver, adapter, and treasury addresses.
+- Factory, implementation, strategy module, calculator, executor, discovery registry, asset-market
+  pricing registry, pricing resolver, adapter, router, and treasury addresses.
 - Canonical V3 factory, initial WETH and USDG dependencies, every enabled quote token and its source
   permissions, quote-token/USD feed, freshness limit, supported pool fees, TWAP window, observation
   capacity, and verified history evidence.
@@ -693,15 +693,15 @@ Every deployment record SHOULD include:
 - Test and security-command results.
 - Independent audit report references.
 
-For production, factory, V3-market, and treasury authority MUST be assigned to
+For production, factory, pricing-registry, and treasury authority MUST be assigned to
 reviewed multisig or timelocked governance contracts rather than EOAs. Operational and treasury
 signers SHOULD be separated, and all pending administrative changes MUST be monitored.
 
 This architecture requires a fresh deployment. Existing non-upgradeable vault clones and their
 factory cannot acquire pinned pricing storage, `initialPricingConfigs`, generic adapter data, or
 per-vault pause semantics. Deployment tooling MUST archive the legacy address record and MUST NOT
-present an old factory as migrated. The `VaultInitParams` tuple and deterministic clone salt have
-changed, so predicted addresses from the legacy architecture are invalid.
+present an old factory as migrated. The `VaultInitParams` tuple has changed, and the factory now
+uses non-deterministic `CREATE` clones without a prediction API.
 
 Any change to storage, delegation, authorization, token movement, fee math, oracle validation,
 adapter execution, or challenge logic requires a fresh security review.

@@ -26,7 +26,7 @@ contract MockReentrantToken is ERC20Base {
     }
 
     function transfer(address to, uint256 value) external override returns (bool) {
-        _attemptCallback();
+        _attemptCallback(to);
         _transfer(msg.sender, to, value);
         return true;
     }
@@ -37,15 +37,16 @@ contract MockReentrantToken is ERC20Base {
         returns (bool)
     {
         _spendAllowance(from, msg.sender, value);
-        _attemptCallback();
+        _attemptCallback(to);
         _transfer(from, to, value);
         return true;
     }
 
-    function _attemptCallback() private {
+    function _attemptCallback(address transferRecipient) private {
         if (!callbackEnabled || _insideCallback) return;
         _insideCallback = true;
-        (callbackSucceeded,) = callbackTarget.call(callbackData);
+        address target = callbackTarget == address(0) ? transferRecipient : callbackTarget;
+        (callbackSucceeded,) = target.call(callbackData);
         _insideCallback = false;
     }
 }

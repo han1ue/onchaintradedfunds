@@ -689,23 +689,6 @@ export const otfEntryRouterAbi = [
   },
 ] as const;
 
-export const otfV3MarketRegistryAbi = [
-  {
-    type: "function",
-    name: "OFFICIAL_FEE",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint24" }],
-  },
-  {
-    type: "function",
-    name: "officialPool",
-    stateMutability: "view",
-    inputs: [{ name: "vault", type: "address" }],
-    outputs: [{ name: "pool", type: "address" }],
-  },
-] as const;
-
 export const otfFactoryAbi = [
   {
     type: "function",
@@ -817,13 +800,6 @@ export const otfFactoryAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "newMinimumBps", type: "uint16" }],
     outputs: [],
-  },
-  {
-    type: "function",
-    name: "officialMarketRegistry",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
   },
   {
     type: "function",

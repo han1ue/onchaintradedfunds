@@ -4,7 +4,7 @@
 **Audit date:** 2026-08-23  
 **Reviewed contracts commit:** `7a2d86506ba4f059db1610f6a7a1413275024fdf`  
 **Scope:** `contracts/src/**/*.sol`, `contracts/test/**/*.sol`, Foundry configuration, contract security gates, and the protocol security specifications  
-**Audit-remediation status:** I-04 and I-05 fixed; I-06 partially fixed. These audit-directed changes do not alter production execution logic; concurrent worktree changes are outside this remediation record.  
+**Audit-remediation status:** M-02 and L-05 are resolved by removing pool creation from the factory; I-04 and I-05 fixed; I-06 partially fixed.
 **Overall status:** **Not production-ready until the Medium findings and documented deployment blockers are resolved and re-reviewed**
 
 ## Executive summary
@@ -24,10 +24,10 @@ No Critical or High-severity vulnerability was confirmed. The review identified:
 The most important unresolved risks are:
 
 1. A thin or abandoned Uniswap V3 pool can continue producing a mechanically valid but attacker-controlled TWAP because liquidity is not checked.
-2. A public mempool attacker can repeatedly pre-initialize the deterministic official V3 pool and censor vault creation.
+2. At the reviewed commit, a public mempool attacker could pre-initialize the deterministic OTF V3 pool and censor vault creation. Current code removes this coupling and deterministic clone prediction.
 3. The advertised 100-asset bound is not safely executable under Robinhood Chain's current 32,000,000 per-transaction gas cap.
 
-Passing tests does not negate these findings. Some relevant behaviors are explicitly tested as expected behavior, including rejection after canonical-pool pre-initialization and continued fee accrual during an incomplete strategic rebalance.
+Passing tests does not negate the unresolved findings. Continued fee accrual during an incomplete strategic rebalance remains explicitly tested behavior.
 
 ## Scope and methodology
 
@@ -36,7 +36,7 @@ The `contracts/` tree matched the reviewed commit at the start of the audit. Unr
 The review covered:
 
 - Vault share accounting, mint/redeem rounding, locked liquidity, donations, exact transfers, and fee growth.
-- Factory initialization, deterministic deployment, canonical pool creation, limits, and privileged controls.
+- Factory initialization, clone deployment, limits, and privileged controls.
 - Strategy proposal, activation, execution, completion, challenges, fee escrow, loss budgets, and role changes.
 - Direct, composed, Robinhood, and Uniswap V3 pricing paths.
 - Registry governance, route pinning, adapter execution, approval hygiene, and external-call boundaries.
@@ -59,13 +59,13 @@ This was a source-level and local execution review. It was not formal verificati
 | ID | Severity | Title | Status |
 | --- | --- | --- | --- |
 | M-01 | Medium | Empty or thin V3 pools remain valid price oracles | Accepted |
-| M-02 | Medium | Deterministic official-pool squatting can censor vault creation | Operational mitigation under review |
+| M-02 | Medium | Deterministic pool squatting could censor vault creation | Resolved |
 | M-03 | Medium | The 100-asset bound is not safely executable on the target chain | Accepted |
 | L-01 | Low | Absolute bands can treat a missing positive-target asset as compliant | Accepted |
 | L-02 | Low | Activated strategies have no timeout or terminal recovery path | Open |
 | L-03 | Low | Rebalance instructions have no expiry or strategy-version binding | Open |
 | L-04 | Low | Manager, router, and adapter authority transfers are one-step | Open |
-| L-05 | Low | Official OTF/USDG initialization assumes USDG is exactly $1 | Open |
+| L-05 | Low | OTF/USDG initialization assumed USDG was exactly $1 | Resolved |
 
 ## Owner disposition
 
@@ -75,7 +75,7 @@ the identified risk is knowingly retained; it does not mean the audit considers 
 | Finding | Owner disposition |
 | --- | --- |
 | M-01 | Accepted with frontend trust labeling and monitoring; direct onchain callers remain exposed to the retained oracle dependency |
-| M-02 | Fixed by adopting an already initialized canonical pool unchanged instead of blocking vault creation |
+| M-02 | Fixed by removing pool handling from vault creation and removing deterministic clone prediction |
 | M-03 | Accepted with a lower frontend cap and transaction gas estimation; the contract still accepts the documented upper bound |
 | L-01 | Accepted; a positive target at or below the absolute deviation may intentionally have a zero lower bound |
 | I-02 | Accepted as an intentional economic-policy design |
@@ -134,34 +134,34 @@ The repository documents selected pricing pools as trusted economic dependencies
 
 ---
 
-## M-02 — Deterministic official-pool squatting can censor vault creation
+## M-02 — Deterministic pool squatting could censor vault creation
 
 **Severity:** Medium  
 **Category:** Availability / front-running  
-**Affected code:**
+**Status:** Resolved after the reviewed commit
+**Originally affected code:**
 
 - `contracts/src/OTFFactory.sol:195-219`
 - `contracts/src/OTFFactory.sol:491-498`
-- `contracts/src/OTFV3MarketRegistry.sol:150-165`
-- `contracts/test/OTFV3MarketRegistry.t.sol:132-159`
+- The removed factory-to-market-registry integration
 
 ### Description
 
 The creator address, creator nonce, deployment parameters, deterministic salt, predicted clone address, and canonical `vault/USDG/500` pool are derivable from public `createVault` calldata. Canonical Uniswap V3 pool creation and initialization are permissionless, and the factory does not require either token address to contain code.
 
-Under the original implementation, a mempool observer could calculate the predicted vault, create its canonical pool, initialize it at any valid price, and make `OTFFactory.createVault()` revert with `PredictedOfficialPoolAlreadyExists`.
+Under the original implementation, a mempool observer could calculate the predicted vault, create its canonical pool, initialize it at any valid price, and make `OTFFactory.createVault()` revert.
 
-The original test at `OTFV3MarketRegistry.t.sol:132-159` proved the atomic revert and confirmed that the creator nonce rolled back. Address rerolling permitted another attempt, but an observer could repeat the attack against each public attempt. The result was targeted, repeatable creation censorship; no creator funds were lost because the transaction reverted atomically.
+The original regression test proved the atomic revert and confirmed that the creator nonce rolled back. Address rerolling permitted another attempt, but an observer could repeat the attack against each public attempt. The result was targeted, repeatable creation censorship; no creator funds were lost because the transaction reverted atomically.
 
 ### Recommendation
 
-Do not require a pristine, correctly initialized official pool as a precondition for vault creation. Suitable designs include:
+Do not require a pristine, correctly initialized pool as a precondition for vault creation.
 
-- Adopt an already initialized canonical pool and report its actual price without treating that price as trusted.
-- Associate or create the official market in a non-blocking post-creation step.
-- Make official market creation optional, because it receives no protocol liquidity and is not used for vault NAV.
+- Keep market creation and initialization in a separate, optional post-creation transaction.
+- Treat any existing Uniswap pool as permissionless market state, not a trusted NAV source.
+- Do not expose deterministic vault prediction unless a concrete consumer requires it.
 
-The implemented resolution adopts an existing initialized pool unchanged. Liquidity tooling must independently protect first LPs from a malicious initial tick.
+The implemented resolution removes market-registry coupling from `OTFFactory`, deploys clones with `CREATE` rather than salted `CREATE2`, and removes the prediction API and creator nonce. The frontend discovers supported markets independently. A third party may still initialize a pool at any price, so liquidity providers must inspect the current price; this no longer affects OTF creation or custody.
 
 ---
 
@@ -335,28 +335,25 @@ Use `pendingOwner` / `pendingManager` plus explicit acceptance and cancellation.
 
 ---
 
-## L-05 — Official OTF/USDG initialization assumes USDG is exactly $1
+## L-05 — OTF/USDG initialization assumed USDG was exactly $1
 
 **Severity:** Low  
 **Category:** Market initialization  
-**Affected code:**
+**Status:** Resolved after the reviewed commit
+**Originally affected code:**
 
-- `contracts/src/OTFV3MarketRegistry.sol:145-147`
-- `contracts/src/OTFV3MarketRegistry.sol:176-187`
+- The removed market-registry initializer
 - `contracts/src/PortfolioCalculator.sol:312-316`
 
 ### Description
 
-`navPerShare()` is denominated in USD, but the official-pool initializer converts the USD value directly into USDG raw units. It never divides by a current USDG/USD price.
+`navPerShare()` is denominated in USD, but the old pool initializer converted the USD value directly into USDG raw units. It never divided by a current USDG/USD price.
 
-If NAV is $100 and USDG is worth $0.80, fair value is 125 USDG, but the pool initializes at 100 USDG. No protocol liquidity is added during creation and the official pool is not used for vault NAV, so the error does not directly affect custody. A first LP or trader can nevertheless be exposed to immediate arbitrage.
+If NAV were $100 and USDG worth $0.80, fair value would be 125 USDG, while the old code initialized at 100 USDG. No protocol liquidity was added and the pool was not used for vault NAV, so the error did not directly affect custody. A first LP or trader could nevertheless have been exposed to immediate arbitrage.
 
 ### Recommendation
 
-Either:
-
-- Compose `OTF_USDG = NAV_USD / USDG_USD` using a validated settlement-token oracle; or
-- Explicitly codify, disclose, and operationally enforce a $1 prerequisite before any liquidity is added.
+The contract initializer was deleted with the market registry. The frontend does not implement pool creation, initial-price selection, or position management; it links users to Synthra on testnet and Uniswap on mainnet. Existing permissionlessly initialized pools remain untrusted market state.
 
 ## Informational and QA observations
 
@@ -458,11 +455,11 @@ These are already substantially disclosed by the repository, but they remain par
 ## Remediation priority
 
 1. Fix M-01 and add a real Uniswap manipulation regression before permitting any V3 pricing source.
-2. Redesign official pool creation so pool pre-initialization cannot block vault creation.
+2. Re-review the resolved factory/market decoupling before deployment.
 3. Replace the 100-asset limit with measured source-specific caps and predeploy/cache route wrappers.
 4. Resolve the weight-band and strategy-timeout design issues; the transition invariants are now strengthened, but thin-liquidity and callback state models remain open.
 5. Add trade expiry/version binding and two-step role transfers.
-6. Correct official-pool USDG normalization and AggregatorV3 round semantics.
+6. Correct AggregatorV3 round semantics.
 7. Run the new pinned Linux Solidity CI and retain its coverage evidence; add canonical/fork integration tests and stateful thin-liquidity/callback models.
 8. Resolve or formally accept the Flags/sequencer, governance, token-freeze, and economic-model risks.
 9. Re-run the full security gate and commission a focused independent re-review of every remediation before mainnet deployment.

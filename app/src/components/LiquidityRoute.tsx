@@ -7,9 +7,9 @@ const LiquidityExperience = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="landingLoading" role="status" aria-label="Loading liquidity manager">
+      <div className="landingLoading" role="status" aria-label="Loading liquidity markets">
         <span>OTF</span>
-        <strong>Loading liquidity manager</strong>
+        <strong>Loading liquidity markets</strong>
       </div>
     ),
   },

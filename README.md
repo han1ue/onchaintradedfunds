@@ -72,7 +72,7 @@ flowchart LR
   Creator --> Config[Per-asset pricing configuration]
   Config --> Resolver[AssetPricingResolver]
   Resolver --> Feeds[Creator-selected Chainlink-compatible feeds]
-  Resolver --> V3Registry[Canonical V3 market registry]
+  Resolver --> V3Registry[Pricing quote and pool registry]
   Resolver --> Pinned[Pinned normalized feed or V3 TWAP]
   Clone --> Pinned
   Registry[AssetRegistry discovery index] --> App[Frontend]
@@ -93,7 +93,7 @@ flowchart LR
 
 `OTFFactory`
 
-- Deploys deterministic minimal-proxy vault clones.
+- Deploys minimal-proxy vault clones with `CREATE`.
 - Rejects invalid implementations.
 - Stores vault list and creator mapping.
 - Reads the protocol treasury from the single authoritative `FeeCollector`.
@@ -156,7 +156,8 @@ flowchart LR
 `AssetPricingResolver`
 
 - Uses USD as the protocol accounting unit for NAV, weights, rebalance checks, challenges, fees,
-  incentives, and oracle-valued loss limits. USDG remains a settlement token and official market pair.
+  incentives, and oracle-valued loss limits. USDG and WETH are currently supported settlement and
+  market quote assets.
 - Accepts a user-supplied direct Chainlink asset/USD, composed asset/quoteToken × quoteToken/USD, or Uniswap V3 TWAP
   configuration when an asset first enters an OTF.
 - Mechanically validates creator-selected Chainlink feeds and freshness limits, or the canonical V3
@@ -205,8 +206,7 @@ used. There is no administrator quality gate that makes such behavior safe.
 
 Direct donations of tracked assets become backing for every share. A donation can change NAV,
 weights, and required mint amounts, but `maxAmountsIn` and `minAmountsOut` protect users from stale
-previews. Prefunding a predicted vault address is treated as additional backing and cannot block
-factory creation.
+previews. Factory clones are not exposed through a deterministic address-prediction API.
 
 ### Draft ERC-7621 Compatibility
 
@@ -282,13 +282,12 @@ The creator grants the factory exact transfer allowances for the initial basket 
 `AssetPricingConfig` for each initial asset. The factory:
 
 1. Validates factory-level hard caps.
-2. Computes a deterministic clone salt from creator, nonce, and initialization parameters.
-3. Deploys the clone.
-4. Transfers exact initial assets to the clone.
-5. Calls `initialize`.
-6. Creates and NAV-initializes a missing official OTF/USDG pool, NAV-initializes an existing
-   uninitialized canonical pool, or adopts an existing initialized canonical pool unchanged.
-7. Records the vault and emits `VaultCreated`.
+2. Deploys a non-deterministic minimal proxy clone.
+3. Transfers exact initial assets to the clone.
+4. Calls `initialize`.
+5. Records the vault and emits `VaultCreated`.
+
+Pool discovery, creation, initialization, and liquidity are deliberately outside this transaction.
 
 The vault initializer:
 
@@ -335,12 +334,11 @@ Minting:
 ### Entry paths
 
 Investors have exactly three entry paths: provide the proportional RWA basket directly, buy
-existing OTF shares from the official OTF/USDG pool, or provide a fixed USDG amount through
-`OTFEntryRouter`. The router spends the entered
-USDG across the constituent pools, derives the largest proportional basket from the assets actually
+existing OTF shares from a discovered supported market, or provide a fixed supported settlement
+asset through its `OTFEntryRouter`. The router spends the entered settlement asset across the constituent pools, derives the largest proportional basket from the assets actually
 received, and reverts unless that basket mints at least the user's minimum shares. Only the strict
 proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
-using protected minimum USDG rates and the resulting USDG is returned to the payer.
+using protected minimum settlement rates and the resulting settlement asset is returned to the payer.
 
 The cost shown by an execution pool is not the OTF's accounting NAV. OTF NAV uses the source pinned
 for each constituent—direct Chainlink, composed Chainlink, or V3 TWAP—while entry cost depends on
@@ -374,11 +372,11 @@ Redemption:
 - Remains available when oracle-dependent actions fail.
 
 Investors likewise have exactly three exit paths: receive the proportional RWA basket directly,
-sell OTF shares into the official OTF/USDG pool, or redeem through an `OTFEntryRouter` for USDG or WETH. For
+sell OTF shares into a discovered supported market, or redeem through an `OTFEntryRouter` for USDG or WETH. For
 the routed settlement exit, the holder approves
 the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
 proportional `redeem` path, sells each received constituent through an approved adapter, enforces
-per-leg and aggregate minimum USDG outputs plus a deadline, and transfers the resulting USDG to the
+per-leg and aggregate minimum settlement outputs plus a deadline, and transfers the result to the
 chosen receiver. Pool proceeds may differ from the pinned-price basket value, and the frontend
 shows that difference before signing. A failed leg or insufficient aggregate output reverts the
 share burn and every swap atomically.
@@ -767,16 +765,16 @@ This is a deployment migration, not an in-place upgrade:
 
 - Existing factory-created clones retain the legacy storage and behavior. A fresh factory,
   implementation, strategy module, view module, resolver, registries, and adapters are required.
-- `VaultInitParams.initialMarketIds` became `initialPricingConfigs`; create/predict calldata, tuple
-  encoders, clone salts, and predicted addresses therefore change.
+- `VaultInitParams.initialMarketIds` became `initialPricingConfigs`; create calldata and tuple
+  encoders therefore change.
 - Pending strategy storage and callers must use `proposeStrategyWithPricing` for a newly introduced
   asset. The draft two-argument ERC-7621 function is limited to already-pinned assets.
 - Adapter data is now an explicit packed V3 path rather than a pricing market ID.
 - Legacy address JSON is archived and schema-version-3 configurators reject old factories instead
   of presenting them as migrated.
 
-WETH, USDG, and all four V3-compatible addresses are required. Every
-new OTF receives an official OTF/USDG pool during its factory transaction, while constituent pricing
+WETH, USDG, and all four V3-compatible addresses are required. OTF creation does not create,
+initialize, adopt, or record a Uniswap pool. Constituent pricing
 may independently use direct Chainlink, composed Chainlink, or a canonical asset/registeredQuote
 TWAP composed with the registry's current quote-token/USD feed. Robinhood testnet currently points these V3 fields
 at Synthra; production addresses must be verified independently.
@@ -805,13 +803,17 @@ history. A pool remains ineligible for pricing until the required observations a
 actually exist. Pool addresses are resolved from the factory rather than persisted beside suggested
 `UniswapV3Twap` configurations. The command does not add liquidity.
 
-The script deploys `OTFV3MarketRegistry`, permanently configures it on the factory before the first
-OTF can be created, and writes the registry, swap-router, and quoter addresses into the shared JSON.
-OTF creation creates or adopts the canonical Uniswap V3 OTF/USDG pool at the fixed 0.05% fee tier,
-requires any adopted pool to be uninitialized, initializes it from NAV per share, and records it as
-the immutable official pool. No
-liquidity is taken from the OTF. Any wallet may add liquidity separately and owns each resulting
-Uniswap position it creates; the pool association cannot be removed or replaced.
+The deployment defines supported market assets once. Each entry contains the token's USD feed and
+drives both quote-token registration and deployment of its entry/exit router. The frontend uses the
+same emitted list to offer OTF/USDG and OTF/WETH markets without merging the contracts' distinct
+pricing and execution responsibilities. This decoupled layout is schema version 6 and requires a
+fresh deployment; the checked-in schema-version-5 testnet record describes the preceding contracts.
+
+After an OTF exists, the frontend discovers canonical Uniswap V3 pools at standard fee tiers. It is
+discovery-only: Synthra on testnet and Uniswap on mainnet handle pool creation, initial-price
+selection, position creation, liquidity changes, fee collection, and position management. An
+existing pool is accepted as permissionless market state; its initial price is not trusted for NAV.
+No liquidity is taken from the OTF. Each position belongs to the wallet that creates it.
 
 Robinhood Chain Testnet does not currently have an official Chainlink equity-feed list in the
 Chainlink documentation. For development, deploy the fresh architecture, compile the current
@@ -924,7 +926,7 @@ The Solidity suite contains broad deterministic, fuzz-property, and stateful inv
 Default settings in `contracts/foundry.toml` run every fuzz property 1,000 times and each invariant
 through 128 sequences of 64 generated actions.
 
-Deterministic coverage includes:
+Test coverage includes:
 
 - First target proposal before 14 days reverts.
 - First target proposal exactly 14 days after creation succeeds.
@@ -941,7 +943,7 @@ Deterministic coverage includes:
 - The factory-owner global pause blocks creation and all primary deposits, while a local pause
   affects direct and routed deposits for exactly one factory vault. Both are reversible and neither
   blocks redemptions, other operations, or fee accrual.
-- Factory clone prediction, enumeration, ownership, treasury transfers, global bounds, and
+- Factory clone creation, enumeration, ownership, treasury transfers, global bounds, and
   atomic creation rollback.
 - Proportional basket minting and redemption, delegated redemption, fee dilution, fee splits,
   role transfers, and strategy history.

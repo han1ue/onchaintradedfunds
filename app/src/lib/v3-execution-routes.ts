@@ -134,6 +134,7 @@ export function useDiscoveredV3Pools(pairs: V3TokenPair[], enabled: boolean) {
     data: lookupResults,
     isLoading: lookupLoading,
     isError: lookupError,
+    refetch: refetchLookups,
   } = useReadContracts({
     contracts: lookups.map((lookup) => ({
       address: factory!,
@@ -155,6 +156,7 @@ export function useDiscoveredV3Pools(pairs: V3TokenPair[], enabled: boolean) {
     data: liquidityResults,
     isLoading: liquidityLoading,
     isError: liquidityError,
+    refetch: refetchLiquidity,
   } = useReadContracts({
     contracts: candidates.map((candidate) => ({
       address: candidate.address,
@@ -178,5 +180,9 @@ export function useDiscoveredV3Pools(pairs: V3TokenPair[], enabled: boolean) {
     isLoading: lookupLoading || liquidityLoading,
     isError: lookupError || liquidityError,
     discoveryComplete: !lookupEnabled || (!lookupLoading && !liquidityLoading),
+    refetch: async () => {
+      await refetchLookups();
+      await refetchLiquidity();
+    },
   };
 }

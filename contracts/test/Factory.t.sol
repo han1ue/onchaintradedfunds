@@ -16,27 +16,24 @@ import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 contract FactoryTest is ProtocolTestBase {
     function testFactoryCreatesAndEnumeratesVault() public {
         VaultInitParams memory params = _defaultParams();
-        address predicted = factory.predictVaultAddress(address(this), 0, params);
         address created = factory.createVault(params);
 
-        assertEq(created, predicted);
+        assertTrue(created != address(0));
         assertEq(factory.vaultCount(), 1);
         assertEq(factory.vaultAt(0), created);
         assertEq(factory.allVaults()[0], created);
         assertEq(factory.creatorOf(created), address(this));
-        assertEq(factory.creatorNonce(address(this)), 1);
         assertTrue(factory.isVault(created));
         assertEq(ManagedOTFVault(created).factory(), address(factory));
     }
 
-    function testFactoryUsesDistinctNonceForIdenticalParams() public {
+    function testFactoryCreatesDistinctClonesForIdenticalParams() public {
         VaultInitParams memory params = _defaultParams();
         address first = factory.createVault(params);
         address second = factory.createVault(params);
 
         assertTrue(first != second);
         assertEq(factory.vaultCount(), 2);
-        assertEq(factory.creatorNonce(address(this)), 2);
     }
 
     function testFactoryRejectsCreatorFeeAboveGlobalMaximum() public {
@@ -272,7 +269,6 @@ contract FactoryTest is ProtocolTestBase {
         factory.createVault(params);
 
         assertEq(factory.vaultCount(), 0);
-        assertEq(factory.creatorNonce(address(this)), 0);
         assertEq(tokenA.balanceOf(address(this)), tokenBalanceBefore);
     }
 

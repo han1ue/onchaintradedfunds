@@ -196,8 +196,9 @@ submitted limit is nonzero and no greater than the manifest maximum. Runtime sta
 health do not change that informational status.
 
 USD is the accounting unit for every oracle-dependent protocol calculation. WETH and USDG are
-initially registered as peer pricing quote tokens. USDG's settlement and official OTF/USDG market
-roles do not make it the accounting numeraire. Each quote token has one current USD configuration.
+initially registered as peer pricing quote tokens and are also supported settlement and OTF-market
+assets. Those execution roles do not make either token the accounting numeraire. Each quote token
+has one current USD configuration.
 Replacing it updates existing composed and V3 routes; disabling it blocks future selections. The
 registry cannot prove Chainlink pair semantics from feed descriptions.
 

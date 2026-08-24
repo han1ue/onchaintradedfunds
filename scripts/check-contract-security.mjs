@@ -155,7 +155,6 @@ const productionContracts = [
   ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
   ["OTFFactory.sol", "OTFFactory"],
   ["OTFEntryRouter.sol", "OTFEntryRouter"],
-  ["OTFV3MarketRegistry.sol", "OTFV3MarketRegistry"],
   ["OTFToken.sol", "OTFToken"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RegisteredUniswapV3Adapter.sol", "RegisteredUniswapV3Adapter"],
@@ -348,7 +347,9 @@ const assetMarketRegistryConstructor = assetMarketRegistry.abi.find(
   (item) => item.type === "constructor",
 );
 assert(
-  assetMarketRegistryConstructor?.inputs.length === 4
+  assetMarketRegistryConstructor?.inputs.length === 2
+    && !assetMarketRegistryFunctions.includes("weth")
+    && !assetMarketRegistryFunctions.includes("usdg")
     && !assetMarketRegistryFunctions.includes("wethUsdgPool"),
   "V3 pricing still has a deployment-time WETH/USDG pool dependency",
 );

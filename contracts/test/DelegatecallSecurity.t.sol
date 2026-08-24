@@ -11,8 +11,7 @@ import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract DelegatecallSecurityTest is ProtocolTestBase {
     function testUninitializedCloneRejectsShareAndStrategyMutations() public {
-        address clone =
-            MinimalClones.cloneDeterministic(factory.vaultImplementation(), keccak256("raw-clone"));
+        address clone = MinimalClones.clone(factory.vaultImplementation());
         ManagedOTFVault vault = ManagedOTFVault(clone);
         uint256[] memory emptyAmounts = new uint256[](0);
 

@@ -6,7 +6,6 @@ import {
   managedOtfVaultAbi,
   otfEntryRouterAbi,
   otfFactoryAbi,
-  otfV3MarketRegistryAbi,
 } from "@onchaintradedfunds/generated";
 import {
   Activity,
@@ -81,7 +80,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses } from "@/lib/deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetMarketAssets } from "@/lib/deployment";
 import {
   selectExecutionRoute,
   selectV3Pool,
@@ -507,7 +506,6 @@ const vaultCreatedEventAbi = [
     inputs: [
       { indexed: true, name: "creator", type: "address" },
       { indexed: true, name: "vault", type: "address" },
-      { indexed: true, name: "nonce", type: "uint256" },
       { indexed: false, name: "name", type: "string" },
       { indexed: false, name: "symbol", type: "string" },
     ],
@@ -2642,21 +2640,20 @@ function VaultHeader({
 }
 
 function VaultMetrics({ vault }: { vault: VaultView }) {
-  const registry = configuredV3MarketRegistryAddress();
-  const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
-    address: registry,
-    abi: otfV3MarketRegistryAbi,
-    functionName: "officialPool",
-    args: vault.address ? [vault.address] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(registry && vault.address) },
-  });
-  const officialPool = officialPoolResult && officialPoolResult !== zeroAddress
-    ? officialPoolResult as `0x${string}`
-    : undefined;
-  const poolVenueUrl = officialPool && vault.address
-    ? `/liquidity?vault=${vault.address}`
-    : undefined;
+  const marketPairs = useMemo<V3TokenPair[]>(
+    () => vault.address
+      ? robinhoodTestnetMarketAssets.map((asset) => ({ tokenA: vault.address!, tokenB: asset.token }))
+      : [],
+    [vault.address],
+  );
+  const { pools: discoveredMarkets, isLoading: marketsLoading } = useDiscoveredV3Pools(
+    marketPairs,
+    Boolean(vault.address),
+  );
+  const marketCount = robinhoodTestnetMarketAssets.filter((asset) => (
+    vault.address && selectV3Pool(discoveredMarkets, vault.address, asset.token)
+  )).length;
+  const poolVenueUrl = vault.address ? `/liquidity?vault=${vault.address}` : undefined;
   const portfolioState = vault.sunset
     ? "Sunset"
     : vault.challengeActive
@@ -2676,13 +2673,11 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
       />
       <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
       <MetricCard
-        label="Liquidity Pool"
-        value={officialPoolLoading ? "Resolving..." : shortAddress(officialPool)}
+        label="Liquidity Markets"
+        value={marketsLoading ? "Resolving..." : `${marketCount} found`}
         href={poolVenueUrl}
         external={false}
-        linkLabel={officialPool
-          ? `Add or remove liquidity in pool ${officialPool}`
-          : undefined}
+        linkLabel="View or create supported OTF markets"
       />
       <MetricCard label="Portfolio Status" value={portfolioState} tone={vault.sunset || vault.challengeActive ? "danger" : vault.withinCompletionBands ? "success" : "warning"} />
       <MetricCard label="Total Shares" value={vault.totalSupply} />
@@ -3730,7 +3725,6 @@ function UserActions({
   const settlementSymbol = isWethMode ? "WETH" : "USDG";
   const entryRouterAddress = configuredEntryRouterAddress(routedSettlementMode);
   const entryAdapterAddress = configuredEntryAdapterAddress(routedSettlementMode);
-  const v3MarketRegistryAddress = configuredV3MarketRegistryAddress();
   const uniswapV3SwapRouterAddress = configuredUniswapV3SwapRouterAddress();
   const uniswapV3QuoterAddress = configuredUniswapV3QuoterAddress();
   const configuredSettlementToken = configuredSettlementTokenAddress(routedSettlementMode);
@@ -4506,29 +4500,25 @@ function UserActions({
   const entrySettlementInput = entryQuoteReady ? requestedSettlementAmount : undefined;
   const settlementBalance = entryAuthorizationResults?.[0]?.result as bigint | undefined;
   const settlementAllowance = entryAuthorizationResults?.[1]?.result as bigint | undefined;
-  const { data: officialPoolResult, isLoading: officialPoolLoading } = useReadContract({
-    address: v3MarketRegistryAddress,
-    abi: otfV3MarketRegistryAbi,
-    functionName: "officialPool",
-    args: vault.address ? [vault.address] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(v3MarketRegistryAddress && vault.address) },
-  });
-  const marketPool = officialPoolResult && officialPoolResult !== zeroAddress
-    ? officialPoolResult as `0x${string}`
-    : undefined;
-  const { data: marketLiquidity, isLoading: marketLiquidityLoading } = useReadContract({
-    address: marketPool,
-    abi: uniswapV3PoolAbi,
-    functionName: "liquidity",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(marketPool) },
-  });
-  const marketLiquidityReady = Boolean(marketPool && typeof marketLiquidity === "bigint" && marketLiquidity > 0n);
-  const marketPoolChecking = Boolean(v3MarketRegistryAddress && vault.address) && (
-    officialPoolLoading || (Boolean(marketPool) && marketLiquidityLoading)
+  const otfMarketPairs = useMemo<V3TokenPair[]>(
+    () => vault.address && configuredSettlementToken
+      ? [{ tokenA: vault.address, tokenB: configuredSettlementToken }]
+      : [],
+    [configuredSettlementToken, vault.address],
   );
-  const marketInputAmount = settlementMode === "usdg"
+  const {
+    pools: discoveredOtfMarkets,
+    isLoading: marketPoolChecking,
+  } = useDiscoveredV3Pools(otfMarketPairs, isLive && isRoutedMode);
+  const selectedMarketPool = vault.address && configuredSettlementToken
+    ? selectV3Pool(discoveredOtfMarkets, vault.address, configuredSettlementToken)
+    : undefined;
+  const marketFee = selectedMarketPool?.fee;
+  const marketLiquidityReady = Boolean(
+    selectedMarketPool && !selectedMarketPool.readFailed &&
+    selectedMarketPool.liquidity !== undefined && selectedMarketPool.liquidity > 0n,
+  );
+  const marketInputAmount = isRoutedMode
     ? activeAction === "deposit" ? requestedSettlementAmount : requestedRedeemShares
     : undefined;
   const marketInputToken = activeAction === "deposit" ? settlementToken : vault.address;
@@ -4542,12 +4532,12 @@ function UserActions({
     address: uniswapV3QuoterAddress,
     abi: uniswapV3QuoterAbi,
     functionName: "quoteExactInputSingle",
-    args: marketInputAmount && marketInputToken && marketOutputToken
+    args: marketInputAmount && marketInputToken && marketOutputToken && marketFee !== undefined
       ? [{
           tokenIn: marketInputToken,
           tokenOut: marketOutputToken,
           amountIn: marketInputAmount,
-          fee: 500,
+          fee: marketFee,
           sqrtPriceLimitX96: 0n,
         }]
       : undefined,
@@ -4607,7 +4597,7 @@ function UserActions({
     marketLiquidityReady && marketInputAmount && marketQuotedOutput && marketMinimumOutput && !marketQuoteError,
   );
   const marketRouteAvailable = Boolean(
-    settlementMode === "usdg" &&
+    isRoutedMode &&
     marketLiquidityReady && uniswapV3QuoterAddress && uniswapV3SwapRouterAddress &&
     !(vault.sunset && activeAction === "deposit"),
   );
@@ -4746,11 +4736,11 @@ function UserActions({
     ? marketQuoteError
       ? {
           title: "Liquidity-pool quote unavailable",
-          detail: `The OTF / USDG pool rejected this ${activeAction} quote: ${errorMessage(marketQuoteError)}`,
+          detail: `The OTF / ${settlementSymbol} pool rejected this ${activeAction} quote: ${errorMessage(marketQuoteError)}`,
         }
       : {
           title: "Liquidity-pool quote incomplete",
-          detail: "The OTF / USDG pool did not return a usable output for this amount. Try a smaller amount or confirm that the pool has active liquidity.",
+          detail: `The OTF / ${settlementSymbol} pool did not return a usable output for this amount. Try a smaller amount or confirm that the pool has active liquidity.`,
         }
     : undefined;
   const failedUnderlyingLegs = (activeAction === "deposit" ? protectedExactInputEntryLegs : redeemLegs)
@@ -5228,7 +5218,7 @@ function UserActions({
         args: [{
           tokenIn: marketInputToken,
           tokenOut: marketOutputToken,
-          fee: 500,
+          fee: marketFee!,
           recipient: connectedAddress,
           amountIn: marketInputAmount,
           amountOutMinimum: marketMinimumOutput,
@@ -5554,7 +5544,7 @@ function UserActions({
                 </strong>
                 <small>
                   {!marketRouteAvailable
-                    ? marketLiquidityReady ? "V3 trade route is not configured" : "No funded OTF / USDG pool"
+                    ? marketLiquidityReady ? "V3 trade route is not configured" : `No funded OTF / ${settlementSymbol} pool`
                     : marketQuoteProblem
                       ? marketQuoteProblem.title
                     : activeAction === "deposit"
@@ -5796,7 +5786,7 @@ function UserActions({
                 <span className="positionRouteIcon"><Droplets size={16} /></span>
                 <div>
                   <strong>Liquidity pool</strong>
-                  <span>{activeAction === "deposit" ? "Buy existing shares from the OTF / USDG pool." : "Sell shares into the OTF / USDG pool."}</span>
+                  <span>{activeAction === "deposit" ? `Buy existing shares from the OTF / ${settlementSymbol} pool.` : `Sell shares into the OTF / ${settlementSymbol} pool.`}</span>
                 </div>
               </div>
               <span className="stateBadge success">Selected</span>
@@ -5872,7 +5862,7 @@ function UserActions({
             </div>
             <div className="routeExecutionNote">
               <Info size={14} />
-              <span>The open-market price comes from the direct OTF / USDG pool and can differ from portfolio value.</span>
+              <span>The open-market price comes from the direct OTF / {settlementSymbol} pool and can differ from portfolio value.</span>
             </div>
           </div>
         ) : null}
@@ -5993,10 +5983,6 @@ function UserActions({
       </div>
     </SectionCard>
   );
-}
-
-function configuredV3MarketRegistryAddress(): `0x${string}` | undefined {
-  return robinhoodTestnetAddresses.v3MarketRegistry;
 }
 
 function configuredUniswapV3SwapRouterAddress(): `0x${string}` | undefined {
@@ -9803,33 +9789,30 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
 }
 
 function ShareMarketPanel({ vault }: { vault: VaultView }) {
-  const registry = configuredV3MarketRegistryAddress();
-  const { data: officialPoolResult, isLoading: poolLoading } = useReadContract({
-    address: registry,
-    abi: otfV3MarketRegistryAbi,
-    functionName: "officialPool",
-    args: vault.address ? [vault.address] : undefined,
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(registry && vault.address) },
-  });
-  const pool = officialPoolResult && officialPoolResult !== zeroAddress
-    ? officialPoolResult as `0x${string}`
-    : undefined;
-  const { data: liquidity, isLoading: liquidityLoading, isError: liquidityError } = useReadContract({
-    address: pool,
-    abi: uniswapV3PoolAbi,
-    functionName: "liquidity",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: Boolean(pool) },
-  });
-  const liquidityAvailable = typeof liquidity === "bigint" && liquidity > 0n;
-  const checking = poolLoading || (Boolean(pool) && liquidityLoading);
+  const marketPairs = useMemo<V3TokenPair[]>(
+    () => vault.address
+      ? robinhoodTestnetMarketAssets.map((asset) => ({ tokenA: vault.address!, tokenB: asset.token }))
+      : [],
+    [vault.address],
+  );
+  const {
+    pools: discoveredMarkets,
+    isLoading: checking,
+    isError: marketsError,
+  } = useDiscoveredV3Pools(marketPairs, Boolean(vault.address));
+  const marketRows = robinhoodTestnetMarketAssets.map((asset) => ({
+    asset,
+    pool: vault.address ? selectV3Pool(discoveredMarkets, vault.address, asset.token) : undefined,
+  }));
+  const liquidityAvailable = marketRows.some(({ pool }) => (
+    pool?.liquidity !== undefined && pool.liquidity > 0n && !pool.readFailed
+  ));
   const addLiquidityUrl = vault.address ? `/liquidity?vault=${vault.address}` : "/liquidity";
 
   return (
     <SectionCard
-      title={`${vault.symbol} liquidity pool`}
-      subtitle={`V3 market for ${vault.symbol}`}
+      title={`${vault.symbol} markets`}
+      subtitle="Supported Uniswap V3 quote markets"
       icon={<Droplets size={15} />}
       action={
         <span className={`stateBadge ${liquidityAvailable ? "success" : "muted"}`}>
@@ -9841,50 +9824,34 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
         <div className="riskCallout info">
           <LockKeyhole size={15} />
           <div>
-            <strong>Immutable official market</strong>
-            <span>This OTF is permanently paired with USDG at the 0.05% fee tier. The manager cannot remove, replace, or change the pool association.</span>
+            <strong>Markets are independent from the OTF</strong>
+            <span>The OTF exists without a pool. This app discovers supported quote markets and sends liquidity management to the external venue.</span>
           </div>
         </div>
 
-        {!registry ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div><strong>Liquidity pool registry is not configured</strong><span>Add the registry address to the Robinhood testnet address JSON to load this OTF&apos;s market.</span></div>
-          </div>
-        ) : null}
-
-        {pool ? (
-          <>
+        {marketRows.map(({ asset, pool }) => {
+          const activeLiquidity = pool?.liquidity !== undefined && pool.liquidity > 0n && !pool.readFailed;
+          return (
             <div className="roleCurrent">
-              <span>Official OTF / USDG pool</span>
-              <strong><a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${pool}`} target="_blank" rel="noreferrer">{shortAddress(pool)} <ExternalLink size={11} /></a></strong>
+              <span>{vault.symbol} / {asset.symbol}</span>
+              <strong>
+                {pool ? (
+                  <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${pool.address}`} target="_blank" rel="noreferrer">
+                    {shortAddress(pool.address)} · {pool.fee / 10_000}% <ExternalLink size={11} />
+                  </a>
+                ) : checking ? "Checking" : "No pool"}
+              </strong>
+              <small>{pool?.readFailed || marketsError ? "Liquidity read unavailable" : activeLiquidity ? "Active liquidity" : pool ? "Pool has no active liquidity" : "No pool yet"}</small>
             </div>
-            <div className="accrualSummary">
-              <div><span>Fee tier</span><strong>0.05%</strong></div>
-              <div><span>Pool association</span><strong>Permanent</strong></div>
-              <div><span>Position ownership</span><strong>Liquidity providers</strong></div>
-              <div><span>Active liquidity</span><strong>{liquidityLoading ? "Checking" : liquidityError ? "Read unavailable" : liquidityAvailable ? "Available" : "Zero"}</strong></div>
-            </div>
-            {!liquidityLoading && !liquidityError && !liquidityAvailable ? (
-              <div className="validationSummary warning">
-                <AlertTriangle size={15} />
-                <div><strong>Secondary-market trading is not active yet</strong><span>The liquidity pool exists, but direct OTF / USDG trading stays disabled until someone adds liquidity.</span></div>
-              </div>
-            ) : null}
-            <div className="riskCallout info">
-              <Info size={15} />
-              <div><strong>Permissionless liquidity</strong><span>Any wallet can supply OTF shares and USDG. Each resulting Uniswap position belongs to the supplying wallet and does not use assets held by the OTF portfolio.</span></div>
-            </div>
-            <a className="primaryAction" href={addLiquidityUrl}>
-              <Droplets size={14} />Manage liquidity
-            </a>
-          </>
-        ) : registry && !poolLoading ? (
-          <div className="validationSummary danger" role="alert">
-            <AlertTriangle size={15} />
-            <div><strong>Liquidity pool was not found</strong><span>This OTF may predate automatic pool creation. Verify the deployment before accepting deposits.</span></div>
-          </div>
-        ) : null}
+          );
+        })}
+        <div className="riskCallout info">
+          <Info size={15} />
+          <div><strong>Permissionless liquidity</strong><span>Each Uniswap position belongs to its supplying wallet and never uses assets held by the OTF portfolio.</span></div>
+        </div>
+        <a className="primaryAction" href={addLiquidityUrl}>
+          <Droplets size={14} />Explore liquidity
+        </a>
       </div>
     </SectionCard>
   );

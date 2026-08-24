@@ -131,20 +131,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(ATTACKER), 0);
     }
 
-    function testPredictedAddressPrefundingCannotBlockCreation() public {
-        VaultInitParams memory params = _defaultParams();
-        address predicted = factory.predictVaultAddress(address(this), 0, params);
-        assertTrue(tokenA.transfer(predicted, ONE));
-
-        address created = factory.createVault(params);
-
-        assertEq(created, predicted);
-        assertEq(tokenA.balanceOf(created), 501 * ONE);
-        assertEq(tokenB.balanceOf(created), 500 * ONE);
-        assertTrue(factory.isVault(created));
-    }
-
-    function testConstituentCannotReenterPredictedCloneBeforeInitialization() public {
+    function testConstituentCannotReenterCloneBeforeInitialization() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.registerAsset(address(reentrantToken));
@@ -155,24 +142,21 @@ contract VaultHardeningTest is ProtocolTestBase {
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
             _directPricing(address(reentrantFeed), PricingSource.Chainlink);
-        address predicted =
-            factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         uint256[] memory emptyMaximums = new uint256[](0);
         reentrantToken.configureCallback(
-            predicted,
+            address(0),
             abi.encodeCall(ManagedOTFVault.mintWithBasket, (ONE, ATTACKER, emptyMaximums)),
             true
         );
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(address(vault), predicted);
         assertFalse(reentrantToken.callbackSucceeded());
         assertEq(vault.balanceOf(ATTACKER), 0);
         assertEq(vault.totalSupply(), params.initialShareSupply);
     }
 
-    function testConstituentCannotInitializePredictedCloneDuringSeedTransfer() public {
+    function testConstituentCannotInitializeCloneDuringSeedTransfer() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
         assetRegistry.registerAsset(address(reentrantToken));
@@ -183,10 +167,8 @@ contract VaultHardeningTest is ProtocolTestBase {
         params.initialAssets[0] = address(reentrantToken);
         params.initialPricingConfigs[0] =
             _directPricing(address(reentrantFeed), PricingSource.Chainlink);
-        address predicted =
-            factory.predictVaultAddress(address(this), factory.creatorNonce(address(this)), params);
         reentrantToken.configureCallback(
-            predicted,
+            address(0),
             abi.encodeCall(
                 ManagedOTFVault.initialize,
                 (
@@ -204,7 +186,6 @@ contract VaultHardeningTest is ProtocolTestBase {
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(address(vault), predicted);
         assertFalse(reentrantToken.callbackSucceeded());
         assertEq(vault.factory(), address(factory));
         assertEq(vault.totalSupply(), params.initialShareSupply);
@@ -220,7 +201,6 @@ contract VaultHardeningTest is ProtocolTestBase {
         factory.createVault(params);
 
         assertEq(factory.vaultCount(), 0);
-        assertEq(factory.creatorNonce(address(this)), 0);
         assertEq(taxedToken.balanceOf(address(this)), senderBalanceBefore);
     }
 

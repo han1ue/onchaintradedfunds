@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { LiquidityRoute } from "@/components/LiquidityRoute";
 
 export const metadata: Metadata = {
-  title: "Testnet Liquidity · Onchain Traded Funds",
-  description: "Add or remove full-range Synthra V3 liquidity on Robinhood Chain Testnet.",
+  title: "Liquidity Markets · Onchain Traded Funds",
+  description: "Discover OTF liquidity markets and open the network liquidity venue to manage positions.",
 };
 
 export default function LiquidityPage() {

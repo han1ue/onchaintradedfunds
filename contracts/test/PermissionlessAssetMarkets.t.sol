@@ -136,9 +136,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         wethUsdFeed = new MockPriceFeed(8, 3_000_00000000);
         usdgUsdFeed = new MockPriceFeed(8, 1_00000000);
         v3Factory = new MockPermissionlessV3Factory();
-        markets = new AssetMarketRegistry(
-            address(this), address(v3Factory), address(weth), address(usdg)
-        );
+        markets = new AssetMarketRegistry(address(this), address(v3Factory));
         markets.registerQuoteToken(address(weth), address(wethUsdFeed), 2 hours, true, true);
         markets.registerQuoteToken(address(usdg), address(usdgUsdFeed), 2 hours, true, true);
     }
