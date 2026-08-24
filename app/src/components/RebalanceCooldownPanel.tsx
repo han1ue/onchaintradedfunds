@@ -535,16 +535,6 @@ const aggregatorV3ReadAbi = [
   },
 ] as const;
 
-const uniswapV3PoolAbi = [
-  {
-    type: "function",
-    name: "liquidity",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint128" }],
-  },
-] as const;
-
 const uniswapV3QuoterAbi: Abi = [
   {
     type: "function",
@@ -9832,7 +9822,7 @@ function ShareMarketPanel({ vault }: { vault: VaultView }) {
         {marketRows.map(({ asset, pool }) => {
           const activeLiquidity = pool?.liquidity !== undefined && pool.liquidity > 0n && !pool.readFailed;
           return (
-            <div className="roleCurrent">
+            <div className="roleCurrent" key={asset.token}>
               <span>{vault.symbol} / {asset.symbol}</span>
               <strong>
                 {pool ? (
