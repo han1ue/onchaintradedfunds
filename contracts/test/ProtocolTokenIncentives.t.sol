@@ -265,7 +265,6 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         params.initialAmounts[0] = uint256(params.initialTargetWeightsBps[0]) * ONE / 10;
         params.initialAmounts[1] = uint256(params.initialTargetWeightsBps[1]) * ONE / 10;
         params.initialAmounts[2] = uint256(otfWeightBps) * ONE / 10;
-        params.deploymentSalt = keccak256(abi.encode("otf-incentive", otfWeightBps));
 
         vault = ManagedOTFVault(factory.createVault(params));
     }

@@ -14,24 +14,6 @@ import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryTest is ProtocolTestBase {
-    function testFactoryRejectsZeroDeploymentSalt() public {
-        VaultInitParams memory params = _defaultParams();
-        params.deploymentSalt = bytes32(0);
-
-        vm.expectRevert(OTFFactory.InvalidDeploymentSalt.selector);
-        factory.createVault(params);
-    }
-
-    function testDeploymentSaltChangesPredictedAddressWithoutChangingConfiguration() public view {
-        VaultInitParams memory first = _defaultParams();
-        VaultInitParams memory second = _defaultParams();
-        second.deploymentSalt = keccak256("another-deployment");
-
-        address firstAddress = factory.predictVaultAddress(address(this), 0, first);
-        address secondAddress = factory.predictVaultAddress(address(this), 0, second);
-        assertTrue(firstAddress != secondAddress);
-    }
-
     function testFactoryCreatesAndEnumeratesVault() public {
         VaultInitParams memory params = _defaultParams();
         address predicted = factory.predictVaultAddress(address(this), 0, params);

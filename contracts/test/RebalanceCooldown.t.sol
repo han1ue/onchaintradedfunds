@@ -317,8 +317,7 @@ contract RebalanceCooldownTest is TestBase {
             creatorFeeBpsPerYear: feeBps,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250,
-            deploymentSalt: keccak256("rebalance-cooldown-deployment")
+            challengeWeightDeviationBps: 250
         });
     }
 

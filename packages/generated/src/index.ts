@@ -906,7 +906,6 @@ export const otfFactoryAbi = [
           { name: "maxNavLossBps", type: "uint16" },
           { name: "maxWeightDeviationBps", type: "uint16" },
           { name: "challengeWeightDeviationBps", type: "uint16" },
-          { name: "deploymentSalt", type: "bytes32" },
         ],
       },
     ],

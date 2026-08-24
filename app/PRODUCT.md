@@ -53,7 +53,7 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
 - Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
 - OTF creation is permissionless within factory-level mechanical validation and enforceable safety constraints.
 - The investor frontend exposes exactly three entry paths—direct RWA basket, official OTF/USDG market, and fixed-USDG constituent routing—and exactly three corresponding exit paths.
-- Every OTF factory transaction rejects an occupied predicted market address before deploying, then atomically creates one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Its association cannot be removed, replaced, or changed by the manager.
+- Every OTF factory transaction atomically creates or adopts one immutable official OTF/USDG Uniswap V3 pool at the 0.05% fee tier. Existing initialized canonical pools are adopted unchanged; the association cannot be removed, replaced, or changed by the manager.
 - Any wallet may add liquidity without using OTF-held portfolio assets and owns the resulting Uniswap position.
 - The direct secondary-market route remains disabled while the official pool reports zero active liquidity.
 - Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.

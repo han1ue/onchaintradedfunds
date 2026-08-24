@@ -129,33 +129,21 @@ contract OTFV3MarketRegistryTest is ProtocolTestBase {
         registry.createOfficialPool(address(vault));
     }
 
-    function testPrecreatedCanonicalPoolRevertsVaultCreationAtomically() public {
+    function testPrecreatedInitializedCanonicalPoolIsAdoptedUnchanged() public {
         VaultInitParams memory params = _defaultParams();
         uint256 nonce = factory.creatorNonce(address(this));
         address predicted = factory.predictVaultAddress(address(this), nonce, params);
         address existing = v3Factory.createPool(predicted, address(usdg), 500);
         MockV3Pool(existing).initialize(1234);
         uint256 vaultCountBefore = factory.vaultCount();
-        uint256 tokenABalanceBefore = tokenA.balanceOf(address(this));
-        uint256 tokenBBalanceBefore = tokenB.balanceOf(address(this));
 
-        vm.expectPartialRevert(OTFFactory.PredictedOfficialPoolAlreadyExists.selector);
-        factory.createVault(params);
+        ManagedOTFVault created = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(factory.creatorNonce(address(this)), nonce);
-        assertEq(factory.vaultCount(), vaultCountBefore);
-        assertEq(predicted.code.length, 0);
-        assertEq(tokenA.balanceOf(address(this)), tokenABalanceBefore);
-        assertEq(tokenB.balanceOf(address(this)), tokenBBalanceBefore);
+        assertEq(address(created), predicted);
+        assertEq(registry.officialPool(predicted), existing);
         assertEq(uint256(MockV3Pool(existing).sqrtPriceX96()), 1234);
-
-        params.deploymentSalt = keccak256("available-canonical-pool");
-        address nextPredicted = factory.predictVaultAddress(address(this), nonce, params);
-        ManagedOTFVault second = ManagedOTFVault(factory.createVault(params));
-
-        assertEq(address(second), nextPredicted);
-        assertTrue(nextPredicted != predicted);
-        assertTrue(registry.officialPool(nextPredicted) != address(0));
+        assertEq(factory.creatorNonce(address(this)), nonce + 1);
+        assertEq(factory.vaultCount(), vaultCountBefore + 1);
     }
 
     function testPrecreatedUninitializedCanonicalPoolIsAcceptedAndInitialized() public {

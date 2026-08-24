@@ -57,7 +57,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _viewModuleCodehash = _viewModule.codehash;
     }
 
-    function bindFactory(bytes32) external {
+    function bindFactory() external {
         if (_initialized) revert AlreadyInitialized();
         if (factory != address(0)) revert UnauthorizedFactory();
         factory = msg.sender;

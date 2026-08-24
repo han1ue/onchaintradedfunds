@@ -15,8 +15,6 @@ interface IFeeCollectorTreasury {
 }
 
 interface IOfficialMarketRegistry {
-    function canonicalPool(address vault) external view returns (address pool);
-    function isInitializedPool(address pool) external view returns (bool initialized);
     function createOfficialPool(address vault) external returns (address pool);
 }
 
@@ -65,7 +63,6 @@ contract OTFFactory is IAdapterAllowlist {
     error InvalidOTFName();
     error StrategyRationaleRequired();
     error StrategyRationaleTooLong(uint256 length);
-    error InvalidDeploymentSalt();
     error Reentrancy();
     error AssetTransferMismatch(
         address asset, uint256 expected, uint256 senderDelta, uint256 receiverDelta
@@ -80,7 +77,6 @@ contract OTFFactory is IAdapterAllowlist {
     error ProtocolTokenAlreadyConfigured();
     error ProtocolTokenNotConfigured();
     error InvalidProtocolTokenThreshold(uint16 thresholdBps);
-    error PredictedOfficialPoolAlreadyExists(address vault, address pool);
 
     event VaultCreated(
         address indexed creator,
@@ -213,19 +209,10 @@ contract OTFFactory is IAdapterAllowlist {
 
         uint256 nonce = creatorNonce[msg.sender];
         bytes32 salt = _salt(msg.sender, nonce, params);
-        address predicted =
-            MinimalClones.predictDeterministicAddress(vaultImplementation, salt, address(this));
-        address existingPool = IOfficialMarketRegistry(marketRegistry).canonicalPool(predicted);
-        if (
-            existingPool != address(0)
-                && IOfficialMarketRegistry(marketRegistry).isInitializedPool(existingPool)
-        ) {
-            revert PredictedOfficialPoolAlreadyExists(predicted, existingPool);
-        }
         creatorNonce[msg.sender] = nonce + 1;
 
         vault = MinimalClones.cloneDeterministic(vaultImplementation, salt);
-        ManagedOTFVault(vault).bindFactory(salt);
+        ManagedOTFVault(vault).bindFactory();
 
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
             _transferInitialAssetExact(
@@ -465,7 +452,6 @@ contract OTFFactory is IAdapterAllowlist {
         if (params.manager == address(0) || params.feeRecipient == address(0)) {
             revert ZeroAddress();
         }
-        if (params.deploymentSalt == bytes32(0)) revert InvalidDeploymentSalt();
         if (params.initialShareSupply < MINIMUM_INITIAL_SHARE_SUPPLY) {
             revert InitialShareSupplyTooSmall(
                 params.initialShareSupply, MINIMUM_INITIAL_SHARE_SUPPLY
@@ -548,8 +534,6 @@ contract OTFFactory is IAdapterAllowlist {
         pure
         returns (bytes32)
     {
-        return keccak256(
-            abi.encode(creator, nonce, params.deploymentSalt, keccak256(abi.encode(params)))
-        );
+        return keccak256(abi.encode(creator, nonce, keccak256(abi.encode(params))));
     }
 }

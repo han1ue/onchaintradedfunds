@@ -34,7 +34,6 @@ struct VaultInitParams {
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
     uint16 challengeWeightDeviationBps;
-    bytes32 deploymentSalt;
 }
 
 struct TradeInstruction {

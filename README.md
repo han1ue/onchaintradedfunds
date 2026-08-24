@@ -283,15 +283,12 @@ The creator grants the factory exact transfer allowances for the initial basket 
 
 1. Validates factory-level hard caps.
 2. Computes a deterministic clone salt from creator, nonce, and initialization parameters.
-3. Predicts the clone address and rejects an already-initialized canonical OTF/USDG pool before
-   doing any deployment, transfer, or initialization work. A created but uninitialized pool is safe
-   to adopt.
-4. Deploys the clone.
-5. Transfers exact initial assets to the clone.
-6. Calls `initialize`.
-7. Creates or adopts an uninitialized official OTF/USDG pool and initializes it atomically from NAV
-   per share.
-8. Records the vault and emits `VaultCreated`.
+3. Deploys the clone.
+4. Transfers exact initial assets to the clone.
+5. Calls `initialize`.
+6. Creates and NAV-initializes a missing official OTF/USDG pool, NAV-initializes an existing
+   uninitialized canonical pool, or adopts an existing initialized canonical pool unchanged.
+7. Records the vault and emits `VaultCreated`.
 
 The vault initializer:
 

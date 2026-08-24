@@ -137,8 +137,7 @@ abstract contract ProtocolTestBase is TestBase {
             creatorFeeBpsPerYear: 100,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
-            challengeWeightDeviationBps: 250,
-            deploymentSalt: keccak256("default-test-deployment")
+            challengeWeightDeviationBps: 250
         });
     }
 

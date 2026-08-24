@@ -75,7 +75,7 @@ the identified risk is knowingly retained; it does not mean the audit considers 
 | Finding | Owner disposition |
 | --- | --- |
 | M-01 | Accepted with frontend trust labeling and monitoring; direct onchain callers remain exposed to the retained oracle dependency |
-| M-02 | Operational mitigation under review; salt rotation and private submission are retry/privacy measures, not an onchain guarantee |
+| M-02 | Fixed by adopting an already initialized canonical pool unchanged instead of blocking vault creation |
 | M-03 | Accepted with a lower frontend cap and transaction gas estimation; the contract still accepts the documented upper bound |
 | L-01 | Accepted; a positive target at or below the absolute deviation may intentionally have a zero lower bound |
 | I-02 | Accepted as an intentional economic-policy design |
@@ -149,9 +149,9 @@ The repository documents selected pricing pools as trusted economic dependencies
 
 The creator address, creator nonce, deployment parameters, deterministic salt, predicted clone address, and canonical `vault/USDG/500` pool are derivable from public `createVault` calldata. Canonical Uniswap V3 pool creation and initialization are permissionless, and the factory does not require either token address to contain code.
 
-A mempool observer can calculate the predicted vault, create its canonical pool, initialize it at any valid price, and make `OTFFactory.createVault()` revert with `PredictedOfficialPoolAlreadyExists`.
+Under the original implementation, a mempool observer could calculate the predicted vault, create its canonical pool, initialize it at any valid price, and make `OTFFactory.createVault()` revert with `PredictedOfficialPoolAlreadyExists`.
 
-The existing test at `OTFV3MarketRegistry.t.sol:132-159` proves the atomic revert and confirms that the creator nonce rolls back. Changing `deploymentSalt` permits another attempt, but an observer can repeat the attack against each public attempt. The result is targeted, repeatable creation censorship; no creator funds are lost because the transaction reverts atomically.
+The original test at `OTFV3MarketRegistry.t.sol:132-159` proved the atomic revert and confirmed that the creator nonce rolled back. Address rerolling permitted another attempt, but an observer could repeat the attack against each public attempt. The result was targeted, repeatable creation censorship; no creator funds were lost because the transaction reverted atomically.
 
 ### Recommendation
 
@@ -161,7 +161,7 @@ Do not require a pristine, correctly initialized official pool as a precondition
 - Associate or create the official market in a non-blocking post-creation step.
 - Make official market creation optional, because it receives no protocol liquidity and is not used for vault NAV.
 
-A commit/reveal salt does not solve front-running of the reveal transaction. If an existing initialized pool is adopted, liquidity tooling must independently protect first LPs from a malicious initial tick.
+The implemented resolution adopts an existing initialized pool unchanged. Liquidity tooling must independently protect first LPs from a malicious initial tick.
 
 ---
 

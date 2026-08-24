@@ -57,7 +57,6 @@ contract OTFV3MarketRegistry {
     error NotOTFFactory(address caller);
     error InvalidVault(address vault);
     error OfficialPoolAlreadySet(address vault, address pool);
-    error CanonicalPoolAlreadyExists(address vault, address pool);
     error FeeTierUnavailable(uint24 fee);
     error InvalidInitialPrice(uint256 navPerShare);
     error PoolResolutionMismatch(address returnedPool, address resolvedPool);
@@ -149,19 +148,21 @@ contract OTFV3MarketRegistry {
 
         address existing =
             IUniswapV3FactoryMarket(uniswapV3Factory).getPool(token0, token1, OFFICIAL_FEE);
-        if (existing != address(0) && _poolSqrtPriceX96(existing) != 0) {
-            revert CanonicalPoolAlreadyExists(vault, existing);
+        bool initializePool = existing == address(0) || _poolSqrtPriceX96(existing) == 0;
+        if (initializePool) {
+            pool = INonfungiblePositionManagerMarket(positionManager)
+                .createAndInitializePoolIfNecessary(token0, token1, OFFICIAL_FEE, sqrtPriceX96);
+        } else {
+            pool = existing;
         }
 
-        pool = INonfungiblePositionManagerMarket(positionManager)
-            .createAndInitializePoolIfNecessary(token0, token1, OFFICIAL_FEE, sqrtPriceX96);
         address resolved =
             IUniswapV3FactoryMarket(uniswapV3Factory).getPool(token0, token1, OFFICIAL_FEE);
         if (pool == address(0) || pool != resolved) {
             revert PoolResolutionMismatch(pool, resolved);
         }
         uint160 actualSqrtPriceX96 = _poolSqrtPriceX96(pool);
-        if (actualSqrtPriceX96 != sqrtPriceX96) {
+        if (initializePool && actualSqrtPriceX96 != sqrtPriceX96) {
             revert PoolInitializationMismatch(sqrtPriceX96, actualSqrtPriceX96);
         }
 

@@ -57,7 +57,6 @@ import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useStat
 import {
   type Abi,
   type ContractFunctionParameters,
-  bytesToHex,
   encodeAbiParameters,
   encodePacked,
   formatUnits,
@@ -1535,7 +1534,6 @@ const protocolErrorMessages = new Map<string, string>(
     ["DuplicateConstituent(address)", "The same asset cannot be added to a portfolio more than once."],
     ["StrategyRationaleRequired()", "Add a short rationale explaining this portfolio strategy."],
     ["StrategyRationaleTooLong(uint256)", "The strategy rationale is too long. Shorten it and try again."],
-    ["InvalidDeploymentSalt()", "A secure deployment salt could not be generated. Retry the creation."],
     ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["InvalidWeightBands(uint16,uint16)", "The proposed weight bands do not satisfy the factory's current policy."],
@@ -1558,8 +1556,6 @@ const protocolErrorMessages = new Map<string, string>(
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
     ["NavLossBudgetExceeded(uint256,uint256,uint16)", "This trade would exceed the OTF's remaining seven-day NAV-loss budget. Reduce the quoted loss or wait for capacity to replenish continuously."],
-    ["CanonicalPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
-    ["PredictedOfficialPoolAlreadyExists(address,address)", "This deployment salt resolves to an occupied canonical market. Retry to generate a fresh salt without changing the OTF configuration."],
     ["OracleSlippageTooHigh(address,address,uint256,uint256,uint16)", "The pool quote loses more oracle value than this portfolio allows. Choose a smaller trade size and try again."],
     ["TradeDoesNotImproveTarget(uint256,uint256)", "This trade does not move the portfolio closer to its target allocation."],
     ["AssetMovedAwayFromTarget(address,uint256,uint256)", "This trade moves one asset farther away from its target allocation."],
@@ -1587,9 +1583,6 @@ const protocolErrorMessages = new Map<string, string>(
   ].map(([signature, message]) => [toFunctionSelector(signature), message]),
 );
 
-const canonicalPoolAlreadyExistsSelector = toFunctionSelector("CanonicalPoolAlreadyExists(address,address)");
-const predictedOfficialPoolAlreadyExistsSelector = toFunctionSelector("PredictedOfficialPoolAlreadyExists(address,address)");
-
 function rawErrorText(error: unknown, seen = new Set<unknown>()): string {
   if (error === null || error === undefined || seen.has(error)) return "";
   seen.add(error);
@@ -1612,10 +1605,6 @@ function rawErrorText(error: unknown, seen = new Set<unknown>()): string {
       : "",
     nestedCause,
   ].join(" ");
-}
-
-function hasErrorSelector(error: unknown, selector: `0x${string}`): boolean {
-  return rawErrorText(error).toLowerCase().includes(selector.toLowerCase());
 }
 
 function errorMessage(error: unknown): string {
@@ -8628,7 +8617,7 @@ function CreateVaultView({
     }
   }
 
-  function vaultInitParams(deploymentSalt: `0x${string}`) {
+  function vaultInitParams() {
     if (!isAddress(draft.manager) || !isAddress(draft.feeRecipient)) {
       throw new Error("Manager and fee-recipient addresses must be valid.");
     }
@@ -8657,7 +8646,6 @@ function CreateVaultView({
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
       challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
-      deploymentSalt,
     };
   }
 
@@ -8682,29 +8670,14 @@ function CreateVaultView({
     setDeployTxHash(undefined);
     setDeployState("pending");
     try {
-      let params: ReturnType<typeof vaultInitParams> | undefined;
-      for (let attempt = 0; attempt < 16; attempt += 1) {
-        const candidate = vaultInitParams(bytesToHex(crypto.getRandomValues(new Uint8Array(32))));
-        try {
-          await publicClient.simulateContract({
-            address: factoryAddress,
-            abi: otfFactoryAbi,
-            functionName: "createVault",
-            args: [candidate],
-            account: connectedAddress as `0x${string}`,
-          });
-          params = candidate;
-          break;
-        } catch (error) {
-          if (
-            !hasErrorSelector(error, canonicalPoolAlreadyExistsSelector)
-              && !hasErrorSelector(error, predictedOfficialPoolAlreadyExistsSelector)
-          ) throw error;
-        }
-      }
-      if (!params) {
-        throw new Error("Could not find an available canonical market address after 16 deployment salts. Retry or use a private transaction endpoint.");
-      }
+      const params = vaultInitParams();
+      await publicClient.simulateContract({
+        address: factoryAddress,
+        abi: otfFactoryAbi,
+        functionName: "createVault",
+        args: [params],
+        account: connectedAddress as `0x${string}`,
+      });
       const hash = await writeContractAsync({
         address: factoryAddress,
         abi: otfFactoryAbi,
