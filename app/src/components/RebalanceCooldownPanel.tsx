@@ -2108,7 +2108,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
       <main className="dashboardMain">
         {isTestnet && !factoryAddress ? (
-          <div className="validationSummary danger" role="alert">
+          <div className="validationSummary danger factoryAddressWarning" role="alert">
             <AlertTriangle size={15} />
             <div>
               <strong>Factory address missing</strong>

@@ -7287,6 +7287,21 @@ input.invalid {
   color: var(--danger);
 }
 
+.factoryAddressWarning {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  margin-bottom: 16px;
+}
+
+.validationSummary.factoryAddressWarning > svg {
+  margin-top: 0;
+}
+
+.factoryAddressWarning strong {
+  display: block;
+  line-height: 15px;
+}
+
 .validationSummary svg,
 .inlineEmptyState > svg {
   flex: 0 0 auto;
