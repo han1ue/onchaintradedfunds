@@ -2910,6 +2910,7 @@ function PriceSourceAddress({ address, label }: { address: string; label: string
 }
 
 function PriceSourcePill({ config, assetSymbol }: { config: ApprovedPricingConfig; assetSymbol: string }) {
+  const detailsId = useId();
   const label = config.source === "chainlink-robinhood"
     ? "Chainlink Robinhood"
     : config.source === "chainlink"
@@ -2919,12 +2920,17 @@ function PriceSourcePill({ config, assetSymbol }: { config: ApprovedPricingConfi
         : "Uniswap V3 TWAP";
 
   return (
-    <details className="priceSourcePill">
-      <summary aria-label={`${label} price source details for ${assetSymbol}`}>
-        <span>{label}</span>
-        <CircleHelp size={12} aria-hidden="true" />
-      </summary>
-      <div className="priceSourcePopover">
+    <div className="priceSourcePill">
+      <button
+        type="button"
+        className="priceSourceTrigger"
+        aria-label={`${label} price source details for ${assetSymbol}`}
+        aria-describedby={detailsId}
+        onPointerDown={(event) => event.preventDefault()}
+      >
+        {label}
+      </button>
+      <div className="priceSourcePopover" id={detailsId}>
         <strong>{label}</strong>
         {"feedAddress" in config ? (
           <dl>
@@ -2950,7 +2956,7 @@ function PriceSourcePill({ config, assetSymbol }: { config: ApprovedPricingConfi
           </dl>
         )}
       </div>
-    </details>
+    </div>
   );
 }
 
