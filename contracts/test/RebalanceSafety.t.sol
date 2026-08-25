@@ -32,11 +32,9 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         for (uint256 i = 0; i < additions.length; i++) {
             MockStockToken asset = new MockStockToken("Additional Stock", "ADD", 18);
             MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
-            RobinhoodChainlinkPriceFeed robinhoodFeed =
-                new RobinhoodChainlinkPriceFeed(address(asset), feed);
             additions[i] = address(asset);
             assetRegistry.registerAsset(address(asset));
-            additionConfigs[i] = _directPricing(address(robinhoodFeed));
+            additionConfigs[i] = _robinhoodPricing(address(asset), feed);
         }
 
         address[] memory acceptedTargets = new address[](99);
@@ -502,8 +500,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertFalse(oldPricingStillConfigured);
 
         MockPriceFeed replacementFeed = new MockPriceFeed(8, 100_00000000);
-        RobinhoodChainlinkPriceFeed replacementRobinhoodFeed =
-            new RobinhoodChainlinkPriceFeed(address(tokenB), replacementFeed);
         vm.warp(vault.nextStrategyChangeTime());
         _refreshPrices();
         _refreshPrice(replacementFeed);
@@ -516,7 +512,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         readdedWeights[1] = 5_000;
         AssetPricingConfig[] memory readdedPricing = new AssetPricingConfig[](2);
         readdedPricing[0] = _directPricing(address(feedA));
-        readdedPricing[1] = _directPricing(address(replacementRobinhoodFeed));
+        readdedPricing[1] = _robinhoodPricing(address(tokenB), replacementFeed);
 
         vault.proposeStrategyWithPricing(
             readdedAssets,
@@ -532,10 +528,19 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         (bool readdedPricingConfigured,,, address readdedPrimarySource,,,,) =
             vault.pricingConfigForAsset(address(tokenB));
         assertTrue(readdedPricingConfigured);
-        assertEq(readdedPrimarySource, address(replacementRobinhoodFeed));
+        assertEq(readdedPrimarySource, readdedPricing[1].primarySource);
 
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);
         assertEq(record.turnoverBps, 5_000);
+    }
+
+    function _robinhoodPricing(address asset, MockPriceFeed feed)
+        private
+        returns (AssetPricingConfig memory)
+    {
+        RobinhoodChainlinkPriceFeed robinhoodFeed =
+            new RobinhoodChainlinkPriceFeed(asset, feed);
+        return _directPricing(address(robinhoodFeed));
     }
 
     function testNewAssetPricingPinsOnlyWhenProposalActivates() public {

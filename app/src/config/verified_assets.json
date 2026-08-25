@@ -335,7 +335,7 @@
     "approvedPricingConfigs": [
       {
         "source": "chainlink-robinhood",
-        "feedAddress": "0x31c31E783B7d985eBB392d59Ebf14bd15abDd22D",
+        "feedAddress": "0x293A308331c61CEA5CcCC5AA73805E24eEA6C081",
         "maxStaleness": 90000
       }
     ]
@@ -346,7 +346,7 @@
     "approvedPricingConfigs": [
       {
         "source": "chainlink-robinhood",
-        "feedAddress": "0x6e6865CFadCD79a2814e2b33575eeEF143368D0d",
+        "feedAddress": "0xDBc2eC3ceC0201e3Ff199a353e52c6b19D84d758",
         "maxStaleness": 90000
       }
     ]
@@ -357,7 +357,7 @@
     "approvedPricingConfigs": [
       {
         "source": "chainlink-robinhood",
-        "feedAddress": "0x2F5Ec40E5510B56d95cf02E62f8Ba2CBB600c20d",
+        "feedAddress": "0xfa5dE3691fbe6597e4d2F51edbE584fBA3BA2aA0",
         "maxStaleness": 90000
       }
     ]
@@ -368,7 +368,7 @@
     "approvedPricingConfigs": [
       {
         "source": "chainlink-robinhood",
-        "feedAddress": "0x745D9C5946C6DccdC3a4503a0e1620cf7414088e",
+        "feedAddress": "0x717e107EF82e89c6e53F3664662428c051c1BDD7",
         "maxStaleness": 90000
       }
     ]
@@ -379,7 +379,7 @@
     "approvedPricingConfigs": [
       {
         "source": "chainlink-robinhood",
-        "feedAddress": "0xd910c37820e3f052B961d77F458a4df17909EC57",
+        "feedAddress": "0x551d8c2118F6Ff36389638292B58a3CF69C50056",
         "maxStaleness": 90000
       }
     ]
