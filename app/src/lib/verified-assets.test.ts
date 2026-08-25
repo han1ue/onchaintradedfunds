@@ -3,12 +3,21 @@ import {
   approvedPricingConfigsFor,
   isVerifiedPricingConfig,
   pricingVerification,
+  verifiedAssets,
 } from "./verified-assets";
 
 const TESTNET_TSLA = "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E";
 const MAINNET_NFLX = "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8";
 
 describe("frontend asset pricing verification", () => {
+  it("uses standard Chainlink routes for testnet tokens without oraclePaused support", () => {
+    const testnetAssets = verifiedAssets.filter((asset) => asset.chainId === 46630);
+    expect(testnetAssets).toHaveLength(5);
+    for (const asset of testnetAssets) {
+      expect(approvedPricingConfigsFor(46630, asset.tokenAddress)[0]?.source).toBe(0);
+    }
+  });
+
   it("matches chain, token, source and every address case-insensitively", () => {
     const approved = approvedPricingConfigsFor(46630, TESTNET_TSLA)[0];
     expect(isVerifiedPricingConfig(46630, TESTNET_TSLA.toLowerCase(), {

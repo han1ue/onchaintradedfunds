@@ -5962,7 +5962,7 @@ input.invalid {
   display: grid;
   width: 100%;
   grid-template-columns: minmax(0, 1fr) max-content 14px;
-  min-height: 54px;
+  min-height: 50px;
   min-width: 0;
   align-items: center;
   gap: 10px;
@@ -6090,6 +6090,35 @@ input.invalid {
   gap: 3px;
   max-height: 250px;
   overflow-y: auto;
+  scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.createAssetPickerOptions::-webkit-scrollbar {
+  width: 6px;
+}
+
+.createAssetPickerOptions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.createAssetPickerOptions::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb) / 46%);
+  background-clip: padding-box;
+}
+
+.createAssetPickerOptions::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--accent-rgb) / 68%);
+  background-clip: padding-box;
+}
+
+.createAssetPickerOptions::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .createAssetPickerOptions > button {
@@ -6160,11 +6189,11 @@ input.invalid {
 }
 
 .assetWeightField .inputWithSuffix {
-  height: 54px;
+  height: 50px;
 }
 
 .assetWeightField .inputWithSuffix input {
-  height: 52px;
+  height: 48px;
 }
 
 .assetPricingPanel {
@@ -6253,7 +6282,7 @@ input.invalid {
 .createAssetRow > .removeCreateAsset {
   display: grid;
   width: 32px;
-  height: 54px;
+  height: 50px;
   margin-top: 18px;
   place-items: center;
   border: 0;

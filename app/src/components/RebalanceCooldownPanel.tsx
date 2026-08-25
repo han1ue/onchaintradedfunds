@@ -8336,11 +8336,19 @@ function CreateVaultView({
       const metadata = testnetCreateAssets.find(
         (asset) => asset.address.toLowerCase() === item.address.toLowerCase(),
       );
+      const approvedPricingConfig = configuredPricingConfig(item.address);
+      const migrateInvalidRobinhoodRoute = Boolean(
+        item.verified
+        && item.pricingConfig.source === 3
+        && approvedPricingConfig?.source === 0
+        && item.pricingConfig.primarySource.toLowerCase() === approvedPricingConfig.primarySource.toLowerCase(),
+      );
       return metadata ? {
         ...item,
         ticker: metadata.symbol,
         name: metadata.name,
         verified: metadata.verified,
+        pricingConfig: migrateInvalidRobinhoodRoute && approvedPricingConfig ? approvedPricingConfig : item.pricingConfig,
       } : item;
     }));
   }, [testnetCreateAssets]);
@@ -9469,12 +9477,16 @@ function CreateVaultView({
                                       : "No verified asset matches this ticker or contract address."}
                                   </div>
                                 ) : null}
-                                {!normalizedAssetPickerSearch ? (
+                                {(!normalizedAssetPickerSearch || (
+                                  filteredAssetPickerOptions.length === 0
+                                  && !assetSearchMetadataPending
+                                  && !assetSearchMetadata
+                                )) ? (
                                   <button
                                     type="button"
                                     role="option"
                                     aria-selected={!asset.verified}
-                                    onClick={() => openUnverifiedAssetModal(index)}
+                                    onClick={() => openUnverifiedAssetModal(index, assetSearchAddress ?? "")}
                                   >
                                     <span className="createAssetOptionIdentity">
                                       <strong>Enter contract address</strong>

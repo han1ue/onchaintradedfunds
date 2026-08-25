@@ -334,7 +334,7 @@
     "tokenAddress": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-robinhood",
+        "source": "chainlink",
         "feedAddress": "0xFe4682bFc463762DdF7d07805B4c2989Ab0D4606",
         "maxStaleness": 90000
       }
@@ -345,7 +345,7 @@
     "tokenAddress": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-robinhood",
+        "source": "chainlink",
         "feedAddress": "0x3d97BB4Cd4EA14615c8cB3EdA7b47B194E70088a",
         "maxStaleness": 90000
       }
@@ -356,7 +356,7 @@
     "tokenAddress": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-robinhood",
+        "source": "chainlink",
         "feedAddress": "0xB1e138F936A0b727852b521cf6d723AcCC87d6aA",
         "maxStaleness": 90000
       }
@@ -367,7 +367,7 @@
     "tokenAddress": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-robinhood",
+        "source": "chainlink",
         "feedAddress": "0x8FCD32ee90aF309A6fB642b95170D4A1f9be3Fd8",
         "maxStaleness": 90000
       }
@@ -378,7 +378,7 @@
     "tokenAddress": "0x71178BAc73cBeb415514eB542a8995b82669778d",
     "approvedPricingConfigs": [
       {
-        "source": "chainlink-robinhood",
+        "source": "chainlink",
         "feedAddress": "0x6A0C8fFaF35770D66657C5B6470a6A1acea4201c",
         "maxStaleness": 90000
       }
