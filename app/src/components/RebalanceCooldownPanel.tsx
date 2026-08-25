@@ -99,6 +99,7 @@ import {
   verifiedAssetFor,
 } from "@/lib/verified-assets";
 import {
+  chainlinkDescriptionMatchesPair,
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   FRONTEND_MAX_TRACKED_ASSETS,
@@ -533,6 +534,13 @@ const aggregatorV3ReadAbi = [
     inputs: [],
     outputs: [{ name: "", type: "uint8" }],
   },
+  {
+    type: "function",
+    name: "description",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
 ] as const;
 
 const uniswapV3QuoterAbi: Abi = [
@@ -930,12 +938,14 @@ function useCompatibleUniswapV3Pools(
 function PricingConfigurationFields({
   chainId,
   assetAddress,
+  assetTicker,
   config,
   onChange,
   disabled = false,
 }: {
   chainId: number;
   assetAddress: string;
+  assetTicker?: string;
   config: AssetPricingConfig;
   onChange: (config: AssetPricingConfig) => void;
   disabled?: boolean;
@@ -987,6 +997,77 @@ function PricingConfigurationFields({
     pricingModalOpen && draftConfig.source === 2,
     registeredQuotes,
   );
+  const pricingAssetAddress = isAddress(assetAddress) ? assetAddress as `0x${string}` : undefined;
+  const { data: onchainAssetTicker } = useReadContract({
+    address: pricingAssetAddress,
+    abi: erc20MetadataReadAbi,
+    functionName: "symbol",
+    chainId,
+    query: { enabled: Boolean(pricingModalOpen && pricingAssetAddress && !assetTicker) },
+  });
+  const expectedAssetTicker = assetTicker?.trim() || String(onchainAssetTicker ?? "").trim().slice(0, 16);
+  const chainlinkFeedAddress = pricingModalOpen
+    && draftConfig.source !== 2
+    && isAddress(draftConfig.primarySource)
+    && draftConfig.primarySource !== zeroAddress
+      ? draftConfig.primarySource
+      : undefined;
+  const {
+    data: feedPreviewResults,
+    isLoading: feedPreviewLoading,
+    isError: feedPreviewReadFailed,
+  } = useReadContracts({
+    contracts: chainlinkFeedAddress ? [
+      { address: chainlinkFeedAddress, abi: aggregatorV3ReadAbi, functionName: "latestRoundData" as const, chainId },
+      { address: chainlinkFeedAddress, abi: aggregatorV3ReadAbi, functionName: "decimals" as const, chainId },
+      { address: chainlinkFeedAddress, abi: aggregatorV3ReadAbi, functionName: "description" as const, chainId },
+    ] : [],
+    query: { enabled: Boolean(chainlinkFeedAddress) },
+  });
+  const feedRoundResult = feedPreviewResults?.[0];
+  const feedDecimalsResult = feedPreviewResults?.[1];
+  const feedDescriptionResult = feedPreviewResults?.[2];
+  const feedPreviewPending = Boolean(
+    chainlinkFeedAddress
+    && !feedPreviewReadFailed
+    && (feedPreviewLoading || !feedPreviewResults),
+  );
+  const feedRound = feedRoundResult?.status === "success"
+    ? feedRoundResult.result as readonly [bigint, bigint, bigint, bigint, bigint]
+    : undefined;
+  const feedDecimals = feedDecimalsResult?.status === "success" ? Number(feedDecimalsResult.result) : undefined;
+  const feedDescription = feedDescriptionResult?.status === "success" ? String(feedDescriptionResult.result).trim() : undefined;
+  const feedExpectedQuote = draftConfig.source === 1 ? quoteTokenLabel(draftConfig.quoteToken) : "USD";
+  const feedPairMatches = feedDescription && expectedAssetTicker
+    ? chainlinkDescriptionMatchesPair(feedDescription, expectedAssetTicker, feedExpectedQuote)
+    : undefined;
+  const currentTimestamp = Math.floor(Date.now() / 1_000);
+  const feedRoundValid = Boolean(
+    feedRound
+    && feedRound[0] > 0n
+    && feedRound[1] > 0n
+    && feedRound[2] > 0n
+    && feedRound[3] >= feedRound[2]
+    && Number(feedRound[3]) <= currentTimestamp
+    && feedRound[4] >= feedRound[0]
+    && feedDecimals !== undefined
+    && feedDecimals <= 36,
+  );
+  const feedFresh = Boolean(
+    feedRoundValid
+    && feedRound
+    && Number(feedRound[3]) + draftConfig.primaryMaxStaleness >= currentTimestamp,
+  );
+  const feedDescriptionValid = Boolean(feedDescription && expectedAssetTicker && feedPairMatches);
+  const feedPreviewValid = feedRoundValid && feedFresh && feedDescriptionValid;
+  const feedPreviewValue = feedRound && feedDecimals !== undefined
+    ? Number(formatUnits(feedRound[1], feedDecimals))
+    : undefined;
+  const feedPreviewDisplay = feedPreviewValue === undefined
+    ? "-"
+    : feedExpectedQuote === "USD"
+      ? formatOraclePrice(feedPreviewValue)
+      : `${feedPreviewValue.toLocaleString(undefined, { maximumFractionDigits: 8 })} ${feedExpectedQuote}`;
 
   useEffect(() => {
     setPricingModalOpen(false);
@@ -1184,6 +1265,38 @@ function PricingConfigurationFields({
                   />
                 </label>
               )}
+              {draftConfig.source !== 2 && chainlinkFeedAddress ? (
+                <div className={`chainlinkFeedPreview ${feedPreviewValid ? "valid" : "warning"}`} role="status" aria-live="polite">
+                  <div className="chainlinkFeedPreviewHeader">
+                    <span>Chainlink feed details</span>
+                    <span className={`stateBadge ${feedPreviewPending ? "muted" : feedPreviewValid ? "success" : "warning"}`}>
+                      {feedPreviewPending ? "Checking" : feedPreviewValid ? "Validated" : "Review"}
+                    </span>
+                  </div>
+                  {feedPreviewPending ? (
+                    <small>Reading the latest round and feed description…</small>
+                  ) : feedRound && feedDecimals !== undefined && feedDescription ? (
+                    <>
+                      <dl>
+                        <div><dt>Latest answer</dt><dd>{feedPreviewDisplay}</dd></div>
+                        <div><dt>Feed description</dt><dd>{feedDescription}</dd></div>
+                        <div><dt>Latest update</dt><dd>{feedRound[3] > 0n ? formatTimestamp(Number(feedRound[3])) : "Unavailable"}</dd></div>
+                        <div><dt>Freshness</dt><dd>{feedFresh ? `Within ${formatPricingDuration(draftConfig.primaryMaxStaleness)}` : "Outside the selected limit"}</dd></div>
+                      </dl>
+                      <div className={`chainlinkPairValidation ${feedPairMatches ? "success" : "warning"}`}>
+                        {feedPairMatches ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+                        <span>{feedPairMatches
+                          ? `Pair matches ${expectedAssetTicker} / ${feedExpectedQuote}.`
+                          : expectedAssetTicker
+                            ? `Expected ${expectedAssetTicker} / ${feedExpectedQuote}; review the feed description before saving.`
+                            : `Feed description found. Confirm that it prices this asset against ${feedExpectedQuote}.`}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <small>No valid Chainlink AggregatorV3 metadata was returned for this address.</small>
+                  )}
+                </div>
+              ) : null}
               {draftConfig.source === 1 || draftConfig.source === 2 ? (
                 <div className="quoteRegistrySummary">
                   <span>Current admin-managed quote/USD configuration</span>
@@ -1221,7 +1334,10 @@ function PricingConfigurationFields({
               <button
                 className="primaryAction"
                 type="button"
-                disabled={!pricingConfigIsComplete(draftConfig)}
+                disabled={
+                  !pricingConfigIsComplete(draftConfig)
+                  || (draftConfig.source !== 2 && (!feedPreviewValid || feedPreviewPending))
+                }
                 onClick={() => {
                   onChange(draftConfig);
                   closePricingModal();
@@ -6715,6 +6831,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
               <PricingConfigurationFields
                 chainId={robinhoodChainTestnet.id}
                 assetAddress={target.address}
+                assetTicker={target.ticker}
                 config={target.pricingConfig}
                 disabled={targetEditorLocked || vault.allocations.some((asset) => asset.address.toLowerCase() === target.address.toLowerCase())}
                 onChange={(pricingConfig) => updateTarget(index, {
@@ -8232,6 +8349,46 @@ function CreateVaultView({
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [unverifiedAssetIndex, setUnverifiedAssetIndex] = useState<number>();
   const [openAssetPickerIndex, setOpenAssetPickerIndex] = useState<number>();
+  const [assetPickerSearch, setAssetPickerSearch] = useState("");
+  const normalizedAssetPickerSearch = assetPickerSearch.trim().toLowerCase();
+  const filteredAssetPickerOptions = testnetCreateAssets.filter((asset) => (
+    !normalizedAssetPickerSearch
+    || asset.symbol.toLowerCase().includes(normalizedAssetPickerSearch)
+    || asset.address.toLowerCase().includes(normalizedAssetPickerSearch)
+  ));
+  const exactVerifiedSearchMatch = testnetCreateAssets.some(
+    (asset) => asset.address.toLowerCase() === normalizedAssetPickerSearch,
+  );
+  const assetSearchAddress = openAssetPickerIndex !== undefined
+    && !exactVerifiedSearchMatch
+    && isAddress(assetPickerSearch.trim())
+      ? assetPickerSearch.trim() as `0x${string}`
+      : undefined;
+  const {
+    data: assetSearchMetadataResults,
+    isLoading: assetSearchMetadataLoading,
+    isError: assetSearchMetadataReadFailed,
+  } = useReadContracts({
+    contracts: assetSearchAddress ? [
+      { address: assetSearchAddress, abi: erc20MetadataReadAbi, functionName: "name" as const, chainId: robinhoodChainTestnet.id },
+      { address: assetSearchAddress, abi: erc20MetadataReadAbi, functionName: "symbol" as const, chainId: robinhoodChainTestnet.id },
+      { address: assetSearchAddress, abi: erc20MetadataReadAbi, functionName: "decimals" as const, chainId: robinhoodChainTestnet.id },
+    ] : [],
+    query: { enabled: Boolean(assetSearchAddress) },
+  });
+  const assetSearchNameResult = assetSearchMetadataResults?.[0];
+  const assetSearchSymbolResult = assetSearchMetadataResults?.[1];
+  const assetSearchDecimalsResult = assetSearchMetadataResults?.[2];
+  const assetSearchMetadata = assetSearchDecimalsResult?.status === "success" ? {
+    name: assetSearchNameResult?.status === "success" ? String(assetSearchNameResult.result).trim().slice(0, 80) : "Unindexed token",
+    symbol: assetSearchSymbolResult?.status === "success" ? String(assetSearchSymbolResult.result).trim().slice(0, 16) : "TOKEN",
+    decimals: Number(assetSearchDecimalsResult.result),
+  } : undefined;
+  const assetSearchMetadataPending = Boolean(
+    assetSearchAddress
+    && !assetSearchMetadataReadFailed
+    && (assetSearchMetadataLoading || !assetSearchMetadataResults),
+  );
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
   const [pricingQuotesPending, setPricingQuotesPending] = useState(false);
   const [pricingQuoteError, setPricingQuoteError] = useState<string>();
@@ -8559,9 +8716,13 @@ function CreateVaultView({
       const target = event.target;
       if (target instanceof Element && target.closest(".assetPickerShell")) return;
       setOpenAssetPickerIndex(undefined);
+      setAssetPickerSearch("");
     };
     const closePickerOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenAssetPickerIndex(undefined);
+      if (event.key === "Escape") {
+        setOpenAssetPickerIndex(undefined);
+        setAssetPickerSearch("");
+      }
     };
     document.addEventListener("pointerdown", closePicker);
     document.addEventListener("keydown", closePickerOnEscape);
@@ -8621,11 +8782,12 @@ function CreateVaultView({
     setPortfolio((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
   }
 
-  function openUnverifiedAssetModal(index: number) {
-    setManualAssetAddress("");
+  function openUnverifiedAssetModal(index: number, address = "") {
+    setManualAssetAddress(address);
     setManualRegistrationError(undefined);
     setManualRegistrationState("idle");
     setOpenAssetPickerIndex(undefined);
+    setAssetPickerSearch("");
     setUnverifiedAssetIndex(index);
   }
 
@@ -9219,55 +9381,110 @@ function CreateVaultView({
                             aria-label={`Choose asset ${index + 1}`}
                             aria-haspopup="listbox"
                             aria-expanded={openAssetPickerIndex === index}
-                            onClick={() => setOpenAssetPickerIndex((current) => current === index ? undefined : index)}
+                            onClick={() => {
+                              setAssetPickerSearch("");
+                              setOpenAssetPickerIndex((current) => current === index ? undefined : index);
+                            }}
                           >
                             <span className="createAssetPickerIdentity">
                               <span className="createAssetPickerName">
                                 <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
-                                <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
-                                  {configurationVerified ? "Verified" : "Unverified"}
-                                </span>
                               </span>
                               <small>{shortAssetAddress(asset.address)}</small>
+                            </span>
+                            <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
+                              {configurationVerified ? "Verified" : "Unverified"}
                             </span>
                             <ChevronDown aria-hidden="true" size={14} />
                           </button>
                           {openAssetPickerIndex === index ? (
-                            <div className="createAssetPickerMenu" role="listbox" aria-label={`Assets for position ${index + 1}`}>
-                              {testnetCreateAssets.map((candidate) => (
-                                <button
-                                  key={candidate.address}
-                                  type="button"
-                                  role="option"
-                                  aria-selected={candidate.address.toLowerCase() === asset.address.toLowerCase()}
-                                  onClick={() => {
-                                    const pricingConfig = configuredPricingConfig(candidate.address) ?? emptyPricingConfig();
-                                    updatePortfolio(index, {
-                                      ticker: candidate.symbol,
-                                      name: candidate.name,
-                                      address: candidate.address,
-                                      poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                                      verified: candidate.verified,
-                                      pricingConfig,
-                                    });
-                                    setOpenAssetPickerIndex(undefined);
-                                  }}
-                                >
-                                  <span>{candidate.symbol} · {candidate.name}</span>
-                                  <span className="stateBadge success">Verified</span>
-                                  {candidate.address.toLowerCase() === asset.address.toLowerCase() ? <Check size={13} aria-hidden="true" /> : null}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                role="option"
-                                aria-selected={!asset.verified}
-                                onClick={() => openUnverifiedAssetModal(index)}
-                              >
-                                <span>Enter contract address</span>
-                                <span className="stateBadge warning">Unverified</span>
-                                {!asset.verified ? <Check size={13} aria-hidden="true" /> : null}
-                              </button>
+                            <div className="createAssetPickerMenu">
+                              <label className="createAssetPickerSearch">
+                                <Search size={14} aria-hidden="true" />
+                                <input
+                                  autoFocus
+                                  value={assetPickerSearch}
+                                  onChange={(event) => setAssetPickerSearch(event.target.value)}
+                                  placeholder="Search ticker or contract address"
+                                  aria-label={`Search assets for position ${index + 1}`}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                              </label>
+                              <div className="createAssetPickerOptions" role="listbox" aria-label={`Assets for position ${index + 1}`}>
+                                {filteredAssetPickerOptions.map((candidate) => (
+                                  <button
+                                    key={candidate.address}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={candidate.address.toLowerCase() === asset.address.toLowerCase()}
+                                    onClick={() => {
+                                      const pricingConfig = configuredPricingConfig(candidate.address) ?? emptyPricingConfig();
+                                      updatePortfolio(index, {
+                                        ticker: candidate.symbol,
+                                        name: candidate.name,
+                                        address: candidate.address,
+                                        poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                                        verified: candidate.verified,
+                                        pricingConfig,
+                                      });
+                                      setOpenAssetPickerIndex(undefined);
+                                      setAssetPickerSearch("");
+                                    }}
+                                  >
+                                    <span className="createAssetOptionIdentity">
+                                      <strong>{candidate.symbol} · {candidate.name}</strong>
+                                      <small>{shortAssetAddress(candidate.address)}</small>
+                                    </span>
+                                    <span className="stateBadge success">Verified</span>
+                                    {candidate.address.toLowerCase() === asset.address.toLowerCase() ? <Check size={13} aria-hidden="true" /> : null}
+                                  </button>
+                                ))}
+                                {assetSearchMetadataPending ? (
+                                  <div className="createAssetPickerStatus" role="status"><Loader2 className="spin" size={14} />Reading token metadata…</div>
+                                ) : null}
+                                {assetSearchAddress && !assetSearchMetadataPending && assetSearchMetadata ? (
+                                  <button
+                                    className="createAssetDiscoveredOption"
+                                    type="button"
+                                    role="option"
+                                    aria-selected={assetSearchAddress.toLowerCase() === asset.address.toLowerCase()}
+                                    disabled={assetSearchMetadata.decimals !== 18}
+                                    onClick={() => openUnverifiedAssetModal(index, assetSearchAddress)}
+                                  >
+                                    <span className="createAssetOptionIdentity">
+                                      <strong>{assetSearchMetadata.symbol || "TOKEN"} · {assetSearchMetadata.name || "Unindexed token"}</strong>
+                                      <small>{shortAssetAddress(assetSearchAddress)} · {assetSearchMetadata.decimals} decimals</small>
+                                    </span>
+                                    <span className={`stateBadge ${assetSearchMetadata.decimals === 18 ? "warning" : "danger"}`}>
+                                      {assetSearchMetadata.decimals === 18 ? "Unverified" : "Unsupported"}
+                                    </span>
+                                    {assetSearchMetadata.decimals === 18 ? <Plus size={13} aria-hidden="true" /> : null}
+                                  </button>
+                                ) : null}
+                                {normalizedAssetPickerSearch && filteredAssetPickerOptions.length === 0 && !assetSearchMetadataPending && !assetSearchMetadata ? (
+                                  <div className="createAssetPickerStatus" role="status">
+                                    {assetSearchAddress
+                                      ? "No ERC-20 metadata was found at this address."
+                                      : "No verified asset matches this ticker or contract address."}
+                                  </div>
+                                ) : null}
+                                {!normalizedAssetPickerSearch ? (
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={!asset.verified}
+                                    onClick={() => openUnverifiedAssetModal(index)}
+                                  >
+                                    <span className="createAssetOptionIdentity">
+                                      <strong>Enter contract address</strong>
+                                      <small>Add a compatible 18-decimal ERC-20</small>
+                                    </span>
+                                    <span className="stateBadge warning">Unverified</span>
+                                    {!asset.verified ? <Check size={13} aria-hidden="true" /> : null}
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -9300,6 +9517,7 @@ function CreateVaultView({
                         <PricingConfigurationFields
                           chainId={robinhoodChainTestnet.id}
                           assetAddress={asset.address}
+                          assetTicker={asset.ticker}
                           config={asset.pricingConfig}
                           onChange={(pricingConfig) => updatePortfolio(index, {
                             pricingConfig,

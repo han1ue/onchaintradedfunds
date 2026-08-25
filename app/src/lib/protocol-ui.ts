@@ -54,6 +54,22 @@ export function primaryDepositsBlocked(input: {
   return input.sunset || input.globalPause || input.localPause || !input.pauseStatusAvailable || input.retiringAsset;
 }
 
+export function chainlinkDescriptionMatchesPair(
+  description: string,
+  baseSymbol: string,
+  quoteSymbol: string,
+): boolean {
+  const tokens = new Set(description.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
+  const normalizedBase = baseSymbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const normalizedQuote = quoteSymbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const quoteAliases = normalizedQuote === "WETH"
+    ? ["WETH", "ETH"]
+    : normalizedQuote === "USDG"
+      ? ["USDG", "USD"]
+      : [normalizedQuote];
+  return Boolean(normalizedBase) && tokens.has(normalizedBase) && quoteAliases.some((token) => tokens.has(token));
+}
+
 export const SUPPORTED_PRICING_SOURCES = Object.freeze([
   "chainlink-robinhood",
   "chainlink",

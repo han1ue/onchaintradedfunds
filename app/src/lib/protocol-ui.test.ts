@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chainlinkDescriptionMatchesPair,
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   FRONTEND_MAX_TRACKED_ASSETS,
@@ -64,5 +65,13 @@ describe("protocol UI policy", () => {
     expect(weightBandValidationError(500, 1_500, limits)).toBeUndefined();
     expect(weightBandValidationError(24, 250, limits)).toContain("Completion");
     expect(weightBandValidationError(100, 124, limits)).toContain("Challenge");
+  });
+
+  it("matches Chainlink descriptions to the expected asset pair without substring false positives", () => {
+    expect(chainlinkDescriptionMatchesPair("TSLA / USD", "TSLA", "USD")).toBe(true);
+    expect(chainlinkDescriptionMatchesPair("TSLA mock USD", "TSLA", "USD")).toBe(true);
+    expect(chainlinkDescriptionMatchesPair("TSLA / ETH", "TSLA", "WETH")).toBe(true);
+    expect(chainlinkDescriptionMatchesPair("AMZN / USD", "TSLA", "USD")).toBe(false);
+    expect(chainlinkDescriptionMatchesPair("DATA / USD", "A", "USD")).toBe(false);
   });
 });
