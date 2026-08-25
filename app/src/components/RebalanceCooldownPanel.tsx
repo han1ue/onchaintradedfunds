@@ -2083,8 +2083,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const creatorFeeBps = resultAt<number>(results, 4) ?? 0;
   const protocolFeeShareBps = resultAt<number>(results, 5) ?? 0;
   const totalSupply = resultAt<bigint>(results, 6);
-  const constituents = resultAt<readonly string[]>(results, 7)
-    as unknown as readonly [readonly string[], readonly number[] | readonly bigint[]] | undefined;
+  const constituents = resultAt<readonly string[]>(results, 7) as unknown as
+    | readonly [readonly string[], readonly number[] | readonly bigint[]]
+    | undefined;
   const assets = constituents?.[0];
   const targetWeights = constituents?.[1];
   const maxNavLossBps = resultAt<number>(results, 8) ?? 0;

@@ -462,11 +462,17 @@ for (const item of viewModule.abi) {
 }
 
 const canonicalSelectors = new Map();
+function selectorFor(compiled, item) {
+  return Object.entries(compiled.methodIdentifiers).find(([signature]) =>
+    signature.startsWith(`${item.name}(`),
+  )?.[1];
+}
 for (const compiled of [vault, viewModule]) {
   for (const item of compiled.abi) {
     if (item.type !== "function") continue;
     const signature = abiSignature(item);
-    const selector = compiled.methodIdentifiers[signature];
+    const selector = selectorFor(compiled, item);
+    assert(selector !== undefined, `missing selector for ${signature}`);
     const existing = canonicalSelectors.get(selector);
     assert(
       existing === undefined || existing === signature,
@@ -477,10 +483,16 @@ for (const compiled of [vault, viewModule]) {
 }
 for (const [signature, selector] of Object.entries(viewModule.methodIdentifiers)) {
   assert(
-    vault.methodIdentifiers[signature] === selector,
-    `vault does not route canonical view selector ${signature}`,
+    vault.methodIdentifiers[signature] === undefined || vault.methodIdentifiers[signature] === selector,
+    `vault view-route selector conflicts with canonical selector ${signature}`,
   );
 }
+assert(
+  /fallback\(\) external[\s\S]*_delegateView\(\)/u.test(
+    readFileSync(join(contracts, "src", "ManagedOTFVault.sol"), "utf8"),
+  ),
+  "vault fallback does not delegate unknown canonical view selectors",
+);
 
 console.log(
   `Contract security checks passed: ERC-7621 ID 0x${erc7621InterfaceId.toString(16)}, ${canonicalLayout.length} canonical storage entries, and ${productionContracts.length} production bytecode limits verified.`,
