@@ -4866,6 +4866,24 @@ textarea::placeholder {
   font-size: 0.75rem;
 }
 
+.appPageHeader p a {
+  color: var(--text-soft);
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--accent-rgb) / 48%);
+  text-underline-offset: 2px;
+}
+
+.appPageHeader p a:hover {
+  color: var(--accent-text);
+  text-decoration-color: currentcolor;
+}
+
+.appPageHeader p a:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid rgb(var(--accent-rgb) / 62%);
+  outline-offset: 2px;
+}
+
 .appPageActions {
   display: flex;
   flex: 0 0 auto;
@@ -5919,6 +5937,22 @@ input.invalid {
   height: 34px;
 }
 
+.assetSelectField,
+.assetWeightField {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.createAssetFieldLabel {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .assetPickerShell {
   position: relative;
   min-width: 0;
@@ -5928,7 +5962,7 @@ input.invalid {
   display: grid;
   width: 100%;
   grid-template-columns: minmax(0, 1fr) 14px;
-  min-height: 46px;
+  min-height: 54px;
   min-width: 0;
   align-items: center;
   gap: 10px;
@@ -5958,6 +5992,12 @@ input.invalid {
   box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
 }
 
+.createAssetPickerIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
 .createAssetPickerName {
   display: flex;
   min-width: 0;
@@ -5977,6 +6017,19 @@ input.invalid {
 
 .createAssetPickerName > .stateBadge {
   flex: 0 0 auto;
+  min-height: 18px;
+  padding: 1px 5px;
+  font-size: 0.52rem;
+  letter-spacing: 0.025em;
+}
+
+.createAssetPickerIdentity > small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .createAssetPicker > svg {
@@ -6043,11 +6096,11 @@ input.invalid {
 }
 
 .assetWeightField .inputWithSuffix {
-  height: 46px;
+  height: 54px;
 }
 
 .assetWeightField .inputWithSuffix input {
-  height: 44px;
+  height: 52px;
 }
 
 .assetPricingPanel {
@@ -6136,7 +6189,8 @@ input.invalid {
 .createAssetRow > .removeCreateAsset {
   display: grid;
   width: 32px;
-  height: 46px;
+  height: 54px;
+  margin-top: 18px;
   place-items: center;
   border: 0;
   border-radius: 4px;

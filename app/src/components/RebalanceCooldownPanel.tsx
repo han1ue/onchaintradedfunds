@@ -7828,7 +7828,7 @@ function AppPageHeader({
   actions,
 }: {
   title: string;
-  description: string;
+  description: ReactNode;
   icon: ReactNode;
   actions?: ReactNode;
 }) {
@@ -8270,36 +8270,55 @@ function CreateVaultView({
     },
   });
   const pricingDraftKey = portfolio.map((asset) => (
-    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}:${asset.pricingConfig.primaryMaxStaleness}:${asset.pricingConfig.secondaryMaxStaleness}`
+    `${asset.address.toLowerCase()}:${asset.pricingConfig.source}:${asset.pricingConfig.quoteToken.toLowerCase()}:${asset.pricingConfig.primarySource.toLowerCase()}:${asset.pricingConfig.secondarySource.toLowerCase()}:${asset.pricingConfig.primaryMaxStaleness}:${asset.pricingConfig.secondaryMaxStaleness}`
   )).join("|");
   useEffect(() => {
     let cancelled = false;
     if (!publicClient || !pricingResolverAddress || portfolio.length === 0) {
       setManualOraclePrices({});
+      setPricingQuotesPending(false);
+      setPricingQuoteError(undefined);
       return;
     }
     setPricingQuotesPending(true);
     setPricingQuoteError(undefined);
     void Promise.all(portfolio.map(async (asset) => {
-      if (!pricingConfigIsComplete(asset.pricingConfig)) {
-        throw new Error(`${asset.ticker} needs a complete pricing configuration.`);
+      try {
+        if (!pricingConfigIsComplete(asset.pricingConfig)) {
+          throw new Error("Pricing configuration is incomplete.");
+        }
+        const simulation = await publicClient.simulateContract({
+          address: pricingResolverAddress,
+          abi: assetPricingResolverAbi,
+          functionName: "validateAndQuotePrice",
+          args: [asset.address as `0x${string}`, asset.pricingConfig],
+        });
+        const [answer, decimals] = simulation.result;
+        return {
+          status: "fulfilled" as const,
+          entry: [asset.address.toLowerCase(), {
+            answer,
+            decimals: Number(decimals),
+            updatedAt: BigInt(Math.floor(Date.now() / 1_000)),
+            value: Number(formatUnits(answer, Number(decimals))),
+            display: formatOraclePrice(Number(formatUnits(answer, Number(decimals)))),
+          }] as const,
+        };
+      } catch (error) {
+        return {
+          status: "rejected" as const,
+          ticker: asset.ticker,
+          reason: errorMessage(error),
+        };
       }
-      const simulation = await publicClient.simulateContract({
-        address: pricingResolverAddress,
-        abi: assetPricingResolverAbi,
-        functionName: "validateAndQuotePrice",
-        args: [asset.address as `0x${string}`, asset.pricingConfig],
-      });
-      const [answer, decimals] = simulation.result;
-      return [asset.address.toLowerCase(), {
-        answer,
-        decimals: Number(decimals),
-        updatedAt: BigInt(Math.floor(Date.now() / 1_000)),
-        value: Number(formatUnits(answer, Number(decimals))),
-        display: formatOraclePrice(Number(formatUnits(answer, Number(decimals)))),
-      }] as const;
-    })).then((entries) => {
-      if (!cancelled) setManualOraclePrices(Object.fromEntries(entries));
+    })).then((results) => {
+      if (cancelled) return;
+      const entries = results.flatMap((result) => result.status === "fulfilled" ? [result.entry] : []);
+      const failures = results.flatMap((result) => result.status === "rejected"
+        ? [`${result.ticker}: ${result.reason}`]
+        : []);
+      setManualOraclePrices(Object.fromEntries(entries));
+      setPricingQuoteError(failures.length > 0 ? failures.join(" ") : undefined);
     }).catch((error) => {
       if (!cancelled) {
         setManualOraclePrices({});
@@ -9192,6 +9211,7 @@ function CreateVaultView({
                     return (
                     <div className="createAssetRow" key={`${asset.address}-${index}`}>
                       <div className="assetSelectField">
+                        <span className="createAssetFieldLabel">Asset</span>
                         <div className="assetPickerShell">
                           <button
                             className={`createAssetPicker ${openAssetPickerIndex === index ? "active" : ""}`}
@@ -9201,11 +9221,14 @@ function CreateVaultView({
                             aria-expanded={openAssetPickerIndex === index}
                             onClick={() => setOpenAssetPickerIndex((current) => current === index ? undefined : index)}
                           >
-                            <span className="createAssetPickerName">
-                              <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
-                              <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
-                                {configurationVerified ? "Verified" : "Unverified"}
+                            <span className="createAssetPickerIdentity">
+                              <span className="createAssetPickerName">
+                                <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
+                                <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
+                                  {configurationVerified ? "Verified" : "Unverified"}
+                                </span>
                               </span>
+                              <small>{shortAssetAddress(asset.address)}</small>
                             </span>
                             <ChevronDown aria-hidden="true" size={14} />
                           </button>
@@ -9250,6 +9273,7 @@ function CreateVaultView({
                         </div>
                       </div>
                       <label className="assetWeightField">
+                        <span className="createAssetFieldLabel">Target weight</span>
                         <div className="inputWithSuffix">
                           <input
                             type="number"
@@ -9915,7 +9939,7 @@ function VerifiedAssetsView({ isTestnet, oraclePrices }: { isTestnet: boolean; o
     <div className="appView">
       <AppPageHeader
         title="Verified Assets"
-        description="Token identities and pricing routes checked against the app's verification registry. Verification is informational and does not authorize OTF constituents."
+        description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>}
         icon={<ShieldCheck size={18} />}
         actions={isTestnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined}
       />
