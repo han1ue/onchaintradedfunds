@@ -17,6 +17,7 @@ import {
   ChartPie,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   CircleHelp,
@@ -942,7 +943,6 @@ function PricingConfigurationFields({
   const [customizing, setCustomizing] = useState(false);
   const approved = approvedPricingConfigsFor(chainId, assetAddress) as AssetPricingConfig[];
   const approvedIndex = approved.findIndex((candidate) => pricingConfigsMatch(candidate, config));
-  const verifiedAsset = verifiedAssetFor(chainId, assetAddress);
   const verification = pricingVerification(chainId, assetAddress, config);
   const verified = verification.verified;
   const registryAddress = chainId === robinhoodChainTestnet.id
@@ -992,17 +992,10 @@ function PricingConfigurationFields({
     onChange(next);
   }
 
-  const statusLabel = verified
-    ? "Verified configuration"
-    : verifiedAsset
-      ? "Custom configuration"
-      : "Unverified configuration";
-
   return (
     <div className="pricingConfigurationFields">
       <div className="pricingConfigurationHeader">
         <span>Pricing configuration</span>
-        <span className={`stateBadge ${verified ? "success" : "warning"}`}>{statusLabel}</span>
       </div>
       <label>
         <span>Approved choice</span>
@@ -8156,6 +8149,7 @@ function CreateVaultView({
   const [manualSecondaryMaxStaleness, setManualSecondaryMaxStaleness] = useState(0);
   const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
+  const [unverifiedAssetIndex, setUnverifiedAssetIndex] = useState<number>();
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
   const [pricingQuotesPending, setPricingQuotesPending] = useState(false);
   const [pricingQuoteError, setPricingQuoteError] = useState<string>();
@@ -8329,7 +8323,9 @@ function CreateVaultView({
     : "Wait for the factory weight-band policy to load.";
   const normalizedOtfName = draft.name.trim();
   const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
-  const hasUnverifiedConstituent = portfolio.some((asset) => !asset.verified);
+  const hasUnverifiedConstituent = portfolio.some((asset) => (
+    !isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, asset.pricingConfig)
+  ));
   const basicsValid =
     otfNameValid &&
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -8445,6 +8441,17 @@ function CreateVaultView({
     }));
   }, [connectedAddress, customFeeRecipient, customManager]);
 
+  useEffect(() => {
+    if (unverifiedAssetIndex === undefined) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && manualRegistrationState !== "pending" && manualRegistrationState !== "submitted") {
+        setUnverifiedAssetIndex(undefined);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [manualRegistrationState, unverifiedAssetIndex]);
+
   if (!isTestnet) {
     return (
       <div className="appView">
@@ -8493,6 +8500,24 @@ function CreateVaultView({
 
   function updatePortfolio(index: number, patch: Partial<TargetAsset>) {
     setPortfolio((current) => current.map((asset, itemIndex) => itemIndex === index ? { ...asset, ...patch } : asset));
+  }
+
+  function openUnverifiedAssetModal(index: number) {
+    setManualAssetAddress("");
+    setManualPricingSource(0);
+    setManualQuoteToken("");
+    setManualPrimarySource("");
+    setManualSecondarySource("");
+    setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
+    setManualSecondaryMaxStaleness(0);
+    setManualRegistrationError(undefined);
+    setManualRegistrationState("idle");
+    setUnverifiedAssetIndex(index);
+  }
+
+  function closeUnverifiedAssetModal() {
+    if (manualRegistrationState === "pending" || manualRegistrationState === "submitted") return;
+    setUnverifiedAssetIndex(undefined);
   }
 
   function distributePortfolioWeight(totalBps: number, assets: TargetAsset[]) {
@@ -8570,12 +8595,9 @@ function CreateVaultView({
   async function validateAndAddAsset() {
     if (
       !publicClient || !connectedAddress || !pricingResolverAddress ||
+      unverifiedAssetIndex === undefined ||
       !isAddress(manualAssetAddress) || !isAddress(manualPrimarySource)
     ) return;
-    if (portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS) {
-      setManualRegistrationError(`Remove an asset before adding another. The frontend safety cap is ${FRONTEND_MAX_TRACKED_ASSETS} tracked assets per OTF.`);
-      return;
-    }
     const assetAddress = manualAssetAddress as `0x${string}`;
     const pricingConfig: AssetPricingConfig = {
       source: manualPricingSource,
@@ -8593,7 +8615,7 @@ function CreateVaultView({
       setManualRegistrationError("Complete the selected pricing route before validating it.");
       return;
     }
-    if (portfolio.some((item) => item.address.toLowerCase() === assetAddress.toLowerCase())) {
+    if (portfolio.some((item, index) => index !== unverifiedAssetIndex && item.address.toLowerCase() === assetAddress.toLowerCase())) {
       setManualRegistrationError("This token contract is already in the portfolio.");
       return;
     }
@@ -8624,30 +8646,27 @@ function CreateVaultView({
           display: formatOraclePrice(Number(formatUnits(answer, Number(feedDecimals)))),
         },
       }));
-      setPortfolio((current) => {
-        if (current.length >= FRONTEND_MAX_TRACKED_ASSETS) return current;
-        const minimum = protocolMinimumTargetWeightBps ?? 500;
-        const existingWeights = distributePortfolioWeight(10_000 - minimum, current);
-        return [
-          ...current.map((item, index) => ({ ...item, targetWeight: existingWeights[index] })),
-          {
+      setPortfolio((current) => current.map((item, index) => (
+        index === unverifiedAssetIndex
+          ? {
             ticker: symbol,
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
             poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
             verified: false,
             pricingConfig,
-            targetWeight: (minimum / 100).toString(),
+            targetWeight: item.targetWeight,
             initialAmount: "",
-          },
-        ];
-      });
+          }
+          : item
+      )));
       setManualAssetAddress("");
       setManualPrimarySource("");
       setManualSecondarySource("");
       setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
       setManualSecondaryMaxStaleness(0);
       setManualRegistrationState("confirmed");
+      setUnverifiedAssetIndex(undefined);
     } catch (error) {
       setManualRegistrationError(errorMessage(error));
       setManualRegistrationState("reverted");
@@ -8827,6 +8846,132 @@ function CreateVaultView({
         description="Deploy an onchain traded fund with enforceable portfolio limits."
         icon={<FilePlus2 size={18} />}
       />
+
+      {unverifiedAssetIndex !== undefined ? (
+        <div
+          className="priceDetailsBackdrop"
+          onMouseDown={(event) => event.target === event.currentTarget && closeUnverifiedAssetModal()}
+        >
+          <section
+            className="unverifiedAssetModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unverified-asset-title"
+            aria-describedby="unverified-asset-description"
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+                "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+              ));
+              const first = focusable.at(0);
+              const last = focusable.at(-1);
+              if (!first || !last) return;
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <header className="unverifiedAssetModalHeader">
+              <div>
+                <div className="unverifiedAssetModalTitle">
+                  <h2 id="unverified-asset-title">Configure an unverified asset</h2>
+                  <span className="stateBadge warning">Unverified</span>
+                </div>
+                <p id="unverified-asset-description">Enter an exact-transfer, 18-decimal ERC-20 contract and choose the pricing route this OTF will pin.</p>
+              </div>
+              <button
+                className="sunsetDialogClose"
+                type="button"
+                aria-label="Close unverified asset configuration"
+                autoFocus
+                disabled={manualRegistrationState === "pending" || manualRegistrationState === "submitted"}
+                onClick={closeUnverifiedAssetModal}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="unverifiedAssetModalBody">
+              <label className="unverifiedTokenAddressField">
+                <span>Token contract</span>
+                <input
+                  className={manualAssetAddress && !isAddress(manualAssetAddress) ? "invalid" : undefined}
+                  value={manualAssetAddress}
+                  onChange={(event) => setManualAssetAddress(event.target.value.trim())}
+                  placeholder="0x ERC-20 address"
+                  autoComplete="off"
+                />
+                <small>The resolver checks token metadata and pricing before this asset replaces the current selection.</small>
+              </label>
+              <PricingConfigurationFields
+                chainId={robinhoodChainTestnet.id}
+                assetAddress={manualAssetAddress}
+                config={{
+                  source: manualPricingSource,
+                  quoteToken: (manualQuoteToken || zeroAddress) as `0x${string}`,
+                  primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
+                  secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
+                  primaryMaxStaleness: manualPrimaryMaxStaleness,
+                  secondaryMaxStaleness: manualSecondaryMaxStaleness,
+                }}
+                onChange={(pricingConfig) => {
+                  setManualPricingSource(pricingConfig.source);
+                  setManualQuoteToken(pricingConfig.quoteToken === zeroAddress ? "" : pricingConfig.quoteToken);
+                  setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
+                  setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
+                  setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
+                  setManualSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
+                }}
+              />
+              <div className="manualAssetRiskNotice" role="note">
+                <AlertTriangle size={15} />
+                <span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span>
+              </div>
+              {!connectedAddress ? (
+                <div className="validationSummary warning" role="status">
+                  <Wallet size={15} />
+                  <div><strong>Connect a wallet to validate</strong><span>The resolver simulation uses the wallet that will create the OTF.</span></div>
+                </div>
+              ) : null}
+              {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
+              <TxStatus state={manualRegistrationState} persistent />
+            </div>
+
+            <footer className="unverifiedAssetModalActions">
+              <button
+                type="button"
+                className="secondaryAction"
+                disabled={manualRegistrationState === "pending" || manualRegistrationState === "submitted"}
+                onClick={closeUnverifiedAssetModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primaryAction"
+                onClick={validateAndAddAsset}
+                disabled={
+                  manualRegistrationState === "pending" ||
+                  manualRegistrationState === "submitted" ||
+                  !connectedAddress ||
+                  !isAddress(manualAssetAddress) ||
+                  !isAddress(manualPrimarySource) ||
+                  ((manualPricingSource === 1 || manualPricingSource === 2) && !isAddress(manualSecondarySource))
+                }
+              >
+                {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
+                  ? <Loader2 className="spin" size={14} />
+                  : <ShieldCheck size={14} />}
+                Validate asset
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
 
       <div className="createLayout">
         <aside className="createSteps" aria-label="OTF creation progress">
@@ -9012,64 +9157,59 @@ function CreateVaultView({
                   </div>
                   <small>Target weights and current oracle prices determine the required seed-token quantities.</small>
                 </label>
-                <datalist id="create-asset-directory">
-                  {testnetCreateAssets.map((candidate) => (
-                    <option key={candidate.address} value={candidate.address}>
-                      {candidate.symbol} · {candidate.name}
-                    </option>
-                  ))}
-                </datalist>
                 <div className="createAssetList">
-                  {portfolio.map((asset, index) => (
-                    <div className="createAssetRow" key={`${asset.ticker}-${index}`}>
+                  {portfolio.map((asset, index) => {
+                    const configurationVerified = isVerifiedPricingConfig(
+                      robinhoodChainTestnet.id,
+                      asset.address,
+                      asset.pricingConfig,
+                    );
+                    return (
+                    <div className="createAssetRow" key={`${asset.address}-${index}`}>
                       <div className="assetSelectField">
-                        <span>Asset</span>
-                        <div className="createAssetSearchControl">
-                          <AssetLogo symbol={asset.ticker} compact />
-                          <input
-                            key={asset.address}
-                            className="createAssetSearchInput"
-                            list="create-asset-directory"
-                            aria-label={`Asset ${index + 1}`}
-                            defaultValue={`${asset.ticker} · ${asset.name ?? catalogAssetForAddress(testnetCreateAssets, asset.address)?.name ?? asset.address}`}
-                            placeholder="Name, symbol, or 0x address"
+                        <div className="createAssetPicker">
+                          <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
+                            {configurationVerified ? "Verified" : "Unverified"}
+                          </span>
+                          <div className="createAssetPickerIdentity">
+                            <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
+                            <small>{shortAssetAddress(asset.address)}</small>
+                          </div>
+                          <ChevronDown aria-hidden="true" size={14} />
+                          <select
+                            value={asset.address}
+                            aria-label={`Choose asset ${index + 1}`}
                             onChange={(event) => {
-                              const query = event.target.value.trim().toLowerCase();
-                              const selected = testnetCreateAssets.find((candidate) =>
-                                candidate.address.toLowerCase() === query ||
-                                candidate.symbol.toLowerCase() === query ||
-                                candidate.name.toLowerCase() === query,
-                              );
-                              if (selected) {
-                                const pricingConfig = configuredPricingConfig(selected.address) ?? emptyPricingConfig();
-                                updatePortfolio(index, {
-                                  ticker: selected.symbol,
-                                  name: selected.name,
-                                  address: selected.address,
-                                  poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                                  verified: selected.verified,
-                                  pricingConfig,
-                                });
+                              if (event.target.value === "unverified") {
+                                openUnverifiedAssetModal(index);
+                                return;
                               }
+                              const selected = testnetCreateAssets.find(
+                                (candidate) => candidate.address.toLowerCase() === event.target.value.toLowerCase(),
+                              );
+                              if (!selected) return;
+                              const pricingConfig = configuredPricingConfig(selected.address) ?? emptyPricingConfig();
+                              updatePortfolio(index, {
+                                ticker: selected.symbol,
+                                name: selected.name,
+                                address: selected.address,
+                                poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                                verified: selected.verified,
+                                pricingConfig,
+                              });
                             }}
-                          />
-                          <Search aria-hidden="true" size={14} />
+                          >
+                            <option value="unverified">Unverified · Enter a token contract</option>
+                            {testnetCreateAssets.map((candidate) => (
+                              <option key={candidate.address} value={candidate.address}>
+                                Verified · {candidate.symbol} · {candidate.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <small className="assetAddressLabel" title={asset.address}>
-                          Robinhood Testnet · {asset.ticker} · {shortAssetAddress(asset.address)}
+                          Robinhood Testnet · {shortAssetAddress(asset.address)}
                         </small>
-                        <span className={`stateBadge ${asset.verified ? "success" : "warning"}`}>
-                          {asset.verified ? "Verified" : "Unverified"}
-                        </span>
-                        <PricingConfigurationFields
-                          chainId={robinhoodChainTestnet.id}
-                          assetAddress={asset.address}
-                          config={asset.pricingConfig}
-                          onChange={(pricingConfig) => updatePortfolio(index, {
-                            pricingConfig,
-                            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                          })}
-                        />
                       </div>
                       <label className="assetWeightField">
                         <span>Target weight</span>
@@ -9085,17 +9225,8 @@ function CreateVaultView({
                           <span>%</span>
                         </div>
                       </label>
-                      <div className="assetOraclePriceField">
-                        <span>Oracle price</span>
-                        <strong>{derivedSeedAmounts[index]?.price?.display ?? "Loading"}</strong>
-                        <small>{derivedSeedAmounts[index]?.displayTargetValue} allocation</small>
-                      </div>
-                      <div className="assetSeedField">
-                        <span>Seed tokens</span>
-                        <strong>{derivedSeedAmounts[index]?.displayAmount || "Loading"}</strong>
-                        <small>{asset.ticker} required</small>
-                      </div>
                       <button
+                        className="removeCreateAsset"
                         type="button"
                         title={`Remove ${asset.ticker}`}
                         aria-label={`Remove ${asset.ticker} from portfolio`}
@@ -9103,8 +9234,32 @@ function CreateVaultView({
                       >
                         <Trash2 size={14} />
                       </button>
+                      <div className="assetPricingPanel">
+                        <PricingConfigurationFields
+                          chainId={robinhoodChainTestnet.id}
+                          assetAddress={asset.address}
+                          config={asset.pricingConfig}
+                          onChange={(pricingConfig) => updatePortfolio(index, {
+                            pricingConfig,
+                            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                          })}
+                        />
+                      </div>
+                      <div className="createAssetDerivedValues">
+                        <div className="assetOraclePriceField">
+                          <span>Oracle price</span>
+                          <strong>{derivedSeedAmounts[index]?.price?.display ?? "Loading"}</strong>
+                          <small>{derivedSeedAmounts[index]?.displayTargetValue} allocation</small>
+                        </div>
+                        <div className="assetSeedField">
+                          <span>Seed tokens</span>
+                          <strong>{derivedSeedAmounts[index]?.displayAmount || "Loading"}</strong>
+                          <small>{asset.ticker} required</small>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <button
                   className="secondaryAction"
@@ -9121,71 +9276,6 @@ function CreateVaultView({
                     <div><strong>Frontend asset cap reached</strong><span>Remove an asset before adding another. This creation flow is limited to {FRONTEND_MAX_TRACKED_ASSETS} assets for transaction safety.</span></div>
                   </div>
                 ) : null}
-                <div className="manualAssetRegistration">
-                  <div className="manualAssetRegistrationIntro">
-                    <div>
-                      <strong>Add an unindexed token</strong>
-                      <span>Choose the exact per-OTF pricing route for any exact-transfer, 18-decimal ERC-20. The resolver validates it before the token is added.</span>
-                    </div>
-                    <span className="stateBadge warning">Unverified</span>
-                  </div>
-                  <div className="manualAssetRegistrationFields">
-                    <label>
-                      <span>Token contract</span>
-                      <input
-                        className={manualAssetAddress && !isAddress(manualAssetAddress) ? "invalid" : undefined}
-                        value={manualAssetAddress}
-                        onChange={(event) => setManualAssetAddress(event.target.value.trim())}
-                        placeholder="0x ERC-20 address"
-                      />
-                    </label>
-                    <PricingConfigurationFields
-                      chainId={robinhoodChainTestnet.id}
-                      assetAddress={manualAssetAddress}
-                      config={{
-                        source: manualPricingSource,
-                        quoteToken: (manualQuoteToken || zeroAddress) as `0x${string}`,
-                        primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
-                        secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
-                        primaryMaxStaleness: manualPrimaryMaxStaleness,
-                        secondaryMaxStaleness: manualSecondaryMaxStaleness,
-                      }}
-                      onChange={(pricingConfig) => {
-                        setManualPricingSource(pricingConfig.source);
-                        setManualQuoteToken(pricingConfig.quoteToken === zeroAddress ? "" : pricingConfig.quoteToken);
-                        setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
-                        setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
-                        setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
-                        setManualSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="secondaryAction"
-                      onClick={validateAndAddAsset}
-                      disabled={
-                        manualRegistrationState === "pending" ||
-                        manualRegistrationState === "submitted" ||
-                        !connectedAddress ||
-                        !isAddress(manualAssetAddress) ||
-                        !isAddress(manualPrimarySource) ||
-                        ((manualPricingSource === 1 || manualPricingSource === 2) && !isAddress(manualSecondarySource))
-                        || portfolio.length >= FRONTEND_MAX_TRACKED_ASSETS
-                      }
-                    >
-                      {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
-                        ? <Loader2 className="spin" size={14} />
-                        : <Plus size={14} />}
-                      Validate and add
-                    </button>
-                  </div>
-                  <div className="manualAssetRiskNotice" role="note">
-                    <AlertTriangle size={15} />
-                    <span>Unverified tokens are not blocked by the protocol. Review source ownership, token upgradeability, liquidity, and transfer behavior before creating an OTF.</span>
-                  </div>
-                  {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
-                  <TxStatus state={manualRegistrationState} persistent />
-                </div>
                 {portfolioIssues.length ? (
                   <div className="validationSummary warning" role="status">
                     <AlertTriangle size={15} />
@@ -9234,7 +9324,7 @@ function CreateVaultView({
                     <h2>{normalizedOtfName}</h2>
                     <span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span>
                     <span className={`stateBadge ${hasUnverifiedConstituent ? "warning" : "success"}`}>
-                      {hasUnverifiedConstituent ? "Includes unverified assets" : "Verified assets"}
+                      {hasUnverifiedConstituent ? "Includes unverified configurations" : "Verified configurations"}
                     </span>
                   </div>
                 </div>
@@ -9242,8 +9332,8 @@ function CreateVaultView({
                   <div className="validationSummary warning" role="note">
                     <AlertTriangle size={15} />
                     <div>
-                      <strong>Includes unverified assets</strong>
-                      <span>At least one constituent does not appear in the verified asset registry. This does not change onchain eligibility or rewards.</span>
+                      <strong>Includes unverified configurations</strong>
+                      <span>At least one asset and pricing-source combination does not match the verified list. This does not change onchain eligibility.</span>
                     </div>
                   </div>
                 ) : null}
