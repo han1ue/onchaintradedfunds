@@ -5,6 +5,18 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const localEnvPath = join(root, ".env.deploy.local");
+if (existsSync(localEnvPath)) {
+  for (const line of readFileSync(localEnvPath, "utf8").split(/\r?\n/u)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u);
+    if (!match || match[1].startsWith("#") || process.env[match[1]] !== undefined) continue;
+    const rawValue = match[2];
+    const quoted = rawValue.length >= 2
+      && ((rawValue.startsWith('"') && rawValue.endsWith('"'))
+        || (rawValue.startsWith("'") && rawValue.endsWith("'")));
+    process.env[match[1]] = quoted ? rawValue.slice(1, -1) : rawValue;
+  }
+}
 const compile = spawnSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], {
   cwd: root,
   stdio: "inherit",

@@ -6,6 +6,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
@@ -31,9 +32,11 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         for (uint256 i = 0; i < additions.length; i++) {
             MockStockToken asset = new MockStockToken("Additional Stock", "ADD", 18);
             MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
+            RobinhoodChainlinkPriceFeed robinhoodFeed =
+                new RobinhoodChainlinkPriceFeed(address(asset), feed);
             additions[i] = address(asset);
             assetRegistry.registerAsset(address(asset));
-            additionConfigs[i] = _directPricing(address(feed));
+            additionConfigs[i] = _directPricing(address(robinhoodFeed));
         }
 
         address[] memory acceptedTargets = new address[](99);
@@ -499,6 +502,8 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertFalse(oldPricingStillConfigured);
 
         MockPriceFeed replacementFeed = new MockPriceFeed(8, 100_00000000);
+        RobinhoodChainlinkPriceFeed replacementRobinhoodFeed =
+            new RobinhoodChainlinkPriceFeed(address(tokenB), replacementFeed);
         vm.warp(vault.nextStrategyChangeTime());
         _refreshPrices();
         _refreshPrice(replacementFeed);
@@ -511,7 +516,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         readdedWeights[1] = 5_000;
         AssetPricingConfig[] memory readdedPricing = new AssetPricingConfig[](2);
         readdedPricing[0] = _directPricing(address(feedA));
-        readdedPricing[1] = _directPricing(address(replacementFeed));
+        readdedPricing[1] = _directPricing(address(replacementRobinhoodFeed));
 
         vault.proposeStrategyWithPricing(
             readdedAssets,
@@ -527,7 +532,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         (bool readdedPricingConfigured,,, address readdedPrimarySource,,,,) =
             vault.pricingConfigForAsset(address(tokenB));
         assertTrue(readdedPricingConfigured);
-        assertEq(readdedPrimarySource, address(replacementFeed));
+        assertEq(readdedPrimarySource, address(replacementRobinhoodFeed));
 
         RebalanceRecord memory record = vault.recentRebalanceRecord(0);
         assertEq(record.turnoverBps, 5_000);
@@ -575,9 +580,9 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertTrue(configured);
         assertEq(uint256(source), uint256(PricingSource.ChainlinkRobinhood));
         assertEq(quoteToken, address(0));
-        assertEq(primarySource, address(feedC));
+        assertEq(primarySource, address(robinhoodFeedC));
         assertEq(secondarySource, address(0));
-        assertEq(normalizedPriceFeed, address(feedC));
+        assertEq(normalizedPriceFeed, address(robinhoodFeedC));
         assertEq(uint256(primaryMaxStaleness), 25 hours);
         assertEq(uint256(secondaryMaxStaleness), 0);
         assertEq(vault.marketIdForAsset(address(tokenC)), bytes32(0));

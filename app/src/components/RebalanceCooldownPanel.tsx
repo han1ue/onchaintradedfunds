@@ -1322,7 +1322,7 @@ function PricingConfigurationFields({
                 <small>Seconds; nonzero and no more than 7 days.</small>
               </label>
               {draftConfig.source === 3 ? (
-                <small className="pricingSetupNote">Robinhood pricing also requires asset.oraclePaused() and blocks oracle-dependent actions while it returns true.</small>
+                <small className="pricingSetupNote">Robinhood pricing requires a Robinhood-aware oracle and blocks oracle-dependent actions while its pause status is true.</small>
               ) : null}
               {draftVerification.availabilityWarning ? (
                 <small className="availabilityWarning">This source uses a shorter freshness limit and may be unavailable more often.</small>
@@ -3447,7 +3447,7 @@ function PriceDetailsModal({
               <h3>Validation</h3>
               <dl className="priceDetailsList">
                 <div><dt>Configuration</dt><dd><span className={`stateBadge ${verified ? "success" : "warning"}`}>{verified ? "Verified" : "Unverified"}</span></dd></div>
-                <div><dt>Primary rule</dt><dd>{config.source === 2 ? "Canonical V3 factory, exact pair and fee, initialized pool, ≥64 observations, full TWAP history" : config.source === 3 ? "Full Chainlink round validation plus asset.oraclePaused()" : "Full Chainlink round validation"}</dd></div>
+                <div><dt>Primary rule</dt><dd>{config.source === 2 ? "Canonical V3 factory, exact pair and fee, initialized pool, ≥64 observations, full TWAP history" : config.source === 3 ? "Full Chainlink round validation plus oracle-level pause status" : "Full Chainlink round validation"}</dd></div>
                 <div><dt>Primary freshness</dt><dd>{formatPricingDuration(config.primaryMaxStaleness)}</dd></div>
                 {hasSecondary ? <div><dt>Quote/USD rule</dt><dd>Full Chainlink round validation</dd></div> : null}
                 {hasSecondary ? <div><dt>Quote/USD freshness</dt><dd>{formatPricingDuration(config.secondaryMaxStaleness)}</dd></div> : null}
@@ -8336,19 +8336,11 @@ function CreateVaultView({
       const metadata = testnetCreateAssets.find(
         (asset) => asset.address.toLowerCase() === item.address.toLowerCase(),
       );
-      const approvedPricingConfig = configuredPricingConfig(item.address);
-      const migrateInvalidRobinhoodRoute = Boolean(
-        item.verified
-        && item.pricingConfig.source === 3
-        && approvedPricingConfig?.source === 0
-        && item.pricingConfig.primarySource.toLowerCase() === approvedPricingConfig.primarySource.toLowerCase(),
-      );
       return metadata ? {
         ...item,
         ticker: metadata.symbol,
         name: metadata.name,
         verified: metadata.verified,
-        pricingConfig: migrateInvalidRobinhoodRoute && approvedPricingConfig ? approvedPricingConfig : item.pricingConfig,
       } : item;
     }));
   }, [testnetCreateAssets]);

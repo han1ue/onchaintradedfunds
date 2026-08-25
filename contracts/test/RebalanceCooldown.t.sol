@@ -13,6 +13,7 @@ import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrateg
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
@@ -36,6 +37,8 @@ contract RebalanceCooldownTest is TestBase {
     MockTradeAdapter private adapter;
     MockPriceFeed private feedA;
     MockPriceFeed private feedB;
+    RobinhoodChainlinkPriceFeed private robinhoodFeedA;
+    RobinhoodChainlinkPriceFeed private robinhoodFeedB;
     OTFFactory private factory;
 
     function setUp() public {
@@ -51,6 +54,8 @@ contract RebalanceCooldownTest is TestBase {
         assetRegistry.registerAsset(address(tokenB));
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
+        robinhoodFeedA = new RobinhoodChainlinkPriceFeed(address(tokenA), feedA);
+        robinhoodFeedB = new RobinhoodChainlinkPriceFeed(address(tokenB), feedB);
 
         tokenA.mint(address(this), 10_000 * ONE);
         tokenB.mint(address(this), 10_000 * ONE);
@@ -291,13 +296,13 @@ contract RebalanceCooldownTest is TestBase {
         pricingConfigs[0] = AssetPricingConfig({
             source: PricingSource.ChainlinkRobinhood,
             quoteToken: address(0),
-            primarySource: address(feedA),
+            primarySource: address(robinhoodFeedA),
             primaryMaxStaleness: 25 hours
         });
         pricingConfigs[1] = AssetPricingConfig({
             source: PricingSource.ChainlinkRobinhood,
             quoteToken: address(0),
-            primarySource: address(feedB),
+            primarySource: address(robinhoodFeedB),
             primaryMaxStaleness: 25 hours
         });
 

@@ -4,6 +4,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const localEnvPath = join(root, ".env.deploy.local");
+if (existsSync(localEnvPath)) {
+  for (const line of readFileSync(localEnvPath, "utf8").split(/\r?\n/u)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u);
+    if (!match || match[1].startsWith("#") || process.env[match[1]] !== undefined) continue;
+    const rawValue = match[2];
+    const quoted = rawValue.length >= 2
+      && ((rawValue.startsWith('"') && rawValue.endsWith('"'))
+        || (rawValue.startsWith("'") && rawValue.endsWith("'")));
+    process.env[match[1]] = quoted ? rawValue.slice(1, -1) : rawValue;
+  }
+}
 const appRequire = createRequire(new URL("../app/package.json", import.meta.url));
 const viem = await import(pathToFileURL(appRequire.resolve("viem")).href);
 const accounts = await import(pathToFileURL(appRequire.resolve("viem/accounts")).href);
@@ -25,10 +37,20 @@ const verifiedAssetsPath = join(root, "app", "src", "config", "verified_assets.j
 const mockDecimals = 8;
 const mockAnswer = 1_00000000n;
 const robinhoodEquityMaxStalenessSeconds = 25 * 60 * 60;
-const catalog = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"))
+const verifiedAssets = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"));
+const catalog = verifiedAssets
   .filter((asset) => Number(asset.chainId) === chainId)
-  .map((asset) => ({ asset: asset.tokenAddress }));
+  .map((asset) => ({
+    asset: asset.tokenAddress,
+    source: asset.approvedPricingConfigs?.[0]?.source,
+    feed: asset.approvedPricingConfigs?.[0]?.feedAddress,
+  }));
 if (!catalog.length) throw new Error(`No verified assets are configured for chain ${chainId}.`);
+for (const item of catalog) {
+  if (item.source !== "chainlink" && item.source !== "chainlink-robinhood") {
+    throw new Error(`Unsupported mock pricing source for ${item.asset}: ${item.source ?? "missing"}`);
+  }
+}
 
 function requiredEnv(...names) {
   for (const name of names) {
@@ -100,6 +122,13 @@ const feedVersionAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ];
+const robinhoodFeedMarkerAbi = [{
+  type: "function",
+  name: "isRobinhoodPriceFeed",
+  stateMutability: "view",
+  inputs: [],
+  outputs: [{ type: "bool" }],
+}];
 const erc20MetadataAbi = [{
   type: "function",
   name: "symbol",
@@ -109,6 +138,10 @@ const erc20MetadataAbi = [{
 }];
 const assetRegistryArtifact = artifact("AssetRegistry.sol", "AssetRegistry");
 const mockFeedArtifact = artifact("TestnetMockPriceFeed.sol", "TestnetMockPriceFeed");
+const robinhoodMockFeedArtifact = artifact(
+  "TestnetMockRobinhoodPriceFeed.sol",
+  "TestnetMockRobinhoodPriceFeed",
+);
 
 async function confirmedWrite({ address, abi, functionName, args = [] }) {
   const { request } = await publicClient.simulateContract({
@@ -128,17 +161,22 @@ async function confirmedWrite({ address, abi, functionName, args = [] }) {
   };
 }
 
-async function deployMockFeed(symbol) {
+async function deployMockFeed(symbol, source) {
+  const isRobinhoodMock = source === "chainlink-robinhood";
+  const compiled = isRobinhoodMock ? robinhoodMockFeedArtifact : mockFeedArtifact;
+  const description = isRobinhoodMock
+    ? `${symbol} Robinhood testnet mock USD`
+    : `${symbol} testnet mock USD`;
   const transactionHash = await wallet.deployContract({
-    abi: mockFeedArtifact.abi,
-    bytecode: mockFeedArtifact.bytecode.object,
-    args: [account.address, mockDecimals, mockAnswer, `${symbol} Robinhood testnet mock USD`],
+    abi: compiled.abi,
+    bytecode: compiled.bytecode.object,
+    args: [account.address, mockDecimals, mockAnswer, description],
     account,
     chain,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: transactionHash });
   if (receipt.status !== "success" || !receipt.contractAddress) {
-    throw new Error(`${symbol} mock feed deployment reverted: ${transactionHash}`);
+    throw new Error(`${symbol} ${source} mock feed deployment reverted: ${transactionHash}`);
   }
   return {
     address: getAddress(receipt.contractAddress),
@@ -175,9 +213,14 @@ for (const item of catalog) {
     (record) => isAddressEqual(record.asset, asset),
   );
   let feedDeployment = existing?.feedDeployment;
-  let feed = existing?.feed ? getAddress(existing.feed) : undefined;
+  let feed = existing?.feed
+    ? getAddress(existing.feed)
+    : item.feed
+      ? getAddress(item.feed)
+      : undefined;
   const existingCode = feed ? await publicClient.getCode({ address: feed }) : undefined;
   let existingVersion;
+  let existingIsRobinhoodMock = false;
   if (feed && existingCode && existingCode !== "0x") {
     try {
       existingVersion = await publicClient.readContract({
@@ -188,15 +231,29 @@ for (const item of catalog) {
     } catch {
       existingVersion = undefined;
     }
+    try {
+      existingIsRobinhoodMock = await publicClient.readContract({
+        address: feed,
+        abi: robinhoodFeedMarkerAbi,
+        functionName: "isRobinhoodPriceFeed",
+      });
+    } catch {
+      existingIsRobinhoodMock = false;
+    }
   }
 
-  if (!feed || !existingCode || existingCode === "0x" || existingVersion !== 2n) {
-    feedDeployment = await deployMockFeed(symbol);
+  const expectsRobinhoodMock = item.source === "chainlink-robinhood";
+  const mockTypeMatches = expectsRobinhoodMock === existingIsRobinhoodMock;
+  if (
+    !feed || !existingCode || existingCode === "0x" || existingVersion !== 2n
+      || !mockTypeMatches
+  ) {
+    feedDeployment = await deployMockFeed(symbol, item.source);
     feed = feedDeployment.address;
-    console.log(`${symbol} self-updating synthetic feed: ${feed}`);
+    console.log(`${symbol} ${item.source} self-updating synthetic feed: ${feed}`);
   } else {
-    feedDeployment = { ...feedDeployment, address: feed };
-    console.log(`${symbol} self-updating synthetic feed retained: ${feed}`);
+    feedDeployment = { ...feedDeployment, address: feed, retained: true };
+    console.log(`${symbol} ${item.source} self-updating synthetic feed retained: ${feed}`);
   }
 
   const registered = await publicClient.readContract({
@@ -218,6 +275,10 @@ for (const item of catalog) {
     symbol,
     asset,
     feed,
+    source: item.source,
+    mockType: expectsRobinhoodMock
+      ? "TestnetMockRobinhoodPriceFeed"
+      : "TestnetMockPriceFeed",
     decimals: mockDecimals,
     baseAnswer: mockAnswer,
     priceEpochSeconds: 300,
@@ -235,15 +296,29 @@ for (const item of catalog) {
   deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
   upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {
     asset,
-    source: "chainlink",
+    source: item.source,
     quoteToken: "0x0000000000000000000000000000000000000000",
     primarySource: feed,
     primaryMaxStaleness: robinhoodEquityMaxStalenessSeconds,
     synthetic: true,
   });
+  const verifiedAsset = verifiedAssets.find(
+    (candidate) => Number(candidate.chainId) === chainId
+      && isAddressEqual(candidate.tokenAddress, asset),
+  );
+  if (!verifiedAsset) throw new Error(`Verified asset disappeared during configuration: ${asset}`);
+  verifiedAsset.approvedPricingConfigs = [{
+    ...verifiedAsset.approvedPricingConfigs[0],
+    source: item.source,
+    feedAddress: feed,
+    maxStaleness: robinhoodEquityMaxStalenessSeconds,
+  }];
   deployment.mockCatalogConfiguredAt = new Date().toISOString();
   saveDeployment(deployment);
 }
 
+writeFileSync(verifiedAssetsPath, `${serialize(verifiedAssets)}\n`);
+
 console.log(`Configured ${catalog.length} mock-priced assets.`);
 console.log(`Deployment metadata updated: ${deploymentPath}`);
+console.log(`Verification registry updated: ${verifiedAssetsPath}`);

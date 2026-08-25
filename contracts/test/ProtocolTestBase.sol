@@ -11,6 +11,7 @@ import { IAssetMarketRegistry } from "../src/interfaces/IAssetMarketRegistry.sol
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockStockToken } from "../src/mocks/MockStockToken.sol";
 import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
@@ -37,6 +38,9 @@ abstract contract ProtocolTestBase is TestBase {
     MockPriceFeed internal feedA;
     MockPriceFeed internal feedB;
     MockPriceFeed internal feedC;
+    RobinhoodChainlinkPriceFeed internal robinhoodFeedA;
+    RobinhoodChainlinkPriceFeed internal robinhoodFeedB;
+    RobinhoodChainlinkPriceFeed internal robinhoodFeedC;
     AssetRegistry internal assetRegistry;
     RebalanceExecutor internal executor;
     MockTradeAdapter internal adapter;
@@ -56,6 +60,9 @@ abstract contract ProtocolTestBase is TestBase {
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
         feedC = new MockPriceFeed(8, 100_00000000);
+        robinhoodFeedA = new RobinhoodChainlinkPriceFeed(address(tokenA), feedA);
+        robinhoodFeedB = new RobinhoodChainlinkPriceFeed(address(tokenB), feedB);
+        robinhoodFeedC = new RobinhoodChainlinkPriceFeed(address(tokenC), feedC);
 
         assetRegistry = new AssetRegistry(address(this));
         executor = new RebalanceExecutor(address(this));
@@ -226,19 +233,25 @@ abstract contract ProtocolTestBase is TestBase {
         feed.setRoundData(nextRound, feed.answer(), block.timestamp, block.timestamp, nextRound);
     }
 
-    function _directPricing(address feed) internal pure returns (AssetPricingConfig memory config) {
+    function _directPricing(address feed) internal view returns (AssetPricingConfig memory config) {
         return _directPricing(feed, PricingSource.ChainlinkRobinhood);
     }
 
     function _directPricing(address feed, PricingSource source)
         internal
-        pure
+        view
         returns (AssetPricingConfig memory config)
     {
+        address primarySource = feed;
+        if (source == PricingSource.ChainlinkRobinhood) {
+            if (feed == address(feedA)) primarySource = address(robinhoodFeedA);
+            else if (feed == address(feedB)) primarySource = address(robinhoodFeedB);
+            else if (feed == address(feedC)) primarySource = address(robinhoodFeedC);
+        }
         config = AssetPricingConfig({
             source: source,
             quoteToken: address(0),
-            primarySource: feed,
+            primarySource: primarySource,
             primaryMaxStaleness: 25 hours
         });
     }

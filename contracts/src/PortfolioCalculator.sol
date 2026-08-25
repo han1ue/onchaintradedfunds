@@ -16,6 +16,10 @@ interface IOraclePauseStatus {
     function oraclePaused() external view returns (bool);
 }
 
+interface IRobinhoodPriceFeed is IOraclePauseStatus {
+    function isRobinhoodPriceFeed() external view returns (bool);
+}
+
 interface IVaultAssetPriceSources {
     function priceFeedForAsset(address asset) external view returns (address);
     function maxStalenessForAsset(address asset) external view returns (uint32);
@@ -346,12 +350,7 @@ contract PortfolioCalculator {
             revert MaxStalenessTooHigh(maxStaleness, MAX_ORACLE_STALENESS);
         }
         if (requireRobinhoodPauseCheck) {
-            bool paused;
-            try IOraclePauseStatus(asset).oraclePaused() returns (bool isPaused) {
-                paused = isPaused;
-            } catch {
-                revert OraclePauseStatusUnavailable(asset);
-            }
+            bool paused = _robinhoodOraclePaused(asset, feed);
             if (paused) revert OraclePaused(asset);
         }
         (
@@ -382,6 +381,24 @@ contract PortfolioCalculator {
         // The positive-answer check above makes this signed-to-unsigned cast lossless.
         // forge-lint: disable-next-line(unsafe-typecast)
         price = uint256(answer);
+    }
+
+    function _robinhoodOraclePaused(address asset, AggregatorV3Interface feed)
+        private
+        view
+        returns (bool paused)
+    {
+        IRobinhoodPriceFeed robinhoodFeed = IRobinhoodPriceFeed(address(feed));
+        try robinhoodFeed.isRobinhoodPriceFeed() returns (bool isRobinhoodOracle) {
+            if (!isRobinhoodOracle) revert OraclePauseStatusUnavailable(asset);
+        } catch {
+            revert OraclePauseStatusUnavailable(asset);
+        }
+        try robinhoodFeed.oraclePaused() returns (bool isPaused) {
+            paused = isPaused;
+        } catch {
+            revert OraclePauseStatusUnavailable(asset);
+        }
     }
 
     function _tokenDecimals(address token) private view returns (uint8 tokenDecimals) {

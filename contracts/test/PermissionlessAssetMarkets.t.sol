@@ -7,6 +7,7 @@ import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { ChainlinkRoutePriceFeed } from "../src/ChainlinkRoutePriceFeed.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
+import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
 import { IUniswapV3OraclePool, UniswapV3RoutePriceFeed } from "../src/UniswapV3RoutePriceFeed.sol";
 import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
 import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
@@ -656,11 +657,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
         resolver.validatePricing(address(asset), config);
     }
 
-    function testRobinhoodValidationRequiresOraclePausedFunction() public {
+    function testRobinhoodValidationRequiresPauseStatusOnFeed() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
-        MockReentrantToken tokenWithoutPause =
-            new MockReentrantToken("No pause status", "NOPAUSE", 18);
         MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
         AssetPricingConfig memory config = AssetPricingConfig({
             source: PricingSource.ChainlinkRobinhood,
@@ -670,7 +669,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         });
 
         vm.expectPartialRevert(PortfolioCalculator.OraclePauseStatusUnavailable.selector);
-        resolver.validatePricing(address(tokenWithoutPause), config);
+        resolver.validatePricing(address(asset), config);
     }
 
     function testResolverRejectsInvalidStaleAndPausedChainlinkFeeds() public {
@@ -704,8 +703,11 @@ contract PermissionlessAssetMarketsTest is TestBase {
         resolver.validatePricing(address(asset), direct);
 
         directFeed.setRoundData(6, 100_00000000, block.timestamp, block.timestamp, 6);
+        RobinhoodChainlinkPriceFeed robinhoodFeed =
+            new RobinhoodChainlinkPriceFeed(address(asset), directFeed);
         asset.setOraclePaused(true);
         direct.source = PricingSource.ChainlinkRobinhood;
+        direct.primarySource = address(robinhoodFeed);
         vm.expectPartialRevert(PortfolioCalculator.OraclePaused.selector);
         resolver.validatePricing(address(asset), direct);
 

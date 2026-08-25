@@ -93,7 +93,10 @@ calculator MUST NOT transfer assets, approve spenders, or mutate vault state.
 OTF. It MUST support direct Chainlink asset/USD, composed asset/registeredQuote × registeredQuote/USD Chainlink, and
 Uniswap V3 TWAP. Chainlink selection is permissionless and MUST mechanically validate each supplied
 AggregatorV3-compatible feed and nonzero staleness limit (no more than seven days). Robinhood direct
-pricing is a distinct source that additionally enforces the stock token's pause status. `AssetMarketRegistry`
+pricing is a distinct source that requires a marked Robinhood oracle exposing `oraclePaused()`.
+Consumers do not branch on chain ID: `RobinhoodChainlinkPriceFeed` delegates price data to Chainlink
+and pause status to its Stock Token, while `TestnetMockRobinhoodPriceFeed` supplies an unpaused test
+status itself. Ordinary Chainlink feeds cannot satisfy the Robinhood source. `AssetMarketRegistry`
 validates and records canonical V3 pools used during a
 new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
 
