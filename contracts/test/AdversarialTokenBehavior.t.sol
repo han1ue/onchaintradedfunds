@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
-import { MockAdversarialERC20 } from "../src/mocks/MockAdversarialERC20.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
+import { MockAdversarialERC20 } from "./mocks/MockAdversarialERC20.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { PricingSource, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -234,3 +234,6 @@ contract AdversarialTokenBehaviorTest is ProtocolTestBase {
         vm.stopPrank();
     }
 }
+
+
+

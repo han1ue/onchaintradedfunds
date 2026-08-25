@@ -32,23 +32,21 @@ interface IManagedOTFVaultAssetCleanup {
 }
 
 abstract contract ManagedOTFVaultStorage is ERC20Base {
-    uint256 public constant BPS = 10_000;
-    uint256 public constant YEAR = 365 days;
-    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
-    uint256 public constant STRATEGY_ACTIVATION_DELAY = 48 hours;
-    uint32 public constant CHALLENGE_GRACE_PERIOD = 7 days;
-    uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
-    uint256 public constant MAX_TRADE_COUNT = 20;
-    uint256 public constant MAX_AUTHORIZED_EXECUTORS = 20;
+    uint256 internal constant BPS = 10_000;
+    uint256 internal constant STRATEGY_CHANGE_COOLDOWN = 14 days;
+    uint256 internal constant STRATEGY_ACTIVATION_DELAY = 48 hours;
+    uint32 internal constant CHALLENGE_GRACE_PERIOD = 7 days;
+    uint256 internal constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
+    uint256 internal constant MAX_TRADE_COUNT = 20;
+    uint256 internal constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 internal constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
     /// @notice Time required for a fully consumed NAV-loss budget to replenish.
-    uint256 public constant NAV_LOSS_RECOVERY_PERIOD = 7 days;
-    uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
+    uint256 internal constant NAV_LOSS_RECOVERY_PERIOD = 7 days;
     /// @notice Maximum retiring balance that may be written off and pruned.
     /// @dev Approved constituents are restricted to 18 decimals, so this is 1e-9 tokens.
-    uint256 public constant MAX_RETIRING_DUST = 1_000_000_000;
-    uint16 public constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
-    uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR =
+    uint256 internal constant MAX_RETIRING_DUST = 1_000_000_000;
+    uint16 internal constant CHALLENGE_CALLER_REWARD_BPS = 5_000;
+    uint16 internal constant MAX_MANAGER_FEE_BPS_PER_YEAR =
         ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
     uint256 internal constant RECENT_REBALANCE_CAP = 16;
     uint256 internal constant RECENT_EXECUTION_CAP = 16;
@@ -155,17 +153,17 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     event VaultInitialized(
-        address indexed factory, address indexed manager, address indexed feeRecipient
+        address indexed _factory, address indexed _manager, address indexed _feeRecipient
     );
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event FeesAccrued(uint256 feeShares, uint256 managerShares, uint256 protocolShares);
     event StrategyRationaleLocked(
-        uint256 indexed strategyVersion, address indexed manager, string rationale
+        uint256 indexed strategyVersion, address indexed _manager, string rationale
     );
     event StrategyVersionActivated(
         uint256 indexed strategyVersion,
-        address indexed manager,
+        address indexed _manager,
         uint64 proposedAt,
         uint64 activatedAt,
         string rationale
@@ -178,7 +176,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     event WeightBandsUpdated(uint16 completionDeviationBps, uint16 challengeDeviationBps);
     event TargetWeightsProposed(
         uint256 indexed rebalanceId,
-        address indexed manager,
+        address indexed _manager,
         address[] newTokens,
         uint256[] newWeights,
         uint16 completionDeviationBps,
@@ -192,10 +190,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         uint256[] newWeights,
         uint64 activatedAt
     );
-    event TargetWeightsProposalCancelled(uint256 indexed rebalanceId, address indexed manager);
+    event TargetWeightsProposalCancelled(uint256 indexed rebalanceId, address indexed _manager);
     event StrategicRebalanceCompleted(
         uint256 indexed rebalanceId,
-        address indexed manager,
+        address indexed _manager,
         uint64 completedAt,
         uint256[] actualWeights
     );
@@ -228,7 +226,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         address indexed caller, uint256 rewardShares, uint256 forfeitedShares
     );
     event ChallengeRewardClaimed(address indexed caller, uint256 rewardShares);
-    event ManagerFeeAccrualSuspended(uint64 timestamp);
     event ManagerFeeAccrualResumed(uint64 timestamp);
     event Contributed(
         address indexed caller, address indexed receiver, uint256 lpAmount, uint256[] amounts
@@ -239,45 +236,41 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     event Rebalanced(address[] newTokens, uint256[] newWeights);
     event ConstituentRemoved(address indexed asset);
     event RetiringDustWrittenOff(address indexed asset, uint256 amount);
-    event OtfSunset(address indexed caller, uint64 sunsetAt);
+    event OtfSunset(address indexed caller, uint64 _sunsetAt);
 
     bool internal _initialized;
     uint256 internal _entered;
 
-    address public factory;
-    address public manager;
-    address public feeRecipient;
-    address public feeCollector;
-    address public assetRegistry;
-    // Reserved for a removed dependency pointer in already-deployed clone layouts.
-    address private __removedDependencySlot;
-    address public rebalanceExecutor;
+    address internal _factory;
+    address internal _manager;
+    address internal _feeRecipient;
+    address internal _feeCollector;
+    address internal _assetRegistry;
+    address internal _rebalanceExecutor;
 
-    uint16 public creatorFeeBpsPerYear;
-    uint16 public protocolFeeShareBps;
-    uint16 public maxNavLossBps;
-    uint16 public maxWeightDeviationBps;
-    uint16 public challengeWeightDeviationBps;
-    uint64 public lastFeeAccrualTimestamp;
-    uint64 public lastCompletedStrategyTimestamp;
-    uint64 public strategicRebalanceStartedAt;
-    uint64 public pendingStrategyProposedAt;
-    uint64 public pendingStrategyActivationTime;
+    uint16 internal _creatorFeeBpsPerYear;
+    uint16 internal _protocolFeeShareBps;
+    uint16 internal _maxNavLossBps;
+    uint16 internal _maxWeightDeviationBps;
+    uint16 internal _challengeWeightDeviationBps;
+    uint64 internal _lastFeeAccrualTimestamp;
+    uint64 internal _lastCompletedStrategyTimestamp;
+    uint64 internal _strategicRebalanceStartedAt;
+    uint64 internal _pendingStrategyProposedAt;
+    uint64 internal _pendingStrategyActivationTime;
 
-    uint256 public rebalanceCount;
-    uint256 public escrowedManagerFeeShares;
-    uint256 public forfeitedManagerFeeShares;
-    bool public strategicRebalanceActive;
-    bool public strategyProposalPending;
-    bool public challengeActive;
-    address public challengeCaller;
-    uint64 public challengeStartedAt;
-    uint64 public challengeDeadline;
-    mapping(address => uint16) public targetWeightBps;
-    mapping(address => bool) public authorizedExecutor;
-    mapping(address => uint256) public challengeRewardShares;
-
-    FeeState internal _feeState;
+    uint256 internal _rebalanceCount;
+    uint256 internal _escrowedManagerFeeShares;
+    uint256 internal _forfeitedManagerFeeShares;
+    bool internal _strategicRebalanceActive;
+    bool internal _strategyProposalPending;
+    bool internal _challengeActive;
+    address internal _challengeCaller;
+    uint64 internal _challengeStartedAt;
+    uint64 internal _challengeDeadline;
+    mapping(address => uint16) internal _targetWeightBps;
+    mapping(address => bool) internal _authorizedExecutor;
+    mapping(address => uint256) internal _challengeRewardShares;
     uint256 internal _strategicNavPerShareBefore;
     uint16 internal _strategicTurnoverBps;
     address[] internal _assets;
@@ -293,18 +286,16 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     RebalanceRecord[16] internal _recentRebalances;
     uint256 internal _feeAccrualRemainderWad;
     uint16 internal _protocolFeeSplitRemainderBps;
-    bool public sunset;
-    uint64 public sunsetAt;
+    bool internal _sunset;
+    uint64 internal _sunsetAt;
     /// @dev Timestamp when the currently consumed NAV-loss capacity is fully replenished.
     uint64 internal _navLossBucketRecoveryAt;
     uint32 internal _strategicExecutionLossBps;
-    uint256 public tradeExecutionCount;
+    uint256 internal _tradeExecutionCount;
     TradeExecutionRecord[16] internal _recentTradeExecutions;
     uint256 internal _challengeFeeAccrualRemainderWad;
 
-    // Version-2 storage. Appended so the clone layout used by the incumbent stack is preserved.
-    // Kept internal so delegatecall modules do not each embed duplicate public
-    // getter bytecode. ManagedOTFVault exposes the canonical read surface.
+    // Pinned asset pricing state.
     address internal _assetMarketRegistry;
     mapping(address => bytes32) internal _marketIdForAsset;
     mapping(address => address) internal _priceFeedForAsset;
@@ -321,11 +312,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     mapping(address => uint32) internal _primaryMaxStalenessForAsset;
     mapping(address => address) internal _quoteTokenForAsset;
 
-    // Version-3 storage. Appended for the two-step manager-transfer flow.
-    address public pendingManager;
+    address internal _pendingManager;
 
     modifier onlyManager() {
-        if (msg.sender != manager) revert NotManager();
+        if (msg.sender != _manager) revert NotManager();
         _;
     }
 
@@ -335,7 +325,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     modifier onlyTradeAuthority() {
-        if (!authorizedExecutor[msg.sender]) {
+        if (!_authorizedExecutor[msg.sender]) {
             revert NotTradeAuthority();
         }
         _;
@@ -349,15 +339,15 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     function _protocolMinTargetWeightBps() internal view returns (uint16) {
-        return IProtocolPortfolioLimits(factory).minTargetWeightBps();
+        return IProtocolPortfolioLimits(_factory).minTargetWeightBps();
     }
 
     function _protocolOtfTokenURI() internal view returns (string memory) {
-        return IProtocolPortfolioLimits(factory).otfTokenURI();
+        return IProtocolPortfolioLimits(_factory).otfTokenURI();
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {
-        return targetWeightBps[asset] == 0;
+        return _targetWeightBps[asset] == 0;
     }
 
     function _effectiveTargetWeights() internal view returns (uint256[] memory weights) {
@@ -367,7 +357,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
-            uint256 storedWeight = targetWeightBps[asset];
+            uint256 storedWeight = _targetWeightBps[asset];
             storedWeightTotal += storedWeight;
             weights[i] = storedWeight;
         }
@@ -434,53 +424,44 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     function _startChallenge(address caller, address[] memory breached) internal {
         uint64 startedAt = uint64(block.timestamp);
-        challengeActive = true;
-        challengeCaller = caller;
-        challengeStartedAt = startedAt;
-        challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
-        _feeState = FeeState.Escrowed;
+        _challengeActive = true;
+        _challengeCaller = caller;
+        _challengeStartedAt = startedAt;
+        _challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
         _challengeFeeAccrualRemainderWad = 0;
-        emit OutOfBandChallengeStarted(caller, startedAt, challengeDeadline, breached);
+        emit OutOfBandChallengeStarted(caller, startedAt, _challengeDeadline, breached);
     }
 
     function _pruneRetiringAssetsWithinDust() internal returns (uint256 removed) {
         uint256 length = _assets.length;
-
-        for (uint256 i = 0; i < length; i++) {
-            address asset = _assets[i];
-            if (
-                _isRetiringAsset(asset)
-                    && IERC20(asset).balanceOf(address(this)) <= MAX_RETIRING_DUST
-            ) {
-                removed++;
-            }
-        }
-        if (removed == 0) return 0;
-        removed = 0;
-
         uint256 writeIndex;
         uint256 remainingWeightTotal;
 
         for (uint256 readIndex = 0; readIndex < length; readIndex++) {
             address asset = _assets[readIndex];
-            uint256 balance = IERC20(asset).balanceOf(address(this));
-            if (_isRetiringAsset(asset) && balance <= MAX_RETIRING_DUST) {
-                delete targetWeightBps[asset];
-                IManagedOTFVaultAssetCleanup(address(this)).moduleClearAssetPricing(asset);
-                removed++;
-                if (balance != 0) emit RetiringDustWrittenOff(asset, balance);
-                emit ConstituentRemoved(asset);
-                continue;
+            if (_isRetiringAsset(asset)) {
+                uint256 balance = IERC20(asset).balanceOf(address(this));
+                if (balance <= MAX_RETIRING_DUST) {
+                    delete _targetWeightBps[asset];
+                    IManagedOTFVaultAssetCleanup(address(this)).moduleClearAssetPricing(asset);
+                    removed++;
+                    if (balance != 0) emit RetiringDustWrittenOff(asset, balance);
+                    emit ConstituentRemoved(asset);
+                    continue;
+                }
             }
 
-            remainingWeightTotal += targetWeightBps[asset];
+            remainingWeightTotal += _targetWeightBps[asset];
             if (writeIndex != readIndex) _assets[writeIndex] = asset;
             writeIndex++;
         }
 
+        if (removed == 0) return 0;
         while (_assets.length > writeIndex) _assets.pop();
         if (remainingWeightTotal != 0 && remainingWeightTotal != BPS) {
             revert InvalidWeightSum(remainingWeightTotal);
         }
     }
 }
+
+

@@ -5,8 +5,8 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
-import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { TestBase } from "./TestBase.sol";
 
@@ -188,3 +188,6 @@ contract ReentrancyGuardsTest is TestBase {
         assertEq(tokenOut.balanceOf(address(executor)), 0);
     }
 }
+
+
+

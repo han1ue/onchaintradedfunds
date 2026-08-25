@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IUniswapV3SwapRouter } from "../interfaces/IUniswapV3SwapRouter.sol";
-import { SafeTransferLib } from "../libraries/SafeTransferLib.sol";
+import { IUniswapV3SwapRouter } from "../../src/interfaces/IUniswapV3SwapRouter.sol";
+import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
 contract MockUniswapV3Router is IUniswapV3SwapRouter {
     using SafeTransferLib for address;
@@ -40,3 +40,6 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
         }
     }
 }
+
+
+

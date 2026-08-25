@@ -9,10 +9,10 @@ import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
 import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
 import { IUniswapV3OraclePool, UniswapV3RoutePriceFeed } from "../src/UniswapV3RoutePriceFeed.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockUniswapV3Router } from "./mocks/MockUniswapV3Router.sol";
 import { AssetPricingConfig, PricingSource } from "../src/VaultTypes.sol";
 import { TestBase } from "./TestBase.sol";
 
@@ -129,7 +129,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        assets = new AssetRegistry(address(this));
+        assets = new AssetRegistry();
         asset = new MockStockToken("Permissionless Asset", "ASSET", 18);
         secondAsset = new MockStockToken("Second", "SECOND", 18);
         weth = new MockStockToken("Wrapped Ether", "WETH", 18);
@@ -166,14 +166,15 @@ contract PermissionlessAssetMarketsTest is TestBase {
         bytes32 first = markets.registerV3Market(address(asset), address(lowFee));
         bytes32 second = markets.registerV3Market(address(asset), address(standardFee));
         assertTrue(first != second);
-        assertTrue(markets.isActiveMarketForAsset(first, address(asset)));
-        assertTrue(markets.isActiveMarketForAsset(second, address(asset)));
         (address marketAsset, address marketPool, uint24 marketFee, bool active) =
             markets.marketFor(first);
         assertEq(marketAsset, address(asset));
         assertEq(marketPool, address(lowFee));
         assertEq(uint256(marketFee), 500);
         assertTrue(active);
+        (address secondMarketAsset,,, bool secondActive) = markets.marketFor(second);
+        assertEq(secondMarketAsset, address(asset));
+        assertTrue(secondActive);
         assertEq(uint256(lowFee.observationCardinality()), 64);
     }
 
@@ -424,7 +425,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
         (address normalizedFeed, bytes32 marketId, uint32 maxStaleness) =
             resolver.resolvePricing(address(asset), config);
         assertTrue(normalizedFeed.code.length != 0);
-        assertTrue(markets.isActiveMarketForAsset(marketId, address(asset)));
+        (address marketAsset,,, bool marketActive) = markets.marketFor(marketId);
+        assertEq(marketAsset, address(asset));
+        assertTrue(marketActive);
         assertEq(uint256(maxStaleness), 2 hours);
 
         markets.setMarketActive(marketId, false);
@@ -743,3 +746,6 @@ contract PermissionlessAssetMarketsTest is TestBase {
         calculator.assetValueForVault(address(vault), address(asset), 1 ether);
     }
 }
+
+
+

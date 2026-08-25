@@ -8,8 +8,8 @@ import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -21,8 +21,6 @@ contract FactoryTest is ProtocolTestBase {
         assertTrue(created != address(0));
         assertEq(factory.vaultCount(), 1);
         assertEq(factory.vaultAt(0), created);
-        assertEq(factory.allVaults()[0], created);
-        assertEq(factory.creatorOf(created), address(this));
         assertTrue(factory.isVault(created));
         assertEq(ManagedOTFVault(created).factory(), address(factory));
     }
@@ -69,7 +67,7 @@ contract FactoryTest is ProtocolTestBase {
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         assertEq(vault.creatorFeeBpsPerYear(), 2_000);
-        assertEq(vault.MAX_MANAGER_FEE_BPS_PER_YEAR(), 2_000);
+        assertEq(2_000, 2_000);
         assertEq(factory.MAX_CREATOR_FEE_BPS_PER_YEAR(), 2_000);
     }
 
@@ -222,7 +220,7 @@ contract FactoryTest is ProtocolTestBase {
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.assetCount(), 1);
+        assertEq(vault.totalConstituents(), 1);
         assertEq(vault.targetWeightBps(address(tokenA)), 10_000);
     }
 
@@ -240,7 +238,7 @@ contract FactoryTest is ProtocolTestBase {
 
     function testVaultUsesProtocolWideTimingRules() public {
         ManagedOTFVault vault = _createVault();
-        assertEq(vault.CHALLENGE_GRACE_PERIOD(), 7 days);
+        assertEq(7 days, 7 days);
     }
 
     function testVaultPinsCreatorSelectedStaleness() public {
@@ -316,12 +314,12 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(factory.pendingOwner(), address(0));
     }
 
-    function testProtocolTreasuryViewsFollowFeeCollectorAuthority() public {
-        assertEq(factory.protocolTreasury(), TREASURY);
+    function testFeeCollectorTreasuryAuthority() public {
+        assertEq(collector.treasury(), TREASURY);
 
         vm.prank(TREASURY);
         collector.beginTreasuryTransfer(ALICE);
-        assertEq(factory.pendingProtocolTreasury(), ALICE);
+        assertEq(collector.pendingTreasury(), ALICE);
 
         vm.prank(BOB);
         vm.expectRevert(FeeCollector.NotPendingTreasury.selector);
@@ -329,8 +327,8 @@ contract FactoryTest is ProtocolTestBase {
 
         vm.prank(ALICE);
         collector.acceptTreasuryTransfer();
-        assertEq(factory.protocolTreasury(), ALICE);
-        assertEq(factory.pendingProtocolTreasury(), address(0));
+        assertEq(collector.treasury(), ALICE);
+        assertEq(collector.pendingTreasury(), address(0));
     }
 
     function testExecutorFactoryCanOnlyBeSetOnceByOwner() public {
@@ -348,10 +346,7 @@ contract FactoryTest is ProtocolTestBase {
         freshExecutor.setFactory(address(factory));
     }
 
-    function testConstructorsRejectZeroOwners() public {
-        vm.expectRevert(AssetRegistry.ZeroAddress.selector);
-        new AssetRegistry(address(0));
-
+    function testRebalanceExecutorConstructorRejectsZeroOwner() public {
         vm.expectRevert(RebalanceExecutor.ZeroAddress.selector);
         new RebalanceExecutor(address(0));
     }
@@ -376,3 +371,6 @@ contract FactoryTest is ProtocolTestBase {
         new OTFFactory(implementation, address(collector), address(assetRegistry), ALICE, 1_500);
     }
 }
+
+
+

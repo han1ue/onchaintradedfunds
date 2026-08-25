@@ -104,7 +104,7 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
 
         vm.warp(START + 1 days);
         _refreshPrices();
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertEq(uint256(vault.feeState()), uint256(ManagedOTFVaultStorage.FeeState.Accruing));
 
         (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
@@ -131,7 +131,7 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
 
         vm.warp(START + 365 days);
         _refreshPrices();
-        assertEq(vault.accrueFees(), 0);
+        assertEq(vault.withdrawManagerFees(), 0);
         assertEq(vault.totalSupply(), supplyAtSunset);
 
         vm.expectRevert(ManagedOTFVaultStorage.VaultSunset.selector);
@@ -206,3 +206,6 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
         pendingVault.sunsetOtf();
     }
 }
+
+
+

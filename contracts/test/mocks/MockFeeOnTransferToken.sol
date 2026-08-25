@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20Metadata } from "../interfaces/IERC20.sol";
+import { IERC20Metadata } from "../../src/interfaces/IERC20.sol";
 
 contract MockFeeOnTransferToken is IERC20Metadata {
     error InvalidFee();
@@ -72,3 +72,6 @@ contract MockFeeOnTransferToken is IERC20Metadata {
         if (fee != 0) emit Transfer(from, address(0), fee);
     }
 }
+
+
+

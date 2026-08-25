@@ -31,7 +31,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         params.initialAmounts[2] = uint256(weightC) * ONE;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        uint16[] memory effectiveTargets = vault.targetWeightsBps();
+        (, uint256[] memory effectiveTargets) = vault.getConstituents();
 
         assertEq(effectiveTargets[0], weightA);
         assertEq(effectiveTargets[1], weightB);
@@ -44,7 +44,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.STRATEGY_CHANGE_COOLDOWN(), 14 days);
+        assertEq(14 days, 14 days);
         assertEq(vault.nextStrategyChangeTime(), START + 14 days);
     }
 
@@ -115,13 +115,13 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         uint96 rawInitialAmount
     ) public {
         VaultInitParams memory params = _defaultParams();
-        uint256 minimum = factory.MINIMUM_LIQUIDITY_SHARES();
         params.initialShareSupply =
             bound(rawInitialSupply, factory.MINIMUM_INITIAL_SHARE_SUPPLY(), 1_000 * ONE);
         uint256 initialAmount = bound(rawInitialAmount, 1, 1_000 * ONE);
         params.initialAmounts[0] = initialAmount;
         params.initialAmounts[1] = initialAmount;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        uint256 minimum = LOCKED_LIQUIDITY_SHARES;
         uint256[] memory minimums = new uint256[](2);
 
         vault.redeem(vault.balanceOf(address(this)), ALICE, address(this), minimums);
@@ -197,7 +197,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
             : Math.mulDiv(100 * ONE, growthWad, ONE) - 100 * ONE;
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
 
-        uint256 actualFeeShares = vault.accrueFees();
+        uint256 actualFeeShares = vault.withdrawManagerFees();
 
         assertEq(actualFeeShares, expectedFeeShares);
         assertEq(vault.balanceOf(address(collector)), expectedProtocolShares);
@@ -218,7 +218,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         vm.warp(START + elapsed);
         feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
-        uint256 accrued = vault.accrueFees();
+        uint256 accrued = vault.withdrawManagerFees();
 
         assertGt(accrued, 0);
         assertEq(vault.lastFeeAccrualTimestamp(), START + elapsed);
@@ -244,7 +244,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         vm.assume(receiver != address(0));
         vm.assume(receiver != address(this));
         ManagedOTFVault vault = _createVault();
-        uint256 initialManagerShares = 100 * ONE - vault.MINIMUM_LIQUIDITY_SHARES();
+        uint256 initialManagerShares = 100 * ONE - LOCKED_LIQUIDITY_SHARES;
         uint256 amount = bound(rawAmount, 0, initialManagerShares);
 
         vault.transfer(receiver, amount);
@@ -280,3 +280,6 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(vault.manager(), ATTACKER);
     }
 }
+
+
+

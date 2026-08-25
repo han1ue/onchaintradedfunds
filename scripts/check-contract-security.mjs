@@ -120,30 +120,10 @@ assert(
   JSON.stringify(viewLayout) === JSON.stringify(canonicalLayout),
   "view module declares storage outside the canonical layout",
 );
-const removedDependencyIndex = canonicalLayout.findIndex(
-  (entry) => entry.label === "__removedDependencySlot",
-);
-assert(removedDependencyIndex > 0, "removed dependency slot is not reserved in the clone layout");
 assert(
-  canonicalLayout[removedDependencyIndex - 1]?.label === "assetRegistry"
-    && canonicalLayout[removedDependencyIndex + 1]?.label === "rebalanceExecutor",
-  "removed dependency slot moved relative to the deployed clone layout",
+  !canonicalLayout.some((entry) => entry.label.includes("removed") || entry.label.includes("gap")),
+  "fresh-deployment layout contains a reserved legacy slot",
 );
-for (const [label, slot] of [
-  ["assetRegistry", "12"],
-  ["__removedDependencySlot", "13"],
-  ["rebalanceExecutor", "14"],
-  ["_pricingConfiguredForAsset", "176"],
-  ["_pendingPricingConfigs", "177"],
-  ["_primaryMaxStalenessForAsset", "178"],
-  ["_quoteTokenForAsset", "179"],
-  ["pendingManager", "180"],
-]) {
-  assert(
-    canonicalLayout.some((entry) => entry.label === label && entry.slot === slot),
-    `${label} is not in canonical storage slot ${slot}`,
-  );
-}
 
 const productionContracts = [
   ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
@@ -192,12 +172,14 @@ const factoryFunctions = factory.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 const factoryEvents = abiSignatures(factory, "event");
+const factoryErrors = abiSignatures(factory, "error");
 const assetRegistryFunctions = assetRegistry.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 const assetRegistryEventNames = assetRegistry.abi
   .filter((item) => item.type === "event")
   .map((item) => item.name);
+const assetRegistryConstructor = assetRegistry.abi.find((item) => item.type === "constructor");
 const pricingResolverFunctions = pricingResolver.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
@@ -208,6 +190,9 @@ const v3RoutePriceFeedFunctions = v3RoutePriceFeed.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 const registeredV3AdapterFunctions = registeredV3Adapter.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
+const calculatorFunctions = artifact("PortfolioCalculator.sol", "PortfolioCalculator").abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
 
@@ -286,6 +271,51 @@ for (const signature of officialERC7621Errors) {
 }
 
 assert(!vaultFunctions.includes("execute"), "generic execute function found in vault ABI");
+for (const removedFunction of [
+  "YEAR",
+  "MINIMUM_LIQUIDITY_SHARES",
+  "moduleMintFees",
+  "accrueFees",
+  "stopChallengeFees",
+  "assetCount",
+  "assetAt",
+  "targetWeightsBps",
+  "feesAccruing",
+  "feesEscrowed",
+  "feesSuspended",
+]) {
+  assert(!vaultFunctions.includes(removedFunction), `removed vault function found: ${removedFunction}`);
+}
+assert(
+  !vaultEvents.has("ManagerFeeAccrualSuspended(uint64)"),
+  "never-emitted manager fee suspension event remains in vault ABI",
+);
+for (const removedFunction of ["STRATEGY_CHANGE_COOLDOWN", "MINIMUM_LIQUIDITY_SHARES"]) {
+  assert(
+    !factoryFunctions.includes(removedFunction),
+    `removed factory function found: ${removedFunction}`,
+  );
+}
+for (const removedFunction of [
+  "allVaults",
+  "creatorOf",
+  "protocolTreasury",
+  "pendingProtocolTreasury",
+]) {
+  assert(!factoryFunctions.includes(removedFunction), `removed factory function found: ${removedFunction}`);
+}
+assert(
+  factoryErrors.has("FailedDeployment()") && !factoryErrors.has("CloneDeploymentFailed()"),
+  "factory does not expose the pinned OpenZeppelin clone-deployment error",
+);
+assert(
+  !calculatorFunctions.includes("effectiveTargetWeights"),
+  "removed target-weight calculator surface remains",
+);
+assert(
+  !assetMarketRegistryFunctions.includes("isActiveMarketForAsset"),
+  "removed active-market helper remains",
+);
 for (const legacyFunction of [
   "finalizeTerminalShutdown",
   "proposeStrategyWithMarkets",
@@ -325,6 +355,10 @@ for (const legacyFunction of [
   );
 }
 assert(assetRegistryFunctions.includes("registerAsset"), "permissionless asset discovery is absent");
+assert(
+  (assetRegistryConstructor?.inputs.length ?? 0) === 0,
+  "permissionless asset discovery constructor is not zero-argument",
+);
 assert(
   assetRegistryFunctions.includes("isRegisteredAsset"),
   "permissionless asset discovery view is absent",
@@ -424,6 +458,27 @@ for (const item of viewModule.abi) {
   assert(
     item.stateMutability === "view" || item.stateMutability === "pure",
     `view-module function is mutative: ${abiSignature(item)}`,
+  );
+}
+
+const canonicalSelectors = new Map();
+for (const compiled of [vault, viewModule]) {
+  for (const item of compiled.abi) {
+    if (item.type !== "function") continue;
+    const signature = abiSignature(item);
+    const selector = compiled.methodIdentifiers[signature];
+    const existing = canonicalSelectors.get(selector);
+    assert(
+      existing === undefined || existing === signature,
+      `canonical ABI selector collision: ${existing} and ${signature} share ${selector}`,
+    );
+    canonicalSelectors.set(selector, signature);
+  }
+}
+for (const [signature, selector] of Object.entries(viewModule.methodIdentifiers)) {
+  assert(
+    vault.methodIdentifiers[signature] === selector,
+    `vault does not route canonical view selector ${signature}`,
   );
 }
 

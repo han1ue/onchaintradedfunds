@@ -20,11 +20,12 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.manager(), address(this));
         assertEq(vault.feeRecipient(), FEE_RECIPIENT);
         assertEq(vault.totalSupply(), 100 * ONE);
-        assertEq(vault.balanceOf(address(this)), 100 * ONE - vault.MINIMUM_LIQUIDITY_SHARES());
-        assertEq(vault.balanceOf(address(vault)), vault.MINIMUM_LIQUIDITY_SHARES());
-        assertEq(vault.assetCount(), 2);
-        assertEq(vault.assetAt(0), address(tokenA));
-        assertEq(vault.assetAt(1), address(tokenB));
+        assertEq(vault.balanceOf(address(this)), 100 * ONE - LOCKED_LIQUIDITY_SHARES);
+        assertEq(vault.balanceOf(address(vault)), LOCKED_LIQUIDITY_SHARES);
+        assertEq(vault.totalConstituents(), 2);
+        (address[] memory constituents,) = vault.getConstituents();
+        assertEq(constituents[0], address(tokenA));
+        assertEq(constituents[1], address(tokenB));
         assertEq(vault.targetWeightBps(address(tokenA)), 5_000);
         assertEq(vault.targetWeightBps(address(tokenB)), 5_000);
         assertEq(vault.lastCompletedStrategyTimestamp(), START);
@@ -125,7 +126,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vm.expectPartialRevert(IERC7621.InsufficientAmount.selector);
         vault.redeem(10 * ONE, address(this), address(this), minimums);
 
-        assertEq(vault.balanceOf(address(this)), 100 * ONE - vault.MINIMUM_LIQUIDITY_SHARES());
+        assertEq(vault.balanceOf(address(this)), 100 * ONE - LOCKED_LIQUIDITY_SHARES);
         assertEq(vault.totalSupply(), 100 * ONE);
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
     }
@@ -193,7 +194,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
         uint256 expectedCreatorShares = expectedFeeShares - expectedProtocolShares;
 
-        uint256 minted = vault.accrueFees();
+        uint256 minted = vault.withdrawManagerFees();
         assertEq(minted, expectedFeeShares);
         assertEq(vault.balanceOf(address(collector)), expectedProtocolShares);
         assertEq(vault.balanceOf(FEE_RECIPIENT), expectedCreatorShares);
@@ -206,9 +207,9 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         vm.warp(START + 1 days);
         _refreshPrices();
 
-        uint256 first = vault.accrueFees();
+        uint256 first = vault.withdrawManagerFees();
         uint256 supply = vault.totalSupply();
-        uint256 second = vault.accrueFees();
+        uint256 second = vault.withdrawManagerFees();
 
         assertGt(first, 0);
         assertEq(second, 0);
@@ -223,17 +224,17 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         ManagedOTFVault singleIntervalVault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + 1);
-        uint256 fragmentedFees = fragmentedVault.accrueFees();
+        uint256 fragmentedFees = fragmentedVault.withdrawManagerFees();
         assertGt(fragmentedFees, 0);
         assertEq(fragmentedVault.lastFeeAccrualTimestamp(), START + 1);
 
         for (uint256 i = 2; i <= 400; i++) {
             vm.warp(START + i);
-            fragmentedFees += fragmentedVault.accrueFees();
+            fragmentedFees += fragmentedVault.withdrawManagerFees();
         }
 
         vm.warp(START + 400);
-        uint256 singleIntervalFees = singleIntervalVault.accrueFees();
+        uint256 singleIntervalFees = singleIntervalVault.withdrawManagerFees();
 
         assertGt(singleIntervalFees, 0);
         assertApproxEqAbs(fragmentedFees, singleIntervalFees, 10_000);
@@ -249,9 +250,9 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         for (uint256 day = 1; day <= 365; day++) {
             vm.warp(START + day * 1 days);
             _refreshPrices();
-            dailyVault.accrueFees();
+            dailyVault.withdrawManagerFees();
         }
-        uint256 annualFees = annualVault.accrueFees();
+        uint256 annualFees = annualVault.withdrawManagerFees();
         uint256 expectedAnnualFees = 100 * ONE * 1_000 / (10_000 - 1_000);
 
         assertEq(annualFees, expectedAnnualFees);
@@ -282,8 +283,8 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
         vm.warp(START + 3_000 + 365 days);
         _refreshPrices();
-        changingVault.accrueFees();
-        controlVault.accrueFees();
+        changingVault.withdrawManagerFees();
+        controlVault.withdrawManagerFees();
 
         // The first interval accrued at 1%, so it cannot be repriced retroactively at 10%.
         assertLt(changingVault.totalSupply(), controlVault.totalSupply());
@@ -295,7 +296,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         feedA.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
         feedB.setRoundData(2, 100_00000000, block.timestamp, block.timestamp, 2);
 
-        uint256 accrued = vault.accrueFees();
+        uint256 accrued = vault.withdrawManagerFees();
 
         assertGt(accrued, 0);
         assertEq(vault.lastFeeAccrualTimestamp(), START + 36_500 days);
@@ -414,7 +415,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
         vm.warp(START + 2 days);
         _refreshPrices();
-        vault.accrueFees();
+        vault.withdrawManagerFees();
         assertGt(vault.balanceOf(ALICE), 0);
     }
 
@@ -449,3 +450,6 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         return string(value);
     }
 }
+
+
+

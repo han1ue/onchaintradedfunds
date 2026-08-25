@@ -28,6 +28,4 @@ interface IAssetMarketRegistry {
         external
         view
         returns (address asset, address pool, uint24 fee, bool active);
-
-    function isActiveMarketForAsset(bytes32 marketId, address asset) external view returns (bool);
 }

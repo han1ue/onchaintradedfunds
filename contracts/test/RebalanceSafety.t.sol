@@ -7,9 +7,9 @@ import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
 import {
     AssetPricingConfig,
     PricingSource,
@@ -201,7 +201,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         vault.executeRebalanceTrades(lossy);
         assertEq(tokenB.balanceOf(address(vault)), tokenBBefore);
 
-        vm.warp(block.timestamp + vault.NAV_LOSS_RECOVERY_PERIOD() / 2);
+        vm.warp(block.timestamp + 7 days / 2);
         _refreshPrices();
         (, usedLossBps,) = vault.navLossBudgetState();
         assertEq(usedLossBps, 1);
@@ -357,7 +357,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         assertTrue(vault.isConstituent(address(tokenB)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
-        assertEq(vault.assetCount(), 2);
+        assertEq(vault.totalConstituents(), 2);
         vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForRetiringAsset.selector);
         vault.previewMint(ONE);
 
@@ -367,7 +367,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         assertFalse(vault.strategicRebalanceActive());
         assertFalse(vault.isConstituent(address(tokenB)));
-        assertEq(vault.assetCount(), 1);
+        assertEq(vault.totalConstituents(), 1);
         assertEq(vault.currentWeight(address(tokenA)), 10_000);
         assertEq(vault.previewMint(ONE).length, 1);
     }
@@ -383,7 +383,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         uint256 quotedBalance = tokenB.balanceOf(address(vault));
         TradeInstruction[] memory trades =
             _singleTrade(address(tokenB), address(tokenA), type(uint256).max, quotedBalance);
-        uint256 donation = vault.MAX_RETIRING_DUST() + 1;
+        uint256 donation = 1_000_000_000 + 1;
         tokenB.mint(ATTACKER, donation);
         vm.prank(ATTACKER);
         assertTrue(tokenB.transfer(address(vault), donation));
@@ -394,7 +394,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(vault)), tokenABefore + quotedBalance + donation);
         assertEq(tokenB.balanceOf(address(vault)), 0);
         assertEq(tokenB.allowance(address(vault), address(executor)), 0);
-        assertEq(vault.assetCount(), 1);
+        assertEq(vault.totalConstituents(), 1);
         assertFalse(vault.isConstituent(address(tokenB)));
         assertFalse(vault.strategicRebalanceActive());
     }
@@ -419,6 +419,30 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             _singleTrade(address(tokenB), address(tokenA), type(uint256).max, 1);
         vm.expectPartialRevert(ManagedOTFVaultStorage.BadTrade.selector);
         vault.executeRebalanceTrades(emptyRetiringTrade);
+    }
+
+    function testPruningReadsBalancesOnlyForRetiringAssets() public {
+        ManagedOTFVault vault = _createVault();
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint16[] memory weights = new uint16[](1);
+        weights[0] = 10_000;
+        _proposeTarget(vault, assets, weights);
+
+        uint256 retiringBalance = tokenB.balanceOf(address(vault));
+        vm.prank(address(vault));
+        assertTrue(tokenB.transfer(ALICE, retiringBalance));
+        vm.mockCallRevert(
+            address(tokenA),
+            abi.encodeWithSignature("balanceOf(address)", address(vault)),
+            abi.encodeWithSignature("Error(string)", "active balance read")
+        );
+
+        assertEq(vault.pruneRetiredAssets(), 1);
+        vm.clearMockedCalls();
+        assertEq(vault.totalConstituents(), 1);
+        (address[] memory constituents,) = vault.getConstituents();
+        assertEq(constituents[0], address(tokenA));
     }
 
     function testFullBalanceSentinelUsesDonatedAmountForOracleSlippage() public {
@@ -475,7 +499,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertTrue(vault.isConstituent(address(tokenC)));
         assertEq(vault.targetWeightBps(address(tokenB)), 0);
         assertEq(vault.targetWeightBps(address(tokenC)), 5_000);
-        assertEq(vault.assetCount(), 3);
+        assertEq(vault.totalConstituents(), 3);
         vm.expectPartialRevert(ManagedOTFVaultStorage.DepositsPausedForRetiringAsset.selector);
         vault.previewMint(ONE);
 
@@ -488,7 +512,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertFalse(vault.isConstituent(address(tokenB)));
         assertTrue(vault.isConstituent(address(tokenA)));
         assertTrue(vault.isConstituent(address(tokenC)));
-        assertEq(vault.assetCount(), 2);
+        assertEq(vault.totalConstituents(), 2);
         assertEq(tokenA.balanceOf(address(vault)), 500 * ONE);
         assertEq(tokenB.balanceOf(address(vault)), 0);
         assertEq(tokenC.balanceOf(address(vault)), 500 * ONE);
@@ -538,8 +562,7 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         private
         returns (AssetPricingConfig memory)
     {
-        RobinhoodChainlinkPriceFeed robinhoodFeed =
-            new RobinhoodChainlinkPriceFeed(asset, feed);
+        RobinhoodChainlinkPriceFeed robinhoodFeed = new RobinhoodChainlinkPriceFeed(asset, feed);
         return _directPricing(address(robinhoodFeed));
     }
 
@@ -784,3 +807,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         executor.executeTrade(trade, trade.amountIn);
     }
 }
+
+
+

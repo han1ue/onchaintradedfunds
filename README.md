@@ -42,7 +42,7 @@ This repository currently implements the first MVP slice:
 |   |-- src/
 |   |   |-- interfaces/
 |   |   |-- libraries/
-|   |   |-- mocks/
+|   |   |-- testnet/
 |   |   |-- ManagedOTFVault.sol
 |   |   |-- OTFFactory.sol
 |   |   |-- RebalanceExecutor.sol
@@ -52,6 +52,7 @@ This repository currently implements the first MVP slice:
 |   |   |-- FeeCollector.sol
 |   |   `-- VaultTypes.sol
 |   |-- test/
+|   |   `-- mocks/
 |   `-- foundry.toml
 |-- app/
 |   |-- src/app/
@@ -733,7 +734,8 @@ NEXT_PUBLIC_RH_TESTNET_RPC_URL=
 
 These optional values configure wallet connectivity and RPC endpoints. Contract and token addresses
 are not environment variables. The frontend and deployment utilities share the checked-in
-`app/src/config/robinhood-testnet.json` file. The frontend reads `allVaults()` from the factory
+`app/src/config/robinhood-testnet.json` file. The frontend enumerates factory vaults through
+`vaultCount()` and bounded `vaultAt()` reads
 recorded there; individual OTF addresses are discovered from the factory.
 
 Robinhood testnet deployment requires only the private signer as secret configuration:

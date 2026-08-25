@@ -12,9 +12,10 @@ import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { ProtocolConstants } from "../src/libraries/ProtocolConstants.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import {
     AssetPricingConfig,
     PricingSource,
@@ -26,6 +27,7 @@ import { TestBase } from "./TestBase.sol";
 abstract contract ProtocolTestBase is TestBase {
     uint256 internal constant START = 1_700_000_000;
     uint256 internal constant ONE = 1e18;
+    uint256 internal constant LOCKED_LIQUIDITY_SHARES = ProtocolConstants.MINIMUM_LIQUIDITY_SHARES;
     address internal constant TREASURY = address(0xCAFE);
     address internal constant FEE_RECIPIENT = address(0xFEE);
     address internal constant ALICE = address(0xA11CE);
@@ -64,7 +66,7 @@ abstract contract ProtocolTestBase is TestBase {
         robinhoodFeedB = new RobinhoodChainlinkPriceFeed(address(tokenB), feedB);
         robinhoodFeedC = new RobinhoodChainlinkPriceFeed(address(tokenC), feedC);
 
-        assetRegistry = new AssetRegistry(address(this));
+        assetRegistry = new AssetRegistry();
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
         collector = new FeeCollector(TREASURY);
@@ -288,3 +290,6 @@ abstract contract ProtocolTestBase is TestBase {
         _executeAndComplete(vault, trades);
     }
 }
+
+
+

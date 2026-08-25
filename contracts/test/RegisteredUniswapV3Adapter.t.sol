@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockUniswapV3Router } from "./mocks/MockUniswapV3Router.sol";
 import { TestBase } from "./TestBase.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -122,3 +122,6 @@ contract RegisteredUniswapV3AdapterTest is TestBase {
         assertEq(tokenIn.allowance(address(adapter), address(router)), 0);
     }
 }
+
+
+

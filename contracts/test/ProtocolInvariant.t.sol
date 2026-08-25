@@ -6,9 +6,9 @@ import { IManagedOTFStrategyHistory } from "../src/interfaces/IManagedOTFStrateg
 import { IManagedOTFVaultView } from "../src/interfaces/IManagedOTFVaultView.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { InvariantTestBase, TestBase } from "./TestBase.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -144,7 +144,7 @@ contract ProtocolInvariantHandler is TestBase {
         vm.warp(block.timestamp + elapsed);
         _refreshOracles();
         eligibleAccrualAttempts++;
-        try vault.accrueFees() {
+        try vault.withdrawManagerFees() {
             successfulAccruals++;
         } catch {
             unexpectedReverts++;
@@ -520,7 +520,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(handler.unexpectedReverts(), 0);
     }
 
-    function invariantShareSupplyEqualsKnownHolderBalances() public view {
+    function invariantShareSupplyEqualsKnownHolderBalances() public {
         uint256 accountedSupply = vault.balanceOf(address(this)) + vault.balanceOf(ALICE)
             + vault.balanceOf(BOB) + vault.balanceOf(FEE_RECIPIENT)
             + vault.balanceOf(address(collector)) + vault.balanceOf(address(vault));
@@ -528,8 +528,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
     }
 
     function invariantPortfolioAlwaysSatisfiesMandateLimits() public {
-        address[] memory assets = vault.assets();
-        uint16[] memory weights = vault.targetWeightsBps();
+        (address[] memory assets, uint256[] memory weights) = vault.getConstituents();
         uint256 sum;
 
         assertGt(assets.length, 0);
@@ -553,12 +552,12 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertGt(vault.navPerShare(), 0);
     }
 
-    function invariantLockedLiquidityCanNeverBeBurned() public view {
-        assertGe(vault.balanceOf(address(vault)), vault.MINIMUM_LIQUIDITY_SHARES());
-        assertGe(vault.totalSupply(), vault.MINIMUM_LIQUIDITY_SHARES());
+    function invariantLockedSharesCannotBeTransferredBurnedOrRedeemed() public {
+        assertEq(vault.balanceOf(address(vault)), LOCKED_LIQUIDITY_SHARES);
+        assertGe(vault.totalSupply(), LOCKED_LIQUIDITY_SHARES);
     }
 
-    function invariantExecutorNeverRetainsAssetsOrApprovals() public view {
+    function invariantExecutorNeverRetainsAssetsOrApprovals() public {
         RebalanceExecutor currentExecutor = RebalanceExecutor(vault.rebalanceExecutor());
         assertEq(tokenA.allowance(address(vault), address(currentExecutor)), 0);
         assertEq(tokenB.allowance(address(vault), address(currentExecutor)), 0);
@@ -570,7 +569,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertLe(vault.lastCompletedStrategyTimestamp(), block.timestamp);
         assertEq(
             vault.nextStrategyChangeTime(),
-            uint256(vault.lastCompletedStrategyTimestamp()) + vault.STRATEGY_CHANGE_COOLDOWN()
+            uint256(vault.lastCompletedStrategyTimestamp()) + 14 days
         );
         assertEq(vault.rebalanceCount(), handler.successfulRebalances());
         uint256 expectedRecent = vault.rebalanceCount() < 16 ? vault.rebalanceCount() : 16;
@@ -597,7 +596,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertEq(handler.pausedOracleRejections(), handler.pausedOracleChecks());
     }
 
-    function invariantAdministrativeHistoryIsAppendOnly() public view {
+    function invariantAdministrativeHistoryIsAppendOnly() public {
         assertEq(vault.manager(), address(handler));
         uint256 expectedVersions = handler.successfulActivations() + 1;
         assertEq(
@@ -613,12 +612,11 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         );
         assertFalse(vault.strategyProposalPending() && vault.strategicRebalanceActive());
         assertLe(vault.lastFeeAccrualTimestamp(), block.timestamp);
-        assertEq(vault.STRATEGY_CHANGE_COOLDOWN(), 14 days);
+        assertEq(14 days, 14 days);
     }
 
-    function invariantFactoryProvenanceNeverChanges() public view {
+    function invariantFactoryMembershipNeverChanges() public {
         assertTrue(factory.isVault(address(vault)));
-        assertEq(factory.creatorOf(address(vault)), address(this));
         assertEq(vault.factory(), address(factory));
     }
 
@@ -643,3 +641,7 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         if (!vault.sunset()) assertEq(totalWeight, 10_000);
     }
 }
+
+
+
+

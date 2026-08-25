@@ -397,13 +397,6 @@ const vaultDepositAbi = [
 const vaultFeeAbi = [
   {
     type: "function",
-    name: "accrueFees",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [{ name: "feeShares", type: "uint256" }],
-  },
-  {
-    type: "function",
     name: "withdrawManagerFees",
     stateMutability: "nonpayable",
     inputs: [],
@@ -1863,18 +1856,31 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const [lastReadAt, setLastReadAt] = useState<number>();
 
   const {
-    data: factoryVaultData,
+    data: factoryVaultCount,
     error: factoryError,
     isLoading: factoryLoading,
   } = useReadContract({
     address: factoryAddress,
     abi: otfFactoryAbi,
-    functionName: "allVaults",
+    functionName: "vaultCount",
     chainId: robinhoodChainTestnet.id,
     query: {
       enabled: Boolean(factoryAddress) && isTestnet,
       refetchInterval: 12_000,
     },
+  });
+  const factoryVaultContracts = factoryAddress && isTestnet
+    ? Array.from({ length: Number(factoryVaultCount ?? 0n) }, (_, index) => ({
+        address: factoryAddress,
+        abi: otfFactoryAbi,
+        functionName: "vaultAt" as const,
+        args: [BigInt(index)] as const,
+        chainId: robinhoodChainTestnet.id,
+      }))
+    : undefined;
+  const { data: factoryVaultData } = useReadContracts({
+    contracts: factoryVaultContracts,
+    query: { enabled: Boolean(factoryVaultContracts), refetchInterval: 12_000 },
   });
   const catalogFeedAddresses = testnetCreateAssets.map((asset) => {
     const pricing = configuredPricingConfig(asset.address);
@@ -1933,7 +1939,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
   const factoryVaultAddresses = useMemo(
     () => isTestnet
-      ? (factoryVaultData ?? []).filter(
+      ? (factoryVaultData ?? []).flatMap((result) => result.status === "success" && isAddress(result.result)
+        ? [result.result]
+        : []).filter(
           (address): address is `0x${string}` => isAddress(address),
         )
       : [],
@@ -1967,17 +1975,14 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "creatorFeeBpsPerYear" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "protocolFeeShareBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalSupply" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "assets" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "targetWeightsBps" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "getConstituents" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxNavLossBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxWeightDeviationBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "STRATEGY_CHANGE_COOLDOWN" },
         { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "minTargetWeightBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalAssetsValue" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "navPerShare" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "currentWeightsBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeWeightDeviationBps" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "CHALLENGE_GRACE_PERIOD" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "isWithinTargetBands" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "strategicRebalanceActive" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "challengeActive" },
@@ -2027,12 +2032,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address, abi: managedOtfVaultAbi, functionName: "assets" },
         { address, abi: managedOtfVaultAbi, functionName: "totalAssetsValue" },
         { address, abi: managedOtfVaultAbi, functionName: "navPerShare" },
-        {
-          address: factoryAddress,
-          abi: otfFactoryAbi,
-          functionName: "creatorOf",
-          args: [address],
-        },
         { address, abi: managedOtfVaultAbi, functionName: "sunset" },
       ] as const))
     : undefined;
@@ -2046,7 +2045,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const directoryResults = directoryData as ReadResult | undefined;
   const vaultSummaries = useMemo<VaultSummary[]>(
     () => factoryVaultAddresses.map((address, index) => {
-      const offset = index * 9;
+      const offset = index * 8;
       const name = resultAt<string>(directoryResults, offset);
       const symbol = resultAt<string>(directoryResults, offset + 1);
       const managerValue = resultAt<string>(directoryResults, offset + 2);
@@ -2054,14 +2053,12 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       const vaultAssets = resultAt<readonly string[]>(directoryResults, offset + 4);
       const totalValue = resultAt<bigint>(directoryResults, offset + 5);
       const shareValue = resultAt<bigint>(directoryResults, offset + 6);
-      const creatorValue = resultAt<string>(directoryResults, offset + 7);
-      const sunset = Boolean(resultAt<boolean>(directoryResults, offset + 8));
+      const sunset = Boolean(resultAt<boolean>(directoryResults, offset + 7));
       return {
         address,
         name: name || shortAddress(address),
         symbol: symbol || "OTF",
         manager: managerValue && isAddress(managerValue) ? managerValue : undefined,
-        creator: creatorValue && isAddress(creatorValue) ? creatorValue : undefined,
         creatorFeeBps: creatorFee,
         assetCount: vaultAssets?.length ?? 0,
         verified: (vaultAssets?.length ?? 0) > 0
@@ -2086,56 +2083,58 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const creatorFeeBps = resultAt<number>(results, 4) ?? 0;
   const protocolFeeShareBps = resultAt<number>(results, 5) ?? 0;
   const totalSupply = resultAt<bigint>(results, 6);
-  const assets = resultAt<readonly string[]>(results, 7);
-  const targetWeights = resultAt<readonly number[] | readonly bigint[]>(results, 8);
-  const maxNavLossBps = resultAt<number>(results, 9) ?? 0;
-  const maxWeightDeviationBps = resultAt<number>(results, 10) ?? 0;
-  const cooldownSeconds = Number(resultAt<bigint>(results, 11) ?? BigInt(14 * 86_400));
-  const minTargetWeightBps = resultAt<number>(results, 12);
-  const totalAssetsValue = resultAt<bigint>(results, 13);
-  const navPerShareValue = resultAt<bigint>(results, 14);
-  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 15);
-  const challengeWeightDeviationBps = resultAt<number>(results, 16) ?? 0;
-  const challengeGracePeriod = resultAt<number>(results, 17) ?? 0;
-  const withinCompletionBands = Boolean(resultAt<boolean>(results, 18));
-  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 19));
-  const challengeActive = Boolean(resultAt<boolean>(results, 20));
-  const challengeStartedAt = resultAt<bigint>(results, 21)
-    ? Number(resultAt<bigint>(results, 21))
+  const constituents = resultAt<readonly string[]>(results, 7)
+    as unknown as readonly [readonly string[], readonly number[] | readonly bigint[]] | undefined;
+  const assets = constituents?.[0];
+  const targetWeights = constituents?.[1];
+  const maxNavLossBps = resultAt<number>(results, 8) ?? 0;
+  const maxWeightDeviationBps = resultAt<number>(results, 9) ?? 0;
+  const cooldownSeconds = 14 * 86_400;
+  const minTargetWeightBps = resultAt<number>(results, 10);
+  const totalAssetsValue = resultAt<bigint>(results, 11);
+  const navPerShareValue = resultAt<bigint>(results, 12);
+  const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 13);
+  const challengeWeightDeviationBps = resultAt<number>(results, 14) ?? 0;
+  const challengeGracePeriod = 7 * 86_400;
+  const withinCompletionBands = Boolean(resultAt<boolean>(results, 15));
+  const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 16));
+  const challengeActive = Boolean(resultAt<boolean>(results, 17));
+  const challengeStartedAt = resultAt<bigint>(results, 18)
+    ? Number(resultAt<bigint>(results, 18))
     : undefined;
-  const challengeDeadline = resultAt<bigint>(results, 22)
-    ? Number(resultAt<bigint>(results, 22))
+  const challengeDeadline = resultAt<bigint>(results, 19)
+    ? Number(resultAt<bigint>(results, 19))
     : undefined;
-  const challengeTimeRemaining = Number(resultAt<bigint>(results, 23) ?? 0n);
-  const feeState = Number(resultAt<number>(results, 24) ?? 0);
-  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 25);
-  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 26);
-  const claimableChallengeRewardValue = resultAt<bigint>(results, 27);
-  const lastStrategyCompletion = resultAt<bigint>(results, 28)
-    ? Number(resultAt<bigint>(results, 28))
+  const challengeTimeRemaining = Number(resultAt<bigint>(results, 20) ?? 0n);
+  const feeState = Number(resultAt<number>(results, 21) ?? 0);
+  const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 22);
+  const forfeitedManagerFeeSharesValue = resultAt<bigint>(results, 23);
+  const claimableChallengeRewardValue = resultAt<bigint>(results, 24);
+  const lastStrategyCompletion = resultAt<bigint>(results, 25)
+    ? Number(resultAt<bigint>(results, 25))
     : undefined;
-  const canProposeStrategy = Boolean(resultAt<boolean>(results, 29));
-  const authorizedExecutors = resultAt<readonly string[]>(results, 30) ?? [];
-  const withinChallengeBands = Boolean(resultAt<boolean>(results, 31));
-  const strategyProposalPending = Boolean(resultAt<boolean>(results, 32));
-  const pendingStrategyActivationTime = resultAt<bigint>(results, 33)
-    ? Number(resultAt<bigint>(results, 33))
+  const canProposeStrategy = Boolean(resultAt<boolean>(results, 26));
+  const authorizedExecutors = resultAt<readonly string[]>(results, 27) ?? [];
+  const withinChallengeBands = Boolean(resultAt<boolean>(results, 28));
+  const strategyProposalPending = Boolean(resultAt<boolean>(results, 29));
+  const pendingStrategyActivationTime = resultAt<bigint>(results, 30)
+    ? Number(resultAt<bigint>(results, 30))
     : undefined;
-  const nextStrategyChange = resultAt<bigint>(results, 34)
+  const nextStrategyChange = resultAt<bigint>(results, 31)
+    ? Number(resultAt<bigint>(results, 31))
+    : undefined;
+  const challengeCaller = resultAt<string>(results, 32);
+  const sunset = Boolean(resultAt<boolean>(results, 33));
+  const sunsetAt = resultAt<bigint>(results, 34)
     ? Number(resultAt<bigint>(results, 34))
     : undefined;
-  const challengeCaller = resultAt<string>(results, 35);
-  const sunset = Boolean(resultAt<boolean>(results, 36));
-  const sunsetAt = resultAt<bigint>(results, 37)
-    ? Number(resultAt<bigint>(results, 37))
-    : undefined;
-  const protocolDepositsPaused = Boolean(resultAt<boolean>(results, 38));
-  const navLossBudget = resultAt<readonly [bigint, number, number]>(results, 39);
-  const vaultDepositsPaused = Boolean(resultAt<boolean>(results, 40));
+  const protocolDepositsPaused = Boolean(resultAt<boolean>(results, 35));
+  const navLossBudget = resultAt<readonly [bigint, number, number]>(results, 36);
+  const vaultDepositsPaused = Boolean(resultAt<boolean>(results, 37));
   const effectiveProtocolFeeShareBps =
-    resultAt<number>(results, 41) ?? protocolFeeShareBps;
+    resultAt<number>(results, 38) ?? protocolFeeShareBps;
   const depositPauseStatusUnavailable = Boolean(enabled) && (
-    results?.[38]?.status !== "success" || results?.[40]?.status !== "success"
+    results?.[35]?.status !== "success" || results?.[37]?.status !== "success"
   );
   const navLossBudgetRecoveryAt = navLossBudget?.[0] ? Number(navLossBudget[0]) : undefined;
   const navLossBudgetUsedBps = Number(navLossBudget?.[1] ?? 0);

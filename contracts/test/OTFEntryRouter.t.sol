@@ -5,7 +5,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -448,3 +448,6 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         });
     }
 }
+
+
+

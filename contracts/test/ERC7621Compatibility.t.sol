@@ -229,3 +229,6 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
         assertFalse(vault.authorizedExecutor(ALICE));
     }
 }
+
+
+

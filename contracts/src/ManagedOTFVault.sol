@@ -10,6 +10,7 @@ import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import {
     AssetPricingConfig,
@@ -59,8 +60,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function bindFactory() external {
         if (_initialized) revert AlreadyInitialized();
-        if (factory != address(0)) revert UnauthorizedFactory();
-        factory = msg.sender;
+        if (_factory != address(0)) revert UnauthorizedFactory();
+        _factory = msg.sender;
     }
 
     function initialize(
@@ -73,10 +74,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint16 protocolFeeShareBps_
     ) external nonReentrant {
         if (_initialized) revert AlreadyInitialized();
-        if (msg.sender != factory_ || factory_ == address(0) || factory != factory_) {
+        if (msg.sender != factory_ || factory_ == address(0) || _factory != factory_) {
             revert UnauthorizedFactory();
         }
-        // The bound factory is the only initializer and validates roles, dependencies, and all
+        // The bound _factory is the only initializer and validates roles, dependencies, and all
         // creation-time limits before deploying the clone.
         if (params.manager == address(this) || params.feeRecipient == address(this)) {
             revert InvalidRoleAddress(address(this));
@@ -84,22 +85,21 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _initialized = true;
         _initializeERC20(params.name, params.symbol, 18);
 
-        factory = factory_;
-        manager = params.manager;
-        authorizedExecutor[params.manager] = true;
+        _factory = factory_;
+        _manager = params.manager;
+        _authorizedExecutor[params.manager] = true;
         _authorizedExecutors.push(params.manager);
         _executorIndexPlusOne[params.manager] = 1;
-        feeRecipient = params.feeRecipient;
-        assetRegistry = assetRegistry_;
+        _feeRecipient = params.feeRecipient;
+        _assetRegistry = assetRegistry_;
         _assetMarketRegistry = assetMarketRegistry_;
-        rebalanceExecutor = rebalanceExecutor_;
-        feeCollector = feeCollector_;
-        creatorFeeBpsPerYear = params.creatorFeeBpsPerYear;
-        protocolFeeShareBps = protocolFeeShareBps_;
-        maxNavLossBps = params.maxNavLossBps;
-        maxWeightDeviationBps = params.maxWeightDeviationBps;
-        challengeWeightDeviationBps = params.challengeWeightDeviationBps;
-        _feeState = FeeState.Accruing;
+        _rebalanceExecutor = rebalanceExecutor_;
+        _feeCollector = feeCollector_;
+        _creatorFeeBpsPerYear = params.creatorFeeBpsPerYear;
+        _protocolFeeShareBps = protocolFeeShareBps_;
+        _maxNavLossBps = params.maxNavLossBps;
+        _maxWeightDeviationBps = params.maxWeightDeviationBps;
+        _challengeWeightDeviationBps = params.challengeWeightDeviationBps;
 
         _configureInitialPricing(params.initialAssets, params.initialPricingConfigs);
         _validateInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
@@ -107,8 +107,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _validateInitialBalances(params.initialAssets, params.initialAmounts);
 
         uint64 timestamp = uint64(block.timestamp);
-        lastFeeAccrualTimestamp = timestamp;
-        lastCompletedStrategyTimestamp = timestamp;
+        _lastFeeAccrualTimestamp = timestamp;
+        _lastCompletedStrategyTimestamp = timestamp;
 
         _strategyVersions.push(
             StrategyVersion({
@@ -124,8 +124,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             _strategyTargetWeightsBps[0].push(params.initialTargetWeightsBps[i]);
         }
 
-        _mint(address(this), MINIMUM_LIQUIDITY_SHARES);
-        _mint(params.manager, params.initialShareSupply - MINIMUM_LIQUIDITY_SHARES);
+        _mint(address(this), ProtocolConstants.MINIMUM_LIQUIDITY_SHARES);
+        _mint(
+            params.manager, params.initialShareSupply - ProtocolConstants.MINIMUM_LIQUIDITY_SHARES
+        );
 
         uint256[] memory initialWeights = _weightsAsUint256();
         emit OwnershipTransferred(address(0), params.manager);
@@ -146,8 +148,47 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function owner() external view returns (address) {
-        return manager;
+        return _manager;
     }
+
+    // Routed protocol reads. The logic and storage interpretation live in ManagedOTFVaultView.
+    function assets() external returns (address[] memory value) { value; _delegateView(); }
+    function factory() external returns (address value) { value; _delegateView(); }
+    function manager() external returns (address value) { value; _delegateView(); }
+    function feeRecipient() external returns (address value) { value; _delegateView(); }
+    function feeCollector() external returns (address value) { value; _delegateView(); }
+    function assetRegistry() external returns (address value) { value; _delegateView(); }
+    function rebalanceExecutor() external returns (address value) { value; _delegateView(); }
+    function creatorFeeBpsPerYear() external returns (uint16 value) { value; _delegateView(); }
+    function protocolFeeShareBps() external returns (uint16 value) { value; _delegateView(); }
+    function maxNavLossBps() external returns (uint16 value) { value; _delegateView(); }
+    function maxWeightDeviationBps() external returns (uint16 value) { value; _delegateView(); }
+    function challengeWeightDeviationBps() external returns (uint16 value) { value; _delegateView(); }
+    function lastFeeAccrualTimestamp() external returns (uint64 value) { value; _delegateView(); }
+    function lastCompletedStrategyTimestamp() external returns (uint64 value) { value; _delegateView(); }
+    function strategicRebalanceStartedAt() external returns (uint64 value) { value; _delegateView(); }
+    function pendingStrategyProposedAt() external returns (uint64 value) { value; _delegateView(); }
+    function pendingStrategyActivationTime() external returns (uint64 value) { value; _delegateView(); }
+    function rebalanceCount() external returns (uint256 value) { value; _delegateView(); }
+    function escrowedManagerFeeShares() external returns (uint256 value) { value; _delegateView(); }
+    function forfeitedManagerFeeShares() external returns (uint256 value) { value; _delegateView(); }
+    function strategicRebalanceActive() external returns (bool value) { value; _delegateView(); }
+    function strategyProposalPending() external returns (bool value) { value; _delegateView(); }
+    function challengeActive() external returns (bool value) { value; _delegateView(); }
+    function challengeCaller() external returns (address value) { value; _delegateView(); }
+    function challengeStartedAt() external returns (uint64 value) { value; _delegateView(); }
+    function challengeDeadline() external returns (uint64 value) { value; _delegateView(); }
+    function targetWeightBps(address asset) external returns (uint16 value) { asset; value; _delegateView(); }
+    function authorizedExecutor(address executor) external returns (bool value) {
+        executor; value; _delegateView();
+    }
+    function challengeRewardShares(address account) external returns (uint256 value) {
+        account; value; _delegateView();
+    }
+    function sunset() external returns (bool value) { value; _delegateView(); }
+    function sunsetAt() external returns (uint64 value) { value; _delegateView(); }
+    function tradeExecutionCount() external returns (uint256 value) { value; _delegateView(); }
+    function pendingManager() external returns (address value) { value; _delegateView(); }
 
     function transferOwnership(address newOwner) external {
         newOwner;
@@ -198,10 +239,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     // Protocol views
-
-    function assets() external view returns (address[] memory) {
-        return _assets;
-    }
 
     function assetMarketRegistry() external returns (address registry) {
         registry;
@@ -257,25 +294,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function assetCount() external returns (uint256 count) {
-        count;
-        _delegateView();
-    }
-
-    function assetAt(uint256 index) external returns (address asset) {
-        index;
-        asset;
-        _delegateView();
-    }
-
     function pruneRetiredAssets() external returns (uint256 removed) {
         removed;
         _delegateStrategy();
-    }
-
-    function targetWeightsBps() external returns (uint16[] memory weights) {
-        weights;
-        _delegateView();
     }
 
     function totalAssetsValue() public returns (uint256 nav) {
@@ -346,25 +367,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
-    function feesAccruing() external returns (bool accruing) {
-        accruing;
-        _delegateView();
-    }
-
-    function feesEscrowed() external returns (bool escrowed) {
-        escrowed;
-        _delegateView();
-    }
-
-    function feesSuspended() external returns (bool suspended) {
-        suspended;
-        _delegateView();
-    }
-
     /// @notice Protocol fee share after the actual-and-target OTF weight incentive is applied.
     /// @dev Missing constituents and failed oracle-valued weight reads preserve the base fee share.
     function effectiveProtocolFeeShareBps() public view returns (uint16 effectiveShareBps) {
-        return IProtocolTokenFeePolicy(factory).effectiveProtocolFeeShareBps(address(this));
+        return IProtocolTokenFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
     }
 
     function authorizedExecutors() external returns (address[] memory executors) {
@@ -500,7 +506,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
         _requireDepositsOpen();
         _accrueFees();
-        uint256 supply = totalSupply;
+        uint256 supply = _totalSupply;
         amountsIn = new uint256[](_assets.length);
         // Pull and verify every constituent before minting. Any later failure atomically reverts
         // all transfers, while the guard prevents a token callback from entering the vault again.
@@ -530,11 +536,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _accrueFees();
         amountsOut = _withdraw(shares, receiver, shareOwner, minAmountsOut);
         emit Withdrawn(msg.sender, receiver, shares, amountsOut);
-    }
-
-    function accrueFees() public returns (uint256 feeShares) {
-        feeShares;
-        _delegateStrategy();
     }
 
     function withdrawManagerFees() external returns (uint256 feeShares) {
@@ -569,15 +570,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             revert InvalidRoleAddress(executor);
         }
         if (authorized) {
-            if (authorizedExecutor[executor]) revert ExecutorAlreadyAuthorized(executor);
+            if (_authorizedExecutor[executor]) revert ExecutorAlreadyAuthorized(executor);
             if (_authorizedExecutors.length >= MAX_AUTHORIZED_EXECUTORS) {
                 revert ExecutorLimitReached();
             }
-            authorizedExecutor[executor] = true;
+            _authorizedExecutor[executor] = true;
             _authorizedExecutors.push(executor);
             _executorIndexPlusOne[executor] = _authorizedExecutors.length;
         } else {
-            if (!authorizedExecutor[executor]) revert ExecutorNotAuthorized(executor);
+            if (!_authorizedExecutor[executor]) revert ExecutorNotAuthorized(executor);
             uint256 index = _executorIndexPlusOne[executor] - 1;
             uint256 lastIndex = _authorizedExecutors.length - 1;
             if (index != lastIndex) {
@@ -587,7 +588,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
             _authorizedExecutors.pop();
             delete _executorIndexPlusOne[executor];
-            authorizedExecutor[executor] = false;
+            _authorizedExecutor[executor] = false;
         }
         emit ExecutorAuthorizationChanged(executor, authorized);
     }
@@ -668,18 +669,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateStrategy();
     }
 
-    function stopChallengeFees() external {
-        _delegateStrategy();
-    }
-
     function moduleAccrueFees() external returns (uint256) {
         if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
         return _accrueFees();
-    }
-
-    function moduleMintFees(uint256 elapsed) external returns (uint256) {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        return _mintFees(elapsed);
     }
 
     function moduleReleaseChallengeFees() external returns (uint256) {
@@ -713,7 +705,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (amounts.length != _assets.length) {
             revert LengthMismatch(_assets.length, amounts.length);
         }
-        uint256 supply = totalSupply;
+        uint256 supply = _totalSupply;
         lpAmount = type(uint256).max;
         for (uint256 i = 0; i < _assets.length; i++) {
             uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
@@ -742,7 +734,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         address shareOwner,
         uint256[] calldata minimums
     ) internal returns (uint256[] memory amounts) {
-        uint256 supply = totalSupply;
+        uint256 supply = _totalSupply;
         amounts = new uint256[](_assets.length);
         if (shareOwner != msg.sender) _spendAllowance(shareOwner, msg.sender, shares);
         _burn(shareOwner, shares);
@@ -761,24 +753,24 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     // Fee state machine
 
     function _accrueFees() internal returns (uint256 feeShares) {
-        if (sunset) return 0;
-        uint64 previousTimestamp = lastFeeAccrualTimestamp;
+        if (_sunset) return 0;
+        uint64 previousTimestamp = _lastFeeAccrualTimestamp;
         uint256 elapsed = block.timestamp - uint256(previousTimestamp);
-        if (challengeActive) {
+        if (_challengeActive) {
             // Challenge fee checkpoints intentionally use the onchain deadline.
             // forge-lint: disable-next-line(block-timestamp)
             uint256 currentTimestamp = block.timestamp;
-            uint256 checkpoint = currentTimestamp < challengeDeadline
+            uint256 checkpoint = currentTimestamp < _challengeDeadline
                 ? currentTimestamp
-                : uint256(challengeDeadline);
-            if (_feeState != FeeState.Suspended && checkpoint > previousTimestamp) {
+                : uint256(_challengeDeadline);
+            if (checkpoint > previousTimestamp) {
                 feeShares = _escrowChallengeFees(checkpoint - previousTimestamp);
                 // Chain timestamps fit uint64 for the lifetime of the protocol.
                 // forge-lint: disable-next-line(unsafe-typecast)
-                lastFeeAccrualTimestamp = uint64(checkpoint);
+                _lastFeeAccrualTimestamp = uint64(checkpoint);
             }
             // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
-            if (currentTimestamp > challengeDeadline) _forfeitChallengeFees();
+            if (currentTimestamp > _challengeDeadline) _forfeitChallengeFees();
             return feeShares;
         }
         if (elapsed == 0) return 0;
@@ -787,12 +779,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         // Fractional share-wei are retained in vault storage, so even a zero-share checkpoint can
         // safely close the interval. This creates a hard, non-retroactive boundary for deposits,
         // exits, and fee-rate changes.
-        lastFeeAccrualTimestamp = uint64(block.timestamp);
+        _lastFeeAccrualTimestamp = uint64(block.timestamp);
     }
 
     function _mintFees(uint256 elapsed) internal returns (uint256 feeShares) {
-        uint256 supply = totalSupply;
-        uint16 feeBps = creatorFeeBpsPerYear;
+        uint256 supply = _totalSupply;
+        uint16 feeBps = _creatorFeeBpsPerYear;
         if (supply == 0 || feeBps == 0 || elapsed == 0) return 0;
         uint256 remainderAfterWad;
         (feeShares, remainderAfterWad) = _portfolioCalculator.feeSharesAfterElapsed(
@@ -802,8 +794,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (feeShares == 0) return 0;
 
         (uint256 managerShares, uint256 protocolShares) = _splitFeeShares(feeShares);
-        if (protocolShares != 0) _mint(feeCollector, protocolShares);
-        if (managerShares != 0) _mint(feeRecipient, managerShares);
+        if (protocolShares != 0) _mint(_feeCollector, protocolShares);
+        if (managerShares != 0) _mint(_feeRecipient, managerShares);
         emit FeesAccrued(feeShares, managerShares, protocolShares);
     }
 
@@ -826,19 +818,19 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _escrowChallengeFees(uint256 elapsed) private returns (uint256 feeShares) {
-        if (totalSupply == 0 || creatorFeeBpsPerYear == 0 || elapsed == 0) return 0;
+        if (_totalSupply == 0 || _creatorFeeBpsPerYear == 0 || elapsed == 0) return 0;
         (feeShares, _challengeFeeAccrualRemainderWad) = _portfolioCalculator.feeSharesAfterElapsed(
-            totalSupply, _challengeFeeAccrualRemainderWad, creatorFeeBpsPerYear, elapsed
+            _totalSupply, _challengeFeeAccrualRemainderWad, _creatorFeeBpsPerYear, elapsed
         );
         if (feeShares != 0) {
             _mint(address(this), feeShares);
-            escrowedManagerFeeShares += feeShares;
+            _escrowedManagerFeeShares += feeShares;
         }
-        emit ManagerFeesEscrowed(feeShares, escrowedManagerFeeShares);
+        emit ManagerFeesEscrowed(feeShares, _escrowedManagerFeeShares);
     }
 
     function _releaseChallengeFees() private returns (uint256 feeShares) {
-        feeShares = escrowedManagerFeeShares;
+        feeShares = _escrowedManagerFeeShares;
         uint256 combinedRemainder = _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
         if (combinedRemainder >= 1e18) {
             combinedRemainder -= 1e18;
@@ -847,35 +839,33 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         _feeAccrualRemainderWad = combinedRemainder;
         _challengeFeeAccrualRemainderWad = 0;
-        escrowedManagerFeeShares = 0;
-        _feeState = FeeState.Accruing;
+        _escrowedManagerFeeShares = 0;
 
         (uint256 managerShares, uint256 protocolShares) = _splitFeeShares(feeShares);
-        if (protocolShares != 0) _transfer(address(this), feeCollector, protocolShares);
-        if (managerShares != 0) _transfer(address(this), feeRecipient, managerShares);
+        if (protocolShares != 0) _transfer(address(this), _feeCollector, protocolShares);
+        if (managerShares != 0) _transfer(address(this), _feeRecipient, managerShares);
         emit FeesAccrued(feeShares, managerShares, protocolShares);
-        emit ManagerFeesReleased(feeRecipient, managerShares);
+        emit ManagerFeesReleased(_feeRecipient, managerShares);
     }
 
     function _forfeitChallengeFees() internal {
         // All accrual paths converge here. Keep the transition idempotent so no caller can
         // process the same challenge more than once, even if a future entry point omits a guard.
-        if (_feeState == FeeState.Suspended) return;
+        if (_lastFeeAccrualTimestamp == _challengeDeadline) return;
 
-        uint64 deadline = challengeDeadline;
-        uint256 forfeitedShares = escrowedManagerFeeShares;
+        uint64 deadline = _challengeDeadline;
+        uint256 forfeitedShares = _escrowedManagerFeeShares;
         uint256 rewardShares = Math.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
-        address caller = challengeCaller;
+        address caller = _challengeCaller;
         if (rewardShares != 0 && caller != address(0)) {
-            challengeRewardShares[caller] += rewardShares;
+            _challengeRewardShares[caller] += rewardShares;
         }
         uint256 treasuryShares = forfeitedShares - rewardShares;
-        if (treasuryShares != 0) _transfer(address(this), feeCollector, treasuryShares);
-        escrowedManagerFeeShares = 0;
+        if (treasuryShares != 0) _transfer(address(this), _feeCollector, treasuryShares);
+        _escrowedManagerFeeShares = 0;
         _challengeFeeAccrualRemainderWad = 0;
-        forfeitedManagerFeeShares += forfeitedShares;
-        lastFeeAccrualTimestamp = deadline;
-        _feeState = FeeState.Suspended;
+        _forfeitedManagerFeeShares += forfeitedShares;
+        _lastFeeAccrualTimestamp = deadline;
         emit ChallengeDeadlineMissed(deadline, uint64(block.timestamp));
         emit ManagerFeesForfeited(forfeitedShares);
         emit ChallengeRewardAccrued(caller, rewardShares, forfeitedShares);
@@ -937,17 +927,17 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _requireDepositsOpen() internal view {
-        if (sunset) revert VaultSunset();
+        if (_sunset) revert VaultSunset();
         if (_assets.length == 0) revert EmptyPortfolio();
-        if (IProtocolPortfolioLimits(factory).depositsPaused()) {
+        if (IProtocolPortfolioLimits(_factory).depositsPaused()) {
             revert ProtocolDepositsPaused();
         }
-        if (IProtocolPortfolioLimits(factory).vaultDepositsPaused(address(this))) {
+        if (IProtocolPortfolioLimits(_factory).vaultDepositsPaused(address(this))) {
             revert VaultDepositsPaused();
         }
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
+            if (_targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
         }
     }
 
@@ -958,7 +948,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     {
         for (uint256 i = 0; i < assets_.length; i++) {
             _assets.push(assets_[i]);
-            targetWeightBps[assets_[i]] = weights_[i];
+            _targetWeightBps[assets_[i]] = weights_[i];
         }
     }
 
@@ -1005,7 +995,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _pricingResolver() internal view returns (IAssetPricingResolver resolver) {
-        address resolverAddress = IProtocolPortfolioLimits(factory).pricingResolver();
+        address resolverAddress = IProtocolPortfolioLimits(_factory).pricingResolver();
         if (resolverAddress == address(0)) revert PricingResolverNotConfigured();
         resolver = IAssetPricingResolver(resolverAddress);
     }
@@ -1066,15 +1056,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _weightsAsUint256() internal view returns (uint256[] memory weights) {
         weights = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = targetWeightBps[_assets[i]];
+            weights[i] = _targetWeightBps[_assets[i]];
         }
-    }
-
-    function _containsCurrentAsset(address asset) internal view returns (bool) {
-        for (uint256 i = 0; i < _assets.length; i++) {
-            if (_assets[i] == asset) return true;
-        }
-        return false;
     }
 
     function _delegateStrategy() private {
@@ -1109,3 +1092,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 }
+
+
+
+

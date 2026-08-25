@@ -16,11 +16,6 @@ contract AssetRegistry is IAssetRegistry {
     event AssetRegistered(address indexed asset, address indexed registrar);
     mapping(address => bool) public isRegisteredAsset;
 
-    /// @dev The ignored constructor argument preserves deployment compatibility without authority.
-    constructor(address legacyInitialOwner) {
-        if (legacyInitialOwner == address(0)) revert ZeroAddress();
-    }
-
     function registerAsset(address asset) external {
         _validateAsset(asset);
         if (isRegisteredAsset[asset]) revert AssetAlreadyRegistered(asset);

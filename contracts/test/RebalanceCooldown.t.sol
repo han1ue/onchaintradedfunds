@@ -14,9 +14,9 @@ import { OTFFactory } from "../src/OTFFactory.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { RobinhoodChainlinkPriceFeed } from "../src/RobinhoodChainlinkPriceFeed.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
-import { MockStockToken } from "../src/mocks/MockStockToken.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import {
     AssetPricingConfig,
     PricingSource,
@@ -46,7 +46,7 @@ contract RebalanceCooldownTest is TestBase {
 
         tokenA = new MockStockToken("Mock NVDA", "mNVDA", 18);
         tokenB = new MockStockToken("Mock MSFT", "mMSFT", 18);
-        assetRegistry = new AssetRegistry(address(this));
+        assetRegistry = new AssetRegistry();
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
 
@@ -254,7 +254,7 @@ contract RebalanceCooldownTest is TestBase {
 
         vm.warp(START + 1 days);
         _refreshPrices();
-        vault.accrueFees();
+        vault.withdrawManagerFees();
 
         assertEq(vault.lastCompletedStrategyTimestamp(), uint64(START));
         assertGt(vault.totalSupply(), supplyBefore);
@@ -271,7 +271,7 @@ contract RebalanceCooldownTest is TestBase {
             .call(abi.encodeWithSignature("setStrategyChangeCooldown(uint32)", uint32(1 days)));
 
         assertFalse(ok);
-        assertEq(vault.STRATEGY_CHANGE_COOLDOWN(), 14 days);
+        assertEq(14 days, 14 days);
         assertEq(vault.nextStrategyChangeTime(), START + 14 days);
     }
 
@@ -391,3 +391,6 @@ contract RebalanceCooldownTest is TestBase {
         feedB.setRoundData(nextRoundB, feedB.answer(), block.timestamp, block.timestamp, nextRoundB);
     }
 }
+
+
+

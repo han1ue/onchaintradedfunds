@@ -22,7 +22,6 @@ interface IUniswapV3MarketPool is IUniswapV3OraclePool {
             uint8 feeProtocol,
             bool unlocked
         );
-    function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
 }
 
 interface IUniswapV3MarketFactory {
@@ -215,11 +214,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         return (market.asset, market.pool, market.fee, market.active);
     }
 
-    function isActiveMarketForAsset(bytes32 marketId, address asset) external view returns (bool) {
-        Market storage market = _marketFor[marketId];
-        return market.active && market.asset == asset;
-    }
-
     function quoteTokenFor(bytes32 marketId) external view returns (address) {
         return _marketFor[marketId].quoteToken;
     }
@@ -300,18 +294,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         }
         uint8 feedDecimals = feed.decimals();
         if (feedDecimals > 36) revert UnsupportedFeedDecimals(usdFeed, feedDecimals);
-    }
-
-    function _requireDecimals(address token, uint8 required) private view {
-        uint8 tokenDecimals;
-        try IERC20Metadata(token).decimals() returns (uint8 decimals_) {
-            tokenDecimals = decimals_;
-        } catch {
-            revert TokenDecimalsUnavailable(token);
-        }
-        if (tokenDecimals != required) {
-            revert UnsupportedQuoteDecimals(token, tokenDecimals, required);
-        }
     }
 
     function _validatePool(address pool, address first, address second)

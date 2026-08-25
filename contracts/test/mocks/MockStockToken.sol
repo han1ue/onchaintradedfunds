@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "../ERC20Base.sol";
+import { ERC20Base } from "../../src/ERC20Base.sol";
 
 contract MockStockToken is ERC20Base {
     bool public oraclePaused;
@@ -18,3 +18,6 @@ contract MockStockToken is ERC20Base {
         oraclePaused = paused;
     }
 }
+
+
+

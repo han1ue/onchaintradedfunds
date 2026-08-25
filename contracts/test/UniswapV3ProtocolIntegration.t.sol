@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
-import { MockUniswapV3Router } from "../src/mocks/MockUniswapV3Router.sol";
+import { MockUniswapV3Router } from "./mocks/MockUniswapV3Router.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
@@ -123,3 +123,6 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         path = abi.encodePacked(tokenIn, bytes3(uint24(3_000)), tokenOut);
     }
 }
+
+
+

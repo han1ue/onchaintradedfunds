@@ -5,13 +5,13 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { ManagedOTFVaultStrategy } from "../src/ManagedOTFVaultStrategy.sol";
 import { ManagedOTFVaultView } from "../src/ManagedOTFVaultView.sol";
-import { MinimalClones } from "../src/libraries/MinimalClones.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract DelegatecallSecurityTest is ProtocolTestBase {
     function testUninitializedCloneRejectsShareAndStrategyMutations() public {
-        address clone = MinimalClones.clone(factory.vaultImplementation());
+        address clone = Clones.clone(factory.vaultImplementation());
         ManagedOTFVault vault = ManagedOTFVault(clone);
         uint256[] memory emptyAmounts = new uint256[](0);
 
@@ -22,7 +22,7 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
         vault.setExecutor(ATTACKER, true);
 
         vm.expectRevert(ManagedOTFVaultStorage.NotInitialized.selector);
-        vault.accrueFees();
+        vault.withdrawManagerFees();
     }
 
     function testStrategyModuleIdentityAndCodehashAreImmutablePerImplementation() public {
@@ -91,3 +91,6 @@ contract DelegatecallSecurityTest is ProtocolTestBase {
         vault.moduleReleaseChallengeFees();
     }
 }
+
+
+

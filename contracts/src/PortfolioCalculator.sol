@@ -8,10 +8,6 @@ import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { PricingSource } from "./VaultTypes.sol";
 
-interface ITargetWeightVault {
-    function targetWeightBps(address asset) external view returns (uint16);
-}
-
 interface IOraclePauseStatus {
     function oraclePaused() external view returns (bool);
 }
@@ -46,7 +42,6 @@ contract PortfolioCalculator {
     error TokenDecimalsUnavailable(address token);
     error UnsupportedDecimals(address token, uint8 decimals_);
     error ZeroNav();
-    error InvalidTargetWeightSum(uint256 sum);
     error InvalidFeeRate(uint16 feeBps);
     error FeeExponentOverflow(uint256 exponentWad);
     error NavLossBudgetExceeded(uint256 usedLossBps, uint256 batchLossBps, uint16 maximumLossBps);
@@ -120,24 +115,6 @@ contract PortfolioCalculator {
             if (!alreadyTracked) sumDiff += newWeights[i] * weightScale;
         }
         return Math.mulDiv(sumDiff, 1, 2 * weightScale, Math.Rounding.Ceil);
-    }
-
-    function effectiveTargetWeights(address vault, address[] calldata assets, address)
-        external
-        view
-        returns (uint256[] memory weights)
-    {
-        uint256 storedWeightTotal;
-        weights = new uint256[](assets.length);
-
-        for (uint256 i = 0; i < assets.length; i++) {
-            uint256 storedWeight = ITargetWeightVault(vault).targetWeightBps(assets[i]);
-            storedWeightTotal += storedWeight;
-            weights[i] = storedWeight;
-        }
-        if (storedWeightTotal != 0 && storedWeightTotal != BPS) {
-            revert InvalidTargetWeightSum(storedWeightTotal);
-        }
     }
 
     function feeSharesAfterElapsed(

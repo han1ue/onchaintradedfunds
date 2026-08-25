@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { ManagedOTFVault } from "./ManagedOTFVault.sol";
-import { MinimalClones } from "./libraries/MinimalClones.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { VaultInitParams } from "./VaultTypes.sol";
@@ -32,14 +32,12 @@ contract OTFFactory is IAdapterAllowlist {
         "ifQ==";
     using SafeTransferLib for address;
 
-    uint256 public constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint16 public constant MAX_CREATOR_FEE_BPS_PER_YEAR =
         ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
     uint256 public constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
     uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 10_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
-    uint256 public constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
     uint256 public constant MAX_INITIAL_SHARE_SUPPLY = ProtocolConstants.MAX_INITIAL_SHARE_SUPPLY;
     uint256 public constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
@@ -110,7 +108,6 @@ contract OTFFactory is IAdapterAllowlist {
     bool public depositsPaused;
 
     address[] private _vaults;
-    mapping(address => address) public creatorOf;
     mapping(address => bool) public isVault;
     mapping(address => bool) public isTradeAdapterApproved;
     mapping(address => bool) public vaultDepositsPaused;
@@ -169,18 +166,6 @@ contract OTFFactory is IAdapterAllowlist {
         return _vaults[index];
     }
 
-    function allVaults() external view returns (address[] memory) {
-        return _vaults;
-    }
-
-    function protocolTreasury() external view returns (address) {
-        return IFeeCollectorTreasury(feeCollector).treasury();
-    }
-
-    function pendingProtocolTreasury() external view returns (address) {
-        return IFeeCollectorTreasury(feeCollector).pendingTreasury();
-    }
-
     function createVault(VaultInitParams calldata params)
         external
         nonReentrantCreation
@@ -190,7 +175,7 @@ contract OTFFactory is IAdapterAllowlist {
         if (pricingResolver == address(0)) revert PricingResolverNotConfigured();
         _validateFactoryBounds(params);
 
-        vault = MinimalClones.clone(vaultImplementation);
+        vault = Clones.clone(vaultImplementation);
         ManagedOTFVault(vault).bindFactory();
 
         for (uint256 i = 0; i < params.initialAssets.length; i++) {
@@ -200,7 +185,6 @@ contract OTFFactory is IAdapterAllowlist {
         }
 
         isVault[vault] = true;
-        creatorOf[vault] = msg.sender;
         _vaults.push(vault);
 
         ManagedOTFVault(vault)

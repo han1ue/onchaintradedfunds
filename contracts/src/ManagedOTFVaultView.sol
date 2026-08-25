@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IProtocolPortfolioLimits, ManagedOTFVaultStorage } from "./ManagedOTFVaultStorage.sol";
+import { IProtocolPortfolioLimits } from "./ManagedOTFVaultStorage.sol";
+import { ManagedOTFVaultModule } from "./ManagedOTFVaultModule.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
@@ -14,34 +15,88 @@ import {
 } from "./VaultTypes.sol";
 
 /// @notice Read-only extension used by ManagedOTFVault through codehash-pinned delegatecall.
-contract ManagedOTFVaultView is ManagedOTFVaultStorage {
-    address private immutable _self;
+contract ManagedOTFVaultView is ManagedOTFVaultModule {
     PortfolioCalculator private immutable _portfolioCalculator;
 
     constructor(PortfolioCalculator portfolioCalculator_) {
         if (address(portfolioCalculator_).code.length == 0) {
             revert AssetNotContract(address(portfolioCalculator_));
         }
-        _self = address(this);
         _portfolioCalculator = portfolioCalculator_;
     }
 
-    modifier onlyDelegateCall() {
-        if (address(this) == _self) revert DirectStrategyCall();
-        _;
+    function assets() external view onlyDelegateCall returns (address[] memory) {
+        return _assets;
     }
 
-    function transfer(address, uint256) external pure override returns (bool) {
-        revert DirectStrategyCall();
+    function factory() external view onlyDelegateCall returns (address) { return _factory; }
+    function manager() external view onlyDelegateCall returns (address) { return _manager; }
+    function feeRecipient() external view onlyDelegateCall returns (address) { return _feeRecipient; }
+    function feeCollector() external view onlyDelegateCall returns (address) { return _feeCollector; }
+    function assetRegistry() external view onlyDelegateCall returns (address) { return _assetRegistry; }
+    function rebalanceExecutor() external view onlyDelegateCall returns (address) { return _rebalanceExecutor; }
+    function creatorFeeBpsPerYear() external view onlyDelegateCall returns (uint16) {
+        return _creatorFeeBpsPerYear;
     }
-
-    function approve(address, uint256) external pure override returns (bool) {
-        revert DirectStrategyCall();
+    function protocolFeeShareBps() external view onlyDelegateCall returns (uint16) {
+        return _protocolFeeShareBps;
     }
-
-    function transferFrom(address, address, uint256) external pure override returns (bool) {
-        revert DirectStrategyCall();
+    function maxNavLossBps() external view onlyDelegateCall returns (uint16) { return _maxNavLossBps; }
+    function maxWeightDeviationBps() external view onlyDelegateCall returns (uint16) {
+        return _maxWeightDeviationBps;
     }
+    function challengeWeightDeviationBps() external view onlyDelegateCall returns (uint16) {
+        return _challengeWeightDeviationBps;
+    }
+    function lastFeeAccrualTimestamp() external view onlyDelegateCall returns (uint64) {
+        return _lastFeeAccrualTimestamp;
+    }
+    function lastCompletedStrategyTimestamp() external view onlyDelegateCall returns (uint64) {
+        return _lastCompletedStrategyTimestamp;
+    }
+    function strategicRebalanceStartedAt() external view onlyDelegateCall returns (uint64) {
+        return _strategicRebalanceStartedAt;
+    }
+    function pendingStrategyProposedAt() external view onlyDelegateCall returns (uint64) {
+        return _pendingStrategyProposedAt;
+    }
+    function pendingStrategyActivationTime() external view onlyDelegateCall returns (uint64) {
+        return _pendingStrategyActivationTime;
+    }
+    function rebalanceCount() external view onlyDelegateCall returns (uint256) { return _rebalanceCount; }
+    function escrowedManagerFeeShares() external view onlyDelegateCall returns (uint256) {
+        return _escrowedManagerFeeShares;
+    }
+    function forfeitedManagerFeeShares() external view onlyDelegateCall returns (uint256) {
+        return _forfeitedManagerFeeShares;
+    }
+    function strategicRebalanceActive() external view onlyDelegateCall returns (bool) {
+        return _strategicRebalanceActive;
+    }
+    function strategyProposalPending() external view onlyDelegateCall returns (bool) {
+        return _strategyProposalPending;
+    }
+    function challengeActive() external view onlyDelegateCall returns (bool) { return _challengeActive; }
+    function challengeCaller() external view onlyDelegateCall returns (address) { return _challengeCaller; }
+    function challengeStartedAt() external view onlyDelegateCall returns (uint64) {
+        return _challengeStartedAt;
+    }
+    function challengeDeadline() external view onlyDelegateCall returns (uint64) { return _challengeDeadline; }
+    function targetWeightBps(address asset) external view onlyDelegateCall returns (uint16) {
+        return _targetWeightBps[asset];
+    }
+    function authorizedExecutor(address executor) external view onlyDelegateCall returns (bool) {
+        return _authorizedExecutor[executor];
+    }
+    function challengeRewardShares(address account) external view onlyDelegateCall returns (uint256) {
+        return _challengeRewardShares[account];
+    }
+    function sunset() external view onlyDelegateCall returns (bool) { return _sunset; }
+    function sunsetAt() external view onlyDelegateCall returns (uint64) { return _sunsetAt; }
+    function tradeExecutionCount() external view onlyDelegateCall returns (uint256) {
+        return _tradeExecutionCount;
+    }
+    function pendingManager() external view onlyDelegateCall returns (address) { return _pendingManager; }
 
     function strategyVersionCount() external view onlyDelegateCall returns (uint256) {
         return _strategyVersions.length;
@@ -168,21 +223,6 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         return PricingSource(_pricingSourceForAsset[asset]);
     }
 
-    function assetCount() external view onlyDelegateCall returns (uint256) {
-        return _assets.length;
-    }
-
-    function assetAt(uint256 index) external view onlyDelegateCall returns (address) {
-        return _assets[index];
-    }
-
-    function targetWeightsBps() external view onlyDelegateCall returns (uint16[] memory weights) {
-        weights = new uint16[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = targetWeightBps[_assets[i]];
-        }
-    }
-
     function totalAssetsValue() external view onlyDelegateCall returns (uint256 nav) {
         return _portfolioCalculator.portfolioValue(address(this), _assets);
     }
@@ -225,35 +265,35 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     {
         if (!_containsAsset(token)) revert NotConstituent(token);
         if (_isRetiringAsset(token)) return (0, 0, 0, 0);
-        uint256 target = targetWeightBps[token];
-        (challengeLower, challengeUpper) = _band(target, challengeWeightDeviationBps);
-        (completionLower, completionUpper) = _band(target, maxWeightDeviationBps);
+        uint256 target = _targetWeightBps[token];
+        (challengeLower, challengeUpper) = _band(target, _challengeWeightDeviationBps);
+        (completionLower, completionUpper) = _band(target, _maxWeightDeviationBps);
     }
 
     function isWithinTargetBands() external view onlyDelegateCall returns (bool) {
-        return _isWithinBands(maxWeightDeviationBps);
+        return _isWithinBands(_maxWeightDeviationBps);
     }
 
     function isWithinChallengeBands() external view onlyDelegateCall returns (bool) {
-        return _isWithinBands(challengeWeightDeviationBps);
+        return _isWithinBands(_challengeWeightDeviationBps);
     }
 
     function canProposeStrategy() external view onlyDelegateCall returns (bool) {
-        if (sunset) return false;
+        if (_sunset) return false;
         // Validator timestamp drift is immaterial to the fixed multi-day strategy delay.
         // forge-lint: disable-next-line(block-timestamp)
         bool cooldownActive = block.timestamp < _nextStrategyChangeTime();
         if (
-            challengeActive || strategicRebalanceActive || strategyProposalPending || cooldownActive
+            _challengeActive || _strategicRebalanceActive || _strategyProposalPending || cooldownActive
         ) return false;
-        return _isWithinBands(maxWeightDeviationBps);
+        return _isWithinBands(_maxWeightDeviationBps);
     }
 
     function challengeTimeRemaining() external view onlyDelegateCall returns (uint256) {
         // Challenge deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
-        if (!challengeActive || block.timestamp >= challengeDeadline) return 0;
-        return uint256(challengeDeadline) - block.timestamp;
+        if (!_challengeActive || block.timestamp >= _challengeDeadline) return 0;
+        return uint256(_challengeDeadline) - block.timestamp;
     }
 
     function nextStrategyChangeTime() external view onlyDelegateCall returns (uint256) {
@@ -262,19 +302,6 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
 
     function feeState() external view onlyDelegateCall returns (FeeState) {
         return _currentFeeState();
-    }
-
-    function feesAccruing() external view onlyDelegateCall returns (bool) {
-        return _currentFeeState() == FeeState.Accruing;
-    }
-
-    function feesEscrowed() external view onlyDelegateCall returns (bool) {
-        return _currentFeeState() == FeeState.Escrowed;
-    }
-
-    function feesSuspended() external view onlyDelegateCall returns (bool) {
-        FeeState state = _currentFeeState();
-        return state == FeeState.Suspended || state == FeeState.Sunset;
     }
 
     function authorizedExecutors()
@@ -375,7 +402,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     }
 
     function recentRebalanceCount() external view onlyDelegateCall returns (uint256) {
-        return rebalanceCount < RECENT_REBALANCE_CAP ? rebalanceCount : RECENT_REBALANCE_CAP;
+        return _rebalanceCount < RECENT_REBALANCE_CAP ? _rebalanceCount : RECENT_REBALANCE_CAP;
     }
 
     function recentRebalanceRecord(uint256 index)
@@ -384,12 +411,12 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         onlyDelegateCall
         returns (RebalanceRecord memory)
     {
-        uint256 storedCount = rebalanceCount < RECENT_REBALANCE_CAP
-            ? rebalanceCount
+        uint256 storedCount = _rebalanceCount < RECENT_REBALANCE_CAP
+            ? _rebalanceCount
             : RECENT_REBALANCE_CAP;
         if (index >= storedCount) revert InvalidRecordIndex(index);
         uint256 first =
-            rebalanceCount > RECENT_REBALANCE_CAP ? rebalanceCount - RECENT_REBALANCE_CAP : 0;
+            _rebalanceCount > RECENT_REBALANCE_CAP ? _rebalanceCount - RECENT_REBALANCE_CAP : 0;
         return _recentRebalances[(first + index) % RECENT_REBALANCE_CAP];
     }
 
@@ -403,10 +430,10 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         // forge-lint: disable-next-line(block-timestamp)
         uint256 timestamp = block.timestamp;
         uint256 storedRecoveryAt = _navLossBucketRecoveryAt;
-        if (storedRecoveryAt > timestamp && maxNavLossBps != 0) {
+        if (storedRecoveryAt > timestamp && _maxNavLossBps != 0) {
             uint256 used = Math.mulDiv(
                 storedRecoveryAt - timestamp,
-                maxNavLossBps,
+                _maxNavLossBps,
                 NAV_LOSS_RECOVERY_PERIOD,
                 Math.Rounding.Ceil
             );
@@ -417,12 +444,12 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         // Bucket recovery timestamps fit uint64 for the lifetime of the chain.
         // forge-lint: disable-next-line(unsafe-typecast)
         recoveryAt = uint64(storedRecoveryAt > timestamp ? storedRecoveryAt : timestamp);
-        maximumLossBps = maxNavLossBps;
+        maximumLossBps = _maxNavLossBps;
     }
 
     function recentTradeExecutionCount() external view onlyDelegateCall returns (uint256) {
         return
-            tradeExecutionCount < RECENT_EXECUTION_CAP ? tradeExecutionCount : RECENT_EXECUTION_CAP;
+            _tradeExecutionCount < RECENT_EXECUTION_CAP ? _tradeExecutionCount : RECENT_EXECUTION_CAP;
     }
 
     function recentTradeExecutionRecord(uint256 index)
@@ -431,39 +458,39 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         onlyDelegateCall
         returns (TradeExecutionRecord memory)
     {
-        uint256 storedCount = tradeExecutionCount < RECENT_EXECUTION_CAP
-            ? tradeExecutionCount
+        uint256 storedCount = _tradeExecutionCount < RECENT_EXECUTION_CAP
+            ? _tradeExecutionCount
             : RECENT_EXECUTION_CAP;
         if (index >= storedCount) revert InvalidRecordIndex(index);
-        uint256 first = tradeExecutionCount > RECENT_EXECUTION_CAP
-            ? tradeExecutionCount - RECENT_EXECUTION_CAP
+        uint256 first = _tradeExecutionCount > RECENT_EXECUTION_CAP
+            ? _tradeExecutionCount - RECENT_EXECUTION_CAP
             : 0;
         return _recentTradeExecutions[(first + index) % RECENT_EXECUTION_CAP];
     }
 
     function _previewSupplyAfterAccrual() private view returns (uint256 supply) {
-        supply = totalSupply;
-        if (sunset) return supply;
-        uint256 previousTimestamp = lastFeeAccrualTimestamp;
+        supply = _totalSupply;
+        if (_sunset) return supply;
+        uint256 previousTimestamp = _lastFeeAccrualTimestamp;
         // Fee previews intentionally follow chain time, matching state-changing accrual.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp <= previousTimestamp) return supply;
 
         // forge-lint: disable-next-line(block-timestamp)
-        uint256 end = challengeActive && block.timestamp > challengeDeadline
-            ? uint256(challengeDeadline)
+        uint256 end = _challengeActive && block.timestamp > _challengeDeadline
+            ? uint256(_challengeDeadline)
             : block.timestamp;
-        if (end <= previousTimestamp || creatorFeeBpsPerYear == 0) return supply;
+        if (end <= previousTimestamp || _creatorFeeBpsPerYear == 0) return supply;
 
         (uint256 feeShares,) = _portfolioCalculator.feeSharesAfterElapsed(
-            totalSupply,
-            challengeActive ? _challengeFeeAccrualRemainderWad : _feeAccrualRemainderWad,
-            creatorFeeBpsPerYear,
+            _totalSupply,
+            _challengeActive ? _challengeFeeAccrualRemainderWad : _feeAccrualRemainderWad,
+            _creatorFeeBpsPerYear,
             end - previousTimestamp
         );
         // forge-lint: disable-next-line(block-timestamp)
-        if (challengeActive && block.timestamp > challengeDeadline) {
-            // Existing escrowed shares are already included in totalSupply. Forfeiture only
+        if (_challengeActive && block.timestamp > _challengeDeadline) {
+            // Existing escrowed shares are already included in _totalSupply. Forfeiture only
             // redistributes them between the challenge caller and treasury; it does not burn them.
             return supply + feeShares;
         }
@@ -471,15 +498,15 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     }
 
     function _requireDepositsOpen() private view {
-        if (sunset) revert VaultSunset();
+        if (_sunset) revert VaultSunset();
         if (_assets.length == 0) revert EmptyPortfolio();
-        if (IProtocolPortfolioLimits(factory).depositsPaused()) revert ProtocolDepositsPaused();
-        if (IProtocolPortfolioLimits(factory).vaultDepositsPaused(address(this))) {
+        if (IProtocolPortfolioLimits(_factory).depositsPaused()) revert ProtocolDepositsPaused();
+        if (IProtocolPortfolioLimits(_factory).vaultDepositsPaused(address(this))) {
             revert VaultDepositsPaused();
         }
         for (uint256 i = 0; i < _assets.length; i++) {
             address asset = _assets[i];
-            if (targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
+            if (_targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
         }
     }
 
@@ -487,7 +514,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         if (!_retiringBalancesAreWithinDust()) return false;
         uint256[] memory weights = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = targetWeightBps[_assets[i]];
+            weights[i] = _targetWeightBps[_assets[i]];
         }
         return _portfolioCalculator.isWithinBands(address(this), _assets, weights, deviationBps);
     }
@@ -502,14 +529,14 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
     }
 
     function _nextStrategyChangeTime() private view returns (uint256) {
-        return uint256(lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
+        return uint256(_lastCompletedStrategyTimestamp) + STRATEGY_CHANGE_COOLDOWN;
     }
 
     function _currentFeeState() private view returns (FeeState) {
-        if (sunset) return FeeState.Sunset;
-        if (!challengeActive) return FeeState.Accruing;
+        if (_sunset) return FeeState.Sunset;
+        if (!_challengeActive) return FeeState.Accruing;
         // forge-lint: disable-next-line(block-timestamp)
-        return block.timestamp > challengeDeadline ? FeeState.Suspended : FeeState.Escrowed;
+        return block.timestamp > _challengeDeadline ? FeeState.Suspended : FeeState.Escrowed;
     }
 
     function _containsAsset(address asset) private view returns (bool) {
@@ -519,3 +546,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultStorage {
         return false;
     }
 }
+
+
+
+

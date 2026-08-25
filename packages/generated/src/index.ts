@@ -106,10 +106,13 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "targetWeightsBps",
+    name: "getConstituents",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ name: "", type: "uint16[]" }],
+    outputs: [
+      { name: "tokens", type: "address[]" },
+      { name: "weights", type: "uint256[]" },
+    ],
   },
   {
     type: "function",
@@ -124,13 +127,6 @@ export const managedOtfVaultAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint16" }],
-  },
-  {
-    type: "function",
-    name: "STRATEGY_CHANGE_COOLDOWN",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
   },
   {
     type: "function",
@@ -421,13 +417,6 @@ export const managedOtfVaultAbi = [
   },
   {
     type: "function",
-    name: "CHALLENGE_GRACE_PERIOD",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint32" }],
-  },
-  {
-    type: "function",
     name: "isWithinTargetBands",
     stateMutability: "view",
     inputs: [],
@@ -561,13 +550,6 @@ export const managedOtfVaultAbi = [
   {
     type: "function",
     name: "resolveOutOfBandChallenge",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "stopChallengeFees",
     stateMutability: "nonpayable",
     inputs: [],
     outputs: [],
@@ -991,20 +973,6 @@ export const otfFactoryAbi = [
     name: "vaultAt",
     stateMutability: "view",
     inputs: [{ name: "index", type: "uint256" }],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "allVaults",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address[]" }],
-  },
-  {
-    type: "function",
-    name: "creatorOf",
-    stateMutability: "view",
-    inputs: [{ name: "vault", type: "address" }],
     outputs: [{ name: "", type: "address" }],
   },
   {

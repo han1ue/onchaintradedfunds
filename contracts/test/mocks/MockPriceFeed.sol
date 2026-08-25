@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AggregatorV3Interface } from "../interfaces/AggregatorV3Interface.sol";
+import { AggregatorV3Interface } from "../../src/interfaces/AggregatorV3Interface.sol";
 
 contract MockPriceFeed is AggregatorV3Interface {
     error RoundUnavailable(uint80 roundId);
@@ -67,3 +67,6 @@ contract MockPriceFeed is AggregatorV3Interface {
         return (roundId, answer, startedAt, updatedAt, answeredInRound);
     }
 }
+
+
+

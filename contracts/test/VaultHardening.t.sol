@@ -6,9 +6,9 @@ import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
-import { MockFeeOnTransferToken } from "../src/mocks/MockFeeOnTransferToken.sol";
-import { MockReentrantToken } from "../src/mocks/MockReentrantToken.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
+import { MockFeeOnTransferToken } from "./mocks/MockFeeOnTransferToken.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
 import { PricingSource, TradeInstruction, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -50,8 +50,8 @@ contract VaultHardeningTest is ProtocolTestBase {
 
         vault.redeem(circulatingShares, ALICE, address(this), minimums);
 
-        assertEq(vault.totalSupply(), vault.MINIMUM_LIQUIDITY_SHARES());
-        assertEq(vault.balanceOf(address(vault)), vault.MINIMUM_LIQUIDITY_SHARES());
+        assertEq(vault.totalSupply(), LOCKED_LIQUIDITY_SHARES);
+        assertEq(vault.balanceOf(address(vault)), LOCKED_LIQUIDITY_SHARES);
         assertGt(tokenA.balanceOf(address(vault)), 0);
         assertGt(tokenB.balanceOf(address(vault)), 0);
 
@@ -65,7 +65,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         vault.mintWithBasket(shares, ALICE, amounts);
         vm.stopPrank();
 
-        assertEq(vault.totalSupply(), vault.MINIMUM_LIQUIDITY_SHARES() + shares);
+        assertEq(vault.totalSupply(), LOCKED_LIQUIDITY_SHARES + shares);
     }
 
     function testFactoryRejectsInitialSupplyThatCannotFundLockedLiquidity() public {
@@ -306,7 +306,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         uint256[] memory amounts = vault.previewMint(ONE);
         reentrantToken.mint(ALICE, amounts[0]);
         tokenB.mint(ALICE, amounts[1]);
-        reentrantToken.configureCallback(address(vault), abi.encodeCall(vault.accrueFees, ()), true);
+        reentrantToken.configureCallback(address(vault), abi.encodeCall(vault.withdrawManagerFees, ()), true);
 
         vm.startPrank(ALICE);
         reentrantToken.approve(address(vault), type(uint256).max);
@@ -326,7 +326,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 30 days);
         _refreshPrices();
-        vault.accrueFees();
+        vault.withdrawManagerFees();
         uint256 protocolShares = vault.balanceOf(address(collector));
         assertGt(protocolShares, 0);
 
@@ -382,3 +382,7 @@ contract VaultHardeningTest is ProtocolTestBase {
             _directPricing(address(taxedFeed), PricingSource.Chainlink);
     }
 }
+
+
+
+

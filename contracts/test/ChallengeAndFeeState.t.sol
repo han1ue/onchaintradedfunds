@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
-import { MockTradeAdapter } from "../src/mocks/MockTradeAdapter.sol";
+import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -65,7 +65,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         uint256 recipientBalanceAfterRelease = vault.balanceOf(FEE_RECIPIENT);
         vm.warp(block.timestamp + 1 days);
         _setPrices(100_00000000, 100_00000000);
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceAfterRelease);
     }
 
@@ -84,7 +84,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.warp(uint256(vault.lastFeeAccrualTimestamp()) + 1 days);
         _refreshPrices();
         uint256 recipientBefore = vault.balanceOf(FEE_RECIPIENT);
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBefore);
         assertFalse(vault.challengeActive());
         assertEq(vault.escrowedManagerFeeShares(), 0);
@@ -105,7 +105,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _setPrices(120_00000000, 100_00000000);
         uint256 recipientDuringChallenge = vault.balanceOf(FEE_RECIPIENT);
         uint256 escrowBefore = vault.escrowedManagerFeeShares();
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertEq(vault.balanceOf(FEE_RECIPIENT), recipientDuringChallenge);
         assertGt(vault.escrowedManagerFeeShares(), escrowBefore);
     }
@@ -249,7 +249,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         vm.warp(START + 1 days);
         _setPrices(120_00000000, 100_00000000);
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertGt(vault.escrowedManagerFeeShares(), 0);
 
         vm.warp(START + 7 days + 1);
@@ -354,7 +354,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         _setPrices(120_00000000, 100_00000000);
 
         uint256 recipientBalanceBefore = vault.balanceOf(FEE_RECIPIENT);
-        uint256 preChallengeFees = vault.accrueFees();
+        uint256 preChallengeFees = vault.withdrawManagerFees();
         uint256 recipientBalanceAtChallengeStart = vault.balanceOf(FEE_RECIPIENT);
 
         assertTrue(vault.challengeActive());
@@ -397,7 +397,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.warp(block.timestamp + 10 days);
         _setPrices(100_00000000, 100_00000000);
 
-        uint256 controlFees = controlVault.accrueFees();
+        uint256 controlFees = controlVault.withdrawManagerFees();
         uint256 claimedReward = claimVault.claimChallengeReward();
         controlVault.claimChallengeReward();
 
@@ -438,7 +438,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
 
         vm.warp(block.timestamp + 1 days);
         _setPrices(100_00000000, 100_00000000);
-        vault.accrueFees();
+        vault.withdrawManagerFees();
         assertGt(vault.totalSupply(), supplyAtForfeiture);
     }
 
@@ -507,7 +507,7 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.warp(START + 17 days);
         _setPrices(100_00000000, 100_00000000);
         uint256 recipientBalanceBeforeChallenge = vault.balanceOf(FEE_RECIPIENT);
-        assertGt(vault.accrueFees(), 0);
+        assertGt(vault.withdrawManagerFees(), 0);
         assertTrue(vault.challengeActive());
         assertGt(vault.balanceOf(FEE_RECIPIENT), recipientBalanceBeforeChallenge);
 
@@ -649,3 +649,6 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.stopPrank();
     }
 }
+
+
+

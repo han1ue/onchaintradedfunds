@@ -208,7 +208,7 @@ const supportedMarketAssets = [
   },
 ];
 
-const assetRegistry = await deployContract({ name: "AssetRegistry", args: [account.address] });
+const assetRegistry = await deployContract({ name: "AssetRegistry" });
 const rebalanceExecutor = await deployContract({
   name: "RebalanceExecutor",
   args: [account.address],

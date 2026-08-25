@@ -5,7 +5,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
-import { MockPriceFeed } from "../src/mocks/MockPriceFeed.sol";
+import { MockPriceFeed } from "./mocks/MockPriceFeed.sol";
 import { AssetPricingConfig, PricingSource, VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
@@ -45,7 +45,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         vm.warp(START + 365 days);
         _refreshAllPrices();
-        uint256 feeShares = vault.accrueFees();
+        uint256 feeShares = vault.withdrawManagerFees();
 
         assertGt(feeShares, 0);
         assertEq(vault.balanceOf(address(collector)), 0);
@@ -59,7 +59,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         vm.warp(START + 365 days);
         _refreshAllPrices();
-        uint256 feeShares = vault.accrueFees();
+        uint256 feeShares = vault.withdrawManagerFees();
         uint256 expectedProtocolShares = feeShares * 750 / 10_000;
 
         assertEq(vault.balanceOf(address(collector)), expectedProtocolShares);
@@ -189,7 +189,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         vm.warp(START + 365 days);
         _refreshAllPrices();
-        uint256 feeShares = vault.accrueFees();
+        uint256 feeShares = vault.withdrawManagerFees();
 
         assertGt(feeShares, 0);
         assertEq(vault.balanceOf(address(collector)), 0);
@@ -224,7 +224,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         ManagedOTFVault vault = _createVault();
         vm.warp(START + 30 days);
         _refreshAllPrices();
-        vault.accrueFees();
+        vault.withdrawManagerFees();
 
         vm.prank(TREASURY);
         uint256 claimedShares = collector.claimAll(address(vault));
@@ -232,7 +232,7 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         uint256 tokenABefore = tokenA.balanceOf(TREASURY);
         uint256 tokenBBefore = tokenB.balanceOf(TREASURY);
-        uint256[] memory minimums = new uint256[](vault.assetCount());
+        uint256[] memory minimums = new uint256[](vault.totalConstituents());
         vm.prank(TREASURY);
         vault.redeem(claimedShares, TREASURY, TREASURY, minimums);
 
@@ -289,3 +289,6 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         _refreshPrice(otfFeed);
     }
 }
+
+
+

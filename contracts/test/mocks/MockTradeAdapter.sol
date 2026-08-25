@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ITradeAdapter } from "../interfaces/ITradeAdapter.sol";
-import { SafeTransferLib } from "../libraries/SafeTransferLib.sol";
+import { ITradeAdapter } from "../../src/interfaces/ITradeAdapter.sol";
+import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract MockTradeAdapter is ITradeAdapter {
@@ -60,3 +60,6 @@ contract MockTradeAdapter is ITradeAdapter {
         return keccak256(abi.encodePacked(tokenIn, tokenOut));
     }
 }
+
+
+
