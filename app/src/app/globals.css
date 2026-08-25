@@ -4387,10 +4387,9 @@ textarea::placeholder {
   gap: 8px;
 }
 
-.pricingConfigurationHeader > span:first-child,
-.pricingConfigurationFields label > span {
+.pricingConfigurationHeader > span:first-child {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: 0;
   color: var(--text-muted);
   font-size: 0.6rem;
   font-weight: 600;
@@ -4398,14 +4397,69 @@ textarea::placeholder {
   text-transform: uppercase;
 }
 
-.pricingConfigurationHeader > span:first-child {
-  margin-bottom: 0;
+.pricingConfigurationChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
-.pricingConfigurationFields select,
-.pricingConfigurationFields input {
-  width: 100%;
-  height: 34px;
+.pricingConfigurationChoices > button {
+  display: grid;
+  min-width: 154px;
+  min-height: 42px;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-raised);
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.pricingConfigurationChoices > button:hover:not(:disabled),
+.pricingConfigurationChoices > button.active {
+  border-color: rgb(var(--accent-rgb) / 42%);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text);
+}
+
+.pricingConfigurationChoices > button.warning.active {
+  border-color: rgb(241 185 61 / 45%);
+  background: rgb(241 185 61 / 7%);
+}
+
+.pricingConfigurationChoices > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.pricingConfigurationChoices span,
+.pricingConfigurationChoices small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pricingConfigurationChoices span {
+  font-size: 0.67rem;
+  font-weight: 650;
+}
+
+.pricingConfigurationChoices small {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 0.56rem;
+}
+
+.pricingConfigurationChoices svg {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--accent-text);
 }
 
 .customPricingFields {
@@ -5865,10 +5919,15 @@ input.invalid {
   height: 34px;
 }
 
-.createAssetPicker {
+.assetPickerShell {
   position: relative;
+  min-width: 0;
+}
+
+.createAssetPicker {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) 14px;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) 14px;
   min-height: 46px;
   min-width: 0;
   align-items: center;
@@ -5877,95 +5936,118 @@ input.invalid {
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--card-raised);
+  color: var(--text);
   padding: 0 11px;
   cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
 }
 
-.createAssetPicker:focus-within {
+.createAssetPicker:hover,
+.createAssetPicker.active {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.createAssetPicker:focus-visible {
   border-color: rgb(var(--accent-rgb) / 62%);
+  outline: 0;
   box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
 }
 
-.createAssetPickerIdentity {
+.createAssetPickerName {
+  display: flex;
   min-width: 0;
-  line-height: 1.05;
+  align-items: center;
+  gap: 8px;
 }
 
-.createAssetPickerIdentity strong,
-.createAssetPickerIdentity small {
-  display: block;
+.createAssetPickerName > strong {
+  min-width: 0;
   overflow: hidden;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.createAssetPickerIdentity strong {
-  color: var(--text);
-  font-size: 0.7rem;
-  font-weight: 650;
-}
-
-.createAssetPickerIdentity small {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 0.54rem;
+.createAssetPickerName > .stateBadge {
+  flex: 0 0 auto;
 }
 
 .createAssetPicker > svg {
   color: var(--text-muted);
+  transition: transform 150ms ease;
 }
 
-.createAssetPicker > .stateBadge {
-  min-width: 61px;
-  justify-content: center;
+.createAssetPicker.active > svg {
+  transform: rotate(180deg);
 }
 
-.createAssetPicker > select {
+.createAssetPickerMenu {
   position: absolute;
-  inset: 0;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 3px;
   width: 100%;
-  height: 100%;
-  cursor: pointer;
-  opacity: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--card);
+  padding: 5px;
+  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
 }
 
-.createAssetSearchControl {
+.createAssetPickerMenu > button {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 14px;
+  width: 100%;
+  min-height: 38px;
+  grid-template-columns: minmax(0, 1fr) max-content 14px;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 5px;
-  background: var(--card-raised);
-  padding: 0 8px;
-}
-
-.createAssetSearchControl:focus-within {
-  border-color: rgb(var(--accent-rgb) / 62%);
-  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
-}
-
-.createAssetSearchControl > svg {
-  color: var(--text-muted);
-}
-
-.createAssetSearchInput {
-  width: 100%;
-  min-width: 0;
-  height: 30px;
-  border: 0;
   background: transparent;
-  color: var(--text);
-  font-size: 0.66rem;
-  font-weight: 650;
-  outline: 0;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 7px 9px;
+  text-align: left;
 }
 
-.assetSelectField > .stateBadge {
-  width: fit-content;
-  margin-top: 6px;
+.createAssetPickerMenu > button:hover,
+.createAssetPickerMenu > button[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--card-raised);
+  color: var(--text);
+}
+
+.createAssetPickerMenu > button > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.66rem;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.createAssetPickerMenu > button > svg {
+  color: var(--accent-text);
+}
+
+.assetWeightField .inputWithSuffix {
+  height: 46px;
+}
+
+.assetWeightField .inputWithSuffix input {
+  height: 44px;
 }
 
 .assetPricingPanel {
@@ -6231,17 +6313,92 @@ input.invalid {
   padding: 14px 22px;
 }
 
-.formSection label > .assetAddressLabel {
-  overflow: hidden;
-  margin-top: 5px;
+.pricingSetupModal {
+  display: grid;
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--card-raised);
+  box-shadow: 0 24px 72px rgb(0 0 0 / 48%);
+}
+
+.pricingSetupModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding: 20px 22px 17px;
+}
+
+.pricingSetupModalHeader > div {
+  min-width: 0;
+}
+
+.pricingSetupModalHeader h2 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 650;
+}
+
+.pricingSetupModalHeader p {
+  max-width: 68ch;
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.pricingSetupModalBody.customPricingFields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 22px 20px;
+}
+
+.pricingSetupModalBody label > span {
+  display: block;
+  margin-bottom: 6px;
   color: var(--text-muted);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.59rem;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  text-transform: none;
-  white-space: nowrap;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pricingSetupModalBody label > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.pricingSetupModalBody input,
+.pricingSetupModalBody select {
+  width: 100%;
+  height: 36px;
+  background: var(--card);
+}
+
+.pricingSetupModalBody .quoteRegistrySummary,
+.pricingSetupModalBody .pricingSetupNote,
+.pricingSetupModalBody .availabilityWarning {
+  grid-column: 1 / -1;
+}
+
+.pricingSetupNote {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.pricingSetupModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 14px 22px;
 }
 
 .createGuarantees {
@@ -7582,13 +7739,21 @@ input.invalid {
     grid-template-columns: 1fr;
   }
 
-  .unverifiedAssetModal {
+  .pricingSetupModalBody.customPricingFields {
+    grid-template-columns: 1fr;
+  }
+
+  .unverifiedAssetModal,
+  .pricingSetupModal {
     max-height: calc(100dvh - 20px);
   }
 
   .unverifiedAssetModalHeader,
   .unverifiedAssetModalBody,
-  .unverifiedAssetModalActions {
+  .unverifiedAssetModalActions,
+  .pricingSetupModalHeader,
+  .pricingSetupModalBody.customPricingFields,
+  .pricingSetupModalActions {
     padding-right: 16px;
     padding-left: 16px;
   }
@@ -8167,14 +8332,8 @@ input.invalid {
     padding-bottom: 7px;
   }
 
-  .createAssetPicker > .stateBadge {
-    grid-column: 1 / -1;
-    width: fit-content;
-    min-width: 0;
-    margin-bottom: -5px;
-  }
-
-  .unverifiedAssetModalActions {
+  .unverifiedAssetModalActions,
+  .pricingSetupModalActions {
     align-items: stretch;
     flex-direction: column-reverse;
   }

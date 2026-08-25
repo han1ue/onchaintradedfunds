@@ -940,11 +940,14 @@ function PricingConfigurationFields({
   onChange: (config: AssetPricingConfig) => void;
   disabled?: boolean;
 }) {
-  const [customizing, setCustomizing] = useState(false);
+  const modalTitleId = useId();
+  const modalDescriptionId = useId();
+  const [pricingModalOpen, setPricingModalOpen] = useState(false);
+  const [draftConfig, setDraftConfig] = useState<AssetPricingConfig>(config);
+  const pricingTriggerRef = useRef<HTMLButtonElement>(null);
   const approved = approvedPricingConfigsFor(chainId, assetAddress) as AssetPricingConfig[];
   const approvedIndex = approved.findIndex((candidate) => pricingConfigsMatch(candidate, config));
   const verification = pricingVerification(chainId, assetAddress, config);
-  const verified = verification.verified;
   const registryAddress = chainId === robinhoodChainTestnet.id
     ? robinhoodTestnetAddresses.assetMarketRegistry
     : undefined;
@@ -981,172 +984,256 @@ function PricingConfigurationFields({
   const { pools, isLoading: poolsLoading } = useCompatibleUniswapV3Pools(
     chainId,
     assetAddress,
-    config.source === 2 && (customizing || approved.length === 0),
+    pricingModalOpen && draftConfig.source === 2,
     registeredQuotes,
   );
 
-  useEffect(() => setCustomizing(false), [assetAddress, chainId]);
+  useEffect(() => {
+    setPricingModalOpen(false);
+    setDraftConfig(config);
+  // The asset identity owns the pricing modal lifecycle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetAddress, chainId]);
 
-  function commit(next: AssetPricingConfig) {
-    setCustomizing(true);
-    onChange(next);
+  const closePricingModal = useCallback(() => {
+    setPricingModalOpen(false);
+    window.setTimeout(() => pricingTriggerRef.current?.focus(), 0);
+  }, []);
+
+  useEffect(() => {
+    if (!pricingModalOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePricingModal();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [closePricingModal, pricingModalOpen]);
+
+  function openPricingModal() {
+    setDraftConfig(pricingConfigIsComplete(config) ? config : {
+      ...emptyPricingConfig(),
+      primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
+    });
+    setPricingModalOpen(true);
   }
 
+  const draftVerification = pricingVerification(chainId, assetAddress, draftConfig);
+
   return (
-    <div className="pricingConfigurationFields">
-      <div className="pricingConfigurationHeader">
-        <span>Pricing configuration</span>
-      </div>
-      <label>
-        <span>Approved choice</span>
-        <select
-          value={!customizing && approvedIndex >= 0 ? `approved-${approvedIndex}` : "custom"}
-          disabled={disabled}
-          onChange={(event) => {
-            if (event.target.value === "custom") {
-              setCustomizing(true);
-              return;
-            }
-            const index = Number(event.target.value.replace("approved-", ""));
-            if (approved[index]) {
-              setCustomizing(false);
-              onChange(approved[index]);
-            }
-          }}
-        >
+    <>
+      <div className="pricingConfigurationFields">
+        <div className="pricingConfigurationHeader">
+          <span>Pricing configuration</span>
+        </div>
+        <div className="pricingConfigurationChoices">
           {approved.map((choice, index) => (
-            <option key={`${choice.source}-${choice.primarySource}`} value={`approved-${index}`}>
-              {pricingSourceLabel(choice.source)} · {shortAddress(choice.primarySource)}
-            </option>
-          ))}
-          <option value="custom">Customize</option>
-        </select>
-      </label>
-      {customizing || !verified ? (
-        <div className="customPricingFields">
-          <label>
-            <span>Pricing source</span>
-            <select
-              value={config.source}
+            <button
+              className={approvedIndex === index ? "active" : ""}
+              key={`${choice.source}-${choice.primarySource}`}
+              type="button"
               disabled={disabled}
-              onChange={(event) => commit({
-                source: Number(event.target.value) as PricingSource,
-                quoteToken: zeroAddress,
-                primarySource: zeroAddress,
-                secondarySource: zeroAddress,
-                primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
-                secondaryMaxStaleness: [1, 2].includes(Number(event.target.value)) ? 60 * 60 : 0,
-              })}
+              aria-pressed={approvedIndex === index}
+              onClick={() => onChange(choice)}
             >
-              <option value={0}>Chainlink</option>
-              <option value={1}>Chainlink Composed</option>
-              <option value={2}>Uniswap V3 TWAP</option>
-              <option value={3}>Chainlink Robinhood</option>
-            </select>
-          </label>
-          {config.source === 1 || config.source === 2 ? (
-            <label>
-              <span>Registered quote token</span>
-              <select
-                value={registeredQuotes.some((quote) => quote.address.toLowerCase() === config.quoteToken.toLowerCase()) ? config.quoteToken : ""}
-                disabled={disabled || registeredQuotes.length === 0}
-                onChange={(event) => {
-                  const quote = registeredQuotes.find((candidate) => candidate.address === event.target.value);
-                  if (!quote) return;
-                  commit({
-                    ...config,
-                    quoteToken: quote.address,
-                    secondarySource: quote.usdFeed,
-                    secondaryMaxStaleness: quote.maxStaleness,
-                  });
-                }}
-              >
-                <option value="">{registeredQuotes.length ? "Choose a quote token" : "No enabled quote tokens"}</option>
-                {registeredQuotes
-                  .filter((quote) => config.source === 1 ? quote.allowComposedChainlink : quote.allowV3Twap)
-                  .map((quote) => <option key={quote.address} value={quote.address}>{quoteTokenLabel(quote.address)}</option>)}
-              </select>
-            </label>
-          ) : null}
-          {config.source === 2 ? (
-            <>
+              <span>{pricingSourceLabel(choice.source)}</span>
+              <small>{shortAddress(choice.primarySource)}</small>
+              {approvedIndex === index ? <Check size={13} aria-hidden="true" /> : null}
+            </button>
+          ))}
+          <button
+            ref={pricingTriggerRef}
+            className={approvedIndex < 0 ? "active warning" : ""}
+            type="button"
+            disabled={disabled}
+            aria-pressed={approvedIndex < 0}
+            onClick={openPricingModal}
+          >
+            <span>{approved.length ? (approvedIndex < 0 ? "Edit unverified pricing" : "Custom pricing") : pricingConfigIsComplete(config) ? "Edit pricing" : "Configure pricing"}</span>
+            <small>{approvedIndex < 0 && pricingConfigIsComplete(config) ? pricingSourceLabel(config.source) : "Choose source and details"}</small>
+            <Pencil size={13} aria-hidden="true" />
+          </button>
+        </div>
+        {verification.availabilityWarning ? (
+          <small className="availabilityWarning">
+            This verified source uses a shorter freshness limit and may be unavailable more often.
+          </small>
+        ) : null}
+      </div>
+
+      {pricingModalOpen ? (
+        <div className="priceDetailsBackdrop" onMouseDown={(event) => event.target === event.currentTarget && closePricingModal()}>
+          <section
+            className="pricingSetupModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={modalTitleId}
+            aria-describedby={modalDescriptionId}
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+                "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+              ));
+              const first = focusable.at(0);
+              const last = focusable.at(-1);
+              if (!first || !last) return;
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <header className="pricingSetupModalHeader">
+              <div>
+                <h2 id={modalTitleId}>Set pricing configuration</h2>
+                <p id={modalDescriptionId}>Choose the oracle type and exact source this OTF will pin for the asset.</p>
+              </div>
+              <button className="sunsetDialogClose" type="button" aria-label="Close pricing configuration" autoFocus onClick={closePricingModal}>
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="pricingSetupModalBody customPricingFields">
               <label>
-                <span>Compatible pools</span>
+                <span>Pricing type</span>
                 <select
-                  value={pools.some((pool) => pool.address.toLowerCase() === config.primarySource.toLowerCase()) ? config.primarySource : ""}
-                  disabled={disabled || poolsLoading || pools.length === 0}
-                  onChange={(event) => {
-                    const pool = pools.find((candidate) => candidate.address === event.target.value);
-                    if (!pool) return;
-                    commit({ ...config, primarySource: pool.address, quoteToken: pool.quoteToken });
-                  }}
+                  value={draftConfig.source}
+                  disabled={disabled}
+                  onChange={(event) => setDraftConfig({
+                    source: Number(event.target.value) as PricingSource,
+                    quoteToken: zeroAddress,
+                    primarySource: zeroAddress,
+                    secondarySource: zeroAddress,
+                    primaryMaxStaleness: DEFAULT_ORACLE_STALENESS_SECONDS,
+                    secondaryMaxStaleness: [1, 2].includes(Number(event.target.value)) ? 60 * 60 : 0,
+                  })}
                 >
-                  <option value="">{poolsLoading ? "Discovering pools…" : pools.length ? "Choose a pool" : "No compatible pools found"}</option>
-                  {pools.map((pool) => (
-                    <option key={pool.address} value={pool.address}>
-                      {pool.quoteSymbol} · {(pool.fee / 10_000).toFixed(2)}% · {shortAddress(pool.address)}
-                    </option>
-                  ))}
+                  <option value={0}>Chainlink</option>
+                  <option value={1}>Chainlink Composed</option>
+                  <option value={2}>Uniswap V3 TWAP</option>
+                  <option value={3}>Chainlink Robinhood</option>
                 </select>
               </label>
+              {draftConfig.source === 1 || draftConfig.source === 2 ? (
+                <label>
+                  <span>Registered quote token</span>
+                  <select
+                    value={registeredQuotes.some((quote) => quote.address.toLowerCase() === draftConfig.quoteToken.toLowerCase()) ? draftConfig.quoteToken : ""}
+                    disabled={disabled || registeredQuotes.length === 0}
+                    onChange={(event) => {
+                      const quote = registeredQuotes.find((candidate) => candidate.address === event.target.value);
+                      if (!quote) return;
+                      setDraftConfig((current) => ({
+                        ...current,
+                        quoteToken: quote.address,
+                        secondarySource: quote.usdFeed,
+                        secondaryMaxStaleness: quote.maxStaleness,
+                      }));
+                    }}
+                  >
+                    <option value="">{registeredQuotes.length ? "Choose a quote token" : "No enabled quote tokens"}</option>
+                    {registeredQuotes
+                      .filter((quote) => draftConfig.source === 1 ? quote.allowComposedChainlink : quote.allowV3Twap)
+                      .map((quote) => <option key={quote.address} value={quote.address}>{quoteTokenLabel(quote.address)}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {draftConfig.source === 2 ? (
+                <>
+                  <label>
+                    <span>Compatible pools</span>
+                    <select
+                      value={pools.some((pool) => pool.address.toLowerCase() === draftConfig.primarySource.toLowerCase()) ? draftConfig.primarySource : ""}
+                      disabled={disabled || poolsLoading || pools.length === 0}
+                      onChange={(event) => {
+                        const pool = pools.find((candidate) => candidate.address === event.target.value);
+                        if (!pool) return;
+                        setDraftConfig((current) => ({ ...current, primarySource: pool.address, quoteToken: pool.quoteToken }));
+                      }}
+                    >
+                      <option value="">{poolsLoading ? "Discovering pools…" : pools.length ? "Choose a pool" : "No compatible pools found"}</option>
+                      {pools.map((pool) => (
+                        <option key={pool.address} value={pool.address}>
+                          {pool.quoteSymbol} · {(pool.fee / 10_000).toFixed(2)}% · {shortAddress(pool.address)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Pool address</span>
+                    <input
+                      className={draftConfig.primarySource !== zeroAddress && !isAddress(draftConfig.primarySource) ? "invalid" : undefined}
+                      value={draftConfig.primarySource === zeroAddress ? "" : draftConfig.primarySource}
+                      disabled={disabled}
+                      onChange={(event) => setDraftConfig((current) => ({ ...current, primarySource: event.target.value.trim() as `0x${string}` }))}
+                      placeholder="Select above or enter 0x address"
+                    />
+                  </label>
+                </>
+              ) : (
+                <label>
+                  <span>{draftConfig.source === 1 ? "Asset/quote Chainlink feed" : "Asset/USD Chainlink feed"}</span>
+                  <input
+                    className={draftConfig.primarySource !== zeroAddress && !isAddress(draftConfig.primarySource) ? "invalid" : undefined}
+                    value={draftConfig.primarySource === zeroAddress ? "" : draftConfig.primarySource}
+                    disabled={disabled}
+                    onChange={(event) => setDraftConfig((current) => ({ ...current, primarySource: event.target.value.trim() as `0x${string}` }))}
+                    placeholder="0x feed address"
+                  />
+                </label>
+              )}
+              {draftConfig.source === 1 || draftConfig.source === 2 ? (
+                <div className="quoteRegistrySummary">
+                  <span>Current admin-managed quote/USD configuration</span>
+                  <strong>{draftConfig.secondarySource !== zeroAddress ? shortAddress(draftConfig.secondarySource) : "Choose a quote token"}</strong>
+                  <small>
+                    {draftConfig.secondarySource !== zeroAddress
+                      ? `${formatPricingDuration(draftConfig.secondaryMaxStaleness)} · full Chainlink round validation`
+                      : "The registry supplies the Chainlink-compatible feed and freshness limit."}
+                  </small>
+                </div>
+              ) : null}
               <label>
-                <span>Pool address</span>
+                <span>{draftConfig.source === 1 ? "Asset/quote freshness limit" : "Freshness limit"}</span>
                 <input
-                  className={config.primarySource !== zeroAddress && !isAddress(config.primarySource) ? "invalid" : undefined}
-                  value={config.primarySource === zeroAddress ? "" : config.primarySource}
+                  type="number"
+                  min={1}
+                  max={MAX_ORACLE_STALENESS_SECONDS}
+                  step={1}
+                  value={draftConfig.primaryMaxStaleness}
                   disabled={disabled}
-                  onChange={(event) => commit({ ...config, primarySource: event.target.value.trim() as `0x${string}` })}
-                  placeholder="Select above or enter 0x address"
+                  onChange={(event) => setDraftConfig((current) => ({ ...current, primaryMaxStaleness: Number(event.target.value) }))}
                 />
+                <small>Seconds; nonzero and no more than 7 days.</small>
               </label>
-            </>
-          ) : (
-            <label>
-              <span>{config.source === 1 ? "Asset/quote Chainlink feed" : "Asset/USD Chainlink feed"}</span>
-              <input
-                className={config.primarySource !== zeroAddress && !isAddress(config.primarySource) ? "invalid" : undefined}
-                value={config.primarySource === zeroAddress ? "" : config.primarySource}
-                disabled={disabled}
-                onChange={(event) => commit({ ...config, primarySource: event.target.value.trim() as `0x${string}` })}
-                placeholder="0x feed address"
-              />
-            </label>
-          )}
-          {config.source === 1 || config.source === 2 ? (
-            <div className="quoteRegistrySummary">
-              <span>Current admin-managed quote/USD configuration</span>
-              <strong>{config.secondarySource !== zeroAddress ? shortAddress(config.secondarySource) : "Choose a quote token"}</strong>
-              <small>
-                {config.secondarySource !== zeroAddress
-                  ? `${formatPricingDuration(config.secondaryMaxStaleness)} · full Chainlink round validation`
-                  : "The registry supplies the Chainlink-compatible feed and freshness limit."}
-              </small>
+              {draftConfig.source === 3 ? (
+                <small className="pricingSetupNote">Robinhood pricing also requires asset.oraclePaused() and blocks oracle-dependent actions while it returns true.</small>
+              ) : null}
+              {draftVerification.availabilityWarning ? (
+                <small className="availabilityWarning">This source uses a shorter freshness limit and may be unavailable more often.</small>
+              ) : null}
             </div>
-          ) : null}
-          <label>
-            <span>{config.source === 1 ? "Asset/quote freshness limit" : "Freshness limit"}</span>
-            <input
-              type="number"
-              min={1}
-              max={MAX_ORACLE_STALENESS_SECONDS}
-              step={1}
-              value={config.primaryMaxStaleness}
-              disabled={disabled}
-              onChange={(event) => commit({ ...config, primaryMaxStaleness: Number(event.target.value) })}
-            />
-            <small>Seconds; nonzero and no more than 7 days.</small>
-          </label>
-          {config.source === 3 ? (
-            <small>Robinhood pricing also requires asset.oraclePaused() and rejects oracle-dependent actions while it returns true.</small>
-          ) : null}
-          {verification.availabilityWarning ? (
-            <small className="availabilityWarning">
-              Verified identity with a shorter freshness limit. Oracle-dependent actions may be unavailable more often.
-            </small>
-          ) : null}
+
+            <footer className="pricingSetupModalActions">
+              <button className="secondaryAction" type="button" onClick={closePricingModal}>Cancel</button>
+              <button
+                className="primaryAction"
+                type="button"
+                disabled={!pricingConfigIsComplete(draftConfig)}
+                onClick={() => {
+                  onChange(draftConfig);
+                  closePricingModal();
+                }}
+              >
+                Save pricing
+              </button>
+            </footer>
+          </section>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -8141,15 +8228,10 @@ function CreateVaultView({
     }));
   }, [testnetCreateAssets]);
   const [manualAssetAddress, setManualAssetAddress] = useState("");
-  const [manualPricingSource, setManualPricingSource] = useState<PricingSource>(0);
-  const [manualQuoteToken, setManualQuoteToken] = useState("");
-  const [manualPrimarySource, setManualPrimarySource] = useState("");
-  const [manualSecondarySource, setManualSecondarySource] = useState("");
-  const [manualPrimaryMaxStaleness, setManualPrimaryMaxStaleness] = useState(DEFAULT_ORACLE_STALENESS_SECONDS);
-  const [manualSecondaryMaxStaleness, setManualSecondaryMaxStaleness] = useState(0);
   const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
   const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [unverifiedAssetIndex, setUnverifiedAssetIndex] = useState<number>();
+  const [openAssetPickerIndex, setOpenAssetPickerIndex] = useState<number>();
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
   const [pricingQuotesPending, setPricingQuotesPending] = useState(false);
   const [pricingQuoteError, setPricingQuoteError] = useState<string>();
@@ -8452,6 +8534,24 @@ function CreateVaultView({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [manualRegistrationState, unverifiedAssetIndex]);
 
+  useEffect(() => {
+    if (openAssetPickerIndex === undefined) return;
+    const closePicker = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".assetPickerShell")) return;
+      setOpenAssetPickerIndex(undefined);
+    };
+    const closePickerOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenAssetPickerIndex(undefined);
+    };
+    document.addEventListener("pointerdown", closePicker);
+    document.addEventListener("keydown", closePickerOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closePicker);
+      document.removeEventListener("keydown", closePickerOnEscape);
+    };
+  }, [openAssetPickerIndex]);
+
   if (!isTestnet) {
     return (
       <div className="appView">
@@ -8504,14 +8604,9 @@ function CreateVaultView({
 
   function openUnverifiedAssetModal(index: number) {
     setManualAssetAddress("");
-    setManualPricingSource(0);
-    setManualQuoteToken("");
-    setManualPrimarySource("");
-    setManualSecondarySource("");
-    setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
-    setManualSecondaryMaxStaleness(0);
     setManualRegistrationError(undefined);
     setManualRegistrationState("idle");
+    setOpenAssetPickerIndex(undefined);
     setUnverifiedAssetIndex(index);
   }
 
@@ -8592,29 +8687,9 @@ function CreateVaultView({
     });
   }
 
-  async function validateAndAddAsset() {
-    if (
-      !publicClient || !connectedAddress || !pricingResolverAddress ||
-      unverifiedAssetIndex === undefined ||
-      !isAddress(manualAssetAddress) || !isAddress(manualPrimarySource)
-    ) return;
+  async function addUnverifiedAsset() {
+    if (!publicClient || unverifiedAssetIndex === undefined || !isAddress(manualAssetAddress)) return;
     const assetAddress = manualAssetAddress as `0x${string}`;
-    const pricingConfig: AssetPricingConfig = {
-      source: manualPricingSource,
-      quoteToken: (manualPricingSource === 1 || manualPricingSource === 2) && isAddress(manualQuoteToken)
-        ? manualQuoteToken as `0x${string}`
-        : zeroAddress,
-      primarySource: manualPrimarySource as `0x${string}`,
-      secondarySource: (manualPricingSource === 1 || manualPricingSource === 2) && isAddress(manualSecondarySource)
-        ? manualSecondarySource as `0x${string}`
-        : zeroAddress,
-      primaryMaxStaleness: manualPrimaryMaxStaleness,
-      secondaryMaxStaleness: manualPricingSource === 1 || manualPricingSource === 2 ? manualSecondaryMaxStaleness : 0,
-    };
-    if (!pricingConfigIsComplete(pricingConfig)) {
-      setManualRegistrationError("Complete the selected pricing route before validating it.");
-      return;
-    }
     if (portfolio.some((item, index) => index !== unverifiedAssetIndex && item.address.toLowerCase() === assetAddress.toLowerCase())) {
       setManualRegistrationError("This token contract is already in the portfolio.");
       return;
@@ -8628,43 +8703,22 @@ function CreateVaultView({
         publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
       ]);
       if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
-      const simulation = await publicClient.simulateContract({
-        account: connectedAddress as `0x${string}`,
-        address: pricingResolverAddress,
-        abi: assetPricingResolverAbi,
-        functionName: "validateAndQuotePrice",
-        args: [assetAddress, pricingConfig],
-      });
-      const [answer, feedDecimals] = simulation.result;
       const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
-      setManualOraclePrices((current) => ({
-        ...current,
-        [assetAddress.toLowerCase()]: {
-          answer,
-          decimals: Number(feedDecimals),
-          updatedAt: BigInt(Math.floor(Date.now() / 1_000)),
-          display: formatOraclePrice(Number(formatUnits(answer, Number(feedDecimals)))),
-        },
-      }));
       setPortfolio((current) => current.map((item, index) => (
         index === unverifiedAssetIndex
           ? {
             ticker: symbol,
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
-            poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+            poolAddress: undefined,
             verified: false,
-            pricingConfig,
+            pricingConfig: emptyPricingConfig(),
             targetWeight: item.targetWeight,
             initialAmount: "",
           }
           : item
       )));
       setManualAssetAddress("");
-      setManualPrimarySource("");
-      setManualSecondarySource("");
-      setManualPrimaryMaxStaleness(DEFAULT_ORACLE_STALENESS_SECONDS);
-      setManualSecondaryMaxStaleness(0);
       setManualRegistrationState("confirmed");
       setUnverifiedAssetIndex(undefined);
     } catch (error) {
@@ -8878,10 +8932,10 @@ function CreateVaultView({
             <header className="unverifiedAssetModalHeader">
               <div>
                 <div className="unverifiedAssetModalTitle">
-                  <h2 id="unverified-asset-title">Configure an unverified asset</h2>
+                  <h2 id="unverified-asset-title">Add an unverified asset</h2>
                   <span className="stateBadge warning">Unverified</span>
                 </div>
-                <p id="unverified-asset-description">Enter an exact-transfer, 18-decimal ERC-20 contract and choose the pricing route this OTF will pin.</p>
+                <p id="unverified-asset-description">Enter the contract for an exact-transfer, 18-decimal ERC-20. You will configure pricing in the asset card next.</p>
               </div>
               <button
                 className="sunsetDialogClose"
@@ -8905,38 +8959,12 @@ function CreateVaultView({
                   placeholder="0x ERC-20 address"
                   autoComplete="off"
                 />
-                <small>The resolver checks token metadata and pricing before this asset replaces the current selection.</small>
+                <small>The app checks the token contract and reads its name, symbol, and decimals.</small>
               </label>
-              <PricingConfigurationFields
-                chainId={robinhoodChainTestnet.id}
-                assetAddress={manualAssetAddress}
-                config={{
-                  source: manualPricingSource,
-                  quoteToken: (manualQuoteToken || zeroAddress) as `0x${string}`,
-                  primarySource: (manualPrimarySource || zeroAddress) as `0x${string}`,
-                  secondarySource: (manualSecondarySource || zeroAddress) as `0x${string}`,
-                  primaryMaxStaleness: manualPrimaryMaxStaleness,
-                  secondaryMaxStaleness: manualSecondaryMaxStaleness,
-                }}
-                onChange={(pricingConfig) => {
-                  setManualPricingSource(pricingConfig.source);
-                  setManualQuoteToken(pricingConfig.quoteToken === zeroAddress ? "" : pricingConfig.quoteToken);
-                  setManualPrimarySource(pricingConfig.primarySource === zeroAddress ? "" : pricingConfig.primarySource);
-                  setManualSecondarySource(pricingConfig.secondarySource === zeroAddress ? "" : pricingConfig.secondarySource);
-                  setManualPrimaryMaxStaleness(pricingConfig.primaryMaxStaleness);
-                  setManualSecondaryMaxStaleness(pricingConfig.secondaryMaxStaleness);
-                }}
-              />
               <div className="manualAssetRiskNotice" role="note">
                 <AlertTriangle size={15} />
                 <span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span>
               </div>
-              {!connectedAddress ? (
-                <div className="validationSummary warning" role="status">
-                  <Wallet size={15} />
-                  <div><strong>Connect a wallet to validate</strong><span>The resolver simulation uses the wallet that will create the OTF.</span></div>
-                </div>
-              ) : null}
               {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
               <TxStatus state={manualRegistrationState} persistent />
             </div>
@@ -8953,20 +8981,17 @@ function CreateVaultView({
               <button
                 type="button"
                 className="primaryAction"
-                onClick={validateAndAddAsset}
+                onClick={addUnverifiedAsset}
                 disabled={
                   manualRegistrationState === "pending" ||
                   manualRegistrationState === "submitted" ||
-                  !connectedAddress ||
-                  !isAddress(manualAssetAddress) ||
-                  !isAddress(manualPrimarySource) ||
-                  ((manualPricingSource === 1 || manualPricingSource === 2) && !isAddress(manualSecondarySource))
+                  !isAddress(manualAssetAddress)
                 }
               >
                 {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
                   ? <Loader2 className="spin" size={14} />
-                  : <ShieldCheck size={14} />}
-                Validate asset
+                  : <Plus size={14} />}
+                Add asset
               </button>
             </footer>
           </section>
@@ -9167,52 +9192,64 @@ function CreateVaultView({
                     return (
                     <div className="createAssetRow" key={`${asset.address}-${index}`}>
                       <div className="assetSelectField">
-                        <div className="createAssetPicker">
-                          <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
-                            {configurationVerified ? "Verified" : "Unverified"}
-                          </span>
-                          <div className="createAssetPickerIdentity">
-                            <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
-                            <small>{shortAssetAddress(asset.address)}</small>
-                          </div>
-                          <ChevronDown aria-hidden="true" size={14} />
-                          <select
-                            value={asset.address}
+                        <div className="assetPickerShell">
+                          <button
+                            className={`createAssetPicker ${openAssetPickerIndex === index ? "active" : ""}`}
+                            type="button"
                             aria-label={`Choose asset ${index + 1}`}
-                            onChange={(event) => {
-                              if (event.target.value === "unverified") {
-                                openUnverifiedAssetModal(index);
-                                return;
-                              }
-                              const selected = testnetCreateAssets.find(
-                                (candidate) => candidate.address.toLowerCase() === event.target.value.toLowerCase(),
-                              );
-                              if (!selected) return;
-                              const pricingConfig = configuredPricingConfig(selected.address) ?? emptyPricingConfig();
-                              updatePortfolio(index, {
-                                ticker: selected.symbol,
-                                name: selected.name,
-                                address: selected.address,
-                                poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                                verified: selected.verified,
-                                pricingConfig,
-                              });
-                            }}
+                            aria-haspopup="listbox"
+                            aria-expanded={openAssetPickerIndex === index}
+                            onClick={() => setOpenAssetPickerIndex((current) => current === index ? undefined : index)}
                           >
-                            <option value="unverified">Unverified · Enter a token contract</option>
-                            {testnetCreateAssets.map((candidate) => (
-                              <option key={candidate.address} value={candidate.address}>
-                                Verified · {candidate.symbol} · {candidate.name}
-                              </option>
-                            ))}
-                          </select>
+                            <span className="createAssetPickerName">
+                              <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
+                              <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
+                                {configurationVerified ? "Verified" : "Unverified"}
+                              </span>
+                            </span>
+                            <ChevronDown aria-hidden="true" size={14} />
+                          </button>
+                          {openAssetPickerIndex === index ? (
+                            <div className="createAssetPickerMenu" role="listbox" aria-label={`Assets for position ${index + 1}`}>
+                              {testnetCreateAssets.map((candidate) => (
+                                <button
+                                  key={candidate.address}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={candidate.address.toLowerCase() === asset.address.toLowerCase()}
+                                  onClick={() => {
+                                    const pricingConfig = configuredPricingConfig(candidate.address) ?? emptyPricingConfig();
+                                    updatePortfolio(index, {
+                                      ticker: candidate.symbol,
+                                      name: candidate.name,
+                                      address: candidate.address,
+                                      poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
+                                      verified: candidate.verified,
+                                      pricingConfig,
+                                    });
+                                    setOpenAssetPickerIndex(undefined);
+                                  }}
+                                >
+                                  <span>{candidate.symbol} · {candidate.name}</span>
+                                  <span className="stateBadge success">Verified</span>
+                                  {candidate.address.toLowerCase() === asset.address.toLowerCase() ? <Check size={13} aria-hidden="true" /> : null}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={!asset.verified}
+                                onClick={() => openUnverifiedAssetModal(index)}
+                              >
+                                <span>Enter contract address</span>
+                                <span className="stateBadge warning">Unverified</span>
+                                {!asset.verified ? <Check size={13} aria-hidden="true" /> : null}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
-                        <small className="assetAddressLabel" title={asset.address}>
-                          Robinhood Testnet · {shortAssetAddress(asset.address)}
-                        </small>
                       </div>
                       <label className="assetWeightField">
-                        <span>Target weight</span>
                         <div className="inputWithSuffix">
                           <input
                             type="number"
@@ -9220,6 +9257,7 @@ function CreateVaultView({
                             max={100}
                             step={0.01}
                             value={asset.targetWeight}
+                            aria-label={`Target weight for ${asset.ticker}`}
                             onChange={(event) => updatePortfolio(index, { targetWeight: event.target.value })}
                           />
                           <span>%</span>
@@ -9248,12 +9286,12 @@ function CreateVaultView({
                       <div className="createAssetDerivedValues">
                         <div className="assetOraclePriceField">
                           <span>Oracle price</span>
-                          <strong>{derivedSeedAmounts[index]?.price?.display ?? "Loading"}</strong>
-                          <small>{derivedSeedAmounts[index]?.displayTargetValue} allocation</small>
+                          <strong>{derivedSeedAmounts[index]?.price?.display ?? "-"}</strong>
+                          <small>{derivedSeedAmounts[index]?.displayTargetValue === "Loading" ? "Allocation unavailable" : `${derivedSeedAmounts[index]?.displayTargetValue} allocation`}</small>
                         </div>
                         <div className="assetSeedField">
                           <span>Seed tokens</span>
-                          <strong>{derivedSeedAmounts[index]?.displayAmount || "Loading"}</strong>
+                          <strong>{derivedSeedAmounts[index]?.displayAmount || "-"}</strong>
                           <small>{asset.ticker} required</small>
                         </div>
                       </div>
@@ -9356,7 +9394,7 @@ function CreateVaultView({
                       <span key={asset.address} title={`${asset.address} · ${pricingSourceLabel(asset.pricingConfig.source)} · ${asset.pricingConfig.primarySource}${asset.pricingConfig.source === 1 || asset.pricingConfig.source === 2 ? ` × ${asset.pricingConfig.secondarySource}` : ""}`}>
                         <AssetLogo symbol={asset.ticker} compact />
                         <strong>{asset.ticker}</strong>
-                        {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "Loading"} seed
+                        {Number(asset.targetWeight || 0).toFixed(1)}% / {derivedSeedAmounts[index]?.displayAmount || "-"} seed
                         <small>
                           {isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, asset.pricingConfig) ? "Verified" : "Unverified"} pricing · {pricingSourceLabel(asset.pricingConfig.source)} · {shortAssetAddress(asset.address)}
                         </small>
