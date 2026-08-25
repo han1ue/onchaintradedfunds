@@ -702,10 +702,9 @@ The current dashboard shows:
 - Current safety limits and factory-policy-bounded manager controls.
 - Manager action readiness.
 
-Asset quality is intentionally frontend-only. `High quality` and `Normal` are live-derived labels
-from metadata and market evidence; they are not stored onchain and cannot authorize, block, or
-grandfather an asset. Catalog pricing configurations are transaction prefills only and are fully
-revalidated by the contracts.
+Asset verification is intentionally frontend-only. `Verified` and `Unverified` reflect registry
+status; they are not stored onchain and cannot authorize, block, or grandfather an asset. Catalog
+pricing configurations are transaction prefills only and are fully revalidated by the contracts.
 
 The UI deliberately follows common DeFi product patterns:
 

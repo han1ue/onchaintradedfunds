@@ -100,14 +100,11 @@ import {
 import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
-  deriveOtfQuality,
   FRONTEND_MAX_TRACKED_ASSETS,
-  normalizeAssetQuality,
   percentToBps,
   primaryDepositsBlocked,
   trackedAssetUnionCount,
   weightBandValidationError,
-  type AssetQuality,
   type WeightBandLimits,
 } from "@/lib/protocol-ui";
 import {
@@ -162,7 +159,7 @@ type TargetAsset = {
   name?: string;
   address: string;
   poolAddress?: `0x${string}`;
-  quality: AssetQuality;
+  verified: boolean;
   pricingConfig: AssetPricingConfig;
   targetWeight: string | number;
   initialAmount: string;
@@ -240,7 +237,7 @@ type VaultSummary = {
   navPerShare?: string;
   navPerShareValue?: bigint;
   sunset: boolean;
-  quality: AssetQuality;
+  verified: boolean;
 };
 
 type VaultView = {
@@ -310,7 +307,7 @@ type VerifiedCatalogAsset = {
   address: string;
   decimals?: number;
   logoUrl?: undefined;
-  quality: "high";
+  verified: true;
   metadataLoading: boolean;
 };
 
@@ -495,7 +492,7 @@ function useVerifiedAssetCatalog(): VerifiedCatalogAsset[] {
       address: asset.tokenAddress,
       decimals: decimalsResult?.status === "success" ? Number(decimalsResult.result) : undefined,
       logoUrl: undefined,
-      quality: "high" as const,
+      verified: true as const,
       metadataLoading: isLoading,
     };
   }), [data, isLoading]);
@@ -1226,8 +1223,8 @@ function catalogAssetForAddress(catalog: VerifiedCatalogAsset[], address: string
   );
 }
 
-function assetQualityForAddress(catalog: VerifiedCatalogAsset[], address: string): AssetQuality {
-  return normalizeAssetQuality(catalogAssetForAddress(catalog, address)?.quality);
+function assetIsVerifiedForAddress(catalog: VerifiedCatalogAsset[], address: string): boolean {
+  return Boolean(catalogAssetForAddress(catalog, address)?.verified);
 }
 
 function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): CatalogOraclePrices {
@@ -1871,7 +1868,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         creator: creatorValue && isAddress(creatorValue) ? creatorValue : undefined,
         creatorFeeBps: creatorFee,
         assetCount: vaultAssets?.length ?? 0,
-        quality: deriveOtfQuality((vaultAssets ?? []).map((asset) => assetQualityForAddress(testnetCreateAssets, asset))),
+        verified: (vaultAssets?.length ?? 0) > 0
+          && (vaultAssets ?? []).every((asset) => assetIsVerifiedForAddress(testnetCreateAssets, asset)),
         navValue: totalValue,
         nav: formatUsd18(totalValue),
         navPerShare: formatUsd18(shareValue),
@@ -2572,9 +2570,8 @@ function VaultHeader({
 }) {
   const testnetCreateAssets = useVerifiedAssetCatalog();
   const [copied, setCopied] = useState<string | null>(null);
-  const quality = deriveOtfQuality(
-    vault.allocations.map((asset) => assetQualityForAddress(testnetCreateAssets, asset.address)),
-  );
+  const verified = vault.allocations.length > 0
+    && vault.allocations.every((asset) => assetIsVerifiedForAddress(testnetCreateAssets, asset.address));
 
   async function copy(value: string | undefined, key: string) {
     if (!value) return;
@@ -2606,8 +2603,8 @@ function VaultHeader({
               <div className="titleLine">
                 <h1>{vault.name}</h1>
                 {vault.sunset ? <span className="stateBadge danger">Sunset</span> : null}
-                <span className={`stateBadge ${quality === "high" ? "success" : "muted"}`}>
-                  {quality === "high" ? "High quality" : "Normal quality"}
+                <span className={`stateBadge ${verified ? "success" : "warning"}`}>
+                  {verified ? "Verified assets" : "Unverified assets"}
                 </span>
                 <span className={`stateBadge ${pricingVerified === undefined ? "muted" : pricingVerified ? "success" : "warning"}`}>
                   {pricingVerified === undefined ? "Checking pricing" : pricingVerified ? "Verified pricing" : "Unverified pricing"}
@@ -3769,9 +3766,8 @@ function UserActions({
     (asset) => asset.address.toLowerCase() === configuredSettlementToken?.toLowerCase() ||
       Boolean(exactInputRouteFor(asset.address)),
   );
-  const vaultQuality = deriveOtfQuality(
-    vault.allocations.map((asset) => assetQualityForAddress(testnetCreateAssets, asset.address)),
-  );
+  const vaultAssetsVerified = vault.allocations.length > 0
+    && vault.allocations.every((asset) => assetIsVerifiedForAddress(testnetCreateAssets, asset.address));
   const depositsPausedForAssetRemoval = vault.allocations.some(
     (asset) => asset.targetWeightBps === 0,
   );
@@ -5387,13 +5383,13 @@ function UserActions({
           </div>
         </div>
 
-        <div className={`validationSummary ${vaultQuality === "high" ? "success" : "warning"}`} role="status">
-            {vaultQuality === "high" ? <ShieldCheck size={15} /> : <Info size={15} />}
+        <div className={`validationSummary ${vaultAssetsVerified ? "success" : "warning"}`} role="status">
+            {vaultAssetsVerified ? <ShieldCheck size={15} /> : <Info size={15} />}
             <div>
-              <strong>{vaultQuality === "high" ? "High-quality OTF" : "Normal-quality OTF"}</strong>
-              <span>{vaultQuality === "high"
-                ? "Every current constituent is marked high quality in the live asset catalog. This informational label does not change contract permissions or pricing."
-                : "At least one current constituent is normal or unknown. Quality is informational and never blocks deposits, strategy changes, trading, or fees."}</span>
+              <strong>{vaultAssetsVerified ? "Verified assets" : "Unverified assets"}</strong>
+              <span>{vaultAssetsVerified
+                ? "Every current constituent appears in the verified asset registry."
+                : "At least one current constituent does not appear in the verified asset registry. This does not change contract permissions."}</span>
             </div>
           </div>
 
@@ -6109,7 +6105,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      quality: assetQualityForAddress(testnetCreateAssets, asset.address),
+      verified: assetIsVerifiedForAddress(testnetCreateAssets, asset.address),
       pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
@@ -6169,7 +6165,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       ticker: asset.symbol,
       name: asset.name,
       address: asset.address,
-      quality: assetQualityForAddress(testnetCreateAssets, asset.address),
+      verified: assetIsVerifiedForAddress(testnetCreateAssets, asset.address),
       pricingConfig: emptyPricingConfig(),
       targetWeight: String(asset.targetWeightBps / 100),
       initialAmount: "",
@@ -6198,7 +6194,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
       if (!configured || (source !== 0 && source !== 1 && source !== 2 && source !== 3)) return target;
       return {
         ...target,
-        quality: assetQualityForAddress(testnetCreateAssets, target.address),
+        verified: assetIsVerifiedForAddress(testnetCreateAssets, target.address),
         pricingConfig: {
           source,
           quoteToken,
@@ -6253,7 +6249,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
     targets.map((asset) => asset.address),
   );
   const trackedUnionWithinFrontendCap = trackedUnionCount <= FRONTEND_MAX_TRACKED_ASSETS;
-  const normalQualityTargets = targets.filter((asset) => asset.quality === "normal");
+  const unverifiedTargets = targets.filter((asset) => !asset.verified);
   const targetPricingValid = incumbentPricingReadsReady && targets.every(
     (asset) => pricingConfigIsComplete(asset.pricingConfig),
   );
@@ -6387,7 +6383,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
         name: nextAsset.name,
         address: nextAsset.address,
         poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-        quality: nextAsset.quality,
+        verified: nextAsset.verified,
         pricingConfig,
         targetWeight: "",
         initialAmount: "",
@@ -6466,7 +6462,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
             poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-            quality: "normal",
+            verified: false,
             pricingConfig,
             targetWeight: formatDraftWeight(protocolMinimumTargetWeightBps),
             initialAmount: "",
@@ -6595,7 +6591,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                           name: selected.name,
                           address: selected.address,
                           poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                          quality: selected.quality,
+                          verified: selected.verified,
                           pricingConfig,
                         });
                       }
@@ -6633,8 +6629,8 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 </div>
               </label>
               <small>Active target {targetChanges[index]?.activeTarget.toFixed(1) ?? "0.0"}% · Live holding {targetChanges[index]?.current.toFixed(1) ?? "0.0"}%</small>
-              <span className={`stateBadge ${target.quality === "high" ? "success" : "muted"}`}>
-                {target.quality === "high" ? "High quality" : "Normal quality"} · {pricingSourceLabel(target.pricingConfig.source)}
+              <span className={`stateBadge ${target.verified ? "success" : "warning"}`}>
+                {target.verified ? "Verified" : "Unverified"} · {pricingSourceLabel(target.pricingConfig.source)}
               </span>
               <PricingConfigurationFields
                 chainId={robinhoodChainTestnet.id}
@@ -6662,7 +6658,7 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 <strong>Add an unindexed token</strong>
               <span>Submit the 18-decimal token with its exact Chainlink or Uniswap V3 pricing configuration.</span>
               </div>
-              <span className="stateBadge muted">Normal quality</span>
+              <span className="stateBadge warning">Unverified</span>
             </div>
             <div className="manualAssetRegistrationFields">
               <label>
@@ -6799,10 +6795,10 @@ function TargetWeightsBuilder({ vault, onRefresh }: { vault: VaultView; onRefres
                 : "The exact onchain tuples for every incumbent constituent must load before this proposal can be signed."}</span>
           </div></div>
         ) : null}
-        {normalQualityTargets.length > 0 ? (
+        {unverifiedTargets.length > 0 ? (
           <div className="riskCallout"><Info size={15} /><div>
-            <strong>Normal-quality constituents</strong>
-            <span>{normalQualityTargets.map((target) => target.ticker).join(", ")} will make the live OTF quality label normal. This metadata never changes proposal eligibility or contract behavior.</span>
+            <strong>Unverified constituents</strong>
+            <span>{unverifiedTargets.map((target) => target.ticker).join(", ")} do not appear in the verified asset registry. This does not change proposal eligibility or contract behavior.</span>
           </div></div>
         ) : null}
         {!targetsChanged ? (
@@ -7929,8 +7925,8 @@ function VaultsDirectory({
                         <div>
                           <strong>{row.name}</strong>
                           <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
-                          <span className={`stateBadge ${row.quality === "high" ? "success" : "muted"}`}>
-                            {row.quality === "high" ? "High quality" : "Normal quality"}
+                          <span className={`stateBadge ${row.verified ? "success" : "warning"}`}>
+                            {row.verified ? "Verified assets" : "Unverified assets"}
                           </span>
                         </div>
                       </div>
@@ -7992,8 +7988,8 @@ function VaultsDirectory({
                       <div>
                         <strong>{row.name}</strong>
                         <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
-                        <span className={`stateBadge ${row.quality === "high" ? "success" : "muted"}`}>
-                          {row.quality === "high" ? "High quality" : "Normal quality"}
+                        <span className={`stateBadge ${row.verified ? "success" : "warning"}`}>
+                          {row.verified ? "Verified assets" : "Unverified assets"}
                         </span>
                       </div>
                     </div>
@@ -8123,16 +8119,16 @@ function CreateVaultView({
     challengeDeviation: String(DEFAULT_CHALLENGE_DEVIATION_BPS / 100),
   });
   const [portfolio, setPortfolio] = useState<TargetAsset[]>(
-    testnetCreateAssets.map((asset) => {
+    testnetCreateAssets.slice(0, 2).map((asset) => {
       const pricingConfig = configuredPricingConfig(asset.address) ?? emptyPricingConfig();
       return {
         ticker: asset.symbol,
         name: asset.name,
         address: asset.address,
         poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-        quality: asset.quality,
+        verified: asset.verified,
         pricingConfig,
-        targetWeight: 100 / testnetCreateAssets.length,
+        targetWeight: 100 / Math.min(testnetCreateAssets.length, 2),
         initialAmount: "",
       };
     }),
@@ -8147,7 +8143,7 @@ function CreateVaultView({
         ...item,
         ticker: metadata.symbol,
         name: metadata.name,
-        quality: metadata.quality,
+        verified: metadata.verified,
       } : item;
     }));
   }, [testnetCreateAssets]);
@@ -8333,7 +8329,7 @@ function CreateVaultView({
     : "Wait for the factory weight-band policy to load.";
   const normalizedOtfName = draft.name.trim();
   const otfNameValid = normalizedOtfName.length > 4 && normalizedOtfName.endsWith(" OTF");
-  const hasNormalQualityConstituent = portfolio.some((asset) => asset.quality === "normal");
+  const hasUnverifiedConstituent = portfolio.some((asset) => !asset.verified);
   const basicsValid =
     otfNameValid &&
     /^[A-Z0-9][A-Z0-9-]*$/.test(draft.symbol) &&
@@ -8548,7 +8544,7 @@ function CreateVaultView({
           name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
           poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-          quality: nextAvailableAsset.quality,
+          verified: nextAvailableAsset.verified,
           pricingConfig,
           targetWeight: 100,
           initialAmount: "",
@@ -8562,7 +8558,7 @@ function CreateVaultView({
           name: nextAvailableAsset.name,
           address: nextAvailableAsset.address,
           poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-          quality: nextAvailableAsset.quality,
+          verified: nextAvailableAsset.verified,
           pricingConfig,
           targetWeight: (protocolMinimumTargetWeightBps / 100).toString(),
           initialAmount: "",
@@ -8639,7 +8635,7 @@ function CreateVaultView({
             name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
             address: assetAddress,
             poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-            quality: "normal",
+            verified: false,
             pricingConfig,
             targetWeight: (minimum / 100).toString(),
             initialAmount: "",
@@ -8999,7 +8995,6 @@ function CreateVaultView({
                 <div className="formIntro">
                   <div>
                     <strong>Initial target portfolio</strong>
-                    <span>Search by name, symbol, or contract address. Contract address and network are the canonical identity. The frontend safety cap is {FRONTEND_MAX_TRACKED_ASSETS} assets.</span>
                   </div>
                   <span className={`stateBadge ${totalWeightValid && portfolioWithinFrontendAssetCap ? "success" : "danger"}`}>{portfolio.length} / {FRONTEND_MAX_TRACKED_ASSETS} assets · Total {totalWeight.toFixed(1)}%</span>
                 </div>
@@ -9052,7 +9047,7 @@ function CreateVaultView({
                                   name: selected.name,
                                   address: selected.address,
                                   poolAddress: pricingConfig.source === 2 ? pricingConfig.primarySource : undefined,
-                                  quality: selected.quality,
+                                  verified: selected.verified,
                                   pricingConfig,
                                 });
                               }
@@ -9063,8 +9058,8 @@ function CreateVaultView({
                         <small className="assetAddressLabel" title={asset.address}>
                           Robinhood Testnet · {asset.ticker} · {shortAssetAddress(asset.address)}
                         </small>
-                        <span className={`stateBadge ${asset.quality === "normal" ? "warning" : "success"}`}>
-                          {asset.quality === "high" ? "High quality" : "Normal quality"}
+                        <span className={`stateBadge ${asset.verified ? "success" : "warning"}`}>
+                          {asset.verified ? "Verified" : "Unverified"}
                         </span>
                         <PricingConfigurationFields
                           chainId={robinhoodChainTestnet.id}
@@ -9132,7 +9127,7 @@ function CreateVaultView({
                       <strong>Add an unindexed token</strong>
                       <span>Choose the exact per-OTF pricing route for any exact-transfer, 18-decimal ERC-20. The resolver validates it before the token is added.</span>
                     </div>
-                    <span className="stateBadge warning">Normal quality</span>
+                    <span className="stateBadge warning">Unverified</span>
                   </div>
                   <div className="manualAssetRegistrationFields">
                     <label>
@@ -9186,7 +9181,7 @@ function CreateVaultView({
                   </div>
                   <div className="manualAssetRiskNotice" role="note">
                     <AlertTriangle size={15} />
-                    <span>Quality is informational, not an eligibility gate. Always review source ownership, token upgradeability, liquidity, and transfer behavior before creating an OTF.</span>
+                    <span>Unverified tokens are not blocked by the protocol. Review source ownership, token upgradeability, liquidity, and transfer behavior before creating an OTF.</span>
                   </div>
                   {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
                   <TxStatus state={manualRegistrationState} persistent />
@@ -9238,17 +9233,17 @@ function CreateVaultView({
                   <div>
                     <h2>{normalizedOtfName}</h2>
                     <span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span>
-                    <span className={`stateBadge ${hasNormalQualityConstituent ? "warning" : "success"}`}>
-                      {hasNormalQualityConstituent ? "Normal quality" : "High quality"}
+                    <span className={`stateBadge ${hasUnverifiedConstituent ? "warning" : "success"}`}>
+                      {hasUnverifiedConstituent ? "Includes unverified assets" : "Verified assets"}
                     </span>
                   </div>
                 </div>
-                {hasNormalQualityConstituent ? (
+                {hasUnverifiedConstituent ? (
                   <div className="validationSummary warning" role="note">
                     <AlertTriangle size={15} />
                     <div>
-                      <strong>Normal-quality OTF</strong>
-                      <span>At least one constituent is not currently marked high quality in the frontend metadata. This label is informational and does not change onchain eligibility or rewards.</span>
+                      <strong>Includes unverified assets</strong>
+                      <span>At least one constituent does not appear in the verified asset registry. This does not change onchain eligibility or rewards.</span>
                     </div>
                   </div>
                 ) : null}

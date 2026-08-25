@@ -78,7 +78,7 @@ const contractRows = [
 ] as const;
 
 const safetyRows = [
-  ["Asset quality", "High and normal are frontend-only metadata labels. They never gate onchain inclusion, submissions, or rewards."],
+  ["Asset verification", "Verified and unverified are frontend registry statuses. They never gate onchain inclusion, submissions, or rewards."],
   ["Pinned pricing", "Each OTF pins exactly one validated Chainlink, Chainlink Composed, or Uniswap V3 TWAP route per constituent, with no fallback."],
   ["Portfolio turnover", "Each completed strategy records its oracle-valued turnover for disclosure; turnover is not capped."],
   ["NAV loss", "Execution loss accumulates against a seven-day budget; gains do not restore consumed capacity."],

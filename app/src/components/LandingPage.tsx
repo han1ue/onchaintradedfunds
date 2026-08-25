@@ -68,7 +68,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               </button>
             </div>
             <div className="landingProof">
-              <span><strong>Unified assets</strong><small>high or normal quality</small></span>
+              <span><strong>Unified assets</strong><small>verified or unverified</small></span>
               <span><strong>Pinned pricing</strong><small>Chainlink or V3 TWAP</small></span>
               <span><strong>Atomic</strong><small>portfolio changes</small></span>
             </div>
@@ -92,7 +92,7 @@ export function LandingPage({ onCreate, onEnter }: LandingPageProps) {
               identity while its allocation remains explicit and publicly inspectable.
             </p>
             <div className="landingFactList">
-              <span><CheckCircle size={13} /> Informational high and normal quality</span>
+              <span><CheckCircle size={13} /> Clear verification status</span>
               <span><CheckCircle size={13} /> Public target and actual weights</span>
               <span><CheckCircle size={13} /> Per-OTF pinned Chainlink or V3 pricing</span>
             </div>

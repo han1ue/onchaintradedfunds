@@ -228,8 +228,8 @@ Unsupported or dangerous token behaviors include:
 
 There is no administrator asset allowlist to exclude these tokens. Exact-transfer checks make a
 violating transfer revert atomically, but behavior that changes later or is not exercised during
-creation remains an integration risk. The frontend's high-quality/normal label is informational
-only and cannot authorize or block a contract interaction.
+creation remains an integration risk. Frontend verification status is informational only and
+cannot authorize or block a contract interaction.
 
 ## Adapter Risks
 
@@ -292,8 +292,8 @@ position through the typed trade call.
 
 The frontend is a convenience layer only. It must not be trusted for authorization, asset
 validation, price-source validation, cooldown enforcement, fee math, or rebalance safety.
-High-quality/normal asset classifications, catalog membership, and prefilled pricing configurations
-are derived metadata only. They have no onchain counterpart and must be recomputed from live data.
+Asset verification status, catalog membership, and prefilled pricing configurations are derived
+metadata only. They have no onchain counterpart and must be recomputed from live data.
 
 Frontend-specific risks:
 

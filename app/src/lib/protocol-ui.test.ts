@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
-  deriveOtfQuality,
   FRONTEND_MAX_TRACKED_ASSETS,
-  normalizeAssetQuality,
   percentToBps,
   primaryDepositsBlocked,
   SUPPORTED_PRICING_SOURCES,
@@ -13,13 +11,6 @@ import {
 } from "./protocol-ui";
 
 describe("protocol UI policy", () => {
-  it("derives live OTF quality and treats unknown metadata as normal", () => {
-    expect(normalizeAssetQuality("blocked")).toBe("normal");
-    expect(deriveOtfQuality(["high", "high"])).toBe("high");
-    expect(deriveOtfQuality(["high", "normal"])).toBe("normal");
-    expect(deriveOtfQuality([])).toBe("normal");
-  });
-
   it("supports exactly the four requested pricing routes and no V4", () => {
     expect(SUPPORTED_PRICING_SOURCES).toEqual([
       "chainlink-robinhood",
