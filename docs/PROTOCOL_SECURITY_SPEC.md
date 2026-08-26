@@ -459,7 +459,7 @@ stateDiagram-v2
     [*] --> Normal
     Normal --> Challenged: Fresh prices prove a challenge-band breach
     Challenged --> Normal: Timely restoration inside tighter completion bands
-    Challenged --> Overdue: Seven-day protocol period expires
+    Challenged --> Overdue: Protocol grace period expires
     Overdue --> Suspended: State change forfeits challenge-window fees once
     Suspended --> Normal: Late restoration inside tighter completion bands
 ```

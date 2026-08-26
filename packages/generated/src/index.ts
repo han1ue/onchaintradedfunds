@@ -4353,6 +4353,29 @@ export const otfFactoryAbi = [
   },
   {
     type: "function",
+    name: "challengeGracePeriod",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint32" }],
+  },
+  {
+    type: "function",
+    name: "setChallengeGracePeriod",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newPeriod", type: "uint32" }],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "ChallengeGracePeriodUpdated",
+    anonymous: false,
+    inputs: [
+      { indexed: false, name: "previousPeriod", type: "uint32" },
+      { indexed: false, name: "newPeriod", type: "uint32" },
+    ],
+  },
+  {
+    type: "function",
     name: "depositsPaused",
     stateMutability: "view",
     inputs: [],

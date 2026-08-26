@@ -535,9 +535,11 @@ accrual. There is no administrator asset revocation or registry-driven shutdown 
 Each target has a wider challenge band and a narrower completion band. Anyone may call
 `flagOutOfBand()`, but fresh pinned prices must prove a real challenge-band breach.
 
-A valid challenge locks target changes and manager-fee withdrawals while the fixed seven-day grace
-period runs. This spans scheduled market weekends and typical holiday closures without making the
-response window a manager-selected policy. All valid fees earned before the challenge start are crystallized first and cannot be
+A valid challenge locks target changes and manager-fee withdrawals during the factory owner's
+protocol-wide grace period, which defaults to seven days. The grace-period value is captured when
+the challenge starts, so a later policy change cannot move an active challenge's deadline. The
+default spans scheduled market weekends and typical holiday closures without making the response
+window a manager-selected policy. All valid fees earned before the challenge start are crystallized first and cannot be
 forfeited later. Natural price movement and constrained trades can both restore the basket. If the
 manager stops the challenge before the deadline, accrued fees are withdrawn normally. If the
 deadline is missed, manager fees from the challenge window are forfeited: 50% becomes a claimable

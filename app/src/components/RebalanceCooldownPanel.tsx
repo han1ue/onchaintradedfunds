@@ -2099,7 +2099,6 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const navPerShareValue = resultAt<bigint>(results, 12);
   const currentWeights = resultAt<readonly number[] | readonly bigint[]>(results, 13);
   const challengeWeightDeviationBps = resultAt<number>(results, 14) ?? 0;
-  const challengeGracePeriod = 7 * 86_400;
   const withinCompletionBands = Boolean(resultAt<boolean>(results, 15));
   const strategicRebalanceActive = Boolean(resultAt<boolean>(results, 16));
   const challengeActive = Boolean(resultAt<boolean>(results, 17));
@@ -2109,6 +2108,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const challengeDeadline = resultAt<bigint>(results, 19)
     ? Number(resultAt<bigint>(results, 19))
     : undefined;
+  const challengeGracePeriod = challengeStartedAt && challengeDeadline
+    ? challengeDeadline - challengeStartedAt
+    : 0;
   const challengeTimeRemaining = Number(resultAt<bigint>(results, 20) ?? 0n);
   const feeState = Number(resultAt<number>(results, 21) ?? 0);
   const escrowedManagerFeeSharesValue = resultAt<bigint>(results, 22);
@@ -8307,6 +8309,16 @@ function CreateVaultView({
   const protocolMinimumTargetWeightBps = protocolMinimumTargetWeightResult === undefined
     ? undefined
     : Number(protocolMinimumTargetWeightResult);
+  const { data: challengeGracePeriodResult } = useReadContract({
+    address: factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "challengeGracePeriod",
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: Boolean(isTestnet && factoryAddress) },
+  });
+  const challengeGracePeriod = challengeGracePeriodResult === undefined
+    ? undefined
+    : Number(challengeGracePeriodResult);
   const weightBandPolicyContracts = factoryAddress ? ([
     { address: factoryAddress, abi: otfFactoryAbi, functionName: "minCompletionDeviationBps" },
     { address: factoryAddress, abi: otfFactoryAbi, functionName: "maxCompletionDeviationBps" },
@@ -9702,7 +9714,7 @@ function CreateVaultView({
                   <div><span>Seven-day NAV-loss budget</span><strong>{draft.maxNavLoss}%</strong></div>
                   <div><span>Completion band</span><strong>+/- {draft.maxDeviation}%</strong></div>
                   <div><span>Challenge band</span><strong>+/- {draft.challengeDeviation}%</strong></div>
-                  <div><span>Challenge grace</span><strong>7 days</strong></div>
+                  <div><span>Challenge grace</span><strong>{challengeGracePeriod === undefined ? "Loading" : formatPricingDuration(challengeGracePeriod)}</strong></div>
                   <div><span>Oracle availability</span><strong>Per-asset freshness and pause checks</strong></div>
                 </div>
                 <div>

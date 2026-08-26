@@ -241,7 +241,7 @@ export default function DocsPage() {
               visible for a separate 48-hour holder exit window before activation. Rebalance
               execution begins after activation and completes only when the portfolio returns
               inside its completion bands. A valid out-of-band challenge can interrupt this path
-              and starts its own seven-day response window.
+              and starts its own protocol-configured response window.
             </p>
             <figure className="otfLifecycleFigure" aria-labelledby="otf-lifecycle-caption">
               <ol className="otfStateFlow" aria-label="Main OTF strategy state flow">
@@ -277,8 +277,8 @@ export default function DocsPage() {
                   <small>Fresh oracle prices must prove that a constituent crossed its wider challenge band.</small>
                 </div>
                 <div className="otfChallengeOutcomes">
-                  <span><ShieldCheck size={14} aria-hidden="true" /><b>Restored within 7 days</b>Held-back fees are preserved.</span>
-                  <span><Scale size={14} aria-hidden="true" /><b>Still out of band after 7 days</b>Fees remain suspended until recovery.</span>
+                  <span><ShieldCheck size={14} aria-hidden="true" /><b>Restored before the deadline</b>Held-back fees are preserved.</span>
+                  <span><Scale size={14} aria-hidden="true" /><b>Still out of band after the deadline</b>Fees remain suspended until recovery.</span>
                 </div>
               </aside>
               <figcaption id="otf-lifecycle-caption">
