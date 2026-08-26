@@ -13,12 +13,14 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
+  BadgeCheck,
   BookOpen,
   ChartPie,
   Check,
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   CircleDollarSign,
   CircleHelp,
   Clock3,
@@ -8363,14 +8365,13 @@ function CreateVaultView({
     }));
   }, [testnetCreateAssets]);
   const [manualAssetAddress, setManualAssetAddress] = useState("");
-  const [manualRegistrationState, setManualRegistrationState] = useState<TxState>("idle");
-  const [manualRegistrationError, setManualRegistrationError] = useState<string>();
   const [unverifiedAssetIndex, setUnverifiedAssetIndex] = useState<number>();
   const [openAssetPickerIndex, setOpenAssetPickerIndex] = useState<number>();
   const [assetPickerSearch, setAssetPickerSearch] = useState("");
   const normalizedAssetPickerSearch = assetPickerSearch.trim().toLowerCase();
   const filteredAssetPickerOptions = testnetCreateAssets.filter((asset) => (
     !normalizedAssetPickerSearch
+    || asset.name.toLowerCase().includes(normalizedAssetPickerSearch)
     || asset.symbol.toLowerCase().includes(normalizedAssetPickerSearch)
     || asset.address.toLowerCase().includes(normalizedAssetPickerSearch)
   ));
@@ -8406,6 +8407,41 @@ function CreateVaultView({
     assetSearchAddress
     && !assetSearchMetadataReadFailed
     && (assetSearchMetadataLoading || !assetSearchMetadataResults),
+  );
+  const manualAssetMetadataAddress = unverifiedAssetIndex !== undefined && isAddress(manualAssetAddress)
+    ? manualAssetAddress as `0x${string}`
+    : undefined;
+  const {
+    data: manualAssetMetadataResults,
+    isLoading: manualAssetMetadataLoading,
+    isError: manualAssetMetadataReadFailed,
+  } = useReadContracts({
+    contracts: manualAssetMetadataAddress ? [
+      { address: manualAssetMetadataAddress, abi: erc20MetadataReadAbi, functionName: "name" as const, chainId: robinhoodChainTestnet.id },
+      { address: manualAssetMetadataAddress, abi: erc20MetadataReadAbi, functionName: "symbol" as const, chainId: robinhoodChainTestnet.id },
+      { address: manualAssetMetadataAddress, abi: erc20MetadataReadAbi, functionName: "decimals" as const, chainId: robinhoodChainTestnet.id },
+    ] : [],
+    query: { enabled: Boolean(manualAssetMetadataAddress) },
+  });
+  const manualAssetNameResult = manualAssetMetadataResults?.[0];
+  const manualAssetSymbolResult = manualAssetMetadataResults?.[1];
+  const manualAssetDecimalsResult = manualAssetMetadataResults?.[2];
+  const manualAssetMetadata = manualAssetDecimalsResult?.status === "success" ? {
+    name: manualAssetNameResult?.status === "success" ? String(manualAssetNameResult.result).trim().slice(0, 80) : "Unindexed token",
+    symbol: manualAssetSymbolResult?.status === "success" ? String(manualAssetSymbolResult.result).trim().slice(0, 16) : "TOKEN",
+    decimals: Number(manualAssetDecimalsResult.result),
+  } : undefined;
+  const manualAssetMetadataPending = Boolean(
+    manualAssetMetadataAddress
+    && !manualAssetMetadataReadFailed
+    && (manualAssetMetadataLoading || !manualAssetMetadataResults),
+  );
+  const manualAssetDuplicate = Boolean(
+    manualAssetMetadataAddress
+    && portfolio.some((item, index) => (
+      index !== unverifiedAssetIndex
+      && item.address.toLowerCase() === manualAssetMetadataAddress.toLowerCase()
+    )),
   );
   const [manualOraclePrices, setManualOraclePrices] = useState<Record<string, CatalogOraclePrice>>({});
   const [pricingQuotesPending, setPricingQuotesPending] = useState(false);
@@ -8720,13 +8756,13 @@ function CreateVaultView({
   useEffect(() => {
     if (unverifiedAssetIndex === undefined) return;
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && manualRegistrationState !== "pending" && manualRegistrationState !== "submitted") {
+      if (event.key === "Escape") {
         setUnverifiedAssetIndex(undefined);
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [manualRegistrationState, unverifiedAssetIndex]);
+  }, [unverifiedAssetIndex]);
 
   useEffect(() => {
     if (openAssetPickerIndex === undefined) return;
@@ -8802,15 +8838,12 @@ function CreateVaultView({
 
   function openUnverifiedAssetModal(index: number, address = "") {
     setManualAssetAddress(address);
-    setManualRegistrationError(undefined);
-    setManualRegistrationState("idle");
     setOpenAssetPickerIndex(undefined);
     setAssetPickerSearch("");
     setUnverifiedAssetIndex(index);
   }
 
   function closeUnverifiedAssetModal() {
-    if (manualRegistrationState === "pending" || manualRegistrationState === "submitted") return;
     setUnverifiedAssetIndex(undefined);
   }
 
@@ -8886,44 +8919,31 @@ function CreateVaultView({
     });
   }
 
-  async function addUnverifiedAsset() {
-    if (!publicClient || unverifiedAssetIndex === undefined || !isAddress(manualAssetAddress)) return;
+  function addUnverifiedAsset() {
+    if (
+      unverifiedAssetIndex === undefined
+      || !isAddress(manualAssetAddress)
+      || !manualAssetMetadata
+      || manualAssetMetadata.decimals !== 18
+      || manualAssetDuplicate
+    ) return;
     const assetAddress = manualAssetAddress as `0x${string}`;
-    if (portfolio.some((item, index) => index !== unverifiedAssetIndex && item.address.toLowerCase() === assetAddress.toLowerCase())) {
-      setManualRegistrationError("This token contract is already in the portfolio.");
-      return;
-    }
-    setManualRegistrationError(undefined);
-    setManualRegistrationState("pending");
-    try {
-      const [decimals, tokenName, tokenSymbol] = await Promise.all([
-        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "decimals" }),
-        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "name" }).catch(() => "Unindexed token"),
-        publicClient.readContract({ address: assetAddress, abi: erc20MetadataReadAbi, functionName: "symbol" }).catch(() => "TOKEN"),
-      ]);
-      if (Number(decimals) !== 18) throw new Error("Constituents must use exactly 18 decimals.");
-      const symbol = String(tokenSymbol).trim().slice(0, 16) || "TOKEN";
-      setPortfolio((current) => current.map((item, index) => (
-        index === unverifiedAssetIndex
-          ? {
-            ticker: symbol,
-            name: String(tokenName).trim().slice(0, 80) || "Unindexed token",
-            address: assetAddress,
-            poolAddress: undefined,
-            verified: false,
-            pricingConfig: emptyPricingConfig(),
-            targetWeight: item.targetWeight,
-            initialAmount: "",
-          }
-          : item
-      )));
-      setManualAssetAddress("");
-      setManualRegistrationState("confirmed");
-      setUnverifiedAssetIndex(undefined);
-    } catch (error) {
-      setManualRegistrationError(errorMessage(error));
-      setManualRegistrationState("reverted");
-    }
+    setPortfolio((current) => current.map((item, index) => (
+      index === unverifiedAssetIndex
+        ? {
+          ticker: manualAssetMetadata.symbol || "TOKEN",
+          name: manualAssetMetadata.name || "Unindexed token",
+          address: assetAddress,
+          poolAddress: undefined,
+          verified: false,
+          pricingConfig: emptyPricingConfig(),
+          targetWeight: item.targetWeight,
+          initialAmount: "",
+        }
+        : item
+    )));
+    setManualAssetAddress("");
+    setUnverifiedAssetIndex(undefined);
   }
 
   function vaultInitParams() {
@@ -9143,16 +9163,14 @@ function CreateVaultView({
               <div>
                 <div className="unverifiedAssetModalTitle">
                   <h2 id="unverified-asset-title">Add an unverified asset</h2>
-                  <span className="stateBadge warning">Unverified</span>
                 </div>
-                <p id="unverified-asset-description">Enter the contract for an exact-transfer, 18-decimal ERC-20. You will configure pricing in the asset card next.</p>
+                <p id="unverified-asset-description">Enter an exact-transfer ERC-20 contract. Its token details are read directly onchain; you will configure pricing in the asset card next.</p>
               </div>
               <button
                 className="sunsetDialogClose"
                 type="button"
                 aria-label="Close unverified asset configuration"
                 autoFocus
-                disabled={manualRegistrationState === "pending" || manualRegistrationState === "submitted"}
                 onClick={closeUnverifiedAssetModal}
               >
                 <X size={16} />
@@ -9171,19 +9189,35 @@ function CreateVaultView({
                 />
                 <small>The app checks the token contract and reads its name, symbol, and decimals.</small>
               </label>
+              {manualAssetMetadataPending ? (
+                <div className="unverifiedAssetLookup" role="status">
+                  <Loader2 className="spin" size={16} />
+                  <div><strong>Reading token details</strong><small>Checking the ERC-20 contract onchain…</small></div>
+                </div>
+              ) : null}
+              {manualAssetMetadata ? (
+                <div className={`unverifiedAssetDetected ${manualAssetMetadata.decimals === 18 ? "valid" : "invalid"}`}>
+                  {manualAssetMetadata.decimals === 18 ? <BadgeCheck size={18} /> : <CircleAlert size={18} />}
+                  <div>
+                    <span>{manualAssetMetadata.symbol || "TOKEN"}</span>
+                    <strong>{manualAssetMetadata.name || "Unindexed token"}</strong>
+                    <small>{shortAssetAddress(manualAssetAddress)} · {manualAssetMetadata.decimals} decimals</small>
+                  </div>
+                </div>
+              ) : null}
+              {manualAssetMetadataReadFailed ? <span className="fieldError">No ERC-20 metadata was found at this address.</span> : null}
+              {manualAssetMetadata && manualAssetMetadata.decimals !== 18 ? <span className="fieldError">Constituents must use exactly 18 decimals.</span> : null}
+              {manualAssetDuplicate ? <span className="fieldError">This token contract is already in the portfolio.</span> : null}
               <div className="manualAssetRiskNotice" role="note">
                 <AlertTriangle size={15} />
                 <span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span>
               </div>
-              {manualRegistrationError ? <span className="fieldError">{manualRegistrationError}</span> : null}
-              <TxStatus state={manualRegistrationState} persistent />
             </div>
 
             <footer className="unverifiedAssetModalActions">
               <button
                 type="button"
                 className="secondaryAction"
-                disabled={manualRegistrationState === "pending" || manualRegistrationState === "submitted"}
                 onClick={closeUnverifiedAssetModal}
               >
                 Cancel
@@ -9193,14 +9227,14 @@ function CreateVaultView({
                 className="primaryAction"
                 onClick={addUnverifiedAsset}
                 disabled={
-                  manualRegistrationState === "pending" ||
-                  manualRegistrationState === "submitted" ||
                   !isAddress(manualAssetAddress)
+                  || manualAssetMetadataPending
+                  || !manualAssetMetadata
+                  || manualAssetMetadata.decimals !== 18
+                  || manualAssetDuplicate
                 }
               >
-                {manualRegistrationState === "pending" || manualRegistrationState === "submitted"
-                  ? <Loader2 className="spin" size={14} />
-                  : <Plus size={14} />}
+                <Plus size={14} />
                 Add asset
               </button>
             </footer>
@@ -9417,12 +9451,12 @@ function CreateVaultView({
                           >
                             <span className="createAssetPickerIdentity">
                               <span className="createAssetPickerName">
-                                <strong>{asset.ticker} · {asset.name ?? "Token"}</strong>
+                                <strong>{asset.ticker}</strong>
+                                {configurationVerified
+                                  ? <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Configured asset" />
+                                  : <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset" />}
                               </span>
-                              <small>{shortAssetAddress(asset.address)}</small>
-                            </span>
-                            <span className={`stateBadge ${configurationVerified ? "success" : "warning"}`}>
-                              {configurationVerified ? "Verified" : "Unverified"}
+                              <small>{asset.name ?? "Token"} · {shortAssetAddress(asset.address)}</small>
                             </span>
                             <ChevronDown aria-hidden="true" size={14} />
                           </button>
@@ -9434,7 +9468,7 @@ function CreateVaultView({
                                   autoFocus
                                   value={assetPickerSearch}
                                   onChange={(event) => setAssetPickerSearch(event.target.value)}
-                                  placeholder="Search ticker or contract address"
+                                  placeholder="Search name, ticker, or contract address"
                                   aria-label={`Search assets for position ${index + 1}`}
                                   autoComplete="off"
                                   spellCheck={false}
@@ -9462,10 +9496,13 @@ function CreateVaultView({
                                     }}
                                   >
                                     <span className="createAssetOptionIdentity">
-                                      <strong>{candidate.symbol} · {candidate.name}</strong>
+                                      <span className="createAssetOptionTicker">
+                                        <strong>{candidate.symbol}</strong>
+                                        <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Configured asset" />
+                                      </span>
+                                      <small>{candidate.name}</small>
                                       <small>{shortAssetAddress(candidate.address)}</small>
                                     </span>
-                                    <span className="stateBadge success">Verified</span>
                                     {candidate.address.toLowerCase() === asset.address.toLowerCase() ? <Check size={13} aria-hidden="true" /> : null}
                                   </button>
                                 ))}
@@ -9482,40 +9519,28 @@ function CreateVaultView({
                                     onClick={() => openUnverifiedAssetModal(index, assetSearchAddress)}
                                   >
                                     <span className="createAssetOptionIdentity">
-                                      <strong>{assetSearchMetadata.symbol || "TOKEN"} · {assetSearchMetadata.name || "Unindexed token"}</strong>
+                                      <span className="createAssetOptionTicker">
+                                        <strong>{assetSearchMetadata.symbol || "TOKEN"}</strong>
+                                        {assetSearchMetadata.decimals === 18 ? <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset" /> : null}
+                                      </span>
+                                      <small>{assetSearchMetadata.name || "Unindexed token"}</small>
                                       <small>{shortAssetAddress(assetSearchAddress)} · {assetSearchMetadata.decimals} decimals</small>
-                                    </span>
-                                    <span className={`stateBadge ${assetSearchMetadata.decimals === 18 ? "warning" : "danger"}`}>
-                                      {assetSearchMetadata.decimals === 18 ? "Unverified" : "Unsupported"}
                                     </span>
                                     {assetSearchMetadata.decimals === 18 ? <Plus size={13} aria-hidden="true" /> : null}
                                   </button>
                                 ) : null}
                                 {normalizedAssetPickerSearch && filteredAssetPickerOptions.length === 0 && !assetSearchMetadataPending && !assetSearchMetadata ? (
-                                  <div className="createAssetPickerStatus" role="status">
-                                    {assetSearchAddress
-                                      ? "No ERC-20 metadata was found at this address."
-                                      : "No verified asset matches this ticker or contract address."}
+                                  <div className="createAssetPickerEmpty" role="status">
+                                    <strong>No configured asset found</strong>
+                                    <p>Add another compatible 18-decimal ERC-20 by contract address. Token details are read directly onchain.</p>
+                                    <button
+                                      className="secondaryAction"
+                                      type="button"
+                                      onClick={() => openUnverifiedAssetModal(index, assetSearchAddress ?? "")}
+                                    >
+                                      {assetSearchAddress ? "Continue with this address" : "Add by contract address"}
+                                    </button>
                                   </div>
-                                ) : null}
-                                {(!normalizedAssetPickerSearch || (
-                                  filteredAssetPickerOptions.length === 0
-                                  && !assetSearchMetadataPending
-                                  && !assetSearchMetadata
-                                )) ? (
-                                  <button
-                                    type="button"
-                                    role="option"
-                                    aria-selected={!asset.verified}
-                                    onClick={() => openUnverifiedAssetModal(index, assetSearchAddress ?? "")}
-                                  >
-                                    <span className="createAssetOptionIdentity">
-                                      <strong>Enter contract address</strong>
-                                      <small>Add a compatible 18-decimal ERC-20</small>
-                                    </span>
-                                    <span className="stateBadge warning">Unverified</span>
-                                    {!asset.verified ? <Check size={13} aria-hidden="true" /> : null}
-                                  </button>
                                 ) : null}
                               </div>
                             </div>

@@ -6121,7 +6121,7 @@ input.invalid {
 .createAssetPicker {
   display: grid;
   width: 100%;
-  grid-template-columns: minmax(0, 1fr) max-content 14px;
+  grid-template-columns: minmax(0, 1fr) 14px;
   min-height: 50px;
   min-width: 0;
   align-items: center;
@@ -6162,27 +6162,23 @@ input.invalid {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
 
 .createAssetPickerName > strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 0.7rem;
-  font-weight: 650;
+  font-size: 0.78rem;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.createAssetPicker > .stateBadge {
-  flex: 0 0 auto;
 }
 
 .createAssetPickerIdentity > small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.58rem;
+  font-size: 0.63rem;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6203,52 +6199,43 @@ input.invalid {
   top: calc(100% + 6px);
   right: 0;
   left: 0;
-  display: grid;
-  gap: 3px;
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 7px;
-  background: var(--card);
-  padding: 5px;
-  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+  background: var(--card-raised);
+  box-shadow: 0 12px 26px rgb(0 0 0 / 20%);
 }
 
 .createAssetPickerSearch {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  display: flex;
+  min-height: 44px;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 3px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--background);
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
   color: var(--text-muted);
-  padding: 0 9px;
+  padding: 8px 11px;
 }
 
 .createAssetPickerSearch:focus-within {
-  border-color: rgb(var(--accent-rgb) / 62%);
   color: var(--accent-text);
-  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%);
 }
 
 .createAssetPickerSearch input {
   width: 100%;
-  height: 36px;
+  height: 28px;
   min-width: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
   color: var(--text);
   padding: 0;
-  font-size: 0.68rem;
+  outline: 0;
+  font-size: 0.76rem;
 }
 
 .createAssetPickerOptions {
-  display: grid;
-  gap: 3px;
-  max-height: 250px;
+  max-height: 280px;
   overflow-y: auto;
   scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent;
   scrollbar-gutter: stable;
@@ -6284,23 +6271,22 @@ input.invalid {
 .createAssetPickerOptions > button {
   display: grid;
   width: 100%;
-  min-height: 46px;
-  grid-template-columns: minmax(0, 1fr) max-content 14px;
+  min-height: 58px;
+  grid-template-columns: minmax(0, 1fr) 14px;
   align-items: center;
   gap: 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
-  padding: 7px 9px;
+  padding: 9px 11px;
   text-align: left;
 }
 
 .createAssetPickerOptions > button:hover:not(:disabled),
 .createAssetPickerOptions > button[aria-selected="true"] {
-  border-color: var(--border);
-  background: var(--card-raised);
+  background: rgb(var(--accent-rgb) / 7%);
   color: var(--text);
 }
 
@@ -6312,25 +6298,43 @@ input.invalid {
 .createAssetOptionIdentity {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
-.createAssetOptionIdentity > strong,
+.createAssetOptionTicker {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.createAssetOptionTicker > strong,
 .createAssetOptionIdentity > small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.createAssetOptionIdentity > strong {
-  color: var(--text-soft);
-  font-size: 0.66rem;
-  font-weight: 620;
+.createAssetOptionTicker > strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .createAssetOptionIdentity > small {
   color: var(--text-muted);
-  font-size: 0.56rem;
+  font-size: 0.63rem;
+}
+
+.createAssetVerificationIcon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.createAssetVerificationIcon.unverified {
+  color: var(--gold);
 }
 
 .createAssetPickerOptions > button > svg {
@@ -6346,6 +6350,27 @@ input.invalid {
   padding: 9px;
   font-size: 0.63rem;
   line-height: 1.4;
+}
+
+.createAssetPickerEmpty {
+  padding: 16px;
+}
+
+.createAssetPickerEmpty > strong {
+  color: var(--text);
+  font-size: 0.79rem;
+}
+
+.createAssetPickerEmpty > p {
+  max-width: 58ch;
+  margin: 5px 0 12px;
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  line-height: 1.5;
+}
+
+.createAssetPickerEmpty > .secondaryAction {
+  min-height: 32px;
 }
 
 .assetWeightField .inputWithSuffix {
@@ -6583,6 +6608,60 @@ input.invalid {
 .unverifiedTokenAddressField > span,
 .unverifiedTokenAddressField > small {
   display: block;
+}
+
+.unverifiedAssetLookup,
+.unverifiedAssetDetected {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 10px 11px;
+}
+
+.unverifiedAssetLookup > svg,
+.unverifiedAssetDetected.valid > svg {
+  color: var(--green);
+}
+
+.unverifiedAssetDetected.invalid {
+  border-color: rgb(235 101 112 / 36%);
+}
+
+.unverifiedAssetDetected.invalid > svg {
+  color: var(--danger);
+}
+
+.unverifiedAssetLookup strong,
+.unverifiedAssetLookup small,
+.unverifiedAssetDetected span,
+.unverifiedAssetDetected strong,
+.unverifiedAssetDetected small {
+  display: block;
+}
+
+.unverifiedAssetLookup strong,
+.unverifiedAssetDetected strong {
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.unverifiedAssetLookup small,
+.unverifiedAssetDetected small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+}
+
+.unverifiedAssetDetected span {
+  margin-bottom: 2px;
+  color: var(--accent-text);
+  font-size: 0.68rem;
+  font-weight: 750;
 }
 
 .unverifiedTokenAddressField > span {
@@ -8755,7 +8834,7 @@ input.invalid {
   }
 
   .createAssetPicker {
-    grid-template-columns: minmax(0, 1fr) max-content 14px;
+    grid-template-columns: minmax(0, 1fr) 14px;
     padding-top: 7px;
     padding-bottom: 7px;
   }
