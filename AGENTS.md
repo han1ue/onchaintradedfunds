@@ -8,6 +8,11 @@ These instructions apply to the entire repository.
 - Avoid unnecessary abstractions, speculative features, broad refactors, or unrelated cleanup.
 - Follow existing project patterns unless the task specifically requires changing them.
 
+## Backwards Compatibility
+
+- Do not preserve backwards compatibility, legacy interfaces, aliases, migrations, or deprecation shims unless the affected behavior has already been deployed to mainnet or the user explicitly requests compatibility.
+- For pre-mainnet code, prefer the clean breaking change and update all affected contracts, applications, tests, documentation, deployment tooling, and generated artifacts together.
+
 ## Communicate Concisely
 
 - Keep progress updates and final responses concise and focused on useful outcomes.

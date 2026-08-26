@@ -125,9 +125,12 @@ const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (Number(deployment.chainId) !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
 }
-if (Number(deployment.schemaVersion) < 8) {
+if (
+  Number(deployment.schemaVersion) < 9
+  || deployment.migration?.architecture !== "centralized-adapter-permissions"
+) {
   throw new Error(
-    "This configurator requires a fresh transaction-token router deployment.",
+    "This configurator requires a fresh centralized-adapter-permissions deployment.",
   );
 }
 
@@ -188,16 +191,35 @@ const factoryAbi = [
   ...ownerAbi,
   {
     type: "function",
-    name: "isTradeAdapterApproved",
+    name: "isRebalanceAdapterApproved",
     stateMutability: "view",
     inputs: [{ type: "address", name: "adapter" }],
     outputs: [{ type: "bool" }],
   },
   {
     type: "function",
-    name: "setTradeAdapterApproved",
+    name: "isEntryAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ type: "address", name: "adapter" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "isExitAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ type: "address", name: "adapter" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setAdapterPermissions",
     stateMutability: "nonpayable",
-    inputs: [{ type: "address", name: "adapter" }, { type: "bool", name: "approved" }],
+    inputs: [
+      { type: "address", name: "adapter" },
+      { type: "bool", name: "rebalance" },
+      { type: "bool", name: "entry" },
+      { type: "bool", name: "exit" },
+    ],
     outputs: [],
   },
 ];
@@ -445,18 +467,17 @@ const v3Adapter = await ensureDeployment(
 const entryRouter = await ensureDeployment(
   "entryRouter",
   entryRouterArtifact,
-  [account.address, factory],
+  [factory],
 );
 
-const [adapterOwner, adapterRouter, entryOwner, entryFactory] =
+const [adapterOwner, adapterRouter, entryFactory] =
   await Promise.all([
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "uniswapRouter" }),
-    publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "factory" }),
   ]);
-if (!isAddressEqual(adapterOwner, account.address) || !isAddressEqual(entryOwner, account.address)) {
-  throw new Error("Signer does not own the configured adapter and entry router.");
+if (!isAddressEqual(adapterOwner, account.address)) {
+  throw new Error("Signer does not own the configured adapter.");
 }
 if (!isAddressEqual(adapterRouter, swapRouter) || !isAddressEqual(entryFactory, factory)) {
   throw new Error("Configured adapter or entry router dependencies do not match the deployment JSON.");
@@ -475,38 +496,34 @@ upsertExecutionRoute(deployment.executionRoutes, {
   pricingIndependent: true,
 });
 
-let tradeApproved = await publicClient.readContract({
+const adapterPermissions = await Promise.all([
+  "isRebalanceAdapterApproved",
+  "isEntryAdapterApproved",
+  "isExitAdapterApproved",
+].map((functionName) => publicClient.readContract({
   address: factory,
   abi: factoryAbi,
-  functionName: "isTradeAdapterApproved",
+  functionName,
   args: [v3Adapter.address],
-});
-const tradeApproval = tradeApproved
+})));
+const permissionUpdate = adapterPermissions.every(Boolean)
   ? { alreadyConfigured: true }
   : await confirmedWrite({
       address: factory,
       abi: factoryAbi,
-      functionName: "setTradeAdapterApproved",
-      args: [v3Adapter.address, true],
+      functionName: "setAdapterPermissions",
+      args: [v3Adapter.address, true, true, true],
     });
-upsertApprovedAdapter(deployment.setupTransactions.approvedAdapters, v3Adapter.address, tradeApproval);
-upsertByAction(deployment.setupTransactions.settlementEntry, "approve-trade-adapter", tradeApproval);
-
-let entryApproved = await publicClient.readContract({
-  address: entryRouter.address,
-  abi: entryRouterArtifact.abi,
-  functionName: "isTradeAdapterApproved",
-  args: [v3Adapter.address],
-});
-const entryApproval = entryApproved
-  ? { alreadyConfigured: true }
-  : await confirmedWrite({
-      address: entryRouter.address,
-      abi: entryRouterArtifact.abi,
-      functionName: "setTradeAdapterApproved",
-      args: [v3Adapter.address, true],
-    });
-upsertByAction(deployment.setupTransactions.settlementEntry, "approve-router-trade-adapter", entryApproval);
+upsertApprovedAdapter(
+  deployment.setupTransactions.approvedAdapters,
+  v3Adapter.address,
+  permissionUpdate,
+);
+upsertByAction(
+  deployment.setupTransactions.settlementEntry,
+  "set-adapter-permissions",
+  permissionUpdate,
+);
 
 for (const [action, caller] of [
   ["authorize-rebalance-executor", rebalanceExecutor],

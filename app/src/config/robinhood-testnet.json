@@ -219,11 +219,6 @@
           "transactionHash": "0x4d3ec9aecc4623b26013586d7ee9da74b9bed5f8b747c584f1826cf6bf159e1d",
           "blockNumber": "107808686",
           "gasUsed": "55016"
-        },
-        "routerAdapterApproval": {
-          "transactionHash": "0xa325c40740e0f1764983664e66d34a8a43459e24860d4a955a7ef413836b3586",
-          "blockNumber": "107808694",
-          "gasUsed": "57771"
         }
       }
     ],

@@ -76,12 +76,15 @@ flowchart LR
   Resolver --> Pinned[Pinned normalized feed or V3 TWAP]
   Clone --> Pinned
   Clone --> Executor[RebalanceExecutor]
-  Executor --> Adapter[Approved trade adapter]
+  Factory --> Registry[Adapter permissions]
+  Registry --> Executor
+  Registry --> EntryRouter
+  Executor --> Adapter[Rebalance-approved adapter]
   Adapter --> Tokens[Underlying ERC-20 assets]
   Clone --> Collector[FeeCollector]
   User[Share holder] --> Clone
   User --> EntryRouter[OTFEntryExitRouter]
-  EntryRouter --> TradeAdapter[Approved trade adapter]
+  EntryRouter --> TradeAdapter[Entry/exit-approved trade adapter]
   TradeAdapter --> Liquidity[Liquidity venue]
   EntryRouter --> Clone
   App --> Factory
@@ -96,7 +99,8 @@ flowchart LR
 - Rejects invalid implementations.
 - Stores the vault list and canonical live protocol policy.
 - Reads the protocol treasury from the single authoritative `FeeCollector`.
-- Stores globally approved trade adapters.
+- Stores the single authoritative packed rebalance, entry, and exit permission configuration for
+  every trade adapter.
 - Enforces the fixed 14-day strategy cooldown.
 - Temporarily stages exact initial assets so a clone can initialize atomically; it holds no assets
   after a successful creation transaction.
@@ -128,7 +132,7 @@ flowchart LR
 `RebalanceExecutor`
 
 - Verifies caller is a factory-created vault.
-- Verifies adapter is globally approved.
+- Verifies the adapter has the factory's rebalance permission.
 - Executes typed adapter swaps only.
 - Prevents arbitrary manager-supplied target calls from the vault.
 
@@ -137,6 +141,8 @@ flowchart LR
 - Accepts an input token per transaction, allocates the fixed input across constituent routes, mints the largest strictly proportional basket supported by the received assets, and enforces the user's minimum shares.
 - Skips swaps when the input token is already a constituent, sells other surplus constituents back to the input token under user-defined minimum refund rates, and returns the proceeds to the payer.
 - Accepts an output token per transaction, atomically redeems the proportional basket, skips its direct constituent leg, sells every other constituent through an approved adapter, and returns all proceeds in the selected output token.
+- Reads entry and exit adapter authorization exclusively from the factory; it has no owner or local
+  adapter allowlist.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
 `RegisteredUniswapV3Adapter`

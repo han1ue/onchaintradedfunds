@@ -17,10 +17,9 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         super.setUp();
         venue = new MockUniswapV3Router();
         v3Adapter = new RegisteredUniswapV3Adapter(address(this), address(venue));
-        entryRouter = new OTFEntryExitRouter(address(this), address(factory));
+        entryRouter = new OTFEntryExitRouter(address(factory));
 
-        factory.setTradeAdapterApproved(address(v3Adapter), true);
-        entryRouter.setTradeAdapterApproved(address(v3Adapter), true);
+        factory.setAdapterPermissions(address(v3Adapter), true, true, true);
         v3Adapter.setCallerApproved(address(executor), true);
         v3Adapter.setCallerApproved(address(entryRouter), true);
 
@@ -56,8 +55,13 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), settlementIn);
         (uint256 mintedShares, uint256 settlementRefunded) = entryRouter.enterWithToken(
-            address(vault), address(tokenC), settlementIn, shares, ALICE,
-            block.timestamp + 1 hours, entrySwaps
+            address(vault),
+            address(tokenC),
+            settlementIn,
+            shares,
+            ALICE,
+            block.timestamp + 1 hours,
+            entrySwaps
         );
         vault.approve(address(entryRouter), shares);
         uint256[] memory redeemAmounts = vault.previewRedeem(shares);

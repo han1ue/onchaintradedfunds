@@ -284,31 +284,68 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(this)), tokenBalanceBefore);
     }
 
-    function testOnlyOwnerCanApproveAdapters() public {
+    function testOnlyOwnerCanSetAdapterPermissions() public {
         vm.prank(ATTACKER);
         vm.expectRevert(OTFFactory.NotOwner.selector);
-        factory.setTradeAdapterApproved(address(adapter), false);
-
-        factory.setTradeAdapterApproved(address(adapter), false);
-        assertFalse(factory.isTradeAdapterApproved(address(adapter)));
+        factory.setAdapterPermissions(address(adapter), false, false, false);
     }
 
-    function testTradeAdapterCanBeRevokedAfterItsCodeDisappears() public {
+    function testAdapterCanReceiveEveryPermissionCombination() public {
+        for (uint256 mask = 0; mask < 8; mask++) {
+            bool rebalance = mask & 1 != 0;
+            bool entry = mask & 2 != 0;
+            bool exit = mask & 4 != 0;
+
+            factory.setAdapterPermissions(address(adapter), rebalance, entry, exit);
+
+            assertEq(factory.isRebalanceAdapterApproved(address(adapter)), rebalance);
+            assertEq(factory.isEntryAdapterApproved(address(adapter)), entry);
+            assertEq(factory.isExitAdapterApproved(address(adapter)), exit);
+        }
+    }
+
+    function testPermissionUpdateAtomicallyReplacesCompleteConfiguration() public {
+        factory.setAdapterPermissions(address(adapter), true, false, true);
+        factory.setAdapterPermissions(address(adapter), false, true, false);
+
+        assertFalse(factory.isRebalanceAdapterApproved(address(adapter)));
+        assertTrue(factory.isEntryAdapterApproved(address(adapter)));
+        assertFalse(factory.isExitAdapterApproved(address(adapter)));
+    }
+
+    function testGrantingPermissionsRejectsZeroAndNonContractAddresses() public {
+        vm.expectRevert(OTFFactory.ZeroAddress.selector);
+        factory.setAdapterPermissions(address(0), true, false, false);
+
+        vm.expectRevert(abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, ALICE));
+        factory.setAdapterPermissions(ALICE, false, true, false);
+
+        vm.expectRevert(abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, BOB));
+        factory.setAdapterPermissions(BOB, false, false, true);
+    }
+
+    function testAdapterPermissionsCanBeRevokedAfterItsCodeDisappears() public {
         address retiredAdapter = address(adapter);
-        assertTrue(factory.isTradeAdapterApproved(retiredAdapter));
+        assertTrue(factory.isRebalanceAdapterApproved(retiredAdapter));
+        assertTrue(factory.isEntryAdapterApproved(retiredAdapter));
+        assertTrue(factory.isExitAdapterApproved(retiredAdapter));
 
         vm.etch(retiredAdapter, bytes(""));
-        factory.setTradeAdapterApproved(retiredAdapter, false);
-        assertFalse(factory.isTradeAdapterApproved(retiredAdapter));
+        factory.setAdapterPermissions(retiredAdapter, false, false, false);
+        assertFalse(factory.isRebalanceAdapterApproved(retiredAdapter));
+        assertFalse(factory.isEntryAdapterApproved(retiredAdapter));
+        assertFalse(factory.isExitAdapterApproved(retiredAdapter));
 
         vm.expectRevert(
             abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, retiredAdapter)
         );
-        factory.setTradeAdapterApproved(retiredAdapter, true);
+        factory.setAdapterPermissions(retiredAdapter, true, false, false);
 
         MockTradeAdapter replacement = new MockTradeAdapter();
-        factory.setTradeAdapterApproved(address(replacement), true);
-        assertTrue(factory.isTradeAdapterApproved(address(replacement)));
+        factory.setAdapterPermissions(address(replacement), false, true, true);
+        assertFalse(factory.isRebalanceAdapterApproved(address(replacement)));
+        assertTrue(factory.isEntryAdapterApproved(address(replacement)));
+        assertTrue(factory.isExitAdapterApproved(address(replacement)));
     }
 
     function testFactoryOwnershipTransferRequiresPendingOwner() public {

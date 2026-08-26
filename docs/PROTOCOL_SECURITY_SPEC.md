@@ -115,7 +115,7 @@ the protocol fee share, MUST continue to be read from the factory.
 
 The executor is a settlement boundary called only by factory-recognized OTFs. It:
 
-- Verifies that the adapter is approved.
+- Verifies that the adapter has the factory's rebalance permission.
 - Pulls the exact approved input amount.
 - Calls the typed adapter swap function.
 - Measures output by balance delta.
@@ -131,7 +131,8 @@ vault's custody and strategy authority boundaries. It MUST:
 
 - Accept only vaults registered by the configured factory.
 - Allocate the complete fixed input amount across the live basket in one atomic transaction.
-- Use only trade adapters approved in the router's independent allowlist.
+- Use only adapters with the factory's entry permission for acquisition and refund swaps.
+- Use only adapters with the factory's exit permission for redemption swaps.
 - Give each adapter an explicit exact input and minimum output.
 - Verify adapter-reported and observed output balance deltas.
 - Mint through the vault's proportional `mintWithBasket` function and verify returned amounts.
@@ -146,6 +147,12 @@ An approved trade adapter MAY use any valid route supported by its venue. Entry/
 one endpoint to the transaction-selected input or output token and the other to a live constituent. Rebalance
 calls require both visible endpoints to be active constituents, and the final output MUST return to
 the vault through `RebalanceExecutor`.
+
+`OTFFactory` MUST be the sole authoritative adapter registry. Its owner MUST replace the complete
+rebalance, entry, and exit permission tuple in one call. Any grant MUST target deployed code; clearing
+all permissions MUST remain possible after code disappears. `OTFEntryExitRouter` MUST NOT have an
+owner, permission setter, or local positive allowlist. Adapter-level caller allowlists remain
+independent and MUST continue to authorize the executor and router explicitly.
 
 ## 3. Delegatecall requirements
 

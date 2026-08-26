@@ -4072,11 +4072,6 @@ export const otfEntryExitRouterAbi = [
     "inputs": [
       {
         "internalType": "address",
-        "name": "initialOwner",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
         "name": "factory_",
         "type": "address"
       }
@@ -4195,28 +4190,6 @@ export const otfEntryExitRouterAbi = [
       }
     ],
     "name": "MinimumOutputNotMet",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "owner",
-        "type": "address"
-      }
-    ],
-    "name": "OwnableInvalidOwner",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "OwnableUnauthorizedAccount",
     "type": "error"
   },
   {
@@ -4409,44 +4382,6 @@ export const otfEntryExitRouterAbi = [
       {
         "indexed": true,
         "internalType": "address",
-        "name": "previousOwner",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "newOwner",
-        "type": "address"
-      }
-    ],
-    "name": "OwnershipTransferStarted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "previousOwner",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "newOwner",
-        "type": "address"
-      }
-    ],
-    "name": "OwnershipTransferred",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
         "name": "owner",
         "type": "address"
       },
@@ -4483,32 +4418,6 @@ export const otfEntryExitRouterAbi = [
     ],
     "name": "RedeemedToToken",
     "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "adapter",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "approved",
-        "type": "bool"
-      }
-    ],
-    "name": "TradeAdapterApprovalChanged",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "acceptOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
   },
   {
     "inputs": [
@@ -4613,51 +4522,6 @@ export const otfEntryExitRouterAbi = [
     "inputs": [
       {
         "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "isTradeAdapterApproved",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "owner",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "pendingOwner",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
         "name": "vault",
         "type": "address"
       },
@@ -4717,44 +4581,6 @@ export const otfEntryExitRouterAbi = [
         "type": "uint256"
       }
     ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "renounceOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "adapter",
-        "type": "address"
-      },
-      {
-        "internalType": "bool",
-        "name": "approved",
-        "type": "bool"
-      }
-    ],
-    "name": "setTradeAdapterApproved",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "newOwner",
-        "type": "address"
-      }
-    ],
-    "name": "transferOwnership",
-    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   }
@@ -5021,6 +4847,50 @@ export const otfFactoryAbi = [
     stateMutability: "view",
     inputs: [{ name: "index", type: "uint256" }],
     outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "isRebalanceAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ name: "adapter", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "isEntryAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ name: "adapter", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "isExitAdapterApproved",
+    stateMutability: "view",
+    inputs: [{ name: "adapter", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setAdapterPermissions",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "adapter", type: "address" },
+      { name: "rebalance", type: "bool" },
+      { name: "entry", type: "bool" },
+      { name: "exit", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "AdapterPermissionsSet",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "adapter", type: "address" },
+      { indexed: false, name: "rebalance", type: "bool" },
+      { indexed: false, name: "entry", type: "bool" },
+      { indexed: false, name: "exit", type: "bool" },
+    ],
   },
   {
     type: "function",

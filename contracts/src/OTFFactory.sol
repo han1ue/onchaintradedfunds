@@ -24,6 +24,12 @@ interface IAssetPricingResolverDependencies {
 }
 
 contract OTFFactory is IAdapterAllowlist {
+    struct AdapterPermissions {
+        bool rebalance;
+        bool entry;
+        bool exit;
+    }
+
     string private constant OTF_TOKEN_METADATA_URI = "data:application/json;base64,eyJpbnRlcm9wIjp7ImVyYzEwNDYiOnRydWV9LCJkZXNjcmlwdGlvbiI6IkFuIE9uY2h"
         "haW4gVHJhZGVkIEZ1bmQgRVJDLTIwIHNoYXJlIHRva2VuLiIsImltYWdlIjoiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCx"
         "QSE4yWnlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpSUhacFpYZENiM2c5SWpBZ01DQXl"
@@ -73,7 +79,7 @@ contract OTFFactory is IAdapterAllowlist {
     error InvalidProtocolTokenThreshold(uint16 thresholdBps);
 
     event VaultCreated(address indexed creator, address indexed vault, string name, string symbol);
-    event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
+    event AdapterPermissionsSet(address indexed adapter, bool rebalance, bool entry, bool exit);
     event ProtocolFeeShareUpdated(uint16 previousShareBps, uint16 newShareBps);
     event ChallengeGracePeriodUpdated(uint32 previousPeriod, uint32 newPeriod);
     event MinimumTargetWeightUpdated(uint16 previousMinimumBps, uint16 newMinimumBps);
@@ -110,7 +116,7 @@ contract OTFFactory is IAdapterAllowlist {
 
     address[] private _vaults;
     mapping(address => bool) public isVault;
-    mapping(address => bool) public isTradeAdapterApproved;
+    mapping(address => AdapterPermissions) private _adapterPermissions;
     mapping(address => bool) public vaultDepositsPaused;
     bool private _creating;
     address private _vaultBeingCreated;
@@ -209,11 +215,28 @@ contract OTFFactory is IAdapterAllowlist {
         }
     }
 
-    function setTradeAdapterApproved(address adapter, bool approved) external onlyOwner {
+    function setAdapterPermissions(address adapter, bool rebalance, bool entry, bool exit)
+        external
+        onlyOwner
+    {
         if (adapter == address(0)) revert ZeroAddress();
-        if (approved && adapter.code.length == 0) revert InvalidDependency(adapter);
-        isTradeAdapterApproved[adapter] = approved;
-        emit TradeAdapterApprovalChanged(adapter, approved);
+        if ((rebalance || entry || exit) && adapter.code.length == 0) {
+            revert InvalidDependency(adapter);
+        }
+        _adapterPermissions[adapter] = AdapterPermissions(rebalance, entry, exit);
+        emit AdapterPermissionsSet(adapter, rebalance, entry, exit);
+    }
+
+    function isRebalanceAdapterApproved(address adapter) external view returns (bool) {
+        return _adapterPermissions[adapter].rebalance;
+    }
+
+    function isEntryAdapterApproved(address adapter) external view returns (bool) {
+        return _adapterPermissions[adapter].entry;
+    }
+
+    function isExitAdapterApproved(address adapter) external view returns (bool) {
+        return _adapterPermissions[adapter].exit;
     }
 
     /// @notice Changes the protocol's share of manager fees for all existing and future OTFs.

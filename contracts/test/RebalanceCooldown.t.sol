@@ -75,7 +75,7 @@ contract RebalanceCooldownTest is TestBase {
             1_500
         );
         executor.setFactory(address(factory));
-        factory.setTradeAdapterApproved(address(adapter), true);
+        factory.setAdapterPermissions(address(adapter), true, true, true);
 
         tokenA.approve(address(factory), type(uint256).max);
         tokenB.approve(address(factory), type(uint256).max);

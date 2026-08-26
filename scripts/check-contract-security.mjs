@@ -172,6 +172,11 @@ const factoryFunctions = factory.abi
   .map((item) => item.name);
 const factoryEvents = abiSignatures(factory, "event");
 const factoryErrors = abiSignatures(factory, "error");
+const adapterPermissionsMapping = factory.storageLayout.storage.find(
+  (entry) => entry.label === "_adapterPermissions",
+);
+const adapterPermissionsType = factory.storageLayout.types[adapterPermissionsMapping?.type]?.value;
+const adapterPermissionsLayout = factory.storageLayout.types[adapterPermissionsType];
 const entryExitRouterFunctions = entryExitRouter.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
@@ -402,11 +407,36 @@ const entryExitRouterConstructor = entryExitRouter.abi.find(
   (item) => item.type === "constructor",
 );
 assert(
-  entryExitRouterConstructor?.inputs.length === 2
+  entryExitRouterConstructor?.inputs.length === 1
+    && entryExitRouterConstructor.inputs[0]?.name === "factory_"
     && !entryExitRouterFunctions.includes("settlementToken")
+    && !entryExitRouterFunctions.includes("owner")
+    && !entryExitRouterFunctions.includes("setTradeAdapterApproved")
+    && !entryExitRouterFunctions.includes("isTradeAdapterApproved")
     && entryExitRouterFunctions.includes("enterWithToken")
     && entryExitRouterFunctions.includes("redeemToToken"),
-  "entry/exit router remains coupled to a deployment-time settlement token",
+  "entry/exit router retains independent administration or unexpected dependencies",
+);
+assert(
+  factoryFunctions.includes("setAdapterPermissions")
+    && factoryFunctions.includes("isRebalanceAdapterApproved")
+    && factoryFunctions.includes("isEntryAdapterApproved")
+    && factoryFunctions.includes("isExitAdapterApproved")
+    && !factoryFunctions.includes("setTradeAdapterApproved")
+    && !factoryFunctions.includes("isTradeAdapterApproved"),
+  "factory adapter permissions are not the sole capability registry",
+);
+assert(
+  factoryEvents.has("AdapterPermissionsSet(address,bool,bool,bool)")
+    && !factoryEvents.has("TradeAdapterApprovalChanged(address,bool)"),
+  "factory exposes an ambiguous or incomplete adapter-permissions event",
+);
+assert(
+  adapterPermissionsLayout?.numberOfBytes === "32"
+    && adapterPermissionsLayout.members.length === 3
+    && adapterPermissionsLayout.members.every((member) => member.slot === "0")
+    && adapterPermissionsLayout.members.map((member) => member.offset).join(",") === "0,1,2",
+  "factory adapter permissions are not packed into one storage slot per adapter",
 );
 assert(
   factoryFunctions.includes("setVaultDepositsPaused")

@@ -277,19 +277,29 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(vault.lastCompletedStrategyTimestamp(), START);
     }
 
-    function testUnapprovedAdapterAndUnsupportedTokensAreRejected() public {
+    function testEntryOnlyAndExitOnlyAdaptersCannotRebalance() public {
         ManagedOTFVault vault = _createVault();
         vault.setExecutor(ALICE, true);
         TradeInstruction[] memory trades = _singleTrade(address(tokenA), address(tokenB), ONE, ONE);
 
-        factory.setTradeAdapterApproved(address(adapter), false);
+        factory.setAdapterPermissions(address(adapter), false, true, false);
         vm.prank(ALICE);
         vm.expectPartialRevert(RebalanceExecutor.UnapprovedAdapter.selector);
         vault.executeRebalanceTrades(trades);
         assertEq(tokenA.allowance(address(vault), address(executor)), 0);
 
-        factory.setTradeAdapterApproved(address(adapter), true);
-        trades = _singleTrade(address(tokenA), address(tokenC), ONE, ONE);
+        factory.setAdapterPermissions(address(adapter), false, false, true);
+        vm.prank(ALICE);
+        vm.expectPartialRevert(RebalanceExecutor.UnapprovedAdapter.selector);
+        vault.executeRebalanceTrades(trades);
+        assertEq(tokenA.allowance(address(vault), address(executor)), 0);
+    }
+
+    function testUnsupportedTradeTokensAreRejected() public {
+        ManagedOTFVault vault = _createVault();
+        vault.setExecutor(ALICE, true);
+        TradeInstruction[] memory trades = _singleTrade(address(tokenA), address(tokenC), ONE, ONE);
+
         vm.prank(ALICE);
         vm.expectPartialRevert(ManagedOTFVaultStorage.TradeAssetNotTracked.selector);
         vault.executeRebalanceTrades(trades);

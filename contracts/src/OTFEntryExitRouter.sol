@@ -5,8 +5,6 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IEntryVault {
@@ -44,7 +42,7 @@ struct ExitSwap {
     bytes adapterData;
 }
 
-contract OTFEntryExitRouter is Ownable2Step {
+contract OTFEntryExitRouter {
     using SafeTransferLib for address;
 
     error ZeroAddress();
@@ -70,7 +68,6 @@ contract OTFEntryExitRouter is Ownable2Step {
     );
     error Reentrancy();
 
-    event TradeAdapterApprovalChanged(address indexed adapter, bool approved);
     event EnteredWithToken(
         address indexed payer,
         address indexed receiver,
@@ -90,11 +87,10 @@ contract OTFEntryExitRouter is Ownable2Step {
     );
 
     address public immutable factory;
-    mapping(address => bool) public isTradeAdapterApproved;
     bool private _entered;
     uint256 private constant REFUND_RATE_SCALE = 1e18;
 
-    constructor(address initialOwner, address factory_) Ownable(initialOwner) {
+    constructor(address factory_) {
         if (factory_ == address(0)) revert ZeroAddress();
         if (factory_.code.length == 0) revert InvalidDependency(factory_);
         factory = factory_;
@@ -105,14 +101,6 @@ contract OTFEntryExitRouter is Ownable2Step {
         _entered = true;
         _;
         _entered = false;
-    }
-
-    function setTradeAdapterApproved(address adapter, bool approved) external onlyOwner {
-        if (adapter == address(0) || (approved && adapter.code.length == 0)) {
-            revert InvalidDependency(adapter);
-        }
-        isTradeAdapterApproved[adapter] = approved;
-        emit TradeAdapterApprovalChanged(adapter, approved);
     }
 
     /// @notice Spends a fixed input-token amount and mints the largest proportional OTF basket.
@@ -156,7 +144,7 @@ contract OTFEntryExitRouter is Ownable2Step {
                 ) {
                     revert InvalidDirectLeg(i);
                 }
-            } else if (!isTradeAdapterApproved[swap.adapter]) {
+            } else if (!IAdapterAllowlist(factory).isEntryAdapterApproved(swap.adapter)) {
                 revert UnapprovedTradeAdapter(swap.adapter);
             } else if (swap.inputAmount != 0 && swap.minRefundInputRate == 0) {
                 revert ZeroMinimumOutput();
@@ -182,11 +170,7 @@ contract OTFEntryExitRouter is Ownable2Step {
             uint256 assetBefore = IERC20(assets[i]).balanceOf(address(this));
             uint256 reportedOutput = ITradeAdapter(swap.adapter)
                 .executeSwap(
-                    inputToken,
-                    assets[i],
-                    swap.inputAmount,
-                    swap.minAssetOut,
-                    swap.adapterData
+                    inputToken, assets[i], swap.inputAmount, swap.minAssetOut, swap.adapterData
                 );
             uint256 observedOutput = IERC20(assets[i]).balanceOf(address(this)) - assetBefore;
             if (reportedOutput != observedOutput) {
@@ -242,16 +226,12 @@ contract OTFEntryExitRouter is Ownable2Step {
             }
 
             EntrySwap calldata swap = swaps[i];
-            uint256 minInputOut =
-                Math.mulDiv(refund, swap.minRefundInputRate, REFUND_RATE_SCALE);
+            uint256 minInputOut = Math.mulDiv(refund, swap.minRefundInputRate, REFUND_RATE_SCALE);
             _pushExact(assets[i], swap.adapter, refund);
             uint256 inputBefore = IERC20(inputToken).balanceOf(address(this));
             uint256 reportedOutput = ITradeAdapter(swap.adapter)
-                .executeSwap(
-                    assets[i], inputToken, refund, minInputOut, swap.refundAdapterData
-                );
-            uint256 observedOutput =
-                IERC20(inputToken).balanceOf(address(this)) - inputBefore;
+                .executeSwap(assets[i], inputToken, refund, minInputOut, swap.refundAdapterData);
+            uint256 observedOutput = IERC20(inputToken).balanceOf(address(this)) - inputBefore;
             if (reportedOutput != observedOutput) {
                 revert AdapterOutputMismatch(i, reportedOutput, observedOutput);
             }
@@ -296,7 +276,7 @@ contract OTFEntryExitRouter is Ownable2Step {
                 ) {
                     revert InvalidDirectLeg(i);
                 }
-            } else if (!isTradeAdapterApproved[swaps[i].adapter]) {
+            } else if (!IAdapterAllowlist(factory).isExitAdapterApproved(swaps[i].adapter)) {
                 revert UnapprovedTradeAdapter(swaps[i].adapter);
             }
         }
@@ -333,11 +313,8 @@ contract OTFEntryExitRouter is Ownable2Step {
             _pushExact(asset, swap.adapter, amount);
             uint256 outputBefore = IERC20(outputToken).balanceOf(address(this));
             uint256 reportedOutput = ITradeAdapter(swap.adapter)
-                .executeSwap(
-                    asset, outputToken, amount, swap.minOutputAmount, swap.adapterData
-                );
-            uint256 observedOutput =
-                IERC20(outputToken).balanceOf(address(this)) - outputBefore;
+                .executeSwap(asset, outputToken, amount, swap.minOutputAmount, swap.adapterData);
+            uint256 observedOutput = IERC20(outputToken).balanceOf(address(this)) - outputBefore;
             if (reportedOutput != observedOutput) {
                 revert AdapterOutputMismatch(i, reportedOutput, observedOutput);
             }

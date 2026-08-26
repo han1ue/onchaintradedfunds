@@ -358,8 +358,9 @@ The factory, market registry, and fee collector already use safer two-step flows
 
 Use `pendingOwner` / `pendingManager` plus explicit acceptance and cancellation. For manager transfer, preserve the current manager and executor configuration until acceptance, then perform executor cleanup atomically. Any vault storage change must pass the existing canonical layout checks and requires fresh review.
 
-`OTFEntryExitRouter` and `RegisteredUniswapV3Adapter` now use OpenZeppelin `Ownable2Step` while preserving
-constructor owner initialization. The clone vault appends `pendingManager` to canonical storage and
+`RegisteredUniswapV3Adapter` now uses OpenZeppelin `Ownable2Step` while preserving constructor owner
+initialization. `OTFEntryExitRouter` subsequently removed ownership and its local adapter allowlist;
+it now reads distinct entry and exit permissions from the factory's authoritative registry. The clone vault appends `pendingManager` to canonical storage and
 implements nomination, zero-address cancellation, replacement, and pending-manager-only acceptance.
 Acceptance checkpoints fees, clears manager-specific pending strategy and rationale state, replaces
 the executor set with the new manager, and emits the ownership and manager-transfer events atomically.

@@ -65,12 +65,12 @@ const sectionGroups: readonly DocsSectionGroup[] = [
 ];
 
 const contractRows = [
-  ["OTFFactory", "Creates vault clones, applies protocol-wide limits, and records vault ownership."],
+  ["OTFFactory", "Creates vault clones, applies protocol-wide limits, and centrally assigns rebalance, entry, and exit adapter permissions."],
   ["Strategy module", "Fixed delegate-called module for manager policy and constrained executor trades."],
   ["Portfolio calculator", "Stateless oracle valuation, portfolio-band checks, and cadence-independent fee-growth calculations."],
   ["ManagedOTFVault", "Custodies the portfolio, issues ERC-20 shares with ERC-1046 SVG metadata, accrues fees, and enforces portfolio rules."],
-  ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
-  ["OTFEntryExitRouter", "Accepts a supported input or output token per transaction and atomically converts it to or from an OTF basket with minimum-output protection."],
+  ["RebalanceExecutor", "Restricts execution to typed swaps through factory-approved rebalance adapters."],
+  ["OTFEntryExitRouter", "Accepts a supported input or output token per transaction, uses the factory's entry and exit adapter permissions, and atomically converts it to or from an OTF basket with minimum-output protection."],
   ["Uniswap V3 adapter", "Executes explicit exact-input paths for entry, redemption, and rebalancing; caller contracts enforce the permitted endpoints."],
   ["Pricing resolver", "Mechanically validates creator-selected Chainlink, Chainlink Composed, or canonical Uniswap V3 TWAP routes and resolves the normalized feed and parameters pinned by one OTF."],
   ["FeeCollector", "Receives the protocol portion of manager fees."],

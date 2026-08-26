@@ -2682,7 +2682,7 @@ export function TopNav({
                         ) : (
                           <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />
                         )}
-                        <span>{value[0].toUpperCase() + value.slice(1)}</span>
+                        <span>{value === "default" ? "Browser" : value[0].toUpperCase() + value.slice(1)}</span>
                         {theme === value ? <Check size={12} aria-hidden="true" /> : null}
                       </button>
                     ))}
@@ -4107,9 +4107,17 @@ function UserActions({
     navRequestedEntryShares = entrySizingSeedShares * 10_000n / BigInt(10_000 + slippageBps);
   }
   const { data: entryAdapterApproved } = useReadContract({
-    address: entryRouterAddress,
-    abi: otfEntryExitRouterAbi,
-    functionName: "isTradeAdapterApproved",
+    address: vault.factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "isEntryAdapterApproved",
+    args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
+    chainId: robinhoodChainTestnet.id,
+    query: { enabled: entryContractsConfigured && isLive },
+  });
+  const { data: exitAdapterApproved } = useReadContract({
+    address: vault.factoryAddress,
+    abi: otfFactoryAbi,
+    functionName: "isExitAdapterApproved",
     args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: entryContractsConfigured && isLive },
@@ -4900,8 +4908,11 @@ function UserActions({
       activeAction === "deposit" ? requestedDirectMintShares : requestedRedeemShares
     ),
   );
+  const activeAdapterApproved = activeAction === "deposit"
+    ? entryAdapterApproved
+    : exitAdapterApproved;
   const underlyingRouteAvailable = entryContractsConfigured &&
-    entryAdapterApproved !== false &&
+    activeAdapterApproved !== false &&
     constituentRoutesReady &&
     (activeAction === "redeem" || !vaultDepositsBlocked);
   const underlyingRouteChecking = Boolean(
@@ -5771,7 +5782,7 @@ function UserActions({
                           : "—"}
                 </strong>
                 <small>
-                  {!entryContractsConfigured || entryAdapterApproved === false
+                  {!entryContractsConfigured || activeAdapterApproved === false
                     ? "Settlement route not configured"
                     : activeAction === "deposit" && vault.sunset
                       ? "OTF sunset — new positions closed"
@@ -10128,8 +10139,11 @@ function WalletView({
           </div>
 
           <section className="sectionCard depositPositions">
-            <div className="directoryPanelHeading">
-              <div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div>
+            <div className="managedVaultsHeading">
+              <div>
+                <span className="appPageIcon"><CircleDollarSign size={16} /></span>
+                <div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div>
+              </div>
               <span className="stateBadge muted">{positions.length} position{positions.length === 1 ? "" : "s"}</span>
             </div>
             {positions.length ? <div className="directoryTableWrap"><table className="directoryTable depositsTable">
@@ -10152,7 +10166,7 @@ function WalletView({
                 </div>
               </div>
               <div className="managedVaultsHeaderActions">
-                <span className={`stateBadge ${managedVaults.length ? "success" : "muted"}`}>{managedVaults.length} OTF{managedVaults.length === 1 ? "" : "s"}</span>
+                {managedVaults.length ? <span className="stateBadge success">{managedVaults.length} OTF{managedVaults.length === 1 ? "" : "s"}</span> : null}
                 <button className="primaryAction" type="button" onClick={onCreateVault}>
                   <Plus size={14} />
                   Create OTF

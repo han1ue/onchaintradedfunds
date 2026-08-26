@@ -98,7 +98,7 @@ contract PermissiveExecutorFactory {
         return true;
     }
 
-    function isTradeAdapterApproved(address) external pure returns (bool) {
+    function isRebalanceAdapterApproved(address) external pure returns (bool) {
         return true;
     }
 }
@@ -188,4 +188,3 @@ contract ReentrancyGuardsTest is TestBase {
         assertEq(tokenOut.balanceOf(address(executor)), 0);
     }
 }
-

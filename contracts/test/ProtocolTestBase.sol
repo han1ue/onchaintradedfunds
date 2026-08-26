@@ -83,7 +83,7 @@ abstract contract ProtocolTestBase is TestBase {
             1_500
         );
         executor.setFactory(address(factory));
-        factory.setTradeAdapterApproved(address(adapter), true);
+        factory.setAdapterPermissions(address(adapter), true, true, true);
 
         tokenA.mint(address(this), 1_000_000 * ONE);
         tokenB.mint(address(this), 1_000_000 * ONE);

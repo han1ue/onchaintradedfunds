@@ -257,7 +257,8 @@ deprecation must not disable an existing OTF's pinned reads or its otherwise-val
 
 `OTFEntryExitRouter` is an optional convenience layer for entering and exiting a proportional basket with a caller-selected ERC-20 input or output token.
 It is not part of vault custody or valuation. The router accepts only factory-registered OTFs,
-requires an independently approved trade adapter for every non-direct constituent leg, checks
+requires the factory's entry permission for every acquisition and refund swap and its exit
+permission for every non-direct redemption leg, checks
 observed token deltas against adapter return values, and uses exact temporary approvals. The
 exact-share path mints only after every exact-output purchase succeeds. The fixed-input path spends
 fixed per-leg inputs, derives the largest strictly proportional mint from observed outputs, enforces
@@ -281,8 +282,10 @@ router until every leg succeeds, after which the exact aggregate is transferred 
 receiver. Failure reverts the share burn and all swaps.
 
 Users therefore provide per-leg maximum inputs, an aggregate maximum settlement amount, and a
-deadline. Unspent USDG is refunded atomically. The adapter allowlist is separate from the factory's
-rebalance-adapter allowlist so approval for one authority does not silently grant the other.
+deadline. Unspent USDG is refunded atomically. `OTFFactory` is the sole adapter registry and replaces
+all three permissions atomically. The router has no owner, administrative setter, or independent
+positive allowlist. Capability separation is preserved because rebalance, entry, and exit are
+distinct booleans, while adapter-level caller approvals remain an additional unchanged boundary.
 
 For rebalance execution, any intermediate token may appear only inside the atomic router path. The
 vault still requires both visible trade endpoints to be current constituents, and output returns

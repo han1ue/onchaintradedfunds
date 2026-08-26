@@ -69,7 +69,7 @@ contract RebalanceExecutor {
         address factory_ = factory;
         if (factory_ == address(0)) revert FactoryNotSet();
         if (!IAdapterAllowlist(factory_).isVault(msg.sender)) revert UnauthorizedVault();
-        if (!IAdapterAllowlist(factory_).isTradeAdapterApproved(instruction.adapter)) {
+        if (!IAdapterAllowlist(factory_).isRebalanceAdapterApproved(instruction.adapter)) {
             revert UnapprovedAdapter(instruction.adapter);
         }
         if (amountIn == 0) revert BadTradeAmount();

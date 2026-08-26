@@ -266,13 +266,12 @@ const uniswapV3Adapter = await deployContract({
 });
 const entryRouter = await deployContract({
   name: "OTFEntryExitRouter",
-  args: [account.address, factory.address],
+  args: [factory.address],
 });
 
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
 const registeredAdapterAbi = contractArtifact("RegisteredUniswapV3Adapter").abi;
-const entryRouterAbi = contractArtifact("OTFEntryExitRouter").abi;
 
 const setupTransactions = {
   setExecutorFactory: await writeContract({
@@ -283,12 +282,12 @@ const setupTransactions = {
   }),
   approvedAdapters: [{
     adapter: uniswapV3Adapter.address,
-    purpose: "generic-rebalance",
+    purpose: "rebalance-entry-exit",
     ...(await writeContract({
       address: factory.address,
       abi: factoryAbi,
-      functionName: "setTradeAdapterApproved",
-      args: [uniswapV3Adapter.address, true],
+      functionName: "setAdapterPermissions",
+      args: [uniswapV3Adapter.address, true, true, true],
     })),
   }],
   settlementEntry: [],
@@ -310,12 +309,6 @@ setupTransactions.settlementEntry.push({
     functionName: "setCallerApproved",
     args: [entryRouter.address, true],
   }),
-  routerAdapterApproval: await writeContract({
-    address: entryRouter.address,
-    abi: entryRouterAbi,
-    functionName: "setTradeAdapterApproved",
-    args: [uniswapV3Adapter.address, true],
-  }),
 });
 
 setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
@@ -326,7 +319,7 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 });
 
 const deployment = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -373,7 +366,7 @@ const deployment = {
     pricingIndependent: true,
   })),
   migration: {
-    architecture: "decoupled-otf-markets",
+    architecture: "centralized-adapter-permissions",
     legacyFactoriesCompatible: false,
   },
   setupTransactions,
