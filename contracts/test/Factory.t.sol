@@ -14,6 +14,13 @@ import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryTest is ProtocolTestBase {
+    AssetRegistry private discoveryRegistry;
+
+    function setUp() public override {
+        super.setUp();
+        discoveryRegistry = new AssetRegistry();
+    }
+
     function testFactoryCreatesAndEnumeratesVault() public {
         VaultInitParams memory params = _defaultParams();
         address created = factory.createVault(params);
@@ -25,6 +32,20 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(ManagedOTFVault(created).factory(), address(factory));
     }
 
+    function testOwnerCanUpdateChallengeGracePeriod() public {
+        assertEq(factory.challengeGracePeriod(), 7 days);
+
+        vm.prank(ALICE);
+        vm.expectRevert(OTFFactory.NotOwner.selector);
+        factory.setChallengeGracePeriod(3 days);
+
+        factory.setChallengeGracePeriod(3 days);
+        assertEq(factory.challengeGracePeriod(), 3 days);
+
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+        factory.setChallengeGracePeriod(0);
+    }
+
     function testFactoryCreatesDistinctClonesForIdenticalParams() public {
         VaultInitParams memory params = _defaultParams();
         address first = factory.createVault(params);
@@ -34,11 +55,11 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(factory.vaultCount(), 2);
     }
 
-    function testFactoryRejectsCreatorFeeAboveGlobalMaximum() public {
+    function testFactoryRejectsManagerFeeAboveGlobalMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = 2_001;
+        params.managerFeeBpsPerYear = 2_001;
 
-        vm.expectPartialRevert(OTFFactory.CreatorFeeTooHigh.selector);
+        vm.expectPartialRevert(OTFFactory.ManagerFeeTooHigh.selector);
         factory.createVault(params);
     }
 
@@ -60,15 +81,15 @@ contract FactoryTest is ProtocolTestBase {
         factory.createVault(params);
     }
 
-    function testFactoryAcceptsCreatorFeeAtGlobalMaximum() public {
+    function testFactoryAcceptsManagerFeeAtGlobalMaximum() public {
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = 2_000;
+        params.managerFeeBpsPerYear = 2_000;
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertEq(vault.creatorFeeBpsPerYear(), 2_000);
+        assertEq(vault.managerFeeBpsPerYear(), 2_000);
         assertEq(2_000, 2_000);
-        assertEq(factory.MAX_CREATOR_FEE_BPS_PER_YEAR(), 2_000);
+        assertEq(factory.MAX_MANAGER_FEE_BPS_PER_YEAR(), 2_000);
     }
 
     function testFactoryRejectsMoreThanMaximumTrackedAssetsBeforeTransfers() public {
@@ -243,7 +264,8 @@ contract FactoryTest is ProtocolTestBase {
 
     function testVaultPinsCreatorSelectedStaleness() public {
         ManagedOTFVault vault = _createVault();
-        assertEq(vault.maxStalenessForAsset(address(tokenA)), 25 hours);
+        (,,,,,, uint32 primaryMaxStaleness,) = vault.pricingConfigForAsset(address(tokenA));
+        assertEq(primaryMaxStaleness, 25 hours);
         assertEq(vault.totalAssetsValue(), 100_000 * ONE);
     }
 
@@ -273,8 +295,8 @@ contract FactoryTest is ProtocolTestBase {
     function testAssetDiscoveryIsPermissionlessAndOnlyOwnerCanApproveAdapters() public {
         MockStockToken discovered = new MockStockToken("Discovered", "DISC", 18);
         vm.prank(ATTACKER);
-        assetRegistry.registerAsset(address(discovered));
-        assertTrue(assetRegistry.isRegisteredAsset(address(discovered)));
+        discoveryRegistry.registerAsset(address(discovered));
+        assertTrue(discoveryRegistry.isRegisteredAsset(address(discovered)));
 
         vm.prank(ATTACKER);
         vm.expectRevert(OTFFactory.NotOwner.selector);
@@ -353,24 +375,22 @@ contract FactoryTest is ProtocolTestBase {
 
     function testAssetRegistryRejectsEOAAssets() public {
         vm.expectPartialRevert(AssetRegistry.AssetNotContract.selector);
-        assetRegistry.registerAsset(ALICE);
+        discoveryRegistry.registerAsset(ALICE);
     }
 
     function testAssetRegistryRejectsNonEighteenDecimalConstituents() public {
         MockStockToken sixDecimalToken = new MockStockToken("Six Decimal", "SIX", 6);
 
         vm.expectPartialRevert(AssetRegistry.UnsupportedAssetDecimals.selector);
-        assetRegistry.registerAsset(address(sixDecimalToken));
+        discoveryRegistry.registerAsset(address(sixDecimalToken));
 
-        assertFalse(assetRegistry.isRegisteredAsset(address(sixDecimalToken)));
+        assertFalse(discoveryRegistry.isRegisteredAsset(address(sixDecimalToken)));
     }
 
     function testFactoryRejectsNonContractDependencies() public {
         address implementation = factory.vaultImplementation();
+        address pricingResolver = factory.pricingResolver();
         vm.expectPartialRevert(OTFFactory.InvalidDependency.selector);
-        new OTFFactory(implementation, address(collector), address(assetRegistry), ALICE, 1_500);
+        new OTFFactory(implementation, address(collector), ALICE, pricingResolver, 1_500);
     }
 }
-
-
-

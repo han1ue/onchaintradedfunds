@@ -6,12 +6,14 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import {
     AssetPricingConfig,
+    PinnedAssetPricing,
     RebalanceRecord,
     StrategyVersion,
     TradeExecutionRecord
 } from "./VaultTypes.sol";
 
 interface IProtocolPortfolioLimits {
+    function challengeGracePeriod() external view returns (uint32);
     function minTargetWeightBps() external view returns (uint16);
     function minCompletionDeviationBps() external view returns (uint16);
     function maxCompletionDeviationBps() external view returns (uint16);
@@ -20,6 +22,9 @@ interface IProtocolPortfolioLimits {
     function depositsPaused() external view returns (bool);
     function vaultDepositsPaused(address vault) external view returns (bool);
     function pricingResolver() external view returns (address);
+    function assetMarketRegistry() external view returns (address);
+    function rebalanceExecutor() external view returns (address);
+    function feeCollector() external view returns (address);
     function otfTokenURI() external pure returns (string memory);
 }
 
@@ -35,8 +40,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 internal constant BPS = 10_000;
     uint256 internal constant STRATEGY_CHANGE_COOLDOWN = 14 days;
     uint256 internal constant STRATEGY_ACTIVATION_DELAY = 48 hours;
-    uint32 internal constant CHALLENGE_GRACE_PERIOD = 7 days;
-    uint256 internal constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
     uint256 internal constant MAX_TRADE_COUNT = 20;
     uint256 internal constant MAX_AUTHORIZED_EXECUTORS = 20;
     uint256 internal constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
@@ -136,11 +139,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error VaultSunset();
     error ProtocolDepositsPaused();
     error VaultDepositsPaused();
-    error AssetMarketRegistryNotConfigured();
-    error PricingResolverNotConfigured();
-    error InvalidAssetMarket(address asset, bytes32 marketId);
-    error InvalidPricingConfig(address asset);
-    error PriceFeedMismatch(address asset, address expected, address supplied);
     error AssetPricingAlreadyPinned(address asset);
     error OwnableUnauthorizedAccount(address account);
 
@@ -244,31 +242,25 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     address internal _manager;
     address internal _feeRecipient;
     address internal _feeCollector;
-    address internal _assetRegistry;
     address internal _rebalanceExecutor;
+    address internal _pricingResolverAddress;
+    address internal _assetMarketRegistry;
 
-    uint16 internal _creatorFeeBpsPerYear;
-    uint16 internal _protocolFeeShareBps;
+    uint16 internal _managerFeeBpsPerYear;
     uint16 internal _maxNavLossBps;
     uint16 internal _maxWeightDeviationBps;
     uint16 internal _challengeWeightDeviationBps;
     uint64 internal _lastFeeAccrualTimestamp;
     uint64 internal _lastCompletedStrategyTimestamp;
-    uint64 internal _strategicRebalanceStartedAt;
-    uint64 internal _pendingStrategyProposedAt;
     uint64 internal _pendingStrategyActivationTime;
 
     uint256 internal _rebalanceCount;
     uint256 internal _escrowedManagerFeeShares;
     uint256 internal _forfeitedManagerFeeShares;
-    bool internal _strategicRebalanceActive;
-    bool internal _strategyProposalPending;
-    bool internal _challengeActive;
     address internal _challengeCaller;
     uint64 internal _challengeStartedAt;
     uint64 internal _challengeDeadline;
     mapping(address => uint16) internal _targetWeightBps;
-    mapping(address => bool) internal _authorizedExecutor;
     mapping(address => uint256) internal _challengeRewardShares;
     uint256 internal _strategicNavPerShareBefore;
     uint16 internal _strategicTurnoverBps;
@@ -294,22 +286,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     TradeExecutionRecord[16] internal _recentTradeExecutions;
     uint256 internal _challengeFeeAccrualRemainderWad;
 
-    // Pinned asset pricing state.
-    address internal _assetMarketRegistry;
-    mapping(address => bytes32) internal _marketIdForAsset;
-    mapping(address => address) internal _priceFeedForAsset;
-
-    // Pricing identity is pinned while an asset remains tracked and is never
-    // read through a mutable global source after selection. Fully pruned assets release their
-    // pricing identity so a later strategy may reintroduce them with a newly validated source.
-    // The legacy market fields above retain their original slots.
-    mapping(address => uint8) internal _pricingSourceForAsset;
-    mapping(address => address) internal _primaryPriceSourceForAsset;
-    mapping(address => uint32) internal _maxStalenessForAsset;
-    mapping(address => bool) internal _pricingConfiguredForAsset;
+    // Pricing identity is pinned while an asset remains tracked. Fully pruned assets release the
+    // record so a later strategy may reintroduce them with a newly validated source.
+    mapping(address => PinnedAssetPricing) internal _pinnedPricingForAsset;
     AssetPricingConfig[] internal _pendingPricingConfigs;
-    mapping(address => uint32) internal _primaryMaxStalenessForAsset;
-    mapping(address => address) internal _quoteTokenForAsset;
 
     address internal _pendingManager;
 
@@ -324,7 +304,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     }
 
     modifier onlyTradeAuthority() {
-        if (!_authorizedExecutor[msg.sender]) {
+        if (!_isAuthorizedExecutor(msg.sender)) {
             revert NotTradeAuthority();
         }
         _;
@@ -343,6 +323,23 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     function _protocolOtfTokenURI() internal view returns (string memory) {
         return IProtocolPortfolioLimits(_factory).otfTokenURI();
+    }
+
+    function _isAuthorizedExecutor(address executor) internal view returns (bool) {
+        return _executorIndexPlusOne[executor] != 0;
+    }
+
+    function _strategyProposalIsPending() internal view returns (bool) {
+        return _pendingStrategyActivationTime != 0;
+    }
+
+    function _strategicRebalanceIsActive() internal view returns (bool) {
+        uint256 count = _strategyVersions.length;
+        return count != 0 && _strategyVersions[count - 1].completedAt == 0;
+    }
+
+    function _challengeIsActive() internal view returns (bool) {
+        return _challengeDeadline != 0;
     }
 
     function _isRetiringAsset(address asset) internal view returns (bool) {
@@ -423,10 +420,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
 
     function _startChallenge(address caller, address[] memory breached) internal {
         uint64 startedAt = uint64(block.timestamp);
-        _challengeActive = true;
         _challengeCaller = caller;
         _challengeStartedAt = startedAt;
-        _challengeDeadline = startedAt + CHALLENGE_GRACE_PERIOD;
+        _challengeDeadline = startedAt + IProtocolPortfolioLimits(_factory).challengeGracePeriod();
         _challengeFeeAccrualRemainderWad = 0;
         emit OutOfBandChallengeStarted(caller, startedAt, _challengeDeadline, breached);
     }
@@ -462,5 +458,3 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         }
     }
 }
-
-

@@ -214,7 +214,6 @@ contract AdversarialTokenBehaviorTest is ProtocolTestBase {
     {
         token = new MockAdversarialERC20("Adversarial Stock", "ADV", 18);
         feed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(token));
         token.mint(address(this), 10_000 * ONE);
         token.approve(address(factory), type(uint256).max);
     }
@@ -234,6 +233,3 @@ contract AdversarialTokenBehaviorTest is ProtocolTestBase {
         vm.stopPrank();
     }
 }
-
-
-

@@ -96,11 +96,12 @@ flowchart LR
 
 - Deploys minimal-proxy vault clones with `CREATE`.
 - Rejects invalid implementations.
-- Stores vault list and creator mapping.
+- Stores the vault list and canonical live protocol policy.
 - Reads the protocol treasury from the single authoritative `FeeCollector`.
 - Stores globally approved trade adapters.
 - Enforces the fixed 14-day strategy cooldown.
-- Does not custody vault assets.
+- Temporarily stages exact initial assets so a clone can initialize atomically; it holds no assets
+  after a successful creation transaction.
 
 `ManagedOTFVault`
 
@@ -161,7 +162,7 @@ flowchart LR
   market quote assets.
 - Accepts a user-supplied direct Chainlink asset/USD, composed asset/quoteToken × quoteToken/USD, or Uniswap V3 TWAP
   configuration when an asset first enters an OTF.
-- Mechanically validates creator-selected Chainlink feeds and freshness limits, or the canonical V3
+- Mechanically validates manager-supplied Chainlink feeds and freshness limits, or the canonical V3
   factory, pair, fee, initialization, observation capacity, and history.
 - Returns a normalized feed that pins the asset feed or pool and reads the current quote-token/USD
   configuration from the registry without a fallback source.
@@ -174,7 +175,7 @@ pair semantics cannot be proven from `description()` and remain an offchain fron
 
 `FeeCollector`
 
-- Receives the protocol portion of manager-selected fee shares.
+- Receives the protocol portion of manager fee shares.
 - Allows only the configured treasury to claim those shares.
 - Uses a two-step treasury transfer.
 
@@ -812,8 +813,8 @@ actually exist. Pool addresses are resolved from the factory rather than persist
 The deployment defines supported market assets once. Each entry contains the token's USD feed and
 drives both quote-token registration and deployment of its entry/exit router. The frontend uses the
 same emitted list to offer OTF/USDG and OTF/WETH markets without merging the contracts' distinct
-pricing and execution responsibilities. This decoupled layout is schema version 6 and requires a
-fresh deployment; the checked-in schema-version-5 testnet record describes the preceding contracts.
+pricing and execution responsibilities. This clean layout is schema version 7 and requires a fresh
+deployment; older testnet records are not accepted by the frontend or configuration scripts.
 
 After an OTF exists, the frontend discovers canonical Uniswap V3 pools at standard fee tiers. It is
 discovery-only: Synthra on testnet and Uniswap on mainnet handle pool creation, initial-price

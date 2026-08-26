@@ -39,5 +39,3 @@ contract OpenZeppelinMathTest is TestBase {
     }
 }
 
-
-

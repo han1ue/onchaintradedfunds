@@ -230,5 +230,3 @@ contract ERC7621CompatibilityTest is ProtocolTestBase {
     }
 }
 
-
-

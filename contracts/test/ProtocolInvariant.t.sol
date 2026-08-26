@@ -534,7 +534,6 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         assertGt(assets.length, 0);
         assertEq(assets.length, weights.length);
         for (uint256 i; i < assets.length; ++i) {
-            assertTrue(assetRegistry.isRegisteredAsset(assets[i]));
             // Raising the protocol floor is intentionally non-retroactive for active targets.
             assertGt(weights[i], 0);
             sum += weights[i];
@@ -553,7 +552,11 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
     }
 
     function invariantLockedSharesCannotBeTransferredBurnedOrRedeemed() public {
-        assertEq(vault.balanceOf(address(vault)), LOCKED_LIQUIDITY_SHARES);
+        assertEq(
+            vault.balanceOf(address(vault)),
+            LOCKED_LIQUIDITY_SHARES + vault.escrowedManagerFeeShares()
+                + vault.challengeRewardShares(ALICE) + vault.challengeRewardShares(address(handler))
+        );
         assertGe(vault.totalSupply(), LOCKED_LIQUIDITY_SHARES);
     }
 
@@ -641,7 +644,3 @@ contract ProtocolInvariantTest is ProtocolTestBase, InvariantTestBase {
         if (!vault.sunset()) assertEq(totalWeight, 10_000);
     }
 }
-
-
-
-

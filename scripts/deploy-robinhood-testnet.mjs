@@ -228,17 +228,6 @@ const vaultImplementation = await deployContract({
   name: "ManagedOTFVault",
   args: [portfolioCalculator.address, vaultStrategy.address, vaultView.address],
 });
-const factory = await deployContract({
-  name: "OTFFactory",
-  args: [
-    vaultImplementation.address,
-    feeCollector.address,
-    assetRegistry.address,
-    rebalanceExecutor.address,
-    protocolFeeShareBps,
-  ],
-});
-
 const assetMarketRegistry = await deployContract({
   name: "AssetMarketRegistry",
   args: [account.address, uniswapV3FactoryAddress],
@@ -263,6 +252,16 @@ const quoteTokenRegistrations = await Promise.all(supportedMarketAssets.map(asyn
 const pricingResolver = await deployContract({
   name: "AssetPricingResolver",
   args: [assetMarketRegistry.address, portfolioCalculator.address],
+});
+const factory = await deployContract({
+  name: "OTFFactory",
+  args: [
+    vaultImplementation.address,
+    feeCollector.address,
+    rebalanceExecutor.address,
+    pricingResolver.address,
+    protocolFeeShareBps,
+  ],
 });
 const uniswapV3Adapter = await deployContract({
   name: "RegisteredUniswapV3Adapter",
@@ -306,18 +305,6 @@ const setupTransactions = {
     })),
   }],
   settlementEntry: [],
-  setAssetMarketRegistry: await writeContract({
-    address: factory.address,
-    abi: factoryAbi,
-    functionName: "setAssetMarketRegistry",
-    args: [assetMarketRegistry.address],
-  }),
-  setPricingResolver: await writeContract({
-    address: factory.address,
-    abi: factoryAbi,
-    functionName: "setPricingResolver",
-    args: [pricingResolver.address],
-  }),
   configureProtocolToken: await writeContract({
     address: factory.address,
     abi: factoryAbi,
@@ -355,7 +342,7 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 });
 
 const deployment = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,

@@ -15,16 +15,13 @@ interface IManagedOTFVaultView {
     function manager() external view returns (address);
     function feeRecipient() external view returns (address);
     function feeCollector() external view returns (address);
-    function assetRegistry() external view returns (address);
     function rebalanceExecutor() external view returns (address);
-    function creatorFeeBpsPerYear() external view returns (uint16);
-    function protocolFeeShareBps() external view returns (uint16);
+    function managerFeeBpsPerYear() external view returns (uint16);
     function maxNavLossBps() external view returns (uint16);
     function maxWeightDeviationBps() external view returns (uint16);
     function challengeWeightDeviationBps() external view returns (uint16);
     function lastFeeAccrualTimestamp() external view returns (uint64);
     function lastCompletedStrategyTimestamp() external view returns (uint64);
-    function strategicRebalanceStartedAt() external view returns (uint64);
     function pendingStrategyProposedAt() external view returns (uint64);
     function pendingStrategyActivationTime() external view returns (uint64);
     function rebalanceCount() external view returns (uint256);
@@ -46,19 +43,21 @@ interface IManagedOTFVaultView {
     function strategyVersionCount() external view returns (uint256);
     function getStrategyVersion(uint256 index) external view returns (StrategyVersion memory);
     function getStrategyTargets(uint256 index)
-        external view returns (address[] memory tokens, uint16[] memory weights);
+        external
+        view
+        returns (address[] memory tokens, uint16[] memory weights);
     function pendingStrategyRationale() external view returns (string memory);
     function nextStrategyRationale() external view returns (string memory);
     function getConstituents()
-        external view returns (address[] memory tokens, uint256[] memory weights);
+        external
+        view
+        returns (address[] memory tokens, uint256[] memory weights);
     function totalConstituents() external view returns (uint256);
     function getWeight(address token) external view returns (uint256);
     function isConstituent(address token) external view returns (bool);
     function getReserve(address token) external view returns (uint256);
     function totalBasketValue() external view returns (uint256);
     function assetMarketRegistry() external view returns (address);
-    function marketIdForAsset(address asset) external view returns (bytes32);
-    function priceFeedForAsset(address asset) external view returns (address);
     function pricingConfigForAsset(address asset)
         external
         view
@@ -72,8 +71,6 @@ interface IManagedOTFVaultView {
             uint32 primaryMaxStaleness,
             uint32 secondaryMaxStaleness
         );
-    function maxStalenessForAsset(address asset) external view returns (uint32);
-    function pricingSourceForAsset(address asset) external view returns (PricingSource);
     function totalAssetsValue() external view returns (uint256);
     function navPerShare() external view returns (uint256);
     function currentWeightsBps() external view returns (uint16[] memory);
@@ -81,7 +78,12 @@ interface IManagedOTFVaultView {
     function getWeightBands(address token)
         external
         view
-        returns (uint256 challengeLower, uint256 challengeUpper, uint256 completionLower, uint256 completionUpper);
+        returns (
+            uint256 challengeLower,
+            uint256 challengeUpper,
+            uint256 completionLower,
+            uint256 completionUpper
+        );
     function isWithinTargetBands() external view returns (bool);
     function isWithinChallengeBands() external view returns (bool);
     function canProposeStrategy() external view returns (bool);

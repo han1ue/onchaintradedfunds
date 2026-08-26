@@ -283,9 +283,19 @@ for (const removedFunction of [
   "feesAccruing",
   "feesEscrowed",
   "feesSuspended",
+  "assetRegistry",
+  "protocolFeeShareBps",
+  "creatorFeeBpsPerYear",
+  "strategicRebalanceStartedAt",
+  "marketIdForAsset",
+  "priceFeedForAsset",
+  "maxStalenessForAsset",
+  "pricingSourceForAsset",
+  "bindFactory",
 ]) {
   assert(!vaultFunctions.includes(removedFunction), `removed vault function found: ${removedFunction}`);
 }
+assert(vaultFunctions.includes("managerFeeBpsPerYear"), "manager fee getter is absent");
 assert(
   !vaultEvents.has("ManagerFeeAccrualSuspended(uint64)"),
   "never-emitted manager fee suspension event remains in vault ABI",
@@ -301,9 +311,19 @@ for (const removedFunction of [
   "creatorOf",
   "protocolTreasury",
   "pendingProtocolTreasury",
+  "assetRegistry",
+  "setAssetMarketRegistry",
+  "setPricingResolver",
 ]) {
   assert(!factoryFunctions.includes(removedFunction), `removed factory function found: ${removedFunction}`);
 }
+const factoryConstructor = factory.abi.find((item) => item.type === "constructor");
+assert(
+  factoryConstructor?.inputs.length === 5
+    && factoryConstructor.inputs[2]?.name === "rebalanceExecutor_"
+    && factoryConstructor.inputs[3]?.name === "pricingResolver_",
+  "factory fixed dependencies are not constructor-wired",
+);
 assert(
   factoryErrors.has("FailedDeployment()") && !factoryErrors.has("CloneDeploymentFailed()"),
   "factory does not expose the pinned OpenZeppelin clone-deployment error",
@@ -367,6 +387,13 @@ assert(
   pricingResolverFunctions.includes("validatePricing")
     && pricingResolverFunctions.includes("resolvePricing"),
   "user-supplied pricing resolver surface is absent",
+);
+const resolvePricingAbi = pricingResolver.abi.find(
+  (item) => item.type === "function" && item.name === "resolvePricing",
+);
+assert(
+  resolvePricingAbi?.outputs.length === 2,
+  "pricing resolver still returns redundant configuration data",
 );
 assert(
   !pricingResolverFunctions.includes("trustedOracles")
@@ -436,6 +463,36 @@ assert(
 );
 const vaultTypesSource = readFileSync(join(contracts, "src", "VaultTypes.sol"), "utf8");
 assert(!/UniswapV4|PricingSource[^}]*V4/su.test(vaultTypesSource), "V4 pricing source found");
+assert(
+  !/creatorFee|CreatorFee|MAX_CREATOR_FEE/u.test(vaultTypesSource)
+    && !vaultFunctions.some((name) => /creatorFee/i.test(name))
+    && !factoryFunctions.some((name) => /creatorFee/i.test(name)),
+  "obsolete creator-fee terminology remains in a production ABI",
+);
+const storageLabels = new Set(canonicalLayout.map((entry) => entry.label));
+for (const removedField of [
+  "_assetRegistry",
+  "_protocolFeeShareBps",
+  "_strategicRebalanceStartedAt",
+  "_strategyProposalPending",
+  "_strategicRebalanceActive",
+  "_challengeActive",
+  "_authorizedExecutor",
+  "_marketIdForAsset",
+  "_priceFeedForAsset",
+  "_pricingSourceForAsset",
+  "_primaryPriceSourceForAsset",
+  "_maxStalenessForAsset",
+  "_pricingConfiguredForAsset",
+  "_primaryMaxStalenessForAsset",
+  "_quoteTokenForAsset",
+]) {
+  assert(!storageLabels.has(removedField), `obsolete vault storage remains: ${removedField}`);
+}
+assert(
+  storageLabels.has("_pinnedPricingForAsset"),
+  "canonical pinned-pricing storage record is absent",
+);
 assert(!strategyFunctions.includes("initialize"), "strategy initializer found");
 assert(
   !strategyFunctions.some((name) => /upgrade|implementation/i.test(name)),

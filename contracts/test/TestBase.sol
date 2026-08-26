@@ -168,5 +168,3 @@ abstract contract InvariantTestBase {
     }
 }
 
-
-

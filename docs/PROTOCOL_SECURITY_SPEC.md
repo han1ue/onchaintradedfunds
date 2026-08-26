@@ -71,13 +71,15 @@ The module MUST reject direct calls made against the module contract itself.
 
 ### `ManagedOTFVaultStorage`
 
-This abstract contract is the sole canonical persistent-storage definition for both the vault and
-strategy module.
+This abstract contract is the sole canonical persistent-storage definition for the vault, strategy
+module, and view module.
 
 - Both contracts MUST inherit it.
 - Derived contracts MUST NOT declare additional non-immutable state.
-- Existing fields MUST NOT be reordered, removed, or have their types changed.
-- New persistent fields MUST be appended to this base only.
+- The fresh-deployment layout MUST contain only active fields and MUST NOT reserve legacy gaps.
+- Pinned pricing MUST use one canonical per-asset record; configuration, executor membership,
+  proposal activity, challenge activity, and strategic-rebalance activity MUST be derived from
+  their canonical records rather than duplicated booleans or mappings.
 - Any storage-layout change requires a new security review and complete test run.
 
 ### `PortfolioCalculator`
@@ -104,6 +106,11 @@ The resolver MUST return a normalized feed or V3 wrapper that pins the creator-s
 or pool. The wrapper MUST load the quote token's single current USD configuration from the registry
 on every read. Replacing that configuration therefore updates every route using the quote token. The
 market and discovery registries MUST NOT determine asset eligibility, execution paths, or execution fee tiers.
+
+The factory MUST constructor-wire the pricing resolver, and the resolver MUST constructor-wire its
+market registry and calculator. Each clone MUST bind `msg.sender` as its factory during its single
+atomic initialization call and cache fixed vault dependencies once. Live protocol policy, including
+the protocol fee share, MUST continue to be read from the factory.
 
 ### `RebalanceExecutor`
 
@@ -442,7 +449,9 @@ checkpoints the final interval and permanently stops future accrual.
 Anyone MAY flag a challenge only when fresh oracle-valued weights prove that at least one
 constituent is outside its challenge band.
 
-Every vault MUST use the protocol-wide seven-day challenge grace period. The fixed period spans
+Every vault MUST use the factory owner's protocol-wide challenge grace period, which defaults to
+seven days. A policy update applies only when a challenge starts and MUST NOT alter an active
+challenge's recorded deadline. The selected period spans
 scheduled equity-market weekends and typical holiday closures while keeping OTFs comparable.
 
 ```mermaid

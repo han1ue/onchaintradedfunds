@@ -124,5 +124,3 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
     }
 }
 
-
-

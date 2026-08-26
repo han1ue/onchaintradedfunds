@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
@@ -43,7 +42,6 @@ abstract contract ProtocolTestBase is TestBase {
     RobinhoodChainlinkPriceFeed internal robinhoodFeedA;
     RobinhoodChainlinkPriceFeed internal robinhoodFeedB;
     RobinhoodChainlinkPriceFeed internal robinhoodFeedC;
-    AssetRegistry internal assetRegistry;
     RebalanceExecutor internal executor;
     MockTradeAdapter internal adapter;
     FeeCollector internal collector;
@@ -66,32 +64,26 @@ abstract contract ProtocolTestBase is TestBase {
         robinhoodFeedB = new RobinhoodChainlinkPriceFeed(address(tokenB), feedB);
         robinhoodFeedC = new RobinhoodChainlinkPriceFeed(address(tokenC), feedC);
 
-        assetRegistry = new AssetRegistry();
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
         collector = new FeeCollector(TREASURY);
-
-        assetRegistry.registerAsset(address(tokenA));
-        assetRegistry.registerAsset(address(tokenB));
-        assetRegistry.registerAsset(address(tokenC));
 
         PortfolioCalculator calculator = new PortfolioCalculator();
         ManagedOTFVaultStrategy strategy = new ManagedOTFVaultStrategy(calculator);
         ManagedOTFVaultView viewModule = new ManagedOTFVaultView(calculator);
         ManagedOTFVault implementation =
             new ManagedOTFVault(calculator, address(strategy), address(viewModule));
+        AssetPricingResolver pricingResolver =
+            new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator);
         factory = new OTFFactory(
             address(implementation),
             address(collector),
-            address(assetRegistry),
             address(executor),
+            address(pricingResolver),
             1_500
         );
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
-        factory.setPricingResolver(
-            address(new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator))
-        );
 
         tokenA.mint(address(this), 1_000_000 * ONE);
         tokenB.mint(address(this), 1_000_000 * ONE);
@@ -141,7 +133,7 @@ abstract contract ProtocolTestBase is TestBase {
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
-            creatorFeeBpsPerYear: 100,
+            managerFeeBpsPerYear: 100,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
             challengeWeightDeviationBps: 250
@@ -290,6 +282,3 @@ abstract contract ProtocolTestBase is TestBase {
         _executeAndComplete(vault, trades);
     }
 }
-
-
-

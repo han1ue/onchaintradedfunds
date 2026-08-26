@@ -119,5 +119,3 @@ contract TestnetMockPriceFeedTest is TestBase {
     }
 }
 
-
-

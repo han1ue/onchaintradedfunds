@@ -207,5 +207,3 @@ contract SunsetAndDepositPauseTest is ProtocolTestBase {
     }
 }
 
-
-

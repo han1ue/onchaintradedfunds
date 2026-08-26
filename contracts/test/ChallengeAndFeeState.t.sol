@@ -26,6 +26,20 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vault.flagOutOfBand();
     }
 
+    function testChallengeUsesCurrentFactoryGracePeriod() public {
+        ManagedOTFVault vault = _createVault();
+        factory.setChallengeGracePeriod(3 days);
+        _setPrices(120_00000000, 100_00000000);
+
+        vault.flagOutOfBand();
+
+        assertEq(vault.challengeDeadline(), START + 3 days);
+
+        factory.setChallengeGracePeriod(1 days);
+        assertEq(vault.challengeStartedAt(), START);
+        assertEq(vault.challengeDeadline(), START + 3 days);
+    }
+
     function testChallengeCannotBeOpenedInsideChallengeBands() public {
         ManagedOTFVault vault = _createVault();
 
@@ -649,6 +663,3 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         vm.stopPrank();
     }
 }
-
-
-

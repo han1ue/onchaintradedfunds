@@ -19,6 +19,15 @@ struct AssetPricingConfig {
     uint32 primaryMaxStaleness;
 }
 
+/// @notice Canonical vault record for a constituent's pinned pricing identity.
+struct PinnedAssetPricing {
+    PricingSource source;
+    address quoteToken;
+    address primarySource;
+    address normalizedPriceFeed;
+    uint32 primaryMaxStaleness;
+}
+
 struct VaultInitParams {
     string name;
     string symbol;
@@ -30,7 +39,7 @@ struct VaultInitParams {
     uint16[] initialTargetWeightsBps;
     uint256[] initialAmounts;
     uint256 initialShareSupply;
-    uint16 creatorFeeBpsPerYear;
+    uint16 managerFeeBpsPerYear;
     uint16 maxNavLossBps;
     uint16 maxWeightDeviationBps;
     uint16 challengeWeightDeviationBps;

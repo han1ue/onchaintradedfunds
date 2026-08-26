@@ -140,5 +140,3 @@ contract StrategyHistoryTest is ProtocolTestBase {
     }
 }
 
-
-

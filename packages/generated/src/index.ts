@@ -64,13 +64,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "function",
-    "name": "bindFactory",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "cancelPendingStrategy",
     "inputs": [],
     "outputs": [],
@@ -272,7 +265,7 @@ export const managedOtfVaultAbi = [
             "internalType": "uint256"
           },
           {
-            "name": "creatorFeeBpsPerYear",
+            "name": "managerFeeBpsPerYear",
             "type": "uint16",
             "internalType": "uint16"
           },
@@ -292,36 +285,6 @@ export const managedOtfVaultAbi = [
             "internalType": "uint16"
           }
         ]
-      },
-      {
-        "name": "factory_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "assetRegistry_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "assetMarketRegistry_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "rebalanceExecutor_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "feeCollector_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "protocolFeeShareBps_",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -1844,11 +1807,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "AssetMarketRegistryNotConfigured",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "AssetMovedAwayFromTarget",
     "inputs": [
       {
@@ -2230,22 +2188,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidAssetMarket",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "marketId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidOraclePrice",
     "inputs": [
       {
@@ -2273,17 +2215,6 @@ export const managedOtfVaultAbi = [
         "name": "updatedAt",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidPricingConfig",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -2571,32 +2502,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "PriceFeedMismatch",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "supplied",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PricingResolverNotConfigured",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ProtocolDepositsPaused",
     "inputs": []
   },
@@ -2797,17 +2702,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "UnapprovedAdapter",
-    "inputs": [
-      {
-        "name": "adapter",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "UnauthorizedFactory",
     "inputs": []
   },
@@ -2929,19 +2823,6 @@ export const managedOtfVaultAbi = [
   {
     "type": "function",
     "name": "assetMarketRegistry",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "assetRegistry",
     "inputs": [],
     "outputs": [
       {
@@ -3116,19 +2997,6 @@ export const managedOtfVaultAbi = [
   {
     "type": "function",
     "name": "challengeWeightDeviationBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "creatorFeeBpsPerYear",
     "inputs": [],
     "outputs": [
       {
@@ -3508,19 +3376,13 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "function",
-    "name": "marketIdForAsset",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "name": "managerFeeBpsPerYear",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -3534,25 +3396,6 @@ export const managedOtfVaultAbi = [
         "name": "",
         "type": "uint16",
         "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "maxStalenessForAsset",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint32",
-        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -3718,25 +3561,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "function",
-    "name": "previewMint",
-    "inputs": [
-      {
-        "name": "shares",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "amountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "previewMaxMint",
     "inputs": [
       {
@@ -3751,6 +3575,25 @@ export const managedOtfVaultAbi = [
         "type": "uint256",
         "internalType": "uint256"
       },
+      {
+        "name": "amountsIn",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewMint",
+    "inputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
       {
         "name": "amountsIn",
         "type": "uint256[]",
@@ -3793,25 +3636,6 @@ export const managedOtfVaultAbi = [
         "name": "amounts",
         "type": "uint256[]",
         "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "priceFeedForAsset",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -3866,38 +3690,6 @@ export const managedOtfVaultAbi = [
         "name": "secondaryMaxStaleness",
         "type": "uint32",
         "internalType": "uint32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "pricingSourceForAsset",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "enum PricingSource"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "protocolFeeShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -4080,19 +3872,6 @@ export const managedOtfVaultAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "strategicRebalanceStartedAt",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -4634,10 +4413,10 @@ export const otfFactoryAbi = [
   },
   {
     type: "function",
-    name: "setAssetMarketRegistry",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "registry", type: "address" }],
-    outputs: [],
+    name: "protocolFeeShareBps",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint16" }],
   },
   {
     type: "function",
@@ -4681,7 +4460,7 @@ export const otfFactoryAbi = [
           { name: "initialTargetWeightsBps", type: "uint16[]" },
           { name: "initialAmounts", type: "uint256[]" },
           { name: "initialShareSupply", type: "uint256" },
-          { name: "creatorFeeBpsPerYear", type: "uint16" },
+          { name: "managerFeeBpsPerYear", type: "uint16" },
           { name: "maxNavLossBps", type: "uint16" },
           { name: "maxWeightDeviationBps", type: "uint16" },
           { name: "challengeWeightDeviationBps", type: "uint16" },

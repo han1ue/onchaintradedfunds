@@ -23,7 +23,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         params.initialAmounts = new uint256[](1);
         params.initialAmounts[0] = 2 * ONE;
         params.initialShareSupply = ONE;
-        params.creatorFeeBpsPerYear = 0;
+        params.managerFeeBpsPerYear = 0;
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         tokenA.mint(ATTACKER, 3);
@@ -134,7 +134,6 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testConstituentCannotReenterCloneBeforeInitialization() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(reentrantToken));
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -159,7 +158,6 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testConstituentCannotInitializeCloneDuringSeedTransfer() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(reentrantToken));
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -168,20 +166,7 @@ contract VaultHardeningTest is ProtocolTestBase {
         params.initialPricingConfigs[0] =
             _directPricing(address(reentrantFeed), PricingSource.Chainlink);
         reentrantToken.configureCallback(
-            address(0),
-            abi.encodeCall(
-                ManagedOTFVault.initialize,
-                (
-                    params,
-                    address(reentrantToken),
-                    address(assetRegistry),
-                    address(0),
-                    address(executor),
-                    address(collector),
-                    factory.protocolFeeShareBps()
-                )
-            ),
-            true
+            address(0), abi.encodeCall(ManagedOTFVault.initialize, (params)), true
         );
 
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
@@ -294,7 +279,6 @@ contract VaultHardeningTest is ProtocolTestBase {
     function testMaliciousConstituentCannotReenterMintOrRedeem() public {
         MockReentrantToken reentrantToken = new MockReentrantToken("Reentrant Stock", "REENT", 18);
         MockPriceFeed reentrantFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(reentrantToken));
         reentrantToken.mint(address(this), 10_000 * ONE);
         reentrantToken.approve(address(factory), type(uint256).max);
 
@@ -306,7 +290,9 @@ contract VaultHardeningTest is ProtocolTestBase {
         uint256[] memory amounts = vault.previewMint(ONE);
         reentrantToken.mint(ALICE, amounts[0]);
         tokenB.mint(ALICE, amounts[1]);
-        reentrantToken.configureCallback(address(vault), abi.encodeCall(vault.withdrawManagerFees, ()), true);
+        reentrantToken.configureCallback(
+            address(vault), abi.encodeCall(vault.withdrawManagerFees, ()), true
+        );
 
         vm.startPrank(ALICE);
         reentrantToken.approve(address(vault), type(uint256).max);
@@ -366,7 +352,6 @@ contract VaultHardeningTest is ProtocolTestBase {
     {
         taxedToken = new MockFeeOnTransferToken("Taxed Stock", "TAX", 18);
         taxedFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(taxedToken));
         taxedToken.mint(address(this), 10_000 * ONE);
         taxedToken.approve(address(factory), type(uint256).max);
     }
@@ -382,7 +367,3 @@ contract VaultHardeningTest is ProtocolTestBase {
             _directPricing(address(taxedFeed), PricingSource.Chainlink);
     }
 }
-
-
-
-

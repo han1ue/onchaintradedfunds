@@ -4,7 +4,7 @@ import { getAddress, isAddress, type Address } from "viem";
 type ContractDeployment = { address?: unknown };
 const contracts = deployment.contracts as Record<string, ContractDeployment | undefined>;
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
-const deploymentCompatible = Number(deployment.schemaVersion) >= 6
+const deploymentCompatible = Number(deployment.schemaVersion) >= 7
   && (deployment.migration as { architecture?: unknown }).architecture === "decoupled-otf-markets";
 const executionRoutes = deployment.executionRoutes as Array<{
   settlement?: unknown;

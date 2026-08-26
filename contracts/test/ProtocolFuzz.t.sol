@@ -198,7 +198,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         uint16 feeBps = uint16(bound(rawFeeBps, 0, 1_000));
         uint256 elapsed = bound(rawElapsed, 1, 365 days);
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = feeBps;
+        params.managerFeeBpsPerYear = feeBps;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + elapsed);
@@ -230,7 +230,7 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         uint16 feeBps = uint16(bound(rawFeeBps, 1, 1_000));
         uint256 elapsed = bound(rawElapsedDays, 366 days, 36_500 days);
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = feeBps;
+        params.managerFeeBpsPerYear = feeBps;
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + elapsed);
@@ -298,6 +298,3 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertEq(vault.manager(), ATTACKER);
     }
 }
-
-
-

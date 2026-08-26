@@ -18,7 +18,6 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
 
         otfToken = new OTFToken(address(this));
         otfFeed = new MockPriceFeed(8, 100_00000000);
-        assetRegistry.registerAsset(address(otfToken));
         otfToken.approve(address(factory), type(uint256).max);
         factory.configureProtocolToken(address(otfToken), 1_000);
     }
@@ -289,6 +288,3 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         _refreshPrice(otfFeed);
     }
 }
-
-
-

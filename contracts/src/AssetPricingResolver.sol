@@ -21,7 +21,7 @@ interface IAssetPricingResolver {
 
     function resolvePricing(address asset, AssetPricingConfig calldata config)
         external
-        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness);
+        returns (address normalizedFeed, bytes32 marketId);
 }
 
 /// @notice Mechanically validates creator-selected pricing and resolves a normalized per-vault feed.
@@ -57,7 +57,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         external
         returns (uint256 price, uint8 priceDecimals)
     {
-        (address normalizedFeed,,) = _resolve(asset, config, true);
+        (address normalizedFeed,) = _resolve(asset, config, true);
         (, int256 answer,,,) = AggregatorV3Interface(normalizedFeed).latestRoundData();
         // Resolution validates that the normalized answer is positive.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -67,14 +67,14 @@ contract AssetPricingResolver is IAssetPricingResolver {
 
     function resolvePricing(address asset, AssetPricingConfig calldata config)
         external
-        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness)
+        returns (address normalizedFeed, bytes32 marketId)
     {
         return _resolve(asset, config, true);
     }
 
     function _resolve(address asset, AssetPricingConfig calldata config, bool deployWrapper)
         private
-        returns (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness)
+        returns (address normalizedFeed, bytes32 marketId)
     {
         if (asset == address(0) || asset.code.length == 0 || config.primarySource.code.length == 0)
         {
@@ -85,23 +85,21 @@ contract AssetPricingResolver is IAssetPricingResolver {
                 || config.source == PricingSource.ChainlinkRobinhood
         ) {
             _requireUnusedSecondary(config, asset);
-            primaryStaleness = config.primaryMaxStaleness;
             _validateLeg(
                 asset,
                 config.primarySource,
-                primaryStaleness,
+                config.primaryMaxStaleness,
                 config.source == PricingSource.ChainlinkRobinhood
             );
-            return (config.primarySource, bytes32(0), primaryStaleness);
+            return (config.primarySource, bytes32(0));
         }
 
         if (config.source == PricingSource.ChainlinkComposed) {
             _requireMarketRegistry();
-            primaryStaleness = config.primaryMaxStaleness;
             address composedQuoteToken = config.quoteToken;
             (address composedQuoteUsdFeed, uint32 composedQuoteMaxStaleness) =
                 _quoteConfig(composedQuoteToken, false);
-            _validateLeg(asset, config.primarySource, primaryStaleness, false);
+            _validateLeg(asset, config.primarySource, config.primaryMaxStaleness, false);
             _validateLeg(composedQuoteToken, composedQuoteUsdFeed, composedQuoteMaxStaleness, false);
             if (deployWrapper) {
                 normalizedFeed = address(
@@ -109,12 +107,12 @@ contract AssetPricingResolver is IAssetPricingResolver {
                         asset,
                         composedQuoteToken,
                         AggregatorV3Interface(config.primarySource),
-                        primaryStaleness,
+                        config.primaryMaxStaleness,
                         marketRegistry
                     )
                 );
             }
-            return (normalizedFeed, bytes32(0), primaryStaleness);
+            return (normalizedFeed, bytes32(0));
         }
 
         if (config.source != PricingSource.UniswapV3Twap) revert InvalidPricingConfig(asset);
@@ -127,7 +125,6 @@ contract AssetPricingResolver is IAssetPricingResolver {
         }
         address quoteToken = marketRegistry.quoteTokenFor(marketId);
         if (quoteToken != config.quoteToken) revert InvalidPricingConfig(asset);
-        primaryStaleness = config.primaryMaxStaleness;
         (address secondarySource, uint32 secondaryStaleness) = _quoteConfig(quoteToken, true);
         _validateLeg(quoteToken, secondarySource, secondaryStaleness, false);
         if (deployWrapper) {
@@ -137,10 +134,10 @@ contract AssetPricingResolver is IAssetPricingResolver {
                 )
             );
             calculator.validatePriceFeed(
-                asset, AggregatorV3Interface(normalizedFeed), primaryStaleness, false
+                asset, AggregatorV3Interface(normalizedFeed), config.primaryMaxStaleness, false
             );
         }
-        return (normalizedFeed, marketId, primaryStaleness);
+        return (normalizedFeed, marketId);
     }
 
     function _requireMarketRegistry() private view {

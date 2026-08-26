@@ -9,6 +9,7 @@ import { IAssetMarketRegistry } from "./interfaces/IAssetMarketRegistry.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     PricingSource,
+    PinnedAssetPricing,
     RebalanceRecord,
     StrategyVersion,
     TradeExecutionRecord
@@ -29,74 +30,129 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         return _assets;
     }
 
-    function factory() external view onlyDelegateCall returns (address) { return _factory; }
-    function manager() external view onlyDelegateCall returns (address) { return _manager; }
-    function feeRecipient() external view onlyDelegateCall returns (address) { return _feeRecipient; }
-    function feeCollector() external view onlyDelegateCall returns (address) { return _feeCollector; }
-    function assetRegistry() external view onlyDelegateCall returns (address) { return _assetRegistry; }
-    function rebalanceExecutor() external view onlyDelegateCall returns (address) { return _rebalanceExecutor; }
-    function creatorFeeBpsPerYear() external view onlyDelegateCall returns (uint16) {
-        return _creatorFeeBpsPerYear;
+    function factory() external view onlyDelegateCall returns (address) {
+        return _factory;
     }
-    function protocolFeeShareBps() external view onlyDelegateCall returns (uint16) {
-        return _protocolFeeShareBps;
+
+    function manager() external view onlyDelegateCall returns (address) {
+        return _manager;
     }
-    function maxNavLossBps() external view onlyDelegateCall returns (uint16) { return _maxNavLossBps; }
+
+    function feeRecipient() external view onlyDelegateCall returns (address) {
+        return _feeRecipient;
+    }
+
+    function feeCollector() external view onlyDelegateCall returns (address) {
+        return _feeCollector;
+    }
+
+    function rebalanceExecutor() external view onlyDelegateCall returns (address) {
+        return _rebalanceExecutor;
+    }
+
+    function managerFeeBpsPerYear() external view onlyDelegateCall returns (uint16) {
+        return _managerFeeBpsPerYear;
+    }
+
+    function maxNavLossBps() external view onlyDelegateCall returns (uint16) {
+        return _maxNavLossBps;
+    }
+
     function maxWeightDeviationBps() external view onlyDelegateCall returns (uint16) {
         return _maxWeightDeviationBps;
     }
+
     function challengeWeightDeviationBps() external view onlyDelegateCall returns (uint16) {
         return _challengeWeightDeviationBps;
     }
+
     function lastFeeAccrualTimestamp() external view onlyDelegateCall returns (uint64) {
         return _lastFeeAccrualTimestamp;
     }
+
     function lastCompletedStrategyTimestamp() external view onlyDelegateCall returns (uint64) {
         return _lastCompletedStrategyTimestamp;
     }
-    function strategicRebalanceStartedAt() external view onlyDelegateCall returns (uint64) {
-        return _strategicRebalanceStartedAt;
-    }
+
     function pendingStrategyProposedAt() external view onlyDelegateCall returns (uint64) {
-        return _pendingStrategyProposedAt;
+        uint64 activationTime = _pendingStrategyActivationTime;
+        // The fixed delay fits uint64 and every nonzero activation timestamp includes it.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return activationTime == 0 ? 0 : activationTime - uint64(STRATEGY_ACTIVATION_DELAY);
     }
+
     function pendingStrategyActivationTime() external view onlyDelegateCall returns (uint64) {
         return _pendingStrategyActivationTime;
     }
-    function rebalanceCount() external view onlyDelegateCall returns (uint256) { return _rebalanceCount; }
+
+    function rebalanceCount() external view onlyDelegateCall returns (uint256) {
+        return _rebalanceCount;
+    }
+
     function escrowedManagerFeeShares() external view onlyDelegateCall returns (uint256) {
         return _escrowedManagerFeeShares;
     }
+
     function forfeitedManagerFeeShares() external view onlyDelegateCall returns (uint256) {
         return _forfeitedManagerFeeShares;
     }
+
     function strategicRebalanceActive() external view onlyDelegateCall returns (bool) {
-        return _strategicRebalanceActive;
+        return _strategicRebalanceIsActive();
     }
+
     function strategyProposalPending() external view onlyDelegateCall returns (bool) {
-        return _strategyProposalPending;
+        return _strategyProposalIsPending();
     }
-    function challengeActive() external view onlyDelegateCall returns (bool) { return _challengeActive; }
-    function challengeCaller() external view onlyDelegateCall returns (address) { return _challengeCaller; }
+
+    function challengeActive() external view onlyDelegateCall returns (bool) {
+        return _challengeIsActive();
+    }
+
+    function challengeCaller() external view onlyDelegateCall returns (address) {
+        return _challengeCaller;
+    }
+
     function challengeStartedAt() external view onlyDelegateCall returns (uint64) {
         return _challengeStartedAt;
     }
-    function challengeDeadline() external view onlyDelegateCall returns (uint64) { return _challengeDeadline; }
+
+    function challengeDeadline() external view onlyDelegateCall returns (uint64) {
+        return _challengeDeadline;
+    }
+
     function targetWeightBps(address asset) external view onlyDelegateCall returns (uint16) {
         return _targetWeightBps[asset];
     }
+
     function authorizedExecutor(address executor) external view onlyDelegateCall returns (bool) {
-        return _authorizedExecutor[executor];
+        return _isAuthorizedExecutor(executor);
     }
-    function challengeRewardShares(address account) external view onlyDelegateCall returns (uint256) {
+
+    function challengeRewardShares(address account)
+        external
+        view
+        onlyDelegateCall
+        returns (uint256)
+    {
         return _challengeRewardShares[account];
     }
-    function sunset() external view onlyDelegateCall returns (bool) { return _sunset; }
-    function sunsetAt() external view onlyDelegateCall returns (uint64) { return _sunsetAt; }
+
+    function sunset() external view onlyDelegateCall returns (bool) {
+        return _sunset;
+    }
+
+    function sunsetAt() external view onlyDelegateCall returns (uint64) {
+        return _sunsetAt;
+    }
+
     function tradeExecutionCount() external view onlyDelegateCall returns (uint256) {
         return _tradeExecutionCount;
     }
-    function pendingManager() external view onlyDelegateCall returns (address) { return _pendingManager; }
+
+    function pendingManager() external view onlyDelegateCall returns (address) {
+        return _pendingManager;
+    }
 
     function strategyVersionCount() external view onlyDelegateCall returns (uint256) {
         return _strategyVersions.length;
@@ -169,14 +225,6 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         return _assetMarketRegistry;
     }
 
-    function marketIdForAsset(address asset) external view onlyDelegateCall returns (bytes32) {
-        return _marketIdForAsset[asset];
-    }
-
-    function priceFeedForAsset(address asset) external view onlyDelegateCall returns (address) {
-        return _priceFeedForAsset[asset];
-    }
-
     function pricingConfigForAsset(address asset)
         external
         view
@@ -192,35 +240,17 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
             uint32 secondaryMaxStaleness
         )
     {
-        configured = _pricingConfiguredForAsset[asset];
-        source = PricingSource(_pricingSourceForAsset[asset]);
-        quoteToken = _quoteTokenForAsset[asset];
-        primarySource = _primaryPriceSourceForAsset[asset];
-        normalizedPriceFeed = _priceFeedForAsset[asset];
-        primaryMaxStaleness = _primaryMaxStalenessForAsset[asset];
+        PinnedAssetPricing storage pinned = _pinnedPricingForAsset[asset];
+        configured = pinned.normalizedPriceFeed != address(0);
+        source = pinned.source;
+        quoteToken = pinned.quoteToken;
+        primarySource = pinned.primarySource;
+        normalizedPriceFeed = pinned.normalizedPriceFeed;
+        primaryMaxStaleness = pinned.primaryMaxStaleness;
         if (source == PricingSource.ChainlinkComposed || source == PricingSource.UniswapV3Twap) {
             (secondarySource, secondaryMaxStaleness,,,) =
                 IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(quoteToken);
         }
-    }
-
-    function maxStalenessForAsset(address asset) external view onlyDelegateCall returns (uint32) {
-        uint32 primaryMaxStaleness = _maxStalenessForAsset[asset];
-        if (PricingSource(_pricingSourceForAsset[asset]) != PricingSource.ChainlinkComposed) {
-            return primaryMaxStaleness;
-        }
-        (, uint32 quoteMaxStaleness,,,) =
-            IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(_quoteTokenForAsset[asset]);
-        return primaryMaxStaleness > quoteMaxStaleness ? primaryMaxStaleness : quoteMaxStaleness;
-    }
-
-    function pricingSourceForAsset(address asset)
-        external
-        view
-        onlyDelegateCall
-        returns (PricingSource)
-    {
-        return PricingSource(_pricingSourceForAsset[asset]);
     }
 
     function totalAssetsValue() external view onlyDelegateCall returns (uint256 nav) {
@@ -283,7 +313,8 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         // forge-lint: disable-next-line(block-timestamp)
         bool cooldownActive = block.timestamp < _nextStrategyChangeTime();
         if (
-            _challengeActive || _strategicRebalanceActive || _strategyProposalPending || cooldownActive
+            _challengeIsActive() || _strategicRebalanceIsActive() || _strategyProposalIsPending()
+                || cooldownActive
         ) return false;
         return _isWithinBands(_maxWeightDeviationBps);
     }
@@ -291,7 +322,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
     function challengeTimeRemaining() external view onlyDelegateCall returns (uint256) {
         // Challenge deadlines intentionally use chain time.
         // forge-lint: disable-next-line(block-timestamp)
-        if (!_challengeActive || block.timestamp >= _challengeDeadline) return 0;
+        if (!_challengeIsActive() || block.timestamp >= _challengeDeadline) return 0;
         return uint256(_challengeDeadline) - block.timestamp;
     }
 
@@ -478,7 +509,9 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
 
     function recentTradeExecutionCount() external view onlyDelegateCall returns (uint256) {
         return
-            _tradeExecutionCount < RECENT_EXECUTION_CAP ? _tradeExecutionCount : RECENT_EXECUTION_CAP;
+            _tradeExecutionCount < RECENT_EXECUTION_CAP
+                ? _tradeExecutionCount
+                : RECENT_EXECUTION_CAP;
     }
 
     function recentTradeExecutionRecord(uint256 index)
@@ -506,19 +539,22 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         if (block.timestamp <= previousTimestamp) return supply;
 
         // forge-lint: disable-next-line(block-timestamp)
-        uint256 end = _challengeActive && block.timestamp > _challengeDeadline
+        bool challengeIsActive = _challengeIsActive();
+        // Fee previews intentionally compare the current chain time with the onchain deadline.
+        // forge-lint: disable-next-line(block-timestamp)
+        uint256 end = challengeIsActive && block.timestamp > _challengeDeadline
             ? uint256(_challengeDeadline)
             : block.timestamp;
-        if (end <= previousTimestamp || _creatorFeeBpsPerYear == 0) return supply;
+        if (end <= previousTimestamp || _managerFeeBpsPerYear == 0) return supply;
 
         (uint256 feeShares,) = _portfolioCalculator.feeSharesAfterElapsed(
             _totalSupply,
-            _challengeActive ? _challengeFeeAccrualRemainderWad : _feeAccrualRemainderWad,
-            _creatorFeeBpsPerYear,
+            challengeIsActive ? _challengeFeeAccrualRemainderWad : _feeAccrualRemainderWad,
+            _managerFeeBpsPerYear,
             end - previousTimestamp
         );
         // forge-lint: disable-next-line(block-timestamp)
-        if (_challengeActive && block.timestamp > _challengeDeadline) {
+        if (challengeIsActive && block.timestamp > _challengeDeadline) {
             // Existing escrowed shares are already included in _totalSupply. Forfeiture only
             // redistributes them between the challenge caller and treasury; it does not burn them.
             return supply + feeShares;
@@ -563,7 +599,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
 
     function _currentFeeState() private view returns (FeeState) {
         if (_sunset) return FeeState.Sunset;
-        if (!_challengeActive) return FeeState.Accruing;
+        if (!_challengeIsActive()) return FeeState.Accruing;
         // forge-lint: disable-next-line(block-timestamp)
         return block.timestamp > _challengeDeadline ? FeeState.Suspended : FeeState.Escrowed;
     }
@@ -575,7 +611,3 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         return false;
     }
 }
-
-
-
-

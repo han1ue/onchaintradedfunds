@@ -449,5 +449,3 @@ contract OTFEntryRouterTest is ProtocolTestBase {
     }
 }
 
-
-

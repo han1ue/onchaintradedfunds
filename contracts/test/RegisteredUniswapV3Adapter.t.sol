@@ -123,5 +123,3 @@ contract RegisteredUniswapV3AdapterTest is TestBase {
     }
 }
 
-
-

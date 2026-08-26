@@ -157,5 +157,3 @@ contract WeightBandPolicyTest is ProtocolTestBase {
     }
 }
 
-
-

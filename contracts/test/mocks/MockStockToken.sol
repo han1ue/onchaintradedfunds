@@ -19,5 +19,3 @@ contract MockStockToken is ERC20Base {
     }
 }
 
-
-

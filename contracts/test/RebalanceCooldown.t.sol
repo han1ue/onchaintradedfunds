@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
@@ -32,7 +31,6 @@ contract RebalanceCooldownTest is TestBase {
 
     MockStockToken private tokenA;
     MockStockToken private tokenB;
-    AssetRegistry private assetRegistry;
     RebalanceExecutor private executor;
     MockTradeAdapter private adapter;
     MockPriceFeed private feedA;
@@ -46,12 +44,9 @@ contract RebalanceCooldownTest is TestBase {
 
         tokenA = new MockStockToken("Mock NVDA", "mNVDA", 18);
         tokenB = new MockStockToken("Mock MSFT", "mMSFT", 18);
-        assetRegistry = new AssetRegistry();
         executor = new RebalanceExecutor(address(this));
         adapter = new MockTradeAdapter();
 
-        assetRegistry.registerAsset(address(tokenA));
-        assetRegistry.registerAsset(address(tokenB));
         feedA = new MockPriceFeed(8, 100_00000000);
         feedB = new MockPriceFeed(8, 100_00000000);
         robinhoodFeedA = new RobinhoodChainlinkPriceFeed(address(tokenA), feedA);
@@ -70,18 +65,17 @@ contract RebalanceCooldownTest is TestBase {
         ManagedOTFVault implementation =
             new ManagedOTFVault(calculator, address(strategy), address(viewModule));
         FeeCollector collector = new FeeCollector(address(0xCAFE));
+        AssetPricingResolver pricingResolver =
+            new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator);
         factory = new OTFFactory(
             address(implementation),
             address(collector),
-            address(assetRegistry),
             address(executor),
+            address(pricingResolver),
             1_500
         );
         executor.setFactory(address(factory));
         factory.setTradeAdapterApproved(address(adapter), true);
-        factory.setPricingResolver(
-            address(new AssetPricingResolver(IAssetMarketRegistry(address(0)), calculator))
-        );
 
         tokenA.approve(address(factory), type(uint256).max);
         tokenB.approve(address(factory), type(uint256).max);
@@ -317,7 +311,7 @@ contract RebalanceCooldownTest is TestBase {
             initialTargetWeightsBps: weights,
             initialAmounts: amounts,
             initialShareSupply: 100 * ONE,
-            creatorFeeBpsPerYear: feeBps,
+            managerFeeBpsPerYear: feeBps,
             maxNavLossBps: 100,
             maxWeightDeviationBps: 25,
             challengeWeightDeviationBps: 250
@@ -391,6 +385,3 @@ contract RebalanceCooldownTest is TestBase {
         feedB.setRoundData(nextRoundB, feedB.answer(), block.timestamp, block.timestamp, nextRoundB);
     }
 }
-
-
-

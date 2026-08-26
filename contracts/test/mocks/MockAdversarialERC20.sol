@@ -123,5 +123,3 @@ contract MockAdversarialERC20 {
     }
 }
 
-
-

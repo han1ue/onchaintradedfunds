@@ -125,7 +125,7 @@ const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (Number(deployment.chainId) !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
 }
-if (Number(deployment.schemaVersion) < 4) {
+if (Number(deployment.schemaVersion) < 7) {
   throw new Error(
     "This configurator requires a fresh permissionless-oracle deployment.",
   );

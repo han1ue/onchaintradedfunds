@@ -31,7 +31,7 @@ This makes each managed portfolio independently inspectable and mechanically bou
 Investors use the web application with an EVM wallet to:
 
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
-- Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, creator fees, strategy history, safety limits, cooldown state, and return history.
+- Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, manager fees, strategy history, safety limits, cooldown state, and return history.
 - Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
 - Enter by supplying the exact proportional RWA basket, buying shares from an available OTF market, or routing a fixed supported settlement asset through constituent pools with minimum-share protection.
 - Exit by receiving the proportional RWA basket, selling shares into an available OTF market, or routing a redemption through constituent pools with minimum-settlement protection.
@@ -39,11 +39,11 @@ Investors use the web application with an EVM wallet to:
 
 Creators and managers use the application to:
 
-- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, creator fee, and policy-bounded safety limits.
+- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, manager fee, and policy-bounded safety limits.
 - Discover supported OTF quote markets and open the network liquidity venue to create pools or manage wallet-funded positions without using portfolio assets.
 - Find OTFs managed by the connected wallet.
 - Propose target changes with a required rationale that becomes permanent when the strategy activates.
-- Accrue creator fees without counting the action as a portfolio change.
+- Accrue manager fees without counting the action as a portfolio change.
 - Build, simulate, and submit a strategy proposal with a public rationale, then execute its constrained rebalance.
 
 The current supported environment is Robinhood Chain Testnet. Robinhood Chain Mainnet is visible as a network choice but has no supported assets, OTF deployments, or product availability yet.
@@ -70,11 +70,11 @@ The current supported environment is Robinhood Chain Testnet. Robinhood Chain Ma
   fresh pinned onchain prices, and atomic execution. Explicit execution paths may use arbitrary
   intermediate tokens without changing the OTF's pinned pricing configuration.
 - Portfolio changes are bounded by enforceable limits covering NAV loss and target-weight deviation. Managers may update completion and challenge bands within the factory owner's live protocol-wide policy. Every included asset must meet the live minimum target weight, initialized at 1%. Solidity permits up to 100 tracked assets and does not impose a separate maximum target or turnover limit; the frontend applies a 20-asset safety cap to creation and to the complete tracked union of strategy proposals, including retiring assets.
-- Every OTF uses a fixed seven-day challenge grace period. Oracle freshness and corporate-action pause checks are selected per leg by the creator, mechanically validated, and pinned while the asset remains tracked. Fully pruning an asset clears its pricing state so a later strategy can reintroduce it with a newly validated source. Robinhood equity feeds publish 24/5; the frontend currently suggests a 25-hour limit measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
+- Every OTF uses the factory owner's protocol-wide challenge grace period, which defaults to seven days. A change applies when the next challenge starts and does not alter an active challenge's recorded deadline. Oracle freshness and corporate-action pause checks are selected per leg by the creator, mechanically validated, and pinned while the asset remains tracked. Fully pruning an asset clears its pricing state so a later strategy can reintroduce it with a newly validated source. Robinhood equity feeds publish 24/5; the frontend currently suggests a 25-hour limit measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
 - Every OTF uses one fixed 14-day strategy cooldown that starts when an unchallenged rebalance completes inside the wider challenge bands, or a challenged rebalance resolves inside the tighter completion bands. Active challenges and out-of-band portfolios block new strategy proposals.
 - Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
 - Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.
-- Creator fees accrue as shares and split between the configured recipient and protocol collector according to contract rules.
+- Manager fees accrue as shares and split between the configured recipient and protocol collector according to contract rules.
 - The frontend offers a convenient testnet metadata catalog and editable pricing suggestions; mechanically valid unindexed assets remain usable and the catalog is not an authorization source.
 - Mainnet product support is explicitly unavailable until real assets, adapters, oracle feeds, contracts, and deployment evidence exist.
 - The MVP is experimental, unaudited, and not production ready. It must not imply regulatory status, guaranteed returns, real Mainnet availability, audited safety, or historical performance that is not backed by live data.

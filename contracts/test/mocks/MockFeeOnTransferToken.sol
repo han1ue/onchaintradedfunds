@@ -73,5 +73,3 @@ contract MockFeeOnTransferToken is IERC20Metadata {
     }
 }
 
-
-

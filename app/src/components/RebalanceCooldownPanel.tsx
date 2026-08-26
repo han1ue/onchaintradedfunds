@@ -233,7 +233,7 @@ type VaultSummary = {
   symbol: string;
   manager?: string;
   creator?: string;
-  creatorFeeBps?: number;
+  managerFeeBps?: number;
   assetCount: number;
   navValue?: bigint;
   nav?: string;
@@ -249,7 +249,7 @@ type VaultView = {
   address?: `0x${string}`;
   manager?: string;
   feeRecipient?: string;
-  creatorFeeBps: number;
+  managerFeeBps: number;
   effectiveProtocolFeeShareBps: number;
   totalSupply: string;
   cooldownSeconds: number;
@@ -1423,7 +1423,7 @@ function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): Catalog
       ? vault.allocations.map((asset) => ({
           address: vault.address as `0x${string}`,
           abi: managedOtfVaultAbi,
-          functionName: "priceFeedForAsset" as const,
+          functionName: "pricingConfigForAsset" as const,
           args: [asset.address as `0x${string}`] as const,
           chainId: robinhoodChainTestnet.id,
         }))
@@ -1432,7 +1432,9 @@ function useVaultPinnedOraclePrices(vault: VaultView, enabled: boolean): Catalog
   });
   const feeds = vault.allocations.map((asset, index) => {
     const result = feedResults?.[index];
-    const feed = result?.status === "success" ? result.result as `0x${string}` : undefined;
+    const feed = result?.status === "success"
+      ? result.result[5] as `0x${string}`
+      : undefined;
     return { asset: asset.address, feed: feed && feed !== zeroAddress ? feed : undefined };
   });
   const { data: priceResults } = useReadContracts({
@@ -1711,7 +1713,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["DuplicateConstituent(address)", "The same asset cannot be added to a portfolio more than once."],
     ["StrategyRationaleRequired()", "Add a short rationale explaining this portfolio strategy."],
     ["StrategyRationaleTooLong(uint256)", "The strategy rationale is too long. Shorten it and try again."],
-    ["CreatorFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
+    ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["InvalidWeightBands(uint16,uint16)", "The proposed weight bands do not satisfy the factory's current policy."],
     ["ZeroShares()", "Enter a share amount greater than zero."],
@@ -1973,8 +1975,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "symbol" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "manager" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "feeRecipient" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "creatorFeeBpsPerYear" },
-        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "protocolFeeShareBps" },
+        { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "managerFeeBpsPerYear" },
+        { address: factoryAddress ?? zeroAddress, abi: otfFactoryAbi, functionName: "protocolFeeShareBps" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "totalSupply" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "getConstituents" },
         { address: vaultAddress, abi: managedOtfVaultAbi, functionName: "maxNavLossBps" },
@@ -2029,7 +2031,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         { address, abi: managedOtfVaultAbi, functionName: "name" },
         { address, abi: managedOtfVaultAbi, functionName: "symbol" },
         { address, abi: managedOtfVaultAbi, functionName: "manager" },
-        { address, abi: managedOtfVaultAbi, functionName: "creatorFeeBpsPerYear" },
+        { address, abi: managedOtfVaultAbi, functionName: "managerFeeBpsPerYear" },
         { address, abi: managedOtfVaultAbi, functionName: "assets" },
         { address, abi: managedOtfVaultAbi, functionName: "totalAssetsValue" },
         { address, abi: managedOtfVaultAbi, functionName: "navPerShare" },
@@ -2050,7 +2052,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       const name = resultAt<string>(directoryResults, offset);
       const symbol = resultAt<string>(directoryResults, offset + 1);
       const managerValue = resultAt<string>(directoryResults, offset + 2);
-      const creatorFee = resultAt<number>(directoryResults, offset + 3);
+      const managerFee = resultAt<number>(directoryResults, offset + 3);
       const vaultAssets = resultAt<readonly string[]>(directoryResults, offset + 4);
       const totalValue = resultAt<bigint>(directoryResults, offset + 5);
       const shareValue = resultAt<bigint>(directoryResults, offset + 6);
@@ -2060,7 +2062,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         name: name || shortAddress(address),
         symbol: symbol || "OTF",
         manager: managerValue && isAddress(managerValue) ? managerValue : undefined,
-        creatorFeeBps: creatorFee,
+        managerFeeBps: managerFee,
         assetCount: vaultAssets?.length ?? 0,
         verified: (vaultAssets?.length ?? 0) > 0
           && (vaultAssets ?? []).every((asset) => assetIsVerifiedForAddress(testnetCreateAssets, asset)),
@@ -2081,7 +2083,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   const manager = managerResult && isAddress(managerResult) ? managerResult : undefined;
   const feeRecipient =
     feeRecipientResult && isAddress(feeRecipientResult) ? feeRecipientResult : undefined;
-  const creatorFeeBps = resultAt<number>(results, 4) ?? 0;
+  const managerFeeBps = resultAt<number>(results, 4) ?? 0;
   const protocolFeeShareBps = resultAt<number>(results, 5) ?? 0;
   const totalSupply = resultAt<bigint>(results, 6);
   const constituents = resultAt<readonly string[]>(results, 7) as unknown as
@@ -2159,7 +2161,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
     address: vaultAddress,
     manager,
     feeRecipient,
-    creatorFeeBps,
+    managerFeeBps,
     effectiveProtocolFeeShareBps,
     totalSupply: supplyDisplay,
     cooldownSeconds,
@@ -2857,7 +2859,7 @@ function VaultMetrics({ vault }: { vault: VaultView }) {
         value={vault.navPerShare ?? "Oracle read failed"}
         helpText="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's configured pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage."
       />
-      <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.creatorFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
+      <MetricCard label="Manager Fee" value={`${bpsToPercent(vault.managerFeeBps)} / yr`} tone={vault.feeState === 2 ? "danger" : vault.feeState === 1 ? "warning" : "neutral"} />
       <MetricCard
         label="Liquidity Markets"
         value={marketsLoading ? "Resolving..." : `${marketCount} found`}
@@ -8103,7 +8105,7 @@ function VaultsDirectory({
                   <th>OTF</th>
                   <th>NAV</th>
                   <th>Assets</th>
-                  <th>Creator fee</th>
+                  <th>Manager fee</th>
                   <th>Manager</th>
                 </tr>
               </thead>
@@ -8132,7 +8134,7 @@ function VaultsDirectory({
                     </td>
                     <td data-label="NAV">{row.nav ?? "Oracle read failed"}</td>
                     <td data-label="Assets">{row.assetCount}</td>
-                    <td data-label="Creator fee">{bpsToPercent(row.creatorFeeBps)}</td>
+                    <td data-label="Manager fee">{bpsToPercent(row.managerFeeBps)}</td>
                     <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
                   </tr>
                 ))}
@@ -8217,8 +8219,8 @@ function VaultsDirectory({
                     <strong>{row.assetCount}</strong>
                   </div>
                   <div>
-                    <span>Creator fee</span>
-                    <strong>{bpsToPercent(row.creatorFeeBps)}</strong>
+                    <span>Manager fee</span>
+                    <strong>{bpsToPercent(row.managerFeeBps)}</strong>
                   </div>
                   <div>
                     <span>Manager</span>
@@ -8234,7 +8236,7 @@ function VaultsDirectory({
                 <th>OTF</th>
                 <th>NAV</th>
                 <th>Assets</th>
-                <th>Creator fee</th>
+                <th>Manager fee</th>
                 <th>Manager</th>
               </tr>
             </thead>
@@ -8263,7 +8265,7 @@ function VaultsDirectory({
                   </td>
                   <td data-label="NAV">{row.nav ?? "Oracle read failed"}</td>
                   <td data-label="Assets">{row.assetCount}</td>
-                  <td data-label="Creator fee">{bpsToPercent(row.creatorFeeBps)}</td>
+                  <td data-label="Manager fee">{bpsToPercent(row.managerFeeBps)}</td>
                   <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
                 </tr>
               ))}
@@ -8378,7 +8380,7 @@ function CreateVaultView({
     rationale: "",
     manager: connectedAddress ?? "",
     feeRecipient: connectedAddress ?? "",
-    creatorFee: "0.50",
+    managerFee: "0.50",
     initialShares: "100",
     initialPortfolioValue: "5",
     maxNavLoss: "0.5",
@@ -8676,8 +8678,8 @@ function CreateVaultView({
     initialPortfolioValue !== undefined &&
     allSeedAmountsReady;
   const remainingSafetyLimitsValid =
-    Number(draft.creatorFee) >= 0 &&
-    Number(draft.creatorFee) <= 10 &&
+    Number(draft.managerFee) >= 0 &&
+    Number(draft.managerFee) <= 10 &&
     Number(draft.initialShares) >= 1 &&
     Number(draft.maxNavLoss) > 0 &&
     Number(draft.maxNavLoss) <= 2 &&
@@ -8713,7 +8715,7 @@ function CreateVaultView({
     portfolio.length === 0 || totalWeightValid ? null : `Adjust target weights to exactly 100%. Current total: ${(totalWeightBps / 100).toFixed(2)}%.`,
   ].filter((issue): issue is string => Boolean(issue));
   const safetyIssues = [
-    Number(draft.creatorFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
+    Number(draft.managerFee) <= 10 ? null : "The manager fee cannot exceed 10% per year.",
     Number(draft.maxNavLoss) <= 2 ? null : "Maximum NAV loss cannot exceed the 2% protocol ceiling.",
     Number(draft.initialShares) >= 1 ? null : "Initial supply must be at least 1 whole share.",
     weightBandPolicyLoading ? "Loading the current factory weight-band policy." : null,
@@ -9006,7 +9008,7 @@ function CreateVaultView({
         return seed.requiredAmount;
       }),
       initialShareSupply: parseUnits(draft.initialShares, 18),
-      creatorFeeBpsPerYear: percentToBps(draft.creatorFee),
+      managerFeeBpsPerYear: percentToBps(draft.managerFee),
       maxNavLossBps: percentToBps(draft.maxNavLoss),
       maxWeightDeviationBps: percentToBps(draft.maxDeviation),
       challengeWeightDeviationBps: percentToBps(draft.challengeDeviation),
@@ -9392,7 +9394,7 @@ function CreateVaultView({
                     />
                     <small>
                       {customFeeRecipient
-                        ? "Custom address receives accrued creator-fee shares."
+                        ? "Custom address receives accrued manager-fee shares."
                         : connectedAddress
                           ? "Locked to the wallet creating this OTF."
                           : "Connect a wallet to use the creator address."}
@@ -9645,7 +9647,7 @@ function CreateVaultView({
             {step === 2 ? (
               <div className="formSection">
                 <div className="formGrid threeColumns">
-                  <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.creatorFee} onChange={(event) => updateDraft("creatorFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
+                  <label><span>Manager fee</span><div className="inputWithSuffix"><input type="number" min={0} max={10} value={draft.managerFee} onChange={(event) => updateDraft("managerFee", event.target.value)} /><span>% / yr</span></div><small>Annual fee minted as OTF shares. Protocol range: 0–10% per year.</small></label>
                   <label><span>Initial shares</span><input type="number" min={1} value={draft.initialShares} onChange={(event) => updateDraft("initialShares", event.target.value)} /><small>Sets the initial OTF share supply. 0.000000000001 share is permanently locked; the manager receives the entered amount minus that share.</small></label>
                   <label><span>Seven-day NAV-loss budget</span><div className="inputWithSuffix"><input type="number" min={0} max={2} value={draft.maxNavLoss} onChange={(event) => updateDraft("maxNavLoss", event.target.value)} /><span>%</span></div><small>Caps oracle-valued execution loss with capacity replenishing linearly over seven days. Protocol maximum: 2%.</small></label>
                   <label><span>Completion band</span><div className="inputWithSuffix"><input type="number" min={weightBandLimits ? weightBandLimits.minCompletionDeviationBps / 100 : undefined} max={weightBandLimits ? weightBandLimits.maxCompletionDeviationBps / 100 : undefined} step={0.01} value={draft.maxDeviation} onChange={(event) => updateDraft("maxDeviation", event.target.value)} /><span>+/- %</span></div><small>{weightBandLimits ? `Every asset must enter this distance from its target to complete. Current factory range: ${bpsToPercent(weightBandLimits.minCompletionDeviationBps)}–${bpsToPercent(weightBandLimits.maxCompletionDeviationBps)}.` : "Loading the current factory range."}</small></label>
@@ -9676,7 +9678,7 @@ function CreateVaultView({
                   <span className="vaultMonogram">NEW</span>
                   <div>
                     <h2>{normalizedOtfName}</h2>
-                    <span>{draft.symbol} · {portfolio.length} assets · {draft.creatorFee}% annual manager fee</span>
+                    <span>{draft.symbol} · {portfolio.length} assets · {draft.managerFee}% annual manager fee</span>
                     <span className={`stateBadge ${hasUnverifiedConstituent ? "warning" : "success"}`}>
                       {hasUnverifiedConstituent ? "Includes unverified configurations" : "Verified configurations"}
                     </span>
@@ -9692,7 +9694,7 @@ function CreateVaultView({
                   </div>
                 ) : null}
                 <div className="reviewGrid">
-                  <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.creatorFee}%</strong></div>
+                  <div className="reviewKeyMetric"><span>Annual manager fee</span><strong>{draft.managerFee}%</strong></div>
                   <div><span>Manager</span><strong>{shortAddress(draft.manager)}</strong></div>
                   <div><span>Fee recipient</span><strong>{shortAddress(draft.feeRecipient)}</strong></div>
                   <div><span>Initial value</span><strong>{Number(draft.initialPortfolioValue) > 0 ? formatOraclePrice(Number(draft.initialPortfolioValue)) : "Not set"}</strong></div>
@@ -11081,7 +11083,7 @@ function ManageVaultsView({
       <div className="manageMetrics">
         <MetricCard label="Current Manager" value={shortAddress(vault.manager)} icon={<KeyRound size={14} />} />
         <MetricCard label="Fee Recipient" value={shortAddress(vault.feeRecipient)} icon={<ReceiptText size={14} />} />
-        <MetricCard label="Manager Fee" value={bpsToPercent(vault.creatorFeeBps)} icon={<Percent size={14} />} />
+        <MetricCard label="Manager Fee" value={bpsToPercent(vault.managerFeeBps)} icon={<Percent size={14} />} />
         <MetricCard label="Strategy Cooldown" value={formatCooldown(vault.cooldownSeconds)} icon={<Clock3 size={14} />} />
       </div>
 
@@ -11301,7 +11303,7 @@ function ManageVaultsView({
             <PortfolioBandStatus vault={vault} context="fees" />
             <div className="accrualSummary">
               <div><span>Pending manager fees</span><strong>{pendingManagerFeeDisplay}</strong></div>
-              <div><span>Manager fee</span><strong>{bpsToPercent(vault.creatorFeeBps)} / yr</strong></div>
+              <div><span>Manager fee</span><strong>{bpsToPercent(vault.managerFeeBps)} / yr</strong></div>
               <div><span>Effective protocol cut</span><strong>{bpsToPercent(vault.effectiveProtocolFeeShareBps)} of accrued fees</strong></div>
               <div><span>Historically forfeited</span><strong>{vault.forfeitedManagerFeeShares}</strong></div>
             </div>

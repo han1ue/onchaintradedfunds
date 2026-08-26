@@ -283,7 +283,10 @@ The parameters and actual holdings are public and holders receive the activation
 
 ### Description
 
-`strategicRebalanceStartedAt` is recorded but never used as a deadline. A portfolio can remain outside completion bands but inside the wider challenge bands indefinitely. In that state:
+At the reviewed commit, a dedicated rebalance-start timestamp was recorded but never used as a
+deadline. Phase 4 removed that redundant field; the strategy version's `activatedAt` remains the
+canonical historical timestamp. A portfolio can remain outside completion bands but inside the
+wider challenge bands indefinitely. In that state:
 
 - Completion reverts.
 - A challenge cannot start.

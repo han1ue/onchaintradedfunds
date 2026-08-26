@@ -443,13 +443,11 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primaryMaxStaleness: 2 hours
         });
 
-        (address normalizedFeed, bytes32 marketId, uint32 maxStaleness) =
-            resolver.resolvePricing(address(asset), config);
+        (address normalizedFeed, bytes32 marketId) = resolver.resolvePricing(address(asset), config);
         assertTrue(normalizedFeed.code.length != 0);
         (address marketAsset,,, bool marketActive) = markets.marketFor(marketId);
         assertEq(marketAsset, address(asset));
         assertTrue(marketActive);
-        assertEq(uint256(maxStaleness), 2 hours);
 
         markets.setMarketActive(marketId, false);
         (, int256 answer,,,) = UniswapV3RoutePriceFeed(normalizedFeed).latestRoundData();
@@ -467,10 +465,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primaryMaxStaleness: 4 hours
         });
 
-        (address normalizedFeed, bytes32 marketId, uint32 primaryStaleness) =
-            resolver.resolvePricing(address(asset), config);
+        (address normalizedFeed, bytes32 marketId) = resolver.resolvePricing(address(asset), config);
         assertEq(marketId, bytes32(0));
-        assertEq(uint256(primaryStaleness), 4 hours);
         (, int256 answer,,,) = ChainlinkRoutePriceFeed(normalizedFeed).latestRoundData();
         assertEq(uint256(answer), 6_000_00000000);
 
@@ -571,7 +567,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(assetUsdgFeed),
             primaryMaxStaleness: 2 hours
         });
-        (address usdgNormalized,,) = resolver.resolvePricing(address(asset), usdgComposed);
+        (address usdgNormalized,) = resolver.resolvePricing(address(asset), usdgComposed);
         (, int256 usdgAnswer,,,) = ChainlinkRoutePriceFeed(usdgNormalized).latestRoundData();
         assertEq(uint256(usdgAnswer), 4_00000000);
 
@@ -586,7 +582,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(usdgPool),
             primaryMaxStaleness: 2 hours
         });
-        (address usdgV3Feed,,) = resolver.resolvePricing(address(secondAsset), usdgV3);
+        (address usdgV3Feed,) = resolver.resolvePricing(address(secondAsset), usdgV3);
         (, int256 usdgV3Answer,,,) = UniswapV3RoutePriceFeed(usdgV3Feed).latestRoundData();
         assertApproxEqAbs(uint256(usdgV3Answer), 1_00000000, 10_000);
     }
@@ -605,7 +601,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(assetThirdFeed),
             primaryMaxStaleness: 2 hours
         });
-        (address pinnedThirdFeed,,) = resolver.resolvePricing(address(asset), thirdComposed);
+        (address pinnedThirdFeed,) = resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 thirdAnswer,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
         assertEq(uint256(thirdAnswer), 6_00000000);
 
@@ -617,7 +613,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(thirdPool),
             primaryMaxStaleness: 2 hours
         });
-        (address thirdV3Feed,,) = resolver.resolvePricing(address(secondAsset), thirdV3);
+        (address thirdV3Feed,) = resolver.resolvePricing(address(secondAsset), thirdV3);
         assertTrue(thirdV3Feed.code.length != 0);
 
         markets.setQuoteTokenEnabled(address(thirdQuote), false);
@@ -630,7 +626,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets.registerQuoteToken(
             address(thirdQuote), address(replacementThirdUsd), 1 hours, true, true
         );
-        (address replacementNormalized,,) = resolver.resolvePricing(address(asset), thirdComposed);
+        (address replacementNormalized,) = resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 replacementAnswer,,,) =
             ChainlinkRoutePriceFeed(replacementNormalized).latestRoundData();
         assertEq(uint256(replacementAnswer), 27_00000000);
@@ -767,6 +763,3 @@ contract PermissionlessAssetMarketsTest is TestBase {
         calculator.assetValueForVault(address(vault), address(asset), 1 ether);
     }
 }
-
-
-

@@ -61,5 +61,3 @@ contract MockTradeAdapter is ITradeAdapter {
     }
 }
 
-
-

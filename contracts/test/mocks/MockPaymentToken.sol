@@ -9,5 +9,3 @@ contract MockPaymentToken is MockStockToken {
     { }
 }
 
-
-

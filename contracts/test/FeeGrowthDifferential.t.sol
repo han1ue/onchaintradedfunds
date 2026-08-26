@@ -73,5 +73,3 @@ contract FeeGrowthDifferentialTest is TestBase {
     }
 }
 
-
-

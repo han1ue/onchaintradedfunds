@@ -218,7 +218,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(vault.allowance(ALICE, BOB), 5 * ONE);
     }
 
-    function testFeeAccrualMintsExactCreatorAndProtocolShares() public {
+    function testFeeAccrualMintsExactManagerAndProtocolShares() public {
         ManagedOTFVault vault = _createVault();
         uint256 elapsed = 365 days;
         vm.warp(START + elapsed);
@@ -226,12 +226,12 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
         uint256 expectedFeeShares = 100 * ONE * 100 / (10_000 - 100);
         uint256 expectedProtocolShares = expectedFeeShares * 1_500 / 10_000;
-        uint256 expectedCreatorShares = expectedFeeShares - expectedProtocolShares;
+        uint256 expectedManagerShares = expectedFeeShares - expectedProtocolShares;
 
         uint256 minted = vault.withdrawManagerFees();
         assertEq(minted, expectedFeeShares);
         assertEq(vault.balanceOf(address(collector)), expectedProtocolShares);
-        assertEq(vault.balanceOf(FEE_RECIPIENT), expectedCreatorShares);
+        assertEq(vault.balanceOf(FEE_RECIPIENT), expectedManagerShares);
         assertEq(vault.totalSupply(), 100 * ONE + expectedFeeShares);
         assertEq(vault.lastFeeAccrualTimestamp(), START + elapsed);
     }
@@ -253,7 +253,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testFeeAccrualIsCheckpointCadenceIndependentAtMinimumSupply() public {
         VaultInitParams memory params = _defaultParams();
         params.initialShareSupply = ONE;
-        params.creatorFeeBpsPerYear = 1_000;
+        params.managerFeeBpsPerYear = 1_000;
         ManagedOTFVault fragmentedVault = ManagedOTFVault(factory.createVault(params));
         ManagedOTFVault singleIntervalVault = ManagedOTFVault(factory.createVault(params));
 
@@ -277,7 +277,7 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
 
     function testAnnualFeeIsCadenceIndependent() public {
         VaultInitParams memory params = _defaultParams();
-        params.creatorFeeBpsPerYear = 1_000;
+        params.managerFeeBpsPerYear = 1_000;
         ManagedOTFVault dailyVault = ManagedOTFVault(factory.createVault(params));
         ManagedOTFVault annualVault = ManagedOTFVault(factory.createVault(params));
 
@@ -305,9 +305,9 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
     function testFeeRateChangeCreatesNonRetroactiveBoundaryAtMinimumSupply() public {
         VaultInitParams memory params = _defaultParams();
         params.initialShareSupply = ONE;
-        params.creatorFeeBpsPerYear = 100;
+        params.managerFeeBpsPerYear = 100;
         ManagedOTFVault changingVault = ManagedOTFVault(factory.createVault(params));
-        params.creatorFeeBpsPerYear = 1_000;
+        params.managerFeeBpsPerYear = 1_000;
         ManagedOTFVault controlVault = ManagedOTFVault(factory.createVault(params));
 
         vm.warp(START + 3_000);
@@ -484,6 +484,3 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         return string(value);
     }
 }
-
-
-

@@ -140,5 +140,3 @@ contract UniswapV3TwapMathDifferentialTest is TestBase {
     }
 }
 
-
-

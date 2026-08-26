@@ -51,5 +51,3 @@ contract MockReentrantToken is ERC20Base {
     }
 }
 
-
-

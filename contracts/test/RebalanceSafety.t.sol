@@ -33,7 +33,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
             MockStockToken asset = new MockStockToken("Additional Stock", "ADD", 18);
             MockPriceFeed feed = new MockPriceFeed(8, 100_00000000);
             additions[i] = address(asset);
-            assetRegistry.registerAsset(address(asset));
             additionConfigs[i] = _robinhoodPricing(address(asset), feed);
         }
 
@@ -614,7 +613,6 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(normalizedPriceFeed, address(robinhoodFeedC));
         assertEq(uint256(primaryMaxStaleness), 25 hours);
         assertEq(uint256(secondaryMaxStaleness), 0);
-        assertEq(vault.marketIdForAsset(address(tokenC)), bytes32(0));
     }
 
     function testAllZeroPricingConfigReusesPinnedPricing() public {
@@ -851,6 +849,3 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         executor.executeTrade(trade, trade.amountIn);
     }
 }
-
-
-
