@@ -8175,7 +8175,6 @@ function VaultsDirectory({
                 <LayoutGrid size={15} />
               </button>
             </div>
-            <span className="stateBadge muted">{vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
           </div>
         </div>
         <div className="directoryToolbar">
