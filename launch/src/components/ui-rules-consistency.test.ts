@@ -36,10 +36,16 @@ describe("launch UI rule consistency", () => {
     expect(read("../server/data.ts")).toContain("'verified', o.creator_verified");
   });
 
-  it("blocks portfolio navigation while any allocation is below the minimum", () => {
+  it("shows actionable validation warnings for every blocked submission step", () => {
     const wizard = read("./SubmitWizard.tsx");
+    expect(wizard).toContain("basicsIssues");
+    expect(wizard).toContain("portfolioIssues");
+    expect(wizard).toContain("proofIssues");
+    expect(wizard).toContain('title={`${basicsIssues.length} required item');
+    expect(wizard).toContain('title="Portfolio needs attention"');
+    expect(wizard).toContain('title="X post needs attention"');
     expect(wizard).toContain("allWeightsMeetMinimum");
     expect(wizard).toContain('aria-invalid={weightBelowMinimum}');
-    expect(wizard).toContain("|| !allWeightsMeetMinimum");
+    expect(wizard).toContain('disabled={step === 1 ? !basicsValid : step === 2 ? !portfolioValid : false}');
   });
 });

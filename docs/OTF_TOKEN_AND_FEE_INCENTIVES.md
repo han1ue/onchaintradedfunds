@@ -69,7 +69,7 @@ No dedicated buyback contract or automatic fee allocation is required.
 ## Admin and operating model
 
 - Factory owner: identifies OTF once, controls the full-rebate threshold, and can set the protocol
-  share of manager fees from 0% to 100% for all existing and future OTFs.
+  share of manager fees from 0% to 40% for all existing and future OTFs.
 - Protocol treasury: claims protocol fee shares and controls any manual redemption or buyback.
 
 Threshold changes affect an OTF when its fees are next checkpointed. The latest threshold and active

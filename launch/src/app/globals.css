@@ -422,6 +422,11 @@ button { color: inherit; }
 .formField input, .formField textarea, .formField select { width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid var(--border-strong); border-radius: 6px; outline: none; background: var(--background); color: var(--text); font-size: .8rem; }
 .formField textarea { resize: vertical; line-height: 1.5; }
 .formField input:focus, .formField textarea:focus, .formField select:focus { border-color: var(--teal); box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 12%); }
+.validationIssues { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; align-items: start; }
+.validationIssues > svg { margin-top: 2px; color: var(--gold); }
+.validationIssues strong { display: block; color: var(--text); }
+.validationIssues ul { margin: 5px 0 0; padding-inline-start: 17px; }
+.validationIssues li + li { margin-top: 3px; }
 .formStack > .button { width: 100%; }
 .allocationTotal { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: .8rem; }
 .allocationTotal span small { color: var(--text-muted); font-size: .66rem; font-weight: 500; }

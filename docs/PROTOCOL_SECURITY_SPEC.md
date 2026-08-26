@@ -189,7 +189,7 @@ No generic `execute(address,bytes)`, `delegate(address,bytes)`, or equivalent se
 The protocol owner MAY:
 
 - Approve or remove trade adapters.
-- Set the protocol share of manager fees between 0 and 10,000 BPS for existing and future OTFs.
+- Set the protocol share of manager fees between 0 and 4,000 BPS for existing and future OTFs.
 - Set the protocol-wide minimum target weight within its hard bounds, provided it does not exceed
   an enabled OTF full-rebate threshold.
 - Permanently identify the OTF protocol token and change or disable its full-rebate threshold. A

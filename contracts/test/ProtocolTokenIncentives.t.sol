@@ -195,20 +195,20 @@ contract ProtocolTokenIncentivesTest is ProtocolTestBase {
         assertEq(vault.balanceOf(FEE_RECIPIENT), feeShares);
     }
 
-    function testAdminCanChangeProtocolFeeShareForExistingVaultsUpToOneHundredPercent() public {
+    function testAdminCanChangeProtocolFeeShareForExistingVaultsUpToFortyPercent() public {
         ManagedOTFVault vault = _createVault();
         assertEq(vault.effectiveProtocolFeeShareBps(), 1_500);
 
-        factory.setProtocolFeeShareBps(10_000);
-        assertEq(factory.protocolFeeShareBps(), 10_000);
-        assertEq(vault.effectiveProtocolFeeShareBps(), 10_000);
+        factory.setProtocolFeeShareBps(4_000);
+        assertEq(factory.protocolFeeShareBps(), 4_000);
+        assertEq(vault.effectiveProtocolFeeShareBps(), 4_000);
 
         vm.prank(ALICE);
         vm.expectRevert(OTFFactory.NotOwner.selector);
         factory.setProtocolFeeShareBps(1_500);
 
         vm.expectPartialRevert(OTFFactory.ProtocolFeeShareTooHigh.selector);
-        factory.setProtocolFeeShareBps(10_001);
+        factory.setProtocolFeeShareBps(4_001);
     }
 
     function testProtocolTokenIdentityCannotBeChanged() public {

@@ -290,6 +290,26 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.totalSupply(), initialSupply + forfeited);
     }
 
+    function testManagerAllocationAtMaximumProtocolShareExceedsMissedSelfChallengeReward() public {
+        factory.setProtocolFeeShareBps(4_000);
+        ManagedOTFVault normalVault = _createVault();
+        ManagedOTFVault challengedVault = _createVault();
+
+        _setPrices(120_00000000, 100_00000000);
+        challengedVault.flagOutOfBand();
+
+        vm.warp(challengedVault.challengeDeadline() + 1);
+        _setPrices(120_00000000, 100_00000000);
+
+        uint256 managerBalanceBefore = normalVault.balanceOf(FEE_RECIPIENT);
+        normalVault.withdrawManagerFees();
+        uint256 normalManagerAllocation =
+            normalVault.balanceOf(FEE_RECIPIENT) - managerBalanceBefore;
+        uint256 selfChallengeReward = challengedVault.claimChallengeReward();
+
+        assertGt(normalManagerAllocation, selfChallengeReward);
+    }
+
     function testOverdueChallengePreviewsMatchProcessedTreasuryTransfer() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);

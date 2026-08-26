@@ -39,7 +39,7 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant MAX_MANAGER_FEE_BPS_PER_YEAR =
         ProtocolConstants.MAX_ANNUAL_MANAGER_FEE_BPS;
     uint256 public constant MAX_TRACKED_ASSETS = ProtocolConstants.MAX_TRACKED_ASSETS;
-    uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 10_000;
+    uint16 public constant MAX_PROTOCOL_FEE_SHARE_BPS = 4_000;
     uint16 public constant GLOBAL_MAX_NAV_LOSS_BPS = 200;
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
