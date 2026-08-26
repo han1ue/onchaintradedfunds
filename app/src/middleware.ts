@@ -1,11 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
-
-const APP_HOSTNAME = "app.onchaintradedfunds.com";
+import { isAppHostname } from "@/config/site";
 
 export function middleware(request: NextRequest) {
-  const hostname = request.headers.get("host")?.split(":", 1)[0].toLowerCase();
-
-  if (hostname !== APP_HOSTNAME) {
+  if (!isAppHostname(request.headers.get("host"))) {
     return NextResponse.next();
   }
 

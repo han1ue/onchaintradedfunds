@@ -4,8 +4,8 @@ import { AlertTriangle } from "lucide-react";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-function isAppRoute(pathname: string): boolean {
-  if (pathname === "/") return false;
+function isAppRoute(pathname: string, appHostname: boolean): boolean {
+  if (pathname === "/") return appHostname;
   return (
     pathname.startsWith("/otfs") ||
     pathname === "/create" ||
@@ -15,9 +15,9 @@ function isAppRoute(pathname: string): boolean {
   );
 }
 
-export function AppTopBanner() {
+export function AppTopBanner({ appHostname }: { appHostname: boolean }) {
   const pathname = usePathname();
-  const showBanner = isAppRoute(pathname);
+  const showBanner = isAppRoute(pathname, appHostname);
 
   useEffect(() => {
     if (showBanner) {

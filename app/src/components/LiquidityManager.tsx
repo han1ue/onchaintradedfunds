@@ -91,7 +91,7 @@ function LiquidityWorkspace() {
 
   function changeView(tab: string) {
     if (tab === "Verified") window.location.assign("/verified");
-    else if (tab !== "Liquidity") window.location.assign("/otfs");
+    else if (tab !== "Liquidity") window.location.assign("/");
   }
 
   return (
@@ -105,7 +105,7 @@ function LiquidityWorkspace() {
       />
       <main className="dashboardMain liquidityPage">
         <div className="liquidityBreadcrumb">
-          <Link href="/otfs">OTFs</Link><span>/</span><strong>Liquidity</strong>
+          <Link href="/">Home</Link><span>/</span><strong>Liquidity</strong>
         </div>
 
         <section className="liquidityIntro">

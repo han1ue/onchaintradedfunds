@@ -116,6 +116,7 @@ import {
   formatTimestamp,
   progressThroughCooldown,
 } from "@/lib/time";
+import { APP_ORIGIN, isAppHostname } from "@/config/site";
 import { LandingPage } from "./LandingPage";
 
 type ContractValue =
@@ -302,7 +303,7 @@ type VaultView = {
   depositPauseStatusUnavailable: boolean;
 };
 
-const navTabs = ["OTFs", "Verified", "Liquidity"];
+const navTabs = ["Home", "Verified", "Liquidity"];
 
 type VerifiedCatalogAsset = {
   symbol: string;
@@ -1826,7 +1827,7 @@ const viewPaths: Record<AppView, string> = {
   verified: "/verified",
 };
 
-function viewFromPathname(pathname: string): AppView {
+function viewFromPathname(pathname: string, hostname?: string): AppView {
   if (pathname === "/create") return "create";
   if (pathname === "/wallet") return "deposits";
   if (pathname === "/verified") return "verified";
@@ -1834,6 +1835,7 @@ function viewFromPathname(pathname: string): AppView {
   if (pathname.endsWith("/manage")) return "manage";
   if (pathname.startsWith("/otfs/")) return "detail";
   if (pathname === "/otfs") return "vaults";
+  if (pathname === "/" && isAppHostname(hostname)) return "vaults";
   return "landing";
 }
 
@@ -2223,7 +2225,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         const config = pinnedPricing.configs[asset.address.toLowerCase()];
         return config && isVerifiedPricingConfig(robinhoodChainTestnet.id, asset.address, config);
       });
-  const activeTab = view === "verified" ? "Verified" : "OTFs";
+  const activeTab = view === "verified" ? "Verified" : "Home";
 
   useEffect(() => {
     if (dataMode === "live" && data) {
@@ -2233,7 +2235,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
   useEffect(() => {
     const syncViewToHistory = () => {
-      setView(viewFromPathname(window.location.pathname));
+      setView(viewFromPathname(window.location.pathname, window.location.hostname));
       setSelectedVaultAddress(vaultAddressFromPathname(window.location.pathname));
       setCreatedTxHash(transactionHashFromLocation());
     };
@@ -2243,12 +2245,17 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
 
   useEffect(() => {
     if (!isTestnet && (view === "detail" || view === "manage")) {
-      window.history.replaceState({}, "", viewPaths.vaults);
+      window.history.replaceState({}, "", isAppHostname(window.location.hostname) ? "/" : viewPaths.vaults);
       setView("vaults");
     }
   }, [isTestnet, view]);
 
   function openView(nextView: AppView, address?: `0x${string}`) {
+    if (nextView === "vaults" && !isAppHostname(window.location.hostname)) {
+      window.location.assign(APP_ORIGIN);
+      return;
+    }
+
     const nextVaultAddress = address ?? vaultAddress;
     if (address) setSelectedVaultAddress(address);
     const otfSlug = nextVaultAddress ?? "unconfigured";
@@ -2258,7 +2265,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
         ? `/otfs/${otfSlug}/created`
       : nextView === "manage"
         ? `/otfs/${otfSlug}/manage`
-        : viewPaths[nextView];
+        : nextView === "vaults"
+          ? "/"
+          : viewPaths[nextView];
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath);
     }
@@ -2283,8 +2292,8 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
   if (view === "landing") {
     return (
       <LandingPage
-        onCreate={() => openView("create")}
-        onEnter={() => openView("vaults")}
+        onCreate={() => window.location.assign(`${APP_ORIGIN}/create`)}
+        onEnter={() => window.location.assign(APP_ORIGIN)}
       />
     );
   }
@@ -2294,7 +2303,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
       <TopNav
         activeTab={activeTab}
         depositsActive={view === "deposits"}
-        onHome={() => openView("landing")}
+        onHome={() => openView("vaults")}
         onTabChange={changeView}
         onOpenDeposits={() => openView("deposits")}
       />

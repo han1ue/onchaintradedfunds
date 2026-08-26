@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { OTF_FAVICON_DATA_URL } from "@onchaintradedfunds/brand";
 import "@onchaintradedfunds/brand/styles.css";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
+import { isAppHostname } from "@/config/site";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
@@ -11,7 +13,9 @@ export const metadata: Metadata = {
   icons: { icon: OTF_FAVICON_DATA_URL },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const appHostname = isAppHostname((await headers()).get("host"));
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -32,7 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <InputBehaviorGuard />
-        <AppTopBanner />
+        <AppTopBanner appHostname={appHostname} />
         {children}
       </body>
     </html>
