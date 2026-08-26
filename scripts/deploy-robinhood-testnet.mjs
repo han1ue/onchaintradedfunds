@@ -208,7 +208,6 @@ const supportedMarketAssets = [
   },
 ];
 
-const assetRegistry = await deployContract({ name: "AssetRegistry" });
 const rebalanceExecutor = await deployContract({
   name: "RebalanceExecutor",
   args: [account.address],
@@ -293,7 +292,6 @@ const setupTransactions = {
     functionName: "setFactory",
     args: [factory.address],
   }),
-  discoveredAssets: [],
   approvedAdapters: [{
     adapter: uniswapV3Adapter.address,
     purpose: "generic-rebalance",
@@ -351,7 +349,6 @@ const deployment = {
   treasury,
   protocolFeeShareBps,
   contracts: {
-    assetRegistry,
     rebalanceExecutor,
     feeCollector,
     otfToken,

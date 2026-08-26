@@ -44,6 +44,8 @@ contract OTFFactory is IAdapterAllowlist {
     uint16 public constant MIN_TARGET_WEIGHT_BPS = 10; // 0.1%
     uint256 public constant MINIMUM_INITIAL_SHARE_SUPPLY = 1e18;
     uint256 public constant MAX_INITIAL_SHARE_SUPPLY = ProtocolConstants.MAX_INITIAL_SHARE_SUPPLY;
+    uint32 public constant MIN_CHALLENGE_GRACE_PERIOD = 1 days;
+    uint32 public constant MAX_CHALLENGE_GRACE_PERIOD = 30 days;
 
     error NotOwner();
     error ZeroAddress();
@@ -225,7 +227,9 @@ contract OTFFactory is IAdapterAllowlist {
     }
 
     function setChallengeGracePeriod(uint32 newPeriod) external onlyOwner {
-        if (newPeriod == 0) revert InvalidLimit();
+        if (newPeriod < MIN_CHALLENGE_GRACE_PERIOD || newPeriod > MAX_CHALLENGE_GRACE_PERIOD) {
+            revert InvalidLimit();
+        }
         uint32 previousPeriod = challengeGracePeriod;
         challengeGracePeriod = newPeriod;
         emit ChallengeGracePeriodUpdated(previousPeriod, newPeriod);

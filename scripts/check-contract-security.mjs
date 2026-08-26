@@ -128,7 +128,6 @@ assert(
 const productionContracts = [
   ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
   ["AssetPricingResolver.sol", "AssetPricingResolver"],
-  ["AssetRegistry.sol", "AssetRegistry"],
   ["ChainlinkRoutePriceFeed.sol", "ChainlinkRoutePriceFeed"],
   ["FeeCollector.sol", "FeeCollector"],
   ["ManagedOTFVault.sol", "ManagedOTFVault"],
@@ -155,7 +154,6 @@ const vault = artifact("ManagedOTFVault.sol", "ManagedOTFVault");
 const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy");
 const viewModule = artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView");
 const factory = artifact("OTFFactory.sol", "OTFFactory");
-const assetRegistry = artifact("AssetRegistry.sol", "AssetRegistry");
 const pricingResolver = artifact("AssetPricingResolver.sol", "AssetPricingResolver");
 const assetMarketRegistry = artifact("AssetMarketRegistry.sol", "AssetMarketRegistry");
 const v3RoutePriceFeed = artifact("UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed");
@@ -173,13 +171,6 @@ const factoryFunctions = factory.abi
   .map((item) => item.name);
 const factoryEvents = abiSignatures(factory, "event");
 const factoryErrors = abiSignatures(factory, "error");
-const assetRegistryFunctions = assetRegistry.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const assetRegistryEventNames = assetRegistry.abi
-  .filter((item) => item.type === "event")
-  .map((item) => item.name);
-const assetRegistryConstructor = assetRegistry.abi.find((item) => item.type === "constructor");
 const pricingResolverFunctions = pricingResolver.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
@@ -342,46 +333,9 @@ for (const legacyFunction of [
 ]) {
   assert(!vaultFunctions.includes(legacyFunction), `legacy vault function found: ${legacyFunction}`);
 }
-for (const legacyEvent of [
-  "AssetApprovalChanged",
-  "AssetBlocked",
-  "AssetRemoved",
-  "AssetStatusChanged",
-]) {
-  assert(
-    !assetRegistryEventNames.includes(legacyEvent),
-    `legacy AssetRegistry event found: ${legacyEvent}`,
-  );
-}
 assert(
   ![...vaultEvents].some((signature) => signature.startsWith("TerminalShutdown")),
   "registry-driven terminal-shutdown event found in vault ABI",
-);
-for (const legacyFunction of [
-  "owner",
-  "statusOf",
-  "canBeConstituent",
-  "isApprovedAsset",
-  "isQualifiedAsset",
-  "setAssetStatus",
-  "setAssetApproved",
-  "approveAsset",
-  "blockAsset",
-  "removeAsset",
-]) {
-  assert(
-    !assetRegistryFunctions.includes(legacyFunction),
-    `legacy AssetRegistry authority found: ${legacyFunction}`,
-  );
-}
-assert(assetRegistryFunctions.includes("registerAsset"), "permissionless asset discovery is absent");
-assert(
-  (assetRegistryConstructor?.inputs.length ?? 0) === 0,
-  "permissionless asset discovery constructor is not zero-argument",
-);
-assert(
-  assetRegistryFunctions.includes("isRegisteredAsset"),
-  "permissionless asset discovery view is absent",
 );
 assert(
   pricingResolverFunctions.includes("validatePricing")

@@ -32,10 +32,6 @@ interface IProtocolTokenFeePolicy {
     function effectiveProtocolFeeShareBps(address vault) external view returns (uint16);
 }
 
-interface IManagedOTFVaultAssetCleanup {
-    function moduleClearAssetPricing(address asset) external;
-}
-
 abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 internal constant BPS = 10_000;
     uint256 internal constant STRATEGY_CHANGE_COOLDOWN = 14 days;
@@ -278,6 +274,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     uint256 internal _feeAccrualRemainderWad;
     uint16 internal _protocolFeeSplitRemainderBps;
     bool internal _sunset;
+    bool internal _challengeDeadlineProcessed;
     uint64 internal _sunsetAt;
     /// @dev Timestamp when the currently consumed NAV-loss capacity is fully replenished.
     uint64 internal _navLossBucketRecoveryAt;
@@ -423,6 +420,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
         _challengeCaller = caller;
         _challengeStartedAt = startedAt;
         _challengeDeadline = startedAt + IProtocolPortfolioLimits(_factory).challengeGracePeriod();
+        _challengeDeadlineProcessed = false;
         _challengeFeeAccrualRemainderWad = 0;
         emit OutOfBandChallengeStarted(caller, startedAt, _challengeDeadline, breached);
     }
@@ -438,7 +436,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
                 uint256 balance = IERC20(asset).balanceOf(address(this));
                 if (balance <= MAX_RETIRING_DUST) {
                     delete _targetWeightBps[asset];
-                    IManagedOTFVaultAssetCleanup(address(this)).moduleClearAssetPricing(asset);
+                    delete _pinnedPricingForAsset[asset];
                     removed++;
                     if (balance != 0) emit RetiringDustWrittenOff(asset, balance);
                     emit ConstituentRemoved(asset);

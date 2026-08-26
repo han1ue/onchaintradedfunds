@@ -53,9 +53,9 @@ Treat these as explicitly trusted dependencies whose compromise remains a protoc
 - Fee collector treasury
 - Constituent-token and approved adapter implementations
 
-`AssetRegistry` is not trusted: it is an optional ownerless discovery index and no vault may consult
-it for authorization. The asset feed or V3 pool remains pinned, while the quote-token registry's
-single current USD configuration is intentionally shared by existing and future routes. Chainlink's Robinhood Flags
+The frontend asset catalogue is not trusted and no vault may consult it for authorization. The asset
+feed or V3 pool remains pinned, while the quote-token registry's single current USD configuration is
+intentionally shared by existing and future routes. Chainlink's Robinhood Flags
 registry can prove proxy authenticity/activity but not pair orientation; review the separate trusted
 pair mapping accordingly.
 

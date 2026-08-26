@@ -46,7 +46,6 @@ This repository currently implements the first MVP slice:
 |   |   |-- ManagedOTFVault.sol
 |   |   |-- OTFFactory.sol
 |   |   |-- RebalanceExecutor.sol
-|   |   |-- AssetRegistry.sol
 |   |   |-- AssetPricingResolver.sol
 |   |   |-- ChainlinkRoutePriceFeed.sol
 |   |   |-- FeeCollector.sol
@@ -76,7 +75,6 @@ flowchart LR
   Resolver --> V3Registry[Pricing quote and pool registry]
   Resolver --> Pinned[Pinned normalized feed or V3 TWAP]
   Clone --> Pinned
-  Registry[AssetRegistry discovery index] --> App[Frontend]
   Clone --> Executor[RebalanceExecutor]
   Executor --> Adapter[Approved trade adapter]
   Adapter --> Tokens[Underlying ERC-20 assets]
@@ -148,12 +146,6 @@ flowchart LR
 - Validates exact path endpoints and every hop, limits callers, reconciles reported and observed
   deltas, and clears temporary router approvals. Intermediate tokens are unrestricted and atomic.
 - Is independent from the pool, feed, and fee tier pinned for portfolio pricing.
-
-`AssetRegistry`
-
-- Optional permissionless discovery index for deployed, exactly-18-decimal token contracts.
-- Has no owner, quality tier, approval, blocking, revocation, or constituent-eligibility authority.
-- Is never consulted by a vault for pricing, deposits, strategy changes, or redemptions.
 
 `AssetPricingResolver`
 
@@ -536,8 +528,9 @@ Each target has a wider challenge band and a narrower completion band. Anyone ma
 `flagOutOfBand()`, but fresh pinned prices must prove a real challenge-band breach.
 
 A valid challenge locks target changes and manager-fee withdrawals during the factory owner's
-protocol-wide grace period, which defaults to seven days. The grace-period value is captured when
-the challenge starts, so a later policy change cannot move an active challenge's deadline. The
+protocol-wide grace period, which defaults to seven days and may be set from one to thirty days. The
+grace-period value is captured when the challenge starts, so a later policy change cannot move an
+active challenge's deadline. The
 default spans scheduled market weekends and typical holiday closures without making the response
 window a manager-selected policy. All valid fees earned before the challenge start are crystallized first and cannot be
 forfeited later. Natural price movement and constrained trades can both restore the basket. If the

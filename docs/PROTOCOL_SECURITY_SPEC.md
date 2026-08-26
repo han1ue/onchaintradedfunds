@@ -99,13 +99,12 @@ pricing is a distinct source that requires a marked Robinhood oracle exposing `o
 Consumers do not branch on chain ID: `RobinhoodChainlinkPriceFeed` delegates price data to Chainlink
 and pause status to its Stock Token, while `TestnetMockRobinhoodPriceFeed` supplies an unpaused test
 status itself. Ordinary Chainlink feeds cannot satisfy the Robinhood source. `AssetMarketRegistry`
-validates and records canonical V3 pools used during a
-new TWAP selection. `AssetRegistry` is an optional permissionless discovery index only.
+validates and records canonical V3 pools used during a new TWAP selection.
 
 The resolver MUST return a normalized feed or V3 wrapper that pins the creator-selected asset feed
 or pool. The wrapper MUST load the quote token's single current USD configuration from the registry
 on every read. Replacing that configuration therefore updates every route using the quote token. The
-market and discovery registries MUST NOT determine asset eligibility, execution paths, or execution fee tiers.
+The market registry MUST NOT determine asset eligibility, execution paths, or execution fee tiers.
 
 The factory MUST constructor-wire the pricing resolver, and the resolver MUST constructor-wire its
 market registry and calculator. Each clone MUST bind `msg.sender` as its factory during its single
@@ -450,8 +449,8 @@ Anyone MAY flag a challenge only when fresh oracle-valued weights prove that at 
 constituent is outside its challenge band.
 
 Every vault MUST use the factory owner's protocol-wide challenge grace period, which defaults to
-seven days. A policy update applies only when a challenge starts and MUST NOT alter an active
-challenge's recorded deadline. The selected period spans
+seven days and MAY be changed from one to thirty days. A policy update applies only when a challenge
+starts and MUST NOT alter an active challenge's recorded deadline. The selected period spans
 scheduled equity-market weekends and typical holiday closures while keeping OTFs comparable.
 
 ```mermaid
@@ -517,7 +516,9 @@ If the grace deadline is observed after expiry:
 Forfeiture and reward balances update only when a state-changing transaction first processes an
 overdue challenge; they do not increase automatically with wall-clock time. The forfeiture interval
 MUST end at the recorded deadline, and processing MUST be an idempotent one-time transition for the
-active challenge. `claimChallengeReward()` MAY process that transition before reading the caller's
+active challenge. The deadline-missed, fee-forfeiture, and reward-accrual events MUST be emitted once
+even when the manager fee and resulting share amounts are zero. `claimChallengeReward()` MAY process
+that transition before reading the caller's
 reward balance. It MUST checkpoint any normally accruing fee interval against the pre-reward share
 supply before minting the full reward balance and resetting it to zero. Later calls and other
 accrual paths MUST NOT increase either the forfeiture total or the caller reward for the same

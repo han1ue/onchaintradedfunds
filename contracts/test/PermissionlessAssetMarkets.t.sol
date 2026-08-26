@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { AssetMarketRegistry } from "../src/AssetMarketRegistry.sol";
 import { AssetPricingResolver } from "../src/AssetPricingResolver.sol";
-import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { ChainlinkRoutePriceFeed } from "../src/ChainlinkRoutePriceFeed.sol";
 import { PortfolioCalculator } from "../src/PortfolioCalculator.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
@@ -97,15 +96,10 @@ contract MockPermissionlessV3Factory {
 }
 
 contract MockVaultPriceSources {
-    address public immutable assetRegistry;
     address public assetMarketRegistry;
     mapping(address => address) public priceFeedForAsset;
     mapping(address => uint32) public maxStalenessForAsset;
     mapping(address => PricingSource) public pricingSourceForAsset;
-
-    constructor(address assetRegistry_) {
-        assetRegistry = assetRegistry_;
-    }
 
     function setPriceFeed(address asset, address feed, uint32 maxStaleness, PricingSource source)
         external
@@ -138,7 +132,6 @@ contract MockVaultPriceSources {
 }
 
 contract PermissionlessAssetMarketsTest is TestBase {
-    AssetRegistry private assets;
     AssetMarketRegistry private markets;
     MockPermissionlessV3Factory private v3Factory;
     MockStockToken private asset;
@@ -150,7 +143,6 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        assets = new AssetRegistry();
         asset = new MockStockToken("Permissionless Asset", "ASSET", 18);
         secondAsset = new MockStockToken("Second", "SECOND", 18);
         weth = new MockStockToken("Wrapped Ether", "WETH", 18);
@@ -161,21 +153,6 @@ contract PermissionlessAssetMarketsTest is TestBase {
         markets = new AssetMarketRegistry(address(this), address(v3Factory));
         markets.registerQuoteToken(address(weth), address(wethUsdFeed), 2 hours, true, true);
         markets.registerQuoteToken(address(usdg), address(usdgUsdFeed), 2 hours, true, true);
-    }
-
-    function testPermissionlessDiscoveryRegistrationHasNoGovernanceStatus() public {
-        vm.prank(address(0xBEEF));
-        assets.registerAsset(address(asset));
-        assertTrue(assets.isRegisteredAsset(address(asset)));
-
-        vm.expectPartialRevert(AssetRegistry.AssetAlreadyRegistered.selector);
-        assets.registerAsset(address(asset));
-    }
-
-    function testDiscoveryRejectsNonEighteenDecimalAsset() public {
-        MockStockToken sixDecimals = new MockStockToken("Six", "SIX", 6);
-        vm.expectPartialRevert(AssetRegistry.UnsupportedAssetDecimals.selector);
-        assets.registerAsset(address(sixDecimals));
     }
 
     function testRegistersMultiplePinnedCandidatesWithoutAnchorPool() public {
@@ -573,9 +550,9 @@ contract PermissionlessAssetMarketsTest is TestBase {
 
         MockPermissionlessV3Pool usdgPool =
             v3Factory.createPool(address(secondAsset), address(usdg), 500);
-        // Token1 has 18 decimals and token0 has 6, so a whole-token 1:1 price requires a
-        // raw-unit ratio near 1e12 rather than tick zero.
-        usdgPool.setTick(276_324);
+        // A whole-token 1:1 price needs a raw-unit ratio near 1e12 or 1e-12 depending on
+        // deterministic token-address ordering.
+        usdgPool.setTick(usdgPool.token0() == address(usdg) ? int24(276_324) : int24(-276_324));
         AssetPricingConfig memory usdgV3 = AssetPricingConfig({
             source: PricingSource.UniswapV3Twap,
             quoteToken: address(usdg),
@@ -751,7 +728,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
     function testPortfolioCalculatorUsesPinnedFeed() public {
         MockPriceFeed pinnedFeed = new MockPriceFeed(8, 150_00000000);
 
-        MockVaultPriceSources vault = new MockVaultPriceSources(address(assets));
+        MockVaultPriceSources vault = new MockVaultPriceSources();
         vault.setPriceFeed(address(asset), address(pinnedFeed), 25 hours, PricingSource.Chainlink);
         PortfolioCalculator calculator = new PortfolioCalculator();
 

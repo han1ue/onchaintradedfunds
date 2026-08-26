@@ -334,19 +334,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "function",
-    "name": "moduleClearAssetPricing",
-    "inputs": [
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "modulePinAssetPricing",
     "inputs": [
       {
@@ -4286,6 +4273,20 @@ export const registeredUniswapV3AdapterAbi = [
 ] as const;
 
 export const otfFactoryAbi = [
+  {
+    type: "function",
+    name: "MIN_CHALLENGE_GRACE_PERIOD",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint32" }],
+  },
+  {
+    type: "function",
+    name: "MAX_CHALLENGE_GRACE_PERIOD",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint32" }],
+  },
   {
     type: "function",
     name: "otfTokenURI",

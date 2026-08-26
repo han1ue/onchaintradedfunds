@@ -8,6 +8,12 @@ import { TradeInstruction } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract ChallengeAndFeeStateTest is ProtocolTestBase {
+    event ChallengeDeadlineMissed(uint64 deadline, uint64 observedAt);
+    event ManagerFeesForfeited(uint256 amount);
+    event ChallengeRewardAccrued(
+        address indexed caller, uint256 rewardShares, uint256 forfeitedShares
+    );
+
     function testPricePumpCanOpenOnlyOneValidChallenge() public {
         ManagedOTFVault vault = _createVault();
         _setPrices(120_00000000, 100_00000000);
@@ -359,6 +365,31 @@ contract ChallengeAndFeeStateTest is ProtocolTestBase {
         assertEq(vault.withdrawManagerFees(), 0);
         assertEq(vault.forfeitedManagerFeeShares(), forfeitedAfterFirstClaim);
         assertEq(vault.totalSupply(), supplyAfterFirstClaim);
+        assertEq(vault.lastFeeAccrualTimestamp(), deadline);
+    }
+
+    function testZeroFeeOverdueChallengeEmitsDeadlineEventsOnce() public {
+        ManagedOTFVault vault = _createVault();
+        vault.setManagerFeeBps(0);
+        _setPrices(120_00000000, 100_00000000);
+        vm.prank(ALICE);
+        vault.flagOutOfBand();
+        uint64 deadline = vault.challengeDeadline();
+
+        vm.warp(uint256(deadline) + 1);
+        vm.expectEmit(false, false, false, true, address(vault));
+        emit ChallengeDeadlineMissed(deadline, uint64(block.timestamp));
+        vm.expectEmit(false, false, false, true, address(vault));
+        emit ManagerFeesForfeited(0);
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit ChallengeRewardAccrued(ALICE, 0, 0);
+        vm.prank(ALICE);
+        assertEq(vault.claimChallengeReward(), 0);
+
+        assertEq(vault.lastFeeAccrualTimestamp(), deadline);
+        assertEq(vault.forfeitedManagerFeeShares(), 0);
+        vm.prank(ALICE);
+        assertEq(vault.claimChallengeReward(), 0);
         assertEq(vault.lastFeeAccrualTimestamp(), deadline);
     }
 

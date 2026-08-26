@@ -103,7 +103,6 @@ if (Number(deployment.schemaVersion) < 7) {
   );
 }
 
-const assetRegistry = getAddress(deployment.contracts.assetRegistry.address);
 const chain = {
   id: chainId,
   name: "Robinhood Chain Testnet",
@@ -136,7 +135,6 @@ const erc20MetadataAbi = [{
   inputs: [],
   outputs: [{ type: "string" }],
 }];
-const assetRegistryArtifact = artifact("AssetRegistry.sol", "AssetRegistry");
 const mockFeedArtifact = artifact("TestnetMockPriceFeed.sol", "TestnetMockPriceFeed");
 const robinhoodMockFeedArtifact = artifact(
   "TestnetMockRobinhoodPriceFeed.sol",
@@ -199,7 +197,6 @@ deployment.oracleMode = "self-updating-testnet-synthetic";
 deployment.oracleDisclaimer =
   "Time-derived synthetic USD drift and bounded pseudo-random movement for Robinhood testnet development; predictable, not Chainlink, not canonical, and not market data.";
 deployment.setupTransactions ??= {};
-deployment.setupTransactions.discoveredAssets ??= [];
 deployment.setupTransactions.mockPriceFeeds ??= [];
 
 for (const item of catalog) {
@@ -256,21 +253,6 @@ for (const item of catalog) {
     console.log(`${symbol} ${item.source} self-updating synthetic feed retained: ${feed}`);
   }
 
-  const registered = await publicClient.readContract({
-    address: assetRegistry,
-    abi: assetRegistryArtifact.abi,
-    functionName: "isRegisteredAsset",
-    args: [asset],
-  });
-  const assetDiscovery = registered
-    ? { alreadyConfigured: true }
-    : await confirmedWrite({
-        address: assetRegistry,
-        abi: assetRegistryArtifact.abi,
-        functionName: "registerAsset",
-        args: [asset],
-      });
-
   const record = {
     symbol,
     asset,
@@ -285,13 +267,8 @@ for (const item of catalog) {
     driftBpsPerDay: 5,
     volatilityBps: 50,
     feedDeployment,
-    assetDiscovery,
   };
   upsertByAsset(deployment.setupTransactions.mockPriceFeeds, record);
-  upsertByAsset(deployment.setupTransactions.discoveredAssets, {
-    asset,
-    ...assetDiscovery,
-  });
   deployment.pricingConfiguration ??= {};
   deployment.pricingConfiguration.suggestedInitialPricingConfigs ??= [];
   upsertByAsset(deployment.pricingConfiguration.suggestedInitialPricingConfigs, {

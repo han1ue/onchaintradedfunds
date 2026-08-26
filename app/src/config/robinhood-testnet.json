@@ -8,12 +8,6 @@
   "treasury": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "protocolFeeShareBps": 1500,
   "contracts": {
-    "assetRegistry": {
-      "address": "0xb9e087eD605f099da3f88C9D73ad7D5C92a86Deb",
-      "transactionHash": "0xd22fca2631d7dd37df9973e81258a2a4071ac751d9351d73d1b9f5b3dee855f2",
-      "blockNumber": "107440208",
-      "gasUsed": "193640"
-    },
     "rebalanceExecutor": {
       "address": "0x3A3A6D0ff3cD810bacBa4bd40FFb1c89feA94461",
       "transactionHash": "0x42487d7ca28644769da9eaf0e4551915608ad627700848cc738edcf82e5d2cc6",
@@ -218,7 +212,6 @@
       "blockNumber": "107440467",
       "gasUsed": "55516"
     },
-    "discoveredAssets": [],
     "approvedAdapters": [
       {
         "adapter": "0x58013E55646Ce042947C96f2d2D8ECD5f1f0661d",

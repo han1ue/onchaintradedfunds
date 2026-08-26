@@ -72,7 +72,6 @@ const contractRows = [
   ["RebalanceExecutor", "Restricts execution to typed swaps through approved adapters."],
   ["OTFEntryRouter", "Atomically converts a fixed supported settlement input into the largest proportional OTF basket, with minimum-share protection and slippage-protected refunds."],
   ["Uniswap V3 adapter", "Executes explicit exact-input paths for entry, redemption, and rebalancing; caller contracts enforce the permitted endpoints."],
-  ["AssetRegistry", "Optional permissionless discovery index; vault eligibility never depends on it."],
   ["Pricing resolver", "Mechanically validates creator-selected Chainlink, Chainlink Composed, or canonical Uniswap V3 TWAP routes and resolves the normalized feed and parameters pinned by one OTF."],
   ["FeeCollector", "Receives the protocol portion of manager fees."],
 ] as const;

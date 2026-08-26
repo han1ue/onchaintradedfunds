@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AssetRegistry } from "../src/AssetRegistry.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
@@ -14,13 +13,6 @@ import { VaultInitParams } from "../src/VaultTypes.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 
 contract FactoryTest is ProtocolTestBase {
-    AssetRegistry private discoveryRegistry;
-
-    function setUp() public override {
-        super.setUp();
-        discoveryRegistry = new AssetRegistry();
-    }
-
     function testFactoryCreatesAndEnumeratesVault() public {
         VaultInitParams memory params = _defaultParams();
         address created = factory.createVault(params);
@@ -34,6 +26,8 @@ contract FactoryTest is ProtocolTestBase {
 
     function testOwnerCanUpdateChallengeGracePeriod() public {
         assertEq(factory.challengeGracePeriod(), 7 days);
+        assertEq(factory.MIN_CHALLENGE_GRACE_PERIOD(), 1 days);
+        assertEq(factory.MAX_CHALLENGE_GRACE_PERIOD(), 30 days);
 
         vm.prank(ALICE);
         vm.expectRevert(OTFFactory.NotOwner.selector);
@@ -43,7 +37,10 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(factory.challengeGracePeriod(), 3 days);
 
         vm.expectRevert(OTFFactory.InvalidLimit.selector);
-        factory.setChallengeGracePeriod(0);
+        factory.setChallengeGracePeriod(1 days - 1);
+
+        vm.expectRevert(OTFFactory.InvalidLimit.selector);
+        factory.setChallengeGracePeriod(30 days + 1);
     }
 
     function testFactoryCreatesDistinctClonesForIdenticalParams() public {
@@ -257,11 +254,6 @@ contract FactoryTest is ProtocolTestBase {
         factory.createVault(params);
     }
 
-    function testVaultUsesProtocolWideTimingRules() public {
-        ManagedOTFVault vault = _createVault();
-        assertEq(7 days, 7 days);
-    }
-
     function testVaultPinsCreatorSelectedStaleness() public {
         ManagedOTFVault vault = _createVault();
         (,,,,,, uint32 primaryMaxStaleness,) = vault.pricingConfigForAsset(address(tokenA));
@@ -292,12 +284,7 @@ contract FactoryTest is ProtocolTestBase {
         assertEq(tokenA.balanceOf(address(this)), tokenBalanceBefore);
     }
 
-    function testAssetDiscoveryIsPermissionlessAndOnlyOwnerCanApproveAdapters() public {
-        MockStockToken discovered = new MockStockToken("Discovered", "DISC", 18);
-        vm.prank(ATTACKER);
-        discoveryRegistry.registerAsset(address(discovered));
-        assertTrue(discoveryRegistry.isRegisteredAsset(address(discovered)));
-
+    function testOnlyOwnerCanApproveAdapters() public {
         vm.prank(ATTACKER);
         vm.expectRevert(OTFFactory.NotOwner.selector);
         factory.setTradeAdapterApproved(address(adapter), false);
@@ -371,20 +358,6 @@ contract FactoryTest is ProtocolTestBase {
     function testRebalanceExecutorConstructorRejectsZeroOwner() public {
         vm.expectRevert(RebalanceExecutor.ZeroAddress.selector);
         new RebalanceExecutor(address(0));
-    }
-
-    function testAssetRegistryRejectsEOAAssets() public {
-        vm.expectPartialRevert(AssetRegistry.AssetNotContract.selector);
-        discoveryRegistry.registerAsset(ALICE);
-    }
-
-    function testAssetRegistryRejectsNonEighteenDecimalConstituents() public {
-        MockStockToken sixDecimalToken = new MockStockToken("Six Decimal", "SIX", 6);
-
-        vm.expectPartialRevert(AssetRegistry.UnsupportedAssetDecimals.selector);
-        discoveryRegistry.registerAsset(address(sixDecimalToken));
-
-        assertFalse(discoveryRegistry.isRegisteredAsset(address(sixDecimalToken)));
     }
 
     function testFactoryRejectsNonContractDependencies() public {

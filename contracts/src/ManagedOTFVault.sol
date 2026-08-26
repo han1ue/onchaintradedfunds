@@ -944,10 +944,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _forfeitChallengeFees() internal {
         // All accrual paths converge here. Keep the transition idempotent so no caller can
         // process the same challenge more than once, even if a future entry point omits a guard.
-        if (
-            _lastFeeAccrualTimestamp == _challengeDeadline && _escrowedManagerFeeShares == 0
-                && _challengeFeeAccrualRemainderWad == 0
-        ) return;
+        if (_challengeDeadlineProcessed) return;
+        _challengeDeadlineProcessed = true;
 
         uint64 deadline = _challengeDeadline;
         uint256 forfeitedShares = _escrowedManagerFeeShares;
@@ -1111,12 +1109,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function modulePinAssetPricing(address asset, AssetPricingConfig calldata config) external {
         if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
         _pinAssetPricing(asset, config);
-    }
-
-    /// @dev Strategy module callback. Fully pruned assets release their canonical pricing record.
-    function moduleClearAssetPricing(address asset) external {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        delete _pinnedPricingForAsset[asset];
     }
 
     function _pullExact(address asset, address from, uint256 amount) internal {
