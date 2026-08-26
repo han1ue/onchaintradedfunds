@@ -148,6 +148,11 @@ type DataMode = "live" | "empty" | "unavailable";
 const MAX_STRATEGY_RATIONALE_BYTES = 2_048;
 const MAX_ORACLE_STALENESS_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_ORACLE_STALENESS_SECONDS = 25 * 60 * 60;
+const ADAPTER_APPROVAL_TYPE = {
+  REBALANCE: 0,
+  ENTRY: 1,
+  EXIT: 2,
+} as const;
 
 type Allocation = {
   symbol: string;
@@ -4109,16 +4114,20 @@ function UserActions({
   const { data: entryAdapterApproved } = useReadContract({
     address: vault.factoryAddress,
     abi: otfFactoryAbi,
-    functionName: "isEntryAdapterApproved",
-    args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
+    functionName: "isAdapterApproved",
+    args: entryAdapterAddress
+      ? [entryAdapterAddress, ADAPTER_APPROVAL_TYPE.ENTRY]
+      : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: entryContractsConfigured && isLive },
   });
   const { data: exitAdapterApproved } = useReadContract({
     address: vault.factoryAddress,
     abi: otfFactoryAbi,
-    functionName: "isExitAdapterApproved",
-    args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
+    functionName: "isAdapterApproved",
+    args: entryAdapterAddress
+      ? [entryAdapterAddress, ADAPTER_APPROVAL_TYPE.EXIT]
+      : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: entryContractsConfigured && isLive },
   });

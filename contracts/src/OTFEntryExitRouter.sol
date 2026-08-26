@@ -144,7 +144,8 @@ contract OTFEntryExitRouter {
                 ) {
                     revert InvalidDirectLeg(i);
                 }
-            } else if (!IAdapterAllowlist(factory).isEntryAdapterApproved(swap.adapter)) {
+            } else if (!IAdapterAllowlist(factory)
+                    .isAdapterApproved(swap.adapter, IAdapterAllowlist.AdapterApprovalType.Entry)) {
                 revert UnapprovedTradeAdapter(swap.adapter);
             } else if (swap.inputAmount != 0 && swap.minRefundInputRate == 0) {
                 revert ZeroMinimumOutput();
@@ -276,7 +277,10 @@ contract OTFEntryExitRouter {
                 ) {
                     revert InvalidDirectLeg(i);
                 }
-            } else if (!IAdapterAllowlist(factory).isExitAdapterApproved(swaps[i].adapter)) {
+            } else if (!IAdapterAllowlist(factory)
+                    .isAdapterApproved(
+                        swaps[i].adapter, IAdapterAllowlist.AdapterApprovalType.Exit
+                    )) {
                 revert UnapprovedTradeAdapter(swaps[i].adapter);
             }
         }

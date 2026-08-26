@@ -227,16 +227,15 @@ contract OTFFactory is IAdapterAllowlist {
         emit AdapterPermissionsSet(adapter, rebalance, entry, exit);
     }
 
-    function isRebalanceAdapterApproved(address adapter) external view returns (bool) {
-        return _adapterPermissions[adapter].rebalance;
-    }
-
-    function isEntryAdapterApproved(address adapter) external view returns (bool) {
-        return _adapterPermissions[adapter].entry;
-    }
-
-    function isExitAdapterApproved(address adapter) external view returns (bool) {
-        return _adapterPermissions[adapter].exit;
+    function isAdapterApproved(address adapter, AdapterApprovalType approvalType)
+        external
+        view
+        returns (bool)
+    {
+        AdapterPermissions storage permissions = _adapterPermissions[adapter];
+        if (approvalType == AdapterApprovalType.Rebalance) return permissions.rebalance;
+        if (approvalType == AdapterApprovalType.Entry) return permissions.entry;
+        return permissions.exit;
     }
 
     /// @notice Changes the protocol's share of manager fees for all existing and future OTFs.

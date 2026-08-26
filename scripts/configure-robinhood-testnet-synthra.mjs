@@ -37,6 +37,11 @@ const oracleMaxAgeSeconds = 3_600n;
 const pricingTwapWindowSeconds = 3_600;
 const targetObservationCardinality = 64;
 const q192 = 1n << 192n;
+const ADAPTER_APPROVAL_TYPE = Object.freeze({
+  REBALANCE: 0,
+  ENTRY: 1,
+  EXIT: 2,
+});
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const verifiedAssetsPath = join(root, "app", "src", "config", "verified_assets.json");
 const catalog = JSON.parse(readFileSync(verifiedAssetsPath, "utf8"))
@@ -191,23 +196,12 @@ const factoryAbi = [
   ...ownerAbi,
   {
     type: "function",
-    name: "isRebalanceAdapterApproved",
+    name: "isAdapterApproved",
     stateMutability: "view",
-    inputs: [{ type: "address", name: "adapter" }],
-    outputs: [{ type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "isEntryAdapterApproved",
-    stateMutability: "view",
-    inputs: [{ type: "address", name: "adapter" }],
-    outputs: [{ type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "isExitAdapterApproved",
-    stateMutability: "view",
-    inputs: [{ type: "address", name: "adapter" }],
+    inputs: [
+      { type: "address", name: "adapter" },
+      { type: "uint8", name: "approvalType" },
+    ],
     outputs: [{ type: "bool" }],
   },
   {
@@ -497,14 +491,14 @@ upsertExecutionRoute(deployment.executionRoutes, {
 });
 
 const adapterPermissions = await Promise.all([
-  "isRebalanceAdapterApproved",
-  "isEntryAdapterApproved",
-  "isExitAdapterApproved",
-].map((functionName) => publicClient.readContract({
+  ADAPTER_APPROVAL_TYPE.REBALANCE,
+  ADAPTER_APPROVAL_TYPE.ENTRY,
+  ADAPTER_APPROVAL_TYPE.EXIT,
+].map((approvalType) => publicClient.readContract({
   address: factory,
   abi: factoryAbi,
-  functionName,
-  args: [v3Adapter.address],
+  functionName: "isAdapterApproved",
+  args: [v3Adapter.address, approvalType],
 })));
 const permissionUpdate = adapterPermissions.every(Boolean)
   ? { alreadyConfigured: true }

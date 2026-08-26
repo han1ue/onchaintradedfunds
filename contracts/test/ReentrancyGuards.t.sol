@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
+import { IAdapterAllowlist } from "../src/interfaces/IAdapterAllowlist.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
@@ -98,7 +99,11 @@ contract PermissiveExecutorFactory {
         return true;
     }
 
-    function isRebalanceAdapterApproved(address) external pure returns (bool) {
+    function isAdapterApproved(address, IAdapterAllowlist.AdapterApprovalType)
+        external
+        pure
+        returns (bool)
+    {
         return true;
     }
 }

@@ -4850,23 +4850,12 @@ export const otfFactoryAbi = [
   },
   {
     type: "function",
-    name: "isRebalanceAdapterApproved",
+    name: "isAdapterApproved",
     stateMutability: "view",
-    inputs: [{ name: "adapter", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "isEntryAdapterApproved",
-    stateMutability: "view",
-    inputs: [{ name: "adapter", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "isExitAdapterApproved",
-    stateMutability: "view",
-    inputs: [{ name: "adapter", type: "address" }],
+    inputs: [
+      { name: "adapter", type: "address" },
+      { name: "approvalType", type: "uint8" },
+    ],
     outputs: [{ name: "", type: "bool" }],
   },
   {

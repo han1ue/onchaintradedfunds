@@ -5,6 +5,7 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { IERC7621 } from "../src/interfaces/IERC7621.sol";
+import { IAdapterAllowlist } from "../src/interfaces/IAdapterAllowlist.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { RebalanceExecutor } from "../src/RebalanceExecutor.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
@@ -298,9 +299,24 @@ contract FactoryTest is ProtocolTestBase {
 
             factory.setAdapterPermissions(address(adapter), rebalance, entry, exit);
 
-            assertEq(factory.isRebalanceAdapterApproved(address(adapter)), rebalance);
-            assertEq(factory.isEntryAdapterApproved(address(adapter)), entry);
-            assertEq(factory.isExitAdapterApproved(address(adapter)), exit);
+            assertEq(
+                factory.isAdapterApproved(
+                    address(adapter), IAdapterAllowlist.AdapterApprovalType.Rebalance
+                ),
+                rebalance
+            );
+            assertEq(
+                factory.isAdapterApproved(
+                    address(adapter), IAdapterAllowlist.AdapterApprovalType.Entry
+                ),
+                entry
+            );
+            assertEq(
+                factory.isAdapterApproved(
+                    address(adapter), IAdapterAllowlist.AdapterApprovalType.Exit
+                ),
+                exit
+            );
         }
     }
 
@@ -308,9 +324,17 @@ contract FactoryTest is ProtocolTestBase {
         factory.setAdapterPermissions(address(adapter), true, false, true);
         factory.setAdapterPermissions(address(adapter), false, true, false);
 
-        assertFalse(factory.isRebalanceAdapterApproved(address(adapter)));
-        assertTrue(factory.isEntryAdapterApproved(address(adapter)));
-        assertFalse(factory.isExitAdapterApproved(address(adapter)));
+        assertFalse(
+            factory.isAdapterApproved(
+                address(adapter), IAdapterAllowlist.AdapterApprovalType.Rebalance
+            )
+        );
+        assertTrue(
+            factory.isAdapterApproved(address(adapter), IAdapterAllowlist.AdapterApprovalType.Entry)
+        );
+        assertFalse(
+            factory.isAdapterApproved(address(adapter), IAdapterAllowlist.AdapterApprovalType.Exit)
+        );
     }
 
     function testGrantingPermissionsRejectsZeroAndNonContractAddresses() public {
@@ -326,15 +350,31 @@ contract FactoryTest is ProtocolTestBase {
 
     function testAdapterPermissionsCanBeRevokedAfterItsCodeDisappears() public {
         address retiredAdapter = address(adapter);
-        assertTrue(factory.isRebalanceAdapterApproved(retiredAdapter));
-        assertTrue(factory.isEntryAdapterApproved(retiredAdapter));
-        assertTrue(factory.isExitAdapterApproved(retiredAdapter));
+        assertTrue(
+            factory.isAdapterApproved(
+                retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Rebalance
+            )
+        );
+        assertTrue(
+            factory.isAdapterApproved(retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Entry)
+        );
+        assertTrue(
+            factory.isAdapterApproved(retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Exit)
+        );
 
         vm.etch(retiredAdapter, bytes(""));
         factory.setAdapterPermissions(retiredAdapter, false, false, false);
-        assertFalse(factory.isRebalanceAdapterApproved(retiredAdapter));
-        assertFalse(factory.isEntryAdapterApproved(retiredAdapter));
-        assertFalse(factory.isExitAdapterApproved(retiredAdapter));
+        assertFalse(
+            factory.isAdapterApproved(
+                retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Rebalance
+            )
+        );
+        assertFalse(
+            factory.isAdapterApproved(retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Entry)
+        );
+        assertFalse(
+            factory.isAdapterApproved(retiredAdapter, IAdapterAllowlist.AdapterApprovalType.Exit)
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, retiredAdapter)
@@ -343,9 +383,21 @@ contract FactoryTest is ProtocolTestBase {
 
         MockTradeAdapter replacement = new MockTradeAdapter();
         factory.setAdapterPermissions(address(replacement), false, true, true);
-        assertFalse(factory.isRebalanceAdapterApproved(address(replacement)));
-        assertTrue(factory.isEntryAdapterApproved(address(replacement)));
-        assertTrue(factory.isExitAdapterApproved(address(replacement)));
+        assertFalse(
+            factory.isAdapterApproved(
+                address(replacement), IAdapterAllowlist.AdapterApprovalType.Rebalance
+            )
+        );
+        assertTrue(
+            factory.isAdapterApproved(
+                address(replacement), IAdapterAllowlist.AdapterApprovalType.Entry
+            )
+        );
+        assertTrue(
+            factory.isAdapterApproved(
+                address(replacement), IAdapterAllowlist.AdapterApprovalType.Exit
+            )
+        );
     }
 
     function testFactoryOwnershipTransferRequiresPendingOwner() public {

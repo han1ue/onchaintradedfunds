@@ -419,13 +419,19 @@ assert(
 );
 assert(
   factoryFunctions.includes("setAdapterPermissions")
-    && factoryFunctions.includes("isRebalanceAdapterApproved")
-    && factoryFunctions.includes("isEntryAdapterApproved")
-    && factoryFunctions.includes("isExitAdapterApproved")
+    && factoryFunctions.includes("isAdapterApproved")
     && !factoryFunctions.includes("setTradeAdapterApproved")
     && !factoryFunctions.includes("isTradeAdapterApproved"),
   "factory adapter permissions are not the sole capability registry",
 );
+for (const removedApprovalGetter of ["Rebalance", "Entry", "Exit"].map(
+  (approvalType) => `is${approvalType}AdapterApproved`,
+)) {
+  assert(
+    !factoryFunctions.includes(removedApprovalGetter),
+    `removed adapter approval getter found: ${removedApprovalGetter}`,
+  );
+}
 assert(
   factoryEvents.has("AdapterPermissionsSet(address,bool,bool,bool)")
     && !factoryEvents.has("TradeAdapterApprovalChanged(address,bool)"),
