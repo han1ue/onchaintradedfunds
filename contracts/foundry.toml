@@ -3,7 +3,8 @@ src = "src"
 test = "test"
 out = "out"
 libs = ["lib"]
-remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
+allow_paths = ["../node_modules"]
+remappings = ["@openzeppelin/=../node_modules/@openzeppelin/"]
 solc_version = "0.8.36"
 evm_version = "shanghai"
 optimizer = true
