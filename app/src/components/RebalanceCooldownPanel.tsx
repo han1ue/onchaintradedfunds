@@ -104,6 +104,7 @@ import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   FRONTEND_MAX_TRACKED_ASSETS,
+  isManagedByAddress,
   percentToBps,
   primaryDepositsBlocked,
   trackedAssetUnionCount,
@@ -2368,11 +2369,9 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
           <VaultsDirectory
             currentVault={vault}
             vaults={vaultSummaries}
-            connectedAddress={connectedAddress}
             isTestnet={isTestnet}
             aumLoading={factoryLoading || directoryLoading}
             onOpenVault={(address) => openView("detail", address)}
-            onCreateVault={() => openView("create")}
           />
         ) : null}
 
@@ -2419,6 +2418,7 @@ export function RebalanceCooldownPanel({ initialView = "landing" }: { initialVie
             isTestnet={isTestnet}
             onBrowseVaults={() => openView("vaults")}
             onOpenVault={(address) => openView("detail", address)}
+            onCreateVault={() => openView("create")}
           />
         ) : null}
 
@@ -8004,19 +8004,15 @@ function UnconfiguredOtfView({
 function VaultsDirectory({
   currentVault,
   vaults,
-  connectedAddress,
   isTestnet,
   aumLoading,
   onOpenVault,
-  onCreateVault,
 }: {
   currentVault: VaultView;
   vaults: VaultSummary[];
-  connectedAddress?: string;
   isTestnet: boolean;
   aumLoading: boolean;
   onOpenVault: (address: `0x${string}`) => void;
-  onCreateVault: () => void;
 }) {
   const testnetCreateAssets = useVerifiedAssetCatalog();
   const [query, setQuery] = useState("");
@@ -8047,11 +8043,6 @@ function VaultsDirectory({
       row.symbol.toLowerCase().includes(normalizedQuery) ||
       row.address.toLowerCase().includes(normalizedQuery),
   );
-  const managedVaults = connectedAddress
-    ? vaults.filter(
-        (row) => row.manager?.toLowerCase() === connectedAddress.toLowerCase(),
-      )
-    : [];
   const readableNavCount = vaults.filter((vault) => vault.navValue !== undefined).length;
   const totalAumValue = vaults.reduce((total, vault) => total + (vault.navValue ?? 0n), 0n);
   const totalAum = !isTestnet
@@ -8068,12 +8059,6 @@ function VaultsDirectory({
         title="Onchain Traded Funds"
         description="Discover and monitor managed onchain funds."
         icon={<LayoutGrid size={18} />}
-        actions={
-          <button className="primaryAction" type="button" disabled={!isTestnet} onClick={onCreateVault}>
-            <Plus size={14} />
-            {isTestnet ? "Create OTF" : "Mainnet unavailable"}
-          </button>
-        }
       />
 
       <DataProvenance vault={currentVault} factory />
@@ -8084,100 +8069,34 @@ function VaultsDirectory({
         <MetricCard label="Verified asset records" value={isTestnet ? String(testnetCreateAssets.length) : "0"} icon={null} />
       </div>
 
-      {managedVaults.length ? (
-        <section className="sectionCard managedVaultsPanel">
-          <div className="managedVaultsHeading">
-            <div>
-              <span className="appPageIcon"><UserCog size={16} /></span>
-              <div>
-                <h2>OTFs you manage</h2>
-                <p>Manager controls and protocol operations for OTFs created by this wallet.</p>
-              </div>
-            </div>
-            <span className="stateBadge success">{managedVaults.length} OTF{managedVaults.length === 1 ? "" : "s"}</span>
-          </div>
-          <div className="directoryTableWrap">
-            <table className="directoryTable managedDirectoryTable">
-              <thead>
-                <tr>
-                  <th>OTF</th>
-                  <th>NAV</th>
-                  <th>Assets</th>
-                  <th>Manager fee</th>
-                  <th>Manager</th>
-                </tr>
-              </thead>
-              <tbody>
-                {managedVaults.map((row) => (
-                  <tr
-                    key={row.address}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onOpenVault(row.address)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") onOpenVault(row.address);
-                    }}
-                  >
-                    <td>
-                      <div className="directoryVault">
-                        <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
-                        <div>
-                          <strong>{row.name}</strong>
-                          <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
-                          <span className={`stateBadge ${row.verified ? "success" : "warning"}`}>
-                            {row.verified ? "Verified assets" : "Unverified assets"}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    <td data-label="NAV">{row.nav ?? "Oracle read failed"}</td>
-                    <td data-label="Assets">{row.assetCount}</td>
-                    <td data-label="Manager fee">{bpsToPercent(row.managerFeeBps)}</td>
-                    <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
       <section className="sectionCard directoryPanel">
-        <div className="directoryPanelHeading">
-          <div>
-            <h2>All OTFs</h2>
-            <p>{isTestnet ? "Public OTFs remain discoverable whether or not you manage them." : "Robinhood Mainnet support has not launched yet."}</p>
-          </div>
-          <div className="directoryPanelMeta">
-            <div className="directoryViewToggle" role="group" aria-label="OTF directory view">
-              <button
-                className={directoryView === "rows" ? "active" : ""}
-                type="button"
-                aria-label="Show OTFs as rows"
-                aria-pressed={directoryView === "rows"}
-                title="Show OTFs as rows"
-                onClick={() => setDirectoryView("rows")}
-              >
-                <List size={15} />
-              </button>
-              <button
-                className={directoryView === "cards" ? "active" : ""}
-                type="button"
-                aria-label="Show OTFs as cards"
-                aria-pressed={directoryView === "cards"}
-                title="Show OTFs as cards"
-                onClick={() => setDirectoryView("cards")}
-              >
-                <LayoutGrid size={15} />
-              </button>
-            </div>
-          </div>
-        </div>
         <div className="directoryToolbar">
           <label className="searchField">
             <Search size={14} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by OTF name or symbol" />
+            <input aria-label="Search OTFs" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by OTF name or symbol" />
           </label>
+          <div className="directoryViewToggle" role="group" aria-label="OTF directory view">
+            <button
+              className={directoryView === "rows" ? "active" : ""}
+              type="button"
+              aria-label="Show OTFs as rows"
+              aria-pressed={directoryView === "rows"}
+              title="Show OTFs as rows"
+              onClick={() => setDirectoryView("rows")}
+            >
+              <List size={15} />
+            </button>
+            <button
+              className={directoryView === "cards" ? "active" : ""}
+              type="button"
+              aria-label="Show OTFs as cards"
+              aria-pressed={directoryView === "cards"}
+              title="Show OTFs as cards"
+              onClick={() => setDirectoryView("cards")}
+            >
+              <LayoutGrid size={15} />
+            </button>
+          </div>
         </div>
 
         <div className={directoryView === "cards" ? "directoryCardsWrap" : "directoryTableWrap"}>
@@ -9161,6 +9080,17 @@ function CreateVaultView({
         icon={<FilePlus2 size={18} />}
       />
 
+      {!connectedAddress ? (
+        <div className="validationSummary createWalletWarning" role="status" aria-live="polite">
+          <Wallet size={15} />
+          <div>
+            <strong>Connect a wallet to create an OTF</strong>
+            <span>A connected wallet is required to deploy the OTF, supply its initial assets, and confirm the transaction.</span>
+          </div>
+          <WalletConnectionAction />
+        </div>
+      ) : null}
+
       {unverifiedAssetIndex !== undefined ? (
         <div
           className="priceDetailsBackdrop"
@@ -9801,6 +9731,7 @@ function CreateVaultView({
                               className="secondaryAction seedApprovalAction"
                               type="button"
                               disabled={
+                                !connectedAddress ||
                                 !asset.balanceSufficient ||
                                 asset.allowance === undefined ||
                                 approvalInProgress
@@ -10034,12 +9965,14 @@ function WalletView({
   isTestnet,
   onBrowseVaults,
   onOpenVault,
+  onCreateVault,
 }: {
   connectedAddress?: string;
   vaults: VaultSummary[];
   isTestnet: boolean;
   onBrowseVaults: () => void;
   onOpenVault: (address: `0x${string}`) => void;
+  onCreateVault: () => void;
 }) {
   const [addressCopied, setAddressCopied] = useState(false);
   const canRead = isTestnet && Boolean(connectedAddress && isAddress(connectedAddress));
@@ -10087,6 +10020,7 @@ function WalletView({
     const decimals = Number(positionResults?.[index * 2 + 1]?.result ?? 18);
     return [{ ...vault, displayBalance: formatWalletTokenBalance(balance, decimals) }];
   });
+  const managedVaults = vaults.filter((vault) => isManagedByAddress(vault.manager, connectedAddress));
   const nativeBalanceLabel = nativeBalance
     ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}`
     : nativeBalanceLoading ? "Loading" : "Unavailable";
@@ -10206,6 +10140,75 @@ function WalletView({
                 <td data-label="NAV / share"><span className="tableValueWithHelp"><span>{position.navPerShare ?? "Unavailable"}</span>{position.navPerShare ? <ValueHelp text="This dollar value is the OTF's current onchain NAV per share: constituent balances valued in USD using each asset's configured pricing route. It is not a redemption quote. Routed or proportional redemption value can differ because of market movement, pool liquidity, fees, and slippage." /> : null}</span></td>
               </tr>)}</tbody>
             </table></div> : <div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div>}
+          </section>
+
+          <section className="sectionCard managedVaultsPanel">
+            <div className="managedVaultsHeading">
+              <div>
+                <span className="appPageIcon"><UserCog size={16} /></span>
+                <div>
+                  <h2>OTFs you manage</h2>
+                  <p>Manager controls and protocol operations for OTFs currently managed by this wallet.</p>
+                </div>
+              </div>
+              <div className="managedVaultsHeaderActions">
+                <span className={`stateBadge ${managedVaults.length ? "success" : "muted"}`}>{managedVaults.length} OTF{managedVaults.length === 1 ? "" : "s"}</span>
+                <button className="primaryAction" type="button" onClick={onCreateVault}>
+                  <Plus size={14} />
+                  Create OTF
+                </button>
+              </div>
+            </div>
+            {managedVaults.length ? (
+              <div className="directoryTableWrap">
+                <table className="directoryTable managedDirectoryTable">
+                  <thead>
+                    <tr>
+                      <th>OTF</th>
+                      <th>NAV</th>
+                      <th>Assets</th>
+                      <th>Manager fee</th>
+                      <th>Manager</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {managedVaults.map((row) => (
+                      <tr
+                        key={row.address}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onOpenVault(row.address)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") onOpenVault(row.address);
+                        }}
+                      >
+                        <td>
+                          <div className="directoryVault">
+                            <OtfTokenIcon className="directoryVaultIcon" size={34} ticker={row.symbol} />
+                            <div>
+                              <strong>{row.name}</strong>
+                              <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
+                              <span className={`stateBadge ${row.verified ? "success" : "warning"}`}>
+                                {row.verified ? "Verified assets" : "Unverified assets"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td data-label="NAV">{row.nav ?? "Oracle read failed"}</td>
+                        <td data-label="Assets">{row.assetCount}</td>
+                        <td data-label="Manager fee">{bpsToPercent(row.managerFeeBps)}</td>
+                        <td data-label="Manager" className="monoValue">{shortAddress(row.manager)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="inlineEmptyState">
+                <UserCog size={18} />
+                <div><strong>No managed OTFs found</strong><span>OTFs will appear here whenever this wallet is their current manager.</span></div>
+              </div>
+            )}
           </section>
         </>
       ) : (

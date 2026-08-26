@@ -54,6 +54,10 @@ export function primaryDepositsBlocked(input: {
   return input.sunset || input.globalPause || input.localPause || !input.pauseStatusAvailable || input.retiringAsset;
 }
 
+export function isManagedByAddress(manager: string | undefined, address: string | undefined): boolean {
+  return Boolean(manager && address && manager.toLowerCase() === address.toLowerCase());
+}
+
 export function chainlinkDescriptionMatchesPair(
   description: string,
   baseSymbol: string,

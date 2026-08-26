@@ -4,6 +4,7 @@ import {
   DEFAULT_CHALLENGE_DEVIATION_BPS,
   DEFAULT_COMPLETION_DEVIATION_BPS,
   FRONTEND_MAX_TRACKED_ASSETS,
+  isManagedByAddress,
   percentToBps,
   primaryDepositsBlocked,
   SUPPORTED_PRICING_SOURCES,
@@ -28,6 +29,13 @@ describe("protocol UI policy", () => {
     expect(primaryDepositsBlocked({ ...open, globalPause: true })).toBe(true);
     expect(primaryDepositsBlocked({ ...open, localPause: true })).toBe(true);
     expect(primaryDepositsBlocked({ ...open, pauseStatusAvailable: false })).toBe(true);
+  });
+
+  it("matches the current manager case-insensitively and handles missing addresses", () => {
+    expect(isManagedByAddress("0xAbC", "0xaBc")).toBe(true);
+    expect(isManagedByAddress("0xAbC", "0xDef")).toBe(false);
+    expect(isManagedByAddress(undefined, "0xAbC")).toBe(false);
+    expect(isManagedByAddress("0xAbC", undefined)).toBe(false);
   });
 
   it("uses the requested creation defaults and converts fixed portfolio percentages to bps", () => {
