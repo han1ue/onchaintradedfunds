@@ -487,6 +487,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _delegateView();
     }
 
+    function previewMaxMint(uint256[] calldata maxAmountsIn)
+        external
+        returns (uint256 shares, uint256[] memory amountsIn)
+    {
+        maxAmountsIn;
+        shares;
+        amountsIn;
+        _delegateView();
+    }
+
     function previewRedeem(uint256 shares) public returns (uint256[] memory amountsOut) {
         shares;
         amountsOut;
@@ -966,7 +976,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function _pinAssetPricing(address asset, AssetPricingConfig calldata config) internal {
         if (_pricingConfiguredForAsset[asset]) {
-            if (config.primarySource == address(0)) return;
+            if (_isPricingReuseSentinel(config)) return;
             if (
                 _pricingSourceForAsset[asset] != uint8(config.source)
                     || _quoteTokenForAsset[asset] != config.quoteToken
@@ -992,6 +1002,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         emit AssetPricingPinned(
             asset, config.source, normalizedFeed, config.quoteToken, config.primarySource, marketId
         );
+    }
+
+    function _isPricingReuseSentinel(AssetPricingConfig calldata config)
+        private
+        pure
+        returns (bool)
+    {
+        return uint8(config.source) == 0 && config.quoteToken == address(0)
+            && config.primarySource == address(0) && config.primaryMaxStaleness == 0;
     }
 
     function _pricingResolver() internal view returns (IAssetPricingResolver resolver) {

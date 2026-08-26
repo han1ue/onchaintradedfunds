@@ -34,6 +34,7 @@ import {
   Monitor,
   KeyRound,
   Landmark,
+  List,
   Network,
   Palette,
   Plus,
@@ -8019,6 +8020,7 @@ function VaultsDirectory({
 }) {
   const testnetCreateAssets = useVerifiedAssetCatalog();
   const [query, setQuery] = useState("");
+  const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
 
   if (!isTestnet) {
     return (
@@ -8147,6 +8149,28 @@ function VaultsDirectory({
             <p>{isTestnet ? "Public OTFs remain discoverable whether or not you manage them." : "Robinhood Mainnet support has not launched yet."}</p>
           </div>
           <div className="directoryPanelMeta">
+            <div className="directoryViewToggle" role="group" aria-label="OTF directory view">
+              <button
+                className={directoryView === "rows" ? "active" : ""}
+                type="button"
+                aria-label="Show OTFs as rows"
+                aria-pressed={directoryView === "rows"}
+                title="Show OTFs as rows"
+                onClick={() => setDirectoryView("rows")}
+              >
+                <List size={15} />
+              </button>
+              <button
+                className={directoryView === "cards" ? "active" : ""}
+                type="button"
+                aria-label="Show OTFs as cards"
+                aria-pressed={directoryView === "cards"}
+                title="Show OTFs as cards"
+                onClick={() => setDirectoryView("cards")}
+              >
+                <LayoutGrid size={15} />
+              </button>
+            </div>
             <span className="stateBadge muted">{vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
           </div>
         </div>
@@ -8157,7 +8181,53 @@ function VaultsDirectory({
           </label>
         </div>
 
-        <div className="directoryTableWrap">
+        <div className={directoryView === "cards" ? "directoryCardsWrap" : "directoryTableWrap"}>
+          <div className="directoryCards" aria-label="OTF cards">
+            {visibleRows.map((row) => (
+              <article
+                key={row.address}
+                className="directoryCard"
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenVault(row.address)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onOpenVault(row.address);
+                }}
+              >
+                <div className="directoryCardHeader">
+                  <div className="directoryVault">
+                    <OtfTokenIcon className="directoryVaultIcon" size={40} ticker={row.symbol} />
+                    <div>
+                      <strong>{row.name}</strong>
+                      <small>{row.symbol} · {shortAddress(row.address)} {row.sunset ? "· Sunset" : ""}</small>
+                    </div>
+                  </div>
+                  <ChevronRight className="directoryCardArrow" size={16} />
+                </div>
+                <span className={`stateBadge ${row.verified ? "success" : "warning"}`}>
+                  {row.verified ? "Verified assets" : "Unverified assets"}
+                </span>
+                <div className="directoryCardStats">
+                  <div>
+                    <span>NAV</span>
+                    <strong>{row.nav ?? "Oracle read failed"}</strong>
+                  </div>
+                  <div>
+                    <span>Assets</span>
+                    <strong>{row.assetCount}</strong>
+                  </div>
+                  <div>
+                    <span>Creator fee</span>
+                    <strong>{bpsToPercent(row.creatorFeeBps)}</strong>
+                  </div>
+                  <div>
+                    <span>Manager</span>
+                    <strong className="monoValue">{shortAddress(row.manager)}</strong>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
           <table className="directoryTable">
             <thead>
               <tr>

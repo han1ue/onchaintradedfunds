@@ -114,6 +114,27 @@ contract MockVaultPriceSources {
         maxStalenessForAsset[asset] = maxStaleness;
         pricingSourceForAsset[asset] = source;
     }
+
+    function pricingConfigForAsset(address asset)
+        external
+        view
+        returns (
+            bool configured,
+            PricingSource source,
+            address,
+            address primarySource,
+            address,
+            address normalizedPriceFeed,
+            uint32 primaryMaxStaleness,
+            uint32
+        )
+    {
+        normalizedPriceFeed = priceFeedForAsset[asset];
+        configured = normalizedPriceFeed != address(0);
+        source = pricingSourceForAsset[asset];
+        primarySource = normalizedPriceFeed;
+        primaryMaxStaleness = maxStalenessForAsset[asset];
+    }
 }
 
 contract PermissionlessAssetMarketsTest is TestBase {

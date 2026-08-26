@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { IProtocolPortfolioLimits } from "./ManagedOTFVaultStorage.sol";
 import { ManagedOTFVaultModule } from "./ManagedOTFVaultModule.sol";
 import { PortfolioCalculator } from "./PortfolioCalculator.sol";
-import { IAdapterAllowlist } from "./interfaces/IAdapterAllowlist.sol";
 import { IERC20, IERC20Metadata } from "./interfaces/IERC20.sol";
 import { RebalanceExecutor } from "./RebalanceExecutor.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -670,9 +669,6 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultModule {
         if (!_containsCurrentAsset(trade.tokenOut)) {
             revert TradeAssetNotTracked(trade.tokenOut);
         }
-        if (!IAdapterAllowlist(_factory).isTradeAdapterApproved(trade.adapter)) {
-            revert UnapprovedAdapter(trade.adapter);
-        }
         _calculator.validateAssetForVault(address(this), trade.tokenIn);
         _calculator.validateAssetForVault(address(this), trade.tokenOut);
     }
@@ -772,13 +768,20 @@ contract ManagedOTFVaultStrategy is ManagedOTFVaultModule {
         private
         view
     {
+        if (_isPricingReuseSentinel(config)) return;
         if (
-            config.primarySource != address(0)
-                && (uint8(config.source) != _pricingSourceForAsset[asset]
-                    || config.primarySource != _primaryPriceSourceForAsset[asset])
+            uint8(config.source) != _pricingSourceForAsset[asset]
+                || config.quoteToken != _quoteTokenForAsset[asset]
+                || config.primarySource != _primaryPriceSourceForAsset[asset]
+                || config.primaryMaxStaleness != _primaryMaxStalenessForAsset[asset]
         ) {
             revert AssetPricingAlreadyPinned(asset);
         }
+    }
+
+    function _isPricingReuseSentinel(AssetPricingConfig memory config) private pure returns (bool) {
+        return uint8(config.source) == 0 && config.quoteToken == address(0)
+            && config.primarySource == address(0) && config.primaryMaxStaleness == 0;
     }
 
     function _clearExecutors() private {

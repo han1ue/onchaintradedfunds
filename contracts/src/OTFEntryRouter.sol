@@ -12,9 +12,10 @@ import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 interface IEntryVault {
     function assets() external view returns (address[] memory);
 
-    function totalSupply() external view returns (uint256);
-
-    function previewMint(uint256 shares) external view returns (uint256[] memory amountsIn);
+    function previewMaxMint(uint256[] calldata maxAmountsIn)
+        external
+        view
+        returns (uint256 shares, uint256[] memory amountsIn);
 
     function mintWithBasket(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
         external
@@ -200,7 +201,7 @@ contract OTFEntryRouter is Ownable2Step {
         }
 
         uint256[] memory requiredAmounts;
-        (shares, requiredAmounts) = _largestProportionalMint(vault, assets, availableAmounts);
+        (shares, requiredAmounts) = IEntryVault(vault).previewMaxMint(availableAmounts);
         if (shares < minShares) revert MinimumOutputNotMet(minShares, shares);
 
         for (uint256 i = 0; i < assets.length; i++) {
@@ -260,72 +261,6 @@ contract OTFEntryRouter is Ownable2Step {
             }
             settlementRefunded += observedOutput;
         }
-    }
-
-    function _largestProportionalMint(
-        address vault,
-        address[] memory assets,
-        uint256[] memory availableAmounts
-    ) private view returns (uint256 shares, uint256[] memory requiredAmounts) {
-        uint256 supply = IEntryVault(vault).totalSupply();
-        uint256 lower = type(uint256).max;
-        for (uint256 i = 0; i < assets.length; i++) {
-            uint256 reserve = IERC20(assets[i]).balanceOf(vault);
-            if (reserve == 0) continue;
-            uint256 candidate = Math.mulDiv(availableAmounts[i], supply, reserve);
-            if (candidate < lower) lower = candidate;
-        }
-        if (lower == type(uint256).max || lower == 0) {
-            return (0, new uint256[](assets.length));
-        }
-
-        requiredAmounts = IEntryVault(vault).previewMint(lower);
-        if (!_amountsFit(requiredAmounts, availableAmounts)) {
-            return _searchLargestMint(vault, 0, lower, availableAmounts);
-        }
-
-        uint256 upper = lower;
-        for (uint256 i = 0; i < 64; i++) {
-            if (upper > type(uint256).max / 2) break;
-            upper *= 2;
-            uint256[] memory upperAmounts = IEntryVault(vault).previewMint(upper);
-            if (!_amountsFit(upperAmounts, availableAmounts)) {
-                return _searchLargestMint(vault, lower, upper, availableAmounts);
-            }
-            lower = upper;
-            requiredAmounts = upperAmounts;
-        }
-        return (lower, requiredAmounts);
-    }
-
-    function _searchLargestMint(
-        address vault,
-        uint256 lower,
-        uint256 upper,
-        uint256[] memory availableAmounts
-    ) private view returns (uint256 shares, uint256[] memory requiredAmounts) {
-        while (upper - lower > 1) {
-            uint256 midpoint = lower + (upper - lower) / 2;
-            uint256[] memory midpointAmounts = IEntryVault(vault).previewMint(midpoint);
-            if (_amountsFit(midpointAmounts, availableAmounts)) lower = midpoint;
-            else upper = midpoint;
-        }
-        shares = lower;
-        requiredAmounts = shares == 0
-            ? new uint256[](availableAmounts.length)
-            : IEntryVault(vault).previewMint(shares);
-    }
-
-    function _amountsFit(uint256[] memory required, uint256[] memory available)
-        private
-        pure
-        returns (bool)
-    {
-        if (required.length != available.length) return false;
-        for (uint256 i = 0; i < required.length; i++) {
-            if (required[i] > available[i]) return false;
-        }
-        return true;
     }
 
     function redeemToSettlement(

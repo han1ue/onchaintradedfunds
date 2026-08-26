@@ -15,12 +15,10 @@ interface IAssetMarketRegistry {
             bool allowV3Twap
         );
 
-    function validateQuoteToken(
-        address quoteToken,
-        address usdFeed,
-        uint32 maxStaleness,
-        bool forV3
-    ) external view;
+    function validatedQuoteTokenConfig(address quoteToken, bool forV3)
+        external
+        view
+        returns (address usdFeed, uint32 maxStaleness);
 
     function registerV3Market(address asset, address pool) external returns (bytes32 marketId);
 

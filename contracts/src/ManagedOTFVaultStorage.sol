@@ -109,7 +109,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Base {
     error TooManyTrades(uint256 count, uint256 maximum);
     error BadTrade(address tokenIn, address tokenOut, uint256 amountIn);
     error TradeAssetNotTracked(address token);
-    error UnapprovedAdapter(address adapter);
     error InvalidRecordIndex(uint256 index);
     error StrategyStateLocked();
     error StrategicRebalanceNotActive();

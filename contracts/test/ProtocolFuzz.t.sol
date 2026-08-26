@@ -110,6 +110,24 @@ contract ProtocolFuzzTest is ProtocolTestBase {
         assertLe(tokenB.balanceOf(address(vault)) - 500 * ONE, 1);
     }
 
+    function testFuzzPreviewMaxMintMatchesPreviewMint(uint96 rawShares, uint96 rawDonation) public {
+        ManagedOTFVault vault = _createVault();
+        uint256 shares = bound(rawShares, 1, 50 * ONE);
+        tokenA.mint(address(vault), bound(rawDonation, 0, 1_000 * ONE));
+        uint256[] memory limits = vault.previewMint(shares);
+
+        (uint256 maximumShares, uint256[] memory amountsIn) = vault.previewMaxMint(limits);
+        uint256[] memory previewed = vault.previewMint(maximumShares);
+        bool nextShareExceedsLimit;
+        uint256[] memory nextPreview = vault.previewMint(maximumShares + 1);
+        for (uint256 i = 0; i < limits.length; i++) {
+            assertEq(amountsIn[i], previewed[i]);
+            assertLe(amountsIn[i], limits[i]);
+            if (nextPreview[i] > limits[i]) nextShareExceedsLimit = true;
+        }
+        assertTrue(nextShareExceedsLimit);
+    }
+
     function testFuzzLockedLiquiditySurvivesFullCirculatingRedemption(
         uint96 rawInitialSupply,
         uint96 rawInitialAmount

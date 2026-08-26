@@ -176,13 +176,17 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         );
     }
 
-    function validateQuoteToken(
-        address quoteToken,
-        address usdFeed,
-        uint32 maxStaleness,
-        bool forV3
-    ) external view {
-        _validateQuoteToken(quoteToken, usdFeed, maxStaleness, forV3);
+    function validatedQuoteTokenConfig(address quoteToken, bool forV3)
+        external
+        view
+        returns (address usdFeed, uint32 maxStaleness)
+    {
+        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
+        if (config.usdFeed == address(0)) revert QuoteTokenConfigNotFound(quoteToken);
+        if (!config.enabled || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)) {
+            revert QuoteTokenConfigMismatch(quoteToken);
+        }
+        return (config.usdFeed, config.maxStaleness);
     }
 
     function registerV3Market(address asset, address pool) external returns (bytes32 marketId) {
@@ -242,20 +246,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
             revert TokenDecimalsUnavailable(asset);
         }
         if (tokenDecimals != 18) revert UnsupportedAssetDecimals(asset, tokenDecimals);
-    }
-
-    function _validateQuoteToken(
-        address quoteToken,
-        address usdFeed,
-        uint32 maxStaleness,
-        bool forV3
-    ) private view {
-        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
-        if (config.usdFeed == address(0)) revert QuoteTokenConfigNotFound(quoteToken);
-        if (
-            !config.enabled || config.usdFeed != usdFeed || config.maxStaleness != maxStaleness
-                || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)
-        ) revert QuoteTokenConfigMismatch(quoteToken);
     }
 
     function _tokenDecimals(address token) private view returns (uint8 tokenDecimals) {

@@ -244,12 +244,11 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
 
     function currentWeight(address token) external view onlyDelegateCall returns (uint256 weight) {
         if (!_containsAsset(token)) revert NotConstituent(token);
-        uint256 nav = _portfolioCalculator.portfolioValue(address(this), _assets);
-        if (nav == 0) revert ZeroNav();
-        uint256 tokenValue = _portfolioCalculator.assetValueForVault(
-            address(this), token, IERC20(token).balanceOf(address(this))
-        );
-        return Math.mulDiv(tokenValue, BPS, nav);
+        (uint256[] memory weights,) = _portfolioCalculator.portfolioState(address(this), _assets);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i] == token) return weights[i];
+        }
+        revert NotConstituent(token);
     }
 
     function getWeightBands(address token)
@@ -380,6 +379,36 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         _requireDepositsOpen();
         uint256 supply = _previewSupplyAfterAccrual();
         amountsIn = new uint256[](_assets.length);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            amountsIn[i] = Math.mulDiv(
+                shares, IERC20(_assets[i]).balanceOf(address(this)), supply, Math.Rounding.Ceil
+            );
+        }
+    }
+
+    function previewMaxMint(uint256[] calldata maxAmountsIn)
+        external
+        view
+        onlyDelegateCall
+        returns (uint256 shares, uint256[] memory amountsIn)
+    {
+        if (maxAmountsIn.length != _assets.length) {
+            revert LengthMismatch(_assets.length, maxAmountsIn.length);
+        }
+        _requireDepositsOpen();
+        uint256 supply = _previewSupplyAfterAccrual();
+        shares = type(uint256).max;
+        amountsIn = new uint256[](_assets.length);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
+            if (reserve == 0) continue;
+            uint256 candidate = Math.mulDiv(maxAmountsIn[i], supply, reserve);
+            if (candidate < shares) shares = candidate;
+        }
+        if (shares == type(uint256).max || shares == 0) {
+            shares = 0;
+            return (shares, amountsIn);
+        }
         for (uint256 i = 0; i < _assets.length; i++) {
             amountsIn[i] = Math.mulDiv(
                 shares, IERC20(_assets[i]).balanceOf(address(this)), supply, Math.Rounding.Ceil

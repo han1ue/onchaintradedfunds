@@ -17,9 +17,19 @@ interface IRobinhoodPriceFeed is IOraclePauseStatus {
 }
 
 interface IVaultAssetPriceSources {
-    function priceFeedForAsset(address asset) external view returns (address);
-    function maxStalenessForAsset(address asset) external view returns (uint32);
-    function pricingSourceForAsset(address asset) external view returns (PricingSource);
+    function pricingConfigForAsset(address asset)
+        external
+        view
+        returns (
+            bool configured,
+            PricingSource source,
+            address quoteToken,
+            address primarySource,
+            address secondarySource,
+            address normalizedPriceFeed,
+            uint32 primaryMaxStaleness,
+            uint32 secondaryMaxStaleness
+        );
 }
 
 contract PortfolioCalculator {
@@ -302,12 +312,19 @@ contract PortfolioCalculator {
         view
         returns (uint256 price, uint8 priceDecimals)
     {
-        AggregatorV3Interface feed;
-        uint32 maxStaleness;
-        feed = AggregatorV3Interface(IVaultAssetPriceSources(vault).priceFeedForAsset(asset));
-        maxStaleness = IVaultAssetPriceSources(vault).maxStalenessForAsset(asset);
-        bool requireRobinhoodPauseCheck = IVaultAssetPriceSources(vault)
-                .pricingSourceForAsset(asset) == PricingSource.ChainlinkRobinhood;
+        (
+            ,
+            PricingSource source,,,,
+            address normalizedPriceFeed,
+            uint32 primaryMaxStaleness,
+            uint32 secondaryMaxStaleness
+        ) = IVaultAssetPriceSources(vault).pricingConfigForAsset(asset);
+        AggregatorV3Interface feed = AggregatorV3Interface(normalizedPriceFeed);
+        uint32 maxStaleness = source == PricingSource.ChainlinkComposed
+            && secondaryMaxStaleness > primaryMaxStaleness
+            ? secondaryMaxStaleness
+            : primaryMaxStaleness;
+        bool requireRobinhoodPauseCheck = source == PricingSource.ChainlinkRobinhood;
         if (address(feed) == address(0)) revert OracleFeedMissing(asset);
         return _readValidPrice(asset, feed, maxStaleness, requireRobinhoodPauseCheck);
     }

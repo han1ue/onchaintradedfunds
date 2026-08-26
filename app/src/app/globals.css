@@ -4956,6 +4956,44 @@ textarea::placeholder {
   gap: 6px;
 }
 
+.directoryViewToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  padding: 2px;
+}
+
+.directoryViewToggle button {
+  display: grid;
+  width: 30px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.directoryViewToggle button:hover {
+  color: var(--text);
+}
+
+.directoryViewToggle button.active {
+  background: var(--card-raised);
+  color: var(--accent-text);
+}
+
+.directoryViewToggle button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid rgb(var(--accent-rgb) / 62%);
+  outline-offset: 1px;
+}
+
 .managedVaultRow {
   display: grid;
   grid-template-columns: minmax(250px, 1.45fr) repeat(3, minmax(110px, 0.7fr)) auto;
@@ -5025,6 +5063,103 @@ textarea::placeholder {
 
 .directoryTableWrap {
   overflow-x: auto;
+}
+
+.directoryCardsWrap {
+  overflow: hidden;
+}
+
+.directoryCardsWrap .directoryTable,
+.directoryCards {
+  display: none;
+}
+
+.directoryCardsWrap .directoryCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.directoryCardsWrap .directoryTable {
+  display: none;
+}
+
+.directoryCard {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-raised);
+  cursor: pointer;
+  padding: 14px;
+  outline: none;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.directoryCard:hover,
+.directoryCard:focus-visible {
+  border-color: rgb(var(--accent-rgb) / 42%);
+  background: rgb(var(--accent-rgb) / 5%);
+}
+
+.directoryCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.directoryCardHeader .directoryVault {
+  min-width: 0;
+}
+
+.directoryCardHeader .directoryVaultIcon {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+}
+
+.directoryCardArrow {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+
+.directoryCard > .stateBadge {
+  margin-top: 12px;
+}
+
+.directoryCardStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 15px;
+  border-top: 1px solid var(--border);
+  padding-top: 13px;
+}
+
+.directoryCardStats span,
+.directoryCardStats strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directoryCardStats span {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.directoryCardStats strong {
+  margin-top: 5px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .directoryTable {
@@ -5126,6 +5261,7 @@ textarea::placeholder {
 
 @media (max-width: 1120px) {
   .directoryPanel .directoryTableWrap,
+  .directoryPanel .directoryCardsWrap,
   .managedVaultsPanel .directoryTableWrap,
   .depositPositions .directoryTableWrap,
   .walletAssets .directoryTableWrap {
@@ -8586,6 +8722,19 @@ input.invalid {
 
   .walletAssets .directoryTable td {
     grid-column: 1 / -1;
+  }
+
+  .directoryViewToggle {
+    display: none;
+  }
+
+  .directoryPanel .directoryCardsWrap .directoryCards {
+    display: none;
+  }
+
+  .directoryPanel .directoryCardsWrap .directoryTable {
+    display: block;
+    min-width: 0;
   }
 
   .brandText {

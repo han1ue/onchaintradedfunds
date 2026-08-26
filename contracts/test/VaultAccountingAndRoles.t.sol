@@ -99,6 +99,40 @@ contract VaultAccountingAndRolesTest is ProtocolTestBase {
         assertEq(tokenB.balanceOf(address(vault)), 500 * ONE);
     }
 
+    function testPreviewMaxMintMatchesPreviewMintAtRoundingBoundaries() public {
+        ManagedOTFVault vault = _createVault();
+        tokenA.mint(address(vault), 1);
+
+        uint256[] memory limits = vault.previewMint(1);
+        (uint256 shares, uint256[] memory amountsIn) = vault.previewMaxMint(limits);
+        assertEq(shares, 1);
+        assertEq(amountsIn[0], limits[0]);
+        assertEq(amountsIn[1], limits[1]);
+
+        limits = vault.previewMint(10 * ONE + 1);
+        (shares, amountsIn) = vault.previewMaxMint(limits);
+        assertEq(shares, 10 * ONE + 1);
+        assertEq(amountsIn[0], limits[0]);
+        assertEq(amountsIn[1], limits[1]);
+    }
+
+    function testPreviewMaxMintAmountsNeverExceedLimits() public {
+        ManagedOTFVault vault = _createVault();
+        tokenA.mint(address(vault), 1);
+        uint256[] memory limits = new uint256[](2);
+        limits[0] = 50 * ONE + 1;
+        limits[1] = 49 * ONE;
+
+        (uint256 shares, uint256[] memory amountsIn) = vault.previewMaxMint(limits);
+
+        assertGt(shares, 0);
+        assertLe(amountsIn[0], limits[0]);
+        assertLe(amountsIn[1], limits[1]);
+        uint256[] memory previewed = vault.previewMint(shares);
+        assertEq(amountsIn[0], previewed[0]);
+        assertEq(amountsIn[1], previewed[1]);
+    }
+
     function testMintMaximumInputProtectsUserAndRevertsAtomically() public {
         ManagedOTFVault vault = _createVault();
         uint256[] memory maximums = vault.previewMint(10 * ONE);

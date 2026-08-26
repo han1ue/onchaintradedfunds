@@ -285,8 +285,9 @@ contract RebalanceSafetyTest is ProtocolTestBase {
 
         factory.setTradeAdapterApproved(address(adapter), false);
         vm.prank(ALICE);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.UnapprovedAdapter.selector);
+        vm.expectPartialRevert(RebalanceExecutor.UnapprovedAdapter.selector);
         vault.executeRebalanceTrades(trades);
+        assertEq(tokenA.allowance(address(vault), address(executor)), 0);
 
         factory.setTradeAdapterApproved(address(adapter), true);
         trades = _singleTrade(address(tokenA), address(tokenC), ONE, ONE);
@@ -614,6 +615,49 @@ contract RebalanceSafetyTest is ProtocolTestBase {
         assertEq(uint256(primaryMaxStaleness), 25 hours);
         assertEq(uint256(secondaryMaxStaleness), 0);
         assertEq(vault.marketIdForAsset(address(tokenC)), bytes32(0));
+    }
+
+    function testAllZeroPricingConfigReusesPinnedPricing() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        AssetPricingConfig[] memory reusePricing = new AssetPricingConfig[](assets.length);
+        vm.warp(START + 14 days);
+        _refreshPrices();
+
+        vault.proposeStrategyWithPricing(
+            assets,
+            _uint256Weights(weights),
+            reusePricing,
+            "Reuse both currently pinned pricing configurations."
+        );
+        vm.warp(vault.pendingStrategyActivationTime());
+        _refreshPrices();
+        vault.activatePendingStrategy();
+
+        assertEq(vault.targetWeightBps(address(tokenA)), 6_000);
+        assertEq(vault.targetWeightBps(address(tokenB)), 4_000);
+    }
+
+    function testIncompleteExplicitPinnedPricingIsRejected() public {
+        ManagedOTFVault vault = _createVault();
+        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
+        AssetPricingConfig[] memory pricingConfigs = new AssetPricingConfig[](assets.length);
+        pricingConfigs[0] = _directPricing(address(feedA));
+        pricingConfigs[0].primaryMaxStaleness = 0;
+        vm.warp(START + 14 days);
+        _refreshPrices();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ManagedOTFVaultStorage.AssetPricingAlreadyPinned.selector, address(tokenA)
+            )
+        );
+        vault.proposeStrategyWithPricing(
+            assets,
+            _uint256Weights(weights),
+            pricingConfigs,
+            "Reject an incomplete explicit pinned-pricing configuration."
+        );
     }
 
     function testMalformedAndOversizedTradeBatchesRevert() public {

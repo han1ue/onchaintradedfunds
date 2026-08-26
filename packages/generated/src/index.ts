@@ -3737,6 +3737,30 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "function",
+    "name": "previewMaxMint",
+    "inputs": [
+      {
+        "name": "maxAmountsIn",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amountsIn",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "previewRedeem",
     "inputs": [
       {

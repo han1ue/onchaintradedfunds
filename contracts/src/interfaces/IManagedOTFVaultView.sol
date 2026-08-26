@@ -92,6 +92,10 @@ interface IManagedOTFVaultView {
     function previewContribute(uint256[] calldata amounts) external view returns (uint256);
     function previewWithdraw(uint256 lpAmount) external view returns (uint256[] memory);
     function previewMint(uint256 shares) external view returns (uint256[] memory);
+    function previewMaxMint(uint256[] calldata maxAmountsIn)
+        external
+        view
+        returns (uint256 shares, uint256[] memory amountsIn);
     function previewRedeem(uint256 shares) external view returns (uint256[] memory);
     function recentRebalanceCount() external view returns (uint256);
     function recentRebalanceRecord(uint256 index) external view returns (RebalanceRecord memory);

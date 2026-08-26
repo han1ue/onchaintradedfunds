@@ -152,8 +152,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         view
         returns (address usdFeed, uint32 maxStaleness)
     {
-        (usdFeed, maxStaleness,,,) = marketRegistry.quoteTokenConfig(quoteToken);
-        marketRegistry.validateQuoteToken(quoteToken, usdFeed, maxStaleness, forV3);
+        return marketRegistry.validatedQuoteTokenConfig(quoteToken, forV3);
     }
 
     function _validateLeg(
