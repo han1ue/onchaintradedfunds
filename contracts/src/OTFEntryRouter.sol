@@ -304,33 +304,35 @@ contract OTFEntryRouter is Ownable2Step {
             IEntryVault(vault).redeem(shares, address(this), msg.sender, minimums);
         if (redeemed.length != assets.length) revert InvalidArrayLength();
 
+        uint256[] memory observedRedeemed = new uint256[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            uint256 observed = IERC20(assets[i]).balanceOf(address(this)) - balancesBefore[i];
+            if (redeemed[i] != observed) {
+                revert VaultOutputMismatch(i, redeemed[i], observed);
+            }
+            observedRedeemed[i] = observed;
+        }
+
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
-            uint256 observedRedeemed = IERC20(asset).balanceOf(address(this)) - balancesBefore[i];
-            if (redeemed[i] != observedRedeemed) {
-                revert VaultOutputMismatch(i, redeemed[i], observedRedeemed);
-            }
+            uint256 amount = observedRedeemed[i];
             if (asset == settlementToken) {
-                settlementReceived += observedRedeemed;
+                settlementReceived += amount;
                 continue;
             }
 
             ExitSwap calldata swap = swaps[i];
-            if (observedRedeemed == 0) {
+            if (amount == 0) {
                 if (swap.minSettlementOut != 0) {
                     revert MinimumOutputNotMet(swap.minSettlementOut, 0);
                 }
                 continue;
             }
-            _pushExact(asset, swap.adapter, observedRedeemed);
+            _pushExact(asset, swap.adapter, amount);
             uint256 settlementBefore = IERC20(settlementToken).balanceOf(address(this));
             uint256 reportedOutput = ITradeAdapter(swap.adapter)
                 .executeSwap(
-                    asset,
-                    settlementToken,
-                    observedRedeemed,
-                    swap.minSettlementOut,
-                    swap.adapterData
+                    asset, settlementToken, amount, swap.minSettlementOut, swap.adapterData
                 );
             uint256 observedOutput =
                 IERC20(settlementToken).balanceOf(address(this)) - settlementBefore;

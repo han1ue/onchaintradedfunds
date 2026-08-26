@@ -5,6 +5,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
 import { ITradeAdapter } from "../src/interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
+import { VaultInitParams } from "../src/VaultTypes.sol";
 import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
@@ -346,6 +347,28 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         assertEq(vault.allowance(ALICE, address(entryRouter)), 0);
     }
 
+    function testSettlementExitSupportsSettlementConstituentFirst() public {
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenC);
+        assets[1] = address(tokenA);
+        _assertSettlementConstituentExit(assets);
+    }
+
+    function testSettlementExitSupportsSettlementConstituentAfterSwap() public {
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenC);
+        _assertSettlementConstituentExit(assets);
+    }
+
+    function testSettlementExitSupportsSettlementConstituentBetweenSwaps() public {
+        address[] memory assets = new address[](3);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenC);
+        assets[2] = address(tokenB);
+        _assertSettlementConstituentExit(assets);
+    }
+
     function testSettlementExitMinimumAndAdapterApprovalRevertAtomically() public {
         ManagedOTFVault vault = _createVault();
         uint256 shares = 10 * ONE;
@@ -424,6 +447,52 @@ contract OTFEntryRouterTest is ProtocolTestBase {
             ExitSwap({ adapter: address(exitAdapter), minSettlementOut: minB, adapterData: "" });
     }
 
+    function _assertSettlementConstituentExit(address[] memory assets) private {
+        VaultInitParams memory params = _defaultParams();
+        params.initialAssets = assets;
+        params.initialPricingConfigs = _pricingConfigsFor(assets);
+        params.initialTargetWeightsBps = new uint16[](assets.length);
+        params.initialAmounts = new uint256[](assets.length);
+        uint16 equalWeight = uint16(10_000 / assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            params.initialTargetWeightsBps[i] = equalWeight;
+            params.initialAmounts[i] = 500 * ONE;
+        }
+        params.initialTargetWeightsBps[0] += uint16(10_000 % assets.length);
+
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        uint256 shares = 10 * ONE;
+        vault.transfer(ALICE, shares);
+        uint256[] memory expectedAssets = vault.previewRedeem(shares);
+        ExitSwap[] memory swaps = new ExitSwap[](assets.length);
+        uint256 expectedSettlement;
+        for (uint256 i = 0; i < assets.length; i++) {
+            expectedSettlement += expectedAssets[i];
+            if (assets[i] != address(tokenC)) {
+                swaps[i] = ExitSwap({
+                    adapter: address(exitAdapter),
+                    minSettlementOut: expectedAssets[i],
+                    adapterData: ""
+                });
+            }
+        }
+
+        uint256 settlementBefore = tokenC.balanceOf(ALICE);
+        vm.startPrank(ALICE);
+        vault.approve(address(entryRouter), shares);
+        uint256 received = entryRouter.redeemToSettlement(
+            address(vault), shares, ALICE, expectedSettlement, block.timestamp + 1 hours, swaps
+        );
+        vm.stopPrank();
+
+        assertEq(received, expectedSettlement);
+        assertEq(tokenC.balanceOf(ALICE), settlementBefore + expectedSettlement);
+        assertEq(vault.balanceOf(ALICE), 0);
+        assertEq(tokenA.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenB.balanceOf(address(entryRouter)), 0);
+        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
+    }
+
     function _entrySwaps(uint256 settlementA, uint256 settlementB)
         private
         view
@@ -448,4 +517,3 @@ contract OTFEntryRouterTest is ProtocolTestBase {
         });
     }
 }
-
