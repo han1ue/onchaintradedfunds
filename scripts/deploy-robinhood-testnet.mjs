@@ -266,24 +266,15 @@ const uniswapV3Adapter = await deployContract({
   name: "RegisteredUniswapV3Adapter",
   args: [account.address, uniswapV3SwapRouterAddress],
 });
-const settlementRoutes = [];
-for (const marketAsset of supportedMarketAssets) {
-  settlementRoutes.push({
-    ...marketAsset,
-    router: await deployContract({
-      name: "OTFEntryRouter",
-      args: [account.address, factory.address, marketAsset.token],
-    }),
-  });
-}
-const entryRouteUsdg = settlementRoutes.find((route) => route.symbol === "USDG");
-const entryRouteWeth = settlementRoutes.find((route) => route.symbol === "WETH");
-if (!entryRouteUsdg || !entryRouteWeth) throw new Error("Supported market routes are incomplete.");
+const entryRouter = await deployContract({
+  name: "OTFEntryExitRouter",
+  args: [account.address, factory.address],
+});
 
 const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
 const factoryAbi = contractArtifact("OTFFactory").abi;
 const registeredAdapterAbi = contractArtifact("RegisteredUniswapV3Adapter").abi;
-const entryRouterAbi = contractArtifact("OTFEntryRouter").abi;
+const entryRouterAbi = contractArtifact("OTFEntryExitRouter").abi;
 
 const setupTransactions = {
   setExecutorFactory: await writeContract({
@@ -312,25 +303,22 @@ const setupTransactions = {
   }),
 };
 
-for (const route of settlementRoutes) {
-  setupTransactions.settlementEntry.push({
-    settlement: route.symbol,
-    adapter: uniswapV3Adapter.address,
-    router: route.router.address,
-    entryRouterCallerApproval: await writeContract({
-      address: uniswapV3Adapter.address,
-      abi: registeredAdapterAbi,
-      functionName: "setCallerApproved",
-      args: [route.router.address, true],
-    }),
-    routerAdapterApproval: await writeContract({
-      address: route.router.address,
-      abi: entryRouterAbi,
-      functionName: "setEntryAdapterApproved",
-      args: [uniswapV3Adapter.address, true],
-    }),
-  });
-}
+setupTransactions.settlementEntry.push({
+  adapter: uniswapV3Adapter.address,
+  router: entryRouter.address,
+  entryRouterCallerApproval: await writeContract({
+    address: uniswapV3Adapter.address,
+    abi: registeredAdapterAbi,
+    functionName: "setCallerApproved",
+    args: [entryRouter.address, true],
+  }),
+  routerAdapterApproval: await writeContract({
+    address: entryRouter.address,
+    abi: entryRouterAbi,
+    functionName: "setTradeAdapterApproved",
+    args: [uniswapV3Adapter.address, true],
+  }),
+});
 
 setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
   address: uniswapV3Adapter.address,
@@ -340,7 +328,7 @@ setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
 });
 
 const deployment = {
-  schemaVersion: 7,
+  schemaVersion: 8,
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -360,8 +348,7 @@ const deployment = {
     assetMarketRegistry,
     pricingResolver,
     uniswapV3Adapter,
-    entryRouter: entryRouteUsdg.router,
-    entryRouterWeth: entryRouteWeth.router,
+    entryRouter,
   },
   externalContracts: {
     usdg: usdgAddress,
@@ -379,11 +366,11 @@ const deployment = {
     maximumOracleStalenessSeconds: 604800,
     note: "Each OTF pins its asset feed or V3 pool. Composed and V3 routes read the quote token's single current USD feed from the admin registry.",
   },
-  executionRoutes: settlementRoutes.map((route) => ({
+  executionRoutes: supportedMarketAssets.map((route) => ({
     settlement: route.symbol,
     settlementToken: route.token,
     adapter: uniswapV3Adapter.address,
-    entryRouter: route.router.address,
+    entryRouter: entryRouter.address,
     pathEncoding: "uniswap-v3-packed",
     pricingIndependent: true,
   })),

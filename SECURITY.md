@@ -252,30 +252,30 @@ Pricing and trading are separate trust surfaces. An OTF may price from one V3 po
 route and execute through different pools, intermediate tokens, and fee tiers. A pricing-market
 deprecation must not disable an existing OTF's pinned reads or its otherwise-valid execution path.
 
-### Settlement entry adapters
+### Entry and exit trade adapters
 
-`OTFEntryRouter` is an optional convenience layer for acquiring a proportional basket with USDG.
+`OTFEntryExitRouter` is an optional convenience layer for entering and exiting a proportional basket with a caller-selected ERC-20 input or output token.
 It is not part of vault custody or valuation. The router accepts only factory-registered OTFs,
-requires an independently approved entry adapter for every non-settlement constituent, checks
+requires an independently approved trade adapter for every non-direct constituent leg, checks
 observed token deltas against adapter return values, and uses exact temporary approvals. The
-exact-share path mints only after every exact-output purchase succeeds. The exact-USDG path spends
+exact-share path mints only after every exact-output purchase succeeds. The fixed-input path spends
 fixed per-leg inputs, derives the largest strictly proportional mint from observed outputs, enforces
-an aggregate minimum-share floor, and sells every surplus constituent back to USDG rather than
-depositing it off-weight. Each refund sale uses a caller-provided minimum USDG-per-constituent rate;
+an aggregate minimum-share floor, and sells every surplus constituent back to the selected input token rather than
+depositing it off-weight. Each refund sale uses a caller-provided minimum input-token-per-constituent rate;
 the whole entry reverts if any purchase, mint, or refund sale violates its bound.
 
 The entry path still inherits liquidity and integration risks:
 
 - AMM execution prices may differ materially from the OTF's pinned-price NAV.
 - Thin or manipulated pools may produce poor quotes even when the vault's oracle value is sound.
-- A compromised approved entry adapter could spend its per-leg allowance incorrectly or attempt to retain funds.
-- Router, adapter, settlement-token, and venue addresses are deployment-critical configuration.
+- A compromised approved trade adapter could spend its per-leg allowance incorrectly or attempt to retain funds.
+- Router and adapter addresses are deployment-critical configuration; callers select only tokens with valid routes.
 - Frontend quotes can become stale before inclusion.
 
-The same router supports settlement-token exits. It first calls the vault's normal proportional
+The same router supports transaction-selected output-token exits. It first calls the vault's normal proportional
 redemption with the user as share owner and the router as basket receiver, then sells only those
 received constituents through approved adapters. Users authorize an exact OTF share amount and
-set per-leg minimums, an aggregate minimum USDG output, and a deadline. Output remains inside the
+set per-leg minimums, an aggregate minimum output, and a deadline. Output remains inside the
 router until every leg succeeds, after which the exact aggregate is transferred to the selected
 receiver. Failure reverts the share burn and all swaps.
 

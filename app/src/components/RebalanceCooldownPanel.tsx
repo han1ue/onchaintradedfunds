@@ -4,7 +4,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   managedOtfVaultAbi,
-  otfEntryRouterAbi,
+  otfEntryExitRouterAbi,
   otfFactoryAbi,
 } from "@onchaintradedfunds/generated";
 import {
@@ -649,7 +649,8 @@ function configuredFactoryAddress(): `0x${string}` | undefined {
 }
 
 function configuredEntryRouterAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
-  return mode === "weth" ? robinhoodTestnetAddresses.entryRouterWeth : robinhoodTestnetAddresses.entryRouter;
+  void mode;
+  return robinhoodTestnetAddresses.entryRouter;
 }
 
 function configuredEntryAdapterAddress(mode: RoutedSettlementMode = "usdg"): `0x${string}` | undefined {
@@ -1717,7 +1718,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["ManagerFeeTooHigh(uint16,uint16)", "The manager fee is above the protocol maximum."],
     ["InvalidWeightBands(uint16,uint16)", "The proposed weight bands do not satisfy the factory's current policy."],
     ["ZeroShares()", "Enter a share amount greater than zero."],
-    ["ZeroSettlementInput()", "Enter a USDG amount greater than zero."],
+    ["ZeroInputAmount()", "Enter an input-token amount greater than zero."],
     ["ZeroAmount()", "Enter an amount greater than zero."],
     ["AmountTooHigh(address,uint256,uint256)", "The required token amount exceeds the maximum allowed for this transaction."],
     ["AmountTooLow(address,uint256,uint256)", "The token amount received is below the minimum allowed for this transaction."],
@@ -1730,7 +1731,8 @@ const protocolErrorMessages = new Map<string, string>(
     ["InsufficientShares(uint256,uint256)", "The share output is below your selected minimum."],
     ["InsufficientAmount(uint256,uint256,uint256)", "One token output is below your selected minimum."],
     ["DeadlineExpired(uint256)", "This quote expired before it could be executed. Request a fresh quote and try again."],
-    ["SettlementInputMismatch(uint256,uint256)", "The constituent allocations no longer match the USDG amount. Request a fresh quote and try again."],
+    ["InputAmountMismatch(uint256,uint256)", "The constituent allocations no longer match the input-token amount. Request a fresh quote and try again."],
+    ["InvalidDirectLeg(uint256)", "A direct constituent leg contains swap data. Request a fresh quote and try again."],
     ["MinimumOutputNotMet(uint256,uint256)", "The trade output fell below your selected minimum. Request a fresh quote and try again."],
     ["Slippage(uint256,uint256)", "The price moved beyond the allowed slippage. Request a fresh quote and try again."],
     ["NavLossTooHigh(uint256,uint256,uint16)", "This trade would lose more oracle value than the portfolio allows. Reduce the trade size and try again."],
@@ -1743,7 +1745,7 @@ const protocolErrorMessages = new Map<string, string>(
     ["BadTrade(address,address,uint256)", "One rebalance trade has invalid assets or an invalid amount."],
     ["TradeAssetNotTracked(address)", "A rebalance trade references an asset that is not tracked by this portfolio."],
     ["UnapprovedAdapter(address)", "The selected trading adapter is not approved by the protocol."],
-    ["UnapprovedEntryAdapter(address)", "The selected entry adapter is not approved by the protocol."],
+    ["UnapprovedTradeAdapter(address)", "The selected trade adapter is not approved by the protocol."],
     ["StrategyChangeCooldownActive(uint256)", "This portfolio is still in its strategy-change cooldown. Try again after the cooldown ends."],
     ["StrategyActivationPending(uint256)", "A new strategy is waiting for activation and cannot be changed yet."],
     ["PendingStrategyExists()", "This portfolio already has a strategy change waiting for activation."],
@@ -4021,16 +4023,7 @@ function UserActions({
   const entrySlippageValid = slippageValid;
   const redeemSlippageBps = slippageBps;
   const redeemSlippageValid = slippageValid;
-  const { data: settlementTokenAddress } = useReadContract({
-    address: entryRouterAddress,
-    abi: otfEntryRouterAbi,
-    functionName: "settlementToken",
-    chainId: robinhoodChainTestnet.id,
-    query: { enabled: entryContractsConfigured && isLive },
-  });
-  const settlementToken = typeof settlementTokenAddress === "string" && isAddress(settlementTokenAddress)
-    ? settlementTokenAddress
-    : configuredSettlementToken;
+  const settlementToken = configuredSettlementToken;
   const exactOutputQuoteContract = (asset: string, amountOut: bigint) => {
     const path = exactOutputRouteFor(asset);
     if (!path || !uniswapV3QuoterAddress) throw new Error("Execution route unavailable");
@@ -4114,8 +4107,8 @@ function UserActions({
   }
   const { data: entryAdapterApproved } = useReadContract({
     address: entryRouterAddress,
-    abi: otfEntryRouterAbi,
-    functionName: "isEntryAdapterApproved",
+    abi: otfEntryExitRouterAbi,
+    functionName: "isTradeAdapterApproved",
     args: entryAdapterAddress ? [entryAdapterAddress] : undefined,
     chainId: robinhoodChainTestnet.id,
     query: { enabled: entryContractsConfigured && isLive },
@@ -5042,7 +5035,7 @@ function UserActions({
     }
   }
 
-  async function enterWithSettlement() {
+  async function enterWithToken() {
     if (
       vaultDepositsBlocked ||
       !vault.address ||
@@ -5060,17 +5053,17 @@ function UserActions({
     const swaps = protectedExactInputEntryLegs.map((leg) => leg.isSettlement
       ? {
           adapter: zeroAddress,
-          settlementIn: leg.settlementIn as bigint,
+          inputAmount: leg.settlementIn as bigint,
           minAssetOut: leg.settlementIn as bigint,
-          minRefundSettlementRate: 0n,
+          minRefundInputRate: 0n,
           adapterData: "0x" as `0x${string}`,
           refundAdapterData: "0x" as `0x${string}`,
         }
       : {
           adapter: entryAdapterAddress,
-          settlementIn: leg.settlementIn as bigint,
+          inputAmount: leg.settlementIn as bigint,
           minAssetOut: leg.minimumAssetOut as bigint,
-          minRefundSettlementRate: leg.minimumRefundSettlementRate as bigint,
+          minRefundInputRate: leg.minimumRefundSettlementRate as bigint,
           adapterData: isRegisteredEntryAdapter
             ? exactInputRouteFor(leg.address) ?? "0x"
             : encodeAbiParameters(
@@ -5089,10 +5082,11 @@ function UserActions({
       setEntryState("pending");
       const hash = await writeContractAsync({
         address: entryRouterAddress,
-        abi: otfEntryRouterAbi,
-        functionName: "enterWithSettlement",
+        abi: otfEntryExitRouterAbi,
+        functionName: "enterWithToken",
         args: [
           vault.address,
+          settlementToken,
           requestedSettlementAmount,
           minimumEntryShares,
           connectedAddress,
@@ -5105,12 +5099,12 @@ function UserActions({
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error(`The ${settlementSymbol} entry transaction reverted.`);
       const entryEvents = parseEventLogs({
-        abi: otfEntryRouterAbi,
-        eventName: "EnteredWithSettlement",
+        abi: otfEntryExitRouterAbi,
+        eventName: "EnteredWithToken",
         logs: receipt.logs,
       });
       const mintedShares = entryEvents[0]?.args.shares;
-      const settlementRefunded = entryEvents[0]?.args.settlementRefunded ?? 0n;
+      const settlementRefunded = entryEvents[0]?.args.inputRefunded ?? 0n;
       await Promise.all([
         refetchEntryAuthorization(),
         refetchEntryPreview(),
@@ -5290,17 +5284,17 @@ function UserActions({
     }
   }
 
-  async function redeemToSettlement() {
+  async function redeemToToken() {
     if (
       !vault.address || !connectedAddress || !publicClient || !entryRouterAddress || !entryAdapterAddress ||
       !settlementToken || !requestedRedeemShares || !minimumRedeemSettlement || !redeemQuoteReady ||
       !redeemBalanceSufficient || !redeemAllowanceSufficient
     ) return;
     const swaps = redeemLegs.map((leg) => leg.isSettlement
-      ? { adapter: zeroAddress, minSettlementOut: 0n, adapterData: "0x" as `0x${string}` }
+      ? { adapter: zeroAddress, minOutputAmount: 0n, adapterData: "0x" as `0x${string}` }
       : {
           adapter: entryAdapterAddress,
-          minSettlementOut: leg.minimumSettlement as bigint,
+          minOutputAmount: leg.minimumSettlement as bigint,
           adapterData: isRegisteredEntryAdapter
             ? exactInputRouteFor(leg.address, true) ?? "0x"
             : encodeAbiParameters(
@@ -5313,10 +5307,11 @@ function UserActions({
       setRedeemState("pending");
       const hash = await writeContractAsync({
         address: entryRouterAddress,
-        abi: otfEntryRouterAbi,
-        functionName: "redeemToSettlement",
+        abi: otfEntryExitRouterAbi,
+        functionName: "redeemToToken",
         args: [
           vault.address,
+          settlementToken,
           requestedRedeemShares,
           connectedAddress,
           minimumRedeemSettlement,
@@ -6114,7 +6109,7 @@ function UserActions({
                     className="primaryAction"
                     type="button"
                     disabled={entryBusy || !underlyingQuoteReady || !entryBalanceSufficient || !entryAllowanceSufficient}
-                    onClick={enterWithSettlement}
+                    onClick={enterWithToken}
                   >
                     {entryBusy ? <Loader2 className="spin" size={14} /> : <ArrowDownToLine size={14} />}
                     Mint {vault.symbol}
@@ -6156,7 +6151,7 @@ function UserActions({
                     className="dangerAction"
                     type="button"
                     disabled={redeemBusy || !underlyingQuoteReady || !minimumRedeemSettlement || !redeemBalanceSufficient || !redeemAllowanceSufficient}
-                    onClick={redeemToSettlement}
+                    onClick={redeemToToken}
                   >
                     {redeemBusy ? <Loader2 className="spin" size={14} /> : <ArrowRight size={14} />}
                     Redeem for {settlementSymbol}

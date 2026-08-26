@@ -125,9 +125,9 @@ const deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (Number(deployment.chainId) !== chainId) {
   throw new Error(`Deployment chain ID ${deployment.chainId} does not match ${chainId}.`);
 }
-if (Number(deployment.schemaVersion) < 7) {
+if (Number(deployment.schemaVersion) < 8) {
   throw new Error(
-    "This configurator requires a fresh permissionless-oracle deployment.",
+    "This configurator requires a fresh transaction-token router deployment.",
   );
 }
 
@@ -270,7 +270,7 @@ const v3AdapterArtifact = artifact(
   "RegisteredUniswapV3Adapter.sol",
   "RegisteredUniswapV3Adapter",
 );
-const entryRouterArtifact = artifact("OTFEntryRouter.sol", "OTFEntryRouter");
+const entryRouterArtifact = artifact("OTFEntryExitRouter.sol", "OTFEntryExitRouter");
 
 async function confirmedWrite({ address, abi, functionName, args = [] }) {
   const { request } = await publicClient.simulateContract({
@@ -445,24 +445,22 @@ const v3Adapter = await ensureDeployment(
 const entryRouter = await ensureDeployment(
   "entryRouter",
   entryRouterArtifact,
-  [account.address, factory, settlementToken],
+  [account.address, factory],
 );
 
-const [adapterOwner, adapterRouter, entryOwner, entryFactory, entrySettlement] =
+const [adapterOwner, adapterRouter, entryOwner, entryFactory] =
   await Promise.all([
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: v3Adapter.address, abi: v3AdapterArtifact.abi, functionName: "uniswapRouter" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "owner" }),
     publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "factory" }),
-    publicClient.readContract({ address: entryRouter.address, abi: entryRouterArtifact.abi, functionName: "settlementToken" }),
   ]);
 if (!isAddressEqual(adapterOwner, account.address) || !isAddressEqual(entryOwner, account.address)) {
   throw new Error("Signer does not own the configured adapter and entry router.");
 }
-if (
-  !isAddressEqual(adapterRouter, swapRouter) || !isAddressEqual(entryFactory, factory)
-    || !isAddressEqual(entrySettlement, settlementToken)
-) throw new Error("Configured adapter or entry router dependencies do not match the deployment JSON.");
+if (!isAddressEqual(adapterRouter, swapRouter) || !isAddressEqual(entryFactory, factory)) {
+  throw new Error("Configured adapter or entry router dependencies do not match the deployment JSON.");
+}
 
 deployment.setupTransactions ??= {};
 deployment.setupTransactions.approvedAdapters ??= [];
@@ -497,7 +495,7 @@ upsertByAction(deployment.setupTransactions.settlementEntry, "approve-trade-adap
 let entryApproved = await publicClient.readContract({
   address: entryRouter.address,
   abi: entryRouterArtifact.abi,
-  functionName: "isEntryAdapterApproved",
+  functionName: "isTradeAdapterApproved",
   args: [v3Adapter.address],
 });
 const entryApproval = entryApproved
@@ -505,10 +503,10 @@ const entryApproval = entryApproved
   : await confirmedWrite({
       address: entryRouter.address,
       abi: entryRouterArtifact.abi,
-      functionName: "setEntryAdapterApproved",
+      functionName: "setTradeAdapterApproved",
       args: [v3Adapter.address, true],
     });
-upsertByAction(deployment.setupTransactions.settlementEntry, "approve-entry-adapter", entryApproval);
+upsertByAction(deployment.setupTransactions.settlementEntry, "approve-router-trade-adapter", entryApproval);
 
 for (const [action, caller] of [
   ["authorize-rebalance-executor", rebalanceExecutor],

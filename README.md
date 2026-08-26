@@ -24,7 +24,7 @@ This repository currently implements the first MVP slice:
 - Fixed minimum rebalance cooldown model.
 - Direct basket vault creation through the factory.
 - Proportional mint and redeem logic.
-- Atomic USDG or WETH entry through separately configured allowlisted routers and one shared V3 adapter.
+- Atomic USDG or WETH entry and exit through one token-agnostic router and approved trade adapters.
 - Lazy share-based management fee accrual.
 - Optional OTF-token holding rebates and a fixed-supply protocol token.
 - Onchain strategy history binding rationales to target snapshots.
@@ -80,9 +80,9 @@ flowchart LR
   Adapter --> Tokens[Underlying ERC-20 assets]
   Clone --> Collector[FeeCollector]
   User[Share holder] --> Clone
-  User --> EntryRouter[OTFEntryRouter]
-  EntryRouter --> EntryAdapter[Approved entry adapter]
-  EntryAdapter --> Liquidity[Uniswap-compatible liquidity]
+  User --> EntryRouter[OTFEntryExitRouter]
+  EntryRouter --> TradeAdapter[Approved trade adapter]
+  TradeAdapter --> Liquidity[Liquidity venue]
   EntryRouter --> Clone
   App --> Factory
   App --> Clone
@@ -132,11 +132,11 @@ flowchart LR
 - Executes typed adapter swaps only.
 - Prevents arbitrary manager-supplied target calls from the vault.
 
-`OTFEntryRouter`
+`OTFEntryExitRouter`
 
-- Allocates a fixed USDG input across constituent pools, mints the largest strictly proportional basket supported by the received assets, and enforces the user's minimum shares.
-- Sells surplus constituents back to USDG under user-defined minimum refund rates and returns the proceeds to the payer.
-- Lets a share holder atomically redeem the proportional basket, sell each constituent through approved adapters, and receive only USDG.
+- Accepts an input token per transaction, allocates the fixed input across constituent routes, mints the largest strictly proportional basket supported by the received assets, and enforces the user's minimum shares.
+- Skips swaps when the input token is already a constituent, sells other surplus constituents back to the input token under user-defined minimum refund rates, and returns the proceeds to the payer.
+- Accepts an output token per transaction, atomically redeems the proportional basket, skips its direct constituent leg, sells every other constituent through an approved adapter, and returns all proceeds in the selected output token.
 - Accepts only factory-created OTFs and never changes portfolio targets or custody rules.
 
 `RegisteredUniswapV3Adapter`
@@ -328,11 +328,12 @@ Minting:
 ### Entry paths
 
 Investors have exactly three entry paths: provide the proportional RWA basket directly, buy
-existing OTF shares from a discovered supported market, or provide a fixed supported settlement
-asset through its `OTFEntryRouter`. The router spends the entered settlement asset across the constituent pools, derives the largest proportional basket from the assets actually
+existing OTF shares from a discovered supported market, or provide a fixed supported input
+asset through `OTFEntryExitRouter`. The router accepts the input token per transaction, spends it across the constituent routes, derives the largest proportional basket from the assets actually
 received, and reverts unless that basket mints at least the user's minimum shares. Only the strict
 proportional amounts enter the OTF; surplus constituents are sold back through approved adapters
-using protected minimum settlement rates and the resulting settlement asset is returned to the payer.
+using protected minimum refund rates and the resulting input asset is returned to the payer. If the
+input asset is itself a constituent, that leg is deposited directly without an adapter call.
 
 The cost shown by an execution pool is not the OTF's accounting NAV. OTF NAV uses the source pinned
 for each constituent—direct Chainlink, composed Chainlink, or V3 TWAP—while entry cost depends on
@@ -366,14 +367,15 @@ Redemption:
 - Remains available when oracle-dependent actions fail.
 
 Investors likewise have exactly three exit paths: receive the proportional RWA basket directly,
-sell OTF shares into a discovered supported market, or redeem through an `OTFEntryRouter` for USDG or WETH. For
-the routed settlement exit, the holder approves
-the exact OTF share amount to `OTFEntryRouter`; the router burns those shares through the normal
+sell OTF shares into a discovered supported market, or redeem through `OTFEntryExitRouter` for USDG or WETH. For
+the routed token exit, the holder approves
+the exact OTF share amount to `OTFEntryExitRouter`; the router burns those shares through the normal
 proportional `redeem` path, sells each received constituent through an approved adapter, enforces
-per-leg and aggregate minimum settlement outputs plus a deadline, and transfers the result to the
+per-leg and aggregate minimum outputs plus a deadline, and transfers the result to the
 chosen receiver. Pool proceeds may differ from the pinned-price basket value, and the frontend
 shows that difference before signing. A failed leg or insufficient aggregate output reverts the
-share burn and every swap atomically.
+share burn and every swap atomically. A constituent matching the selected output token is returned
+directly without a swap.
 
 ## Strategic Rebalancing
 
@@ -514,7 +516,7 @@ down without depending on the manager, oracle freshness, or a separate protocol 
 The factory owner may call `setDepositsPaused(bool)` to reversibly pause new OTF
 creation and deposits across all OTFs
 created by the factory. This emergency control is enforced inside each vault, including deposits
-routed through `OTFEntryRouter`; it does not pause redemptions, transfers, or ordinary
+routed through `OTFEntryExitRouter`; it does not pause redemptions, transfers, or ordinary
 secondary-market trading.
 
 The owner may also call `setVaultDepositsPaused(vault, bool)` for one factory-created OTF. The call
@@ -744,21 +746,22 @@ Keep that value in the ignored `.env.deploy.local` file. Never add it to the add
 deployment script reads its chain, treasury, optional frontend pricing suggestions, WETH, USDG,
 and V3 infrastructure from `app/src/config/robinhood-testnet.json`. It does not require a
 WETH/USDG pricing pool. When WETH/USDG execution liquidity exists, the frontend discovers it from
-the canonical V3 factory so the two entry routers can reuse asset/USDG liquidity; it is not passed
+the canonical V3 factory so the shared entry/exit router can reuse asset/USDG liquidity; it is not passed
 to any pricing constructor or stored in the deployment manifest.
 
 Deploying always recompiles source-only artifacts before broadcasting, targets the Shanghai EVM
 supported by Robinhood Chain Testnet, deploys the pricing resolver and one generic execution adapter,
 and updates the shared address configuration only after setup succeeds. Before writing schema
-version 4 it archives the prior JSON; legacy factories and vaults are not upgraded in place:
+version 8 it archives the prior JSON; legacy factories and vaults are not upgraded in place:
 
 ```bash
 corepack pnpm contracts:deploy:robinhood-testnet
 ```
 
-The schema-version-4 manifest exposes `contracts.pricingResolver`, the protocol-wide seven-day
-maximum oracle staleness, one `contracts.uniswapV3Adapter`, and root `executionRoutes[]` records
-(`settlementToken`, shared adapter, entry router, and path encoding). Execution pool addresses are
+The schema-version-8 manifest exposes `contracts.pricingResolver`, the protocol-wide seven-day
+maximum oracle staleness, one `contracts.uniswapV3Adapter`, one token-agnostic
+`contracts.entryRouter`, and root `executionRoutes[]` records (`settlementToken`, shared adapter,
+shared entry router, and path encoding). Execution pool addresses are
 discovered at runtime from the canonical V3 factory across the supported fee tiers;
 `pricingConfiguration.suggestedInitialPricingConfigs` and `suggestedV3PricingConfigs` are separate,
 non-authoritative transaction prefills. Execution records never contain a pricing market ID.

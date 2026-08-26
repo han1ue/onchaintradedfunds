@@ -22,7 +22,19 @@ for (const item of [...core.filter((item) => item.type !== "function" || !viewFu
 const generatedPath = resolve(root, "packages", "generated", "src", "index.ts");
 const generated = readFileSync(generatedPath, "utf8");
 const start = generated.indexOf("export const managedOtfVaultAbi = ");
-const end = generated.indexOf("export const otfEntryRouterAbi = ");
-if (start === -1 || end === -1) throw new Error("generated ABI boundaries were not found");
-const replacement = `export const managedOtfVaultAbi = ${JSON.stringify(union, null, 2)} as const;\n\n`;
-writeFileSync(generatedPath, `${generated.slice(0, start)}${replacement}${generated.slice(end)}`);
+const routerStart = generated.indexOf("export const otfEntryExitRouterAbi = ");
+const routerEnd = generated.indexOf("export const registeredUniswapV3AdapterAbi = ");
+if (start === -1 || routerStart === -1 || routerEnd === -1) {
+  throw new Error("generated ABI boundaries were not found");
+}
+const router = artifact("OTFEntryExitRouter.sol", "OTFEntryExitRouter").abi;
+const replacement = [
+  `export const managedOtfVaultAbi = ${JSON.stringify(union, null, 2)} as const;`,
+  "",
+  `export const otfEntryExitRouterAbi = ${JSON.stringify(router, null, 2)} as const;`,
+  "",
+].join("\n");
+writeFileSync(
+  generatedPath,
+  `${generated.slice(0, start)}${replacement}${generated.slice(routerEnd)}`,
+);

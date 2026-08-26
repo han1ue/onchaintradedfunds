@@ -4,9 +4,9 @@ import { getAddress, isAddress, type Address } from "viem";
 type ContractDeployment = { address?: unknown };
 const contracts = deployment.contracts as Record<string, ContractDeployment | undefined>;
 const externalContracts = deployment.externalContracts as Record<string, unknown>;
-const deploymentCompatible = Number(deployment.schemaVersion) >= 7
+const deploymentCompatible = Number(deployment.schemaVersion) >= 8
   && (deployment.migration as { architecture?: unknown }).architecture === "decoupled-otf-markets";
-const executionRoutes = deployment.executionRoutes as Array<{
+const executionRoutes = (deploymentCompatible ? deployment.executionRoutes : []) as Array<{
   settlement?: unknown;
   settlementToken?: unknown;
   adapter?: unknown;
@@ -32,7 +32,6 @@ export const robinhoodTestnetAddresses = Object.freeze({
   vaultImplementation: deployedContract("vaultImplementation"),
   factory: deployedContract("factory"),
   entryRouter: deployedContract("entryRouter"),
-  entryRouterWeth: deployedContract("entryRouterWeth"),
   uniswapV3Adapter: deployedContract("uniswapV3Adapter"),
   assetMarketRegistry: deployedContract("assetMarketRegistry"),
   pricingResolver: deployedContract("pricingResolver"),

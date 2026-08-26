@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { EntrySwap, ExitSwap, OTFEntryRouter } from "../src/OTFEntryRouter.sol";
+import { EntrySwap, ExitSwap, OTFEntryExitRouter } from "../src/OTFEntryExitRouter.sol";
 import { MockUniswapV3Router } from "./mocks/MockUniswapV3Router.sol";
 import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
 import { TradeInstruction } from "../src/VaultTypes.sol";
@@ -11,16 +11,16 @@ import { ProtocolTestBase } from "./ProtocolTestBase.sol";
 contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
     MockUniswapV3Router private venue;
     RegisteredUniswapV3Adapter private v3Adapter;
-    OTFEntryRouter private entryRouter;
+    OTFEntryExitRouter private entryRouter;
 
     function setUp() public override {
         super.setUp();
         venue = new MockUniswapV3Router();
         v3Adapter = new RegisteredUniswapV3Adapter(address(this), address(venue));
-        entryRouter = new OTFEntryRouter(address(this), address(factory), address(tokenC));
+        entryRouter = new OTFEntryExitRouter(address(this), address(factory));
 
         factory.setTradeAdapterApproved(address(v3Adapter), true);
-        entryRouter.setEntryAdapterApproved(address(v3Adapter), true);
+        entryRouter.setTradeAdapterApproved(address(v3Adapter), true);
         v3Adapter.setCallerApproved(address(executor), true);
         v3Adapter.setCallerApproved(address(entryRouter), true);
 
@@ -37,17 +37,17 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         EntrySwap[] memory entrySwaps = new EntrySwap[](2);
         entrySwaps[0] = EntrySwap({
             adapter: address(v3Adapter),
-            settlementIn: required[0],
+            inputAmount: required[0],
             minAssetOut: required[0],
-            minRefundSettlementRate: ONE,
+            minRefundInputRate: ONE,
             adapterData: _path(address(tokenC), address(tokenA)),
             refundAdapterData: _path(address(tokenA), address(tokenC))
         });
         entrySwaps[1] = EntrySwap({
             adapter: address(v3Adapter),
-            settlementIn: required[1],
+            inputAmount: required[1],
             minAssetOut: required[1],
-            minRefundSettlementRate: ONE,
+            minRefundInputRate: ONE,
             adapterData: _path(address(tokenC), address(tokenB)),
             refundAdapterData: _path(address(tokenB), address(tokenC))
         });
@@ -55,24 +55,26 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
 
         vm.startPrank(ALICE);
         tokenC.approve(address(entryRouter), settlementIn);
-        (uint256 mintedShares, uint256 settlementRefunded) = entryRouter.enterWithSettlement(
-            address(vault), settlementIn, shares, ALICE, block.timestamp + 1 hours, entrySwaps
+        (uint256 mintedShares, uint256 settlementRefunded) = entryRouter.enterWithToken(
+            address(vault), address(tokenC), settlementIn, shares, ALICE,
+            block.timestamp + 1 hours, entrySwaps
         );
         vault.approve(address(entryRouter), shares);
         uint256[] memory redeemAmounts = vault.previewRedeem(shares);
         ExitSwap[] memory exitSwaps = new ExitSwap[](2);
         exitSwaps[0] = ExitSwap({
             adapter: address(v3Adapter),
-            minSettlementOut: redeemAmounts[0],
+            minOutputAmount: redeemAmounts[0],
             adapterData: _path(address(tokenA), address(tokenC))
         });
         exitSwaps[1] = ExitSwap({
             adapter: address(v3Adapter),
-            minSettlementOut: redeemAmounts[1],
+            minOutputAmount: redeemAmounts[1],
             adapterData: _path(address(tokenB), address(tokenC))
         });
-        uint256 received = entryRouter.redeemToSettlement(
+        uint256 received = entryRouter.redeemToToken(
             address(vault),
+            address(tokenC),
             shares,
             ALICE,
             redeemAmounts[0] + redeemAmounts[1],
@@ -123,4 +125,3 @@ contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
         path = abi.encodePacked(tokenIn, bytes3(uint24(3_000)), tokenOut);
     }
 }
-

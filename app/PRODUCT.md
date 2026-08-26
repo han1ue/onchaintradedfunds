@@ -33,8 +33,8 @@ Investors use the web application with an EVM wallet to:
 - Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
 - Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, manager fees, strategy history, safety limits, cooldown state, and return history.
 - Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
-- Enter by supplying the exact proportional RWA basket, buying shares from an available OTF market, or routing a fixed supported settlement asset through constituent pools with minimum-share protection.
-- Exit by receiving the proportional RWA basket, selling shares into an available OTF market, or routing a redemption through constituent pools with minimum-settlement protection.
+- Enter by supplying the exact proportional RWA basket, buying shares from an available OTF market, or selecting USDG or WETH per transaction and routing a fixed input through constituent pools with minimum-share protection.
+- Exit by receiving the proportional RWA basket, selling shares into an available OTF market, or selecting USDG or WETH per transaction and routing a redemption through constituent pools with per-leg and aggregate minimum-output protection.
 - Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
 
 Creators and managers use the application to:

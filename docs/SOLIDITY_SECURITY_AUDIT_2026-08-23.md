@@ -181,7 +181,7 @@ The implemented resolution removes market-registry coupling from `OTFFactory`, d
 - `contracts/src/ManagedOTFVaultStrategy.sol:270-330`
 - `contracts/src/ManagedOTFVaultStrategy.sol:650-665`
 - `contracts/src/AssetPricingResolver.sol:100-142`
-- `contracts/src/OTFEntryRouter.sol:279-331`
+- `contracts/src/OTFEntryExitRouter.sol:279-331`
 - `contracts/test/RebalanceSafety.t.sol:23-73`
 
 ### Description
@@ -345,7 +345,7 @@ The version binding is stronger than a deadline alone. Add expired and wrong-ver
 **Affected code:**
 
 - `contracts/src/ManagedOTFVaultStrategy.sol:57-80`
-- `contracts/src/OTFEntryRouter.sol:129-134`
+- `contracts/src/OTFEntryExitRouter.sol:129-134`
 - `contracts/src/RegisteredUniswapV3Adapter.sol:65-70`
 
 ### Description
@@ -358,7 +358,7 @@ The factory, market registry, and fee collector already use safer two-step flows
 
 Use `pendingOwner` / `pendingManager` plus explicit acceptance and cancellation. For manager transfer, preserve the current manager and executor configuration until acceptance, then perform executor cleanup atomically. Any vault storage change must pass the existing canonical layout checks and requires fresh review.
 
-`OTFEntryRouter` and `RegisteredUniswapV3Adapter` now use OpenZeppelin `Ownable2Step` while preserving
+`OTFEntryExitRouter` and `RegisteredUniswapV3Adapter` now use OpenZeppelin `Ownable2Step` while preserving
 constructor owner initialization. The clone vault appends `pendingManager` to canonical storage and
 implements nomination, zero-address cancellation, replacement, and pending-manager-only acceptance.
 Acceptance checkpoints fees, clears manager-specific pending strategy and rationale state, replaces
@@ -423,7 +423,7 @@ limit:
 | `ManagedOTFVaultStrategy` | 24,501 | 75 |
 | `ManagedOTFVaultView` | 16,353 | 8,223 |
 | `OTFFactory` | 10,984 | 13,592 |
-| `OTFEntryRouter` | 9,813 | 14,763 |
+| `OTFEntryExitRouter` | 9,813 | 14,763 |
 | `OTFToken` | 2,898 | 21,678 |
 | `PortfolioCalculator` | 7,900 | 16,676 |
 | `RegisteredUniswapV3Adapter` | 2,813 | 21,763 |

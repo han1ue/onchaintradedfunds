@@ -134,7 +134,7 @@ const productionContracts = [
   ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
   ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
   ["OTFFactory.sol", "OTFFactory"],
-  ["OTFEntryRouter.sol", "OTFEntryRouter"],
+  ["OTFEntryExitRouter.sol", "OTFEntryExitRouter"],
   ["OTFToken.sol", "OTFToken"],
   ["PortfolioCalculator.sol", "PortfolioCalculator"],
   ["RegisteredUniswapV3Adapter.sol", "RegisteredUniswapV3Adapter"],
@@ -161,6 +161,7 @@ const registeredV3Adapter = artifact(
   "RegisteredUniswapV3Adapter.sol",
   "RegisteredUniswapV3Adapter",
 );
+const entryExitRouter = artifact("OTFEntryExitRouter.sol", "OTFEntryExitRouter");
 const erc7621 = artifact("IERC7621.sol", "IERC7621");
 const vaultFunctions = vault.abi.filter((item) => item.type === "function").map((item) => item.name);
 const strategyFunctions = strategy.abi
@@ -171,6 +172,9 @@ const factoryFunctions = factory.abi
   .map((item) => item.name);
 const factoryEvents = abiSignatures(factory, "event");
 const factoryErrors = abiSignatures(factory, "error");
+const entryExitRouterFunctions = entryExitRouter.abi
+  .filter((item) => item.type === "function")
+  .map((item) => item.name);
 const pricingResolverFunctions = pricingResolver.abi
   .filter((item) => item.type === "function")
   .map((item) => item.name);
@@ -393,6 +397,16 @@ const registeredV3AdapterConstructor = registeredV3Adapter.abi.find(
 assert(
   registeredV3AdapterConstructor?.inputs.length === 2,
   "generic V3 adapter constructor has unexpected route-policy dependencies",
+);
+const entryExitRouterConstructor = entryExitRouter.abi.find(
+  (item) => item.type === "constructor",
+);
+assert(
+  entryExitRouterConstructor?.inputs.length === 2
+    && !entryExitRouterFunctions.includes("settlementToken")
+    && entryExitRouterFunctions.includes("enterWithToken")
+    && entryExitRouterFunctions.includes("redeemToToken"),
+  "entry/exit router remains coupled to a deployment-time settlement token",
 );
 assert(
   factoryFunctions.includes("setVaultDepositsPaused")
