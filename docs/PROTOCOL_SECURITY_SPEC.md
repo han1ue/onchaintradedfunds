@@ -203,7 +203,9 @@ The market-registry owner MAY configure a quote token's single quote-token/USD f
 limit, disable it for future composed or V3 selections, or deprecate a pool for future selections.
 Reconfiguring a quote token preserves its enabled state and updates existing routes using it. WETH
 and USDG are the initial peer quote tokens, and every enabled owner-configured quote token MAY be
-used for both composed Chainlink and V3 pricing. No protocol role MAY
+used for both composed Chainlink and V3 pricing. A new configuration MUST default to enabled. Status
+changes MUST only change the enabled flag, MUST only govern future route selection, and MUST NOT
+remove a quote token or block an existing pinned route. No protocol role MAY
 approve, qualify, block, revoke, or remove an asset or creator-selected primary Chainlink feed. Pair
 semantics remain an offchain verification duty.
 

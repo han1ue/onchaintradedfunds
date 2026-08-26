@@ -161,8 +161,9 @@ flowchart LR
 
 `AssetMarketRegistry` also owns the pricing quote-token registry. WETH and USDG are the
 initial peer quote tokens. The owner may configure future quote tokens or disable a token for future
-selections. Every enabled token supports both composed Chainlink and V3 pricing. Each quote token
-has one current USD feed and freshness limit. Reconfiguring it updates
+selections; there is no quote-token removal function. New configurations default to enabled, and
+updates preserve that status. Every enabled token supports both composed Chainlink and V3 pricing.
+Each quote token has one current USD feed and freshness limit. Reconfiguring it updates
 every composed and V3 pricing route that uses that quote token. Chainlink
 pair semantics cannot be proven from `description()` and remain an offchain frontend/governance duty.
 
