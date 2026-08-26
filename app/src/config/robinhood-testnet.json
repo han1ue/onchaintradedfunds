@@ -114,8 +114,6 @@
         },
         "synthetic": true,
         "maxStaleness": 3600,
-        "allowComposedChainlink": true,
-        "allowV3Twap": true,
         "transactionHash": "0x1229e608bf22e4c01fd062127f5a1a8cff7da5e0c81514fdeb3120d40d92f685",
         "blockNumber": "107440372",
         "gasUsed": "127739"
@@ -131,8 +129,6 @@
         },
         "synthetic": true,
         "maxStaleness": 3600,
-        "allowComposedChainlink": true,
-        "allowV3Twap": true,
         "transactionHash": "0x7fc689ac339c48e7f54373432e1233ec99a7b6397ff57d700d6fcb0ffc9a9941",
         "blockNumber": "107440373",
         "gasUsed": "108458"

@@ -199,11 +199,11 @@ The protocol owner MAY:
   reject a non-factory target.
 - Transfer factory or V3 market-registry ownership using their defined controls.
 
-The market-registry owner MAY register a quote token, configure its single quote-token/USD feed and
-source permissions, disable it for future composed or V3 selections, or deprecate a pool for future
-selections. Reconfiguring a quote token's feed or freshness limit updates existing routes using it.
-WETH and USDG are the initial peer quote tokens, and additional owner-registered quote tokens MAY be
-used when the applicable composed-Chainlink or V3 permission is enabled. No protocol role MAY
+The market-registry owner MAY configure a quote token's single quote-token/USD feed and freshness
+limit, disable it for future composed or V3 selections, or deprecate a pool for future selections.
+Reconfiguring a quote token preserves its enabled state and updates existing routes using it. WETH
+and USDG are the initial peer quote tokens, and every enabled owner-configured quote token MAY be
+used for both composed Chainlink and V3 pricing. No protocol role MAY
 approve, qualify, block, revoke, or remove an asset or creator-selected primary Chainlink feed. Pair
 semantics remain an offchain verification duty.
 
@@ -604,7 +604,7 @@ For V3 TWAP pricing:
 
 - `primarySource` MUST be a pool returned by the configured canonical factory's `getPool` for the
   exact asset/quote pair and exact onchain fee.
-- The quote MUST be an enabled owner-registered quote token whose `allowV3Twap` permission is true.
+- The quote MUST be an enabled owner-configured quote token.
 - The quote-token/USD Chainlink-compatible feed and staleness limit MUST be loaded from the registry
   on every read.
 - The pool MUST be initialized, use a supported fee tier, have at least the protocol observation
@@ -701,8 +701,8 @@ Every deployment record SHOULD include:
 - Chain ID.
 - Factory, implementation, strategy module, calculator, executor, discovery registry, asset-market
   pricing registry, pricing resolver, adapter, router, and treasury addresses.
-- Canonical V3 factory, initial WETH and USDG dependencies, every enabled quote token and its source
-  permissions, quote-token/USD feed, freshness limit, supported pool fees, TWAP window, observation
+- Canonical V3 factory, initial WETH and USDG dependencies, every enabled quote token and its
+  quote-token/USD feed, freshness limit, supported pool fees, TWAP window, observation
   capacity, and verified history evidence.
 - Every frontend-manifest Chainlink base/quote/feed relationship, maximum staleness, explicit pricing source,
   official Flags status where available, and the source used for that evidence.

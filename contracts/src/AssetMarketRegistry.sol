@@ -34,8 +34,6 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         address usdFeed;
         uint32 maxStaleness;
         bool enabled;
-        bool allowComposedChainlink;
-        bool allowV3Twap;
     }
 
     struct Market {
@@ -81,11 +79,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     );
     event MarketStatusChanged(bytes32 indexed marketId, bool active);
     event QuoteTokenConfigured(
-        address indexed quoteToken,
-        address indexed usdFeed,
-        uint32 maxStaleness,
-        bool allowComposedChainlink,
-        bool allowV3Twap
+        address indexed quoteToken, address indexed usdFeed, uint32 maxStaleness
     );
     event QuoteTokenStatusChanged(address indexed quoteToken, bool enabled);
     event OwnershipTransferStarted(address indexed owner, address indexed pendingOwner);
@@ -115,13 +109,10 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         _;
     }
 
-    function registerQuoteToken(
-        address quoteToken,
-        address usdFeed,
-        uint32 maxStaleness,
-        bool allowComposedChainlink,
-        bool allowV3Twap
-    ) external onlyOwner {
+    function setQuoteToken(address quoteToken, address usdFeed, uint32 maxStaleness)
+        external
+        onlyOwner
+    {
         if (quoteToken == address(0) || quoteToken.code.length == 0) {
             revert InvalidQuoteToken(quoteToken);
         }
@@ -131,17 +122,14 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         }
         _tokenDecimals(quoteToken);
         _validateUsdFeed(quoteToken, usdFeed, maxStaleness);
-        if (_quoteTokenConfig[quoteToken].usdFeed == address(0)) _quoteTokens.push(quoteToken);
-        _quoteTokenConfig[quoteToken] = QuoteTokenConfig({
-            usdFeed: usdFeed,
-            maxStaleness: maxStaleness,
-            enabled: true,
-            allowComposedChainlink: allowComposedChainlink,
-            allowV3Twap: allowV3Twap
-        });
-        emit QuoteTokenConfigured(
-            quoteToken, usdFeed, maxStaleness, allowComposedChainlink, allowV3Twap
-        );
+        QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
+        if (config.usdFeed == address(0)) {
+            _quoteTokens.push(quoteToken);
+            config.enabled = true;
+        }
+        config.usdFeed = usdFeed;
+        config.maxStaleness = maxStaleness;
+        emit QuoteTokenConfigured(quoteToken, usdFeed, maxStaleness);
     }
 
     function setQuoteTokenEnabled(address quoteToken, bool enabled) external onlyOwner {
@@ -158,34 +146,20 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
     function quoteTokenConfig(address quoteToken)
         external
         view
-        returns (
-            address usdFeed,
-            uint32 maxStaleness,
-            bool enabled,
-            bool allowComposedChainlink,
-            bool allowV3Twap
-        )
+        returns (address usdFeed, uint32 maxStaleness, bool enabled)
     {
         QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
-        return (
-            config.usdFeed,
-            config.maxStaleness,
-            config.enabled,
-            config.allowComposedChainlink,
-            config.allowV3Twap
-        );
+        return (config.usdFeed, config.maxStaleness, config.enabled);
     }
 
-    function validatedQuoteTokenConfig(address quoteToken, bool forV3)
+    function validatedQuoteTokenConfig(address quoteToken)
         external
         view
         returns (address usdFeed, uint32 maxStaleness)
     {
         QuoteTokenConfig storage config = _quoteTokenConfig[quoteToken];
         if (config.usdFeed == address(0)) revert QuoteTokenConfigNotFound(quoteToken);
-        if (!config.enabled || (forV3 ? !config.allowV3Twap : !config.allowComposedChainlink)) {
-            revert QuoteTokenConfigMismatch(quoteToken);
-        }
+        if (!config.enabled) revert QuoteTokenConfigMismatch(quoteToken);
         return (config.usdFeed, config.maxStaleness);
     }
 
@@ -336,7 +310,7 @@ contract AssetMarketRegistry is IAssetMarketRegistry {
         else revert InvalidPoolPair(pool, asset);
         QuoteTokenConfig storage config = _quoteTokenConfig[other];
         if (config.usdFeed == address(0)) revert InvalidQuoteToken(other);
-        if (!config.enabled || !config.allowV3Twap) revert InvalidQuoteToken(other);
+        if (!config.enabled) revert InvalidQuoteToken(other);
         return other;
     }
 }

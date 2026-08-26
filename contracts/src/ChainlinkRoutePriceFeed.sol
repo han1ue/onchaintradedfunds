@@ -101,7 +101,7 @@ contract ChainlinkRoutePriceFeed is AggregatorV3Interface {
             uint256 assetUpdatedAt,
             uint8 assetDecimals
         ) = _readLeg(asset, assetQuoteFeed, assetQuoteMaxStaleness);
-        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,,,) =
+        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,) =
             marketRegistry.quoteTokenConfig(quoteToken);
         (
             uint80 wethRound,

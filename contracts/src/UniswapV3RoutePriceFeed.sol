@@ -160,7 +160,7 @@ contract UniswapV3RoutePriceFeed is AggregatorV3Interface {
     {
         int256 signedAnswer;
         uint80 answeredInRound;
-        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,,,) =
+        (address quoteUsdFeed, uint32 quoteUsdMaxStaleness,) =
             marketRegistry.quoteTokenConfig(quoteToken);
         if (quoteUsdFeed.code.length == 0) revert FeedNotContract(quoteUsdFeed);
         if (quoteUsdMaxStaleness == 0) revert InvalidMaxStaleness();

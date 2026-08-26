@@ -239,13 +239,11 @@ const quoteTokenRegistrations = await Promise.all(supportedMarketAssets.map(asyn
   feedDeployment: marketAsset.feedDeployment,
   synthetic: Boolean(marketAsset.feedDeployment.synthetic) || !marketAsset.feedDeployment.retained,
   maxStaleness: quoteUsdMaxStaleness,
-  allowComposedChainlink: true,
-  allowV3Twap: true,
   ...(await writeContract({
     address: assetMarketRegistry.address,
     abi: assetMarketRegistryAbi,
-    functionName: "registerQuoteToken",
-    args: [marketAsset.token, marketAsset.usdFeed, quoteUsdMaxStaleness, true, true],
+    functionName: "setQuoteToken",
+    args: [marketAsset.token, marketAsset.usdFeed, quoteUsdMaxStaleness],
   })),
 })));
 const pricingResolver = await deployContract({

@@ -151,8 +151,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
         usdgUsdFeed = new MockPriceFeed(8, 1_00000000);
         v3Factory = new MockPermissionlessV3Factory();
         markets = new AssetMarketRegistry(address(this), address(v3Factory));
-        markets.registerQuoteToken(address(weth), address(wethUsdFeed), 2 hours, true, true);
-        markets.registerQuoteToken(address(usdg), address(usdgUsdFeed), 2 hours, true, true);
+        markets.setQuoteToken(address(weth), address(wethUsdFeed), 2 hours);
+        markets.setQuoteToken(address(usdg), address(usdgUsdFeed), 2 hours);
     }
 
     function testRegistersMultiplePinnedCandidatesWithoutAnchorPool() public {
@@ -564,13 +564,19 @@ contract PermissionlessAssetMarketsTest is TestBase {
         assertApproxEqAbs(uint256(usdgV3Answer), 1_00000000, 10_000);
     }
 
-    function testAdminAddedQuoteSupportsComposedAndV3AndUpdatesExistingRoutes() public {
+    function testQuoteTokenAddUpdateDisableAndReenable() public {
         PortfolioCalculator calculator = new PortfolioCalculator();
         AssetPricingResolver resolver = new AssetPricingResolver(markets, calculator);
 
         MockStockToken thirdQuote = new MockStockToken("Third Quote", "THIRD", 18);
         MockPriceFeed thirdUsdFeed = new MockPriceFeed(8, 2_00000000);
-        markets.registerQuoteToken(address(thirdQuote), address(thirdUsdFeed), 2 hours, true, true);
+        markets.setQuoteToken(address(thirdQuote), address(thirdUsdFeed), 2 hours);
+        (address configuredFeed, uint32 configuredStaleness, bool enabled) =
+            markets.quoteTokenConfig(address(thirdQuote));
+        assertEq(configuredFeed, address(thirdUsdFeed));
+        assertEq(uint256(configuredStaleness), 2 hours);
+        assertTrue(enabled);
+
         MockPriceFeed assetThirdFeed = new MockPriceFeed(18, 3 ether);
         AssetPricingConfig memory thirdComposed = AssetPricingConfig({
             source: PricingSource.ChainlinkComposed,
@@ -591,25 +597,47 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primaryMaxStaleness: 2 hours
         });
         (address thirdV3Feed,) = resolver.resolvePricing(address(secondAsset), thirdV3);
-        assertTrue(thirdV3Feed.code.length != 0);
+        (, int256 thirdV3Answer,,,) = UniswapV3RoutePriceFeed(thirdV3Feed).latestRoundData();
+        assertEq(uint256(thirdV3Answer), 2_00000000);
 
         markets.setQuoteTokenEnabled(address(thirdQuote), false);
         vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
         resolver.validatePricing(address(asset), thirdComposed);
+        vm.expectPartialRevert(AssetMarketRegistry.InvalidQuoteToken.selector);
+        resolver.validatePricing(address(secondAsset), thirdV3);
         (, int256 stillPinned,,,) = ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
         assertEq(uint256(stillPinned), 6_00000000);
+        (, int256 stillPinnedV3,,,) = UniswapV3RoutePriceFeed(thirdV3Feed).latestRoundData();
+        assertEq(uint256(stillPinnedV3), 2_00000000);
 
         MockPriceFeed replacementThirdUsd = new MockPriceFeed(8, 9_00000000);
-        markets.registerQuoteToken(
-            address(thirdQuote), address(replacementThirdUsd), 1 hours, true, true
-        );
+        markets.setQuoteToken(address(thirdQuote), address(replacementThirdUsd), 1 hours);
+        (configuredFeed, configuredStaleness, enabled) =
+            markets.quoteTokenConfig(address(thirdQuote));
+        assertEq(configuredFeed, address(replacementThirdUsd));
+        assertEq(uint256(configuredStaleness), 1 hours);
+        assertFalse(enabled);
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigMismatch.selector);
+        resolver.validatePricing(address(asset), thirdComposed);
+        (, int256 updatedExistingRoute,,,) =
+            ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
+        assertEq(uint256(updatedExistingRoute), 27_00000000);
+        (, int256 updatedExistingV3Route,,,) =
+            UniswapV3RoutePriceFeed(thirdV3Feed).latestRoundData();
+        assertEq(uint256(updatedExistingV3Route), 9_00000000);
+
+        replacementThirdUsd.setRoundData(2, 0, block.timestamp, block.timestamp, 2);
+        markets.setQuoteTokenEnabled(address(thirdQuote), true);
+        (,, enabled) = markets.quoteTokenConfig(address(thirdQuote));
+        assertTrue(enabled);
+        vm.expectPartialRevert(PortfolioCalculator.InvalidOraclePrice.selector);
+        resolver.validatePricing(address(asset), thirdComposed);
+
+        replacementThirdUsd.setRoundData(3, 9_00000000, block.timestamp, block.timestamp, 3);
         (address replacementNormalized,) = resolver.resolvePricing(address(asset), thirdComposed);
         (, int256 replacementAnswer,,,) =
             ChainlinkRoutePriceFeed(replacementNormalized).latestRoundData();
         assertEq(uint256(replacementAnswer), 27_00000000);
-        (, int256 updatedExistingRoute,,,) =
-            ChainlinkRoutePriceFeed(pinnedThirdFeed).latestRoundData();
-        assertEq(uint256(updatedExistingRoute), 27_00000000);
     }
 
     function testQuoteFeedReplacementMustAlreadyBeValid() public {
@@ -617,7 +645,7 @@ contract PermissionlessAssetMarketsTest is TestBase {
         invalidFeed.setRoundData(2, 0, block.timestamp, block.timestamp, 2);
 
         vm.expectPartialRevert(AssetMarketRegistry.InvalidOraclePrice.selector);
-        markets.registerQuoteToken(address(weth), address(invalidFeed), 1 hours, true, true);
+        markets.setQuoteToken(address(weth), address(invalidFeed), 1 hours);
     }
 
     function testResolverRejectsUnregisteredAndDisabledQuoteToken() public {
@@ -631,6 +659,8 @@ contract PermissionlessAssetMarketsTest is TestBase {
             primarySource: address(primary),
             primaryMaxStaleness: 2 hours
         });
+        vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigNotFound.selector);
+        markets.setQuoteTokenEnabled(address(unknownQuote), false);
         vm.expectPartialRevert(AssetMarketRegistry.QuoteTokenConfigNotFound.selector);
         resolver.validatePricing(address(asset), config);
 

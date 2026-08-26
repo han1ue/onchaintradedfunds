@@ -248,7 +248,7 @@ contract ManagedOTFVaultView is ManagedOTFVaultModule {
         normalizedPriceFeed = pinned.normalizedPriceFeed;
         primaryMaxStaleness = pinned.primaryMaxStaleness;
         if (source == PricingSource.ChainlinkComposed || source == PricingSource.UniswapV3Twap) {
-            (secondarySource, secondaryMaxStaleness,,,) =
+            (secondarySource, secondaryMaxStaleness,) =
                 IAssetMarketRegistry(_assetMarketRegistry).quoteTokenConfig(quoteToken);
         }
     }

@@ -204,7 +204,8 @@ initially registered as peer pricing quote tokens and are also supported settlem
 assets. Those execution roles do not make either token the accounting numeraire. Each quote token
 has one current USD configuration.
 Replacing it updates existing composed and V3 routes; disabling it blocks future selections. The
-registry cannot prove Chainlink pair semantics from feed descriptions.
+enabled flag does not disable existing pinned routes, and every enabled quote token supports both
+pricing modes. The registry cannot prove Chainlink pair semantics from feed descriptions.
 
 Robinhood Stock Token price feeds already include corporate-action multipliers. The vault must not
 multiply by a separate UI multiplier. The upstream feed can keep returning a value while the token

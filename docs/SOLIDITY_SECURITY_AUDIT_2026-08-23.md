@@ -442,7 +442,7 @@ margin and remains a significant release constraint.
 ### I-05 — Normative V3 quote-token requirement and implementation diverge
 
 **Status:** Fixed  
-`docs/PROTOCOL_SECURITY_SPEC.md` now permits any enabled owner-registered quote token whose `allowV3Twap` permission is true, matching `AssetMarketRegistry` and the existing tests. The specification also records the broader governance dependency and corresponding deployment evidence requirements.
+`docs/PROTOCOL_SECURITY_SPEC.md` now permits any enabled owner-configured quote token, matching `AssetMarketRegistry` and the existing tests. The specification also records the broader governance dependency and corresponding deployment evidence requirements.
 
 ### I-06 — Test assurance has important blind spots
 

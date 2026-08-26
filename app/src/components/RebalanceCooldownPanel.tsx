@@ -789,15 +789,11 @@ const quoteTokenRegistryAbi = [
   {
     type: "function", name: "quoteTokenConfig", stateMutability: "view",
     inputs: [{ name: "quoteToken", type: "address" }],
-    outputs: [{
-      name: "", type: "tuple", components: [
-        { name: "usdFeed", type: "address" },
-        { name: "maxStaleness", type: "uint32" },
-        { name: "enabled", type: "bool" },
-        { name: "allowComposedChainlink", type: "bool" },
-        { name: "allowV3Twap", type: "bool" },
-      ],
-    }],
+    outputs: [
+      { name: "usdFeed", type: "address" },
+      { name: "maxStaleness", type: "uint32" },
+      { name: "enabled", type: "bool" },
+    ],
   },
 ] as const;
 
@@ -805,8 +801,6 @@ type RegisteredQuoteToken = {
   address: `0x${string}`;
   usdFeed: `0x${string}`;
   maxStaleness: number;
-  allowComposedChainlink: boolean;
-  allowV3Twap: boolean;
 };
 
 function quoteTokenLabel(address: string): string {
@@ -888,7 +882,7 @@ function useCompatibleUniswapV3Pools(
     : chainId === robinhoodChainTestnet.id && robinhoodTestnetAddresses.uniswapV3Factory
       ? {
           factory: robinhoodTestnetAddresses.uniswapV3Factory,
-          quotes: registeredQuotes.filter((quote) => quote.allowV3Twap).map((quote) => ({
+          quotes: registeredQuotes.map((quote) => ({
             symbol: quoteTokenLabel(quote.address), address: quote.address,
           })),
         }
@@ -976,14 +970,12 @@ function PricingConfigurationFields({
   const registeredQuotes: RegisteredQuoteToken[] = (quoteTokenAddresses ?? []).flatMap((address, index) => {
     const result = quoteConfigResults?.[index];
     if (result?.status !== "success") return [];
-    const value = result.result;
-    if (!value.enabled) return [];
+    const [usdFeed, maxStaleness, enabled] = result.result;
+    if (!enabled) return [];
     return [{
       address,
-      usdFeed: value.usdFeed,
-      maxStaleness: Number(value.maxStaleness),
-      allowComposedChainlink: value.allowComposedChainlink,
-      allowV3Twap: value.allowV3Twap,
+      usdFeed,
+      maxStaleness: Number(maxStaleness),
     }];
   });
   const { pools, isLoading: poolsLoading } = useCompatibleUniswapV3Pools(
@@ -1210,9 +1202,9 @@ function PricingConfigurationFields({
                     }}
                   >
                     <option value="">{registeredQuotes.length ? "Choose a quote token" : "No enabled quote tokens"}</option>
-                    {registeredQuotes
-                      .filter((quote) => draftConfig.source === 1 ? quote.allowComposedChainlink : quote.allowV3Twap)
-                      .map((quote) => <option key={quote.address} value={quote.address}>{quoteTokenLabel(quote.address)}</option>)}
+                    {registeredQuotes.map((quote) => (
+                      <option key={quote.address} value={quote.address}>{quoteTokenLabel(quote.address)}</option>
+                    ))}
                   </select>
                 </label>
               ) : null}

@@ -98,7 +98,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
             _requireMarketRegistry();
             address composedQuoteToken = config.quoteToken;
             (address composedQuoteUsdFeed, uint32 composedQuoteMaxStaleness) =
-                _quoteConfig(composedQuoteToken, false);
+                _quoteConfig(composedQuoteToken);
             _validateLeg(asset, config.primarySource, config.primaryMaxStaleness, false);
             _validateLeg(composedQuoteToken, composedQuoteUsdFeed, composedQuoteMaxStaleness, false);
             if (deployWrapper) {
@@ -125,7 +125,7 @@ contract AssetPricingResolver is IAssetPricingResolver {
         }
         address quoteToken = marketRegistry.quoteTokenFor(marketId);
         if (quoteToken != config.quoteToken) revert InvalidPricingConfig(asset);
-        (address secondarySource, uint32 secondaryStaleness) = _quoteConfig(quoteToken, true);
+        (address secondarySource, uint32 secondaryStaleness) = _quoteConfig(quoteToken);
         _validateLeg(quoteToken, secondarySource, secondaryStaleness, false);
         if (deployWrapper) {
             normalizedFeed = address(
@@ -144,12 +144,12 @@ contract AssetPricingResolver is IAssetPricingResolver {
         if (address(marketRegistry) == address(0)) revert MarketRegistryUnavailable();
     }
 
-    function _quoteConfig(address quoteToken, bool forV3)
+    function _quoteConfig(address quoteToken)
         private
         view
         returns (address usdFeed, uint32 maxStaleness)
     {
-        return marketRegistry.validatedQuoteTokenConfig(quoteToken, forV3);
+        return marketRegistry.validatedQuoteTokenConfig(quoteToken);
     }
 
     function _validateLeg(

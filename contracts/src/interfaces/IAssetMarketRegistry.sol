@@ -7,15 +7,9 @@ interface IAssetMarketRegistry {
     function quoteTokenConfig(address quoteToken)
         external
         view
-        returns (
-            address usdFeed,
-            uint32 maxStaleness,
-            bool enabled,
-            bool allowComposedChainlink,
-            bool allowV3Twap
-        );
+        returns (address usdFeed, uint32 maxStaleness, bool enabled);
 
-    function validatedQuoteTokenConfig(address quoteToken, bool forV3)
+    function validatedQuoteTokenConfig(address quoteToken)
         external
         view
         returns (address usdFeed, uint32 maxStaleness);
