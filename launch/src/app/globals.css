@@ -174,7 +174,7 @@ button { color: inherit; }
 .timelineProgress::before { content: ""; position: absolute; inset: 4px 0; background: var(--border-strong); }
 .timelineProgressFill { position: absolute; inset: 4px auto 4px 0; background: var(--teal); transition: width .3s ease-out; }
 .timelineProgressThumb { position: absolute; z-index: 1; top: 50%; width: 8px; height: 8px; border: 2px solid var(--card); border-radius: 50%; background: var(--teal); transform: translate(-50%, -50%); transition: left .3s ease-out; }
-.competitionTimeline ol { display: grid; grid-template-columns: 7fr 30fr 10fr; margin: 0; padding: 0; list-style: none; }
+.competitionTimeline ol { display: grid; grid-template-columns: var(--submission-phase-width) var(--voting-phase-width) var(--final-phase-width); margin: 0; padding: 0; list-style: none; }
 .competitionTimeline li { position: relative; min-width: 0; padding: 15px 18px 17px; }
 .competitionTimeline li + li { border-left: 1px solid var(--border); }
 .competitionTimeline li.current { background: rgb(var(--accent-rgb) / 4%); }

@@ -9,8 +9,11 @@ const profile = readFileSync(new URL("../app/me/page.tsx", import.meta.url), "ut
 
 describe("proposal draft lifecycle", () => {
   it("expires drafts lazily and releases their identity reservations", () => {
+    const expiryQuery = actions.slice(actions.indexOf("async function expireStaleDrafts"), actions.indexOf("export async function expireProposalDrafts"));
     expect(actions).toContain("expireStaleDrafts");
     expect(actions).toContain("PROPOSAL_DRAFT_TTL_MS");
+    expect(expiryQuery).toContain("set status = 'expired', updated_at = ${now}");
+    expect(expiryQuery).not.toContain("set ${proposals.");
     expect(schema).toContain('["draft", "confirmed", "expired", "deleted"]');
     expect(schema).not.toContain("<> 'deleted'");
     expect(schema.match(/in \('draft', 'confirmed'\)/g)).toHaveLength(3);

@@ -8436,6 +8436,9 @@ function CreateVaultView({
     && !manualAssetMetadataReadFailed
     && (manualAssetMetadataLoading || !manualAssetMetadataResults),
   );
+  const manualVerifiedAsset = manualAssetMetadataAddress
+    ? catalogAssetForAddress(testnetCreateAssets, manualAssetMetadataAddress)
+    : undefined;
   const manualAssetDuplicate = Boolean(
     manualAssetMetadataAddress
     && portfolio.some((item, index) => (
@@ -8919,7 +8922,7 @@ function CreateVaultView({
     });
   }
 
-  function addUnverifiedAsset() {
+  function addManualAsset() {
     if (
       unverifiedAssetIndex === undefined
       || !isAddress(manualAssetAddress)
@@ -8927,16 +8930,19 @@ function CreateVaultView({
       || manualAssetMetadata.decimals !== 18
       || manualAssetDuplicate
     ) return;
-    const assetAddress = manualAssetAddress as `0x${string}`;
+    const assetAddress = (manualVerifiedAsset?.address ?? manualAssetAddress) as `0x${string}`;
+    const verifiedPricingConfig = manualVerifiedAsset
+      ? configuredPricingConfig(manualVerifiedAsset.address)
+      : undefined;
     setPortfolio((current) => current.map((item, index) => (
       index === unverifiedAssetIndex
         ? {
-          ticker: manualAssetMetadata.symbol || "TOKEN",
-          name: manualAssetMetadata.name || "Unindexed token",
+          ticker: (manualVerifiedAsset?.symbol ?? manualAssetMetadata.symbol) || "TOKEN",
+          name: (manualVerifiedAsset?.name ?? manualAssetMetadata.name) || "Unindexed token",
           address: assetAddress,
-          poolAddress: undefined,
-          verified: false,
-          pricingConfig: emptyPricingConfig(),
+          poolAddress: verifiedPricingConfig?.source === 2 ? verifiedPricingConfig.primarySource : undefined,
+          verified: Boolean(manualVerifiedAsset),
+          pricingConfig: verifiedPricingConfig ?? emptyPricingConfig(),
           targetWeight: item.targetWeight,
           initialAmount: "",
         }
@@ -9162,9 +9168,11 @@ function CreateVaultView({
             <header className="unverifiedAssetModalHeader">
               <div>
                 <div className="unverifiedAssetModalTitle">
-                  <h2 id="unverified-asset-title">Add an unverified asset</h2>
+                  <h2 id="unverified-asset-title">{manualVerifiedAsset ? "Add a verified asset" : "Add an unverified asset"}</h2>
                 </div>
-                <p id="unverified-asset-description">Enter an exact-transfer ERC-20 contract. Its token details are read directly onchain; you will configure pricing in the asset card next.</p>
+                <p id="unverified-asset-description">{manualVerifiedAsset
+                  ? "This contract matches the verified asset registry, so its approved pricing configuration will be used automatically."
+                  : "Enter an exact-transfer ERC-20 contract. Its token details are read directly onchain; you will configure pricing in the asset card next."}</p>
               </div>
               <button
                 className="sunsetDialogClose"
@@ -9197,21 +9205,25 @@ function CreateVaultView({
               ) : null}
               {manualAssetMetadata ? (
                 <div className={`unverifiedAssetDetected ${manualAssetMetadata.decimals === 18 ? "valid" : "invalid"}`}>
-                  {manualAssetMetadata.decimals === 18 ? <BadgeCheck size={18} /> : <CircleAlert size={18} />}
+                  {manualAssetMetadata.decimals === 18
+                    ? <BadgeCheck size={18} aria-label={manualVerifiedAsset ? "Verified asset" : "Valid token contract"}><title>{manualVerifiedAsset ? "Verified" : "Valid token contract"}</title></BadgeCheck>
+                    : <CircleAlert size={18} />}
                   <div>
-                    <span>{manualAssetMetadata.symbol || "TOKEN"}</span>
-                    <strong>{manualAssetMetadata.name || "Unindexed token"}</strong>
-                    <small>{shortAssetAddress(manualAssetAddress)} · {manualAssetMetadata.decimals} decimals</small>
+                    <span>{(manualVerifiedAsset?.symbol ?? manualAssetMetadata.symbol) || "TOKEN"}</span>
+                    <strong>{(manualVerifiedAsset?.name ?? manualAssetMetadata.name) || "Unindexed token"}</strong>
+                    <small>{shortAssetAddress(manualAssetAddress)} · {manualVerifiedAsset ? "Verified" : `${manualAssetMetadata.decimals} decimals`}</small>
                   </div>
                 </div>
               ) : null}
               {manualAssetMetadataReadFailed ? <span className="fieldError">No ERC-20 metadata was found at this address.</span> : null}
               {manualAssetMetadata && manualAssetMetadata.decimals !== 18 ? <span className="fieldError">Constituents must use exactly 18 decimals.</span> : null}
               {manualAssetDuplicate ? <span className="fieldError">This token contract is already in the portfolio.</span> : null}
-              <div className="manualAssetRiskNotice" role="note">
-                <AlertTriangle size={15} />
-                <span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span>
-              </div>
+              {!manualVerifiedAsset ? (
+                <div className="manualAssetRiskNotice" role="note">
+                  <AlertTriangle size={15} />
+                  <span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span>
+                </div>
+              ) : null}
             </div>
 
             <footer className="unverifiedAssetModalActions">
@@ -9225,7 +9237,7 @@ function CreateVaultView({
               <button
                 type="button"
                 className="primaryAction"
-                onClick={addUnverifiedAsset}
+                onClick={addManualAsset}
                 disabled={
                   !isAddress(manualAssetAddress)
                   || manualAssetMetadataPending
@@ -9235,7 +9247,7 @@ function CreateVaultView({
                 }
               >
                 <Plus size={14} />
-                Add asset
+                {manualVerifiedAsset ? `Add ${manualVerifiedAsset.symbol}` : "Add asset"}
               </button>
             </footer>
           </section>
@@ -9453,8 +9465,8 @@ function CreateVaultView({
                               <span className="createAssetPickerName">
                                 <strong>{asset.ticker}</strong>
                                 {configurationVerified
-                                  ? <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Configured asset" />
-                                  : <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset" />}
+                                  ? <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Verified asset"><title>Verified</title></BadgeCheck>
+                                  : <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset"><title>Unverified</title></CircleAlert>}
                               </span>
                               <small>{asset.name ?? "Token"} · {shortAssetAddress(asset.address)}</small>
                             </span>
@@ -9498,7 +9510,7 @@ function CreateVaultView({
                                     <span className="createAssetOptionIdentity">
                                       <span className="createAssetOptionTicker">
                                         <strong>{candidate.symbol}</strong>
-                                        <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Configured asset" />
+                                        <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Verified asset"><title>Verified</title></BadgeCheck>
                                       </span>
                                       <small>{candidate.name}</small>
                                       <small>{shortAssetAddress(candidate.address)}</small>
@@ -9521,7 +9533,7 @@ function CreateVaultView({
                                     <span className="createAssetOptionIdentity">
                                       <span className="createAssetOptionTicker">
                                         <strong>{assetSearchMetadata.symbol || "TOKEN"}</strong>
-                                        {assetSearchMetadata.decimals === 18 ? <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset" /> : null}
+                                        {assetSearchMetadata.decimals === 18 ? <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset"><title>Unverified</title></CircleAlert> : null}
                                       </span>
                                       <small>{assetSearchMetadata.name || "Unindexed token"}</small>
                                       <small>{shortAssetAddress(assetSearchAddress)} · {assetSearchMetadata.decimals} decimals</small>
@@ -10201,8 +10213,7 @@ function WalletView({
               </div>
               <div className="managedVaultsHeaderActions">
                 {managedVaults.length ? <span className="stateBadge success">{managedVaults.length} OTF{managedVaults.length === 1 ? "" : "s"}</span> : null}
-                <button className="primaryAction" type="button" onClick={onCreateVault}>
-                  <Plus size={14} />
+                <button className="secondaryAction managedCreateAction" type="button" onClick={onCreateVault}>
                   Create OTF
                 </button>
               </div>

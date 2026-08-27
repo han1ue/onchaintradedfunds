@@ -31,7 +31,7 @@ async function expireStaleDrafts(
 ) {
   await database.execute(sql`
     update ${proposals}
-    set ${proposals.status} = 'expired', ${proposals.updatedAt} = ${now}
+    set status = 'expired', updated_at = ${now}
     where ${proposals.status} = 'draft'
       and ${proposals.draftExpiresAt} is not null
       and ${proposals.draftExpiresAt} <= ${now}

@@ -72,6 +72,13 @@ function validationRequestError(code: string) {
   };
 }
 
+export function selectableRegistryAssetForAddress(assets: AssetRegistryEntry[], address: string) {
+  const normalizedAddress = address.trim().toLowerCase();
+  return assets.find((asset) => (
+    asset.verified || preferredActiveMarketPricingConfig(asset.markets)
+  ) && asset.contractAddress.toLowerCase() === normalizedAddress);
+}
+
 export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfig, label, onChange }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -93,6 +100,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     || asset.name.toLowerCase().includes(normalizedQuery)
     || asset.symbol.toLowerCase().includes(normalizedQuery)
     || asset.contractAddress.toLowerCase() === normalizedQuery);
+  const registryAssetForManualAddress = selectableRegistryAssetForAddress(assets, assetAddress);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -104,6 +112,10 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   useEffect(() => {
     setValidation(null);
     setLookupError(null);
+    if (registryAssetForManualAddress) {
+      setLookupState("idle");
+      return;
+    }
     if (!manual || !EVM_ADDRESS_PATTERN.test(assetAddress.trim())) {
       setLookupState("idle");
       return;
@@ -134,7 +146,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         });
     }, 450);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [assetAddress, manual, poolAddress]);
+  }, [assetAddress, manual, poolAddress, registryAssetForManualAddress]);
 
   function choose(asset: AssetRegistryEntry) {
     const configuredPriceSource = asset.verified ? null : preferredActiveMarketPricingConfig(asset.markets);
@@ -153,6 +165,12 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
   }
 
   function useManualAsset() {
+    if (registryAssetForManualAddress) {
+      choose(registryAssetForManualAddress);
+      setManual(false);
+      setValidation(null);
+      return;
+    }
     const detected = validation?.asset;
     if (!detected || validation?.status !== "pass" || validation.requirements.some((item) => item.status !== "pass")) return;
     const metadata: ProposalAssetMetadata = {
@@ -171,16 +189,18 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
   const detected = validation?.asset ?? null;
   const hasValidPoolAddress = EVM_ADDRESS_PATTERN.test(poolAddress.trim());
-  const canUseManualAsset = validation?.status === "pass"
+  const canUseManualAsset = Boolean(registryAssetForManualAddress) || (
+    validation?.status === "pass"
     && Boolean(detected && detected.decimals === 18 && normalizeTickerInput(detected.symbol) && detected.name.trim())
-    && validation.requirements.every((item) => item.status === "pass");
+    && validation.requirements.every((item) => item.status === "pass")
+  );
   const decision = validation ? validationDecision(validation, canUseManualAsset) : null;
 
   return <div className="assetMarketPicker">
     <button className="assetPickerTrigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={`${label}: choose asset`}>
       {selected || selectedMetadata ? <>
         <span className="assetPickerIdentity">
-          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected?.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
+          <span className="assetPickerTicker"><strong>{selectedSymbol}</strong>{selected?.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset"><title>Verified</title></BadgeCheck> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset"><title>Unverified</title></CircleAlert>}</span>
           <small>{selected?.name ?? selectedMetadata?.name} · {shortAddress(selected?.contractAddress ?? selectedMetadata?.contractAddress ?? "")}</small>
         </span>
       </> : <span className="assetPickerPlaceholder">Choose an asset</span>}
@@ -191,14 +211,14 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       <div className="assetPickerResults">
         {selectedMetadata && !normalizedQuery && <button type="button" onClick={openManualAsset}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><strong>{selectedMetadata.symbol}</strong><CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" /></span>
+            <span className="assetPickerTicker"><strong>{selectedMetadata.symbol}</strong><CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset"><title>Unverified</title></CircleAlert></span>
             <small>{selectedMetadata.name}</small>
             <code>Edit contract and Uniswap V3 pool</code>
           </span>
         </button>}
         {filtered.map((asset) => <button key={asset.id} type="button" onClick={() => choose(asset)}>
           <span className="assetPickerIdentity">
-            <span className="assetPickerTicker"><strong>{asset.symbol}</strong>{asset.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset" /> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset" />}</span>
+            <span className="assetPickerTicker"><strong>{asset.symbol}</strong>{asset.verified ? <BadgeCheck className="assetPickerVerificationIcon" size={12} aria-label="Verified asset"><title>Verified</title></BadgeCheck> : <CircleAlert className="assetPickerVerificationIcon unverified" size={12} aria-label="Unverified asset"><title>Unverified</title></CircleAlert>}</span>
             <small>{asset.name}</small>
             <code>{asset.verified ? `${asset.network} · ${shortAddress(asset.contractAddress)}` : `Saved pool · ${shortAddress(preferredActiveMarketPricingConfig(asset.markets)?.poolAddress ?? "")}`}</code>
           </span>
@@ -213,8 +233,10 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
     <dialog ref={dialogRef} className="assetRequestDialog" onClose={() => setManual(false)} onCancel={() => setManual(false)} aria-labelledby={`${label.replace(/\s+/g, "-").toLowerCase()}-asset-dialog-title`}>
       <div className="assetRequestDialogBody">
         <button className="dialogClose" type="button" onClick={() => setManual(false)} aria-label="Close asset request"><X size={17} /></button>
-        <h2 id={`${label.replace(/\s+/g, "-").toLowerCase()}-asset-dialog-title`}>Add an unlisted asset</h2>
-        <p>Enter its Robinhood Chain contract and canonical Uniswap V3 pool. The browser never calls CoinGecko and never receives the Demo key.</p>
+        <h2 id={`${label.replace(/\s+/g, "-").toLowerCase()}-asset-dialog-title`}>{registryAssetForManualAddress ? "Use a verified asset" : "Add an unlisted asset"}</h2>
+        <p>{registryAssetForManualAddress
+          ? "This contract matches the verified asset registry and will use its saved pricing source."
+          : "Enter its Robinhood Chain contract and canonical Uniswap V3 pool. The browser never calls CoinGecko and never receives the Demo key."}</p>
 
         <label className="assetRequestField">
           <span>Token contract address</span>
@@ -222,6 +244,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
           {!assetAddress && <small>Robinhood Chain · 18-decimal ERC-20 tokens only</small>}
         </label>
 
+        {registryAssetForManualAddress && <div className="detectedAsset"><BadgeCheck size={18} aria-label="Verified asset"><title>Verified</title></BadgeCheck><div><span>{registryAssetForManualAddress.symbol}</span><strong>{registryAssetForManualAddress.name}</strong><small>Verified registry asset</small></div></div>}
         {lookupState === "loading" && <div className="tokenLookupState" role="status"><span className="tokenLookupPulse" /><div><strong>{hasValidPoolAddress ? "Validating asset and pool" : "Validating token"}</strong><small>{hasValidPoolAddress ? "Checking Robinhood Chain first, then market evidence…" : "Checking token info now; enter a pool address to continue."}</small></div></div>}
         {lookupState === "error" && lookupError && <div className="tokenLookupState danger" role="alert"><CircleAlert size={17} /><div><strong>{lookupError.title}</strong><small>{lookupError.detail}</small></div></div>}
         {detected && <div className={`detectedAsset${detected.decimals === 18 ? "" : " invalid"}`}>
@@ -230,11 +253,11 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
         </div>}
         {detected && detected.decimals !== 18 && <p className="assetRequestError" role="alert">This token cannot be added. OTF constituents must use exactly 18 decimals.</p>}
 
-        <label className="assetRequestField">
+        {!registryAssetForManualAddress && <label className="assetRequestField">
           <span>Uniswap V3 pool address</span>
           <input value={poolAddress} onChange={(event) => setPoolAddress(event.target.value)} placeholder="0x…" spellCheck="false" />
           <small>Use the canonical token/WETH or token/USDG Uniswap V3 pool. Every check below must pass.</small>
-        </label>
+        </label>}
 
         {validation && decision && <div className={`marketValidationDecision ${decision.tone}`} role={decision.tone === "approved" ? "status" : "alert"} aria-live="polite">
           {decision.tone === "approved" ? <CircleCheck size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
@@ -252,7 +275,9 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
 
         <div className="assetRequestActions">
           <Button variant="secondary" onClick={() => setManual(false)}>Cancel</Button>
-          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>{detected ? `Add ${normalizeTickerInput(detected.symbol)}` : "Add token"}</Button>
+          <Button onClick={useManualAsset} disabled={!canUseManualAsset}>{registryAssetForManualAddress
+            ? `Use ${registryAssetForManualAddress.symbol}`
+            : detected ? `Add ${normalizeTickerInput(detected.symbol)}` : "Add token"}</Button>
         </div>
       </div>
     </dialog>

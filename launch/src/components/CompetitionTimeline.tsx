@@ -1,16 +1,25 @@
 import { Check, Circle, Clock3 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { getCompetitionStatus } from "@/lib/competition";
 import type { CompetitionSummary } from "@/lib/types";
 import { SectionCard } from "./ui";
+
+const FINAL_PHASE_DISPLAY_DAYS = 10;
+
+export function timelineProgressPercent(elapsedDays: number, totalDays: number, final: boolean) {
+  if (final) return 100;
+  const displayDays = totalDays + FINAL_PHASE_DISPLAY_DAYS;
+  return displayDays > 0
+    ? Math.max(0, Math.min(100, elapsedDays / displayDays * 100))
+    : 0;
+}
 
 export function CompetitionTimeline({ competition }: { competition: CompetitionSummary }) {
   const status = getCompetitionStatus(competition);
   const rules = competition.rules;
   const totalDays = rules.submissionOnlyDays + rules.votingDays;
   const elapsedDays = status.progressDays;
-  const progressPercent = totalDays > 0
-    ? Math.max(0, Math.min(100, elapsedDays / totalDays * 100))
-    : 0;
+  const progressPercent = timelineProgressPercent(elapsedDays, totalDays, status.stage === "final");
   const currentIndex = status.stage === "submissions" ? 0 : status.stage === "voting" ? 1 : status.stage === "review" || status.stage === "final" ? 2 : -1;
   const cancelled = status.stage === "cancelled";
   const phases = [
@@ -35,7 +44,11 @@ export function CompetitionTimeline({ competition }: { competition: CompetitionS
       <span className="timelineProgressFill" style={{ width: `${progressPercent}%` }} />
       <span className="timelineProgressThumb" style={{ left: `clamp(4px, ${progressPercent}%, calc(100% - 4px))` }} aria-hidden="true" />
     </div>
-    <ol>{phases.map((phase, index) => {
+    <ol style={{
+      "--submission-phase-width": `${rules.submissionOnlyDays}fr`,
+      "--voting-phase-width": `${rules.votingDays}fr`,
+      "--final-phase-width": `${FINAL_PHASE_DISPLAY_DAYS}fr`,
+    } as CSSProperties}>{phases.map((phase, index) => {
       const state = cancelled ? "cancelled" : index < currentIndex ? "complete" : index === currentIndex ? "current" : "upcoming";
       const Icon = state === "complete" ? Check : state === "current" ? Clock3 : Circle;
       return <li className={state} key={phase.title}><div className="timelineMarker"><Icon size={14} /><span>{state === "cancelled" ? "Ended" : state === "complete" ? "Complete" : state === "current" ? "Now" : "Next"}</span></div><strong>{phase.title}</strong><small>{phase.timing}</small><p>{phase.detail}</p></li>;
