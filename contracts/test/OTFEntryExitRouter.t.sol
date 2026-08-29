@@ -419,6 +419,63 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
         _assertRouterClean();
     }
 
+    function testRedeemToTokenRejectsConstituentInjectedByOutputTransfer() public {
+        MockReentrantToken output = new MockReentrantToken("Output", "OUT", 18);
+        output.mint(address(venue), 100 * ONE);
+        _createPool(address(assetA), address(output));
+        _createPool(address(assetB), address(output));
+        output.configureCallback(
+            address(assetB), abi.encodeCall(assetB.mint, (address(router), ONE)), true
+        );
+        output.configureCallbackSender(address(router));
+
+        V3Swap[] memory legs = new V3Swap[](2);
+        legs[0] = _leg(address(assetA), address(output), type(uint256).max, 50 * ONE);
+        legs[1] = _leg(address(assetB), address(output), type(uint256).max, 50 * ONE);
+        uint256 sharesBefore = sourceVault.balanceOf(ALICE);
+        uint256 supplyBefore = sourceVault.totalSupply();
+        uint256 assetABackingBefore = assetA.balanceOf(address(sourceVault));
+        uint256 assetBBackingBefore = assetB.balanceOf(address(sourceVault));
+        uint256 assetAVenueBefore = assetA.balanceOf(address(venue));
+        uint256 assetBVenueBefore = assetB.balanceOf(address(venue));
+        uint256 assetBSupplyBefore = assetB.totalSupply();
+        uint256 outputVenueBefore = output.balanceOf(address(venue));
+
+        vm.startPrank(ALICE);
+        sourceVault.approve(address(router), 50 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFEntryExitRouter.IncompleteLiquidation.selector, address(assetB), ONE
+            )
+        );
+        router.redeemToToken(
+            BasketRedeemRequest({
+                vault: address(sourceVault),
+                outputToken: address(output),
+                shares: 50 * ONE,
+                minAmountOut: 100 * ONE,
+                deadline: block.timestamp + 1
+            }),
+            _zeroMinimums(),
+            legs
+        );
+        vm.stopPrank();
+
+        assertEq(sourceVault.balanceOf(ALICE), sharesBefore);
+        assertEq(sourceVault.totalSupply(), supplyBefore);
+        assertEq(sourceVault.allowance(ALICE, address(router)), 50 * ONE);
+        assertEq(assetA.balanceOf(address(sourceVault)), assetABackingBefore);
+        assertEq(assetB.balanceOf(address(sourceVault)), assetBBackingBefore);
+        assertEq(assetA.balanceOf(address(venue)), assetAVenueBefore);
+        assertEq(assetB.balanceOf(address(venue)), assetBVenueBefore);
+        assertEq(assetB.totalSupply(), assetBSupplyBefore);
+        assertEq(output.balanceOf(address(venue)), outputVenueBefore);
+        assertEq(output.balanceOf(ALICE), 0);
+        assertEq(output.balanceOf(address(router)), 0);
+        assertFalse(output.callbackSucceeded());
+        _assertRouterClean();
+    }
+
     function testPreexistingRouterDustIsNeverConsumedOrRefunded() public {
         input.mint(address(router), 7 * ONE);
         V3Swap[] memory legs = new V3Swap[](1);

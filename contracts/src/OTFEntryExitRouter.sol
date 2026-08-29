@@ -260,6 +260,7 @@ contract OTFEntryExitRouter {
         }
         _recordCredit(sheet, request.outputToken, amountOut);
         _pushExact(request.outputToken, msg.sender, amountOut);
+        _requireOnlyOutput(sheet, request.outputToken);
         _refundAndClose(sheet, msg.sender);
 
         emit BasketRedeemed(
