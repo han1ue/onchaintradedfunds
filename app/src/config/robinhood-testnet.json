@@ -89,6 +89,13 @@
     "uniswapV3SwapRouter": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
     "uniswapV3Quoter": "0x231606c321A99DE81e28fE48B07a93F1ba49e713"
   },
+  "externalLiquidity": {
+    "venue": "Synthra",
+    "baseUrl": "https://app.synthra.org/"
+  },
+  "quoteService": {
+    "endpoint": null
+  },
   "pricingConfiguration": {
     "sources": [
       "chainlink",

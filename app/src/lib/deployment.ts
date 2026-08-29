@@ -2,22 +2,44 @@ import deployment from "../config/robinhood-testnet.json";
 import { getAddress, isAddress, type Address } from "viem";
 
 type ContractDeployment = { address?: unknown };
-const contracts = deployment.contracts as Record<string, ContractDeployment | undefined>;
-const externalContracts = deployment.externalContracts as Record<string, unknown>;
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function httpsUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const contracts = record(deployment.contracts) as Record<string, ContractDeployment | undefined>;
+const externalContracts = record(deployment.externalContracts);
 const deploymentCompatible = Number(deployment.schemaVersion) >= 9
-  && (deployment.migration as { architecture?: unknown }).architecture === "centralized-adapter-permissions";
-const executionRoutes = (deploymentCompatible ? deployment.executionRoutes : []) as Array<{
+  && record(deployment.migration).architecture === "centralized-adapter-permissions";
+const executionRoutes = (deploymentCompatible && Array.isArray(deployment.executionRoutes)
+  ? deployment.executionRoutes
+  : []) as Array<{
   settlement?: unknown;
   settlementToken?: unknown;
   adapter?: unknown;
   entryRouter?: unknown;
 }>;
-const quoteTokens = deployment.pricingConfiguration.quoteTokens as Array<{
+const pricingConfiguration = record(deployment.pricingConfiguration);
+const quoteTokens = Array.isArray(pricingConfiguration.quoteTokens)
+  ? pricingConfiguration.quoteTokens as Array<{
   symbol?: unknown;
   quoteToken?: unknown;
   usdFeed?: unknown;
   maxStaleness?: unknown;
-}>;
+}>
+  : [];
+const externalLiquidity = record(deployment.externalLiquidity);
+const quoteService = record(deployment.quoteService);
 function address(value: unknown): Address | undefined {
   return typeof value === "string" && isAddress(value) ? getAddress(value) : undefined;
 }
@@ -41,6 +63,16 @@ export const robinhoodTestnetAddresses = Object.freeze({
   uniswapV3PositionManager: address(externalContracts.uniswapV3PositionManager),
   uniswapV3SwapRouter: address(externalContracts.uniswapV3SwapRouter),
   uniswapV3Quoter: address(externalContracts.uniswapV3Quoter),
+});
+
+export const robinhoodTestnetLiquidity = Object.freeze({
+  venue: typeof externalLiquidity.venue === "string" ? externalLiquidity.venue : undefined,
+  baseUrl: httpsUrl(externalLiquidity.baseUrl),
+});
+
+/** A null endpoint is an intentional disabled state until a typed HTTPS quote service is configured. */
+export const robinhoodTestnetQuote = Object.freeze({
+  endpoint: httpsUrl(quoteService.endpoint),
 });
 
 export const robinhoodTestnetMarketAssets = Object.freeze(executionRoutes.flatMap((route) => {

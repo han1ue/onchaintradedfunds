@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const localEnvPath = join(root, ".env.deploy.local");
@@ -117,6 +118,7 @@ async function writeContract({ address, abi, functionName, args = [] }) {
 
 const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
 const deploymentConfig = JSON.parse(readFileSync(deploymentPath, "utf8"));
+const appOwnedIntegrations = appOwnedIntegrationConfiguration(deploymentConfig);
 const rpcUrl = env("RH_TESTNET_RPC_URL", env("RPC_URL", deploymentConfig.rpcUrl ?? defaultRpcUrl));
 const chainId = Number(deploymentConfig.chainId ?? defaultChainId);
 const protocolFeeShareBps = Number(deploymentConfig.protocolFeeShareBps ?? 1500);
@@ -370,6 +372,7 @@ const deployment = {
     legacyFactoriesCompatible: false,
   },
   setupTransactions,
+  ...appOwnedIntegrations,
 };
 
 mkdirSync(dirname(deploymentPath), { recursive: true });

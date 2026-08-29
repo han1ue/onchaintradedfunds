@@ -774,6 +774,12 @@ discovered at runtime from the canonical V3 factory across the supported fee tie
 `pricingConfiguration.suggestedInitialPricingConfigs` and `suggestedV3PricingConfigs` are separate,
 non-authoritative transaction prefills. Execution records never contain a pricing market ID.
 
+The app-owned `externalLiquidity` and `quoteService` sections are retained when deployment writes
+the manifest. `externalLiquidity.baseUrl` must be HTTPS. `quoteService.endpoint` may be `null`; that
+is the intentional disabled state for swaps until an HTTPS typed-quote service is configured. The
+testnet liquidity action uses the configured Synthra venue, while the mainnet action opens Uniswap
+V3's add-position flow with the selected OTF/USDG pair and 0.30% fee prefilled.
+
 This is a deployment migration, not an in-place upgrade:
 
 - Existing factory-created clones retain the legacy storage and behavior. A fresh factory,

@@ -7,12 +7,10 @@ import { getAddress, isAddress } from "viem";
 import { useChainId, useReadContract } from "wagmi";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetMarketAssets } from "@/lib/deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetLiquidity, robinhoodTestnetMarketAssets } from "@/lib/deployment";
+import { synthraAddLiquidityUrl, uniswapV3AddPositionUrl } from "@/lib/external-liquidity";
 import { selectV3Pool, useDiscoveredV3Pools, type V3TokenPair } from "@/lib/v3-execution-routes";
 import { TopNav } from "./RebalanceCooldownPanel";
-
-const SYNTHRA_LIQUIDITY_URL = "https://app.synthra.org/#/add/ETH";
-const UNISWAP_LIQUIDITY_URL = "https://app.uniswap.org/positions?chain=robinhood";
 
 const otfFactoryAbi = [{
   type: "function",
@@ -77,8 +75,10 @@ function LiquidityWorkspace() {
     },
   });
 
-  const venueName = isMainnet ? "Uniswap" : "Synthra";
-  const venueUrl = isMainnet ? UNISWAP_LIQUIDITY_URL : SYNTHRA_LIQUIDITY_URL;
+  const venueName = isMainnet ? "Uniswap" : robinhoodTestnetLiquidity.venue ?? "External venue";
+  const venueUrl = isMainnet
+    ? uniswapV3AddPositionUrl(validOtfAddress, robinhoodTestnetAddresses.usdg)
+    : synthraAddLiquidityUrl(robinhoodTestnetLiquidity.baseUrl);
   const marketState = poolDiscoveryLoading
     ? "Checking"
     : selectedPool?.readFailed
@@ -180,7 +180,14 @@ function LiquidityWorkspace() {
                 ) : null}
               </>
             ) : (
-              <div className="validationSummary"><Info size={15} /><div><strong>Mainnet markets are not indexed yet</strong><span>Use Uniswap to create pools and manage positions. Discovery will appear after the production deployment is configured.</span></div></div>
+              <>
+                <label className="liquidityField">
+                  <span>OTF address</span>
+                  <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" />
+                  <small>Enter the OTF address to prefill the Uniswap V3 OTF / USDG position.</small>
+                </label>
+                <div className="validationSummary"><Info size={15} /><div><strong>Mainnet markets are not indexed yet</strong><span>Use Uniswap to create pools and manage positions. Discovery will appear after the production deployment is configured.</span></div></div>
+              </>
             )}
           </aside>
 
@@ -193,9 +200,13 @@ function LiquidityWorkspace() {
               <strong>One venue for the complete liquidity lifecycle</strong>
               <p>Create a pool, choose its initial price, add or remove liquidity, collect fees, and manage positions directly on {venueName}.</p>
             </div>
-            <a className="primaryAction liquidityVenueAction" href={venueUrl} target="_blank" rel="noreferrer">
-              Open {venueName} liquidity <ExternalLink size={14} />
-            </a>
+            {venueUrl ? (
+              <a className="primaryAction liquidityVenueAction" href={venueUrl} target="_blank" rel="noreferrer">
+                Open {venueName} liquidity <ExternalLink size={14} />
+              </a>
+            ) : (
+              <span className="primaryAction liquidityVenueAction" aria-disabled="true">Liquidity venue unavailable</span>
+            )}
             <p className="liquidityHelper">The OTF app never takes custody of liquidity-position assets or submits pool-management transactions.</p>
           </section>
         </div>
