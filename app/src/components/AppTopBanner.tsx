@@ -5,11 +5,12 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 function isAppRoute(pathname: string): boolean {
-  if (pathname === "/" || pathname === "/docs") return true;
+  if (pathname === "/") return true;
   return (
     pathname.startsWith("/otfs") ||
     pathname === "/create" ||
-    pathname === "/verified"
+    pathname === "/verified" ||
+    pathname === "/wallet"
   );
 }
 

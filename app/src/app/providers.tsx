@@ -24,7 +24,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <RainbowKitProvider
           appInfo={{
             appName: "Onchain Traded Funds",
-            learnMoreUrl: "/docs",
+            learnMoreUrl: "https://github.com/han1ue/onchaintradedfunds#readme",
           }}
           modalSize="compact"
           theme={walletTheme}

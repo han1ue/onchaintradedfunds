@@ -119,7 +119,7 @@ execution-price promise.
 ## Application and liquidity disclosures
 
 The app's operating navigation is intended to map to `/` (Swap), `/otfs` (Funds),
-`/otfs/<address>` (fund detail), `/create` (Create), `/verified` (Verified), and `/docs` (Docs).
+`/otfs/<address>` (fund detail), `/create` (Create), `/verified` (Verified), and `/wallet` (Wallet). The Docs control opens this repository's documentation externally.
 There is no top-level Liquidity product. Wallet, quote, approval, simulation, submission, success,
 and failure states should be shown explicitly; unavailable configuration must not look executable.
 

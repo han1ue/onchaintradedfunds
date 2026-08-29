@@ -16,6 +16,6 @@ describe("operate navigation", () => {
     expect(operateViewForPath("/otfs/0x0000000000000000000000000000000000000001/manage")).toBe("fund-detail");
     expect(operateViewForPath("/create")).toBe("create");
     expect(operateViewForPath("/verified")).toBe("verified");
-    expect(operateViewForPath("/docs")).toBe("docs");
+    expect(operateViewForPath("/wallet")).toBe("wallet");
   });
 });
