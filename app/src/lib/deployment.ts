@@ -33,7 +33,6 @@ export const robinhoodTestnetLiquidity = Object.freeze({
   baseUrl: typeof liquidity.baseUrl === "string" && /^https:\/\//.test(liquidity.baseUrl)
     ? liquidity.baseUrl
     : undefined,
-  prefillSupported: liquidity.prefillSupported === true,
 });
 
 /**
@@ -46,11 +45,7 @@ export const robinhoodTestnetQuote = Object.freeze({
     : undefined,
 });
 
-export const robinhoodTestnetFormation = Object.freeze({
-  calculationVersion: Number(deployment.formation.calculationVersion),
-  snapshotAuthority: address(deployment.formation.snapshotAuthority),
-  dataSourceConfigured: Boolean(deployment.formation.dataSource),
-});
+const robinhoodTestnetFormationSnapshotAuthority = address(deployment.formation.snapshotAuthority);
 
 export const robinhoodTestnetDeploymentReady = deployment.status === "deployed"
   && Boolean(
@@ -58,6 +53,6 @@ export const robinhoodTestnetDeploymentReady = deployment.status === "deployed"
     && robinhoodTestnetAddresses.entryRouter
     && robinhoodTestnetAddresses.feeCollector
     && robinhoodTestnetAddresses.otfToken
-    && robinhoodTestnetFormation.snapshotAuthority
+    && robinhoodTestnetFormationSnapshotAuthority
     && robinhoodTestnetQuote.endpoint,
   );

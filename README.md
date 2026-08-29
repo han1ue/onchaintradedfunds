@@ -35,7 +35,7 @@ ERC-1271 contract) authenticates one EIP-712 `FormationSnapshot` for a specific 
 intended creator, ordered constituent array, market-cap array, unit-price array, snapshot time,
 expiry, calculation version, and nonce. An ordered token-decimals array is signed alongside the
 constituents. The factory rejects a zero creator or any caller other than the signed creator before
-the one-use nonce/digest can be consumed. It also checks the signature, expiry/domain, token
+the one-use nonce can be consumed. It also checks the signature, expiry/domain, token
 contracts, uniqueness, positive data, and that each live `decimals()` result exactly matches the
 signed value and is at most 36. Relative quantities use the signed decimals. The signed creator
 separately supplies unsigned name, symbol, beneficiary, and immutable
@@ -118,10 +118,11 @@ execution-price promise.
 
 ## Application and liquidity disclosures
 
-The app's operating navigation is intended to map to `/` (Swap), `/otfs` (Funds),
-`/otfs/<address>` (fund detail), `/create` (Create), `/verified` (Verified), and `/wallet` (Wallet). The Docs control opens this repository's documentation externally.
-There is no top-level Liquidity product. Wallet, quote, approval, simulation, submission, success,
-and failure states should be shown explicitly; unavailable configuration must not look executable.
+The app's operating routes are `/` (Swap), `/funds` (Funds), `/funds/<address>` (fund detail),
+`/create` (Create), `/verified` (Verified), `/wallet` (Wallet), and `/liquidity` (external-liquidity
+workspace). The Docs control opens this repository's documentation externally. Wallet, quote,
+approval, simulation, submission, success, and failure states should be shown explicitly;
+unavailable configuration must not look executable.
 
 Pool creation and liquidity-position management happen on the external network venue. The app does
 not custody LP positions or submit pool-management transactions. A leaving-app disclosure is

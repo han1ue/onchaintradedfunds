@@ -47,7 +47,6 @@ function artifact(name) {
 function functions(compiled) { return compiled.abi.filter((item) => item.type === "function"); }
 function functionNames(compiled) { return new Set(functions(compiled).map((item) => item.name)); }
 function constructor(compiled) { return compiled.abi.find((item) => item.type === "constructor"); }
-function signature(item) { return `${item.name}(${(item.inputs ?? []).map((input) => input.type).join(",")})`; }
 
 assert(existsSync(solhint), "solhint is not installed; run corepack pnpm install");
 execFileSync(process.execPath, [solhint, "contracts/src/**/*.sol", "--max-warnings", "0"], { cwd: root, stdio: "inherit" });
@@ -90,7 +89,7 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 }));
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
-  "_name", "_symbol", "_decimals", "_totalSupply", "_balanceOf", "_allowance", "_erc20Initialized",
+  "_name", "_symbol", "_decimals", "_totalSupply", "_balanceOf", "_allowance",
   "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
   "_feeCollector", "_entryExitRouter", "_annualCreatorExpenseRatioBps", "_formationOtfWeightBps",
   "_formationSnapshotTime", "_formationCalculationVersion", "_formationSnapshotDigest", "_shutdownAt",
@@ -114,7 +113,7 @@ for (const [name, expected] of Object.entries(expectedConstructors)) {
 }
 
 const factoryNames = functionNames(compiled.OTFFactory);
-for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "formationSnapshotDigest", "predictVaultAddress", "previewRelativeQuantities", "createVault", "effectiveProtocolFeeShareBps", "otfTokenURI", "isVault", "formationNonceUsed", "formationSnapshotUsed"]) {
+for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "formationSnapshotDigest", "predictVaultAddress", "previewRelativeQuantities", "createVault", "effectiveProtocolFeeShareBps", "otfTokenURI", "isVault", "formationNonceUsed"]) {
   assert(factoryNames.has(name), `factory function ${name} is absent`);
 }
 const createVault = functions(compiled.OTFFactory).find((item) => item.name === "createVault");

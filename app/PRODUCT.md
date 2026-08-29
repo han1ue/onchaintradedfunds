@@ -4,7 +4,7 @@ The application is an operating surface for creating and inspecting oracleless m
 
 ## Product truth
 
-- The Swap route is `/`; Funds is `/otfs`; fund detail remains address-routed under `/otfs/<address>`.
+- The Swap route is `/`; Funds is `/funds`; fund detail remains address-routed under `/funds/<address>`; and the external-liquidity workspace is `/liquidity`.
 - Formation relies on an authenticated, expiring snapshot that binds the chain, factory, intended creator, ordered constituent addresses and token decimals, market caps, unit prices, calculation version, and nonce.
 - A creator supplies metadata, an ordered list of at most 20 addresses, a fixed beneficiary, and an immutable annual creator expense ratio from 0 to 1000 bps.
 - The formation-allocation rebate benefits the creator and does not reduce the holder fee. A 10% creator expense ratio can dilute holders and is not recommended.

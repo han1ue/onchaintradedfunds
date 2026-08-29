@@ -109,7 +109,6 @@ contract FormationSnapshotTest is FormationTestBase {
         FormationSnapshot memory snapshot =
             _twoAssetSnapshot(factory, address(tokenA), address(tokenB), 3 * WAD, WAD, 2);
         bytes memory signature = _sign(factory, snapshot);
-        bytes32 digest = factory.formationSnapshotDigest(snapshot);
         address predicted = factory.predictVaultAddress(snapshot);
         VaultCreationParams memory params = _params(0);
 
@@ -120,7 +119,6 @@ contract FormationSnapshotTest is FormationTestBase {
         factory.createVault(params, snapshot, signature);
 
         assertFalse(factory.formationNonceUsed(snapshot.nonce));
-        assertFalse(factory.formationSnapshotUsed(digest));
         assertEq(factory.vaultCount(), 0);
         assertEq(predicted.code.length, 0);
 
@@ -128,7 +126,6 @@ contract FormationSnapshotTest is FormationTestBase {
         address vault = factory.createVault(params, snapshot, signature);
         assertEq(vault, predicted);
         assertTrue(factory.formationNonceUsed(snapshot.nonce));
-        assertTrue(factory.formationSnapshotUsed(digest));
         assertEq(ManagedOTFVault(vault).creator(), CREATOR);
     }
 
@@ -154,7 +151,6 @@ contract FormationSnapshotTest is FormationTestBase {
             factory, address(mutableDecimals), address(tokenB), 3 * WAD, WAD, 4
         );
         bytes memory signature = _sign(factory, snapshot);
-        bytes32 digest = factory.formationSnapshotDigest(snapshot);
         address predicted = factory.predictVaultAddress(snapshot);
 
         mutableDecimals.setDecimals(6);
@@ -167,7 +163,6 @@ contract FormationSnapshotTest is FormationTestBase {
         factory.createVault(_params(0), snapshot, signature);
 
         assertFalse(factory.formationNonceUsed(snapshot.nonce));
-        assertFalse(factory.formationSnapshotUsed(digest));
         assertEq(predicted.code.length, 0);
 
         mutableDecimals.setDecimals(18);
@@ -183,7 +178,6 @@ contract FormationSnapshotTest is FormationTestBase {
             factory, address(callerDependent), address(tokenB), 3 * WAD, WAD, 5
         );
         bytes memory signature = _sign(factory, snapshot);
-        bytes32 digest = factory.formationSnapshotDigest(snapshot);
 
         vm.prank(CREATOR);
         vm.expectRevert(
@@ -194,7 +188,6 @@ contract FormationSnapshotTest is FormationTestBase {
         factory.createVault(_params(0), snapshot, signature);
 
         assertFalse(factory.formationNonceUsed(snapshot.nonce));
-        assertFalse(factory.formationSnapshotUsed(digest));
     }
 
     function testSnapshotReplayAndAuthorityNonceReplayRevert() public {

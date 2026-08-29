@@ -32,7 +32,7 @@ The signed EIP-712 `FormationSnapshot` MUST bind all of:
 The array hashes and the domain separator MUST preserve ordering and bind the verifying factory and
 current chain. The factory MUST reject a wrong domain, nonpositive market-cap/price value, malformed
 array lengths, duplicate or non-contract constituents, self-constituents, unsupported decimals,
-expired/future snapshots, an already-used nonce, or an already-used digest. It MUST reject a zero
+expired/future snapshots, or an already-used nonce. It MUST reject a zero
 creator or any caller other than the signed creator before marking replay state used or deploying a
 vault. Creator-selected name, symbol, expense beneficiary, and annual expense ratio MUST remain
 separate unsigned creation parameters; no creator may replace signed formation data with unsigned
@@ -215,10 +215,10 @@ and does not submit pool-management transactions. Pool fees belong to LPs; creat
 liquidity nor execution price. The UI MUST keep route, fee, gas, price impact, and unavailable-data
 states distinct.
 
-The intended operating routes are `/` Swap, `/otfs` Funds, `/otfs/<address>` fund detail, `/create`
-Create, `/verified` Verified, and `/docs` Docs. Liquidity MUST NOT be a top-level product. Mainnet
-USDG/OTF addresses, new production deployments, and the production typed quote service are
-unresolved.
+The intended operating routes are `/` Swap, `/funds` Funds, `/funds/<address>` fund detail,
+`/create` Create, `/verified` Verified, `/wallet` Wallet, and `/liquidity` external-liquidity
+workspace. The Docs control opens the repository documentation externally. Mainnet USDG/OTF
+addresses, new production deployments, and the production typed quote service are unresolved.
 Synthra publishes no documented OTF/USDG pair-prefill URL and MUST NOT be presented as production
 evidence.
 

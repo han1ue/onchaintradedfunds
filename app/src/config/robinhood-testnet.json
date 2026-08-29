@@ -34,8 +34,7 @@
   },
   "policy": {
     "baseProtocolFeeShareBps": 1500,
-    "protocolTokenFullRebateThresholdBps": 1000,
-    "formationAllocationRebateEnabled": true
+    "protocolTokenFullRebateThresholdBps": 1000
   },
   "externalLiquidity": {
     "venue": "Synthra",

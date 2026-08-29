@@ -10,12 +10,6 @@ export const PRICING_SOURCE_OPTIONS: { source: PricingSource; label: string }[] 
 
 export const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
-export function emptyPricingConfig(source: PricingSource): PricingConfig {
-  if (source === "chainlink-direct") return { source, feedAddress: "" };
-  if (source === "chainlink-weth") return { source, assetWethFeedAddress: "", wethUsdFeedAddress: "" };
-  return { source, poolAddress: "" };
-}
-
 export function clonePricingConfig(config: PricingConfig): PricingConfig {
   if (config.source === "chainlink-direct") return { source: config.source, feedAddress: config.feedAddress };
   if (config.source === "chainlink-weth") return {
@@ -39,11 +33,6 @@ export function preferredActiveMarketPricingConfig(
 ): Extract<PricingConfig, { source: "uniswap-v3" }> | null {
   const market = markets.find((candidate) => candidate.active);
   return market ? { source: "uniswap-v3", poolAddress: market.poolAddress } : null;
-}
-
-export function configForSource(configs: readonly KnownPricingConfig[], source: PricingSource): PricingConfig {
-  const known = configs.find((config) => config.active && config.source === source);
-  return known ? clonePricingConfig(known) : emptyPricingConfig(source);
 }
 
 export function pricingConfigComplete(config: PricingConfig | null | undefined): config is PricingConfig {

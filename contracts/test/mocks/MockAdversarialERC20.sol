@@ -1,19 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Configurable ERC-20 test double for exercising low-level return-data and balance-delta
-///         defenses. It is intentionally noncompliant outside `ReturnBehavior.True`.
+/// @notice Configurable ERC-20 test double for exercising approval and balance-delta defenses.
 contract MockAdversarialERC20 {
-    enum ReturnBehavior {
-        True,
-        False,
-        NoReturn,
-        Malformed
-    }
-
     enum TransferMutation {
         None,
-        SenderOverdebit,
         TouchedBalanceRebase
     }
 
@@ -29,7 +20,6 @@ contract MockAdversarialERC20 {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
-    ReturnBehavior public returnBehavior;
     TransferMutation public transferMutation;
     uint256 public mutationAmount;
     bool public ignoreApprovals;
@@ -41,10 +31,6 @@ contract MockAdversarialERC20 {
         name = name_;
         symbol = symbol_;
         decimals = decimals_;
-    }
-
-    function setReturnBehavior(ReturnBehavior behavior) external {
-        returnBehavior = behavior;
     }
 
     function setTransferMutation(TransferMutation mutation, uint256 amount) external {
@@ -73,7 +59,7 @@ contract MockAdversarialERC20 {
 
     function transfer(address to, uint256 amount) external returns (bool) {
         _transfer(msg.sender, to, amount);
-        return _returnResult();
+        return true;
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {
@@ -81,7 +67,7 @@ contract MockAdversarialERC20 {
             allowance[msg.sender][spender] = amount;
             emit Approval(msg.sender, spender, amount);
         }
-        return _returnResult();
+        return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
@@ -92,26 +78,18 @@ contract MockAdversarialERC20 {
             emit Approval(from, msg.sender, allowance[from][msg.sender]);
         }
         _transfer(from, to, amount);
-        return _returnResult();
+        return true;
     }
 
     function _transfer(address from, address to, uint256 amount) private {
         if (to == address(0)) revert InvalidReceiver();
 
-        uint256 overdebit =
-            transferMutation == TransferMutation.SenderOverdebit ? mutationAmount : 0;
-        uint256 debit = amount + overdebit;
         uint256 balance = balanceOf[from];
-        if (balance < debit) revert InsufficientBalance();
+        if (balance < amount) revert InsufficientBalance();
 
-        balanceOf[from] = balance - debit;
+        balanceOf[from] = balance - amount;
         balanceOf[to] += amount;
         emit Transfer(from, to, amount);
-
-        if (overdebit != 0) {
-            totalSupply -= overdebit;
-            emit Transfer(from, address(0), overdebit);
-        }
 
         if (transferMutation == TransferMutation.TouchedBalanceRebase && mutationAmount != 0) {
             balanceOf[from] += mutationAmount;
@@ -119,21 +97,6 @@ contract MockAdversarialERC20 {
             totalSupply += mutationAmount * 2;
             emit Transfer(address(0), from, mutationAmount);
             emit Transfer(address(0), to, mutationAmount);
-        }
-    }
-
-    function _returnResult() private view returns (bool) {
-        ReturnBehavior behavior = returnBehavior;
-        if (behavior == ReturnBehavior.True) return true;
-        if (behavior == ReturnBehavior.False) return false;
-        if (behavior == ReturnBehavior.NoReturn) {
-            assembly ("memory-safe") {
-                return(0, 0)
-            }
-        }
-        assembly ("memory-safe") {
-            mstore(0, 1)
-            return(31, 1)
         }
     }
 }

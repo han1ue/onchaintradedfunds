@@ -10,7 +10,7 @@ const localEnvPath = join(root, ".env.deploy.local");
 if (existsSync(localEnvPath)) {
   for (const line of readFileSync(localEnvPath, "utf8").split(/\r?\n/u)) {
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u);
-    if (!match || match[1].startsWith("#") || process.env[match[1]] !== undefined) continue;
+    if (!match || process.env[match[1]] !== undefined) continue;
     const value = match[2];
     process.env[match[1]] = value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
       ? value.slice(1, -1)
@@ -138,7 +138,7 @@ const deployment = {
   contracts: { feeCollector, otfToken, vaultImplementation, factory, entryRouter },
   externalContracts: { ...external, uniswapV3Factory, uniswapV3SwapRouter02 },
   formation: { calculationVersion: 1, snapshotAuthority: formationSnapshotAuthority, dataSource: null },
-  policy: { baseProtocolFeeShareBps, protocolTokenFullRebateThresholdBps, formationAllocationRebateEnabled: true },
+  policy: { baseProtocolFeeShareBps, protocolTokenFullRebateThresholdBps },
   routing: {
     integration: "uniswap-v3-swap-router-02",
     exactInputTuple: "(bytes,address,uint256,uint256)",

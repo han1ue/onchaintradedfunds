@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { IERC20Metadata } from "./interfaces/IERC20.sol";
 
 abstract contract ERC20Base is IERC20Metadata {
-    error ERC20AlreadyInitialized();
     error ERC20InsufficientBalance(address account, uint256 balance, uint256 needed);
     error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed);
     error ERC20InvalidReceiver(address receiver);
@@ -18,8 +17,6 @@ abstract contract ERC20Base is IERC20Metadata {
 
     mapping(address => uint256) internal _balanceOf;
     mapping(address => mapping(address => uint256)) internal _allowance;
-
-    bool private _erc20Initialized;
 
     function name() external view returns (string memory) {
         return _name;
@@ -69,11 +66,9 @@ abstract contract ERC20Base is IERC20Metadata {
     function _initializeERC20(string memory name_, string memory symbol_, uint8 decimals_)
         internal
     {
-        if (_erc20Initialized) revert ERC20AlreadyInitialized();
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
-        _erc20Initialized = true;
     }
 
     function _transfer(address from, address to, uint256 value) internal {

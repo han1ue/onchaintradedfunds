@@ -10,7 +10,7 @@ whose EIP-712 signature the configured `formationSnapshotAuthority` validates, e
 recovery or ERC-1271. The signed snapshot binds the chain ID, factory, intended creator, ordered
 constituents, their ordered token decimals, market caps, unit prices, snapshot time, expiry,
 calculation version 1, and nonce. A copied pending transaction from another address fails before it
-can consume the one-use nonce or digest. The factory requires each live token `decimals()` response
+can consume the one-use nonce. The factory requires each live token `decimals()` response
 to equal its signed value and be at most 36, then derives quantities from that signed value. This
 fails closed against mutable or caller-dependent decimal metadata. The factory also validates
 positive data, contracts, uniqueness, and quantity derivation before cloning a vault.

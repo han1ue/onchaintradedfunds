@@ -1156,11 +1156,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "ERC20AlreadyInitialized",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ERC20InsufficientAllowance",
     "inputs": [
       {
@@ -1828,25 +1823,6 @@ export const otfFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "formationSnapshotUsed",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isVault",
     "inputs": [
       {
@@ -2208,17 +2184,6 @@ export const otfFactoryAbi = [
         "name": "nonce",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FormationSnapshotAlreadyUsed",
-    "inputs": [
-      {
-        "name": "digest",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ]
   },
@@ -4049,11 +4014,6 @@ export const otfTokenAbi = [
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "ERC20AlreadyInitialized",
-    "inputs": []
   },
   {
     "type": "error",

@@ -73,7 +73,6 @@ contract OTFFactory {
     error InvalidFormationCreator(address creator);
     error UnauthorizedFormationCreator(address caller, address creator);
     error FormationNonceAlreadyUsed(uint256 nonce);
-    error FormationSnapshotAlreadyUsed(bytes32 digest);
     error Reentrancy();
     error InvalidVault(address vault);
     error InvalidProtocolFeePolicy(uint16 protocolShareBps, uint16 thresholdBps);
@@ -99,7 +98,6 @@ contract OTFFactory {
     address[] private _vaults;
     mapping(address => bool) public isVault;
     mapping(uint256 => bool) public formationNonceUsed;
-    mapping(bytes32 => bool) public formationSnapshotUsed;
     bool private _creating;
 
     constructor(
@@ -258,7 +256,6 @@ contract OTFFactory {
         if (formationNonceUsed[snapshot.nonce]) {
             revert FormationNonceAlreadyUsed(snapshot.nonce);
         }
-        if (formationSnapshotUsed[digest]) revert FormationSnapshotAlreadyUsed(digest);
         (bool validSignature, address recovered) =
             _isValidAuthoritySignature(digest, authoritySignature);
         if (!validSignature) revert InvalidFormationSignature(recovered);
@@ -267,7 +264,6 @@ contract OTFFactory {
         (uint256[] memory relativeQuantities, uint16 formationOtfWeightBps) =
             _validateAndDeriveSnapshot(snapshot, vault, true);
         formationNonceUsed[snapshot.nonce] = true;
-        formationSnapshotUsed[digest] = true;
 
         address deployed = Clones.cloneDeterministic(vaultImplementation, digest);
         if (deployed != vault) revert InvalidVault(deployed);

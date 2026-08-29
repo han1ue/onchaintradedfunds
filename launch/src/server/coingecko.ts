@@ -37,17 +37,11 @@ const tokenInfoSchema = z.object({
   }).passthrough() }).passthrough(),
 }).passthrough();
 
-export type CoinGeckoTokenPrices = z.infer<typeof tokenPricesSchema>;
-export type CoinGeckoPool = z.infer<typeof poolSchema>;
-export type CoinGeckoToken = z.infer<typeof tokenSchema>;
-export type CoinGeckoTokenInfo = z.infer<typeof tokenInfoSchema>;
-
 type RedisClient = ReturnType<typeof createClient>;
 type CacheEntry = { expiresAt: number; value: unknown };
 
 const memoryCache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<unknown>>();
-const providerCalls = { public: 0, demo: 0 };
 const globalForCoinGecko = globalThis as unknown as {
   launchCoinGeckoRedis?: RedisClient;
   launchCoinGeckoRedisPromise?: Promise<RedisClient>;
@@ -133,7 +127,6 @@ async function requestValidated<T>(path: string, schema: z.ZodType<T>): Promise<
   const providers: ("public" | "demo")[] = env.COINGECKO_DEMO_API_KEY ? ["public", "demo"] : ["public"];
   for (const provider of providers) {
     for (let attempt = 0; attempt < maxAttemptsPerProvider; attempt += 1) {
-      providerCalls[provider] += 1;
       try {
         const parsed = schema.safeParse(await fetchProvider(provider, path));
         if (!parsed.success) throw new Error(`COINGECKO_${provider.toUpperCase()}_INVALID_RESPONSE`);
@@ -203,13 +196,4 @@ export class CoinGeckoClient {
 let client: CoinGeckoClient | undefined;
 export function getCoinGeckoClient() {
   return client ??= new CoinGeckoClient();
-}
-
-export function getCoinGeckoProviderCallCounts() {
-  return { ...providerCalls };
-}
-
-export function resetCoinGeckoProviderCallCounts() {
-  providerCalls.public = 0;
-  providerCalls.demo = 0;
 }

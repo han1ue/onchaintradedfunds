@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/packages/brand/src/styles.css"],"sourcesContent":[".otfBrandMark {\n  display: grid;\n  width: 30px;\n  height: 30px;\n  flex: 0 0 auto;\n  place-items: center;\n  border: 1px solid rgb(var(--accent-rgb) / 34%);\n  border-radius: 6px;\n  background: rgb(var(--accent-rgb) / 13%);\n  color: var(--accent-text, var(--teal));\n  font-family: Inter, \"Segoe UI\", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;\n  font-size: .56rem;\n  font-weight: 800;\n  letter-spacing: 0;\n  line-height: 1;\n}\n"],"names":[],"mappings":"AAAA"}}]
-}

@@ -35,5 +35,4 @@ if (process.env.NODE_ENV === "production") {
 }
 
 export const isDatabaseConfigured = Boolean(env.DATABASE_URL);
-export const isXConfigured = Boolean(env.AUTH_X_CONSUMER_KEY && env.AUTH_X_CONSUMER_SECRET && env.TWITTERAPI_IO_API_KEY);
 export const adminXIds = new Set((env.ADMIN_X_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));

@@ -25,8 +25,6 @@ export type XPost = {
   entities?: { urls?: { expanded_url?: string; unwound_url?: string }[] };
 };
 
-export type CreatedXPost = { id: string; text: string };
-
 type TwitterApiIoUser = {
   type?: string;
   id: string;

@@ -67,7 +67,7 @@ describe("leaderboard accessibility", () => {
     expect(markup).toContain("A balanced portfolio for long-term onchain participation.");
     expect(markup).toContain('aria-label="ETH 60%, USDC 40%"');
     expect(markup).toContain("@ada");
-    expect(markup).toContain("1,234");
+    expect(markup).toContain(entry.votes.toLocaleString());
   });
 
   it("keeps the responsive and reduced-motion protections in place", () => {
