@@ -791,7 +791,7 @@ function SwapSurface() {
           {venue ? <small>{venue.prefilled ? `The selected ${routeOtf?.symbol ?? "OTF"} and USDG addresses will be passed to Uniswap.` : "Synthra does not provide a documented pair-prefill URL, so confirm the OTF and USDG addresses after leaving OTF."}</small> : null}
         </section>
       </main>
-      <OperateFooter />
+      <div className="swapFooterFrame"><OperateFooter /></div>
       {picker ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} /> : null}
     </div>
   );
@@ -966,7 +966,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>No OTF deployment is configured on Robinhood Mainnet. Enable Testnet in Settings to use the current application environment.</p></section>
         ) : (
           <>
-            <div className="validationSummary" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
+            <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
             <div className="directoryMetrics"><MetricCard label="Total AUM" value="Unavailable" /><MetricCard label="OTFs" value="0" /><MetricCard label="Verified asset records" value={String(configuredAssetsFor(chainId).length)} /></div>
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
@@ -976,8 +976,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   <button className={directoryView === "cards" ? "active" : ""} type="button" aria-label="Show OTFs as cards" aria-pressed={directoryView === "cards"} onClick={() => setDirectoryView("cards")}><LayoutGrid size={15} /></button>
                 </div>
               </div>
-              <div className="emptyDirectory"><Search size={18} /><strong>No testnet OTFs available</strong><span>New OTFs will appear here after the redesigned factory and directory reader are deployed.</span></div>
-              <small className="fundDirectoryDisclosure">Directory identity does not verify a pool, liquidity, route, economic safety, or investment outcome.</small>
+              <div className="emptyDirectory"><Search size={18} /><strong>No testnet OTFs available</strong><span>New OTFs will appear here automatically.</span></div>
             </section>
           </>
         )}
@@ -1037,7 +1036,21 @@ function WalletSurface() {
             <section className="sectionCard walletAssets"><div className="directoryPanelHeading"><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div><span className="stateBadge muted">Reader unavailable</span></div><div className="inlineEmptyState"><Wallet size={18} /><div><strong>Position data is not configured</strong><span>No positions are substituted until the redesigned directory and balance reader can authenticate OTF share contracts.</span></div></div></section>
             <section className="sectionCard walletAssets"><div className="directoryPanelHeading"><div><h2>OTFs you created</h2><p>Funds formed by this wallet.</p></div><Link className="secondaryAction" href="/create">Create OTF</Link></div><div className="inlineEmptyState"><FilePlus2 size={18} /><div><strong>Creator history is not configured</strong><span>Created OTFs will appear here when the redesigned factory reader is deployed.</span></div></div></section>
           </>
-        ) : <section className="sectionCard depositsEmpty"><span><Wallet size={22} /></span><h2>Connect your wallet to view positions</h2><p>OTF share positions and testnet balances will appear here after connecting.</p><WalletConnectionAction /></section>}
+        ) : (
+          <section className="sectionCard depositsEmpty">
+            <span><Wallet size={22} /></span>
+            <h2>
+              <ConnectButton.Custom>
+                {({ mounted, openConnectModal }) => (
+                  <button className="depositsConnectLink" type="button" disabled={!mounted} onClick={openConnectModal}>Connect your wallet</button>
+                )}
+              </ConnectButton.Custom>{" "}
+              to view positions
+            </h2>
+            <p>OTF share positions will appear here after connecting.</p>
+            <Link className="secondaryAction" href="/otfs"><LayoutGrid size={14} />Browse OTFs</Link>
+          </section>
+        )}
       </div>
     </DashboardPage>
   );
