@@ -15,6 +15,10 @@
   --accent-foreground: #071716;
   --gold: #f1b93d;
   --danger: #eb6570;
+  --utility-action: var(--text-muted);
+  --utility-action-hover: var(--text-soft);
+  --utility-control-bg: var(--card-raised);
+  --utility-control-border: var(--border);
   --testnet-banner-height: 30px;
   --radius: 8px;
   color-scheme: dark;
@@ -476,7 +480,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapTokenOption strong { font-size: 11px; }
 .swapTokenOption small { color: var(--text-muted); margin-top: 2px; font-size: 10px; }
 .swapTokenOption > small { flex: 0 0 auto; color: var(--text-faint); }
-.swapTokenOption.addressOption { border-color: rgb(241 185 61 / 35%); }
+.swapTokenOption.addressOption { border-color: var(--utility-control-border); }
 .swapPickerEmpty { color: var(--text-muted); margin: 4px 0; padding: 8px; font-size: 11px; }
 .swapTokenFootnote { color: var(--text-muted); border-top: 1px solid var(--border); margin: 12px 0 0; padding-top: 11px; font-size: 10px; line-height: 1.5; }
 
@@ -749,9 +753,9 @@ body {
 .depositsButton { gap: 7px; padding: 0 11px; font-size: 0.79rem; font-weight: 550; }
 .depositsButton:hover,
 .depositsButton.active { border-color: rgb(var(--accent-rgb) / 34%); background: rgb(var(--accent-rgb) / 10%); color: var(--accent-text); }
-.iconOnly { width: 34px; padding: 0; }
+.iconOnly { width: 34px; border-color: var(--utility-control-border); background: var(--utility-control-bg); color: var(--utility-action); padding: 0; }
 .iconOnly.compact { width: 28px; height: 28px; }
-.iconOnly:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
+.iconOnly:hover { border-color: var(--border-strong); background: var(--surface); color: var(--utility-action-hover); }
 .iconOnly.active { border-color: rgb(var(--accent-rgb) / 42%); background: rgb(var(--accent-rgb) / 10%); color: var(--accent-text); }
 
 .settingsControl,
@@ -820,7 +824,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 
 :root[data-theme="light"] .topNav { background: rgb(255 255 255 / 92%); }
 :root[data-theme="light"] .depositsButton,
-:root[data-theme="light"] .iconOnly { background: rgb(248 250 251 / 92%); }
+:root[data-theme="light"] .iconOnly { background: var(--utility-control-bg); }
 
 .dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 20px 24px 32px; }
 .dashboardMain h1,
@@ -925,8 +929,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .rwaAssetIdentity small { display: block; }
 .rwaAssetIdentity strong { color: var(--text); font-size: 0.73rem; font-weight: 650; }
 .rwaAssetIdentity small { margin-top: 3px; color: var(--text-muted); font-size: 0.62rem; }
-.tableAddressLink { display: inline-flex; align-items: center; gap: 5px; color: var(--text-soft); text-decoration: none; }
-.tableAddressLink:hover { color: var(--accent-text); }
+.tableAddressLink { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); text-decoration: none; }
+.tableAddressLink:hover { color: var(--utility-action-hover); }
 
 .depositsEmpty { display: grid; min-height: 360px; place-items: center; align-content: center; gap: 10px; padding: 30px; text-align: center; }
 .depositsEmpty > span { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 28%); border-radius: 7px; background: rgb(var(--accent-rgb) / 9%); color: var(--accent-text); }
@@ -942,18 +946,18 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .walletAddressValue { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 10px; }
 .walletAddressValue strong { min-width: 0; flex: 1 1 auto; margin-top: 0; font-size: 1.08rem; letter-spacing: -0.015em; }
 .walletAddressActions { position: absolute; top: 11px; right: 12px; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
-.walletAddressActions .iconOnly { color: var(--text-muted); }
+.walletAddressActions .iconOnly { color: var(--utility-action); }
 .walletAddressCopyFeedback { color: var(--green); font-size: 0.67rem; font-weight: 650; white-space: nowrap; }
-.metricCardFaucetAction { position: absolute; top: 9px; right: 12px; display: inline-flex; height: 22px; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 5px; background: var(--card-raised); color: var(--text-muted); padding: 0 4px; font-size: 0.58rem; font-weight: 600; line-height: 1; text-decoration: none; text-transform: none; white-space: nowrap; }
-.metricCardFaucetAction:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
+.metricCardFaucetAction { position: absolute; top: 9px; right: 12px; display: inline-flex; height: 22px; align-items: center; gap: 3px; border: 1px solid var(--utility-control-border); border-radius: 5px; background: var(--utility-control-bg); color: var(--utility-action); padding: 0 4px; font-size: 0.58rem; font-weight: 600; line-height: 1; text-decoration: none; text-transform: none; white-space: nowrap; }
+.metricCardFaucetAction:hover { border-color: var(--border-strong); background: var(--surface); color: var(--utility-action-hover); }
 .metricCardFaucetAction .metricCardFaucetIcon { order: 0; }
 .metricCardFaucetAction > span { order: 1; }
 .metricCardFaucetAction .metricCardFaucetExternalIcon { order: 2; }
 .walletDisconnectAction { color: var(--danger); }
 
 .vaultBreadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: -6px; color: var(--text-muted); font-size: 0.69rem; }
-.vaultBreadcrumb a { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); text-decoration: none; }
-.vaultBreadcrumb a:hover { color: var(--text); }
+.vaultBreadcrumb a { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); text-decoration: none; }
+.vaultBreadcrumb a:hover { color: var(--utility-action-hover); }
 .detailIdentityCard dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0; padding: 14px; }
 .detailIdentityCard dl > div { min-width: 0; padding-right: 16px; }
 .detailIdentityCard dt { color: var(--text-muted); font-size: 0.61rem; font-weight: 600; text-transform: uppercase; }
@@ -1133,13 +1137,25 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--text-muted);
+  color: var(--utility-action);
   text-decoration: none;
 }
 
 .liquidityBreadcrumb a:hover,
 .liquidityExplorerLink:hover {
-  color: var(--accent-text);
+  color: var(--utility-action-hover);
+}
+
+.secondaryAction.utilityAction {
+  border-color: var(--utility-control-border);
+  background: var(--utility-control-bg);
+  color: var(--utility-action);
+}
+
+.secondaryAction.utilityAction:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--utility-action-hover);
 }
 
 .liquidityBreadcrumb > span {

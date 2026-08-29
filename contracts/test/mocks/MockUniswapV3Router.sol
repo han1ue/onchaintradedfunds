@@ -9,6 +9,7 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
 
     address public factory;
     uint256 public reportedOutputBonus;
+    uint256 public outputMultiplier = 1;
     bool public failNextSwap;
     bool public skipInputPull;
 
@@ -18,6 +19,11 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
 
     function setReportedOutputBonus(uint256 bonus) external {
         reportedOutputBonus = bonus;
+    }
+
+    function setOutputMultiplier(uint256 multiplier) external {
+        require(multiplier != 0, "ZERO_MULTIPLIER");
+        outputMultiplier = multiplier;
     }
 
     function setFailNextSwap(bool fail) external {
@@ -39,7 +45,7 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
         }
         address tokenIn = _firstToken(params.path);
         address tokenOut = _lastToken(params.path);
-        amountOut = params.amountIn;
+        amountOut = params.amountIn * outputMultiplier;
         require(amountOut >= params.amountOutMinimum, "SLIPPAGE");
         if (!skipInputPull) tokenIn.safeTransferFrom(msg.sender, address(this), params.amountIn);
         tokenOut.safeTransfer(params.recipient, amountOut);

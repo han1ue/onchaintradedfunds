@@ -1,0 +1,16 @@
+{
+  "network": "robinhood-mainnet",
+  "chainId": 4663,
+  "externalContracts": {
+    "usdg": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+  },
+  "externalLiquidity": {
+    "venue": "Uniswap",
+    "baseUrl": "https://app.uniswap.org/positions/create/v3",
+    "chainSlug": "robinhood",
+    "feeAmount": 3000,
+    "tickSpacing": 60,
+    "isDynamic": false
+  },
+  "identitySource": "https://docs.robinhood.com/chain/contracts/"
+}

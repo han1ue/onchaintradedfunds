@@ -89,7 +89,6 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 }));
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
-  "_name", "_symbol", "_decimals", "_totalSupply", "_balanceOf", "_allowance",
   "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
   "_feeCollector", "_entryExitRouter", "_annualCreatorExpenseRatioBps", "_formationOtfWeightBps",
   "_formationSnapshotTime", "_formationCalculationVersion", "_formationSnapshotDigest", "_shutdownAt",
@@ -98,6 +97,19 @@ const expectedStorage = [
   "_protocolFeeSplitRemainderBps",
 ];
 assert(JSON.stringify(vaultLayout.storage.map((entry) => entry.label)) === JSON.stringify(expectedStorage), "unexpected or legacy vault storage field");
+
+const vaultStorageSource = readFileSync(join(contracts, "src", "ManagedOTFVaultStorage.sol"), "utf8");
+const vaultSource = readFileSync(join(contracts, "src", "ManagedOTFVault.sol"), "utf8");
+const otfTokenSource = readFileSync(join(contracts, "src", "OTFToken.sol"), "utf8");
+assert(!existsSync(join(contracts, "src", "ERC20Base.sol")), "hand-written ERC20Base remains in production sources");
+assert(/ManagedOTFVaultStorage is ERC20Upgradeable/u.test(vaultStorageSource), "vault shares do not use OpenZeppelin ERC20Upgradeable");
+assert(
+  /_disableInitializers\(\)/u.test(vaultSource)
+    && /external initializer nonReentrant/u.test(vaultSource)
+    && /__ERC20_init\(params\.name, params\.symbol\)/u.test(vaultSource),
+  "vault ERC20 initialization is not clone-safe and implementation-locked",
+);
+assert(/OTFToken is ERC20/u.test(otfTokenSource), "OTFToken does not use OpenZeppelin ERC20");
 
 const expectedConstructors = {
   ManagedOTFVault: [],

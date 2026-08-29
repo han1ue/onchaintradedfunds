@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "../../src/ERC20Base.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract MockReentrantToken is ERC20Base {
+contract MockReentrantToken is ERC20 {
     address public callbackTarget;
     address public callbackSender;
     bytes public callbackData;
     bool public callbackEnabled;
     bool public callbackSucceeded;
     bool private _insideCallback;
+    uint8 private _tokenDecimals;
 
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) {
-        _initializeERC20(name_, symbol_, decimals_);
+    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
+        _tokenDecimals = decimals_;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _tokenDecimals;
     }
 
     function mint(address to, uint256 amount) external {
@@ -30,21 +35,14 @@ contract MockReentrantToken is ERC20Base {
         callbackSender = sender;
     }
 
-    function transfer(address to, uint256 value) external override returns (bool) {
+    function transfer(address to, uint256 value) public override returns (bool) {
         _attemptCallback(to);
-        _transfer(msg.sender, to, value);
-        return true;
+        return super.transfer(to, value);
     }
 
-    function transferFrom(address from, address to, uint256 value)
-        external
-        override
-        returns (bool)
-    {
-        _spendAllowance(from, msg.sender, value);
+    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
         _attemptCallback(to);
-        _transfer(from, to, value);
-        return true;
+        return super.transferFrom(from, to, value);
     }
 
     function _attemptCallback(address transferRecipient) private {

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "./ERC20Base.sol";
+import {
+    ERC20Upgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 
 interface IOTFFactoryFeePolicy {
@@ -10,7 +12,7 @@ interface IOTFFactoryFeePolicy {
 }
 
 /// @dev Clone-safe vault storage. Formation and fee-policy fields have no mutation path.
-abstract contract ManagedOTFVaultStorage is ERC20Base {
+abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     uint256 internal constant BPS = ProtocolConstants.BPS;
     uint256 internal constant WAD = ProtocolConstants.WAD;
     uint256 internal constant YEAR = ProtocolConstants.YEAR;

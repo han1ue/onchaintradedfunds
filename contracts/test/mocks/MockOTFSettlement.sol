@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "../../src/ERC20Base.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
 contract MockOTFSettlementFactory {
@@ -12,7 +12,7 @@ contract MockOTFSettlementFactory {
     }
 }
 
-contract MockOTFSettlementVault is ERC20Base {
+contract MockOTFSettlementVault is ERC20 {
     using SafeTransferLib for address;
 
     error UnauthorizedRouter(address caller);
@@ -24,8 +24,9 @@ contract MockOTFSettlementVault is ERC20Base {
     bool public failMint;
     bool public failRedeem;
 
-    constructor(string memory name_, string memory symbol_, address[] memory assets_) {
-        _initializeERC20(name_, symbol_, 18);
+    constructor(string memory name_, string memory symbol_, address[] memory assets_)
+        ERC20(name_, symbol_)
+    {
         _assets = assets_;
     }
 

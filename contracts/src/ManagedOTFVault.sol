@@ -16,10 +16,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     constructor() {
         // The implementation itself must never be initialized or used as a vault.
+        _disableInitializers();
         _initialized = true;
     }
 
-    function initialize(VaultInitParams calldata params) external nonReentrant {
+    function initialize(VaultInitParams calldata params) external initializer nonReentrant {
         if (_initialized) revert AlreadyInitialized();
         if (msg.sender.code.length == 0) revert UnauthorizedFactory();
         if (
@@ -60,7 +61,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
 
         _initialized = true;
-        _initializeERC20(params.name, params.symbol, 18);
+        __ERC20_init(params.name, params.symbol);
         _factory = msg.sender;
         _creator = params.creator;
         _expenseBeneficiary = params.expenseBeneficiary;
@@ -234,7 +235,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
         if (shares == 0) revert ZeroShares();
-        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
         amountsIn = _previewMintWithSupply(shares, effectiveSupply);
     }
 
@@ -247,7 +248,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (maxAmountsIn.length != length) {
             revert InvalidArrayLength(length, maxAmountsIn.length);
         }
-        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
         uint256 denominator = effectiveSupply == 0 ? FORMATION_SHARE_UNIT : effectiveSupply;
         shares = type(uint256).max;
         bool anyQuantity;
@@ -268,7 +269,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
         if (shares == 0) revert ZeroShares();
-        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
         amountsOut = _previewRedeemWithSupply(shares, effectiveSupply);
     }
 
@@ -292,7 +293,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _requireBackingSound();
         uint256[] memory balancesBefore = _actualBalances();
         uint256[] memory senderBalancesBefore = _basketBalances(msg.sender);
-        amountsIn = _previewMintWithSupply(shares, _totalSupply);
+        amountsIn = _previewMintWithSupply(shares, totalSupply());
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
             uint256 amount = amountsIn[i];
@@ -326,7 +327,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _requireBackingSound();
         uint256[] memory balancesBefore = _actualBalances();
         uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
-        amountsOut = _previewRedeemWithSupply(shares, _totalSupply);
+        amountsOut = _previewRedeemWithSupply(shares, totalSupply());
         for (uint256 i = 0; i < length; i++) {
             if (amountsOut[i] < minAmountsOut[i]) {
                 revert AmountTooLow(_assets[i], amountsOut[i], minAmountsOut[i]);
@@ -374,7 +375,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (minAmountsOut.length != length) {
             revert InvalidArrayLength(length, minAmountsOut.length);
         }
-        uint256 supply = _totalSupply;
+        uint256 supply = totalSupply();
         if (shares > supply) revert SharesExceedSupply(shares, supply);
 
         amountsOut = new uint256[](length);
@@ -521,7 +522,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         (, uint256 remainderWad) = _feeTargetAt(uint64(block.timestamp));
         _feeShareRemainderWad = remainderWad;
         _feeEpochTimestamp = uint64(block.timestamp);
-        _feeEpochSupply = _totalSupply;
+        _feeEpochSupply = totalSupply();
         _feeEpochAccruedShares = 0;
     }
 

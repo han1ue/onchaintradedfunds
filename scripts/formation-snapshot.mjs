@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 const require = createRequire(resolve(root, "app", "package.json"));
@@ -62,7 +63,10 @@ function fail(message) {
   throw new Error(`Invalid formation snapshot: ${message}`);
 }
 
-function uint(value, field, max = UINT256_MAX) {
+export function uint(value, field, max = UINT256_MAX) {
+  if (typeof value === "number" && (!Number.isSafeInteger(value) || value < 0)) {
+    fail(`${field} must be a non-negative safe integer`);
+  }
   if ((typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint")
       || (typeof value === "string" && !/^\d+$/u.test(value))) {
     fail(`${field} must be a non-negative integer`);
@@ -82,7 +86,7 @@ function address(value, field) {
   return getAddress(value);
 }
 
-function validate(raw) {
+export function validate(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail("fixture must be a JSON object");
   for (const key of Object.keys(raw)) {
     if (!allowedFields.has(key)) fail(`unexpected field ${key}; metadata and fee terms are not signed here`);
@@ -229,7 +233,9 @@ async function main() {
   process.stdout.write(`${json(output)}\n`);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

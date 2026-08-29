@@ -2,6 +2,12 @@
 pragma solidity ^0.8.24;
 
 interface Vm {
+    struct Log {
+        bytes32[] topics;
+        bytes data;
+        address emitter;
+    }
+
     function warp(uint256 newTimestamp) external;
     function prank(address sender) external;
     function startPrank(address sender) external;
@@ -10,6 +16,8 @@ interface Vm {
     function expectRevert(bytes4 selector) external;
     function expectRevert(bytes calldata revertData) external;
     function expectPartialRevert(bytes4 selector) external;
+    function recordLogs() external;
+    function getRecordedLogs() external returns (Log[] memory entries);
     function etch(address target, bytes calldata newRuntimeBytecode) external;
     function mockCall(address callee, bytes calldata data, bytes calldata returnData) external;
     function clearMockedCalls() external;

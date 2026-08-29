@@ -7,7 +7,7 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { FormationSnapshot, VaultCreationParams } from "../src/VaultTypes.sol";
-import { ERC20Base } from "../src/ERC20Base.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
 import { TestBase } from "./TestBase.sol";
 
@@ -43,13 +43,18 @@ contract MockCoreRouter {
     }
 }
 
-contract SlashableToken is ERC20Base {
+contract SlashableToken is ERC20 {
     error BalanceReadsDisabled();
 
     bool public balanceReadsDisabled;
+    uint8 private _tokenDecimals;
 
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) {
-        _initializeERC20(name_, symbol_, decimals_);
+    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
+        _tokenDecimals = decimals_;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _tokenDecimals;
     }
 
     function mint(address to, uint256 amount) external {
@@ -70,13 +75,18 @@ contract SlashableToken is ERC20Base {
     }
 }
 
-contract CrossMutatingToken is ERC20Base {
+contract CrossMutatingToken is ERC20 {
     address public callbackTarget;
     bytes public callbackData;
     bool public callbackEnabled;
+    uint8 private _tokenDecimals;
 
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) {
-        _initializeERC20(name_, symbol_, decimals_);
+    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
+        _tokenDecimals = decimals_;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _tokenDecimals;
     }
 
     function mint(address to, uint256 amount) external {
@@ -89,14 +99,14 @@ contract CrossMutatingToken is ERC20Base {
         callbackEnabled = enabled;
     }
 
-    function transfer(address to, uint256 amount) external override returns (bool) {
+    function transfer(address to, uint256 amount) public override returns (bool) {
         _transfer(msg.sender, to, amount);
         _callback();
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount)
-        external
+        public
         override
         returns (bool)
     {

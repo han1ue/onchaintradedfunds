@@ -775,6 +775,17 @@ function SwapSurface() {
         args: [address, executionPlan.approval.spender],
       });
       if (allowance < executionPlan.approval.amount) {
+        if (allowance > 0n) {
+          const resetHash = await walletClient.writeContract({
+            account: address,
+            address: executionPlan.approval.token,
+            abi: ERC20_APPROVE_ABI,
+            functionName: "approve",
+            args: [executionPlan.approval.spender, 0n],
+          });
+          const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
+          if (resetReceipt.status !== "success") throw new Error("The token approval reset reverted.");
+        }
         const approvalHash = await walletClient.writeContract({
           account: address,
           address: executionPlan.approval.token,
@@ -782,7 +793,8 @@ function SwapSurface() {
           functionName: "approve",
           args: [executionPlan.approval.spender, executionPlan.approval.amount],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+        const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+        if (approvalReceipt.status !== "success") throw new Error("The exact token approval reverted.");
       }
       setExecution("simulation");
       const data = encodeFunctionData({
@@ -1306,7 +1318,7 @@ function VerifiedSurface() {
     <DashboardPage>
       <div className="appView">
         <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />Funds</Link></div>
-        <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
+        <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction utilityAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">
             <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{assets.length} verified</span></div>

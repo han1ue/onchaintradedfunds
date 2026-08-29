@@ -101,7 +101,8 @@ contract OTFEntryExitRouter {
         address indexed caller,
         address indexed tokenIn,
         address indexed tokenOut,
-        uint256 amountIn,
+        uint256 grossAmountIn,
+        uint256 inputRefunded,
         uint256 amountOut
     );
     event BasketMinted(
@@ -196,10 +197,18 @@ contract OTFEntryExitRouter {
         }
         _recordCredit(sheet, request.tokenOut, amountOut);
         _pushExact(request.tokenOut, msg.sender, amountOut);
+        // Capture the exact tokenIn balance before cleanup refunds it. This is intentionally not
+        // derived as gross input minus refund because a valid route can produce additional tokenIn.
+        uint256 inputRefunded = _transientBalance(sheet, request.tokenIn);
         _refundAndClose(sheet, msg.sender);
 
         emit DirectSwapExecuted(
-            msg.sender, request.tokenIn, request.tokenOut, request.amountIn, amountOut
+            msg.sender,
+            request.tokenIn,
+            request.tokenOut,
+            request.amountIn,
+            inputRefunded,
+            amountOut
         );
     }
 
@@ -260,6 +269,9 @@ contract OTFEntryExitRouter {
         }
         _recordCredit(sheet, request.outputToken, amountOut);
         _pushExact(request.outputToken, msg.sender, amountOut);
+        // The output token transfer is an external call and may inject a constituent back into
+        // the router. Re-assert complete liquidation before any residual balance can be refunded.
+        _requireOnlyOutput(sheet, request.outputToken);
         _refundAndClose(sheet, msg.sender);
 
         emit BasketRedeemed(

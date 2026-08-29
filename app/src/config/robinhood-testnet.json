@@ -38,8 +38,7 @@
   },
   "externalLiquidity": {
     "venue": "Synthra",
-    "baseUrl": "https://app.synthra.org/",
-    "prefillSupported": false
+    "baseUrl": "https://app.synthra.org/"
   },
   "quoteService": {
     "endpoint": null

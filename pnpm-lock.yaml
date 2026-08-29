@@ -11,6 +11,9 @@ importers:
       '@openzeppelin/contracts':
         specifier: 5.6.1
         version: 5.6.1
+      '@openzeppelin/contracts-upgradeable':
+        specifier: 5.6.1
+        version: 5.6.1(@openzeppelin/contracts@5.6.1)
     devDependencies:
       solc:
         specifier: 0.8.36
@@ -1100,6 +1103,11 @@ packages:
 
   '@openzeppelin/contracts@5.6.1':
     resolution: {integrity: sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w==}
+
+  '@openzeppelin/contracts-upgradeable@5.6.1':
+    resolution: {integrity: sha512-n4a/vfRs114lXyUdYg7pyY8LvFKWvCDF5lEcRRAVxap8g6ZEdLqm+9tmt2zTtRHcNMxTYp9y5t6KBof4tHp7Og==}
+    peerDependencies:
+      '@openzeppelin/contracts': 5.6.1
 
   '@paulmillr/qr@0.2.1':
     resolution: {integrity: sha512-IHnV6A+zxU7XwmKFinmYjUcwlyK9+xkG3/s9KcQhI9BjQKycrJ1JRO+FbNYPwZiPKW3je/DR0k7w8/gLa5eaxQ==}
@@ -5102,6 +5110,10 @@ snapshots:
   '@nolyfill/is-core-module@1.0.39': {}
 
   '@openzeppelin/contracts@5.6.1': {}
+
+  '@openzeppelin/contracts-upgradeable@5.6.1(@openzeppelin/contracts@5.6.1)':
+    dependencies:
+      '@openzeppelin/contracts': 5.6.1
 
   '@paulmillr/qr@0.2.1': {}
 

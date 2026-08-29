@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
@@ -35,6 +36,7 @@ const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
 if (config.schemaVersion !== 10 || config.architecture !== "oracleless-market-cap-at-formation-v1") {
   throw new Error("Deployment config must use schema 10 oracleless-market-cap-at-formation-v1");
 }
+const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
 const env = (name) => {
   const value = process.env[name];
   if (!value || !value.trim()) throw new Error(`Missing required env var ${name}`);
@@ -146,6 +148,7 @@ const deployment = {
     maxLegs: 40,
   },
   setupTransactions: { routerConfiguration },
+  ...appOwnedIntegrations,
   note: "Formation data provider integration is intentionally unconfigured; only authority-signed snapshots may form vaults.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });

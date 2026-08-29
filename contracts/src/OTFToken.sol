@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ERC20Base } from "./ERC20Base.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @notice Fixed-supply protocol token for Onchain Traded Funds.
 /// @dev Distribution and governance can be layered around this token without introducing a
 ///      privileged minting key into the token itself.
-contract OTFToken is ERC20Base {
+contract OTFToken is ERC20 {
     uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
 
     string private constant OTF_TOKEN_METADATA_URI = "data:application/json;base64,eyJuYW1lIjoiT25jaGFpbiBUcmFkZWQgRnVuZHMiLCJzeW1ib2wiOiJPVEYiLCJpbnRlcm9"
@@ -22,10 +22,9 @@ contract OTFToken is ERC20Base {
 
     error ZeroAddress();
 
-    constructor(address initialHolder) {
+    constructor(address initialHolder) ERC20("Onchain Traded Funds", "OTF") {
         if (initialHolder == address(0)) revert ZeroAddress();
 
-        _initializeERC20("Onchain Traded Funds", "OTF", 18);
         _mint(initialHolder, MAX_SUPPLY);
     }
 

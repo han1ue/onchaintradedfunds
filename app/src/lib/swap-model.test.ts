@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SwapAsset, SwapQuote, SwapQuoteService } from "./swap-model";
-import { robinhoodTestnetAddresses } from "./deployment";
+import { robinhoodMainnetAddresses, robinhoodTestnetAddresses } from "./deployment";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -276,9 +276,20 @@ describe("typed entry-router quote boundary", () => {
 });
 
 describe("liquidity handoff", () => {
-  it("keeps mainnet disabled until its USDG address is present in trusted configuration", () => {
-    const venue = liquidityVenueFor(4663, FUND_A, USDG);
-    expect(venue).toBeUndefined();
+  it("prefills the official Uniswap V3 flow with the selected mainnet OTF/USDG pair", () => {
+    expect(robinhoodMainnetAddresses.usdg).toBe("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168");
+    const mainnetUsdg = { ...USDG, address: robinhoodMainnetAddresses.usdg! };
+    const venue = liquidityVenueFor(4663, FUND_A, mainnetUsdg);
+    const url = new URL(venue!.href);
+
+    expect(venue).toMatchObject({ name: "Uniswap", prefilled: true });
+    expect(url.origin + url.pathname).toBe("https://app.uniswap.org/positions/create/v3");
+    expect(url.searchParams.get("chain")).toBe("robinhood");
+    expect(url.searchParams.get("currencyA")).toBe(FUND_A.address);
+    expect(url.searchParams.get("currencyB")).toBe(robinhoodMainnetAddresses.usdg);
+    expect(JSON.parse(url.searchParams.get("fee")!)).toEqual({ feeAmount: 3_000, tickSpacing: 60, isDynamic: false });
+    expect(url.searchParams.get("step")).toBe("1");
+    expect(liquidityVenueFor(4663, FUND_A, { ...mainnetUsdg, address: robinhoodTestnetAddresses.usdg! })).toBeUndefined();
   });
 
   it("uses the official Synthra app without a documented pair prefill on testnet", () => {

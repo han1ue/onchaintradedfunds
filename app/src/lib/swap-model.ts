@@ -1,5 +1,11 @@
 import { getAddress, isAddress, maxUint256, zeroAddress, type Address, type Hex } from "viem";
-import { robinhoodTestnetAddresses, robinhoodTestnetLiquidity, robinhoodTestnetQuote } from "./deployment";
+import {
+  robinhoodMainnetAddresses,
+  robinhoodMainnetLiquidity,
+  robinhoodTestnetAddresses,
+  robinhoodTestnetLiquidity,
+  robinhoodTestnetQuote,
+} from "./deployment";
 
 export type SwapAssetKind = "erc20" | "otf";
 
@@ -566,9 +572,25 @@ export function routerArgsForExecution(call: TypedRouterCall): readonly unknown[
 }
 
 export type LiquidityVenue = { name: "Uniswap" | "Synthra"; href: string; prefilled: boolean };
-type LiquidityNetworkConfig = { venue: "uniswap" | "synthra"; chainSlug?: string; officialBaseUrl: string; usdgAddress?: Address };
+type LiquidityNetworkConfig = {
+  venue: "uniswap" | "synthra";
+  chainSlug?: string;
+  officialBaseUrl: string;
+  usdgAddress?: Address;
+  feeAmount?: number;
+  tickSpacing?: number;
+  isDynamic?: boolean;
+};
 const LIQUIDITY_NETWORKS: Record<number, LiquidityNetworkConfig> = {
-  4663: { venue: "uniswap", chainSlug: "robinhood", officialBaseUrl: "https://app.uniswap.org/positions/create/v3" },
+  4663: {
+    venue: "uniswap",
+    chainSlug: robinhoodMainnetLiquidity.chainSlug,
+    officialBaseUrl: robinhoodMainnetLiquidity.venue === "Uniswap" ? robinhoodMainnetLiquidity.baseUrl ?? "" : "",
+    usdgAddress: robinhoodMainnetAddresses.usdg,
+    feeAmount: robinhoodMainnetLiquidity.feeAmount,
+    tickSpacing: robinhoodMainnetLiquidity.tickSpacing,
+    isDynamic: robinhoodMainnetLiquidity.isDynamic,
+  },
   // Synthra publishes no documented OTF/USDG pair-prefill URL format, so use its official app base only.
   46630: { venue: "synthra", officialBaseUrl: robinhoodTestnetLiquidity.venue === "Synthra" ? robinhoodTestnetLiquidity.baseUrl ?? "" : "", usdgAddress: robinhoodTestnetAddresses.usdg },
 };
@@ -577,7 +599,14 @@ export function liquidityVenueFor(chainId: number | undefined, otf: SwapAsset | 
   const config = LIQUIDITY_NETWORKS[chainId];
   if (!config?.officialBaseUrl || !config.usdgAddress || config.usdgAddress.toLowerCase() !== usdg.address.toLowerCase()) return undefined;
   if (config.venue === "synthra") return { name: "Synthra", href: config.officialBaseUrl, prefilled: false };
-  const params = new URLSearchParams({ chain: config.chainSlug!, currencyA: otf.address, currencyB: usdg.address, fee: JSON.stringify({ feeAmount: 3_000 }) });
+  if (!config.chainSlug || !config.feeAmount || !config.tickSpacing || config.isDynamic !== false) return undefined;
+  const params = new URLSearchParams({
+    chain: config.chainSlug,
+    currencyA: otf.address,
+    currencyB: usdg.address,
+    fee: JSON.stringify({ feeAmount: config.feeAmount, tickSpacing: config.tickSpacing, isDynamic: config.isDynamic }),
+    step: "1",
+  });
   return { name: "Uniswap", href: `${config.officialBaseUrl}?${params.toString()}`, prefilled: true };
 }
 export function liquidityActionLabel(otfSymbol: string): string { return `Add liquidity to ${otfSymbol}/USDG`; }

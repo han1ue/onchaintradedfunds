@@ -15,6 +15,7 @@ import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
 import { MockOTFSettlementVault } from "./mocks/MockOTFSettlement.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { Vm } from "./TestBase.sol";
 
 contract OTFEntryExitRouterTest is AtomicRouterTestBase {
     function setUp() public {
@@ -173,6 +174,46 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
         vm.stopPrank();
 
         assertEq(input.balanceOf(ALICE), beforeBalance);
+        _assertRouterClean();
+    }
+
+    function testDirectSwapEventRecordsGrossInputAndPartialInputRefund() public {
+        V3Swap[] memory legs = new V3Swap[](1);
+        legs[0] = _leg(address(input), address(sourceVault), 10 * ONE, 10 * ONE);
+
+        vm.startPrank(ALICE);
+        input.approve(address(router), 20 * ONE);
+        vm.recordLogs();
+        router.swapDirect(_directBuyRequest(20 * ONE, 10 * ONE), legs);
+        vm.stopPrank();
+
+        (uint256 grossAmountIn, uint256 inputRefunded, uint256 amountOut) =
+            _directSwapEventAmounts(vm.getRecordedLogs());
+        assertEq(grossAmountIn, 20 * ONE);
+        assertEq(inputRefunded, 10 * ONE);
+        assertEq(amountOut, 10 * ONE);
+        _assertRouterClean();
+    }
+
+    function testDirectSwapEventSupportsRefundGreaterThanGrossInput() public {
+        venue.setOutputMultiplier(2);
+        V3Swap[] memory legs = new V3Swap[](3);
+        legs[0] = _leg(address(input), address(assetC), 10 * ONE, 20 * ONE);
+        legs[1] = _leg(address(assetC), address(input), 20 * ONE, 40 * ONE);
+        legs[2] = _leg(address(input), address(sourceVault), 5 * ONE, 10 * ONE);
+        _createPool(address(input), address(assetC));
+
+        vm.startPrank(ALICE);
+        input.approve(address(router), 10 * ONE);
+        vm.recordLogs();
+        router.swapDirect(_directBuyRequest(10 * ONE, 10 * ONE), legs);
+        vm.stopPrank();
+
+        (uint256 grossAmountIn, uint256 inputRefunded, uint256 amountOut) =
+            _directSwapEventAmounts(vm.getRecordedLogs());
+        assertEq(grossAmountIn, 10 * ONE);
+        assertEq(inputRefunded, 35 * ONE);
+        assertEq(amountOut, 10 * ONE);
         _assertRouterClean();
     }
 
@@ -419,6 +460,63 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
         _assertRouterClean();
     }
 
+    function testRedeemToTokenRejectsConstituentInjectedByOutputTransfer() public {
+        MockReentrantToken output = new MockReentrantToken("Output", "OUT", 18);
+        output.mint(address(venue), 100 * ONE);
+        _createPool(address(assetA), address(output));
+        _createPool(address(assetB), address(output));
+        output.configureCallback(
+            address(assetB), abi.encodeCall(assetB.mint, (address(router), ONE)), true
+        );
+        output.configureCallbackSender(address(router));
+
+        V3Swap[] memory legs = new V3Swap[](2);
+        legs[0] = _leg(address(assetA), address(output), type(uint256).max, 50 * ONE);
+        legs[1] = _leg(address(assetB), address(output), type(uint256).max, 50 * ONE);
+        uint256 sharesBefore = sourceVault.balanceOf(ALICE);
+        uint256 supplyBefore = sourceVault.totalSupply();
+        uint256 assetABackingBefore = assetA.balanceOf(address(sourceVault));
+        uint256 assetBBackingBefore = assetB.balanceOf(address(sourceVault));
+        uint256 assetAVenueBefore = assetA.balanceOf(address(venue));
+        uint256 assetBVenueBefore = assetB.balanceOf(address(venue));
+        uint256 assetBSupplyBefore = assetB.totalSupply();
+        uint256 outputVenueBefore = output.balanceOf(address(venue));
+
+        vm.startPrank(ALICE);
+        sourceVault.approve(address(router), 50 * ONE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFEntryExitRouter.IncompleteLiquidation.selector, address(assetB), ONE
+            )
+        );
+        router.redeemToToken(
+            BasketRedeemRequest({
+                vault: address(sourceVault),
+                outputToken: address(output),
+                shares: 50 * ONE,
+                minAmountOut: 100 * ONE,
+                deadline: block.timestamp + 1
+            }),
+            _zeroMinimums(),
+            legs
+        );
+        vm.stopPrank();
+
+        assertEq(sourceVault.balanceOf(ALICE), sharesBefore);
+        assertEq(sourceVault.totalSupply(), supplyBefore);
+        assertEq(sourceVault.allowance(ALICE, address(router)), 50 * ONE);
+        assertEq(assetA.balanceOf(address(sourceVault)), assetABackingBefore);
+        assertEq(assetB.balanceOf(address(sourceVault)), assetBBackingBefore);
+        assertEq(assetA.balanceOf(address(venue)), assetAVenueBefore);
+        assertEq(assetB.balanceOf(address(venue)), assetBVenueBefore);
+        assertEq(assetB.totalSupply(), assetBSupplyBefore);
+        assertEq(output.balanceOf(address(venue)), outputVenueBefore);
+        assertEq(output.balanceOf(ALICE), 0);
+        assertEq(output.balanceOf(address(router)), 0);
+        assertFalse(output.callbackSucceeded());
+        _assertRouterClean();
+    }
+
     function testPreexistingRouterDustIsNeverConsumedOrRefunded() public {
         input.mint(address(router), 7 * ONE);
         V3Swap[] memory legs = new V3Swap[](1);
@@ -540,6 +638,26 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
             minAmountOut: minAmountOut,
             deadline: block.timestamp + 1
         });
+    }
+
+    function _directSwapEventAmounts(Vm.Log[] memory logs)
+        private
+        view
+        returns (uint256 grossAmountIn, uint256 inputRefunded, uint256 amountOut)
+    {
+        bytes32 eventSignature =
+            keccak256("DirectSwapExecuted(address,address,address,uint256,uint256,uint256)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            Vm.Log memory log = logs[i];
+            if (
+                log.emitter != address(router) || log.topics.length == 0
+                    || log.topics[0] != eventSignature
+            ) {
+                continue;
+            }
+            return abi.decode(log.data, (uint256, uint256, uint256));
+        }
+        revert("DirectSwapExecuted missing");
     }
 }
 
