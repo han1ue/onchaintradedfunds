@@ -7,8 +7,9 @@ import { usePathname } from "next/navigation";
 function isAppRoute(pathname: string): boolean {
   if (pathname === "/") return true;
   return (
-    pathname.startsWith("/otfs") ||
+    pathname.startsWith("/funds") ||
     pathname === "/create" ||
+    pathname === "/liquidity" ||
     pathname === "/verified" ||
     pathname === "/wallet"
   );

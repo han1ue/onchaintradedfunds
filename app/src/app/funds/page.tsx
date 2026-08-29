@@ -1,5 +1,5 @@
 import { AppRoute } from "@/components/AppRoute";
 
-export default function OTFDirectoryPage() {
+export default function FundsPage() {
   return <AppRoute initialView="vaults" />;
 }

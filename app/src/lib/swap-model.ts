@@ -587,11 +587,17 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
   return typedQuoteService({ chainId, entryRouter: robinhoodTestnetAddresses.entryRouter, endpoint: robinhoodTestnetQuote.endpoint });
 }
 
-export function creationValidation(input: { name: string; symbol: string; constituents: readonly { address: string }[]; annualExpenseRatioBps: number; beneficiary: string }): string[] {
+export const MAX_OTF_MANDATE_BYTES = 2_048;
+
+export function creationValidation(input: { name: string; symbol: string; mandate: string; constituents: readonly { address: string }[]; annualExpenseRatioBps: number; beneficiary: string }): string[] {
   const errors: string[] = [];
   const active = input.constituents.filter((asset) => asset.address.trim());
-  if (!input.name.trim()) errors.push("Name is required.");
-  if (!input.symbol.trim()) errors.push("Ticker is required.");
+  const normalizedName = input.name.trim();
+  const mandateBytes = new TextEncoder().encode(input.mandate.trim()).length;
+  if (normalizedName.length <= 4 || !normalizedName.endsWith(" OTF")) errors.push("Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').");
+  if (!/^[A-Z0-9][A-Z0-9-]*$/.test(input.symbol)) errors.push("Enter a ticker using letters, numbers, or hyphens.");
+  if (!mandateBytes) errors.push("Write an initial strategy rationale.");
+  if (mandateBytes > MAX_OTF_MANDATE_BYTES) errors.push(`Shorten the initial strategy rationale to ${MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes or fewer.`);
   if (!active.length) errors.push("Add at least one constituent.");
   if (active.length > 20) errors.push("An OTF can include at most 20 constituents.");
   const addresses = active.map((asset) => asset.address.trim().toLowerCase());

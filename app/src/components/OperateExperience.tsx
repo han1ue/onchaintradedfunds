@@ -56,7 +56,7 @@ import {
   executionStages,
   isPositiveDecimalAmount,
   liquidityActionLabel,
-  liquidityVenueFor,
+  MAX_OTF_MANDATE_BYTES,
   pastedAsset,
   quoteIsFresh,
   quoteServiceForChain,
@@ -71,12 +71,13 @@ import {
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
 
-export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified" | "wallet";
+export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
 
 type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://github.com/han1ue/onchaintradedfunds#readme";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
+const UNISWAP_LIQUIDITY_URL = "https://app.uniswap.org/positions?chain=robinhood";
 
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
@@ -132,7 +133,7 @@ function configuredUsdgFor(chainId: number): SwapAsset | undefined {
 function addressFromLocation(): Address | undefined {
   if (typeof window === "undefined") return undefined;
   const segments = window.location.pathname.split("/").filter(Boolean);
-  const candidate = segments[0] === "otfs" ? segments[1] : undefined;
+  const candidate = segments[0] === "funds" ? segments[1] : undefined;
   return candidate && isAddress(candidate) ? getAddress(candidate) : undefined;
 }
 
@@ -302,13 +303,13 @@ function OperateNav() {
   return (
     <header className="topNav">
       <div className="topNavInner">
-        <Link className="logoGroup" href="/otfs" aria-label="Onchain Traded Funds">
+        <Link className="logoGroup" href="/funds" aria-label="Onchain Traded Funds">
           <OtfBrandMark />
           <span className="brandText"><strong>Onchain Traded Funds</strong></span>
         </Link>
         <nav className="navTabs" aria-label="Primary navigation">
           <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
-          <Link className={current === "funds" ? "active" : ""} href="/otfs">Funds</Link>
+          <Link className={current === "funds" ? "active" : ""} href="/funds">Funds</Link>
           <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
         </nav>
         <div className="navActions">
@@ -429,13 +430,13 @@ function OperateNav() {
 
 function OperateFooter() {
   const chainId = useChainId();
-  const showLiquidity = chainId === robinhoodChainTestnet.id && Boolean(robinhoodTestnetLiquidity.baseUrl);
+  const showLiquidity = chainId === robinhoodChainTestnet.id;
 
   return (
     <footer className="dashboardFooter">
       <span>Onchain Traded Funds · experimental, unaudited software</span>
       <div className="footerLinks">
-        {showLiquidity ? <a href={robinhoodTestnetLiquidity.baseUrl} target="_blank" rel="noopener noreferrer">Testnet liquidity<ExternalLink size={12} /></a> : null}
+        {showLiquidity ? <Link href="/liquidity">Testnet liquidity</Link> : null}
         <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
         <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub<ExternalLink size={12} /></a>
       </div>
@@ -615,7 +616,11 @@ function SwapSurface() {
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
   const routeOtf = output.kind === "otf" ? output : input.kind === "otf" ? input : undefined;
-  const venue = liquidityVenueFor(chainId, routeOtf, configuredUsdg);
+  const testnet = chainId === robinhoodChainTestnet.id;
+  const mainnet = chainId === robinhoodChain.id;
+  const testnetLiquidityHref = testnet && routeOtf && routeOtf.address !== zeroAddress && configuredUsdg
+    ? `/liquidity?vault=${encodeURIComponent(routeOtf.address)}&quote=${encodeURIComponent(configuredUsdg.address)}`
+    : undefined;
   const { data: inputBalance, isLoading: inputBalanceLoading } = useBalance({
     address,
     token: input.address === zeroAddress ? undefined : input.address,
@@ -795,11 +800,11 @@ function SwapSurface() {
         </section>
         <section className="swapLiquidityAction" aria-label="Add OTF and USDG liquidity">
           <div>
-            <strong>{liquidityActionLabel(routeOtf?.isFactoryVault ? routeOtf.symbol : "OTF")}</strong>
+            <strong>{liquidityActionLabel(routeOtf && routeOtf.address !== zeroAddress ? routeOtf.symbol : "OTF")}</strong>
             <p>Add liquidity for the selected OTF/USDG market in your own wallet. OTF never submits an LP transaction and this does not imply an official pool.</p>
           </div>
-          {venue ? <a href={venue.href} target="_blank" rel="noopener noreferrer">Open {venue.name}<ExternalLink size={14} /></a> : <button type="button" disabled>Select an OTF and USDG</button>}
-          {venue ? <small>{venue.prefilled ? `The selected ${routeOtf?.symbol ?? "OTF"} and USDG addresses will be passed to Uniswap.` : "Synthra does not provide a documented pair-prefill URL, so confirm the OTF and USDG addresses after leaving OTF."}</small> : null}
+          {testnet ? (testnetLiquidityHref ? <Link href={testnetLiquidityHref}>Open liquidity page<ArrowRight size={14} /></Link> : <button type="button" disabled>Select an OTF and USDG</button>) : mainnet ? <a href={UNISWAP_LIQUIDITY_URL} target="_blank" rel="noopener noreferrer">Open Uniswap<ExternalLink size={14} /></a> : <button type="button" disabled>Unsupported network</button>}
+          {testnetLiquidityHref ? <small>The selected OTF and USDG addresses will be carried into the testnet liquidity page.</small> : mainnet ? <small>Liquidity positions are created and managed externally on Uniswap.</small> : null}
         </section>
       </main>
       <div className="swapFooterFrame"><OperateFooter /></div>
@@ -810,32 +815,163 @@ function SwapSurface() {
 
 type ConstituentInput = { address: string };
 
-function DashboardPage({ children }: { children: React.ReactNode }) {
-  return <div className="operateShell"><OperateNav /><main className="dashboardMain">{children}<OperateFooter /></main></div>;
+function DashboardPage({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className="operateShell"><OperateNav /><main className={`dashboardMain${className ? ` ${className}` : ""}`}>{children}<OperateFooter /></main></div>;
+}
+
+function LiquiditySurface() {
+  const chainId = useChainId();
+  const testnet = chainId === robinhoodChainTestnet.id;
+  const mainnet = chainId === robinhoodChain.id;
+  const initialVault = typeof window === "undefined"
+    ? ""
+    : new URLSearchParams(window.location.search).get("vault") ?? "";
+  const initialQuote = typeof window === "undefined"
+    ? ""
+    : new URLSearchParams(window.location.search).get("quote") ?? "";
+  const marketAssets = configuredAssetsFor(robinhoodChainTestnet.id);
+  const [otfAddress, setOtfAddress] = useState(initialVault);
+  const [quoteChoice, setQuoteChoice] = useState(
+    marketAssets.some((asset) => asset.address.toLowerCase() === initialQuote.toLowerCase())
+      ? initialQuote
+      : marketAssets[0]?.address ?? "",
+  );
+  const validOtfAddress = isAddress(otfAddress) ? getAddress(otfAddress) : undefined;
+  const selectedMarketAsset = marketAssets.find(
+    (asset) => asset.address.toLowerCase() === quoteChoice.toLowerCase(),
+  ) ?? marketAssets[0];
+  const venueName = mainnet ? "Uniswap" : "Synthra";
+  const venueUrl = mainnet
+    ? UNISWAP_LIQUIDITY_URL
+    : robinhoodTestnetLiquidity.baseUrl ?? "https://app.synthra.org/";
+
+  return (
+    <DashboardPage className="liquidityPage">
+      <div className="liquidityBreadcrumb">
+        <Link href="/funds">Home</Link><span>/</span><strong>Liquidity</strong>
+      </div>
+
+      <section className="liquidityIntro">
+        <div>
+          <h1>OTF liquidity markets</h1>
+          <p>Inspect supported markets here. Pool creation and every liquidity-position action happen on the network&apos;s external liquidity venue.</p>
+        </div>
+        <div className="liquidityBadges" aria-label="Liquidity venues">
+          <span>{venueName}</span>
+          <span>{testnet ? "Testnet" : mainnet ? "Mainnet" : "Unsupported network"}</span>
+        </div>
+      </section>
+
+      <div className="liquidityLayout">
+        <aside className="liquidityMarketPanel">
+          <div className="liquidityPanelHeading">
+            <Droplets size={16} />
+            <div><strong>Market discovery</strong><span>{testnet ? "Supported testnet settlement assets are configured below." : "Mainnet discovery will follow the production deployment."}</span></div>
+          </div>
+
+          {testnet ? (
+            <>
+              <label className="liquidityField">
+                <span>OTF address</span>
+                <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" />
+                <small>Enter a Robinhood Chain Testnet OTF address.</small>
+              </label>
+
+              <div className="liquidityField">
+                <span>Settlement asset</span>
+                <div className="liquidityQuoteChoices" role="list" aria-label="Supported OTF market assets">
+                  {marketAssets.map((marketAsset) => {
+                    const active = marketAsset.address.toLowerCase() === selectedMarketAsset?.address.toLowerCase();
+                    return (
+                      <button
+                        className={active ? "active" : ""}
+                        type="button"
+                        key={marketAsset.address}
+                        onClick={() => setQuoteChoice(marketAsset.address)}
+                      >
+                        <strong>{marketAsset.symbol}</strong>
+                        <span>Configured</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="liquidityPoolRecord">
+                <div><span>Selected market</span><strong>OTF / {selectedMarketAsset?.symbol ?? "quote"}</strong></div>
+                <div><span>OTF</span><strong>{validOtfAddress ? shortAddress(validOtfAddress) : "Not selected"}</strong></div>
+                <div><span>Settlement asset</span><strong>{selectedMarketAsset ? shortAddress(selectedMarketAsset.address) : "Not configured"}</strong></div>
+                <div><span>Market state</span><strong>Check on {venueName}</strong></div>
+              </div>
+
+              {otfAddress && !validOtfAddress ? (
+                <div className="validationSummary danger"><CircleAlert size={15} /><div><strong>Invalid OTF address</strong><span>Enter a valid EVM contract address.</span></div></div>
+              ) : null}
+              {validOtfAddress ? (
+                <a className="liquidityExplorerLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${validOtfAddress}`} target="_blank" rel="noreferrer">
+                  Inspect OTF contract <ExternalLink size={12} />
+                </a>
+              ) : null}
+            </>
+          ) : (
+            <div className="validationSummary"><Info size={15} /><div><strong>{mainnet ? "Mainnet markets are not indexed yet" : "Unsupported network"}</strong><span>{mainnet ? "Use Uniswap to create pools and manage positions. Discovery will appear after the production deployment is configured." : "Switch to Robinhood Testnet to use the testnet liquidity workspace."}</span></div></div>
+          )}
+        </aside>
+
+        <section className="liquidityVenuePanel">
+          <div className="liquidityPanelHeading">
+            <ExternalLink size={16} />
+            <div><strong>Manage on {venueName}</strong><span>{testnet ? "Robinhood Chain Testnet" : mainnet ? "Robinhood Chain Mainnet" : "External liquidity venue"}</span></div>
+          </div>
+          <div className="liquidityVenueMessage">
+            <strong>One venue for the complete liquidity lifecycle</strong>
+            <p>Create a pool, choose its initial price, add or remove liquidity, collect fees, and manage positions directly on {venueName}.</p>
+          </div>
+          {(testnet || mainnet) ? (
+            <a className="primaryAction liquidityVenueAction" href={venueUrl} target="_blank" rel="noreferrer">
+              Open {venueName} liquidity <ExternalLink size={14} />
+            </a>
+          ) : <button className="primaryAction liquidityVenueAction" type="button" disabled>Unsupported network</button>}
+          <p className="liquidityHelper">The OTF app never takes custody of liquidity-position assets or submits pool-management transactions.</p>
+        </section>
+      </div>
+    </DashboardPage>
+  );
 }
 
 function CreateSurface() {
   const steps = [
-    { label: "Fund basics", description: "Name the OTF and describe its mandate." },
-    { label: "Constituents", description: "Add the ordered token contracts in the formation basket." },
-    { label: "Economics", description: "Set the immutable creator expense ratio and beneficiary." },
-    { label: "Review", description: "Review the formation input before preparing a snapshot." },
+    { label: "Basics", description: "Identity and mandate" },
+    { label: "Constituents", description: "Ordered assets" },
+    { label: "Economics", description: "Fee and beneficiary" },
+    { label: "Review", description: "Confirm formation" },
   ] as const;
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [description, setDescription] = useState("");
+  const [mandate, setMandate] = useState("");
   const [expenseRatio, setExpenseRatio] = useState("0");
   const [beneficiary, setBeneficiary] = useState("");
   const [constituents, setConstituents] = useState<ConstituentInput[]>([{ address: "" }]);
   const [submitted, setSubmitted] = useState(false);
   const annualExpenseRatioBps = expenseRatio === "" ? Number.NaN : Number(expenseRatio);
-  const errors = creationValidation({ name, symbol, constituents, annualExpenseRatioBps, beneficiary });
+  const errors = creationValidation({ name, symbol, mandate, constituents, annualExpenseRatioBps, beneficiary });
   const structurallyValid = submitted && errors.length === 0;
+  const normalizedName = name.trim();
+  const nameValid = normalizedName.length > 4 && normalizedName.endsWith(" OTF");
+  const tickerValid = /^[A-Z0-9][A-Z0-9-]*$/.test(symbol);
+  const mandateBytes = new TextEncoder().encode(mandate.trim()).length;
+  const mandateValid = mandateBytes > 0 && mandateBytes <= MAX_OTF_MANDATE_BYTES;
+  const basicsIssues = [
+    nameValid ? null : "Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').",
+    tickerValid ? null : "Enter a ticker using letters, numbers, or hyphens.",
+    mandateBytes > 0 ? null : "Write an initial strategy rationale.",
+    mandateBytes <= MAX_OTF_MANDATE_BYTES ? null : `Shorten the initial strategy rationale to ${MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes or fewer.`,
+  ].filter((issue): issue is string => Boolean(issue));
   const normalizedConstituents = constituents.map((asset) => asset.address.trim().toLowerCase()).filter(Boolean);
   const stepValid = [
-    Boolean(name.trim() && symbol.trim()),
+    nameValid && tickerValid && mandateValid,
     constituents.length > 0
       && constituents.length <= 20
       && constituents.every((asset) => isAddress(asset.address))
@@ -882,10 +1018,26 @@ function CreateSurface() {
               {step === 0 ? (
                 <div className="formSection">
                   <div className="formGrid twoColumns">
-                    <label><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Technology Leaders OTF" /><small>The onchain fund name cannot be changed after formation.</small></label>
+                    <label><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => setName((current) => current.trimEnd())} placeholder="Technology Leaders OTF" aria-label="OTF name" /><small>Must end in &apos; OTF&apos;. The name cannot be changed after formation.</small></label>
                     <label><span>OTF ticker</span><input value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 16))} placeholder="TECH" /><small>The ticker cannot be changed after formation.</small></label>
                   </div>
-                  <label><span>Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe the fund mandate in plain language." rows={5} /><small>Public metadata only. This does not change formation pricing or routing.</small></label>
+                  <label>
+                    <div className="subHeader">
+                      <span>Initial strategy rationale</span>
+                      <small className={mandateValid ? "successText" : mandateBytes > MAX_OTF_MANDATE_BYTES ? "dangerText" : "warningText"}>{mandateBytes.toLocaleString("en-US")} / {MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes</small>
+                    </div>
+                    <textarea value={mandate} onChange={(event) => setMandate(event.target.value)} placeholder="Describe the portfolio mandate and investment rationale." rows={4} maxLength={MAX_OTF_MANDATE_BYTES} aria-invalid={!mandateValid} />
+                    <small>This becomes the fund&apos;s initial mandate and cannot be empty.</small>
+                  </label>
+                  {basicsIssues.length ? (
+                    <div className="validationSummary" role="status" aria-live="polite">
+                      <CircleAlert size={15} />
+                      <div>
+                        <strong>{basicsIssues.length} required item{basicsIssues.length === 1 ? "" : "s"} remaining</strong>
+                        <ul>{basicsIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -932,7 +1084,7 @@ function CreateSurface() {
               ) : null}
 
               <div className="createFormActions">
-                <button className="secondaryAction" type="button" onClick={() => step === 0 ? window.location.assign("/otfs") : setStep((current) => current - 1)}><ArrowLeft size={14} />{step === 0 ? "Back to OTFs" : "Back"}</button>
+                <button className="secondaryAction" type="button" onClick={() => step === 0 ? window.location.assign("/funds") : setStep((current) => current - 1)}><ArrowLeft size={14} />{step === 0 ? "Back to OTFs" : "Back"}</button>
                 {step < steps.length - 1 ? (
                   <button className="primaryAction" type="button" disabled={!stepValid[step]} onClick={() => { setSubmitted(false); setFurthestStep((current) => Math.max(current, step + 1)); setStep((current) => current + 1); }}>Continue<ArrowRight size={14} /></button>
                 ) : <button className="primaryAction" type="button" onClick={() => setSubmitted(true)}><FilePlus2 size={14} />Validate formation input</button>}
@@ -954,7 +1106,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     return (
       <DashboardPage>
         <div className="appView">
-          <div className="vaultBreadcrumb appBreadcrumb"><Link href="/otfs"><ArrowLeft size={12} />OTFs</Link></div>
+          <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
           <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and formation history for this address-routed fund." icon={<LayoutGrid size={18} />} />
           <section className="sectionCard detailIdentityCard">
             <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>Onchain reads are not configured for the redesigned deployment.</p></div><span className="stateBadge muted">Unavailable</span></div>
@@ -1006,6 +1158,7 @@ function VerifiedSurface() {
   return (
     <DashboardPage>
       <div className="appView">
+        <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />Funds</Link></div>
         <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">
@@ -1037,7 +1190,7 @@ function WalletSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction walletExploreAction" href="/otfs"><LayoutGrid size={14} />Explore OTFs</Link></>} />
+        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction walletExploreAction" href="/funds"><LayoutGrid size={14} />Explore OTFs</Link></>} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
           <>
             <div className="depositMetrics walletMetrics">
@@ -1061,7 +1214,7 @@ function WalletSurface() {
               to view positions
             </h2>
             <p>OTF share positions will appear here after connecting.</p>
-            <Link className="secondaryAction" href="/otfs"><LayoutGrid size={14} />Browse OTFs</Link>
+            <Link className="secondaryAction" href="/funds"><LayoutGrid size={14} />Browse OTFs</Link>
           </section>
         )}
       </div>
@@ -1070,6 +1223,7 @@ function WalletSurface() {
 }
 
 function OperateRouter({ initialView }: { initialView: OperateView }) {
+  if (initialView === "liquidity") return <LiquiditySurface />;
   if (initialView === "create") return <CreateSurface />;
   if (initialView === "vaults") return <FundsSurface detail={false} />;
   if (initialView === "detail") return <FundsSurface detail />;

@@ -1,5 +1,5 @@
 import { AppRoute } from "@/components/AppRoute";
 
-export default function OTFPage() {
+export default function FundPage() {
   return <AppRoute initialView="detail" />;
 }

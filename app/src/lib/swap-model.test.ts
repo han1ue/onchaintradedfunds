@@ -299,6 +299,7 @@ describe("OTF creation validation", () => {
     const errors = creationValidation({
       name: "",
       symbol: "",
+      mandate: "",
       constituents: Array.from({ length: 21 }, (_, index) => ({
         address: index === 1 ? "0x0000000000000000000000000000000000000001" : `0x${String(index + 1).padStart(40, "0")}`,
       })),
@@ -306,8 +307,9 @@ describe("OTF creation validation", () => {
       beneficiary: "not-an-address",
     });
     expect(errors).toEqual(expect.arrayContaining([
-      "Name is required.",
-      "Ticker is required.",
+      "Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').",
+      "Enter a ticker using letters, numbers, or hyphens.",
+      "Write an initial strategy rationale.",
       "An OTF can include at most 20 constituents.",
       "Duplicate constituents are not allowed.",
       "Annual creator expense ratio must be between 0 and 1000 bps.",
@@ -317,8 +319,9 @@ describe("OTF creation validation", () => {
 
   it("rejects zero constituent and beneficiary addresses", () => {
     expect(creationValidation({
-      name: "Zero Fund",
+      name: "Zero Fund OTF",
       symbol: "ZERO",
+      mandate: "Validate zero-address handling.",
       constituents: [{ address: "0x0000000000000000000000000000000000000000" }],
       annualExpenseRatioBps: 0,
       beneficiary: "0x0000000000000000000000000000000000000000",
@@ -326,5 +329,21 @@ describe("OTF creation validation", () => {
       "The zero address cannot be a constituent.",
       "A valid nonzero fixed beneficiary address is required.",
     ]));
+  });
+
+  it("requires the OTF suffix and a bounded nonempty mandate", () => {
+    const validInput = {
+      name: "Technology Leaders OTF",
+      symbol: "TECH",
+      mandate: "Track a transparent basket of technology leaders.",
+      constituents: [{ address: "0x0000000000000000000000000000000000000001" }],
+      annualExpenseRatioBps: 0,
+      beneficiary: "0x0000000000000000000000000000000000000002",
+    };
+
+    expect(creationValidation(validInput)).toEqual([]);
+    expect(creationValidation({ ...validInput, name: "Technology Leaders" })).toContain("Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').");
+    expect(creationValidation({ ...validInput, mandate: "" })).toContain("Write an initial strategy rationale.");
+    expect(creationValidation({ ...validInput, mandate: "🚀".repeat(513) })).toContain("Shorten the initial strategy rationale to 2,048 bytes or fewer.");
   });
 });
