@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { OtfBrandMark } from "@onchaintradedfunds/brand";
 import {
   ArrowDownUp,
   ArrowUpRight,
@@ -13,7 +14,6 @@ import {
   History,
   Info,
   LoaderCircle,
-  Menu,
   Plus,
   Search,
   ShieldCheck,
@@ -27,7 +27,7 @@ import { useAccount, useBalance, useChainId, usePublicClient, useWalletClient } 
 import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetLiquidity } from "@/lib/deployment";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -202,20 +202,39 @@ function TokenPicker({
 function OperateNav() {
   const pathname = usePathname();
   const current = navigationItemForPath(pathname);
-  const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => setMenuOpen(false), [pathname]);
 
   return (
-    <header className="swapNav">
-      <Link className="swapBrand" href="/" aria-label="Onchain Traded Funds swap"><span>OTF</span><strong>Onchain Traded Funds</strong></Link>
-      <button type="button" className="swapMenuButton" aria-label="Toggle navigation" aria-expanded={menuOpen} aria-controls="operate-primary-nav" onClick={() => setMenuOpen((open) => !open)}><Menu size={19} /></button>
-      <nav id="operate-primary-nav" className={menuOpen ? "open" : ""} aria-label="Primary navigation">
-        <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
-        <Link className={current === "funds" ? "active" : ""} href="/otfs">Funds</Link>
-        <Link className={current === "verified" ? "active" : ""} href="/verified">Verified</Link>
-      </nav>
-      <div className="swapNavActions"><Link href="/docs">Docs</Link><Link href="/create" className="swapCreateLink">Create OTF</Link><ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} /></div>
+    <header className="topNav">
+      <div className="topNavInner">
+        <Link className="logoGroup" href="/otfs" aria-label="Onchain Traded Funds">
+          <OtfBrandMark />
+          <span className="brandText"><strong>Onchain Traded Funds</strong></span>
+        </Link>
+        <nav className="navTabs" aria-label="Primary navigation">
+          <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
+          <Link className={current === "funds" ? "active" : ""} href="/otfs">Funds</Link>
+          <Link href="/docs">Docs</Link>
+        </nav>
+        <div className="navActions"><ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} /></div>
+      </div>
     </header>
+  );
+}
+
+function OperateFooter() {
+  const chainId = useChainId();
+  const showLiquidity = chainId === robinhoodChainTestnet.id && Boolean(robinhoodTestnetLiquidity.baseUrl);
+
+  return (
+    <footer className="dashboardFooter">
+      <span>Onchain Traded Funds · experimental, unaudited software</span>
+      {showLiquidity ? (
+        <a href={robinhoodTestnetLiquidity.baseUrl} target="_blank" rel="noopener noreferrer">
+          Testnet pair liquidity
+          <ExternalLink size={12} />
+        </a>
+      ) : null}
+    </footer>
   );
 }
 
@@ -541,12 +560,16 @@ function SwapSurface() {
           {executionMessage ? <p className={`swapExecutionFeedback ${execution === "failure" ? "failure" : "success"}`} role="status">{executionMessage}</p> : null}
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : <div className="swapEmptyQuote"><Info size={15} /><span>{pairExecutable ? "Enter a valid amount to request direct-liquidity and basket-settlement quotes concurrently." : "Resolve token decimals and OTF factory identity before requesting executable quotes."}</span></div>}
         </section>
-        <section className="swapLiquidityAction" aria-label="External liquidity">
-          <div><strong>{liquidityActionLabel(routeOtf?.isFactoryVault ? routeOtf.symbol : "OTF")}</strong><p>Liquidity is created on the venue in your own wallet. OTF never submits an LP transaction and this does not imply an official pool.</p></div>
-          {venue ? <a href={venue.href} target="_blank" rel="noopener noreferrer">Open {venue.name}<ExternalLink size={14} /></a> : <button type="button" disabled>Choose an OTF, USDG, and valid network</button>}
-          {venue ? <small>{venue.prefilled ? "Leaving OTF for Uniswap with the selected OTF and USDG addresses." : "Leaving OTF for Synthra. No LP prefill is used because a documented pair-prefill URL format is unavailable."}</small> : null}
+        <section className="swapLiquidityAction" aria-label="Add OTF and USDG liquidity">
+          <div>
+            <strong>{liquidityActionLabel(routeOtf?.isFactoryVault ? routeOtf.symbol : "OTF")}</strong>
+            <p>Add liquidity for the selected OTF/USDG market in your own wallet. OTF never submits an LP transaction and this does not imply an official pool.</p>
+          </div>
+          {venue ? <a href={venue.href} target="_blank" rel="noopener noreferrer">Open {venue.name}<ExternalLink size={14} /></a> : <button type="button" disabled>Select an OTF and USDG</button>}
+          {venue ? <small>{venue.prefilled ? `The selected ${routeOtf?.symbol ?? "OTF"} and USDG addresses will be passed to Uniswap.` : "Synthra does not provide a documented pair-prefill URL, so confirm the OTF and USDG addresses after leaving OTF."}</small> : null}
         </section>
       </main>
+      <OperateFooter />
       {picker ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} /> : null}
     </div>
   );
@@ -588,20 +611,54 @@ function CreateSurface() {
         <button type="submit" className="createPrimary">Validate formation input</button>
         <p className="createBlocked">Creation transactions are intentionally unavailable until the snapshot and typed create service are configured. This form never reports a preview as a submitted fund.</p>
       </form>
-    </main></div>
+    </main><OperateFooter /></div>
   );
 }
 
 function FundsSurface({ detail }: { detail: boolean }) {
   const routeAddress = addressFromLocation();
   if (detail) {
-    return <div className="operateShell"><OperateNav /><main className="fundMain"><Link href="/otfs" className="backLink">← Funds</Link><section className="fundDetail"><h1>{routeAddress ? shortAddress(routeAddress) : "Fund address unavailable"}</h1><p>Fund routes remain address-based. This page exposes identity and history only when the corresponding typed read service is available.</p><dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>History</dt><dd>History retrieval is not configured. No activity is substituted for this address.</dd></div><div><dt>Metadata</dt><dd>Resolve the onchain name and symbol before presenting an identity result.</dd></div></dl></section></main></div>;
+    return <div className="operateShell"><OperateNav /><main className="fundMain"><Link href="/otfs" className="backLink">← Funds</Link><section className="fundDetail"><h1>{routeAddress ? shortAddress(routeAddress) : "Fund address unavailable"}</h1><p>Fund routes remain address-based. This page exposes identity and history only when the corresponding typed read service is available.</p><dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>History</dt><dd>History retrieval is not configured. No activity is substituted for this address.</dd></div><div><dt>Metadata</dt><dd>Resolve the onchain name and symbol before presenting an identity result.</dd></div></dl></section></main><OperateFooter /></div>;
   }
-  return <div className="operateShell"><OperateNav /><main className="fundMain"><section className="fundIntro"><div><h1>Funds</h1><p>Address-routed OTFs. Identity and ordinary metadata are distinct from economic or route safety.</p></div><Link href="/create">Create an OTF <ArrowUpRight size={14} /></Link></section><section className="fundDirectory"><div><strong>Onchain directory</strong><span>Directory reader unavailable</span></div><div className="fundTableWrap"><table><thead><tr><th>Fund</th><th>Constituents</th><th>Annual creator expense ratio</th><th>Formation</th></tr></thead><tbody><tr><td colSpan={4}><strong>No current deployment data</strong><span>The redesigned factory and typed directory reader are not configured. No preview funds are substituted for onchain rows.</span></td></tr></tbody></table></div><small className="fundDirectoryDisclosure">A future directory can establish an onchain address and ordinary metadata only. It does not indicate a pool, liquidity, route, economic safety, or investment outcome.</small></section></main></div>;
+  return (
+    <div className="operateShell">
+      <OperateNav />
+      <main className="fundMain fundsHome">
+        <section className="fundPageHeader">
+          <div>
+            <h1>Onchain Traded Funds</h1>
+            <p>Discover and inspect market-cap-at-formation onchain funds.</p>
+          </div>
+          <div className="fundPageActions">
+            <Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link>
+            <Link className="primaryAction" href="/create">Create an OTF <ArrowUpRight size={14} /></Link>
+          </div>
+        </section>
+        <section className="directoryMetrics" aria-label="Fund directory status">
+          <article><span>Directory status</span><strong>Unavailable</strong></article>
+          <article><span>OTFs</span><strong>0</strong></article>
+          <article><span>Formation model</span><strong>Market cap snapshot</strong></article>
+        </section>
+        <section className="fundDirectory">
+          <div className="directoryToolbar">
+            <label className="directorySearch"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name, symbol, or address" disabled /></label>
+            <span>Directory reader unavailable</span>
+          </div>
+          <div className="emptyDirectory">
+            <Search size={18} />
+            <strong>No current deployment data</strong>
+            <span>The redesigned factory and typed directory reader are not configured. No preview funds are substituted for onchain rows.</span>
+          </div>
+          <small className="fundDirectoryDisclosure">A future directory can establish an onchain address and ordinary metadata only. It does not indicate a pool, liquidity, route, economic safety, or investment outcome.</small>
+        </section>
+      </main>
+      <OperateFooter />
+    </div>
+  );
 }
 
 function VerifiedSurface() {
-  return <div className="operateShell"><OperateNav /><main className="verifiedMain"><section><h1>Verified</h1><p>Verification here means identity and metadata only. It never controls routing or access to a fund address.</p><div className="verifiedStatement"><ShieldCheck size={20} /><div><strong>What this can establish</strong><p>Displayed name, symbol, token address, and ordinary metadata can be checked against their declared source.</p></div></div><div className="verifiedStatement"><CircleAlert size={20} /><div><strong>What this never establishes</strong><p>It does not verify a pool, route, liquidity, price, economic safety, audit status, or investment outcome.</p></div></div></section></main></div>;
+  return <div className="operateShell"><OperateNav /><main className="verifiedMain"><Link href="/otfs" className="backLink">← Funds</Link><section><h1>Verified</h1><p>Verification here means identity and metadata only. It never controls routing or access to a fund address.</p><div className="verifiedStatement"><ShieldCheck size={20} /><div><strong>What this can establish</strong><p>Displayed name, symbol, token address, and ordinary metadata can be checked against their declared source.</p></div></div><div className="verifiedStatement"><CircleAlert size={20} /><div><strong>What this never establishes</strong><p>It does not verify a pool, route, liquidity, price, economic safety, audit status, or investment outcome.</p></div></div></section></main><OperateFooter /></div>;
 }
 
 function OperateRouter({ initialView }: { initialView: OperateView }) {

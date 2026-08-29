@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { DocsNavigation } from "./DocsNavigation";
 
 const groups = [
@@ -26,8 +26,8 @@ export default function DocsPage() {
   return (
     <main className="docsPage">
       <header className="docsHeader">
-        <Link className="docsBrand" href="/"><span>OTF</span><strong>Onchain Traded Funds</strong></Link>
-        <div className="docsHeaderActions"><Link href="/">Open Swap <ArrowUpRight size={14} /></Link><Link href="/create">Create OTF</Link></div>
+        <Link className="docsBrand" href="/otfs"><span>OTF</span><strong>Onchain Traded Funds</strong></Link>
+        <nav className="docsHeaderActions" aria-label="Primary navigation"><Link href="/">Swap</Link><Link href="/otfs">Funds</Link><Link className="active" href="/docs">Docs</Link></nav>
       </header>
       <div className="docsLayout">
         <DocsNavigation groups={groups} />

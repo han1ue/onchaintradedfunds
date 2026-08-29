@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { navigationItemForPath, operateViewForPath } from "./operate-navigation";
 
 describe("operate navigation", () => {
-  it("keeps Swap, Funds and Verified navigation aligned with routes", () => {
+  it("keeps Swap and Funds navigation aligned with routes", () => {
     expect(navigationItemForPath("/")).toBe("swap");
     expect(navigationItemForPath("/otfs")).toBe("funds");
     expect(navigationItemForPath("/otfs/0x0000000000000000000000000000000000000001")).toBe("funds");
-    expect(navigationItemForPath("/verified")).toBe("verified");
+    expect(navigationItemForPath("/create")).toBe("funds");
+    expect(navigationItemForPath("/verified")).toBe("funds");
   });
 
   it("preserves address-routed fund detail paths", () => {
