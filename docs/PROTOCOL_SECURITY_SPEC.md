@@ -216,11 +216,13 @@ liquidity nor execution price. The UI MUST keep route, fee, gas, price impact, a
 states distinct.
 
 The intended operating routes are `/` Swap, `/funds` Funds, `/funds/<address>` fund detail,
-`/create` Create, `/verified` Verified, `/wallet` Wallet, and `/liquidity` external-liquidity
+`/create` Create, `/verified` Verified, `/wallet` Wallet, and `/liquidity` legacy testnet LP
 workspace. The Docs control opens the repository documentation externally. Mainnet USDG/OTF
 addresses, new production deployments, and the production typed quote service are unresolved.
-Synthra publishes no documented OTF/USDG pair-prefill URL and MUST NOT be presented as production
-evidence.
+Production liquidity actions MUST leave the app for the configured external venue. The internal
+liquidity workspace MAY approve tokens and mint wallet-owned, full-range positions only on Robinhood
+Chain Testnet, only through its explicitly configured legacy Synthra V3 contracts, and only for USDG
+pairs. It MUST NOT be presented or enabled as a production liquidity path.
 
 ## 10. Verification and change control
 

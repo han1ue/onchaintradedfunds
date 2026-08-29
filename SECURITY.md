@@ -109,6 +109,11 @@ The Swap surface's external-liquidity action hands pool creation and LP-position
 not custody LP assets or manage positions. Users must review the leaving-app disclosure, route,
 price impact, fees, gas, deadline, and slippage themselves.
 
+The `/liquidity` route is an explicit testnet-only exception for legacy Synthra V3 test pools. It
+can approve USDG/test assets and mint wallet-owned full-range positions through the configured
+legacy position manager. It is not used for production assets, mainnet liquidity, or protocol-owned
+funds.
+
 ## Explicit limitations and unresolved blockers
 
 - No formal audit or independent economic review has been completed; passing tests and security

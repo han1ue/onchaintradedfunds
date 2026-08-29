@@ -134,7 +134,7 @@ The nav is a ruled, lightly blurred top bar. Swap, Funds, and Verified are cente
 - **Do** make unavailable chain data visibly unavailable.
 - **Do** use ordered constituent addresses for formation; allocation belongs to the authenticated snapshot, not the creator form.
 - **Do** keep route, fee, gas, and price-impact information separate.
-- **Do** leave external liquidity in its official venue with a leaving-app disclosure.
+- **Do** leave production liquidity in its official venue with a leaving-app disclosure; keep the internal liquidity utility visibly testnet-only and USDG-only.
 
 ### Don't:
 

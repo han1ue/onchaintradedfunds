@@ -235,7 +235,7 @@ a { color: inherit; }
   background: transparent;
   color: var(--text-muted);
   padding: 7px 11px;
-  font-size: 0.79rem;
+  font-size: 0.86rem;
   font-weight: 500;
   text-decoration: none;
   transition: background 150ms ease, color 150ms ease;
@@ -746,7 +746,7 @@ body {
   text-decoration: none;
 }
 
-.depositsButton { gap: 7px; padding: 0 10px; font-size: 0.72rem; font-weight: 500; }
+.depositsButton { gap: 7px; padding: 0 11px; font-size: 0.79rem; font-weight: 550; }
 .depositsButton:hover,
 .depositsButton.active { border-color: rgb(var(--accent-rgb) / 34%); background: rgb(var(--accent-rgb) / 10%); color: var(--accent-text); }
 .iconOnly { width: 34px; padding: 0; }
@@ -834,6 +834,14 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageHeader p a { color: var(--text-soft); text-decoration-color: rgb(var(--accent-rgb) / 48%); text-underline-offset: 2px; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
+.fundsSummary { display: flex; min-height: 88px; align-items: center; justify-content: space-between; gap: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 15px 16px; }
+.fundsSummary dl { display: grid; min-width: min(520px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0; }
+.fundsSummary dl > div { min-width: 0; padding: 1px 24px 1px 0; }
+.fundsSummary dl > div + div { border-left: 1px solid var(--border); padding-right: 0; padding-left: 24px; }
+.fundsSummary dt { color: var(--text-muted); font-size: 0.64rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
+.fundsSummary dd { margin: 7px 0 0; color: var(--text); font-size: 1.3rem; font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+.fundsSummary small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.62rem; }
+
 .primaryAction,
 .secondaryAction { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; font-size: 0.72rem; font-weight: 600; text-decoration: none; }
 .secondaryAction { border-color: var(--border-strong); background: var(--card-raised); color: var(--text-soft); }
@@ -872,6 +880,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .directoryDataNotice { align-items: center; }
 .directoryDataNotice > svg { margin-top: 0; }
 .inlineEmptyState { align-items: center; border-color: var(--border); background: var(--background); color: var(--text-muted); margin: 12px 14px 14px; }
+.walletPositionEmpty span { color: var(--text-muted); }
 
 .directoryToolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
 .searchField { display: flex; width: min(360px, 100%); min-width: 220px; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--background); color: var(--text-muted); padding-left: 10px; }
@@ -931,7 +940,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 
 .walletAddressMetric .metricLabel { padding-right: 112px; }
 .walletAddressValue { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 10px; }
-.walletAddressValue strong { min-width: 0; flex: 1 1 auto; margin-top: 0; }
+.walletAddressValue strong { min-width: 0; flex: 1 1 auto; margin-top: 0; font-size: 1.08rem; letter-spacing: -0.015em; }
 .walletAddressActions { position: absolute; top: 11px; right: 12px; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
 .walletAddressActions .iconOnly { color: var(--text-muted); }
 .walletAddressCopyFeedback { color: var(--green); font-size: 0.67rem; font-weight: 650; white-space: nowrap; }
@@ -1200,13 +1209,17 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 }
 
 .liquidityMarketPanel,
-.liquidityVenuePanel {
+.liquidityVenuePanel,
+.liquidityActionPanel {
   display: grid;
   align-content: start;
-  gap: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
+}
+
+.liquidityMarketPanel {
+  gap: 16px;
   padding: 18px;
 }
 
@@ -1266,6 +1279,103 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   font-size: 0.63rem;
   line-height: 1.45;
 }
+
+.liquidityField input,
+.liquidityField select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--background);
+  color: var(--text);
+  padding: 0 11px;
+  font-size: 0.72rem;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.liquidityField input::placeholder { color: var(--text-faint); }
+.liquidityField input:focus,
+.liquidityField select:focus { border-color: rgb(var(--accent-rgb) / 62%); background: var(--card-raised); }
+
+.liquidityActionHeading {
+  display: flex;
+  min-height: 51px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 18px;
+}
+
+.liquidityActionHeading strong { font-size: 0.78rem; font-weight: 650; }
+.liquidityActionHeading span { color: var(--text-muted); font-size: 0.63rem; }
+
+.liquidityActionBody { display: grid; gap: 16px; padding: 18px; }
+
+.fullRangeNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid rgb(var(--accent-rgb) / 24%);
+  border-radius: 6px;
+  background: rgb(var(--accent-rgb) / 6%);
+  color: var(--accent-text);
+  padding: 10px 11px;
+}
+
+.fullRangeNotice > svg { flex: 0 0 auto; margin-top: 1px; }
+.fullRangeNotice strong,
+.fullRangeNotice span { display: block; }
+.fullRangeNotice strong { color: var(--text); font-size: 0.7rem; }
+.fullRangeNotice span { margin-top: 4px; color: var(--text-soft); font-size: 0.65rem; line-height: 1.45; }
+
+.liquidityTokenInputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+
+.liquidityTokenInput {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  padding: 11px;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.liquidityTokenInput:focus-within { border-color: rgb(var(--accent-rgb) / 58%); background: var(--card-raised); }
+.liquidityTokenInput > span { grid-column: 1 / -1; }
+.liquidityTokenInput strong,
+.liquidityTokenInput small { display: block; }
+.liquidityTokenInput strong { color: var(--text); font-size: 0.72rem; }
+.liquidityTokenInput small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
+.liquidityTokenInput input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); padding: 0; font-size: 1.12rem; font-variant-numeric: tabular-nums; }
+.liquidityTokenInput input::placeholder { color: var(--text-faint); }
+.liquidityTokenInput button { border: 0; background: transparent; color: var(--accent-text); cursor: pointer; padding: 3px 0; font-size: 0.62rem; font-weight: 700; }
+.liquidityTokenInput button:hover { color: var(--text); }
+
+.liquiditySlippage { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 14px; }
+.liquiditySlippage > span { color: var(--text-muted); font-size: 0.66rem; font-weight: 600; }
+.liquiditySlippage > div { display: flex; width: 92px; min-height: 34px; align-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--background); padding: 0 9px; }
+.liquiditySlippage > div:focus-within { border-color: rgb(var(--accent-rgb) / 58%); }
+.liquiditySlippage input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); padding: 0; font-size: 0.7rem; text-align: right; }
+.liquiditySlippage > div > span { color: var(--text-muted); font-size: 0.65rem; }
+
+.liquidityTxStatus { display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--text-muted); padding: 10px 11px; }
+.liquidityTxStatus > svg { flex: 0 0 auto; margin-top: 1px; }
+.liquidityTxStatus strong,
+.liquidityTxStatus span { display: block; }
+.liquidityTxStatus strong { color: var(--text); font-size: 0.69rem; }
+.liquidityTxStatus span { margin-top: 4px; color: var(--text-muted); font-size: 0.64rem; line-height: 1.45; }
+.liquidityTxStatus.working { border-color: rgb(241 185 61 / 28%); color: var(--gold); }
+.liquidityTxStatus.success { border-color: rgb(46 208 154 / 30%); color: var(--green); }
+.liquidityTxStatus.danger { border-color: rgb(235 101 112 / 32%); color: var(--danger); }
+
+.liquiditySubmitRow { display: flex; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 16px; }
+.liquiditySubmitRow .primaryAction { width: 100%; min-height: 42px; }
 
 .liquidityQuoteChoices {
   display: grid;
@@ -1403,6 +1513,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .networkMenu { width: min(244px, calc(100vw - 28px)); }
   .appPageHeader { align-items: stretch; flex-direction: column; }
   .appPageActions { align-self: flex-start; flex-wrap: wrap; }
+  .fundsSummary { align-items: flex-start; flex-direction: column; }
+  .fundsSummary .appPageActions { width: 100%; }
   .managedVaultsHeading { align-items: flex-start; flex-direction: column; }
   .managedVaultsHeaderActions { width: 100%; justify-content: space-between; }
   .directoryToolbar { align-items: stretch; flex-direction: column; }
@@ -1477,4 +1589,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .liquidityVenuePanel {
     padding: 14px;
   }
+
+  .liquidityTokenInputs { grid-template-columns: 1fr; }
+  .liquidityActionHeading { align-items: flex-start; flex-direction: column; gap: 4px; padding-top: 12px; padding-bottom: 12px; }
+  .liquidityActionBody { padding: 14px; }
 }

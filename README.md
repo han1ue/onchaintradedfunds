@@ -119,17 +119,17 @@ execution-price promise.
 ## Application and liquidity disclosures
 
 The app's operating routes are `/` (Swap), `/funds` (Funds), `/funds/<address>` (fund detail),
-`/create` (Create), `/verified` (Verified), `/wallet` (Wallet), and `/liquidity` (external-liquidity
-workspace). The Docs control opens this repository's documentation externally. Wallet, quote,
+`/create` (Create), `/verified` (Verified), `/wallet` (Wallet), and `/liquidity` (legacy testnet
+LP utility). The Docs control opens this repository's documentation externally. Wallet, quote,
 approval, simulation, submission, success, and failure states should be shown explicitly;
 unavailable configuration must not look executable.
 
-Pool creation and liquidity-position management happen on the external network venue. The app does
-not custody LP positions or submit pool-management transactions. A leaving-app disclosure is
-required. Mainnet USDG/OTF addresses, new production deployments, and the production typed quote
-service remain unresolved. Synthra publishes no documented OTF/USDG pair-prefill URL, so
-the testnet action opens its app without prefill. Testnet data must not be presented as a production
-market.
+Production pool creation and liquidity-position management happen on the external network venue,
+and the Swap route uses a leaving-app action. The `/liquidity` route is a separate, testnet-only
+utility for minting wallet-owned, full-range positions in the legacy Synthra V3 USDG pools used by
+the configured test assets; it must never be presented as a production market or deployment path.
+Mainnet USDG/OTF addresses, new production deployments, and the production typed quote service
+remain unresolved.
 
 ## Repository layout
 

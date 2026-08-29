@@ -47,7 +47,7 @@ import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, use
 import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetLiquidity } from "@/lib/deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -72,6 +72,7 @@ import {
   type SwapQuote,
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
+import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 
 export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
 
@@ -887,121 +888,9 @@ function DashboardPage({ children, className }: { children: React.ReactNode; cla
 }
 
 function LiquiditySurface() {
-  const chainId = useChainId();
-  const testnet = chainId === robinhoodChainTestnet.id;
-  const mainnet = chainId === robinhoodChain.id;
-  const initialVault = typeof window === "undefined"
-    ? ""
-    : new URLSearchParams(window.location.search).get("vault") ?? "";
-  const initialQuote = typeof window === "undefined"
-    ? ""
-    : new URLSearchParams(window.location.search).get("quote") ?? "";
-  const marketAssets = configuredAssetsFor(robinhoodChainTestnet.id);
-  const [otfAddress, setOtfAddress] = useState(initialVault);
-  const [quoteChoice, setQuoteChoice] = useState(
-    marketAssets.some((asset) => asset.address.toLowerCase() === initialQuote.toLowerCase())
-      ? initialQuote
-      : marketAssets[0]?.address ?? "",
-  );
-  const validOtfAddress = isAddress(otfAddress) ? getAddress(otfAddress) : undefined;
-  const selectedMarketAsset = marketAssets.find(
-    (asset) => asset.address.toLowerCase() === quoteChoice.toLowerCase(),
-  ) ?? marketAssets[0];
-  const venueName = mainnet ? "Uniswap" : "Synthra";
-  const venueUrl = mainnet
-    ? UNISWAP_LIQUIDITY_URL
-    : robinhoodTestnetLiquidity.baseUrl ?? "https://app.synthra.org/";
-
   return (
     <DashboardPage className="liquidityPage">
-      <div className="liquidityBreadcrumb">
-        <Link href="/funds">Home</Link><span>/</span><strong>Liquidity</strong>
-      </div>
-
-      <section className="liquidityIntro">
-        <div>
-          <h1>OTF liquidity markets</h1>
-          <p>Inspect supported markets here. Pool creation and every liquidity-position action happen on the network&apos;s external liquidity venue.</p>
-        </div>
-        <div className="liquidityBadges" aria-label="Liquidity venues">
-          <span>{venueName}</span>
-          <span>{testnet ? "Testnet" : mainnet ? "Mainnet" : "Unsupported network"}</span>
-        </div>
-      </section>
-
-      <div className="liquidityLayout">
-        <aside className="liquidityMarketPanel">
-          <div className="liquidityPanelHeading">
-            <Droplets size={16} />
-            <div><strong>Market discovery</strong><span>{testnet ? "Supported testnet settlement assets are configured below." : "Mainnet discovery will follow the production deployment."}</span></div>
-          </div>
-
-          {testnet ? (
-            <>
-              <label className="liquidityField">
-                <span>OTF address</span>
-                <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" />
-                <small>Enter a Robinhood Chain Testnet OTF address.</small>
-              </label>
-
-              <div className="liquidityField">
-                <span>Settlement asset</span>
-                <div className="liquidityQuoteChoices" role="list" aria-label="Supported OTF market assets">
-                  {marketAssets.map((marketAsset) => {
-                    const active = marketAsset.address.toLowerCase() === selectedMarketAsset?.address.toLowerCase();
-                    return (
-                      <button
-                        className={active ? "active" : ""}
-                        type="button"
-                        key={marketAsset.address}
-                        onClick={() => setQuoteChoice(marketAsset.address)}
-                      >
-                        <strong>{marketAsset.symbol}</strong>
-                        <span>Configured</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="liquidityPoolRecord">
-                <div><span>Selected market</span><strong>OTF / {selectedMarketAsset?.symbol ?? "quote"}</strong></div>
-                <div><span>OTF</span><strong>{validOtfAddress ? shortAddress(validOtfAddress) : "Not selected"}</strong></div>
-                <div><span>Settlement asset</span><strong>{selectedMarketAsset ? shortAddress(selectedMarketAsset.address) : "Not configured"}</strong></div>
-                <div><span>Market state</span><strong>Check on {venueName}</strong></div>
-              </div>
-
-              {otfAddress && !validOtfAddress ? (
-                <div className="validationSummary danger"><CircleAlert size={15} /><div><strong>Invalid OTF address</strong><span>Enter a valid EVM contract address.</span></div></div>
-              ) : null}
-              {validOtfAddress ? (
-                <a className="liquidityExplorerLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${validOtfAddress}`} target="_blank" rel="noreferrer">
-                  Inspect OTF contract <ExternalLink size={12} />
-                </a>
-              ) : null}
-            </>
-          ) : (
-            <div className="validationSummary"><Info size={15} /><div><strong>{mainnet ? "Mainnet markets are not indexed yet" : "Unsupported network"}</strong><span>{mainnet ? "Use Uniswap to create pools and manage positions. Discovery will appear after the production deployment is configured." : "Switch to Robinhood Testnet to use the testnet liquidity workspace."}</span></div></div>
-          )}
-        </aside>
-
-        <section className="liquidityVenuePanel">
-          <div className="liquidityPanelHeading">
-            <ExternalLink size={16} />
-            <div><strong>Manage on {venueName}</strong><span>{testnet ? "Robinhood Chain Testnet" : mainnet ? "Robinhood Chain Mainnet" : "External liquidity venue"}</span></div>
-          </div>
-          <div className="liquidityVenueMessage">
-            <strong>One venue for the complete liquidity lifecycle</strong>
-            <p>Create a pool, choose its initial price, add or remove liquidity, collect fees, and manage positions directly on {venueName}.</p>
-          </div>
-          {(testnet || mainnet) ? (
-            <a className="primaryAction liquidityVenueAction" href={venueUrl} target="_blank" rel="noreferrer">
-              Open {venueName} liquidity <ExternalLink size={14} />
-            </a>
-          ) : <button className="primaryAction liquidityVenueAction" type="button" disabled>Unsupported network</button>}
-          <p className="liquidityHelper">The OTF app never takes custody of liquidity-position assets or submits pool-management transactions.</p>
-        </section>
-      </div>
+      <TestnetLiquiditySurface />
     </DashboardPage>
   );
 }
@@ -1377,18 +1266,18 @@ function FundsSurface({ detail }: { detail: boolean }) {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader
-          title="Onchain Traded Funds"
-          description="Discover and monitor managed onchain funds."
-          icon={<LayoutGrid size={18} />}
-          actions={<><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></>}
-        />
+        <section className="fundsSummary" aria-label="Funds overview">
+          <dl>
+            <div><dt>Total AUM</dt><dd>Unavailable</dd><small>Waiting for the onchain directory</small></div>
+            <div><dt>OTFs</dt><dd>0</dd><small>Deployed funds indexed</small></div>
+          </dl>
+          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
+        </section>
         {!testnet ? (
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>No assets, liquidity adapters, or OTF deployments are configured on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
         ) : (
           <>
             <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
-            <div className="directoryMetrics"><MetricCard label="Total AUM" value="Unavailable" /><MetricCard label="OTFs" value="0" /></div>
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
                 <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name or symbol" disabled /></label>
@@ -1457,7 +1346,7 @@ function WalletSurface() {
               <MetricCard label="USDG Balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
               <MetricCard label="ETH Balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
             </div>
-            <section className="sectionCard depositPositions"><div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div></div><span className="stateBadge muted">0 positions</span></div><div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div></section>
+            <section className="sectionCard depositPositions"><div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div></div><span className="stateBadge muted">0 positions</span></div><div className="inlineEmptyState walletPositionEmpty"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div></section>
             <section className="sectionCard managedVaultsPanel"><div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>OTFs you manage</h2><p>Manager controls and protocol operations for OTFs currently managed by this wallet.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div><div className="inlineEmptyState"><UserCog size={18} /><div><strong>No managed OTFs found</strong><span>OTFs will appear here whenever this wallet is their current manager.</span></div></div></section>
           </>
         ) : (
