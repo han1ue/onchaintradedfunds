@@ -1,113 +1,18 @@
-# Product
+# Onchain Traded Funds application
 
-<!-- impeccable:product-schema 1 -->
+The application is an operating surface for creating and inspecting oracleless market-cap-at-formation OTFs.
 
-## Platform
+## Product truth
 
-web
+- The Swap route is `/`; Funds is `/otfs`; fund detail remains address-routed under `/otfs/<address>`.
+- Formation relies on an authenticated, expiring snapshot that binds the chain, factory, intended creator, ordered constituent addresses and token decimals, market caps, unit prices, calculation version, and nonce.
+- A creator supplies metadata, an ordered list of at most 20 addresses, a fixed beneficiary, and an immutable annual creator expense ratio from 0 to 1000 bps.
+- The formation-allocation rebate benefits the creator and does not reduce the holder fee. A 10% creator expense ratio can dilute holders and is not recommended.
+- There is no ongoing price oracle, Net Asset Value calculation, rebalance, strategy, proposal, challenge, target-weight system, adapter approval process, or active pool-approval process.
+- Verification concerns identity and ordinary metadata only; it never gates routing and never establishes route, liquidity, price, economic safety, audit status, or investment outcome.
+- Swap compares only the direct and basket routes that are actually queried. It never claims best price across all venues and never fabricates quotes or transaction states.
+- Liquidity remains external: use Uniswap on Robinhood Chain and Synthra on Robinhood Chain Testnet only when trusted configuration and a selected OTF/USDG pair permit a link. A link never implies an official pool.
 
-## Users
+## Current limits
 
-The primary users are investors evaluating, acquiring, monitoring, and redeeming positions in transparent onchain portfolios backed by tokenized stock assets. They need to understand what each OTF owns, how it has performed, what rules constrain it, who manages it, whether its oracle data is healthy, and when its portfolio may next change.
-
-The secondary users are creators and managers who launch and operate OTFs. They need to define an initial thesis and allocation, configure policy-bounded safety limits, monitor their products, accrue fees, and propose target changes with a rationale that satisfies the protocol's rules.
-
-## Product Purpose
-
-Onchain Traded Funds is an experimental protocol for creating and using managed, tokenized-stock portfolio products onchain. Each OTF holds its own basket of mechanically valid 18-decimal ERC-20 assets with pinned pricing and issues fungible shares representing proportional ownership of that basket.
-
-The product should let investors inspect a fund's portfolio, valuation, manager, thesis, operating rules, oracle state, and portfolio-change history before acting. It should let managers exercise portfolio judgment without gaining an unrestricted path to withdraw assets or bypass the mandate.
-
-For the MVP, success means making the complete OTF lifecycle understandable and usable on Robinhood Chain Testnet: discovery, inspection, wallet connection, creation, proportional deposits and redemptions, manager operations, and safety-checked rebalancing.
-
-## Positioning
-
-OTF combines human portfolio management with enforceable onchain limits. Managers may change a portfolio only through a narrow atomic rebalance path constrained by current constituents and approved adapters, fresh per-OTF pinned prices, factory-policy-bounded weight bands, NAV-loss protection, target-weight checks, and a minimum cooldown. Strategy turnover is recorded for disclosure rather than capped.
-
-This makes each managed portfolio independently inspectable and mechanically bounded. The protocol's position is evolutionary: it rebuilds familiar fund ownership and management mechanics as transparent, programmable onchain infrastructure rather than presenting itself as an attack on traditional ETFs.
-
-## Operating Context
-
-Investors use the web application with an EVM wallet to:
-
-- Discover available OTFs and distinguish live protocol data from unavailable networks or preview states.
-- Inspect NAV, NAV per share, portfolio allocation, target and actual weights, oracle freshness, manager fees, strategy history, safety limits, cooldown state, and return history.
-- Review their OTF share positions and inspect the protocol's supported RWA catalog separately.
-- Enter by supplying the exact proportional RWA basket, buying shares from an available OTF market, or selecting USDG or WETH per transaction and routing a fixed input through constituent pools with minimum-share protection.
-- Exit by receiving the proportional RWA basket, selling shares into an available OTF market, or selecting USDG or WETH per transaction and routing a redemption through constituent pools with per-leg and aggregate minimum-output protection.
-- Obtain supported testnet assets from the Robinhood Chain Testnet faucet.
-
-Creators and managers use the application to:
-
-- Create an OTF with a name that ends in ` OTF`, a freely chosen ticker, initial thesis, manager, fee recipient, mechanically valid assets, exact pricing configurations, target weights, manager fee, and policy-bounded safety limits.
-- Discover supported OTF quote markets and open the network liquidity venue to create pools or manage wallet-funded positions without using portfolio assets.
-- Find OTFs managed by the connected wallet.
-- Propose target changes with a required rationale that becomes permanent when the strategy activates.
-- Accrue manager fees without counting the action as a portfolio change.
-- Build, simulate, and submit a strategy proposal with a public rationale, then execute its constrained rebalance.
-
-The current supported environment is Robinhood Chain Testnet. Robinhood Chain Mainnet is visible as a network choice but has no supported assets, OTF deployments, or product availability yet.
-
-## Capabilities and Constraints
-
-- Each OTF is an ERC-20 share token and custodian of its own underlying basket. Its ERC-1046 metadata uses the canonical dark OTF SVG image.
-- OTF creation is permissionless within factory-level mechanical validation and enforceable safety constraints.
-- The investor frontend exposes exactly three entry paths—direct RWA basket, an available OTF market, and constituent routing from a supported settlement asset—and exactly three corresponding exit paths.
-- OTF creation is independent of Uniswap pool creation. Supported market assets come from the deployment's shared quote-and-execution configuration; the UI discovers every standard V3 fee tier and links to Synthra on testnet or Uniswap on mainnet.
-- Uniswap pools remain permissionless protocol infrastructure. A pool created by another wallet is discovered and shown rather than treated as an OTF-owned or trusted market.
-- Pool creation, initial-price selection, position creation, liquidity changes, and fee collection all happen on the external venue. Any wallet may supply liquidity without using OTF-held portfolio assets and owns the resulting position.
-- A direct secondary-market route remains disabled until its discovered pool reports active liquidity.
-- Proportional redemptions remain a contract-level primitive and do not depend on oracle availability.
-- A manager may irreversibly sunset an OTF after its strategy cooldown finishes and while no
-  challenge, proposal, or rebalance is active. Sunset
-  checkpoints fees once, permanently closes deposits and portfolio management, and leaves share
-  transfers and proportional redemptions available for an orderly wind-down.
-- The factory owner may reversibly pause new OTF creation and deposits across all
-  factory-created OTFs without pausing redemptions, transfers, or secondary-market share trading.
-- Only the configured manager may stage a rationale or submit a strategy proposal; rationales cannot be appended independently.
-- The manager has no arbitrary call or asset-withdrawal surface.
-- Rebalances use current constituents and one approved generic V3 adapter, exact temporary approvals,
-  fresh pinned onchain prices, and atomic execution. Explicit execution paths may use arbitrary
-  intermediate tokens without changing the OTF's pinned pricing configuration.
-- Portfolio changes are bounded by enforceable limits covering NAV loss and target-weight deviation. Managers may update completion and challenge bands within the factory owner's live protocol-wide policy. Every included asset must meet the live minimum target weight, initialized at 1%. Solidity permits up to 100 tracked assets and does not impose a separate maximum target or turnover limit; the frontend applies a 20-asset safety cap to creation and to the complete tracked union of strategy proposals, including retiring assets.
-- Every OTF uses the factory owner's protocol-wide challenge grace period, which defaults to seven days. A change applies when the next challenge starts and does not alter an active challenge's recorded deadline. Oracle freshness and corporate-action pause checks are selected per leg by the creator, mechanically validated, and pinned while the asset remains tracked. Fully pruning an asset clears its pricing state so a later strategy can reintroduce it with a newly validated source. Robinhood equity feeds publish 24/5; the frontend currently suggests a 25-hour limit measured from each feed's latest update, so oracle-priced actions can continue into a weekend before pausing until fresh prices arrive.
-- Every OTF uses one fixed 14-day strategy cooldown that starts when an unchallenged rebalance completes inside the wider challenge bands, or a challenged rebalance resolves inside the tighter completion bands. Active challenges and out-of-band portfolios block new strategy proposals.
-- Failed rebalances, staged rationales, fee accrual, role transfers, deposits, and redemptions do not reset the cooldown.
-- Strategy history permanently pairs each activated rationale with its complete target snapshot and completion state.
-- Manager fees accrue as shares and split between the configured recipient and protocol collector according to contract rules.
-- The frontend offers a convenient testnet metadata catalog and editable pricing suggestions; mechanically valid unindexed assets remain usable and the catalog is not an authorization source.
-- Mainnet product support is explicitly unavailable until real assets, adapters, oracle feeds, contracts, and deployment evidence exist.
-- The MVP is experimental, unaudited, and not production ready. It must not imply regulatory status, guaranteed returns, real Mainnet availability, audited safety, or historical performance that is not backed by live data.
-- “OTF” means “Onchain Traded Fund.” User-facing product terminology should use OTF rather than vault except where contract-level documentation requires the technical term.
-
-## Brand Commitments
-
-- The official product name is **Onchain Traded Funds** and the abbreviation is **OTF**.
-- The square `OTF` mark is the primary product symbol, including application identity and favicon use.
-- Product language should be precise, restrained, and legible to both finance-oriented and crypto-native users.
-- The core message is transparent managed funds with people making portfolio decisions and code enforcing the limits.
-- The product should describe the fund model as being rebuilt onchain without claiming that an OTF is a regulated ETF product.
-- Experimental and unaudited status must remain clear wherever users could mistake preview or testnet behavior for a production financial product.
-
-## Evidence on Hand
-
-- Protocol scope, architecture, lifecycle, and cooldown behavior: `../README.md`.
-- Security assumptions and non-production warning: `../SECURITY.md`.
-- Contract implementation and enforcement: `../contracts/src/`.
-- Cooldown boundary and non-reset tests: `../contracts/test/RebalanceCooldown.t.sol`.
-- Generated contract interfaces: `../packages/generated/src/index.ts`.
-- Current product workflows and application copy: `src/components/RebalanceCooldownPanel.tsx`.
-- Landing-page narrative and interaction: `src/components/LandingPage.tsx` and `src/components/ETFChainScene.tsx`.
-- Network configuration: `src/lib/chains.ts`.
-- Wallet integration: `src/lib/wagmi.ts` and `src/app/providers.tsx`.
-- Protocol documentation presented in the product: `src/app/docs/page.tsx`.
-
-There are no audited-production claims, regulated-product approvals, customer testimonials, verified Mainnet deployments, or independently validated performance records on hand. Future work must not fabricate them.
-
-## Product Principles
-
-1. **Make the portfolio legible.** Investors should be able to understand holdings, valuation, rules, risks, and change history before connecting capital.
-2. **Keep management bounded.** Human judgment is valuable, but every manager action must remain inside visible and enforceable protocol limits.
-3. **Show evidence, not assurances.** Prefer live contract state, oracle status, transaction history, and explicit unavailable states over unsupported confidence claims.
-4. **Separate roles without fragmenting the product.** Investor workflows should remain approachable while manager controls expose the detail required for responsible operation.
-5. **Treat testnet truthfully.** Make the MVP useful and convincing without disguising previews, mocks, unavailable Mainnet functionality, or unaudited software as production reality.
+The app must keep writes disabled until new deployments plus typed quote/calldata, authenticated snapshot/create, and factory directory/history services are configured. Unavailable states should name that limitation plainly.

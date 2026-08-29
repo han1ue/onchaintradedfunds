@@ -12,6 +12,9 @@ optimizer_runs = 1
 via_ir = true
 bytecode_hash = "none"
 extra_output = ["storageLayout"]
+# OpenZeppelin 5.6.1 uses a local named `error`; solc 0.8.36 emits the upstream-only
+# future-keyword warning even when linting this repository's source directory.
+ignored_error_codes = [6335]
 
 [profile.default.fuzz]
 runs = 1_000

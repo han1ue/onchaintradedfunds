@@ -6,7 +6,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -20,15 +20,14 @@
     "next": "15.5.22",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "three": "^0.185.1",
     "viem": "2.33.3",
     "wagmi": "2.16.1"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "3.3.1",
     "@types/node": "24.1.0",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
-    "@types/three": "^0.185.1",
     "eslint": "9.32.0",
     "eslint-config-next": "15.5.22",
     "typescript": "5.9.2",

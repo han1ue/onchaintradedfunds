@@ -1,236 +1,49 @@
 {
-  "schemaVersion": 9,
+  "schemaVersion": 10,
+  "architecture": "oracleless-market-cap-at-formation-v1",
   "network": "robinhood-testnet",
   "chainId": 46630,
-  "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
-  "deployedAt": "2026-08-26T21:40:43.614Z",
-  "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
-  "treasury": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
-  "protocolFeeShareBps": 1500,
+  "status": "not-deployed",
   "contracts": {
-    "rebalanceExecutor": {
-      "address": "0xD669425b7fA77A40f3F6F387606ad40F2D8fD307",
-      "transactionHash": "0xc8f6364a200462877bc8f66b84232539dc5e6eb0d22899ade03bf509fec0e577",
-      "blockNumber": "107897738",
-      "gasUsed": "792199"
-    },
     "feeCollector": {
-      "address": "0x62A1f6678a8C957C46112BE70101EE4cFe9e139F",
-      "transactionHash": "0x0c97b2a323ab33a4914a3a9d5b2b422e768d2119b82a3c71ca3d9418bcb056d6",
-      "blockNumber": "107897749",
-      "gasUsed": "387603"
+      "address": null
     },
     "otfToken": {
-      "address": "0x8659fC6700552C8a089a29f51b9c377e61C6b291",
-      "transactionHash": "0xdd1b571a2698d500006f2d55c00ee073a7d817a442e78fc805885f9ee8178d54",
-      "blockNumber": "107897764",
-      "gasUsed": "923186"
-    },
-    "portfolioCalculator": {
-      "address": "0x6E03ba63412824B3595cffD47f63db6C8C8A2590",
-      "transactionHash": "0xb54012607fbed498f6d1059556fce7f62f2bc066292062af6c3ba04bdc93db40",
-      "blockNumber": "107897783",
-      "gasUsed": "1871379"
-    },
-    "vaultStrategy": {
-      "address": "0x08D291EF55aEa464D50F02ce0F5f42f29447DD8D",
-      "transactionHash": "0xa4a5e628cc08ed61fd76ec22e9d3f1c71a387b283b86dba4ea249e40e0de0b12",
-      "blockNumber": "107897793",
-      "gasUsed": "5235014"
-    },
-    "vaultView": {
-      "address": "0x2DB1De7193e4c324c0A980CcB13C93FF8350fE23",
-      "transactionHash": "0x8a5ad65ef1433c4f11e33c7f7acdd8adba4f73c006d50a0017aa88e55cb6f598",
-      "blockNumber": "107897808",
-      "gasUsed": "3838269"
+      "address": null
     },
     "vaultImplementation": {
-      "address": "0x3Bfa0F24F1317c21296bab5ECFf54d57fC87F006",
-      "transactionHash": "0xe7f7191f6c7c79204c132114bb93afd620d92ad57a756ca590b81a855f2d8675",
-      "blockNumber": "107897822",
-      "gasUsed": "4685595"
+      "address": null
     },
     "factory": {
-      "address": "0x3Da6957896dd7AEfF684BD8692b015Fb4acaF396",
-      "transactionHash": "0xfe762a3764611d2db82d7689f26ee4bfa5f4bc2c2324c283e28513aef9c45f9e",
-      "blockNumber": "107897881",
-      "gasUsed": "2596240"
-    },
-    "assetMarketRegistry": {
-      "address": "0x07520D21e9b86515DFb1d72d15Ed1D2daeC9DCd6",
-      "transactionHash": "0x7d3254084ce69b787e5acb10394c7cd5573a51c5f722904590a519882c20b906",
-      "blockNumber": "107897840",
-      "gasUsed": "1382955"
-    },
-    "pricingResolver": {
-      "address": "0x35C564060D308e52A5CF32dfCd3c1E39A0848222",
-      "transactionHash": "0xaf08f0fbf3544ed3db0c836ab3bafe8417db6bf5e5c44d1394e587113ef8a4c5",
-      "blockNumber": "107897870",
-      "gasUsed": "4210621"
-    },
-    "uniswapV3Adapter": {
-      "address": "0x394ca6211AeAA3bEeEDd9344a02E5e41D499c810",
-      "transactionHash": "0xde4d7bf627aaf580f3c0c6b3a3b77409ac407a642fdcf5d450fb9921d5525e4d",
-      "blockNumber": "107897893",
-      "gasUsed": "762877"
+      "address": null
     },
     "entryRouter": {
-      "address": "0x63ecF1fcc11B0A2030B6bddA6948158a666bed4b",
-      "transactionHash": "0x8b1b4986e73986845ab9e5d81dc536e44817b6ee759ba37fd3b4efa1a6d1e9eb",
-      "blockNumber": "107897911",
-      "gasUsed": "1941852"
+      "address": null
     }
   },
   "externalContracts": {
     "usdg": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
     "weth": "0x33e4191705c386532ba27cBF171Db86919200B94",
-    "uniswapV3Factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
-    "uniswapV3PositionManager": "0x54A0EF7da351cb8fD1998E7945cc51E5825fB233",
-    "uniswapV3SwapRouter": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
-    "uniswapV3Quoter": "0x231606c321A99DE81e28fE48B07a93F1ba49e713"
+    "uniswapV3Factory": null,
+    "uniswapV3SwapRouter02": null
   },
-  "pricingConfiguration": {
-    "sources": [
-      "chainlink",
-      "chainlink-composed",
-      "uniswap-v3",
-      "chainlink-robinhood"
-    ],
-    "quoteTokens": [
-      {
-        "symbol": "USDG",
-        "quoteToken": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
-        "usdFeed": "0xb6acb695022630B4e7e28D8800bAD30F9F3cB916",
-        "feedDeployment": {
-          "address": "0xb6acb695022630B4e7e28D8800bAD30F9F3cB916",
-          "retained": true,
-          "synthetic": true
-        },
-        "synthetic": true,
-        "maxStaleness": 3600,
-        "transactionHash": "0x09d44f39d3d1eaf9d039cb88abe0af1aff54045b0e188ad83573a150d69cff7f",
-        "blockNumber": "107897853",
-        "gasUsed": "118715"
-      },
-      {
-        "symbol": "WETH",
-        "quoteToken": "0x33e4191705c386532ba27cBF171Db86919200B94",
-        "usdFeed": "0x828D8B03Eb53c2A5316B65d2c95C2b9dC0702335",
-        "feedDeployment": {
-          "address": "0x828D8B03Eb53c2A5316B65d2c95C2b9dC0702335",
-          "retained": true,
-          "synthetic": true
-        },
-        "synthetic": true,
-        "maxStaleness": 3600,
-        "transactionHash": "0xcf89c740f7640121d499198cd967732223ce501c7c04ad2119f3a3d46997fc04",
-        "blockNumber": "107897854",
-        "gasUsed": "98845"
-      }
-    ],
-    "vaultInitField": "initialPricingConfigs",
-    "suggestedInitialPricingConfigs": [
-      {
-        "asset": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
-        "source": "chainlink-robinhood",
-        "quoteToken": "0x0000000000000000000000000000000000000000",
-        "primarySource": "0x293A308331c61CEA5CcCC5AA73805E24eEA6C081",
-        "primaryMaxStaleness": 90000,
-        "synthetic": true
-      },
-      {
-        "asset": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
-        "source": "chainlink-robinhood",
-        "quoteToken": "0x0000000000000000000000000000000000000000",
-        "primarySource": "0xDBc2eC3ceC0201e3Ff199a353e52c6b19D84d758",
-        "primaryMaxStaleness": 90000,
-        "synthetic": true
-      },
-      {
-        "asset": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
-        "source": "chainlink-robinhood",
-        "quoteToken": "0x0000000000000000000000000000000000000000",
-        "primarySource": "0xfa5dE3691fbe6597e4d2F51edbE584fBA3BA2aA0",
-        "primaryMaxStaleness": 90000,
-        "synthetic": true
-      },
-      {
-        "asset": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
-        "source": "chainlink-robinhood",
-        "quoteToken": "0x0000000000000000000000000000000000000000",
-        "primarySource": "0x717e107EF82e89c6e53F3664662428c051c1BDD7",
-        "primaryMaxStaleness": 90000,
-        "synthetic": true
-      },
-      {
-        "asset": "0x71178BAc73cBeb415514eB542a8995b82669778d",
-        "source": "chainlink-robinhood",
-        "quoteToken": "0x0000000000000000000000000000000000000000",
-        "primarySource": "0x551d8c2118F6Ff36389638292B58a3CF69C50056",
-        "primaryMaxStaleness": 90000,
-        "synthetic": true
-      }
-    ],
-    "maximumOracleStalenessSeconds": 604800,
-    "note": "Each OTF pins its asset feed or V3 pool. Composed and V3 routes read the quote token's single current USD feed from the admin registry."
+  "formation": {
+    "calculationVersion": 1,
+    "snapshotAuthority": null,
+    "dataSource": null
   },
-  "executionRoutes": [
-    {
-      "settlement": "USDG",
-      "settlementToken": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
-      "adapter": "0x394ca6211AeAA3bEeEDd9344a02E5e41D499c810",
-      "entryRouter": "0x63ecF1fcc11B0A2030B6bddA6948158a666bed4b",
-      "pathEncoding": "uniswap-v3-packed",
-      "pricingIndependent": true
-    },
-    {
-      "settlement": "WETH",
-      "settlementToken": "0x33e4191705c386532ba27cBF171Db86919200B94",
-      "adapter": "0x394ca6211AeAA3bEeEDd9344a02E5e41D499c810",
-      "entryRouter": "0x63ecF1fcc11B0A2030B6bddA6948158a666bed4b",
-      "pathEncoding": "uniswap-v3-packed",
-      "pricingIndependent": true
-    }
-  ],
-  "migration": {
-    "architecture": "centralized-adapter-permissions",
-    "legacyFactoriesCompatible": false
+  "policy": {
+    "baseProtocolFeeShareBps": 1500,
+    "protocolTokenFullRebateThresholdBps": 1000,
+    "formationAllocationRebateEnabled": true
   },
-  "setupTransactions": {
-    "setExecutorFactory": {
-      "transactionHash": "0xf422d54c2b9fef6b44484ca0ccdb3d49209c7a3c5cfa98cb00efd749f8126f22",
-      "blockNumber": "107897927",
-      "gasUsed": "52239"
-    },
-    "approvedAdapters": [
-      {
-        "adapter": "0x394ca6211AeAA3bEeEDd9344a02E5e41D499c810",
-        "purpose": "rebalance-entry-exit",
-        "transactionHash": "0xe7348c33e374aca7a1e58a33bfe0706e7e8e0f6faac46fbbd5fe74c65b0ccdf5",
-        "blockNumber": "107897939",
-        "gasUsed": "60322"
-      }
-    ],
-    "settlementEntry": [
-      {
-        "adapter": "0x394ca6211AeAA3bEeEDd9344a02E5e41D499c810",
-        "router": "0x63ecF1fcc11B0A2030B6bddA6948158a666bed4b",
-        "entryRouterCallerApproval": {
-          "transactionHash": "0xa39179efa8e29595760f1e64be68bd0e22e28d5bf17fda1234474e432a781b5c",
-          "blockNumber": "107897968",
-          "gasUsed": "53409"
-        }
-      }
-    ],
-    "configureProtocolToken": {
-      "transactionHash": "0xc94ccdfae87be5aade9d530deff9373e756cbf53634ffae5e8ed314f95292a3a",
-      "blockNumber": "107897955",
-      "gasUsed": "39344"
-    },
-    "rebalanceExecutorCallerApproval": {
-      "transactionHash": "0xb777d6e4dca9d3325c2145c9b92dbad4942cd9755db8f8809c6f732ce4c9b4ac",
-      "blockNumber": "107897983",
-      "gasUsed": "53409"
-    }
-  }
+  "externalLiquidity": {
+    "venue": "Synthra",
+    "baseUrl": "https://app.synthra.org/",
+    "prefillSupported": false
+  },
+  "quoteService": {
+    "endpoint": null
+  },
+  "note": "The previous testnet contracts implement a different pre-mainnet architecture and are intentionally not exposed by this configuration. Deploy the redesigned contracts and configure a production formation authority before enabling writes or quotes."
 }

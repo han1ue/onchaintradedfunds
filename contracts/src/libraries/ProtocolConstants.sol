@@ -2,9 +2,16 @@
 pragma solidity ^0.8.24;
 
 library ProtocolConstants {
-    uint256 internal constant MAX_TRACKED_ASSETS = 100;
-    uint256 internal constant MAX_INITIAL_SHARE_SUPPLY = 1_000_000 ether;
-    uint256 internal constant MAX_STRATEGY_RATIONALE_BYTES = 2_048;
-    uint256 internal constant MINIMUM_LIQUIDITY_SHARES = 1_000_000;
-    uint16 internal constant MAX_ANNUAL_MANAGER_FEE_BPS = 2_000;
+    uint256 internal constant BPS = 10_000;
+    uint256 internal constant WAD = 1e18;
+    uint256 internal constant YEAR = 365 days;
+    uint256 internal constant MAX_CONSTITUENTS = 20;
+    uint16 internal constant MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS = 1_000;
+
+    /// @dev V1 derives raw token quantities for a one-dollar formation basket.
+    uint256 internal constant FORMATION_NOTIONAL_USD_WAD = 1e18;
+    /// @dev One formation basket initially corresponds to one 18-decimal vault share.
+    uint256 internal constant FORMATION_SHARE_UNIT = 1e18;
+    uint32 internal constant FORMATION_CALCULATION_VERSION = 1;
+    uint8 internal constant MAX_CONSTITUENT_DECIMALS = 36;
 }

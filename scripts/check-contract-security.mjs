@@ -1,560 +1,149 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const contracts = join(root, "contracts");
 const runtimeLimit = 24_576;
 const initcodeLimit = 49_152;
-
-function findForge() {
-  if (process.env.FORGE_BIN) return process.env.FORGE_BIN;
-
-  const command = process.platform === "win32" ? "where.exe" : "which";
-  const discovered = spawnSync(command, ["forge"], { encoding: "utf8" });
-  if (discovered.status === 0) return discovered.stdout.trim().split(/\r?\n/)[0];
-
-  const candidates = [
-    join(homedir(), ".foundry", "bin", process.platform === "win32" ? "forge.exe" : "forge"),
-  ];
-  if (process.env.LOCALAPPDATA) {
-    const foundryHome = join(process.env.LOCALAPPDATA, "Foundry");
-    if (existsSync(foundryHome)) {
-      for (const entry of readdirSync(foundryHome).sort().reverse()) {
-        candidates.push(join(foundryHome, entry, "forge.exe"));
-      }
-    }
-  }
-
-  const forge = candidates.find(existsSync);
-  if (!forge) {
-    throw new Error("forge was not found; install Foundry or set FORGE_BIN");
-  }
-  return forge;
-}
-
-const forge = findForge();
-const solhint = join(root, "node_modules", "solhint", "solhint.js");
-
-function runForge(args, options = {}) {
-  return execFileSync(forge, args, {
-    cwd: contracts,
-    encoding: "utf8",
-    stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
-  });
-}
+const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "FeeCollector", "OTFToken"];
+const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry/i;
+const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry)\b/i;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function findForge() {
+  if (process.env.FORGE_BIN) return process.env.FORGE_BIN;
+  const command = process.platform === "win32" ? "where.exe" : "which";
+  const discovered = spawnSync(command, ["forge"], { encoding: "utf8" });
+  if (discovered.status === 0) return discovered.stdout.trim().split(/\r?\n/u)[0];
+  const candidates = [join(homedir(), ".foundry", "bin", process.platform === "win32" ? "forge.exe" : "forge")];
+  const forgeHome = process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Foundry");
+  if (forgeHome && existsSync(forgeHome)) {
+    for (const entry of readdirSync(forgeHome).sort().reverse()) candidates.push(join(forgeHome, entry, "forge.exe"));
+  }
+  const forge = candidates.find(existsSync);
+  if (!forge) throw new Error("forge was not found; install Foundry or set FORGE_BIN");
+  return forge;
+}
+
+const forge = findForge();
+const solhint = join(root, "node_modules", "solhint", "solhint.js");
+function runForge(args) { return execFileSync(forge, args, { cwd: contracts, stdio: "inherit" }); }
 function byteLength(hex) {
-  const normalized = hex.startsWith("0x") ? hex.slice(2) : hex;
-  return normalized.length / 2;
+  assert(typeof hex === "string", "artifact bytecode is missing");
+  const value = hex.startsWith("0x") ? hex.slice(2) : hex;
+  assert(value.length % 2 === 0, "artifact bytecode has an odd number of hex digits");
+  return value.length / 2;
 }
-
-function artifact(source, contract) {
-  return JSON.parse(
-    readFileSync(join(contracts, "out", source, `${contract}.json`), "utf8"),
-  );
+function artifact(name) {
+  const path = join(contracts, "out", `${name}.sol`, `${name}.json`);
+  assert(existsSync(path), `missing fresh artifact ${relative(root, path)}`);
+  return JSON.parse(readFileSync(path, "utf8"));
 }
-
-function abiSignature(item) {
-  return `${item.name}(${item.inputs.map((input) => input.type).join(",")})`;
-}
-
-function abiSignatures(compiled, type) {
-  return new Set(
-    compiled.abi.filter((item) => item.type === type).map(abiSignature),
-  );
-}
-
-function normalizedStorage(layout) {
-  return layout.storage.map((entry) => {
-    const type = layout.types[entry.type];
-    return {
-      label: entry.label,
-      slot: entry.slot,
-      offset: entry.offset,
-      encoding: type.encoding,
-      numberOfBytes: type.numberOfBytes,
-      typeLabel: type.label.replace(
-        /(?:ManagedOTFVault|ManagedOTFVaultStrategy|ManagedOTFVaultView|ManagedOTFVaultStorage)\./g,
-        "OTF.",
-      ),
-    };
-  });
-}
+function functions(compiled) { return compiled.abi.filter((item) => item.type === "function"); }
+function functionNames(compiled) { return new Set(functions(compiled).map((item) => item.name)); }
+function constructor(compiled) { return compiled.abi.find((item) => item.type === "constructor"); }
+function signature(item) { return `${item.name}(${(item.inputs ?? []).map((input) => input.type).join(",")})`; }
 
 assert(existsSync(solhint), "solhint is not installed; run corepack pnpm install");
-execFileSync(process.execPath, [solhint, "contracts/src/**/*.sol", "--max-warnings", "0"], {
-  cwd: root,
-  stdio: "inherit",
-});
+execFileSync(process.execPath, [solhint, "contracts/src/**/*.sol", "--max-warnings", "0"], { cwd: root, stdio: "inherit" });
 
+// Regenerate artifacts before inspecting them so removed production modules cannot linger.
+execFileSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], { cwd: root, stdio: "inherit" });
 runForge(["build", "--force", "-q"]);
 runForge(["lint", "src", "--deny", "warnings"]);
 
-const vaultLayout = normalizedStorage(
-  artifact("ManagedOTFVault.sol", "ManagedOTFVault").storageLayout,
-);
-const strategyLayout = normalizedStorage(
-  artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy").storageLayout,
-);
-const viewLayout = normalizedStorage(
-  artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView").storageLayout,
-);
-const canonicalLayout = normalizedStorage(
-  artifact("ManagedOTFVaultStorage.sol", "ManagedOTFVaultStorage").storageLayout,
-);
-assert(
-  JSON.stringify(vaultLayout) === JSON.stringify(canonicalLayout),
-  "vault declares storage outside the canonical layout",
-);
-assert(
-  JSON.stringify(strategyLayout) === JSON.stringify(canonicalLayout),
-  "strategy declares storage outside the canonical layout",
-);
-assert(
-  JSON.stringify(viewLayout) === JSON.stringify(canonicalLayout),
-  "view module declares storage outside the canonical layout",
-);
-assert(
-  !canonicalLayout.some((entry) => entry.label.includes("removed") || entry.label.includes("gap")),
-  "fresh-deployment layout contains a reserved legacy slot",
-);
+function soliditySourceNames(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return soliditySourceNames(path);
+    return entry.isFile() && entry.name.endsWith(".sol") ? [entry.name] : [];
+  });
+}
+const sourceNames = soliditySourceNames(join(contracts, "src"));
+assert(!sourceNames.some((name) => forbiddenArtifactName.test(name)), "stale production source remains");
+const artifactNames = readdirSync(join(contracts, "out"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
+assert(!artifactNames.some((name) => forbiddenArtifactName.test(name)), "stale production artifact remains");
 
-const productionContracts = [
-  ["AssetMarketRegistry.sol", "AssetMarketRegistry"],
-  ["AssetPricingResolver.sol", "AssetPricingResolver"],
-  ["ChainlinkRoutePriceFeed.sol", "ChainlinkRoutePriceFeed"],
-  ["FeeCollector.sol", "FeeCollector"],
-  ["ManagedOTFVault.sol", "ManagedOTFVault"],
-  ["ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy"],
-  ["ManagedOTFVaultView.sol", "ManagedOTFVaultView"],
-  ["OTFFactory.sol", "OTFFactory"],
-  ["OTFEntryExitRouter.sol", "OTFEntryExitRouter"],
-  ["OTFToken.sol", "OTFToken"],
-  ["PortfolioCalculator.sol", "PortfolioCalculator"],
-  ["RegisteredUniswapV3Adapter.sol", "RegisteredUniswapV3Adapter"],
-  ["RebalanceExecutor.sol", "RebalanceExecutor"],
-  ["UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed"],
+const compiled = Object.fromEntries(production.map((name) => [name, artifact(name)]));
+for (const [name, value] of Object.entries(compiled)) {
+  assert(byteLength(value.deployedBytecode.object) <= runtimeLimit, `${name} runtime exceeds ${runtimeLimit} bytes`);
+  assert(byteLength(value.bytecode.object) <= initcodeLimit, `${name} initcode exceeds ${initcodeLimit} bytes`);
+  assert(!JSON.stringify(value.abi).match(forbiddenAbiWords), `${name} ABI contains a removed surface`);
+}
+
+const vaultStorage = artifact("ManagedOTFVaultStorage").storageLayout;
+const vaultLayout = compiled.ManagedOTFVault.storageLayout;
+assert(vaultStorage && vaultLayout, "fresh vault storage layouts are missing");
+const normalizeStorage = (layout) => layout.storage.map((entry) => ({
+  label: entry.label,
+  slot: entry.slot,
+  offset: entry.offset,
+  type: layout.types[entry.type]?.label,
+  bytes: layout.types[entry.type]?.numberOfBytes,
+}));
+assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
+const expectedStorage = [
+  "_name", "_symbol", "_decimals", "_totalSupply", "_balanceOf", "_allowance", "_erc20Initialized",
+  "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
+  "_feeCollector", "_entryExitRouter", "_annualCreatorExpenseRatioBps", "_formationOtfWeightBps",
+  "_formationSnapshotTime", "_formationCalculationVersion", "_formationSnapshotDigest", "_shutdownAt",
+  "_assets", "_relativeQuantity", "_accountedBalance", "_feeEpochTimestamp",
+  "_lastFeeCheckpointTimestamp", "_feeEpochSupply", "_feeEpochAccruedShares", "_feeShareRemainderWad",
+  "_protocolFeeSplitRemainderBps",
 ];
+assert(JSON.stringify(vaultLayout.storage.map((entry) => entry.label)) === JSON.stringify(expectedStorage), "unexpected or legacy vault storage field");
 
-for (const [source, name] of productionContracts) {
-  const compiled = artifact(source, name);
-  const runtime = byteLength(compiled.deployedBytecode.object);
-  const initcode = byteLength(compiled.bytecode.object);
-  assert(runtime <= runtimeLimit, `${name} runtime is ${runtime} bytes`);
-  assert(initcode <= initcodeLimit, `${name} initcode is ${initcode} bytes`);
-}
-
-const vault = artifact("ManagedOTFVault.sol", "ManagedOTFVault");
-const strategy = artifact("ManagedOTFVaultStrategy.sol", "ManagedOTFVaultStrategy");
-const viewModule = artifact("ManagedOTFVaultView.sol", "ManagedOTFVaultView");
-const factory = artifact("OTFFactory.sol", "OTFFactory");
-const pricingResolver = artifact("AssetPricingResolver.sol", "AssetPricingResolver");
-const assetMarketRegistry = artifact("AssetMarketRegistry.sol", "AssetMarketRegistry");
-const v3RoutePriceFeed = artifact("UniswapV3RoutePriceFeed.sol", "UniswapV3RoutePriceFeed");
-const registeredV3Adapter = artifact(
-  "RegisteredUniswapV3Adapter.sol",
-  "RegisteredUniswapV3Adapter",
-);
-const entryExitRouter = artifact("OTFEntryExitRouter.sol", "OTFEntryExitRouter");
-const erc7621 = artifact("IERC7621.sol", "IERC7621");
-const vaultFunctions = vault.abi.filter((item) => item.type === "function").map((item) => item.name);
-const strategyFunctions = strategy.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const factoryFunctions = factory.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const factoryEvents = abiSignatures(factory, "event");
-const factoryErrors = abiSignatures(factory, "error");
-const adapterPermissionsMapping = factory.storageLayout.storage.find(
-  (entry) => entry.label === "_adapterPermissions",
-);
-const adapterPermissionsType = factory.storageLayout.types[adapterPermissionsMapping?.type]?.value;
-const adapterPermissionsLayout = factory.storageLayout.types[adapterPermissionsType];
-const entryExitRouterFunctions = entryExitRouter.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const pricingResolverFunctions = pricingResolver.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const assetMarketRegistryFunctions = assetMarketRegistry.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const v3RoutePriceFeedFunctions = v3RoutePriceFeed.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const registeredV3AdapterFunctions = registeredV3Adapter.abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-const calculatorFunctions = artifact("PortfolioCalculator.sol", "PortfolioCalculator").abi
-  .filter((item) => item.type === "function")
-  .map((item) => item.name);
-
-const officialERC7621Functions = new Map([
-  ["contribute(uint256[],address,uint256)", "a1ee8feb"],
-  ["getConstituents()", "10d79f4d"],
-  ["getReserve(address)", "c9a396e9"],
-  ["getWeight(address)", "ac6c5251"],
-  ["isConstituent(address)", "6a76d37b"],
-  ["previewContribute(uint256[])", "d1602deb"],
-  ["previewWithdraw(uint256)", "0a28a477"],
-  ["rebalance(address[],uint256[])", "2be01190"],
-  ["totalBasketValue()", "28b50621"],
-  ["totalConstituents()", "1f39b64e"],
-  ["withdraw(uint256,address,uint256[])", "b06c2075"],
-]);
-const officialERC7621Events = [
-  "Contributed(address,address,uint256,uint256[])",
-  "Rebalanced(address[],uint256[])",
-  "Withdrawn(address,address,uint256,uint256[])",
-];
-const officialERC7621Errors = [
-  "DuplicateConstituent(address)",
-  "InsufficientAmount(uint256,uint256,uint256)",
-  "InsufficientShares(uint256,uint256)",
-  "InvalidWeights(uint256)",
-  "LengthMismatch(uint256,uint256)",
-  "NotConstituent(address)",
-  "ZeroAddress()",
-  "ZeroAmount()",
-];
-const localERC7621Functions = new Map(Object.entries(erc7621.methodIdentifiers));
-assert(
-  localERC7621Functions.size === officialERC7621Functions.size,
-  "IERC7621 function count differs from the pinned official draft",
-);
-let erc7621InterfaceId = 0n;
-for (const [signature, selector] of officialERC7621Functions) {
-  assert(
-    localERC7621Functions.get(signature) === selector,
-    `IERC7621 selector differs for ${signature}`,
-  );
-  erc7621InterfaceId ^= BigInt(`0x${selector}`);
-}
-assert(
-  erc7621InterfaceId === 0xc9c80f73n,
-  `IERC7621 interface ID is 0x${erc7621InterfaceId.toString(16)}, expected 0xc9c80f73`,
-);
-
-const localERC7621Events = abiSignatures(erc7621, "event");
-const localERC7621Errors = abiSignatures(erc7621, "error");
-const vaultMethodIdentifiers = new Map(Object.entries(vault.methodIdentifiers));
-const vaultEvents = abiSignatures(vault, "event");
-const vaultErrors = abiSignatures(vault, "error");
-assert(
-  localERC7621Events.size === officialERC7621Events.length,
-  "IERC7621 event count differs from the pinned official draft",
-);
-assert(
-  localERC7621Errors.size === officialERC7621Errors.length,
-  "IERC7621 error count differs from the pinned official draft",
-);
-for (const [signature, selector] of officialERC7621Functions) {
-  assert(
-    vaultMethodIdentifiers.get(signature) === selector,
-    `vault is missing ERC-7621 function ${signature}`,
-  );
-}
-for (const signature of officialERC7621Events) {
-  assert(localERC7621Events.has(signature), `IERC7621 is missing event ${signature}`);
-  assert(vaultEvents.has(signature), `vault is missing ERC-7621 event ${signature}`);
-}
-for (const signature of officialERC7621Errors) {
-  assert(localERC7621Errors.has(signature), `IERC7621 is missing error ${signature}`);
-  assert(vaultErrors.has(signature), `vault is missing ERC-7621 error ${signature}`);
+const expectedConstructors = {
+  ManagedOTFVault: [],
+  FeeCollector: ["initialTreasury"],
+  OTFToken: ["initialHolder"],
+  OTFFactory: ["vaultImplementation_", "feeCollector_", "formationSnapshotAuthority_", "protocolToken_", "baseProtocolFeeShareBps_", "protocolTokenFullRebateThresholdBps_"],
+  OTFEntryExitRouter: ["factory_", "uniswapV3Factory_", "uniswapV3Router_"],
+};
+for (const [name, expected] of Object.entries(expectedConstructors)) {
+  const actual = constructor(compiled[name]);
+  assert(actual && actual.inputs.length === expected.length, `${name} constructor arity changed`);
+  assert(actual.inputs.every((input, index) => input.name === expected[index]), `${name} constructor fields changed`);
 }
 
-assert(!vaultFunctions.includes("execute"), "generic execute function found in vault ABI");
-for (const removedFunction of [
-  "YEAR",
-  "MINIMUM_LIQUIDITY_SHARES",
-  "moduleMintFees",
-  "accrueFees",
-  "stopChallengeFees",
-  "assetCount",
-  "assetAt",
-  "targetWeightsBps",
-  "feesAccruing",
-  "feesEscrowed",
-  "feesSuspended",
-  "assetRegistry",
-  "protocolFeeShareBps",
-  "creatorFeeBpsPerYear",
-  "strategicRebalanceStartedAt",
-  "marketIdForAsset",
-  "priceFeedForAsset",
-  "maxStalenessForAsset",
-  "pricingSourceForAsset",
-  "bindFactory",
-]) {
-  assert(!vaultFunctions.includes(removedFunction), `removed vault function found: ${removedFunction}`);
+const factoryNames = functionNames(compiled.OTFFactory);
+for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "formationSnapshotDigest", "predictVaultAddress", "previewRelativeQuantities", "createVault", "effectiveProtocolFeeShareBps", "otfTokenURI", "isVault", "formationNonceUsed", "formationSnapshotUsed"]) {
+  assert(factoryNames.has(name), `factory function ${name} is absent`);
 }
-assert(vaultFunctions.includes("managerFeeBpsPerYear"), "manager fee getter is absent");
-assert(
-  !vaultEvents.has("ManagerFeeAccrualSuspended(uint64)"),
-  "never-emitted manager fee suspension event remains in vault ABI",
-);
-for (const removedFunction of ["STRATEGY_CHANGE_COOLDOWN", "MINIMUM_LIQUIDITY_SHARES"]) {
-  assert(
-    !factoryFunctions.includes(removedFunction),
-    `removed factory function found: ${removedFunction}`,
-  );
-}
-for (const removedFunction of [
-  "allVaults",
-  "creatorOf",
-  "protocolTreasury",
-  "pendingProtocolTreasury",
-  "assetRegistry",
-  "setAssetMarketRegistry",
-  "setPricingResolver",
-]) {
-  assert(!factoryFunctions.includes(removedFunction), `removed factory function found: ${removedFunction}`);
-}
-const factoryConstructor = factory.abi.find((item) => item.type === "constructor");
-assert(
-  factoryConstructor?.inputs.length === 5
-    && factoryConstructor.inputs[2]?.name === "rebalanceExecutor_"
-    && factoryConstructor.inputs[3]?.name === "pricingResolver_",
-  "factory fixed dependencies are not constructor-wired",
-);
-assert(
-  factoryErrors.has("FailedDeployment()") && !factoryErrors.has("CloneDeploymentFailed()"),
-  "factory does not expose the pinned OpenZeppelin clone-deployment error",
-);
-assert(
-  !calculatorFunctions.includes("effectiveTargetWeights"),
-  "removed target-weight calculator surface remains",
-);
-assert(
-  !assetMarketRegistryFunctions.includes("isActiveMarketForAsset"),
-  "removed active-market helper remains",
-);
-for (const legacyFunction of [
-  "finalizeTerminalShutdown",
-  "proposeStrategyWithMarkets",
-]) {
-  assert(!vaultFunctions.includes(legacyFunction), `legacy vault function found: ${legacyFunction}`);
-}
-assert(
-  ![...vaultEvents].some((signature) => signature.startsWith("TerminalShutdown")),
-  "registry-driven terminal-shutdown event found in vault ABI",
-);
-assert(
-  pricingResolverFunctions.includes("validatePricing")
-    && pricingResolverFunctions.includes("resolvePricing"),
-  "user-supplied pricing resolver surface is absent",
-);
-const resolvePricingAbi = pricingResolver.abi.find(
-  (item) => item.type === "function" && item.name === "resolvePricing",
-);
-assert(
-  resolvePricingAbi?.outputs.length === 2,
-  "pricing resolver still returns redundant configuration data",
-);
-assert(
-  !pricingResolverFunctions.includes("trustedOracles")
-    && !factoryFunctions.includes("oracleRegistry"),
-  "removed oracle-registry dependency remains in a production ABI",
-);
-const pricingResolverConstructor = pricingResolver.abi.find((item) => item.type === "constructor");
-assert(
-  pricingResolverConstructor?.inputs.length === 2,
-  "pricing resolver constructor still depends on an oracle registry",
-);
-const assetMarketRegistryConstructor = assetMarketRegistry.abi.find(
-  (item) => item.type === "constructor",
-);
-assert(
-  assetMarketRegistryConstructor?.inputs.length === 2
-    && !assetMarketRegistryFunctions.includes("weth")
-    && !assetMarketRegistryFunctions.includes("usdg")
-    && !assetMarketRegistryFunctions.includes("wethUsdgPool"),
-  "V3 pricing still has a deployment-time WETH/USDG pool dependency",
-);
-assert(
-  v3RoutePriceFeedFunctions.includes("marketRegistry")
-    && v3RoutePriceFeedFunctions.includes("quoteAssetInUsd")
-    && !v3RoutePriceFeedFunctions.includes("wethUsdgPool"),
-  "V3 pricing does not read the shared quote-token/USD registry",
-);
-assert(
-  registeredV3AdapterFunctions.includes("executeSwap"),
-  "generic V3 adapter executeSwap surface is absent",
-);
-assert(
-  !registeredV3AdapterFunctions.includes("marketIdFromData"),
-  "V3 execution remains coupled to a pricing market ID",
-);
-assert(
-  !registeredV3AdapterFunctions.includes("settlementToken"),
-  "generic V3 execution remains coupled to a settlement token",
-);
-const registeredV3AdapterConstructor = registeredV3Adapter.abi.find(
-  (item) => item.type === "constructor",
-);
-assert(
-  registeredV3AdapterConstructor?.inputs.length === 2,
-  "generic V3 adapter constructor has unexpected route-policy dependencies",
-);
-const entryExitRouterConstructor = entryExitRouter.abi.find(
-  (item) => item.type === "constructor",
-);
-assert(
-  entryExitRouterConstructor?.inputs.length === 1
-    && entryExitRouterConstructor.inputs[0]?.name === "factory_"
-    && !entryExitRouterFunctions.includes("settlementToken")
-    && !entryExitRouterFunctions.includes("owner")
-    && !entryExitRouterFunctions.includes("setTradeAdapterApproved")
-    && !entryExitRouterFunctions.includes("isTradeAdapterApproved")
-    && entryExitRouterFunctions.includes("enterWithToken")
-    && entryExitRouterFunctions.includes("redeemToToken"),
-  "entry/exit router retains independent administration or unexpected dependencies",
-);
-assert(
-  factoryFunctions.includes("setAdapterPermissions")
-    && factoryFunctions.includes("isAdapterApproved")
-    && !factoryFunctions.includes("setTradeAdapterApproved")
-    && !factoryFunctions.includes("isTradeAdapterApproved"),
-  "factory adapter permissions are not the sole capability registry",
-);
-for (const removedApprovalGetter of ["Rebalance", "Entry", "Exit"].map(
-  (approvalType) => `is${approvalType}AdapterApproved`,
-)) {
-  assert(
-    !factoryFunctions.includes(removedApprovalGetter),
-    `removed adapter approval getter found: ${removedApprovalGetter}`,
-  );
-}
-assert(
-  factoryEvents.has("AdapterPermissionsSet(address,bool,bool,bool)")
-    && !factoryEvents.has("TradeAdapterApprovalChanged(address,bool)"),
-  "factory exposes an ambiguous or incomplete adapter-permissions event",
-);
-assert(
-  adapterPermissionsLayout?.numberOfBytes === "32"
-    && adapterPermissionsLayout.members.length === 3
-    && adapterPermissionsLayout.members.every((member) => member.slot === "0")
-    && adapterPermissionsLayout.members.map((member) => member.offset).join(",") === "0,1,2",
-  "factory adapter permissions are not packed into one storage slot per adapter",
-);
-assert(
-  factoryFunctions.includes("setVaultDepositsPaused")
-    && factoryFunctions.includes("vaultDepositsPaused"),
-  "per-vault deposit pause controls are absent",
-);
-assert(
-  factoryEvents.has("VaultDepositsPauseChanged(address,bool)"),
-  "per-vault deposit pause event is absent",
-);
-const createVaultAbi = factory.abi.find(
-  (item) => item.type === "function" && item.name === "createVault",
-);
-const vaultInitComponents = createVaultAbi?.inputs?.[0]?.components ?? [];
-assert(
-  vaultInitComponents.some((component) => component.name === "initialPricingConfigs"),
-  "factory createVault tuple does not accept initialPricingConfigs",
-);
-assert(
-  !vaultInitComponents.some((component) => component.name === "initialMarketIds"),
-  "factory createVault tuple still accepts initialMarketIds",
-);
-const vaultTypesSource = readFileSync(join(contracts, "src", "VaultTypes.sol"), "utf8");
-assert(!/UniswapV4|PricingSource[^}]*V4/su.test(vaultTypesSource), "V4 pricing source found");
-assert(
-  !/creatorFee|CreatorFee|MAX_CREATOR_FEE/u.test(vaultTypesSource)
-    && !vaultFunctions.some((name) => /creatorFee/i.test(name))
-    && !factoryFunctions.some((name) => /creatorFee/i.test(name)),
-  "obsolete creator-fee terminology remains in a production ABI",
-);
-const storageLabels = new Set(canonicalLayout.map((entry) => entry.label));
-for (const removedField of [
-  "_assetRegistry",
-  "_protocolFeeShareBps",
-  "_strategicRebalanceStartedAt",
-  "_strategyProposalPending",
-  "_strategicRebalanceActive",
-  "_challengeActive",
-  "_authorizedExecutor",
-  "_marketIdForAsset",
-  "_priceFeedForAsset",
-  "_pricingSourceForAsset",
-  "_primaryPriceSourceForAsset",
-  "_maxStalenessForAsset",
-  "_pricingConfiguredForAsset",
-  "_primaryMaxStalenessForAsset",
-  "_quoteTokenForAsset",
-]) {
-  assert(!storageLabels.has(removedField), `obsolete vault storage remains: ${removedField}`);
-}
-assert(
-  storageLabels.has("_pinnedPricingForAsset"),
-  "canonical pinned-pricing storage record is absent",
-);
-assert(!strategyFunctions.includes("initialize"), "strategy initializer found");
-assert(
-  !strategyFunctions.some((name) => /upgrade|implementation/i.test(name)),
-  "upgrade surface found in strategy ABI",
-);
-assert(vaultFunctions.includes("strategyModule"), "strategy module identity is not exposed");
-assert(
-  vaultFunctions.includes("strategyModuleCodehash"),
-  "strategy module codehash is not exposed",
-);
-assert(vaultFunctions.includes("viewModule"), "view module identity is not exposed");
-assert(vaultFunctions.includes("viewModuleCodehash"), "view module codehash is not exposed");
+const createVault = functions(compiled.OTFFactory).find((item) => item.name === "createVault");
+assert(createVault.inputs.length === 3 && createVault.inputs[0].type === "tuple" && createVault.inputs[1].type === "tuple" && createVault.inputs[2].type === "bytes", "createVault does not accept params, snapshot, signature");
+const snapshotComponents = createVault.inputs[1].components.map((input) => `${input.name}:${input.type}`);
+assert(snapshotComponents.join("|") === "chainId:uint256|factory:address|creator:address|constituents:address[]|tokenDecimals:uint8[]|marketCapsUsdWad:uint256[]|unitPricesUsdWad:uint256[]|snapshotTime:uint64|expiry:uint64|calculationVersion:uint32|nonce:uint256", "FormationSnapshot ABI is not the canonical array form");
+const factoryCtor = constructor(compiled.OTFFactory);
+assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,address,address,address,uint16,uint16", "factory immutable dependency constructor changed");
 
-for (const item of viewModule.abi) {
-  assert(
-    item.type !== "fallback" && item.type !== "receive",
-    `view module exposes a ${item.type} entry point`,
-  );
-  if (item.type !== "function") continue;
-  assert(
-    item.stateMutability === "view" || item.stateMutability === "pure",
-    `view-module function is mutative: ${abiSignature(item)}`,
-  );
-}
+const routerFunctions = functions(compiled.OTFEntryExitRouter);
+const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
+assert(JSON.stringify(routerMutating) === JSON.stringify(["mintFromToken", "redeemToToken", "swapBasketToBasket", "swapDirect"].sort()), "router exposes an untyped mutating entrypoint");
+for (const name of ["swapDirect", "mintFromToken", "redeemToToken", "swapBasketToBasket", "factory", "uniswapV3Factory", "uniswapV3Router"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
 
-const canonicalSelectors = new Map();
-function selectorFor(compiled, item) {
-  return Object.entries(compiled.methodIdentifiers).find(([signature]) =>
-    signature.startsWith(`${item.name}(`),
-  )?.[1];
-}
-for (const compiled of [vault, viewModule]) {
-  for (const item of compiled.abi) {
-    if (item.type !== "function") continue;
-    const signature = abiSignature(item);
-    const selector = selectorFor(compiled, item);
-    assert(selector !== undefined, `missing selector for ${signature}`);
-    const existing = canonicalSelectors.get(selector);
-    assert(
-      existing === undefined || existing === signature,
-      `canonical ABI selector collision: ${existing} and ${signature} share ${selector}`,
-    );
-    canonicalSelectors.set(selector, signature);
-  }
-}
-for (const [signature, selector] of Object.entries(viewModule.methodIdentifiers)) {
-  assert(
-    vault.methodIdentifiers[signature] === undefined || vault.methodIdentifiers[signature] === selector,
-    `vault view-route selector conflicts with canonical selector ${signature}`,
-  );
-}
-assert(
-  /fallback\(\) external[\s\S]*_delegateView\(\)/u.test(
-    readFileSync(join(contracts, "src", "ManagedOTFVault.sol"), "utf8"),
-  ),
-  "vault fallback does not delegate unknown canonical view selectors",
-);
+const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
+assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
+assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents is not 20");
+const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
+assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
 
-console.log(
-  `Contract security checks passed: ERC-7621 ID 0x${erc7621InterfaceId.toString(16)}, ${canonicalLayout.length} canonical storage entries, and ${productionContracts.length} production bytecode limits verified.`,
-);
+const tokenNames = functionNames(compiled.OTFToken);
+assert(tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "fixed OTF supply surface is incomplete");
+assert(![...tokenNames].some((name) => /^(mint|burn|set.*Supply|increaseSupply|decreaseSupply)$/iu.test(name)), "OTF token exposes a mutable supply function");
+assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].inputs[0].type === "address", "OTF token holder constructor changed");
+
+const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
+assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
+assert(/schemaVersion:\s*10/u.test(deploySource), "deployment script does not write schema 10");
+assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
+const formationCliSource = readFileSync(join(root, "scripts", "formation-snapshot.mjs"), "utf8");
+assert(!/privateKeyToAccount|\.signTypedData\s*\(/u.test(formationCliSource), "offline formation CLI must not handle raw authority keys");
+console.log(`Security checks passed for ${production.join(", ")}.`);

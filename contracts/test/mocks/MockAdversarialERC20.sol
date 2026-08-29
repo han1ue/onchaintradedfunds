@@ -32,6 +32,7 @@ contract MockAdversarialERC20 {
     ReturnBehavior public returnBehavior;
     TransferMutation public transferMutation;
     uint256 public mutationAmount;
+    bool public ignoreApprovals;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -51,11 +52,23 @@ contract MockAdversarialERC20 {
         mutationAmount = amount;
     }
 
+    function setIgnoreApprovals(bool ignored) external {
+        ignoreApprovals = ignored;
+    }
+
     function mint(address to, uint256 amount) external {
         if (to == address(0)) revert InvalidReceiver();
         totalSupply += amount;
         balanceOf[to] += amount;
         emit Transfer(address(0), to, amount);
+    }
+
+    function burn(address from, uint256 amount) external {
+        uint256 balance = balanceOf[from];
+        if (balance < amount) revert InsufficientBalance();
+        balanceOf[from] = balance - amount;
+        totalSupply -= amount;
+        emit Transfer(from, address(0), amount);
     }
 
     function transfer(address to, uint256 amount) external returns (bool) {
@@ -64,8 +77,10 @@ contract MockAdversarialERC20 {
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        emit Approval(msg.sender, spender, amount);
+        if (!ignoreApprovals) {
+            allowance[msg.sender][spender] = amount;
+            emit Approval(msg.sender, spender, amount);
+        }
         return _returnResult();
     }
 
@@ -122,4 +137,3 @@ contract MockAdversarialERC20 {
         }
     }
 }
-

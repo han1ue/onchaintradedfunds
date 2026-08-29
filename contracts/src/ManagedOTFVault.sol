@@ -1,1118 +1,596 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {
-    IProtocolPortfolioLimits,
-    IProtocolTokenFeePolicy,
-    ManagedOTFVaultStorage
-} from "./ManagedOTFVaultStorage.sol";
-import { IAssetPricingResolver } from "./AssetPricingResolver.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
-import { PortfolioCalculator } from "./PortfolioCalculator.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { ManagedOTFVaultStorage, IOTFFactoryFeePolicy } from "./ManagedOTFVaultStorage.sol";
+import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-import {
-    AssetPricingConfig,
-    PinnedAssetPricing,
-    PricingSource,
-    RebalanceRecord,
-    StrategyVersion,
-    TradeExecutionRecord,
-    TradeInstruction,
-    VaultInitParams
-} from "./VaultTypes.sol";
+import { VaultInitParams } from "./VaultTypes.sol";
 
-interface IInitialAssetProvider {
-    function provideInitialAssets(address[] calldata assets, uint256[] calldata amounts) external;
-}
-
+/// @notice Oracleless fixed-basket OTF share token.
+/// @dev Formation data and the expense policy are immutable after clone initialization.
 contract ManagedOTFVault is ManagedOTFVaultStorage {
     using SafeTransferLib for address;
 
-    PortfolioCalculator private immutable _portfolioCalculator;
-    address private immutable _strategyModule;
-    bytes32 private immutable _strategyModuleCodehash;
-    address private immutable _viewModule;
-    bytes32 private immutable _viewModuleCodehash;
-
-    event AssetPricingPinned(
-        address indexed asset,
-        PricingSource indexed source,
-        address indexed priceFeed,
-        address quoteToken,
-        address primarySource,
-        bytes32 marketId
-    );
-
-    constructor(
-        PortfolioCalculator portfolioCalculator_,
-        address strategyModule_,
-        address viewModule_
-    ) {
-        if (address(portfolioCalculator_).code.length == 0) {
-            revert AssetNotContract(address(portfolioCalculator_));
-        }
-        if (strategyModule_.code.length == 0) revert AssetNotContract(strategyModule_);
-        if (viewModule_.code.length == 0) revert AssetNotContract(viewModule_);
+    constructor() {
+        // The implementation itself must never be initialized or used as a vault.
         _initialized = true;
-        _portfolioCalculator = portfolioCalculator_;
-        _strategyModule = strategyModule_;
-        _strategyModuleCodehash = _strategyModule.codehash;
-        _viewModule = viewModule_;
-        _viewModuleCodehash = _viewModule.codehash;
     }
 
     function initialize(VaultInitParams calldata params) external nonReentrant {
         if (_initialized) revert AlreadyInitialized();
-        if (msg.sender.code.length == 0 || _factory != address(0)) revert UnauthorizedFactory();
-        if (params.manager == address(this) || params.feeRecipient == address(this)) {
-            revert InvalidRoleAddress(address(this));
+        if (msg.sender.code.length == 0) revert UnauthorizedFactory();
+        if (
+            params.creator == address(0) || params.expenseBeneficiary == address(0)
+                || params.entryExitRouter == address(0) || params.feeCollector == address(0)
+        ) revert ZeroAddress();
+        if (params.creator == address(this) || params.expenseBeneficiary == address(this)) {
+            revert InvalidReceiver(address(this));
         }
-        _factory = msg.sender;
-        IProtocolPortfolioLimits factoryPolicy = IProtocolPortfolioLimits(msg.sender);
-        _rebalanceExecutor = factoryPolicy.rebalanceExecutor();
-        _feeCollector = factoryPolicy.feeCollector();
-        _pricingResolverAddress = factoryPolicy.pricingResolver();
-        _assetMarketRegistry = factoryPolicy.assetMarketRegistry();
-        if (_rebalanceExecutor.code.length == 0) revert AssetNotContract(_rebalanceExecutor);
-        if (_feeCollector.code.length == 0) revert AssetNotContract(_feeCollector);
-        if (_pricingResolverAddress.code.length == 0) {
-            revert AssetNotContract(_pricingResolverAddress);
+        if (params.entryExitRouter.code.length == 0) {
+            revert InvalidDependency(params.entryExitRouter);
         }
+        if (params.feeCollector.code.length == 0) revert InvalidDependency(params.feeCollector);
+        uint256 length = params.constituents.length;
+        if (length == 0 || length > ProtocolConstants.MAX_CONSTITUENTS) {
+            revert InvalidArrayLength(ProtocolConstants.MAX_CONSTITUENTS, length);
+        }
+        if (params.relativeQuantities.length != length) {
+            revert InvalidArrayLength(length, params.relativeQuantities.length);
+        }
+        if (
+            params.annualCreatorExpenseRatioBps
+                > ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
+        ) {
+            revert ExpenseRatioTooHigh(
+                params.annualCreatorExpenseRatioBps,
+                ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
+            );
+        }
+        if (
+            params.formationOtfWeightBps > BPS
+                || params.formationCalculationVersion
+                    != ProtocolConstants.FORMATION_CALCULATION_VERSION
+        ) {
+            revert InvalidFormationMetadata(
+                params.formationOtfWeightBps, params.formationCalculationVersion
+            );
+        }
+
         _initialized = true;
         _initializeERC20(params.name, params.symbol, 18);
+        _factory = msg.sender;
+        _creator = params.creator;
+        _expenseBeneficiary = params.expenseBeneficiary;
+        _entryExitRouter = params.entryExitRouter;
+        _feeCollector = params.feeCollector;
+        _annualCreatorExpenseRatioBps = params.annualCreatorExpenseRatioBps;
+        _formationOtfWeightBps = params.formationOtfWeightBps;
+        _formationSnapshotTime = params.formationSnapshotTime;
+        _formationCalculationVersion = params.formationCalculationVersion;
+        _formationSnapshotDigest = params.formationSnapshotDigest;
 
-        _feeRecipient = params.feeRecipient;
-        _managerFeeBpsPerYear = params.managerFeeBpsPerYear;
-        _maxNavLossBps = params.maxNavLossBps;
-        _maxWeightDeviationBps = params.maxWeightDeviationBps;
-        _challengeWeightDeviationBps = params.challengeWeightDeviationBps;
-
-        _configureInitialPricing(params.initialAssets, params.initialPricingConfigs);
-        _validateInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
-        _storeInitialPortfolio(params.initialAssets, params.initialTargetWeightsBps);
-        IInitialAssetProvider(msg.sender)
-            .provideInitialAssets(params.initialAssets, params.initialAmounts);
-        _validateInitialBalances(params.initialAssets, params.initialAmounts);
-
-        _manager = params.manager;
-        _authorizedExecutors.push(params.manager);
-        _executorIndexPlusOne[params.manager] = 1;
+        for (uint256 i = 0; i < length; i++) {
+            address asset = params.constituents[i];
+            if (asset == address(0) || asset == address(this) || asset.code.length == 0) {
+                revert InvalidConstituent(asset);
+            }
+            if (_relativeQuantity[asset] != 0) revert DuplicateConstituent(asset);
+            uint256 quantity = params.relativeQuantities[i];
+            if (quantity == 0) revert InvalidRelativeQuantity(asset);
+            _assets.push(asset);
+            _relativeQuantity[asset] = quantity;
+        }
 
         uint64 timestamp = uint64(block.timestamp);
-        _lastFeeAccrualTimestamp = timestamp;
-        _lastCompletedStrategyTimestamp = timestamp;
-
-        _strategyVersions.push(
-            StrategyVersion({
-                proposedAt: timestamp,
-                activatedAt: timestamp,
-                completedAt: timestamp,
-                author: params.manager,
-                rationale: params.initialStrategyRationale
-            })
+        _feeEpochTimestamp = timestamp;
+        _lastFeeCheckpointTimestamp = timestamp;
+        emit VaultInitialized(
+            msg.sender, params.creator, params.expenseBeneficiary, params.formationSnapshotDigest
         );
-        for (uint256 i = 0; i < params.initialAssets.length; i++) {
-            _strategyAssets[0].push(params.initialAssets[i]);
-            _strategyTargetWeightsBps[0].push(params.initialTargetWeightsBps[i]);
+    }
+
+    // Formation and policy views
+
+    function assets() external view returns (address[] memory) {
+        return _assets;
+    }
+
+    function factory() external view returns (address) {
+        return _factory;
+    }
+
+    function creator() external view returns (address) {
+        return _creator;
+    }
+
+    function expenseBeneficiary() external view returns (address) {
+        return _expenseBeneficiary;
+    }
+
+    function feeCollector() external view returns (address) {
+        return _feeCollector;
+    }
+
+    function entryExitRouter() external view returns (address) {
+        return _entryExitRouter;
+    }
+
+    function annualCreatorExpenseRatioBps() external view returns (uint16) {
+        return _annualCreatorExpenseRatioBps;
+    }
+
+    function formationOtfWeightBps() external view returns (uint16) {
+        return _formationOtfWeightBps;
+    }
+
+    function formationSnapshotTime() external view returns (uint64) {
+        return _formationSnapshotTime;
+    }
+
+    function formationCalculationVersion() external view returns (uint32) {
+        return _formationCalculationVersion;
+    }
+
+    function formationSnapshotDigest() external view returns (bytes32) {
+        return _formationSnapshotDigest;
+    }
+
+    function relativeQuantity(address asset) external view returns (uint256) {
+        return _relativeQuantity[asset];
+    }
+
+    function accountedBalance(address asset) external view returns (uint256) {
+        return _accountedBalance[asset];
+    }
+
+    function accountedBalances() external view returns (uint256[] memory balances) {
+        uint256 length = _assets.length;
+        balances = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            balances[i] = _accountedBalance[_assets[i]];
         }
-
-        _mint(address(this), ProtocolConstants.MINIMUM_LIQUIDITY_SHARES);
-        _mint(
-            params.manager, params.initialShareSupply - ProtocolConstants.MINIMUM_LIQUIDITY_SHARES
-        );
-
-        uint256[] memory initialWeights = _weightsAsUint256();
-        emit OwnershipTransferred(address(0), params.manager);
-        emit Rebalanced(params.initialAssets, initialWeights);
-        emit VaultInitialized(msg.sender, params.manager, params.feeRecipient);
     }
 
-    // ERC-165 / ERC-173
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == ERC165_INTERFACE_ID || interfaceId == ERC173_INTERFACE_ID
-            || interfaceId == ERC7621_INTERFACE_ID;
+    function shutdown() external view returns (bool) {
+        return _shutdown;
     }
 
-    /// @notice Returns ERC-1046 metadata for this OTF ERC-20 share token.
+    function shutdownAt() external view returns (uint64) {
+        return _shutdownAt;
+    }
+
+    function lastFeeCheckpointTimestamp() external view returns (uint64) {
+        return _lastFeeCheckpointTimestamp;
+    }
+
+    function feeShareRemainderWad() external view returns (uint256) {
+        (, uint256 remainderWad) = _feeTargetAt(uint64(block.timestamp));
+        return remainderWad;
+    }
+
+    function protocolFeeSplitRemainderBps() external view returns (uint16) {
+        return _protocolFeeSplitRemainderBps;
+    }
+
     function tokenURI() external view returns (string memory) {
-        return _protocolOtfTokenURI();
+        return IOTFFactoryFeePolicy(_factory).otfTokenURI();
     }
 
-    function owner() external view returns (address) {
-        return _manager;
-    }
-
-    // Routed protocol reads. The logic and storage interpretation live in ManagedOTFVaultView.
-    function assets() external returns (address[] memory value) {
-        value;
-        _delegateView();
-    }
-
-    function factory() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function manager() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function feeRecipient() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function feeCollector() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function rebalanceExecutor() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function managerFeeBpsPerYear() external returns (uint16 value) {
-        value;
-        _delegateView();
-    }
-
-    function maxNavLossBps() external returns (uint16 value) {
-        value;
-        _delegateView();
-    }
-
-    function maxWeightDeviationBps() external returns (uint16 value) {
-        value;
-        _delegateView();
-    }
-
-    function challengeWeightDeviationBps() external returns (uint16 value) {
-        value;
-        _delegateView();
-    }
-
-    function lastFeeAccrualTimestamp() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function lastCompletedStrategyTimestamp() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function pendingStrategyProposedAt() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function pendingStrategyActivationTime() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function rebalanceCount() external returns (uint256 value) {
-        value;
-        _delegateView();
-    }
-
-    function escrowedManagerFeeShares() external returns (uint256 value) {
-        value;
-        _delegateView();
-    }
-
-    function forfeitedManagerFeeShares() external returns (uint256 value) {
-        value;
-        _delegateView();
-    }
-
-    function strategicRebalanceActive() external returns (bool value) {
-        value;
-        _delegateView();
-    }
-
-    function strategyProposalPending() external returns (bool value) {
-        value;
-        _delegateView();
-    }
-
-    function challengeActive() external returns (bool value) {
-        value;
-        _delegateView();
-    }
-
-    function challengeCaller() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function challengeStartedAt() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function challengeDeadline() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function targetWeightBps(address asset) external returns (uint16 value) {
-        asset;
-        value;
-        _delegateView();
-    }
-
-    function authorizedExecutor(address executor) external returns (bool value) {
-        executor;
-        value;
-        _delegateView();
-    }
-
-    function challengeRewardShares(address account) external returns (uint256 value) {
-        account;
-        value;
-        _delegateView();
-    }
-
-    function sunset() external returns (bool value) {
-        value;
-        _delegateView();
-    }
-
-    function sunsetAt() external returns (uint64 value) {
-        value;
-        _delegateView();
-    }
-
-    function tradeExecutionCount() external returns (uint256 value) {
-        value;
-        _delegateView();
-    }
-
-    function pendingManager() external returns (address value) {
-        value;
-        _delegateView();
-    }
-
-    function transferOwnership(address newOwner) external {
-        newOwner;
-        _delegateStrategy();
-    }
-
-    function acceptOwnership() external {
-        _delegateStrategy();
-    }
-
-    // ERC-7621 views
-
-    function getConstituents()
-        external
-        returns (address[] memory tokens, uint256[] memory weights)
-    {
-        tokens;
-        weights;
-        _delegateView();
-    }
-
-    function totalConstituents() external returns (uint256 count) {
-        count;
-        _delegateView();
-    }
-
-    function getReserve(address token) public returns (uint256 balance) {
-        token;
-        balance;
-        _delegateView();
-    }
-
-    function getWeight(address token) external returns (uint256 weight) {
-        token;
-        weight;
-        _delegateView();
-    }
-
-    function isConstituent(address token) public returns (bool constituent) {
-        token;
-        constituent;
-        _delegateView();
-    }
-
-    function totalBasketValue() public returns (uint256 value) {
-        value;
-        _delegateView();
-    }
-
-    // Protocol views
-
-    function assetMarketRegistry() external returns (address registry) {
-        registry;
-        _delegateView();
-    }
-
-    function pricingConfigForAsset(address asset)
-        external
-        returns (
-            bool configured,
-            PricingSource source,
-            address quoteToken,
-            address primarySource,
-            address secondarySource,
-            address normalizedPriceFeed,
-            uint32 primaryMaxStaleness,
-            uint32 secondaryMaxStaleness
-        )
-    {
-        asset;
-        configured;
-        source;
-        quoteToken;
-        primarySource;
-        secondarySource;
-        normalizedPriceFeed;
-        primaryMaxStaleness;
-        secondaryMaxStaleness;
-        _delegateView();
-    }
-
-    function pruneRetiredAssets() external returns (uint256 removed) {
-        removed;
-        _delegateStrategy();
-    }
-
-    function totalAssetsValue() public returns (uint256 nav) {
-        nav;
-        _delegateView();
-    }
-
-    function navPerShare() external returns (uint256 nav) {
-        nav;
-        _delegateView();
-    }
-
-    function currentWeightsBps() public returns (uint16[] memory weights) {
-        weights;
-        _delegateView();
-    }
-
-    function currentWeight(address token) public returns (uint256 weight) {
-        token;
-        weight;
-        _delegateView();
-    }
-
-    function getWeightBands(address token)
-        external
-        returns (
-            uint256 challengeLower,
-            uint256 challengeUpper,
-            uint256 completionLower,
-            uint256 completionUpper
-        )
-    {
-        token;
-        challengeLower;
-        challengeUpper;
-        completionLower;
-        completionUpper;
-        _delegateView();
-    }
-
-    function isWithinTargetBands() public returns (bool withinBands) {
-        withinBands;
-        _delegateView();
-    }
-
-    function isWithinChallengeBands() public returns (bool withinBands) {
-        withinBands;
-        _delegateView();
-    }
-
-    function canProposeStrategy() public returns (bool allowed) {
-        allowed;
-        _delegateView();
-    }
-
-    function challengeTimeRemaining() external returns (uint256 remaining) {
-        remaining;
-        _delegateView();
-    }
-
-    function nextStrategyChangeTime() public returns (uint256 timestamp) {
-        timestamp;
-        _delegateView();
-    }
-
-    function feeState() public returns (FeeState state) {
-        state;
-        _delegateView();
-    }
-
-    /// @notice Protocol fee share after the actual-and-target OTF weight incentive is applied.
-    /// @dev Missing constituents and failed oracle-valued weight reads preserve the base fee share.
-    function effectiveProtocolFeeShareBps() public view returns (uint16 effectiveShareBps) {
-        return IProtocolTokenFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
-    }
-
-    function authorizedExecutors() external returns (address[] memory executors) {
-        executors;
-        _delegateView();
-    }
-
-    function recentRebalanceCount() external returns (uint256 count) {
-        count;
-        _delegateView();
-    }
-
-    function recentRebalanceRecord(uint256 index) external returns (RebalanceRecord memory record) {
-        index;
-        record;
-        _delegateView();
-    }
-
-    function navLossBudgetState()
-        external
-        returns (uint64 recoveryAt, uint16 usedLossBps, uint16 maximumLossBps)
-    {
-        recoveryAt;
-        usedLossBps;
-        maximumLossBps;
-        _delegateView();
-    }
-
-    function recentTradeExecutionCount() external returns (uint256 count) {
-        count;
-        _delegateView();
-    }
-
-    function recentTradeExecutionRecord(uint256 index)
-        external
-        returns (TradeExecutionRecord memory record)
-    {
-        index;
-        record;
-        _delegateView();
-    }
-
-    // ERC-7621 entry and exit
-
-    function previewContribute(uint256[] calldata amounts) public returns (uint256 lpAmount) {
-        amounts;
-        lpAmount;
-        _delegateView();
-    }
-
-    function contribute(uint256[] calldata amounts, address receiver, uint256 minShares)
-        external
-        onlyInitialized
-        nonReentrant
-        returns (uint256 lpAmount)
-    {
-        if (receiver == address(0)) revert ZeroAddress();
-        if (receiver == address(this)) revert InvalidReceiver(receiver);
-        if (amounts.length != _assets.length) {
-            revert LengthMismatch(_assets.length, amounts.length);
-        }
-        bool anyAmount;
-        for (uint256 i = 0; i < amounts.length; i++) {
-            if (amounts[i] != 0) {
-                anyAmount = true;
-                break;
+    /// @notice Returns false (rather than crediting donations) if any constituent is under-backed.
+    function backingIsSound() external view returns (bool) {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            try IERC20(asset).balanceOf(address(this)) returns (uint256 actual) {
+                if (actual < _accountedBalance[asset]) return false;
+            } catch {
+                return false;
             }
         }
-        if (!anyAmount) revert ZeroAmount();
+        return true;
+    }
 
-        _requireDepositsOpen();
-        _accrueFees();
-        lpAmount = _previewContributeCurrentSupply(amounts);
-        if (lpAmount < minShares) revert InsufficientShares(minShares, lpAmount);
-        if (lpAmount == 0) revert InsufficientShares(1, 0);
+    // Expense-ratio accounting
 
-        // Pull and verify every constituent before minting. This avoids exposing temporarily
-        // unbacked shares during token callbacks; the guard blocks nested vault mutations.
-        for (uint256 i = 0; i < _assets.length; i++) {
-            _pullExact(_assets[i], msg.sender, amounts[i]);
+    function pendingExpenseFeeShares() public view returns (uint256 pendingShares) {
+        if (_shutdown || _annualCreatorExpenseRatioBps == 0 || _feeEpochSupply == 0) return 0;
+        (uint256 targetShares,) = _feeTargetAt(uint64(block.timestamp));
+        if (targetShares > _feeEpochAccruedShares) {
+            pendingShares = targetShares - _feeEpochAccruedShares;
         }
-        _mint(receiver, lpAmount);
-        emit Contributed(msg.sender, receiver, lpAmount, amounts);
     }
 
-    function previewWithdraw(uint256 lpAmount) public returns (uint256[] memory amounts) {
-        lpAmount;
-        amounts;
-        _delegateView();
+    function previewExpenseFees()
+        external
+        view
+        returns (
+            uint256 totalFeeShares,
+            uint256 creatorShares,
+            uint256 protocolShares,
+            uint16 effectiveProtocolShareBps
+        )
+    {
+        totalFeeShares = pendingExpenseFeeShares();
+        effectiveProtocolShareBps =
+            IOTFFactoryFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
+        if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
+        (creatorShares, protocolShares,) =
+            _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);
     }
 
-    function withdraw(uint256 lpAmount, address receiver, uint256[] calldata minAmounts)
+    function checkpointFees()
         external
         onlyInitialized
         nonReentrant
-        returns (uint256[] memory amounts)
+        returns (uint256 totalFeeShares)
     {
-        if (lpAmount == 0) revert ZeroAmount();
-        if (receiver == address(0)) revert ZeroAddress();
-        if (receiver == address(this)) revert InvalidReceiver(receiver);
-        if (minAmounts.length != _assets.length) {
-            revert LengthMismatch(_assets.length, minAmounts.length);
-        }
-        _accrueFees();
-        amounts = _withdraw(lpAmount, receiver, msg.sender, minAmounts);
-        emit Withdrawn(msg.sender, receiver, lpAmount, amounts);
+        totalFeeShares = _accrueFees();
     }
 
-    // Existing explicit-share convenience entry and delegated exit
+    // Router-only normal settlement
 
-    function previewMint(uint256 shares) public returns (uint256[] memory amountsIn) {
-        shares;
-        amountsIn;
-        _delegateView();
+    function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
+        if (shares == 0) revert ZeroShares();
+        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        amountsIn = _previewMintWithSupply(shares, effectiveSupply);
     }
 
     function previewMaxMint(uint256[] calldata maxAmountsIn)
         external
+        view
         returns (uint256 shares, uint256[] memory amountsIn)
     {
-        maxAmountsIn;
-        shares;
-        amountsIn;
-        _delegateView();
+        uint256 length = _assets.length;
+        if (maxAmountsIn.length != length) {
+            revert InvalidArrayLength(length, maxAmountsIn.length);
+        }
+        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        uint256 denominator = effectiveSupply == 0 ? FORMATION_SHARE_UNIT : effectiveSupply;
+        shares = type(uint256).max;
+        bool anyQuantity;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 quantity = effectiveSupply == 0
+                ? _relativeQuantity[_assets[i]]
+                : _accountedBalance[_assets[i]];
+            if (quantity == 0) continue;
+            anyQuantity = true;
+            uint256 assetShares = Math.mulDiv(maxAmountsIn[i], denominator, quantity);
+            if (assetShares < shares) shares = assetShares;
+        }
+        if (!anyQuantity) shares = 0;
+        if (effectiveSupply == 0 && shares < FORMATION_SHARE_UNIT) shares = 0;
+        if (shares == 0) return (0, new uint256[](length));
+        amountsIn = _previewMintWithSupply(shares, effectiveSupply);
     }
 
-    function previewRedeem(uint256 shares) public returns (uint256[] memory amountsOut) {
-        shares;
-        amountsOut;
-        _delegateView();
+    function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
+        if (shares == 0) revert ZeroShares();
+        uint256 effectiveSupply = _totalSupply + pendingExpenseFeeShares();
+        amountsOut = _previewRedeemWithSupply(shares, effectiveSupply);
     }
 
-    function mintWithBasket(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
+    function routerMint(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
         external
         onlyInitialized
+        onlyRouter
         nonReentrant
         returns (uint256[] memory amountsIn)
     {
+        if (_shutdown) revert VaultShutdown();
         if (receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidReceiver(receiver);
         if (shares == 0) revert ZeroShares();
-        if (maxAmountsIn.length != _assets.length) revert InvalidArrayLength();
-
-        _requireDepositsOpen();
-        _accrueFees();
-        uint256 supply = _totalSupply;
-        amountsIn = new uint256[](_assets.length);
-        // Pull and verify every constituent before minting. Any later failure atomically reverts
-        // all transfers, while the guard prevents a token callback from entering the vault again.
-        for (uint256 i = 0; i < _assets.length; i++) {
-            address asset = _assets[i];
-            uint256 required = Math.mulDiv(
-                shares, IERC20(asset).balanceOf(address(this)), supply, Math.Rounding.Ceil
-            );
-            if (required > maxAmountsIn[i]) revert AmountTooHigh(asset, required, maxAmountsIn[i]);
-            amountsIn[i] = required;
-            _pullExact(asset, msg.sender, required);
+        uint256 length = _assets.length;
+        if (maxAmountsIn.length != length) {
+            revert InvalidArrayLength(length, maxAmountsIn.length);
         }
+
+        _accrueFees();
+        _requireBackingSound();
+        uint256[] memory balancesBefore = _actualBalances();
+        uint256[] memory senderBalancesBefore = _basketBalances(msg.sender);
+        amountsIn = _previewMintWithSupply(shares, _totalSupply);
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            uint256 amount = amountsIn[i];
+            if (amount > maxAmountsIn[i]) revert AmountTooHigh(asset, amount, maxAmountsIn[i]);
+            _pullExact(asset, msg.sender, amount);
+            _accountedBalance[asset] += amount;
+        }
+        _requireExpectedBalances(balancesBefore, amountsIn, true);
+        _requireExpectedAccountBalances(msg.sender, senderBalancesBefore, amountsIn, false);
         _mint(receiver, shares);
-        emit Contributed(msg.sender, receiver, shares, amountsIn);
+        _resetFeeEpoch();
+        emit BasketMinted(msg.sender, receiver, shares, amountsIn);
     }
 
-    function redeem(
+    function routerRedeem(
         uint256 shares,
+        address owner,
         address receiver,
-        address shareOwner,
         uint256[] calldata minAmountsOut
-    ) external onlyInitialized nonReentrant returns (uint256[] memory amountsOut) {
-        if (receiver == address(0) || shareOwner == address(0)) revert ZeroAddress();
+    ) external onlyInitialized onlyRouter nonReentrant returns (uint256[] memory amountsOut) {
+        if (_shutdown) revert VaultShutdown();
+        if (owner == address(0) || receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidReceiver(receiver);
         if (shares == 0) revert ZeroShares();
-        if (minAmountsOut.length != _assets.length) revert InvalidArrayLength();
+        uint256 length = _assets.length;
+        if (minAmountsOut.length != length) {
+            revert InvalidArrayLength(length, minAmountsOut.length);
+        }
+
         _accrueFees();
-        amountsOut = _withdraw(shares, receiver, shareOwner, minAmountsOut);
-        emit Withdrawn(msg.sender, receiver, shares, amountsOut);
-    }
-
-    function withdrawManagerFees() external returns (uint256 feeShares) {
-        feeShares;
-        _delegateStrategy();
-    }
-
-    function claimChallengeReward() external returns (uint256) {
-        _delegateStrategy();
-    }
-
-    // Strategy authority
-
-    function setNextStrategyRationale(string calldata rationale) external {
-        rationale;
-        _delegateStrategy();
-    }
-
-    function setManagerFeeBps(uint16 newFeeBps) external {
-        newFeeBps;
-        _delegateStrategy();
-    }
-
-    function setWeightBands(uint16 completionDeviationBps, uint16 challengeDeviationBps_) external {
-        completionDeviationBps;
-        challengeDeviationBps_;
-        _delegateStrategy();
-    }
-
-    function setExecutor(address executor, bool authorized) external onlyManager {
-        if (executor == address(0) || executor == address(this)) {
-            revert InvalidRoleAddress(executor);
-        }
-        if (authorized) {
-            if (_isAuthorizedExecutor(executor)) revert ExecutorAlreadyAuthorized(executor);
-            if (_authorizedExecutors.length >= MAX_AUTHORIZED_EXECUTORS) {
-                revert ExecutorLimitReached();
-            }
-            _authorizedExecutors.push(executor);
-            _executorIndexPlusOne[executor] = _authorizedExecutors.length;
-        } else {
-            if (!_isAuthorizedExecutor(executor)) revert ExecutorNotAuthorized(executor);
-            uint256 index = _executorIndexPlusOne[executor] - 1;
-            uint256 lastIndex = _authorizedExecutors.length - 1;
-            if (index != lastIndex) {
-                address moved = _authorizedExecutors[lastIndex];
-                _authorizedExecutors[index] = moved;
-                _executorIndexPlusOne[moved] = index + 1;
-            }
-            _authorizedExecutors.pop();
-            delete _executorIndexPlusOne[executor];
-        }
-        emit ExecutorAuthorizationChanged(executor, authorized);
-    }
-
-    function setFeeRecipient(address newFeeRecipient) external {
-        newFeeRecipient;
-        _delegateStrategy();
-    }
-
-    /// @notice Permanently ends deposits, fee accrual, challenges, and portfolio management.
-    /// @dev Redemptions and ordinary ERC-20 share transfers remain available for an orderly wind-down.
-    function sunsetOtf() external {
-        _delegateStrategy();
-    }
-
-    // ERC-7621 rebalance changes targets only. Trades and completion are separate calls.
-
-    function rebalance(address[] calldata newTokens, uint256[] calldata newWeights) external {
-        newTokens;
-        newWeights;
-        _delegateStrategy();
-    }
-
-    function proposeStrategy(
-        address[] calldata newTokens,
-        uint256[] calldata newWeights,
-        string calldata rationale
-    ) external {
-        newTokens;
-        newWeights;
-        rationale;
-        _delegateStrategy();
-    }
-
-    function proposeStrategyWithPricing(
-        address[] calldata newTokens,
-        uint256[] calldata newWeights,
-        AssetPricingConfig[] calldata pricingConfigs,
-        string calldata rationale
-    ) external {
-        newTokens;
-        newWeights;
-        pricingConfigs;
-        rationale;
-        _delegateStrategy();
-    }
-
-    // Unknown selectors are routed only to the immutable, read-only extension module.
-    // solhint-disable-next-line no-complex-fallback
-    fallback() external {
-        _delegateView();
-    }
-
-    function activatePendingStrategy() external {
-        _delegateStrategy();
-    }
-
-    function cancelPendingStrategy() external {
-        _delegateStrategy();
-    }
-
-    function executeRebalanceTrades(TradeInstruction[] calldata trades) external {
-        trades;
-        _delegateStrategy();
-    }
-
-    function completeStrategicRebalance() external {
-        _delegateStrategy();
-    }
-
-    // Permissionless challenge
-
-    function flagOutOfBand() external {
-        _delegateStrategy();
-    }
-
-    function resolveOutOfBandChallenge() external {
-        _delegateStrategy();
-    }
-
-    function moduleAccrueFees() external returns (uint256) {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        return _accrueFees();
-    }
-
-    function moduleReleaseChallengeFees() external returns (uint256) {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        return _releaseChallengeFees();
-    }
-
-    function strategyModule() external view returns (address) {
-        return _strategyModule;
-    }
-
-    function strategyModuleCodehash() external view returns (bytes32) {
-        return _strategyModuleCodehash;
-    }
-
-    function viewModule() external view returns (address) {
-        return _viewModule;
-    }
-
-    function viewModuleCodehash() external view returns (bytes32) {
-        return _viewModuleCodehash;
-    }
-
-    // Internal share accounting
-
-    function _previewContributeCurrentSupply(uint256[] calldata amounts)
-        internal
-        view
-        returns (uint256 lpAmount)
-    {
-        if (amounts.length != _assets.length) {
-            revert LengthMismatch(_assets.length, amounts.length);
-        }
-        uint256 supply = _totalSupply;
-        lpAmount = type(uint256).max;
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            if (reserve == 0) {
-                if (amounts[i] != 0) {
-                    revert NonProportionalContribution(_assets[i], amounts[i], 0);
-                }
-                continue;
-            }
-            uint256 candidate = Math.mulDiv(amounts[i], supply, reserve);
-            if (candidate < lpAmount) lpAmount = candidate;
-        }
-        if (lpAmount == type(uint256).max) return 0;
-        for (uint256 i = 0; i < _assets.length; i++) {
-            uint256 reserve = IERC20(_assets[i]).balanceOf(address(this));
-            uint256 required = Math.mulDiv(lpAmount, reserve, supply, Math.Rounding.Ceil);
-            if (amounts[i] != required) {
-                revert NonProportionalContribution(_assets[i], amounts[i], required);
+        _requireBackingSound();
+        uint256[] memory balancesBefore = _actualBalances();
+        uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
+        amountsOut = _previewRedeemWithSupply(shares, _totalSupply);
+        for (uint256 i = 0; i < length; i++) {
+            if (amountsOut[i] < minAmountsOut[i]) {
+                revert AmountTooLow(_assets[i], amountsOut[i], minAmountsOut[i]);
             }
         }
-    }
-
-    function _withdraw(
-        uint256 shares,
-        address receiver,
-        address shareOwner,
-        uint256[] calldata minimums
-    ) internal returns (uint256[] memory amounts) {
-        uint256 supply = _totalSupply;
-        amounts = new uint256[](_assets.length);
-        if (shareOwner != msg.sender) _spendAllowance(shareOwner, msg.sender, shares);
-        _burn(shareOwner, shares);
-
-        for (uint256 i = 0; i < _assets.length; i++) {
+        if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
+        _burn(owner, shares);
+        for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
-            uint256 amount = Math.mulDiv(shares, IERC20(asset).balanceOf(address(this)), supply);
-            if (amount < minimums[i]) {
-                revert InsufficientAmount(i, minimums[i], amount);
-            }
-            amounts[i] = amount;
+            uint256 amount = amountsOut[i];
+            _accountedBalance[asset] -= amount;
             _pushExact(asset, receiver, amount);
         }
+        _requireExpectedBalances(balancesBefore, amountsOut, false);
+        _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
+        _resetFeeEpoch();
+        emit BasketRedeemed(msg.sender, owner, receiver, shares, amountsOut);
     }
 
-    // Fee state machine
+    // Emergency path
 
-    function _accrueFees() internal returns (uint256 feeShares) {
-        if (_sunset) return 0;
-        uint64 previousTimestamp = _lastFeeAccrualTimestamp;
-        uint256 elapsed = block.timestamp - uint256(previousTimestamp);
-        if (_challengeIsActive()) {
-            // Challenge fee checkpoints intentionally use the onchain deadline.
-            // forge-lint: disable-next-line(block-timestamp)
-            uint256 currentTimestamp = block.timestamp;
-            uint256 checkpoint = currentTimestamp < _challengeDeadline
-                ? currentTimestamp
-                : uint256(_challengeDeadline);
-            if (checkpoint > previousTimestamp) {
-                feeShares = _escrowChallengeFees(checkpoint - previousTimestamp);
-                // Chain timestamps fit uint64 for the lifetime of the protocol.
-                // forge-lint: disable-next-line(unsafe-typecast)
-                _lastFeeAccrualTimestamp = uint64(checkpoint);
-            }
-            // Fee forfeiture is intentionally keyed to the onchain challenge deadline.
-            if (currentTimestamp > _challengeDeadline) _forfeitChallengeFees();
-            return feeShares;
+    function activateEmergencyShutdown() external onlyInitialized nonReentrant {
+        if (_shutdown) revert VaultShutdown();
+        if (msg.sender != _creator && !_hasBackingDeficit()) {
+            revert UnauthorizedShutdown(msg.sender);
         }
-        if (elapsed == 0) return 0;
-
-        feeShares = _mintFees(elapsed);
-        // Fractional share-wei are retained in vault storage, so even a zero-share checkpoint can
-        // safely close the interval. This creates a hard, non-retroactive boundary for deposits,
-        // exits, and fee-rate changes.
-        _lastFeeAccrualTimestamp = uint64(block.timestamp);
+        _accrueFees();
+        _shutdown = true;
+        _shutdownAt = uint64(block.timestamp);
+        emit EmergencyShutdown(msg.sender, _shutdownAt);
     }
 
-    function _mintFees(uint256 elapsed) internal returns (uint256 feeShares) {
+    /// @notice Permissionless holder exit using actual balances, safe even after a backing deficit.
+    function emergencyRedeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut)
+        external
+        onlyInitialized
+        nonReentrant
+        returns (uint256[] memory amountsOut)
+    {
+        if (!_shutdown) revert VaultNotShutdown();
+        if (receiver == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
+        if (shares == 0) revert ZeroShares();
+        uint256 length = _assets.length;
+        if (minAmountsOut.length != length) {
+            revert InvalidArrayLength(length, minAmountsOut.length);
+        }
         uint256 supply = _totalSupply;
-        uint16 feeBps = _managerFeeBpsPerYear;
-        if (supply == 0 || feeBps == 0 || elapsed == 0) return 0;
-        uint256 remainderAfterWad;
-        (feeShares, remainderAfterWad) = _portfolioCalculator.feeSharesAfterElapsed(
-            supply, _feeAccrualRemainderWad, feeBps, elapsed
-        );
-        _feeAccrualRemainderWad = remainderAfterWad;
-        if (feeShares == 0) return 0;
+        if (shares > supply) revert SharesExceedSupply(shares, supply);
 
-        (uint256 managerShares, uint256 protocolShares) = _splitFeeShares(feeShares);
-        if (protocolShares != 0) _mint(_feeCollector, protocolShares);
-        if (managerShares != 0) _mint(_feeRecipient, managerShares);
-        emit FeesAccrued(feeShares, managerShares, protocolShares);
-    }
-
-    function _splitFeeShares(uint256 feeShares)
-        private
-        returns (uint256 managerShares, uint256 protocolShares)
-    {
-        uint16 effectiveShareBps = effectiveProtocolFeeShareBps();
-        protocolShares = Math.mulDiv(feeShares, effectiveShareBps, BPS);
-        uint256 splitRemainder =
-            mulmod(feeShares, effectiveShareBps, BPS) + _protocolFeeSplitRemainderBps;
-        if (splitRemainder >= BPS) {
-            protocolShares += 1;
-            splitRemainder -= BPS;
-        }
-        // `splitRemainder` is reduced below BPS, which is below uint16.max.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        _protocolFeeSplitRemainderBps = uint16(splitRemainder);
-        managerShares = feeShares - protocolShares;
-    }
-
-    function _escrowChallengeFees(uint256 elapsed) private returns (uint256 feeShares) {
-        if (_totalSupply == 0 || _managerFeeBpsPerYear == 0 || elapsed == 0) return 0;
-        (feeShares, _challengeFeeAccrualRemainderWad) = _portfolioCalculator.feeSharesAfterElapsed(
-            _totalSupply, _challengeFeeAccrualRemainderWad, _managerFeeBpsPerYear, elapsed
-        );
-        if (feeShares != 0) {
-            _mint(address(this), feeShares);
-            _escrowedManagerFeeShares += feeShares;
-        }
-        emit ManagerFeesEscrowed(feeShares, _escrowedManagerFeeShares);
-    }
-
-    function _releaseChallengeFees() private returns (uint256 feeShares) {
-        feeShares = _escrowedManagerFeeShares;
-        uint256 combinedRemainder = _feeAccrualRemainderWad + _challengeFeeAccrualRemainderWad;
-        if (combinedRemainder >= 1e18) {
-            combinedRemainder -= 1e18;
-            feeShares++;
-            _mint(address(this), 1);
-        }
-        _feeAccrualRemainderWad = combinedRemainder;
-        _challengeFeeAccrualRemainderWad = 0;
-        _escrowedManagerFeeShares = 0;
-
-        (uint256 managerShares, uint256 protocolShares) = _splitFeeShares(feeShares);
-        if (protocolShares != 0) _transfer(address(this), _feeCollector, protocolShares);
-        if (managerShares != 0) _transfer(address(this), _feeRecipient, managerShares);
-        emit FeesAccrued(feeShares, managerShares, protocolShares);
-        emit ManagerFeesReleased(_feeRecipient, managerShares);
-    }
-
-    function _forfeitChallengeFees() internal {
-        // All accrual paths converge here. Keep the transition idempotent so no caller can
-        // process the same challenge more than once, even if a future entry point omits a guard.
-        if (_challengeDeadlineProcessed) return;
-        _challengeDeadlineProcessed = true;
-
-        uint64 deadline = _challengeDeadline;
-        uint256 forfeitedShares = _escrowedManagerFeeShares;
-        uint256 rewardShares = Math.mulDiv(forfeitedShares, CHALLENGE_CALLER_REWARD_BPS, BPS);
-        address caller = _challengeCaller;
-        if (rewardShares != 0 && caller != address(0)) {
-            _challengeRewardShares[caller] += rewardShares;
-        }
-        uint256 treasuryShares = forfeitedShares - rewardShares;
-        if (treasuryShares != 0) _transfer(address(this), _feeCollector, treasuryShares);
-        _escrowedManagerFeeShares = 0;
-        _challengeFeeAccrualRemainderWad = 0;
-        _forfeitedManagerFeeShares += forfeitedShares;
-        _lastFeeAccrualTimestamp = deadline;
-        emit ChallengeDeadlineMissed(deadline, uint64(block.timestamp));
-        emit ManagerFeesForfeited(forfeitedShares);
-        emit ChallengeRewardAccrued(caller, rewardShares, forfeitedShares);
-    }
-
-    // Validation and calculations
-
-    function _validateInitialPortfolio(address[] calldata assets_, uint16[] calldata weights_)
-        internal
-        view
-    {
-        if (assets_.length == 0) revert EmptyPortfolio();
-        if (assets_.length > MAX_TRACKED_ASSETS) revert TrackedAssetLimitExceeded();
-        if (assets_.length != weights_.length) {
-            revert LengthMismatch(assets_.length, weights_.length);
-        }
-        uint256 minimumTargetWeightBps = _protocolMinTargetWeightBps();
-        uint256 sum;
-        for (uint256 i = 0; i < assets_.length; i++) {
-            _validateAssetAndWeight(assets_, i, weights_[i], minimumTargetWeightBps);
-            sum += weights_[i];
-        }
-        if (sum != BPS) revert InvalidWeights(sum);
-    }
-
-    function _validateAssetAndWeight(
-        address[] calldata assets_,
-        uint256 index,
-        uint256 weight,
-        uint256 minimumTargetWeightBps
-    ) internal view {
-        address asset = assets_[index];
-        if (asset == address(0)) revert ZeroAddress();
-        if (asset == address(this)) revert SelfAssetNotSupported();
-        if (asset.code.length == 0) revert AssetNotContract(asset);
-        if (weight < minimumTargetWeightBps) {
-            revert AssetWeightTooLow(asset, weight, minimumTargetWeightBps);
-        }
-        _portfolioCalculator.validateAssetForVault(address(this), asset);
-        for (uint256 j = index + 1; j < assets_.length; j++) {
-            if (assets_[j] == asset) revert DuplicateConstituent(asset);
-        }
-    }
-
-    function _validateInitialBalances(address[] calldata assets_, uint256[] calldata amounts)
-        internal
-        view
-    {
-        if (assets_.length != amounts.length) {
-            revert LengthMismatch(assets_.length, amounts.length);
-        }
-        for (uint256 i = 0; i < assets_.length; i++) {
-            if (amounts[i] == 0) revert InitialAmountZero(assets_[i]);
-            uint256 balance = IERC20(assets_[i]).balanceOf(address(this));
-            if (balance < amounts[i]) {
-                revert InitialBalanceMismatch(assets_[i], amounts[i], balance);
+        amountsOut = new uint256[](length);
+        uint256[] memory balancesBefore = new uint256[](length);
+        uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
+        uint256[] memory accountedReductions = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            uint256 actual = IERC20(asset).balanceOf(address(this));
+            balancesBefore[i] = actual;
+            uint256 accounted = _accountedBalance[asset];
+            uint256 distributable = actual < accounted ? actual : accounted;
+            amountsOut[i] =
+                shares == supply ? distributable : Math.mulDiv(distributable, shares, supply);
+            accountedReductions[i] =
+                shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
+            if (amountsOut[i] < minAmountsOut[i]) {
+                revert AmountTooLow(asset, amountsOut[i], minAmountsOut[i]);
             }
         }
-    }
 
-    function _requireDepositsOpen() internal view {
-        if (_sunset) revert VaultSunset();
-        if (_assets.length == 0) revert EmptyPortfolio();
-        if (IProtocolPortfolioLimits(_factory).depositsPaused()) {
-            revert ProtocolDepositsPaused();
-        }
-        if (IProtocolPortfolioLimits(_factory).vaultDepositsPaused(address(this))) {
-            revert VaultDepositsPaused();
-        }
-        for (uint256 i = 0; i < _assets.length; i++) {
+        _burn(msg.sender, shares);
+        for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
-            if (_targetWeightBps[asset] == 0) revert DepositsPausedForRetiringAsset(asset);
+            uint256 currentActual = IERC20(asset).balanceOf(address(this));
+            if (currentActual != balancesBefore[i]) {
+                revert AssetTransferMismatch(
+                    asset, balancesBefore[i], balancesBefore[i], currentActual
+                );
+            }
+            _accountedBalance[asset] -= accountedReductions[i];
+            _pushExact(asset, receiver, amountsOut[i]);
         }
+        _requireExpectedBalances(balancesBefore, amountsOut, false);
+        _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
+        emit EmergencyRedeemed(msg.sender, receiver, shares, amountsOut);
     }
 
-    // Storage and transfer helpers
+    // Internal accounting
 
-    function _storeInitialPortfolio(address[] calldata assets_, uint16[] calldata weights_)
+    function _previewMintWithSupply(uint256 shares, uint256 supply)
         internal
+        view
+        returns (uint256[] memory amountsIn)
     {
-        for (uint256 i = 0; i < assets_.length; i++) {
-            _assets.push(assets_[i]);
-            _targetWeightBps[assets_[i]] = weights_[i];
+        if (supply == 0 && shares < FORMATION_SHARE_UNIT) {
+            revert BootstrapSharesTooSmall(shares, FORMATION_SHARE_UNIT);
+        }
+        uint256 length = _assets.length;
+        amountsIn = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            uint256 quantity =
+                supply == 0 ? _relativeQuantity[_assets[i]] : _accountedBalance[_assets[i]];
+            uint256 denominator = supply == 0 ? FORMATION_SHARE_UNIT : supply;
+            amountsIn[i] = Math.mulDiv(quantity, shares, denominator, Math.Rounding.Ceil);
         }
     }
 
-    function _configureInitialPricing(
-        address[] calldata assets_,
-        AssetPricingConfig[] calldata pricingConfigs_
-    ) internal {
-        if (pricingConfigs_.length != assets_.length) {
-            revert LengthMismatch(assets_.length, pricingConfigs_.length);
-        }
-        for (uint256 i = 0; i < assets_.length; i++) {
-            _pinAssetPricing(assets_[i], pricingConfigs_[i]);
+    function _previewRedeemWithSupply(uint256 shares, uint256 supply)
+        internal
+        view
+        returns (uint256[] memory amountsOut)
+    {
+        if (supply == 0 || shares > supply) revert SharesExceedSupply(shares, supply);
+        uint256 length = _assets.length;
+        amountsOut = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            uint256 accounted = _accountedBalance[_assets[i]];
+            amountsOut[i] = shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
         }
     }
 
-    function _pinAssetPricing(address asset, AssetPricingConfig calldata config) internal {
-        PinnedAssetPricing storage pinned = _pinnedPricingForAsset[asset];
-        if (pinned.normalizedPriceFeed != address(0)) {
-            if (_isPricingReuseSentinel(config)) return;
-            if (
-                pinned.source != config.source || pinned.quoteToken != config.quoteToken
-                    || pinned.primarySource != config.primarySource
-                    || pinned.primaryMaxStaleness != config.primaryMaxStaleness
-            ) revert AssetPricingAlreadyPinned(asset);
-            return;
+    function _feeTargetAt(uint64 timestamp)
+        internal
+        view
+        returns (uint256 targetShares, uint256 remainderWad)
+    {
+        remainderWad = _feeShareRemainderWad;
+        if (_shutdown || _annualCreatorExpenseRatioBps == 0 || _feeEpochSupply == 0) {
+            return (_feeEpochAccruedShares, remainderWad);
+        }
+        uint256 elapsed = uint256(timestamp) - uint256(_feeEpochTimestamp);
+        if (elapsed == 0) return (_feeEpochAccruedShares, remainderWad);
+
+        if (elapsed == YEAR) {
+            uint256 retentionBps = BPS - _annualCreatorExpenseRatioBps;
+            targetShares = Math.mulDiv(_feeEpochSupply, _annualCreatorExpenseRatioBps, retentionBps);
+            uint256 rationalRemainder =
+                mulmod(_feeEpochSupply, _annualCreatorExpenseRatioBps, retentionBps);
+            uint256 exactFractional =
+                Math.mulDiv(rationalRemainder, WAD, retentionBps) + _feeShareRemainderWad;
+            targetShares += exactFractional / WAD;
+            remainderWad = exactFractional % WAD;
+            return (targetShares, remainderWad);
         }
 
-        (address normalizedFeed, bytes32 marketId) =
-            _pricingResolver().resolvePricing(asset, config);
-        _pinnedPricingForAsset[asset] = PinnedAssetPricing({
-            source: config.source,
-            quoteToken: config.quoteToken,
-            primarySource: config.primarySource,
-            normalizedPriceFeed: normalizedFeed,
-            primaryMaxStaleness: config.primaryMaxStaleness
-        });
+        uint256 growthWad =
+            FeeGrowthMath.expenseDilutionGrowthWad(_annualCreatorExpenseRatioBps, elapsed);
+        if (growthWad <= WAD) return (_feeEpochAccruedShares, remainderWad);
+        uint256 growthDeltaWad = growthWad - WAD;
+        targetShares = Math.mulDiv(_feeEpochSupply, growthDeltaWad, WAD);
+        uint256 fractional = mulmod(_feeEpochSupply, growthDeltaWad, WAD) + _feeShareRemainderWad;
+        targetShares += fractional / WAD;
+        remainderWad = fractional % WAD;
+    }
 
-        _portfolioCalculator.validateAssetForVault(address(this), asset);
-        emit AssetPricingPinned(
-            asset, config.source, normalizedFeed, config.quoteToken, config.primarySource, marketId
+    function _accrueFees() internal returns (uint256 totalFeeShares) {
+        _lastFeeCheckpointTimestamp = uint64(block.timestamp);
+        if (_shutdown || _annualCreatorExpenseRatioBps == 0 || _feeEpochSupply == 0) return 0;
+        (uint256 targetShares,) = _feeTargetAt(uint64(block.timestamp));
+        if (targetShares <= _feeEpochAccruedShares) return 0;
+        totalFeeShares = targetShares - _feeEpochAccruedShares;
+        _feeEpochAccruedShares = targetShares;
+
+        uint16 effectiveProtocolShareBps =
+            IOTFFactoryFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
+        if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
+        (uint256 creatorShares, uint256 protocolShares, uint16 splitRemainder) =
+            _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);
+        _protocolFeeSplitRemainderBps = splitRemainder;
+        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
+        if (protocolShares != 0) _mint(_feeCollector, protocolShares);
+        emit ExpenseFeesCheckpointed(
+            totalFeeShares, creatorShares, protocolShares, effectiveProtocolShareBps
         );
     }
 
-    function _isPricingReuseSentinel(AssetPricingConfig calldata config)
-        private
-        pure
-        returns (bool)
+    function _splitFeeShares(uint256 feeShares, uint16 protocolShareBps)
+        internal
+        view
+        returns (uint256 creatorShares, uint256 protocolShares, uint16 newRemainderBps)
     {
-        return uint8(config.source) == 0 && config.quoteToken == address(0)
-            && config.primarySource == address(0) && config.primaryMaxStaleness == 0;
+        protocolShares = Math.mulDiv(feeShares, protocolShareBps, BPS);
+        uint256 fractional =
+            mulmod(feeShares, protocolShareBps, BPS) + _protocolFeeSplitRemainderBps;
+        protocolShares += fractional / BPS;
+        // The modulo result is strictly below 10,000 and therefore fits uint16.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        newRemainderBps = uint16(fractional % BPS);
+        creatorShares = feeShares - protocolShares;
     }
 
-    function _pricingResolver() internal view returns (IAssetPricingResolver resolver) {
-        resolver = IAssetPricingResolver(_pricingResolverAddress);
+    function _resetFeeEpoch() internal {
+        (, uint256 remainderWad) = _feeTargetAt(uint64(block.timestamp));
+        _feeShareRemainderWad = remainderWad;
+        _feeEpochTimestamp = uint64(block.timestamp);
+        _feeEpochSupply = _totalSupply;
+        _feeEpochAccruedShares = 0;
     }
 
-    /// @dev Strategy module callback. It validates pending sources without mutating vault pricing.
-    function modulePrepareAssetPricing(address asset, AssetPricingConfig calldata config) external {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        _pricingResolver().validatePricing(asset, config);
+    function _requireBackingSound() internal view {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            uint256 actual = IERC20(asset).balanceOf(address(this));
+            uint256 accounted = _accountedBalance[asset];
+            if (actual < accounted) revert BackingDeficient(asset, accounted, actual);
+        }
     }
 
-    /// @dev Strategy module callback. Activation pins the source atomically with strategy state.
-    function modulePinAssetPricing(address asset, AssetPricingConfig calldata config) external {
-        if (msg.sender != address(this)) revert UnauthorizedModuleCallback();
-        _pinAssetPricing(asset, config);
+    /// @dev A failed balance read does not prove a deficit and cannot authorize shutdown.
+    function _hasBackingDeficit() internal view returns (bool) {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            try IERC20(asset).balanceOf(address(this)) returns (uint256 actual) {
+                if (actual < _accountedBalance[asset]) return true;
+            } catch { }
+        }
+        return false;
+    }
+
+    function _actualBalances() internal view returns (uint256[] memory balances) {
+        return _basketBalances(address(this));
+    }
+
+    function _basketBalances(address account) internal view returns (uint256[] memory balances) {
+        uint256 length = _assets.length;
+        balances = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            balances[i] = IERC20(_assets[i]).balanceOf(account);
+        }
+    }
+
+    function _requireExpectedBalances(
+        uint256[] memory balancesBefore,
+        uint256[] memory amounts,
+        bool increase
+    ) internal view {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 expected =
+                increase ? balancesBefore[i] + amounts[i] : balancesBefore[i] - amounts[i];
+            uint256 actual = IERC20(_assets[i]).balanceOf(address(this));
+            if (actual != expected) revert BasketBalanceChanged(_assets[i], expected, actual);
+        }
+    }
+
+    function _requireExpectedAccountBalances(
+        address account,
+        uint256[] memory balancesBefore,
+        uint256[] memory amounts,
+        bool increase
+    ) internal view {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 expected =
+                increase ? balancesBefore[i] + amounts[i] : balancesBefore[i] - amounts[i];
+            uint256 actual = IERC20(_assets[i]).balanceOf(account);
+            if (actual != expected) {
+                revert BasketAccountBalanceChanged(_assets[i], account, expected, actual);
+            }
+        }
     }
 
     function _pullExact(address asset, address from, uint256 amount) internal {
-        if (amount == 0) return;
         uint256 senderBefore = IERC20(asset).balanceOf(from);
         uint256 receiverBefore = IERC20(asset).balanceOf(address(this));
         asset.safeTransferFrom(from, address(this), amount);
@@ -1125,56 +603,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function _pushExact(address asset, address receiver, uint256 amount) internal {
-        if (amount == 0) return;
+    function _pushExact(address asset, address to, uint256 amount) internal {
         uint256 senderBefore = IERC20(asset).balanceOf(address(this));
-        uint256 receiverBefore = IERC20(asset).balanceOf(receiver);
-        asset.safeTransfer(receiver, amount);
+        uint256 receiverBefore = IERC20(asset).balanceOf(to);
+        if (amount != 0) asset.safeTransfer(to, amount);
         uint256 senderAfter = IERC20(asset).balanceOf(address(this));
-        uint256 receiverAfter = IERC20(asset).balanceOf(receiver);
+        uint256 receiverAfter = IERC20(asset).balanceOf(to);
         uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
         uint256 receiverDelta = receiverAfter >= receiverBefore ? receiverAfter - receiverBefore : 0;
         if (senderDelta != amount || receiverDelta != amount) {
             revert AssetTransferMismatch(asset, amount, senderDelta, receiverDelta);
-        }
-    }
-
-    function _weightsAsUint256() internal view returns (uint256[] memory weights) {
-        weights = new uint256[](_assets.length);
-        for (uint256 i = 0; i < _assets.length; i++) {
-            weights[i] = _targetWeightBps[_assets[i]];
-        }
-    }
-
-    function _delegateStrategy() private {
-        if (!_initialized) revert NotInitialized();
-        address module = _strategyModule;
-        bytes32 actualCodehash = module.codehash;
-        if (actualCodehash != _strategyModuleCodehash) {
-            revert StrategyModuleIntegrityCheckFailed(_strategyModuleCodehash, actualCodehash);
-        }
-        assembly {
-            calldatacopy(0, 0, calldatasize())
-            let success := delegatecall(gas(), module, 0, calldatasize(), 0, 0)
-            returndatacopy(0, 0, returndatasize())
-            if iszero(success) { revert(0, returndatasize()) }
-            return(0, returndatasize())
-        }
-    }
-
-    function _delegateView() private {
-        if (!_initialized) revert NotInitialized();
-        address module = _viewModule;
-        bytes32 actualCodehash = module.codehash;
-        if (actualCodehash != _viewModuleCodehash) {
-            revert StrategyModuleIntegrityCheckFailed(_viewModuleCodehash, actualCodehash);
-        }
-        assembly {
-            calldatacopy(0, 0, calldatasize())
-            let success := delegatecall(gas(), module, 0, calldatasize(), 0, 0)
-            returndatacopy(0, 0, returndatasize())
-            if iszero(success) { revert(0, returndatasize()) }
-            return(0, returndatasize())
         }
     }
 }

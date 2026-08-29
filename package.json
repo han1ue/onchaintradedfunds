@@ -4,11 +4,9 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "contracts:solc": "node scripts/compile-contracts.mjs",
+    "contracts:abi": "node scripts/generate-contract-abis.mjs",
+    "contracts:formation": "node scripts/formation-snapshot.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
-    "contracts:configure:robinhood-testnet-mocks": "node scripts/configure-robinhood-testnet-mocks.mjs",
-    "contracts:configure:robinhood-testnet-synthra": "node scripts/configure-robinhood-testnet-synthra.mjs",
-    "contracts:bootstrap:weth-usdg-execution": "node scripts/bootstrap-weth-usdg-execution-pool.mjs",
-    "contracts:walk:robinhood-testnet-mocks": "node scripts/walk-robinhood-testnet-mock-prices.mjs",
     "launch:dev": "corepack pnpm --filter @onchaintradedfunds/launch dev",
     "launch:build": "corepack pnpm --filter @onchaintradedfunds/launch build",
     "launch:test": "corepack pnpm --filter @onchaintradedfunds/launch test",

@@ -1,6 +1,0 @@
-{
-  "/page": "app/page.js",
-  "/otfs/[...slug]/page": "app/otfs/[...slug]/page.js",
-  "/liquidity/page": "app/liquidity/page.js",
-  "/otfs/page": "app/otfs/page.js"
-}

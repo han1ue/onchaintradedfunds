@@ -1,153 +1,79 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import { execFileSync } from "node:child_process";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(import.meta.dirname, "..");
+const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const localEnvPath = join(root, ".env.deploy.local");
 if (existsSync(localEnvPath)) {
   for (const line of readFileSync(localEnvPath, "utf8").split(/\r?\n/u)) {
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u);
     if (!match || match[1].startsWith("#") || process.env[match[1]] !== undefined) continue;
-    const rawValue = match[2];
-    const quoted = rawValue.length >= 2
-      && ((rawValue.startsWith('"') && rawValue.endsWith('"'))
-        || (rawValue.startsWith("'") && rawValue.endsWith("'")));
-    process.env[match[1]] = quoted ? rawValue.slice(1, -1) : rawValue;
+    const value = match[2];
+    process.env[match[1]] = value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+      ? value.slice(1, -1)
+      : value;
   }
 }
-const compile = spawnSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], {
+
+// Compile before creating a client; this script never uses stale or deleted artifacts.
+execFileSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, SOLC_INCLUDE_TESTS: "false" },
 });
-if (compile.status !== 0) {
-  throw new Error("Fresh contract compilation failed; deployment was not started.");
-}
+
 const appRequire = createRequire(new URL("../app/package.json", import.meta.url));
 const viem = await import(pathToFileURL(appRequire.resolve("viem")).href);
 const accounts = await import(pathToFileURL(appRequire.resolve("viem/accounts")).href);
-
-const {
-  createPublicClient,
-  createWalletClient,
-  formatEther,
-  getAddress,
-  http,
-  isAddress,
-  nonceManager,
-} = viem;
+const { createPublicClient, createWalletClient, getAddress, http, isAddress, nonceManager } = viem;
 const { privateKeyToAccount } = accounts;
 
-const defaultRpcUrl = "https://rpc.testnet.chain.robinhood.com";
-const defaultChainId = 46630;
-const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
-
-function env(name, fallback) {
+const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
+if (config.schemaVersion !== 10 || config.architecture !== "oracleless-market-cap-at-formation-v1") {
+  throw new Error("Deployment config must use schema 10 oracleless-market-cap-at-formation-v1");
+}
+const env = (name) => {
   const value = process.env[name];
-  return value && value.trim() ? value.trim() : fallback;
-}
-
-function requiredEnv(...names) {
-  for (const name of names) {
-    const value = env(name);
-    if (value) return value;
-  }
-  throw new Error(`Missing required env var: ${names.join(" or ")}`);
-}
-
-function parseAddress(name, value) {
+  if (!value || !value.trim()) throw new Error(`Missing required env var ${name}`);
+  return value.trim();
+};
+const address = (name, value) => {
   if (!isAddress(value)) throw new Error(`${name} is not a valid address: ${value}`);
   return getAddress(value);
-}
-
-function artifact(source, contract) {
-  const path = join(root, "contracts", "out", source, `${contract}.json`);
-  if (!existsSync(path)) {
-    throw new Error(`Missing artifact ${path}; run "corepack pnpm contracts:solc" first.`);
+};
+const bps = (name, value) => {
+  if (!/^\d+$/u.test(value)) throw new Error(`${name} must be an integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
+    throw new Error(`${name} must be between 0 and 10000`);
   }
+  return parsed;
+};
+const artifact = (name) => {
+  const path = join(root, "contracts", "out", `${name}.sol`, `${name}.json`);
+  if (!existsSync(path)) throw new Error(`Missing artifact ${path}`);
   return JSON.parse(readFileSync(path, "utf8"));
-}
+};
+const json = (value) => JSON.stringify(value, (_key, current) => typeof current === "bigint" ? current.toString() : current, 2);
 
-function contractArtifact(name) {
-  return artifact(`${name}.sol`, name);
-}
-
-function deploymentPayload(result) {
-  return JSON.stringify(
-    result,
-    (_key, value) => (typeof value === "bigint" ? value.toString() : value),
-    2,
-  );
-}
-
-async function deployContract({ name, args = [], gas }) {
-  const compiled = contractArtifact(name);
-  const bytecode = compiled.bytecode.object.startsWith("0x")
-    ? compiled.bytecode.object
-    : `0x${compiled.bytecode.object}`;
-  const hash = await wallet.deployContract({
-    abi: compiled.abi,
-    bytecode,
-    args,
-    ...(gas ? { gas } : {}),
-    chain,
-    account,
-  });
-  console.log(`${name} tx: ${hash}`);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error(`${name} deployment reverted: ${hash}`);
-  console.log(`${name}: ${receipt.contractAddress}`);
-  return {
-    address: getAddress(receipt.contractAddress),
-    transactionHash: hash,
-    blockNumber: receipt.blockNumber,
-    gasUsed: receipt.gasUsed,
-  };
-}
-
-async function writeContract({ address, abi, functionName, args = [] }) {
-  const hash = await wallet.writeContract({ address, abi, functionName, args, chain, account });
-  console.log(`${functionName} tx: ${hash}`);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
-  return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
-}
-
-const privateKey = requiredEnv("DEPLOYER_PRIVATE_KEY", "PRIVATE_KEY");
-const deploymentConfig = JSON.parse(readFileSync(deploymentPath, "utf8"));
-const rpcUrl = env("RH_TESTNET_RPC_URL", env("RPC_URL", deploymentConfig.rpcUrl ?? defaultRpcUrl));
-const chainId = Number(deploymentConfig.chainId ?? defaultChainId);
-const protocolFeeShareBps = Number(deploymentConfig.protocolFeeShareBps ?? 1500);
+const privateKey = env("DEPLOYER_PRIVATE_KEY");
+const treasury = address("TREASURY", env("TREASURY"));
+const formationSnapshotAuthority = address("FORMATION_SNAPSHOT_AUTHORITY", env("FORMATION_SNAPSHOT_AUTHORITY"));
+const baseProtocolFeeShareBps = bps("BASE_PROTOCOL_FEE_SHARE_BPS", env("BASE_PROTOCOL_FEE_SHARE_BPS"));
+const protocolTokenFullRebateThresholdBps = bps("PROTOCOL_TOKEN_FULL_REBATE_THRESHOLD_BPS", env("PROTOCOL_TOKEN_FULL_REBATE_THRESHOLD_BPS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
-const treasury = parseAddress("treasury", deploymentConfig.treasury ?? account.address);
-const suggestedInitialPricingConfigs =
-  deploymentConfig.pricingConfiguration?.suggestedInitialPricingConfigs ?? [];
-const externalContracts = deploymentConfig.externalContracts ?? {};
-const usdgAddress = parseAddress("externalContracts.usdg", externalContracts.usdg);
-const wethAddress = parseAddress("externalContracts.weth", externalContracts.weth);
-const existingQuoteTokens = deploymentConfig.pricingConfiguration?.quoteTokens ?? [];
-const existingWethQuote = existingQuoteTokens.find((quote) => quote.symbol === "WETH");
-const existingUsdgQuote = existingQuoteTokens.find((quote) => quote.symbol === "USDG");
-const configuredWethUsdFeed = env("WETH_USD_FEED_ADDRESS") ?? existingWethQuote?.usdFeed;
-const configuredUsdgUsdFeed = env("USDG_USD_FEED_ADDRESS") ?? existingUsdgQuote?.usdFeed;
-const quoteUsdMaxStaleness = Number(env("QUOTE_USD_MAX_STALENESS_SECONDS", "3600"));
-const uniswapV3FactoryAddress = parseAddress(
-  "externalContracts.uniswapV3Factory",
-  externalContracts.uniswapV3Factory,
-);
-const uniswapV3PositionManagerAddress = parseAddress(
-  "externalContracts.uniswapV3PositionManager",
-  externalContracts.uniswapV3PositionManager,
-);
-const uniswapV3SwapRouterAddress = parseAddress(
-  "externalContracts.uniswapV3SwapRouter",
-  externalContracts.uniswapV3SwapRouter,
-);
-const uniswapV3QuoterAddress = parseAddress(
-  "externalContracts.uniswapV3Quoter",
-  externalContracts.uniswapV3Quoter,
+const initialHolder = address("OTF_TOKEN_INITIAL_HOLDER", process.env.OTF_TOKEN_INITIAL_HOLDER?.trim() || treasury);
+const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim() || config.rpcUrl || "https://rpc.testnet.chain.robinhood.com";
+const chainId = Number(config.chainId ?? 46630);
+if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error(`Invalid chain ID ${chainId}`);
+const external = config.externalContracts ?? {};
+const uniswapV3Factory = address("externalContracts.uniswapV3Factory", external.uniswapV3Factory);
+const uniswapV3SwapRouter02 = address(
+  "externalContracts.uniswapV3SwapRouter02",
+  external.uniswapV3SwapRouter02,
 );
 
 const chain = {
@@ -158,221 +84,70 @@ const chain = {
 };
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
+if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match schema-10 config");
 
-const actualChainId = await publicClient.getChainId();
-if (actualChainId !== chainId) {
-  throw new Error(`RPC returned chain ID ${actualChainId}, expected ${chainId}.`);
+async function deploy(name, args = []) {
+  const compiled = artifact(name);
+  const bytecode = compiled.bytecode.object.startsWith("0x") ? compiled.bytecode.object : `0x${compiled.bytecode.object}`;
+  const hash = await wallet.deployContract({ abi: compiled.abi, bytecode, args, chain, account });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`${name} deployment reverted`);
+  return { address: getAddress(receipt.contractAddress), transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
-
-const balance = await publicClient.getBalance({ address: account.address });
-console.log(`Deployer: ${account.address}`);
-console.log(`Balance: ${formatEther(balance)} ETH`);
-if (balance === 0n) {
-  throw new Error("Deployer has no testnet ETH for gas.");
-}
-
-const wethUsdFeed = configuredWethUsdFeed
-  ? {
-      address: parseAddress("WETH_USD_FEED_ADDRESS", configuredWethUsdFeed),
-      retained: true,
-      synthetic: Boolean(existingWethQuote?.synthetic),
-    }
-  : await deployContract({
-      name: "TestnetMockPriceFeed",
-      args: [account.address, 8, 1_625_00000000n, "Synthetic WETH / USD"],
-    });
-const usdgUsdFeed = configuredUsdgUsdFeed
-  ? {
-      address: parseAddress("USDG_USD_FEED_ADDRESS", configuredUsdgUsdFeed),
-      retained: true,
-      synthetic: Boolean(existingUsdgQuote?.synthetic),
-    }
-  : await deployContract({
-      name: "TestnetMockPriceFeed",
-      args: [account.address, 8, 1_00000000n, "Synthetic USDG / USD"],
-    });
-const wethUsdFeedAddress = wethUsdFeed.address;
-const usdgUsdFeedAddress = usdgUsdFeed.address;
-const supportedMarketAssets = [
-  {
-    symbol: "USDG",
-    token: usdgAddress,
-    usdFeed: usdgUsdFeedAddress,
-    feedDeployment: usdgUsdFeed,
-  },
-  {
-    symbol: "WETH",
-    token: wethAddress,
-    usdFeed: wethUsdFeedAddress,
-    feedDeployment: wethUsdFeed,
-  },
-];
-
-const rebalanceExecutor = await deployContract({
-  name: "RebalanceExecutor",
-  args: [account.address],
-});
-const feeCollector = await deployContract({ name: "FeeCollector", args: [treasury] });
-const otfToken = await deployContract({ name: "OTFToken", args: [treasury] });
-const portfolioCalculator = await deployContract({ name: "PortfolioCalculator" });
-const vaultStrategy = await deployContract({
-  name: "ManagedOTFVaultStrategy",
-  args: [portfolioCalculator.address],
-});
-const vaultView = await deployContract({
-  name: "ManagedOTFVaultView",
-  args: [portfolioCalculator.address],
-});
-const vaultImplementation = await deployContract({
-  name: "ManagedOTFVault",
-  args: [portfolioCalculator.address, vaultStrategy.address, vaultView.address],
-});
-const assetMarketRegistry = await deployContract({
-  name: "AssetMarketRegistry",
-  args: [account.address, uniswapV3FactoryAddress],
-});
-const assetMarketRegistryAbi = contractArtifact("AssetMarketRegistry").abi;
-const quoteTokenRegistrations = await Promise.all(supportedMarketAssets.map(async (marketAsset) => ({
-  symbol: marketAsset.symbol,
-  quoteToken: marketAsset.token,
-  usdFeed: marketAsset.usdFeed,
-  feedDeployment: marketAsset.feedDeployment,
-  synthetic: Boolean(marketAsset.feedDeployment.synthetic) || !marketAsset.feedDeployment.retained,
-  maxStaleness: quoteUsdMaxStaleness,
-  ...(await writeContract({
-    address: assetMarketRegistry.address,
-    abi: assetMarketRegistryAbi,
-    functionName: "setQuoteToken",
-    args: [marketAsset.token, marketAsset.usdFeed, quoteUsdMaxStaleness],
-  })),
-})));
-const pricingResolver = await deployContract({
-  name: "AssetPricingResolver",
-  args: [assetMarketRegistry.address, portfolioCalculator.address],
-});
-const factory = await deployContract({
-  name: "OTFFactory",
-  args: [
-    vaultImplementation.address,
-    feeCollector.address,
-    rebalanceExecutor.address,
-    pricingResolver.address,
-    protocolFeeShareBps,
-  ],
-});
-const uniswapV3Adapter = await deployContract({
-  name: "RegisteredUniswapV3Adapter",
-  args: [account.address, uniswapV3SwapRouterAddress],
-});
-const entryRouter = await deployContract({
-  name: "OTFEntryExitRouter",
-  args: [factory.address],
-});
-
-const rebalanceExecutorAbi = contractArtifact("RebalanceExecutor").abi;
-const factoryAbi = contractArtifact("OTFFactory").abi;
-const registeredAdapterAbi = contractArtifact("RegisteredUniswapV3Adapter").abi;
-
-const setupTransactions = {
-  setExecutorFactory: await writeContract({
-    address: rebalanceExecutor.address,
-    abi: rebalanceExecutorAbi,
-    functionName: "setFactory",
-    args: [factory.address],
-  }),
-  approvedAdapters: [{
-    adapter: uniswapV3Adapter.address,
-    purpose: "rebalance-entry-exit",
-    ...(await writeContract({
-      address: factory.address,
-      abi: factoryAbi,
-      functionName: "setAdapterPermissions",
-      args: [uniswapV3Adapter.address, true, true, true],
-    })),
-  }],
-  settlementEntry: [],
-  configureProtocolToken: await writeContract({
+async function configureRouter(factory, router) {
+  const hash = await wallet.writeContract({
     address: factory.address,
-    abi: factoryAbi,
-    functionName: "configureProtocolToken",
-    // Permanently identify the testnet token while leaving fee rebates disabled.
-    args: [otfToken.address, 0],
-  }),
-};
+    abi: artifact("OTFFactory").abi,
+    functionName: "configureEntryExitRouter",
+    args: [router.address],
+    chain,
+    account,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("configureEntryExitRouter reverted");
+  return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
+}
 
-setupTransactions.settlementEntry.push({
-  adapter: uniswapV3Adapter.address,
-  router: entryRouter.address,
-  entryRouterCallerApproval: await writeContract({
-    address: uniswapV3Adapter.address,
-    abi: registeredAdapterAbi,
-    functionName: "setCallerApproved",
-    args: [entryRouter.address, true],
-  }),
-});
-
-setupTransactions.rebalanceExecutorCallerApproval = await writeContract({
-  address: uniswapV3Adapter.address,
-  abi: registeredAdapterAbi,
-  functionName: "setCallerApproved",
-  args: [rebalanceExecutor.address, true],
-});
+const vaultImplementation = await deploy("ManagedOTFVault");
+const feeCollector = await deploy("FeeCollector", [treasury]);
+const otfToken = await deploy("OTFToken", [initialHolder]);
+const factory = await deploy("OTFFactory", [
+  vaultImplementation.address,
+  feeCollector.address,
+  formationSnapshotAuthority,
+  otfToken.address,
+  baseProtocolFeeShareBps,
+  protocolTokenFullRebateThresholdBps,
+]);
+const entryRouter = await deploy("OTFEntryExitRouter", [
+  factory.address,
+  uniswapV3Factory,
+  uniswapV3SwapRouter02,
+]);
+const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
-  schemaVersion: 9,
+  schemaVersion: 10,
+  architecture: "oracleless-market-cap-at-formation-v1",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
+  status: "deployed",
   deployedAt: new Date().toISOString(),
   deployer: account.address,
-  treasury,
-  protocolFeeShareBps,
-  contracts: {
-    rebalanceExecutor,
-    feeCollector,
-    otfToken,
-    portfolioCalculator,
-    vaultStrategy,
-    vaultView,
-    vaultImplementation,
-    factory,
-    assetMarketRegistry,
-    pricingResolver,
-    uniswapV3Adapter,
-    entryRouter,
+  contracts: { feeCollector, otfToken, vaultImplementation, factory, entryRouter },
+  externalContracts: { ...external, uniswapV3Factory, uniswapV3SwapRouter02 },
+  formation: { calculationVersion: 1, snapshotAuthority: formationSnapshotAuthority, dataSource: null },
+  policy: { baseProtocolFeeShareBps, protocolTokenFullRebateThresholdBps, formationAllocationRebateEnabled: true },
+  routing: {
+    integration: "uniswap-v3-swap-router-02",
+    exactInputTuple: "(bytes,address,uint256,uint256)",
+    maxHopsPerLeg: 3,
+    maxLegs: 40,
   },
-  externalContracts: {
-    usdg: usdgAddress,
-    weth: wethAddress,
-    uniswapV3Factory: uniswapV3FactoryAddress,
-    uniswapV3PositionManager: uniswapV3PositionManagerAddress,
-    uniswapV3SwapRouter: uniswapV3SwapRouterAddress,
-    uniswapV3Quoter: uniswapV3QuoterAddress,
-  },
-  pricingConfiguration: {
-    sources: ["chainlink", "chainlink-composed", "uniswap-v3", "chainlink-robinhood"],
-    quoteTokens: quoteTokenRegistrations,
-    vaultInitField: "initialPricingConfigs",
-    suggestedInitialPricingConfigs,
-    maximumOracleStalenessSeconds: 604800,
-    note: "Each OTF pins its asset feed or V3 pool. Composed and V3 routes read the quote token's single current USD feed from the admin registry.",
-  },
-  executionRoutes: supportedMarketAssets.map((route) => ({
-    settlement: route.symbol,
-    settlementToken: route.token,
-    adapter: uniswapV3Adapter.address,
-    entryRouter: entryRouter.address,
-    pathEncoding: "uniswap-v3-packed",
-    pricingIndependent: true,
-  })),
-  migration: {
-    architecture: "centralized-adapter-permissions",
-    legacyFactoriesCompatible: false,
-  },
-  setupTransactions,
+  setupTransactions: { routerConfiguration },
+  note: "Formation data provider integration is intentionally unconfigured; only authority-signed snapshots may form vaults.",
 };
-
 mkdirSync(dirname(deploymentPath), { recursive: true });
-writeFileSync(deploymentPath, `${deploymentPayload(deployment)}\n`);
-
-console.log(`Deployment and frontend address configuration written to ${deploymentPath}`);
+writeFileSync(deploymentPath, `${json(deployment)}\n`);
+console.log(`Deployment configuration written to ${deploymentPath}`);

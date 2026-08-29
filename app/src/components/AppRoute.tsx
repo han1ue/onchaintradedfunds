@@ -1,10 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { AppView } from "./RebalanceCooldownPanel";
+import type { OperateView } from "./OperateExperience";
 
-const CooldownExperience = dynamic(
-  () => import("./CooldownExperience").then((mod) => mod.CooldownExperience),
+const OperateExperience = dynamic(
+  () => import("./OperateExperience").then((mod) => mod.OperateExperience),
   {
     ssr: false,
     loading: () => (
@@ -16,10 +16,6 @@ const CooldownExperience = dynamic(
   },
 );
 
-export function AppRoute({ initialView }: { initialView: AppView }) {
-  return (
-    <main>
-      <CooldownExperience initialView={initialView} />
-    </main>
-  );
+export function AppRoute({ initialView }: { initialView: OperateView }) {
+  return <OperateExperience initialView={initialView} />;
 }

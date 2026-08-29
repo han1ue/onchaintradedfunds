@@ -1,93 +1,74 @@
-# OTF Protocol Token and Fee Incentives
+# OTF token and fee incentives
 
-Status: implementation-ready, not approved for production deployment.
+Status: pre-mainnet policy specification. The contracts are unaudited and this document is not an
+approval of token distribution, investment economics, or deployment.
 
-This design adds a fixed-supply `OTF` protocol token and a linear protocol-fee incentive for OTFs
-that target an allocation to it. Token distribution, launch valuation, liquidity provisioning, and governance are
-intentionally outside the contract defaults and must be decided before deployment.
+## OTF token
 
-## Contracts
+`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. It mints exactly
+1,000,000,000 tokens once to its constructor-supplied initial holder. There is no privileged
+minter, inflation switch, transfer tax, blacklist, or upgrade hook. Distribution, vesting,
+governance, liquidity, and treasury custody remain deployment decisions.
 
-### `OTFToken`
+## Annual creator expense ratio
 
-- Standard 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`.
-- Mints the fixed 1 billion OTF supply once to the constructor-supplied treasury or distribution
-  address.
-- Has no privileged minter, inflation switch, transfer tax, blacklist, or upgrade hook.
-- Exposes ERC-1046 `tokenURI()` metadata containing the onchain OTF SVG.
+Each vault stores the exact ABI field `annualCreatorExpenseRatioBps` as an immutable 0..1000 bps
+annual creator expense ratio. Its beneficiary is fixed at formation. The expense is paid by minting
+shares, not by transferring basket assets. Fees are lazy and cadence-independent: the fee epoch,
+fixed-point growth, and fractional remainders ensure that checkpoint timing does not materially
+change dilution. Every supply-changing operation checkpoints fees before supply math, and final
+shutdown stops accrual.
 
-The initial holder can retain undistributed supply in a treasury or timelock and fund distribution
-contracts later. A Merkle distributor does not need to exist when OTF is deployed: once an airdrop
-snapshot and allocation are approved, the treasury can deploy the distributor and transfer only
-that allocation into it. Team or contributor allocations should similarly be transferred into
-vesting contracts rather than being held by recipients without restrictions.
-
-### `OTFFactory` policy
-
-The factory owner can permanently identify one protocol-token address. The identity cannot later be
-replaced, preventing an admin from redirecting the incentive to an unrelated asset. The owner can
-change `protocolTokenFullRebateBps` from the current `minTargetWeightBps` to 10,000 BPS; setting it
-to zero disables the incentive. An enabled threshold cannot be below the mutable constituent
-minimum, and that minimum cannot be raised above an enabled threshold.
-
-For each fee accrual, a vault reads both the OTF token's oracle-valued actual weight and configured
-target weight. If:
-
-- `A` is the actual OTF weight in BPS,
-- `G` is the configured OTF target weight in BPS,
-- `W = min(A, G)` is the rebate weight in BPS,
-- `T` is the admin-set full-rebate threshold in BPS, and
-- `P` is the normal protocol share of the manager's AUM fee,
-
-then the effective protocol share is:
+If `S` is pre-fee supply and `r` is the annual ratio, the one-year target is:
 
 ```text
-effective protocol share = P * max(T - W, 0) / T
+feeShares = S * r / (1 - r)
 ```
 
-This means a vault at half of the threshold pays half of the normal protocol share, and a vault at
-or above the threshold pays none of it. All fee shares not sent to the protocol remain with the
-manager's configured fee recipient; the investor's total manager-selected AUM fee does not change.
+At 10% for a 365-day year, this is approximately 11.111% of pre-fee supply, leaving existing
+holders with 90% of post-fee supply. This is a share-dilution policy, not a promise of asset value
+or performance.
 
-The target caps the rebate, while the actual oracle-valued weight proves the corresponding OTF tokens
-are held. OTF follows the same `minTargetWeightBps` rule as every other constituent. If OTF is not a
-constituent, the threshold is disabled, or its actual weight cannot be read safely, the vault charges
-the normal protocol share. The incentive therefore fails closed when a required portfolio oracle is
-unavailable.
+## FeeCollector
 
-### Treasury fee claims and manual buybacks
+The factory's base protocol fee split is minted as shares of the relevant OTF to `FeeCollector`.
+The collector does not hold underlying assets for investors. Only its treasury may call `claim` or
+`claimAll`; treasury changes use a two-step handoff. The treasury may redeem claimed OTF shares and
+execute any subsequent token purchase through its own reviewed multisig process.
 
-Protocol fees continue to arrive in `FeeCollector` as shares of many different OTF vaults, not as
-one cash token. The existing contracts support a treasury-controlled manual buyback flow:
+## Formation-allocation rebate
 
-1. The treasury calls `FeeCollector.claim` or `claimAll` for a vault share token.
-2. The treasury redeems those shares into the corresponding basket assets.
-3. The treasury performs any approved OTF purchases through its normal multisig execution process.
+The optional rebate only reallocates protocol fee shares to the creator. It never lowers the total
+creator-selected fee paid by holders and does not use a runtime NAV or price oracle. Define:
 
-No dedicated buyback contract or automatic fee allocation is required.
+- `G`: signed formation OTF allocation in basis points;
+- `coverage`: `min(floor(actualOtf * 10,000 / accountedOtf), 10,000)`;
+- `W`: `floor(G * coverage / 10,000)`;
+- `T`: configured full-rebate threshold in basis points; and
+- `P`: normal/base protocol fee share in basis points.
 
-## Admin and operating model
+```text
+effective protocol share = P                      when disabled or T == 0
+effective protocol share = 0                      when valid W >= T and T > 0
+effective protocol share = ceil(P * (T - W) / T)  when valid W < T and T > 0
+```
 
-- Factory owner: identifies OTF once, controls the full-rebate threshold, and can set the protocol
-  share of manager fees from 0% to 40% for all existing and future OTFs.
-- Protocol treasury: claims protocol fee shares and controls any manual redemption or buyback.
+Coverage is based on the signed formation allocation and actual/accounted OTF token balance. The
+coverage and `W` steps floor; the final ceiling prevents integer rounding from over-rebating. A
+donation above `accountedOtf` is capped out and cannot manufacture coverage. If OTF is absent or
+duplicated, the accounted balance is zero, a balance read fails, any constituent is under-backed,
+or policy data is malformed, the normal `P` split applies (fail closed). Formation allocation does
+not follow post-formation value drift.
 
-Threshold changes affect an OTF when its fees are next checkpointed. The latest threshold and active
-target are intentionally applied to the entire uncheckpointed interval; the protocol does not keep
-historical rebate-policy intervals. Strategy activation checkpoints fees before replacing the
-active target weights.
+## Trust and unresolved decisions
 
-## Launch gates
+The formation authority/data provider is unresolved and must be independently controlled before
+production. The creator's beneficiary and expense ratio are visible at formation but are not a
+guarantee of performance. Factory/collector governance, token distribution, treasury policy,
+mainnet OTF and USDG addresses, typed quote service, liquidity policy, and the creator-dependent
+sound-vault emergency path are unresolved.
 
-Before mainnet deployment, the protocol should complete all of the following:
-
-- Publish token supply, distribution, vesting, liquidity, and treasury-recipient decisions.
-- Decide whether purchased tokens are held, streamed, or sent to an irrecoverable burn vault.
-- Establish liquid, manipulation-resistant OTF price markets and oracle configuration.
-- Put factory and collector ownership behind an appropriate timelock or multisig.
-- Define treasury procedures and transaction-level slippage policy for redemptions and buys.
-- Model whether the rebate creates circular demand, concentration, or manager gaming risks.
-- Obtain an independent security and economic review of the final configuration.
-
-These contracts remain covered by the repository-wide warning: they are experimental and not
-production ready.
+Pool fees belong to external LPs. The creator promises no pool liquidity, price, execution quality,
+or buyback. The app's external-liquidity handoff must disclose that it does not custody LP positions
+or submit pool-management transactions. Synthra publishes no documented OTF/USDG pair-prefill URL
+and is not production evidence.

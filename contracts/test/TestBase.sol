@@ -21,7 +21,12 @@ interface Vm {
     function deal(address account, uint256 newBalance) external;
     function etch(address target, bytes calldata newRuntimeBytecode) external;
     function mockCallRevert(address callee, bytes calldata data, bytes calldata revertData) external;
+    function mockCall(address callee, bytes calldata data, bytes calldata returnData) external;
     function clearMockedCalls() external;
+    function addr(uint256 privateKey) external returns (address);
+    function sign(uint256 privateKey, bytes32 digest)
+        external
+        returns (uint8 v, bytes32 r, bytes32 s);
 }
 
 abstract contract TestBase {
@@ -167,4 +172,3 @@ abstract contract InvariantTestBase {
         return _targetedInterfaces;
     }
 }
-

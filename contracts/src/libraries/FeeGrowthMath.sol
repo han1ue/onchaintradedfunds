@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Fixed-point exponentiation used by cadence-independent management-fee accounting.
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+
+/// @notice Fixed-point exponentiation used by cadence-independent expense-ratio accounting.
 /// @dev Adapted from Solady's FixedPointMathLib at commit
 /// c251232428b668a073293eb04c6c288b19ad5728 (MIT), originally credited to Remco Bloemen.
 library FeeGrowthMath {
@@ -9,6 +11,33 @@ library FeeGrowthMath {
 
     error ExpOverflow();
     error LnWadUndefined();
+    error InvalidAnnualExpenseRatio(uint256 expenseRatioBps);
+
+    /// @notice Compound supply-growth factor that makes holder retention equal to
+    ///         `(1 - annualExpenseRatio) ** elapsedYears`.
+    /// @dev Because this derives growth from the complete elapsed interval, callers can make
+    ///      fee checkpoints cadence-independent by retaining a fixed epoch supply.
+    function expenseDilutionGrowthWad(uint16 annualExpenseRatioBps, uint256 elapsed)
+        internal
+        pure
+        returns (uint256 growthWad)
+    {
+        if (annualExpenseRatioBps >= 10_000) {
+            revert InvalidAnnualExpenseRatio(annualExpenseRatioBps);
+        }
+        uint256 retentionWad = 1e18 - Math.mulDiv(annualExpenseRatioBps, 1e18, 10_000);
+        uint256 elapsedYearsWad = Math.mulDiv(elapsed, 1e18, 365 days);
+        // The ratio bounds keep retention within 1e18, and elapsed originates from uint64
+        // timestamps, so both values are far below int256.max.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int256 base = int256(retentionWad);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int256 exponent = -int256(elapsedYearsWad);
+        int256 result = powWad(base, exponent);
+        // expWad is non-negative throughout this supported domain.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        growthWad = uint256(result);
+    }
 
     /// @dev Returns `x ** y`, where both arguments and the result are WAD fixed point.
     function powWad(int256 x, int256 y) internal pure returns (int256) {

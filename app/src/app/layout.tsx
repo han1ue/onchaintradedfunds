@@ -1,42 +1,37 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import Script from "next/script";
 import { OTF_FAVICON_DATA_URL } from "@onchaintradedfunds/brand";
 import "@onchaintradedfunds/brand/styles.css";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
-import { isAppHostname } from "@/config/site";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
-  description: "Managed onchain traded funds with enforceable portfolio safety limits.",
+  description: "Oracleless market-cap-at-formation onchain traded funds.",
   icons: { icon: OTF_FAVICON_DATA_URL },
 };
 
-export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const appHostname = isAppHostname((await headers()).get("host"));
-
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-scroll-behavior="smooth">
       <head>
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-7VY28DHL52" />
-        <script
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-7VY28DHL52"
+          strategy="afterInteractive"
+        />
+        <Script
           id="gtag-init"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html:
               "window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', 'G-7VY28DHL52');",
           }}
         />
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var t=localStorage.getItem('otf-theme');document.documentElement.dataset.theme=t==='light'||t==='dark'?t:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.palette=localStorage.getItem('otf-palette')==='robinhood'?'robinhood':'default'}catch(e){}",
-          }}
-        />
       </head>
       <body>
         <InputBehaviorGuard />
-        <AppTopBanner appHostname={appHostname} />
+        <AppTopBanner />
         {children}
       </body>
     </html>

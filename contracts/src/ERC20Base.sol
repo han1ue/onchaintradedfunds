@@ -37,7 +37,7 @@ abstract contract ERC20Base is IERC20Metadata {
         return _totalSupply;
     }
 
-    function balanceOf(address account) external view returns (uint256) {
+    function balanceOf(address account) public view virtual returns (uint256) {
         return _balanceOf[account];
     }
 

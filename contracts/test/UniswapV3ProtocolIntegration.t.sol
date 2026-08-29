@@ -1,131 +1,91 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { EntrySwap, ExitSwap, OTFEntryExitRouter } from "../src/OTFEntryExitRouter.sol";
-import { MockUniswapV3Router } from "./mocks/MockUniswapV3Router.sol";
-import { RegisteredUniswapV3Adapter } from "../src/RegisteredUniswapV3Adapter.sol";
-import { TradeInstruction } from "../src/VaultTypes.sol";
-import { ProtocolTestBase } from "./ProtocolTestBase.sol";
+import { DirectSwapRequest, V3Swap } from "../src/OTFEntryExitRouter.sol";
+import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
 
-contract UniswapV3ProtocolIntegrationTest is ProtocolTestBase {
-    MockUniswapV3Router private venue;
-    RegisteredUniswapV3Adapter private v3Adapter;
-    OTFEntryExitRouter private entryRouter;
-
-    function setUp() public override {
-        super.setUp();
-        venue = new MockUniswapV3Router();
-        v3Adapter = new RegisteredUniswapV3Adapter(address(this), address(venue));
-        entryRouter = new OTFEntryExitRouter(address(factory));
-
-        factory.setAdapterPermissions(address(v3Adapter), true, true, true);
-        v3Adapter.setCallerApproved(address(executor), true);
-        v3Adapter.setCallerApproved(address(entryRouter), true);
-
-        tokenA.mint(address(venue), 10_000 * ONE);
-        tokenB.mint(address(venue), 10_000 * ONE);
-        tokenC.mint(address(venue), 10_000 * ONE);
-        tokenC.mint(ALICE, 10_000 * ONE);
+contract UniswapV3ProtocolIntegrationTest is AtomicRouterTestBase {
+    function setUp() public {
+        _setUpAtomicRouter();
     }
 
-    function testEntryAndRedemptionUseV3SettlementPools() public {
-        ManagedOTFVault vault = _createVault();
-        uint256 shares = 10 * ONE;
-        uint256[] memory required = vault.previewMint(shares);
-        EntrySwap[] memory entrySwaps = new EntrySwap[](2);
-        entrySwaps[0] = EntrySwap({
-            adapter: address(v3Adapter),
-            inputAmount: required[0],
-            minAssetOut: required[0],
-            minRefundInputRate: ONE,
-            adapterData: _path(address(tokenC), address(tokenA)),
-            refundAdapterData: _path(address(tokenA), address(tokenC))
-        });
-        entrySwaps[1] = EntrySwap({
-            adapter: address(v3Adapter),
-            inputAmount: required[1],
-            minAssetOut: required[1],
-            minRefundInputRate: ONE,
-            adapterData: _path(address(tokenC), address(tokenB)),
-            refundAdapterData: _path(address(tokenB), address(tokenC))
-        });
-        uint256 settlementIn = required[0] + required[1];
+    function testDirectLiquiditySupportsBuySellAndOTFToOTF() public {
+        V3Swap[] memory leg = new V3Swap[](1);
+        leg[0] = _leg(address(input), address(sourceVault), 25 * ONE, 25 * ONE);
+        uint256 sourceBefore = sourceVault.balanceOf(ALICE);
 
         vm.startPrank(ALICE);
-        tokenC.approve(address(entryRouter), settlementIn);
-        (uint256 mintedShares, uint256 settlementRefunded) = entryRouter.enterWithToken(
-            address(vault),
-            address(tokenC),
-            settlementIn,
-            shares,
-            ALICE,
-            block.timestamp + 1 hours,
-            entrySwaps
+        input.approve(address(router), 25 * ONE);
+        assertEq(
+            router.swapDirect(
+                _request(address(input), address(sourceVault), 25 * ONE, 25 * ONE), leg
+            ),
+            25 * ONE
         );
-        vault.approve(address(entryRouter), shares);
-        uint256[] memory redeemAmounts = vault.previewRedeem(shares);
-        ExitSwap[] memory exitSwaps = new ExitSwap[](2);
-        exitSwaps[0] = ExitSwap({
-            adapter: address(v3Adapter),
-            minOutputAmount: redeemAmounts[0],
-            adapterData: _path(address(tokenA), address(tokenC))
-        });
-        exitSwaps[1] = ExitSwap({
-            adapter: address(v3Adapter),
-            minOutputAmount: redeemAmounts[1],
-            adapterData: _path(address(tokenB), address(tokenC))
-        });
-        uint256 received = entryRouter.redeemToToken(
-            address(vault),
-            address(tokenC),
-            shares,
-            ALICE,
-            redeemAmounts[0] + redeemAmounts[1],
-            block.timestamp + 1 hours,
-            exitSwaps
+        assertEq(sourceVault.balanceOf(ALICE), sourceBefore + 25 * ONE);
+
+        sourceVault.approve(address(router), 25 * ONE);
+        leg[0] = _leg(address(sourceVault), address(input), 25 * ONE, 25 * ONE);
+        assertEq(
+            router.swapDirect(
+                _request(address(sourceVault), address(input), 25 * ONE, 25 * ONE), leg
+            ),
+            25 * ONE
+        );
+
+        sourceVault.approve(address(router), 10 * ONE);
+        leg[0] = _leg(address(sourceVault), address(targetVault), 10 * ONE, 10 * ONE);
+        assertEq(
+            router.swapDirect(
+                _request(address(sourceVault), address(targetVault), 10 * ONE, 10 * ONE), leg
+            ),
+            10 * ONE
         );
         vm.stopPrank();
 
-        assertEq(mintedShares, shares);
-        assertEq(settlementRefunded, 0);
-        assertEq(received, redeemAmounts[0] + redeemAmounts[1]);
-        assertEq(vault.balanceOf(ALICE), 0);
-        assertEq(tokenC.balanceOf(address(entryRouter)), 0);
-        assertEq(tokenC.balanceOf(address(v3Adapter)), 0);
+        assertEq(targetVault.balanceOf(ALICE), 10 * ONE);
+        _assertRouterClean();
     }
 
-    function testManagerRebalanceUsesV3UsdgHop() public {
-        ManagedOTFVault vault = _createVault();
-        (address[] memory assets, uint16[] memory weights) = _sixtyFortyPortfolio();
-        _proposeTarget(vault, assets, weights);
-
-        TradeInstruction[] memory trades = new TradeInstruction[](1);
-        trades[0] = TradeInstruction({
-            adapter: address(v3Adapter),
-            tokenIn: address(tokenB),
-            tokenOut: address(tokenA),
-            amountIn: 100 * ONE,
-            minAmountOut: 99 * ONE,
-            adapterData: abi.encodePacked(
-                address(tokenB),
-                bytes3(uint24(3_000)),
-                address(tokenC),
-                bytes3(uint24(500)),
-                address(tokenA)
+    function testAuthenticatedMultihopAndSplitRoutesArePermissionless() public {
+        _createPool(address(assetA), address(sourceVault));
+        V3Swap[] memory legs = new V3Swap[](2);
+        legs[0] = V3Swap({
+            amountIn: 6 * ONE,
+            minAmountOut: 6 * ONE,
+            path: abi.encodePacked(
+                address(input), bytes3(FEE), address(assetA), bytes3(FEE), address(sourceVault)
             )
         });
+        legs[1] = _leg(address(input), address(sourceVault), 4 * ONE, 4 * ONE);
 
-        _refreshPrices();
-        vault.executeRebalanceTrades(trades);
+        vm.startPrank(ALICE);
+        input.approve(address(router), 12 * ONE);
+        uint256 beforeInput = input.balanceOf(ALICE);
+        assertEq(
+            router.swapDirect(
+                _request(address(input), address(sourceVault), 12 * ONE, 10 * ONE), legs
+            ),
+            10 * ONE
+        );
+        vm.stopPrank();
 
-        assertEq(tokenA.balanceOf(address(vault)), 600 * ONE);
-        assertEq(tokenB.balanceOf(address(vault)), 400 * ONE);
-        assertTrue(!vault.strategicRebalanceActive());
-        assertEq(tokenB.allowance(address(v3Adapter), address(venue)), 0);
+        assertEq(beforeInput - input.balanceOf(ALICE), 10 * ONE);
+        assertEq(input.allowance(address(router), address(venue)), 0);
+        _assertRouterClean();
     }
 
-    function _path(address tokenIn, address tokenOut) private pure returns (bytes memory path) {
-        path = abi.encodePacked(tokenIn, bytes3(uint24(3_000)), tokenOut);
+    function _request(address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut)
+        private
+        view
+        returns (DirectSwapRequest memory request)
+    {
+        request = DirectSwapRequest({
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            amountIn: amountIn,
+            minAmountOut: minOut,
+            deadline: block.timestamp + 1
+        });
     }
 }

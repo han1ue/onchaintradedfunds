@@ -1,10 +1,11 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 import solc from "solc";
 
 const root = process.cwd();
 const contractsSrc = join(root, "contracts", "src");
 const contractsTest = join(root, "contracts", "test");
+const artifactsRoot = join(root, "contracts", "out");
 const nodeModules = join(root, "node_modules");
 
 function solidityFiles(dir) {
@@ -39,7 +40,13 @@ const input = {
     viaIR: true,
     outputSelection: {
       "*": {
-        "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"],
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object",
+          "storageLayout",
+          "evm.methodIdentifiers",
+        ],
       },
     },
   },
@@ -69,6 +76,10 @@ if (errors.some((diagnostic) => diagnostic.severity === "error")) {
   process.exit(1);
 }
 
+// The compiler output is a disposable source-of-truth. Removing it first prevents deleted
+// production contracts from surviving in artifacts and being consumed by deployment tooling.
+rmSync(artifactsRoot, { recursive: true, force: true });
+
 for (const [source, contracts] of Object.entries(output.contracts ?? {})) {
   for (const [contractName, compiled] of Object.entries(contracts)) {
     const artifactDir = join(root, "contracts", "out", basename(source));
@@ -80,6 +91,8 @@ for (const [source, contracts] of Object.entries(output.contracts ?? {})) {
           abi: compiled.abi,
           bytecode: compiled.evm.bytecode,
           deployedBytecode: compiled.evm.deployedBytecode,
+          storageLayout: compiled.storageLayout,
+          methodIdentifiers: compiled.evm.methodIdentifiers,
         },
         null,
         2,

@@ -5,6 +5,7 @@ import { ERC20Base } from "../../src/ERC20Base.sol";
 
 contract MockReentrantToken is ERC20Base {
     address public callbackTarget;
+    address public callbackSender;
     bytes public callbackData;
     bool public callbackEnabled;
     bool public callbackSucceeded;
@@ -25,6 +26,10 @@ contract MockReentrantToken is ERC20Base {
         callbackSucceeded = false;
     }
 
+    function configureCallbackSender(address sender) external {
+        callbackSender = sender;
+    }
+
     function transfer(address to, uint256 value) external override returns (bool) {
         _attemptCallback(to);
         _transfer(msg.sender, to, value);
@@ -43,11 +48,13 @@ contract MockReentrantToken is ERC20Base {
     }
 
     function _attemptCallback(address transferRecipient) private {
-        if (!callbackEnabled || _insideCallback) return;
+        if (
+            !callbackEnabled || _insideCallback
+                || (callbackSender != address(0) && msg.sender != callbackSender)
+        ) return;
         _insideCallback = true;
         address target = callbackTarget == address(0) ? transferRecipient : callbackTarget;
         (callbackSucceeded,) = target.call(callbackData);
         _insideCallback = false;
     }
 }
-
