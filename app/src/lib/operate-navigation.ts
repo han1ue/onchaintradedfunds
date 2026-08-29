@@ -1,9 +1,10 @@
 export type OperateNavItem = "swap" | "funds";
 export type OperatePathView = "swap" | "funds" | "fund-detail" | "create" | "verified" | "wallet";
 
-export function navigationItemForPath(pathname: string): OperateNavItem {
+export function navigationItemForPath(pathname: string): OperateNavItem | undefined {
   if (pathname === "/create" || pathname === "/verified" || pathname === "/otfs" || pathname.startsWith("/otfs/")) return "funds";
-  return "swap";
+  if (pathname === "/") return "swap";
+  return undefined;
 }
 
 export function operateViewForPath(pathname: string): OperatePathView {

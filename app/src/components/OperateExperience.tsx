@@ -13,6 +13,7 @@ import {
   CheckCircle,
   ChevronDown,
   CircleAlert,
+  CircleDollarSign,
   Copy,
   Droplets,
   ExternalLink,
@@ -32,6 +33,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  UserCog,
   Wallet,
   X,
   XCircle,
@@ -140,6 +142,15 @@ function sameAsset(left: SwapAsset | undefined, right: SwapAsset | undefined): b
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function symbolMonogram(symbol: string): string {
+  const value = symbol.replace(/^OTF-/, "").replace(/[^A-Z0-9]/gi, "");
+  return (value || "OTF").slice(0, 2).toUpperCase();
+}
+
+function AssetLogo({ symbol }: { symbol: string }) {
+  return <span className="assetLogoFallback" aria-hidden="true">{symbolMonogram(symbol)}</span>;
 }
 
 function AssetMark({ asset }: { asset: SwapAsset }) {
@@ -372,7 +383,7 @@ function OperateNav() {
                     onClick={() => switchChain({ chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id })}
                   >
                     <span className="settingsOptionIcon"><Zap size={15} /></span>
-                    <span className="settingsOptionText"><strong>Testnet mode</strong><small>Uses the testnet of the selected chain.</small></span>
+                    <span className="settingsOptionText"><strong>Testnet mode</strong><small>Uses the testnet of the currently selected chain.</small></span>
                     <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true"><span /></span>
                   </button>
                 </div>
@@ -441,8 +452,8 @@ function AppPageHeader({ title, description, icon, actions }: { title: string; d
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return <article className="metricCard"><span className="metricLabel">{label}</span><strong>{value}</strong></article>;
+function MetricCard({ label, value, action }: { label: string; value: string; action?: React.ReactNode }) {
+  return <article className={`metricCard${action ? " hasMetricAction" : ""}`}><span className="metricLabel">{label}</span><strong>{value}</strong>{action}</article>;
 }
 
 function WalletConnectionAction() {
@@ -843,7 +854,7 @@ function CreateSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title="Create OTF" description="Deploy a market-cap-at-formation onchain traded fund." icon={<FilePlus2 size={18} />} />
+        <AppPageHeader title="Create OTF" description="Deploy an onchain traded fund with enforceable portfolio limits." icon={<FilePlus2 size={18} />} />
         <div className="createLayout">
           <aside className="createSteps" aria-label="OTF creation progress">
             {steps.map((item, index) => (
@@ -958,16 +969,16 @@ function FundsSurface({ detail }: { detail: boolean }) {
       <div className="appView">
         <AppPageHeader
           title="Onchain Traded Funds"
-          description="Discover market-cap-at-formation onchain funds."
+          description="Discover and monitor managed onchain funds."
           icon={<LayoutGrid size={18} />}
           actions={<><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create">Create an OTF<ArrowUpRight size={14} /></Link></>}
         />
         {!testnet ? (
-          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>No OTF deployment is configured on Robinhood Mainnet. Enable Testnet in Settings to use the current application environment.</p></section>
+          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>No assets, liquidity adapters, or OTF deployments are configured on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
         ) : (
           <>
             <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
-            <div className="directoryMetrics"><MetricCard label="Total AUM" value="Unavailable" /><MetricCard label="OTFs" value="0" /><MetricCard label="Verified asset records" value={String(configuredAssetsFor(chainId).length)} /></div>
+            <div className="directoryMetrics"><MetricCard label="Total AUM" value="Unavailable" /><MetricCard label="OTFs" value="0" /></div>
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
                 <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name or symbol" disabled /></label>
@@ -976,7 +987,10 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   <button className={directoryView === "cards" ? "active" : ""} type="button" aria-label="Show OTFs as cards" aria-pressed={directoryView === "cards"} onClick={() => setDirectoryView("cards")}><LayoutGrid size={15} /></button>
                 </div>
               </div>
-              <div className="emptyDirectory"><Search size={18} /><strong>No testnet OTFs available</strong><span>New OTFs will appear here automatically.</span></div>
+              <div className={directoryView === "cards" ? "directoryCardsWrap" : "directoryTableWrap"}>
+                <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>NAV</th><th>Assets</th><th>Manager fee</th><th>Manager</th></tr></thead><tbody /></table>
+                <div className="emptyDirectory"><Search size={18} /><strong>No testnet OTFs yet</strong><span>New OTFs will appear here automatically.</span></div>
+              </div>
             </section>
           </>
         )}
@@ -992,12 +1006,11 @@ function VerifiedSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title="Verified Assets" description={<>Token identities and metadata checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and never authorizes routing.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
-        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current configured identities.</p></section> : (
+        <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
+        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">
-            <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Configured identity and ordinary ERC-20 metadata only.</p></div><span className="stateBadge success"><CheckCircle size={12} />{assets.length} configured</span></div>
-            <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th><th>Verification</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.address}><td><div className="directoryVault"><span className="swapAssetMark">{asset.symbol.slice(0, 1)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label="Decimals">{asset.decimals}</td><td data-label="Token contract"><a className="tableAddressLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td><td data-label="Verification"><span className="stateBadge success">Configured identity</span></td></tr>)}</tbody></table></div>
-            <div className="verificationScope"><ShieldCheck size={16} /><div><strong>Identity and metadata only</strong><span>This does not verify a pool, route, liquidity, price, economic safety, audit status, or investment outcome.</span></div></div>
+            <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{assets.length} verified</span></div>
+            <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td></tr>)}</tbody></table></div>
           </section>
         )}
       </div>
@@ -1024,17 +1037,17 @@ function WalletSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction" href="/otfs"><LayoutGrid size={14} />Explore OTFs</Link></>} />
-        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view the current application balances.</p></section> : address ? (
+        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction walletExploreAction" href="/otfs"><LayoutGrid size={14} />Explore OTFs</Link></>} />
+        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
           <>
-            <div className="walletMetrics">
-              <article className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status">Copied</span> : null}<button className="iconOnly compact" type="button" onClick={copyWalletAddress} aria-label="Copy wallet address">{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" aria-label="Open wallet in block explorer"><ExternalLink size={13} /></a></div></div><strong title={address}>{shortAddress(address)}</strong></article>
-              <MetricCard label="OTF positions" value="Unavailable" />
-              <MetricCard label="USDG balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "Unavailable"} />
-              <MetricCard label="ETH balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} />
+            <div className="depositMetrics walletMetrics">
+              <article className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}<button className="iconOnly compact" type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></div></div><div className="walletAddressValue"><strong title={address}>{shortAddress(address)}</strong></div></article>
+              <MetricCard label="OTF Positions" value="0" />
+              <MetricCard label="USDG Balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
+              <MetricCard label="ETH Balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
             </div>
-            <section className="sectionCard walletAssets"><div className="directoryPanelHeading"><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div><span className="stateBadge muted">Reader unavailable</span></div><div className="inlineEmptyState"><Wallet size={18} /><div><strong>Position data is not configured</strong><span>No positions are substituted until the redesigned directory and balance reader can authenticate OTF share contracts.</span></div></div></section>
-            <section className="sectionCard walletAssets"><div className="directoryPanelHeading"><div><h2>OTFs you created</h2><p>Funds formed by this wallet.</p></div><Link className="secondaryAction" href="/create">Create OTF</Link></div><div className="inlineEmptyState"><FilePlus2 size={18} /><div><strong>Creator history is not configured</strong><span>Created OTFs will appear here when the redesigned factory reader is deployed.</span></div></div></section>
+            <section className="sectionCard depositPositions"><div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div></div><span className="stateBadge muted">0 positions</span></div><div className="inlineEmptyState"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div></section>
+            <section className="sectionCard managedVaultsPanel"><div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>OTFs you manage</h2><p>Manager controls and protocol operations for OTFs currently managed by this wallet.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create">Create OTF</Link></div></div><div className="inlineEmptyState"><UserCog size={18} /><div><strong>No managed OTFs found</strong><span>OTFs will appear here whenever this wallet is their current manager.</span></div></div></section>
           </>
         ) : (
           <section className="sectionCard depositsEmpty">
