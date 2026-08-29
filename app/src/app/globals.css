@@ -1065,7 +1065,7 @@ body {
 .createBlocked { margin: 0; }
 .createFormActions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; }
 
-.dashboardFooter { width: 100%; margin: 0 auto; border-top: 1px solid var(--border); padding: 16px 0 0; color: var(--text-muted); font-size: 0.64rem; }
+.dashboardFooter { width: 100%; margin: 20px auto 0; border-top: 1px solid var(--border); padding: 16px 0 28px; color: var(--text-muted); font-size: 0.64rem; }
 .footerLinks,
 .footerLinks a { display: flex; align-items: center; gap: 12px; }
 .footerLinks a { gap: 5px; color: var(--text-soft); text-decoration: none; }
