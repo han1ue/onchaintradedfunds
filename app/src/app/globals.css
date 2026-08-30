@@ -207,7 +207,7 @@ a { color: inherit; }
   border-radius: 999px;
   background: rgb(15 20 27 / 88%);
   box-shadow: 0 12px 32px rgb(0 0 0 / 24%);
-  padding: 0 20px;
+  padding: 0 30px;
   backdrop-filter: blur(12px);
 }
 
