@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
@@ -211,7 +212,28 @@ function AssetLogo({ symbol }: { symbol: string }) {
 
 function AssetMark({ asset }: { asset: SwapAsset }) {
   if (asset.kind === "otf") return <OtfBrandMark className="swapAssetBrandMark" />;
+  const tokenIcon = asset.symbol.toUpperCase() === "WETH"
+    ? "/assets/tokens/weth.png"
+    : asset.symbol.toUpperCase() === "USDG"
+      ? "/assets/tokens/usdg.png"
+      : undefined;
+  if (tokenIcon) return <Image className="swapAssetImage" src={tokenIcon} alt="" width={30} height={30} aria-hidden="true" />;
   return <span className="swapAssetMark" aria-hidden="true">{asset.symbol.slice(0, 1)}</span>;
+}
+
+function SwapBalance({ active, loading, balance, symbol, onUse }: {
+  active: boolean;
+  loading: boolean;
+  balance?: { formatted: string; value: bigint };
+  symbol: string;
+  onUse?: () => void;
+}) {
+  if (!active) return null;
+  if (loading) return <>Loading…</>;
+  if (!balance) return null;
+  const label = `${balance.formatted} ${symbol}`;
+  if (!onUse || balance.value === 0n) return <>{label}</>;
+  return <button type="button" className="swapBalanceButton" title={`Use the full ${label} balance`} aria-label={`Use full balance: ${label}`} onClick={onUse}>{label}</button>;
 }
 
 function isUnselectedOtf(asset: SwapAsset): boolean {
@@ -651,17 +673,21 @@ function SwapSurface() {
   const deploymentReady = chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady;
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
+  const inputSelected = input.address !== zeroAddress;
+  const outputSelected = output.address !== zeroAddress;
+  const inputBalanceEnabled = Boolean(address && inputSelected && assetHasExecutableMetadata(input));
+  const outputBalanceEnabled = Boolean(address && outputSelected && assetHasExecutableMetadata(output));
   const { data: inputBalance, isLoading: inputBalanceLoading } = useBalance({
     address,
-    token: input.address === zeroAddress ? undefined : input.address,
+    token: inputSelected ? input.address : undefined,
     chainId,
-    query: { enabled: Boolean(address && assetHasExecutableMetadata(input)) },
+    query: { enabled: inputBalanceEnabled },
   });
   const { data: outputBalance, isLoading: outputBalanceLoading } = useBalance({
     address,
-    token: output.address === zeroAddress ? undefined : output.address,
+    token: outputSelected ? output.address : undefined,
     chainId,
-    query: { enabled: Boolean(address && assetHasExecutableMetadata(output)) },
+    query: { enabled: outputBalanceEnabled },
   });
 
   useEffect(() => {
@@ -872,12 +898,12 @@ function SwapSurface() {
           </div>
           <div className="swapPair">
             <div className="swapAmountBox">
-              <div className="swapAmountTop"><span>You pay</span><span>{inputBalanceLoading ? "Loading balance" : inputBalance ? `Balance ${inputBalance.formatted}` : "Balance unavailable"} <button type="button" disabled={!inputBalance || inputBalance.value === 0n} title={inputBalance ? `Use the full ${input.symbol} balance` : "A resolved wallet balance is required before MAX can be used"} onClick={() => inputBalance && setAmount(inputBalance.formatted)}>MAX</button></span></div>
+              <div className="swapAmountTop"><span>You pay</span><span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(inputBalance.formatted)} /></span></div>
               <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><button type="button" className="swapAssetButton" aria-label="Select token to pay" onClick={() => setPicker("input")}><AssetMark asset={input} /><strong className={isUnselectedOtf(input) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(input) ? "—" : input.symbol}</strong><ChevronDown size={15} /></button></div>
             </div>
             <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
             <div className="swapAmountBox receive">
-              <div className="swapAmountTop"><span>You receive</span><span>{outputBalanceLoading ? "Loading balance" : outputBalance ? `Balance ${outputBalance.formatted}` : "Balance unavailable"}</span></div>
+              <div className="swapAmountTop"><span>You receive</span><span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div>
               <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><button type="button" className="swapAssetButton" aria-label="Select token to receive" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong className={isUnselectedOtf(output) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(output) ? "—" : output.symbol}</strong><ChevronDown size={15} /></button></div>
             </div>
           </div>

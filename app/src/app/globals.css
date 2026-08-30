@@ -602,9 +602,10 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapAmountBox:focus-within { border-color: rgb(var(--accent-rgb) / 54%); background: var(--surface); }
 
 .swapAmountTop { display: flex; justify-content: space-between; gap: 10px; color: var(--text-muted); font-size: 11px; }
-.swapAmountTop > span:last-child { min-width: 0; overflow: hidden; color: var(--text-faint); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.swapAmountTop button { border: 0; background: transparent; color: var(--accent-text); font-size: 10px; font-weight: 750; }
-.swapAmountTop button:disabled { color: var(--text-faint); }
+.swapBalanceSlot { min-width: 0; overflow: hidden; color: var(--text-faint); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.swapBalanceButton { border: 0; outline: 0; background: transparent; color: var(--accent-text); padding: 0; font: inherit; }
+.swapBalanceButton:hover { color: var(--accent); }
+.swapBalanceButton:focus-visible { border-radius: 3px; box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 28%); }
 
 .swapAmountEntry { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 4px; }
 
@@ -643,6 +644,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapAssetButton .swapAssetPlaceholder { min-width: 18px; font-size: 18px; font-weight: 650; line-height: 1; text-align: center; }
 
 .swapAssetMark { display: inline-grid; width: 19px; height: 19px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #536073; color: white; font-size: 10px; font-weight: 800; }
+.swapAssetImage { display: block; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; object-fit: contain; }
 .swapAssetBrandMark { width: 19px; height: 19px; border-radius: 4px; font-size: .42rem; }
 
 .swapReverse {
