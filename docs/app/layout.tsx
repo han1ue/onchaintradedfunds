@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OTF_FAVICON_DATA_URL } from "@onchaintradedfunds/brand";
 import { Head } from "nextra/components";
 import { getPageMap } from "nextra/page-map";
 import { Footer, Layout, Navbar } from "nextra-theme-docs";
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
     template: "%s | Onchain Traded Funds",
   },
   description: "Protocol, security, and incentive documentation for Onchain Traded Funds.",
+  icons: { icon: OTF_FAVICON_DATA_URL },
 };
 
 const logo = (
@@ -47,7 +49,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head
-        faviconGlyph="OTF"
         color={{
           hue: 174,
           saturation: 53,

@@ -589,7 +589,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapSettingsPopover select:focus { border-color: var(--accent-text); }
 .swapSettingsPopover small { color: var(--text-muted); font-size: 10px; line-height: 1.5; }
 
-.swapPair { position: relative; display: grid; gap: 8px; }
+.swapPair { position: relative; display: grid; gap: 12px; }
 
 .swapAmountBox {
   border: 1px solid var(--border);
@@ -640,9 +640,10 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapAssetButton:hover { border-color: rgb(var(--accent-rgb) / 60%); background: var(--surface); }
 .swapAssetButton strong { overflow: hidden; text-overflow: ellipsis; font-size: 12px; white-space: nowrap; }
 .swapAssetButton svg { flex: 0 0 auto; color: var(--text-muted); }
+.swapAssetButton .swapAssetPlaceholder { min-width: 18px; font-size: 18px; font-weight: 650; line-height: 1; text-align: center; }
 
 .swapAssetMark { display: inline-grid; width: 19px; height: 19px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #536073; color: white; font-size: 10px; font-weight: 800; }
-.swapAssetMark.otf { border-radius: 6px; background: var(--teal); color: var(--accent-foreground); }
+.swapAssetBrandMark { width: 19px; height: 19px; border-radius: 4px; font-size: .42rem; }
 
 .swapReverse {
   position: absolute;
@@ -671,7 +672,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   border-radius: 8px;
   background: var(--teal);
   color: var(--accent-foreground);
-  margin-top: 10px;
+  margin-top: 12px;
   padding: 0 14px;
   font-size: 13px;
   font-weight: 760;
@@ -1783,11 +1784,17 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .createLayout { grid-template-columns: 190px minmax(0, 1fr); }
 }
 
+@media (max-width: 820px) {
+  .topNavInner { grid-template-columns: minmax(0, 1fr) auto; }
+  .logoGroup { display: none; }
+  .navTabs { justify-self: start; }
+}
+
 @media (max-width: 760px) {
   .dashboardMain { padding-right: 14px; padding-left: 14px; }
   .swapFooterFrame { padding-right: 14px; padding-left: 14px; }
   .topNav { padding-top: 8px; }
-  .topNavInner { display: grid; width: calc(100% - 16px); grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; }
+  .topNavInner { display: grid; width: calc(100% - 32px); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 10px; }
   .brandText { display: none; }
   .navTabs { width: auto; gap: 0; overflow: visible; }
   .navTabs a { min-height: 34px; padding-right: 9px; padding-left: 9px; font-size: 0.76rem; font-weight: 600; }
