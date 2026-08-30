@@ -753,9 +753,9 @@ body {
 .depositsButton { gap: 7px; padding: 0 10px; font-size: 0.72rem; font-weight: 500; }
 .depositsButton:hover,
 .depositsButton.active { border-color: rgb(var(--accent-rgb) / 34%); background: rgb(var(--accent-rgb) / 10%); color: var(--accent-text); }
-.iconOnly { width: 34px; border-color: var(--utility-control-border); background: var(--utility-control-bg); color: var(--utility-action); padding: 0; }
+.iconOnly { width: 34px; }
 .iconOnly.compact { width: 28px; height: 28px; }
-.iconOnly:hover { border-color: var(--border-strong); background: var(--surface); color: var(--utility-action-hover); }
+.iconOnly:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
 .iconOnly.active { border-color: rgb(var(--accent-rgb) / 42%); background: rgb(var(--accent-rgb) / 10%); color: var(--accent-text); }
 
 .settingsControl,
@@ -823,8 +823,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .themeSwitch.active > span { background: var(--teal); transform: translateX(14px); }
 
 :root[data-theme="light"] .topNav { background: rgb(255 255 255 / 92%); }
-:root[data-theme="light"] .depositsButton { background: rgb(248 250 251 / 92%); }
-:root[data-theme="light"] .iconOnly { background: var(--utility-control-bg); }
+:root[data-theme="light"] .depositsButton,
+:root[data-theme="light"] .iconOnly { background: rgb(248 250 251 / 92%); }
 
 .dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 20px 24px 32px; }
 .dashboardMain h1,
@@ -863,7 +863,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .walletMetrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .metricCard { position: relative; min-width: 0; padding: 12px 14px; }
 .metricLabel { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 7px; color: var(--text-muted); font-size: 0.66rem; font-weight: 600; line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase; }
-.metricCard > strong { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.25; }
+.metricCard strong { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.25; }
 .walletMetrics .metricCard { position: relative; }
 .walletMetrics .hasMetricAction .metricLabel { padding-right: 56px; }
 
@@ -945,8 +945,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .walletAddressValue { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 10px; }
 .walletAddressValue strong { min-width: 0; flex: 1 1 auto; margin-top: 0; }
 .walletAddressActions { position: absolute; top: 11px; right: 12px; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
-.walletAddressActions .iconOnly { border-color: var(--border); background: rgb(24 30 39 / 84%); color: var(--text-muted); }
-.walletAddressActions .iconOnly:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
+.walletAddressActions .iconOnly { color: var(--text-muted); }
 .walletAddressCopyFeedback { color: var(--green); font-size: 0.67rem; font-weight: 650; white-space: nowrap; }
 .metricCardFaucetAction { position: absolute; top: 9px; right: 12px; display: inline-flex; height: 22px; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 5px; background: var(--card-raised); color: var(--text-muted); padding: 0 4px; font-size: 0.58rem; font-weight: 600; line-height: 1; text-decoration: none; text-transform: none; white-space: nowrap; }
 .metricCardFaucetAction:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
