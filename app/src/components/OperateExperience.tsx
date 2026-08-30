@@ -358,7 +358,7 @@ function OperateNav() {
   return (
     <header className="topNav">
       <div className="topNavInner">
-        <Link className="logoGroup" href="/funds" aria-label="Onchain Traded Funds">
+        <Link className="logoGroup" href="/" aria-label="Onchain Traded Funds">
           <OtfBrandMark />
           <span className="brandText"><strong>Onchain Traded Funds</strong></span>
         </Link>

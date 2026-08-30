@@ -83,6 +83,24 @@ body {
   background: rgb(55 183 170 / 11%);
 }
 
+.otf-footer-content {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.otf-footer-content a {
+  color: var(--otf-foreground);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.otf-footer-content a:hover {
+  color: var(--otf-teal);
+}
+
 article {
   max-width: 74ch;
 }
@@ -104,6 +122,11 @@ article :where(code) {
   .otf-docs-brand > span:last-child,
   .otf-open-app {
     display: none;
+  }
+
+  .otf-footer-content {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

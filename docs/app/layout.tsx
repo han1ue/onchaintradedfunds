@@ -36,7 +36,10 @@ const navbar = (
 
 const footer = (
   <Footer>
-    Onchain Traded Funds · Experimental, unaudited, and pre-mainnet.
+    <span className="otf-footer-content">
+      <span>Onchain Traded Funds · Experimental, unaudited, and pre-mainnet.</span>
+      <a href="https://app.onchaintradedfunds.com">Open app</a>
+    </span>
   </Footer>
 );
 
@@ -71,9 +74,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           pageMap={await getPageMap()}
           docsRepositoryBase="https://github.com/han1ue/onchaintradedfunds/tree/main/docs"
           footer={footer}
+          copyPageButton={false}
           nextThemes={{ defaultTheme: "dark" }}
           sidebar={{ autoCollapse: true, defaultMenuCollapseLevel: 1 }}
-          toc={{ title: "On this page", backToTop: "Back to top" }}
+          toc={{ title: "On this page", backToTop: "Back to top", float: false }}
           editLink="Edit this page"
           feedback={{ content: "Report a documentation issue" }}
         >
