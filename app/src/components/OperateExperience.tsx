@@ -1320,7 +1320,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     <DashboardPage>
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <div className="fundsAum"><strong>Unavailable</strong><span>in 0 OTFs</span></div>
+          <div className="fundsAum"><strong aria-label="Total AUM unavailable">-.-- $</strong><span>in 0 OTFs</span></div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (

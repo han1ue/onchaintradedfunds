@@ -1116,7 +1116,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageHeader p a { color: var(--text-soft); text-decoration-color: rgb(var(--accent-rgb) / 48%); text-underline-offset: 2px; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
-.fundsSummary { display: flex; min-height: 80px; align-items: center; justify-content: space-between; gap: 24px; padding: 6px 4px 10px; }
+.fundsSummary { display: flex; min-height: 96px; align-items: center; justify-content: space-between; gap: 24px; border-radius: 20px; background: color-mix(in srgb, var(--card) 72%, var(--background)); padding: 18px 20px; }
 .fundsAum strong,
 .fundsAum span { display: block; }
 .fundsAum strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
