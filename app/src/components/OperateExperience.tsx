@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfBrandMark } from "@onchaintradedfunds/brand";
 import {
   ArrowLeft,
   ArrowRight,
-  ArrowDownUp,
+  ArrowDown,
   ArrowUpRight,
   BadgeCheck,
   Check,
@@ -55,10 +55,7 @@ import {
   decimalInputValue,
   ERC20_APPROVE_ABI,
   executionPlanForQuote,
-  executionStages,
   isPositiveDecimalAmount,
-  liquidityActionLabel,
-  liquidityVenueFor,
   MAX_OTF_MANDATE_BYTES,
   pastedAsset,
   quoteIsFresh,
@@ -66,7 +63,6 @@ import {
   requestConcurrentQuotes,
   routerArgsForExecution,
   supportedSwapDirection,
-  swapDirectionLabel,
   validSwapPair,
   type SwapAsset,
   type SwapAssetKind,
@@ -373,10 +369,6 @@ function OperateNav() {
           <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
         </nav>
         <div className="navActions">
-          <Link className={`depositsButton ${pathname === "/wallet" ? "active" : ""}`} href="/wallet" title="Wallet">
-            <Wallet size={14} />
-            <span>Wallet</span>
-          </Link>
           <div className="networkControl" ref={networkRef}>
             <button
               className={`networkButton ${networkOpen ? "active" : ""}`}
@@ -416,6 +408,7 @@ function OperateNav() {
               </div>
             ) : null}
           </div>
+          <HeaderWalletControl active={pathname === "/wallet"} />
           <div className="settingsControl" ref={settingsRef}>
             <button
               className={`iconOnly ${settingsOpen ? "active" : ""}`}
@@ -488,6 +481,25 @@ function OperateNav() {
   );
 }
 
+function HeaderWalletControl({ active }: { active: boolean }) {
+  return (
+    <ConnectButton.Custom>
+      {({ account, mounted, authenticationStatus, openConnectModal }) => {
+        const ready = mounted && authenticationStatus !== "loading";
+        const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
+        if (!ready) return <button className="headerWalletButton" type="button" disabled>Wallet</button>;
+        if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
+        return (
+          <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
+            <Wallet size={14} />
+            <span>{account.displayName}</span>
+          </Link>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
+}
+
 function OperateFooter() {
   const chainId = useChainId();
   const showLiquidity = chainId === robinhoodChainTestnet.id;
@@ -532,52 +544,6 @@ function WalletConnectionAction() {
   );
 }
 
-function SwapStatus({
-  chainId,
-  quotes,
-  activeQuote,
-  now,
-  deploymentReady,
-  execution,
-}: {
-  chainId: number;
-  quotes: SwapQuote[];
-  activeQuote?: SwapQuote;
-  now: number;
-  deploymentReady: boolean;
-  execution: "idle" | "approval" | "simulation" | "submission" | "success" | "failure";
-}) {
-  const { address } = useAccount();
-  const knownNetwork = chainId === robinhoodChainTestnet.id || chainId === robinhoodChain.id;
-  const testnet = chainId === robinhoodChainTestnet.id;
-  const networkText = testnet ? "Robinhood Chain Testnet" : chainId === robinhoodChain.id ? "Robinhood Chain" : "Unsupported network";
-  const usableQuote = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
-  const quoteText = usableQuote ? "Quote ready" : quotes.some((quote) => quote.state === "loading") ? "Requesting quotes" : "No executable quote";
-  const stages = executionStages({
-    walletConnected: Boolean(address),
-    networkSupported: knownNetwork,
-    usableQuote,
-    deploymentReady,
-    execution: execution === "idle" ? undefined : execution,
-  });
-  return (
-    <div className="swapExecutionState" aria-live="polite">
-      <span><Wallet size={14} />{address ? shortAddress(address) : "Wallet not connected"}</span>
-      <span className={knownNetwork ? "ready" : "warning"}><ShieldCheck size={14} />{networkText}</span>
-      <span className={usableQuote ? "ready" : "warning"}><CircleAlert size={14} />{quoteText}</span>
-      {!deploymentReady ? <span className="warning"><CircleAlert size={14} />Deployment configuration incomplete</span> : null}
-      <dl className="swapStageList">
-        <div><dt>Wallet</dt><dd>{stages.wallet}</dd></div>
-        <div><dt>Approval</dt><dd>{stages.approval}</dd></div>
-        <div><dt>Simulation</dt><dd>{stages.simulation}</dd></div>
-        <div><dt>Submit</dt><dd>{stages.submission}</dd></div>
-        <div><dt>Success</dt><dd>{stages.success}</dd></div>
-        <div><dt>Failure</dt><dd>{stages.failure}</dd></div>
-      </dl>
-    </div>
-  );
-}
-
 function QuoteReview({
   quotes,
   activeQuote,
@@ -599,66 +565,71 @@ function QuoteReview({
 }) {
   const selectedValid = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   return (
-    <section className="swapReview" aria-label="Quote details">
-      <div className="swapReviewHeader"><strong>Quote details</strong><button type="button" onClick={onRefresh}><LoaderCircle size={13} />Refresh</button></div>
-      <div className="swapRoutes">
-        {quotes.map((quote) => {
-          const valid = quoteIsFresh(quote, now);
-          return (
-            <button key={quote.id} type="button" className={`swapRoute ${activeQuote?.id === quote.id ? "selected" : ""}`} disabled={!valid} onClick={() => onChoose(quote)}>
-              <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (valid ? "Quoted route" : "Unavailable")}</small></span>
-              <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? "Select" : quote.state}</span>
-            </button>
-          );
-        })}
+    <details className="swapReview">
+      <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : "No executable quote"}</small><ChevronDown size={15} /></summary>
+      <div className="swapReviewBody">
+        <div className="swapReviewHeader"><strong>Compared routes</strong><button type="button" onClick={onRefresh}><LoaderCircle size={13} />Refresh</button></div>
+        <div className="swapRoutes">
+          {quotes.map((quote) => {
+            const valid = quoteIsFresh(quote, now);
+            return (
+              <button key={quote.id} type="button" className={`swapRoute ${activeQuote?.id === quote.id ? "selected" : ""}`} disabled={!valid} onClick={() => onChoose(quote)}>
+                <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (valid ? "Quoted route" : "Unavailable")}</small></span>
+                <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? activeQuote?.id === quote.id ? "Selected" : "Use route" : quote.state}</span>
+              </button>
+            );
+          })}
+        </div>
+        <dl className="swapQuoteMetrics">
+          <div><dt>Expected output</dt><dd>{selectedValid ? `${activeQuote?.expectedOutput ?? activeQuote?.outputAmount} ${outputSymbol}` : "—"}</dd></div>
+          <div><dt>Minimum received</dt><dd>{selectedValid ? `${activeQuote?.minimumReceived ?? "—"} ${outputSymbol}` : "—"}</dd></div>
+          <div><dt>Venue fees</dt><dd>{selectedValid && activeQuote?.venueFeeBps !== undefined ? `${activeQuote.venueFeeBps / 100}%` : "—"}</dd></div>
+          <div><dt>Price impact</dt><dd>{selectedValid && activeQuote?.priceImpactBps !== undefined ? `${activeQuote.priceImpactBps / 100}%` : "—"}</dd></div>
+          <div><dt>Route</dt><dd>{selectedValid ? activeQuote?.routeLabel : "No valid route selected"}</dd></div>
+          <div><dt>Network gas</dt><dd>{selectedValid ? activeQuote?.gasEstimate ?? "Unavailable" : "—"}</dd></div>
+        </dl>
+        <div className="swapRouteInspection">
+          <strong>Route inspection</strong>
+          {selectedValid && activeQuote?.hops?.length ? (
+            <ol>
+              {activeQuote.hops.map((hop, index) => (
+                <li key={`${hop.venue}-${hop.tokenIn}-${hop.tokenOut}-${index}`}>
+                  <span>{index + 1}</span>
+                  <div>
+                    <strong>{hop.venue}</strong>
+                    <small>{shortAddress(hop.tokenIn)} → {shortAddress(hop.tokenOut)}</small>
+                    <small>V3 fee tier {hop.feeTier / 10_000}% · pool address is authenticated by the onchain V3 factory during execution</small>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : <p>No executable hop details are available for inspection.</p>}
+        </div>
+        <p className="swapRouteDisclosure">Only the direct-liquidity and basket-settlement routes queried here are compared. Selection is not a claim of best price across all venues.</p>
+        <p className="swapRouteDisclosure">{executionConfigured
+          ? "This response was parsed into a bounded entry-router method. A stale quote is never actionable."
+          : "Typed quote and deployment configuration are incomplete. A stale quote is never actionable, and no approval, simulation, or transaction can start."}</p>
+        <span className="swapPairLine">Input: {inputSymbol} · Output: {outputSymbol}</span>
       </div>
-      <dl className="swapQuoteMetrics">
-        <div><dt>Expected output</dt><dd>{selectedValid ? `${activeQuote?.expectedOutput ?? activeQuote?.outputAmount} ${outputSymbol}` : "—"}</dd></div>
-        <div><dt>Minimum received</dt><dd>{selectedValid ? `${activeQuote?.minimumReceived ?? "—"} ${outputSymbol}` : "—"}</dd></div>
-        <div><dt>Venue fees</dt><dd>{selectedValid && activeQuote?.venueFeeBps !== undefined ? `${activeQuote.venueFeeBps / 100}%` : "—"}</dd></div>
-        <div><dt>Price impact</dt><dd>{selectedValid && activeQuote?.priceImpactBps !== undefined ? `${activeQuote.priceImpactBps / 100}%` : "—"}</dd></div>
-        <div><dt>Route</dt><dd>{selectedValid ? activeQuote?.routeLabel : "No valid route selected"}</dd></div>
-        <div><dt>Network gas</dt><dd>{selectedValid ? activeQuote?.gasEstimate ?? "Unavailable" : "—"}</dd></div>
-      </dl>
-      <div className="swapRouteInspection">
-        <strong>Route inspection</strong>
-        {selectedValid && activeQuote?.hops?.length ? (
-          <ol>
-            {activeQuote.hops.map((hop, index) => (
-              <li key={`${hop.venue}-${hop.tokenIn}-${hop.tokenOut}-${index}`}>
-                <span>{index + 1}</span>
-                <div>
-                  <strong>{hop.venue}</strong>
-                  <small>{shortAddress(hop.tokenIn)} → {shortAddress(hop.tokenOut)}</small>
-                  <small>V3 fee tier {hop.feeTier / 10_000}% · pool address is authenticated by the onchain V3 factory during execution</small>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : <p>No executable hop details are available for inspection.</p>}
-      </div>
-      <p className="swapRouteDisclosure">Only the direct-liquidity and basket-settlement routes queried here are compared. Selection is not a claim of best price across all venues.</p>
-      <p className="swapRouteDisclosure">{executionConfigured
-        ? "This response was parsed into a bounded entry-router method. A stale quote is never actionable."
-        : "Typed quote and deployment configuration are incomplete. A stale quote is never actionable, and no approval, simulation, or transaction can start."}</p>
-      <span className="swapPairLine">Input: {inputSymbol} · Output: {outputSymbol}</span>
-    </section>
+    </details>
   );
 }
 
 function SwapSurface() {
   const chainId = useChainId();
   const { address } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const { switchChain } = useSwitchChain();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
   const configuredAssets = useMemo(() => configuredAssetsFor(chainId), [chainId]);
-  const configuredUsdg = useMemo(() => configuredUsdgFor(chainId), [chainId]);
   const routeFundAddress = addressFromLocation();
   const routeFund = routeFundAddress ? { address: routeFundAddress, symbol: "OTF", name: "Unresolved fund route address", kind: "otf" as const, decimals: 18, metadataResolved: false } : undefined;
   const [input, setInput] = useState<SwapAsset>(() => configuredUsdgFor(robinhoodChainTestnet.id) ?? EMPTY_ERC20);
   const [output, setOutput] = useState<SwapAsset>(EMPTY_OTF);
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
+  const [swapSettingsOpen, setSwapSettingsOpen] = useState(false);
   const [picker, setPicker] = useState<"input" | "output">();
   const [quotes, setQuotes] = useState<SwapQuote[]>([]);
   const [activeQuote, setActiveQuote] = useState<SwapQuote>();
@@ -666,6 +637,7 @@ function SwapSurface() {
   const [now, setNow] = useState(Date.now());
   const [execution, setExecution] = useState<"idle" | "approval" | "simulation" | "submission" | "success" | "failure">("idle");
   const [executionMessage, setExecutionMessage] = useState<string>();
+  const swapSettingsRef = useRef<HTMLDivElement>(null);
   const pairValid = validSwapPair(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
   const directionSupported = supportedSwapDirection(input, output);
@@ -675,15 +647,6 @@ function SwapSurface() {
   const deploymentReady = chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady;
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
-  const routeOtf = output.kind === "otf" ? output : input.kind === "otf" ? input : undefined;
-  const testnet = chainId === robinhoodChainTestnet.id;
-  const mainnet = chainId === robinhoodChain.id;
-  const testnetLiquidityHref = testnet && routeOtf && routeOtf.address !== zeroAddress && configuredUsdg
-    ? `/liquidity?vault=${encodeURIComponent(routeOtf.address)}&quote=${encodeURIComponent(configuredUsdg.address)}`
-    : undefined;
-  const mainnetLiquidityVenue = mainnet && routeOtf && routeOtf.address !== zeroAddress && configuredUsdg
-    ? liquidityVenueFor(chainId, routeOtf, configuredUsdg)
-    : undefined;
   const { data: inputBalance, isLoading: inputBalanceLoading } = useBalance({
     address,
     token: input.address === zeroAddress ? undefined : input.address,
@@ -701,6 +664,22 @@ function SwapSurface() {
     const interval = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!swapSettingsOpen) return;
+    const closeSettings = (event: PointerEvent) => {
+      if (!swapSettingsRef.current?.contains(event.target as Node)) setSwapSettingsOpen(false);
+    };
+    const closeSettingsOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSwapSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeSettings);
+    document.addEventListener("keydown", closeSettingsOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeSettings);
+      document.removeEventListener("keydown", closeSettingsOnEscape);
+    };
+  }, [swapSettingsOpen]);
 
   useEffect(() => {
     setQuotes((current) => {
@@ -839,38 +818,68 @@ function SwapSurface() {
                 : execution === "submission"
                   ? "Submitting swap"
                   : "Review and submit swap";
+  const statusMessage = executionMessage
+    ?? (!supportedNetwork
+      ? "Switch to Robinhood Chain to continue."
+      : !deploymentReady
+        ? "Swaps are unavailable until the entry router and typed quote endpoint are configured."
+        : amount && !amountValid
+          ? "Enter a positive amount within the selected token's decimal precision."
+          : !pairValid
+            ? "Choose two different assets."
+            : !pairExecutable
+              ? "Resolve token decimals and OTF factory identity to request a quote."
+              : !directionSupported
+                ? "Choose an OTF share for one side of the swap."
+                : quotes.some((quote) => quote.state === "loading")
+                  ? "Finding the best available queried route…"
+                  : quotes.length && !usableQuote
+                    ? "No executable quote is currently available."
+                    : undefined);
+
+  function handlePrimaryAction() {
+    if (!address) {
+      openConnectModal?.();
+      return;
+    }
+    if (!supportedNetwork) {
+      switchChain({ chainId: robinhoodChainTestnet.id });
+      return;
+    }
+    void executeSwap();
+  }
 
   return (
     <div className="operateShell">
       <OperateNav />
       <main className="swapMain">
-        <section className="swapIntro"><h1>Swap</h1><p>Trade ERC-20s and OTF shares through routes that are explicitly quoted and inspectable.</p></section>
         <section className="swapCard" aria-label="Swap tokens">
-          <div className="swapSettings"><span>{swapDirectionLabel(input, output)}</span><label>Slippage <select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))}><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select></label><SlidersHorizontal size={15} /></div>
-          <div className="swapAmountBox">
-            <div className="swapAmountTop"><span>You pay</span><span>{inputBalanceLoading ? "Loading balance" : inputBalance ? `Balance ${inputBalance.formatted}` : "Balance unavailable"} <button type="button" disabled={!inputBalance || inputBalance.value === 0n} title={inputBalance ? `Use the full ${input.symbol} balance` : "A resolved wallet balance is required before MAX can be used"} onClick={() => inputBalance && setAmount(inputBalance.formatted)}>MAX</button></span></div>
-            <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><button type="button" className="swapAssetButton" onClick={() => setPicker("input")}><AssetMark asset={input} /><strong>{input.symbol}</strong><ChevronDown size={15} /></button></div>
+          <div className="swapCardHeader">
+            <strong>Swap</strong>
+            <div className="swapSettingsControl" ref={swapSettingsRef}>
+              <button type="button" className={`swapIconButton ${swapSettingsOpen ? "active" : ""}`} title="Swap settings" aria-label="Open swap settings" aria-haspopup="dialog" aria-expanded={swapSettingsOpen} onClick={() => setSwapSettingsOpen((open) => !open)}><SlidersHorizontal size={16} /></button>
+              {swapSettingsOpen ? (
+                <div className="swapSettingsPopover" role="dialog" aria-label="Swap settings">
+                  <label><span>Maximum slippage</span><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))}><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select></label>
+                  <small>The quote&apos;s minimum received amount reflects this tolerance.</small>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDownUp size={16} /></button>
-          <div className="swapAmountBox receive">
-            <div className="swapAmountTop"><span>You receive</span><span>{outputBalanceLoading ? "Loading balance" : outputBalance ? `Balance ${outputBalance.formatted}` : "Balance unavailable"}</span></div>
-            <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><button type="button" className="swapAssetButton" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong>{output.symbol}</strong><ChevronDown size={15} /></button></div>
+          <div className="swapPair">
+            <div className="swapAmountBox">
+              <div className="swapAmountTop"><span>You pay</span><span>{inputBalanceLoading ? "Loading balance" : inputBalance ? `Balance ${inputBalance.formatted}` : "Balance unavailable"} <button type="button" disabled={!inputBalance || inputBalance.value === 0n} title={inputBalance ? `Use the full ${input.symbol} balance` : "A resolved wallet balance is required before MAX can be used"} onClick={() => inputBalance && setAmount(inputBalance.formatted)}>MAX</button></span></div>
+              <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><button type="button" className="swapAssetButton" onClick={() => setPicker("input")}><AssetMark asset={input} /><strong>{input.symbol}</strong><ChevronDown size={15} /></button></div>
+            </div>
+            <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
+            <div className="swapAmountBox receive">
+              <div className="swapAmountTop"><span>You receive</span><span>{outputBalanceLoading ? "Loading balance" : outputBalance ? `Balance ${outputBalance.formatted}` : "Balance unavailable"}</span></div>
+              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><button type="button" className="swapAssetButton" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong>{output.symbol}</strong><ChevronDown size={15} /></button></div>
+            </div>
           </div>
-          <SwapStatus chainId={chainId} quotes={quotes} activeQuote={activeQuote} now={now} deploymentReady={deploymentReady} execution={execution} />
-          <button type="button" className="swapPrimary" disabled={!canExecute} onClick={executeSwap}>{primaryLabel}</button>
-          <p className="swapExecutionNote">{deploymentReady
-            ? "The client approves only the exact selected input to the immutable entry router, simulates the locally typed call, then asks the wallet to submit it."
-            : "Writes remain disabled: the redesigned factory, immutable entry router, and typed quote endpoint have not been configured for this network."}</p>
-          {executionMessage ? <p className={`swapExecutionFeedback ${execution === "failure" ? "failure" : "success"}`} role="status">{executionMessage}</p> : null}
-          {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : <div className="swapEmptyQuote"><Info size={15} /><span>{pairExecutable ? "Enter a valid amount to request direct-liquidity and basket-settlement quotes concurrently." : "Resolve token decimals and OTF factory identity before requesting executable quotes."}</span></div>}
-        </section>
-        <section className="swapLiquidityAction" aria-label="Add OTF and USDG liquidity">
-          <div>
-            <strong>{liquidityActionLabel(routeOtf && routeOtf.address !== zeroAddress ? routeOtf.symbol : "OTF")}</strong>
-            <p>Add liquidity for the selected OTF/USDG market in your own wallet. OTF never submits an LP transaction and this does not imply an official pool.</p>
-          </div>
-          {testnet ? (testnetLiquidityHref ? <Link href={testnetLiquidityHref}>Open liquidity page<ArrowRight size={14} /></Link> : <button type="button" disabled>Select an OTF and USDG</button>) : mainnet ? (mainnetLiquidityVenue ? <a href={mainnetLiquidityVenue.href} target="_blank" rel="noopener noreferrer">Open Uniswap<ExternalLink size={14} /></a> : <button type="button" disabled>Select a factory OTF and USDG</button>) : <button type="button" disabled>Unsupported network</button>}
-          {testnetLiquidityHref ? <small>The selected OTF and USDG addresses will be carried into the testnet liquidity page.</small> : mainnetLiquidityVenue ? <small>The selected OTF and canonical mainnet USDG will be prefilled on Uniswap.</small> : mainnet ? <small>Mainnet liquidity requires a factory-identified OTF paired with canonical USDG.</small> : null}
+          <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{primaryLabel}</button>
+          {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{statusMessage}</p> : null}
+          {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
         </section>
       </main>
       <div className="swapFooterFrame"><OperateFooter /></div>

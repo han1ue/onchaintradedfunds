@@ -47,13 +47,13 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Dark Exchange Ledger"**
+**Creative North Star: "The Calm Exchange"**
 
-The product uses a low-light operational field, teal signals, and thin rules to make financial state feel legible rather than promotional. The visual hierarchy is compact, exact, and calm enough for repeated task use.
+The product uses a low-light operational field, teal signals, and thin rules to make financial state feel legible rather than promotional. Swap is intentionally reduced to one obvious exchange task, while supporting routes retain the denser operational language they need.
 
 **Key Characteristics:**
 
-- Dense but breathable transaction controls.
+- Compact, breathable transaction controls with progressive disclosure.
 - Teal marks a confirmed path or intentional action; gold and rose name caution or failure.
 - Data is layered by tone and rule, not by an excess of floating cards.
 
@@ -94,7 +94,7 @@ Deep blue-black surfaces hold the interface; teal is scarce and therefore meanin
 
 ## Layout
 
-The Swap route centers a narrow task surface in a broad dark field. The card keeps payment, reversal, receipt, state, and route details in a single vertical flow. Auxiliary pages use ruled sections and a wider 760px content measure. On mobile, navigation becomes two rows and pair, quote, and formation fields collapse without horizontal overflow.
+The Swap route centers a compact exchange surface in a broad dark field. The card keeps payment, reversal, receipt, the primary action, and only current status in one vertical flow; route inspection stays collapsed until requested. Auxiliary pages use ruled sections and a wider content measure. The shared header is an inset floating bar below the Testnet warning. On mobile it remains one compact row, reduces the brand to its mark or hides it when necessary, and prevents control overflow down to 320px.
 
 ## Elevation & Depth
 
@@ -115,7 +115,7 @@ Controls are gently rounded: 8px for actions and inputs, 12px for grouped fields
 ### Cards / Containers
 
 - **Primary Swap Surface:** One centered card with a 16px radius and diffuse shadow.
-- **Route Ledger:** Uses internal rules and rows, not nested raised cards.
+- **Quote Details:** A single collapsed disclosure contains alternate queried routes, metrics, hops, fees, impact, and factual route disclosures.
 
 ### Inputs / Fields
 
@@ -125,7 +125,7 @@ Controls are gently rounded: 8px for actions and inputs, 12px for grouped fields
 
 ### Navigation
 
-The nav is a ruled, lightly blurred top bar. Swap, Funds, and Verified are centered; the active item receives a restrained teal wash. Wallet connection remains on the right.
+The navigation surface floats away from the viewport edges with rounded ends, a quiet rule, restrained blur, and soft shadow. It contains Swap, Funds, and Docs. The right side orders the icon-only Robinhood network selector, the RainbowKit connection/account control, and settings. The closed network control never displays a chain name.
 
 ## Do's and Don'ts
 
