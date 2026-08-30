@@ -17,11 +17,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     constructor() {
         // The implementation itself must never be initialized or used as a vault.
         _disableInitializers();
-        _initialized = true;
     }
 
     function initialize(VaultInitParams calldata params) external initializer nonReentrant {
-        if (_initialized) revert AlreadyInitialized();
         if (msg.sender.code.length == 0) revert UnauthorizedFactory();
         if (
             params.creator == address(0) || params.expenseBeneficiary == address(0)

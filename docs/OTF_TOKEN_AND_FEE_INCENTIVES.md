@@ -65,8 +65,9 @@ not follow post-formation value drift.
 The formation authority/data provider is unresolved and must be independently controlled before
 production. The creator's beneficiary and expense ratio are visible at formation but are not a
 guarantee of performance. Factory/collector governance, token distribution, treasury policy,
-mainnet OTF and USDG addresses, typed quote service, liquidity policy, and the creator-dependent
-sound-vault emergency path are unresolved.
+mainnet OTF addresses, typed quote service, liquidity policy, and the creator-dependent sound-vault
+emergency path are unresolved. Canonical mainnet USDG identity is configured separately from
+testnet deployment state.
 
 Pool fees belong to external LPs. The creator promises no pool liquidity, price, execution quality,
 or buyback. The app's external-liquidity handoff must disclose that it does not custody LP positions

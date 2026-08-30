@@ -128,8 +128,8 @@ Production pool creation and liquidity-position management happen on the externa
 and the Swap route uses a leaving-app action. The `/liquidity` route is a separate, testnet-only
 utility for minting wallet-owned, full-range positions in the legacy Synthra V3 USDG pools used by
 the configured test assets; it must never be presented as a production market or deployment path.
-Mainnet USDG/OTF addresses, new production deployments, and the production typed quote service
-remain unresolved.
+The canonical mainnet USDG address is configured separately from testnet. Mainnet OTF addresses,
+new production deployments, and the production typed quote service remain unresolved.
 
 ## Repository layout
 

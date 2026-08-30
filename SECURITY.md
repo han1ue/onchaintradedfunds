@@ -122,7 +122,8 @@ funds.
   future formations only, but bad attestations remain an economic risk.
 - New production deployments, governance/key management, monitoring, and incident procedures are
   unresolved.
-- The production typed quote service is unresolved. Mainnet USDG and OTF addresses are unresolved.
+- The production typed quote service and mainnet OTF addresses are unresolved. Canonical mainnet
+  USDG identity is configured separately from testnet deployment state.
 - Synthra publishes no documented OTF/USDG pair-prefill URL. Testnet liquidity and data are not
   production evidence.
 - Malicious, rebasing, and fee-on-transfer assets remain unsupported despite exact-delta guards;

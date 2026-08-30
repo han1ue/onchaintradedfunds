@@ -217,8 +217,9 @@ states distinct.
 
 The intended operating routes are `/` Swap, `/funds` Funds, `/funds/<address>` fund detail,
 `/create` Create, `/verified` Verified, `/wallet` Wallet, and `/liquidity` legacy testnet LP
-workspace. The Docs control opens the repository documentation externally. Mainnet USDG/OTF
-addresses, new production deployments, and the production typed quote service are unresolved.
+workspace. The Docs control opens the repository documentation externally. Canonical mainnet USDG
+identity is configured separately from testnet; mainnet OTF addresses, new production deployments,
+and the production typed quote service are unresolved.
 Production liquidity actions MUST leave the app for the configured external venue. The internal
 liquidity workspace MAY approve tokens and mint wallet-owned, full-range positions only on Robinhood
 Chain Testnet, only through its explicitly configured legacy Synthra V3 contracts, and only for USDG

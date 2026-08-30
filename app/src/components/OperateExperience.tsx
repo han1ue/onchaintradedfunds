@@ -47,7 +47,7 @@ import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, use
 import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
+import { robinhoodMainnetAddresses, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -58,6 +58,7 @@ import {
   executionStages,
   isPositiveDecimalAmount,
   liquidityActionLabel,
+  liquidityVenueFor,
   MAX_OTF_MANDATE_BYTES,
   pastedAsset,
   quoteIsFresh,
@@ -72,6 +73,7 @@ import {
   type SwapQuote,
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
+import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 
 export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
@@ -80,7 +82,6 @@ type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://github.com/han1ue/onchaintradedfunds#readme";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
-const UNISWAP_LIQUIDITY_URL = "https://app.uniswap.org/positions?chain=robinhood";
 const MAX_CONSTITUENT_DECIMALS = 36;
 
 const ERC20_METADATA_READ_ABI = [
@@ -153,20 +154,25 @@ const EMPTY_OTF: SwapAsset = {
 };
 
 function configuredAssetsFor(chainId: number): SwapAsset[] {
-  if (chainId !== robinhoodChainTestnet.id) return [];
+  const addresses = chainId === robinhoodChainTestnet.id
+    ? robinhoodTestnetAddresses
+    : chainId === robinhoodChain.id
+      ? robinhoodMainnetAddresses
+      : undefined;
+  if (!addresses) return [];
   const assets: SwapAsset[] = [];
-  if (robinhoodTestnetAddresses.usdg) {
+  if (addresses.usdg) {
     assets.push({
-      address: robinhoodTestnetAddresses.usdg,
+      address: addresses.usdg,
       symbol: "USDG",
       name: "USDG",
       kind: "erc20",
-      decimals: 18,
+      decimals: chainId === robinhoodChain.id ? 6 : 18,
       metadataResolved: true,
       verified: true,
     });
   }
-  if (robinhoodTestnetAddresses.weth) {
+  if (chainId === robinhoodChainTestnet.id && robinhoodTestnetAddresses.weth) {
     assets.push({
       address: robinhoodTestnetAddresses.weth,
       symbol: "WETH",
@@ -508,7 +514,7 @@ function AppPageHeader({ title, description, icon, actions }: { title: string; d
 }
 
 function MetricCard({ label, value, action }: { label: string; value: string; action?: React.ReactNode }) {
-  return <article className={`metricCard${action ? " hasMetricAction" : ""}`}><span className="metricLabel">{label}</span><strong>{value}</strong>{action}</article>;
+  return <div className={`metricCard${action ? " hasMetricAction" : ""}`}><span className="metricLabel">{label}</span><strong>{value}</strong>{action}</div>;
 }
 
 function WalletConnectionAction() {
@@ -675,6 +681,9 @@ function SwapSurface() {
   const testnetLiquidityHref = testnet && routeOtf && routeOtf.address !== zeroAddress && configuredUsdg
     ? `/liquidity?vault=${encodeURIComponent(routeOtf.address)}&quote=${encodeURIComponent(configuredUsdg.address)}`
     : undefined;
+  const mainnetLiquidityVenue = mainnet && routeOtf && routeOtf.address !== zeroAddress && configuredUsdg
+    ? liquidityVenueFor(chainId, routeOtf, configuredUsdg)
+    : undefined;
   const { data: inputBalance, isLoading: inputBalanceLoading } = useBalance({
     address,
     token: input.address === zeroAddress ? undefined : input.address,
@@ -709,8 +718,8 @@ function SwapSurface() {
   }, [now]);
 
   useEffect(() => {
-    if (chainId === robinhoodChainTestnet.id) return;
-    setInput((current) => current.verified ? EMPTY_ERC20 : current);
+    const networkUsdg = configuredUsdgFor(chainId);
+    setInput((current) => current.verified ? networkUsdg ?? EMPTY_ERC20 : current);
     setOutput((current) => current.verified ? EMPTY_ERC20 : current);
   }, [chainId]);
 
@@ -774,28 +783,19 @@ function SwapSurface() {
         functionName: "allowance",
         args: [address, executionPlan.approval.spender],
       });
-      if (allowance < executionPlan.approval.amount) {
-        if (allowance > 0n) {
-          const resetHash = await walletClient.writeContract({
-            account: address,
-            address: executionPlan.approval.token,
-            abi: ERC20_APPROVE_ABI,
-            functionName: "approve",
-            args: [executionPlan.approval.spender, 0n],
-          });
-          const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
-          if (resetReceipt.status !== "success") throw new Error("The token approval reset reverted.");
-        }
+      await ensureExactErc20Approval(allowance, executionPlan.approval.amount, async (approvalAmount) => {
         const approvalHash = await walletClient.writeContract({
           account: address,
           address: executionPlan.approval.token,
           abi: ERC20_APPROVE_ABI,
           functionName: "approve",
-          args: [executionPlan.approval.spender, executionPlan.approval.amount],
+          args: [executionPlan.approval.spender, approvalAmount],
         });
         const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-        if (approvalReceipt.status !== "success") throw new Error("The exact token approval reverted.");
-      }
+        if (approvalReceipt.status !== "success") {
+          throw new Error(approvalAmount === 0n ? "The token approval reset reverted." : "The exact token approval reverted.");
+        }
+      });
       setExecution("simulation");
       const data = encodeFunctionData({
         abi: otfEntryExitRouterAbi,
@@ -869,8 +869,8 @@ function SwapSurface() {
             <strong>{liquidityActionLabel(routeOtf && routeOtf.address !== zeroAddress ? routeOtf.symbol : "OTF")}</strong>
             <p>Add liquidity for the selected OTF/USDG market in your own wallet. OTF never submits an LP transaction and this does not imply an official pool.</p>
           </div>
-          {testnet ? (testnetLiquidityHref ? <Link href={testnetLiquidityHref}>Open liquidity page<ArrowRight size={14} /></Link> : <button type="button" disabled>Select an OTF and USDG</button>) : mainnet ? <a href={UNISWAP_LIQUIDITY_URL} target="_blank" rel="noopener noreferrer">Open Uniswap<ExternalLink size={14} /></a> : <button type="button" disabled>Unsupported network</button>}
-          {testnetLiquidityHref ? <small>The selected OTF and USDG addresses will be carried into the testnet liquidity page.</small> : mainnet ? <small>Liquidity positions are created and managed externally on Uniswap.</small> : null}
+          {testnet ? (testnetLiquidityHref ? <Link href={testnetLiquidityHref}>Open liquidity page<ArrowRight size={14} /></Link> : <button type="button" disabled>Select an OTF and USDG</button>) : mainnet ? (mainnetLiquidityVenue ? <a href={mainnetLiquidityVenue.href} target="_blank" rel="noopener noreferrer">Open Uniswap<ExternalLink size={14} /></a> : <button type="button" disabled>Select a factory OTF and USDG</button>) : <button type="button" disabled>Unsupported network</button>}
+          {testnetLiquidityHref ? <small>The selected OTF and USDG addresses will be carried into the testnet liquidity page.</small> : mainnetLiquidityVenue ? <small>The selected OTF and canonical mainnet USDG will be prefilled on Uniswap.</small> : mainnet ? <small>Mainnet liquidity requires a factory-identified OTF paired with canonical USDG.</small> : null}
         </section>
       </main>
       <div className="swapFooterFrame"><OperateFooter /></div>
@@ -1286,7 +1286,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (
-          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>No assets, liquidity adapters, or OTF deployments are configured on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
+          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Canonical USDG is configured, but no OTF deployments or typed execution service are available on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
         ) : (
           <>
             <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
@@ -1349,11 +1349,11 @@ function WalletSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction walletExploreAction" href="/funds"><LayoutGrid size={14} />Explore OTFs</Link></>} />
+        <AppPageHeader title="My wallet" description="Your OTF share positions and network balance." icon={<Wallet size={18} />} actions={<><WalletConnectionAction /><Link className="secondaryAction" href="/funds"><LayoutGrid size={14} />Explore OTFs</Link></>} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
           <>
             <div className="depositMetrics walletMetrics">
-              <article className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}<button className="iconOnly compact" type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></div></div><div className="walletAddressValue"><strong title={address}>{shortAddress(address)}</strong></div></article>
+              <div className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}<button className="iconOnly compact" type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></div></div><div className="walletAddressValue"><strong title={address}>{shortAddress(address)}</strong></div></div>
               <MetricCard label="OTF Positions" value="0" />
               <MetricCard label="USDG Balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
               <MetricCard label="ETH Balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />

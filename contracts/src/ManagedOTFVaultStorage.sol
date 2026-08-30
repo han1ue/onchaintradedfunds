@@ -18,7 +18,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     uint256 internal constant YEAR = ProtocolConstants.YEAR;
     uint256 internal constant FORMATION_SHARE_UNIT = ProtocolConstants.FORMATION_SHARE_UNIT;
 
-    error AlreadyInitialized();
     error NotInitialized();
     error UnauthorizedFactory();
     error UnauthorizedRouter(address caller);
