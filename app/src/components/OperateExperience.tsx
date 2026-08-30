@@ -76,7 +76,7 @@ export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified
 
 type AppearancePreference = "default" | "light" | "dark";
 
-const DOCS_URL = "https://github.com/han1ue/onchaintradedfunds#readme";
+const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
 const MAX_CONSTITUENT_DECIMALS = 36;
 const SPLASH_ENTRY_KEY = "otf-splash-entered";
