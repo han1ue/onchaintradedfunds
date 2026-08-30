@@ -615,25 +615,3 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
   if (chainId !== 46630) return unavailableQuoteService;
   return typedQuoteService({ chainId, entryRouter: robinhoodTestnetAddresses.entryRouter, endpoint: robinhoodTestnetQuote.endpoint });
 }
-
-export const MAX_OTF_MANDATE_BYTES = 2_048;
-
-export function creationValidation(input: { name: string; symbol: string; mandate: string; constituents: readonly { address: string }[]; annualExpenseRatioBps: number; beneficiary: string }): string[] {
-  const errors: string[] = [];
-  const active = input.constituents.filter((asset) => asset.address.trim());
-  const normalizedName = input.name.trim();
-  const mandateBytes = new TextEncoder().encode(input.mandate.trim()).length;
-  if (normalizedName.length <= 4 || !normalizedName.endsWith(" OTF")) errors.push("Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').");
-  if (!/^[A-Z0-9][A-Z0-9-]*$/.test(input.symbol)) errors.push("Enter a ticker using letters, numbers, or hyphens.");
-  if (!mandateBytes) errors.push("Write an initial strategy rationale.");
-  if (mandateBytes > MAX_OTF_MANDATE_BYTES) errors.push(`Shorten the initial strategy rationale to ${MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes or fewer.`);
-  if (!active.length) errors.push("Add at least one constituent.");
-  if (active.length > 20) errors.push("An OTF can include at most 20 constituents.");
-  const addresses = active.map((asset) => asset.address.trim().toLowerCase());
-  if (addresses.some((asset) => !isAddress(asset))) errors.push("Each constituent needs a valid token address.");
-  if (addresses.some((asset) => asset === zeroAddress)) errors.push("The zero address cannot be a constituent.");
-  if (new Set(addresses).size !== addresses.length) errors.push("Duplicate constituents are not allowed.");
-  if (!Number.isInteger(input.annualExpenseRatioBps) || input.annualExpenseRatioBps < 0 || input.annualExpenseRatioBps > 1_000) errors.push("Annual creator expense ratio must be between 0 and 1000 bps.");
-  if (!isAddress(input.beneficiary) || input.beneficiary.toLowerCase() === zeroAddress) errors.push("A valid nonzero fixed beneficiary address is required.");
-  return errors;
-}

@@ -56,7 +56,9 @@ export async function getAssetRegistry(search = ""): Promise<AssetRegistryEntry[
       ea.network, ea.chain_id as "chainId", ea.decimals,
       (va.asset_address is not null) as verified,
       ea.price_source as "priceSource", latest.bid_usd::float8 as "latestPriceUsd",
+      latest.bid_usd::text as "latestPriceUsdExact",
       latest.sampled_at::text as "latestPriceAt",
+      market_cap.value::text as "marketCapUsd",
       coalesce(configs.items, '[]'::json) as "pricingConfigs",
       coalesce(markets.items, '[]'::json) as markets
     from asset_registry ea
@@ -69,6 +71,14 @@ export async function getAssetRegistry(search = ""): Promise<AssetRegistryEntry[
       order by aps.sampled_at desc
       limit 1
     ) latest on true
+    left join lateral (
+      select aes.market_cap_usd as value
+      from asset_markets cap_market
+      join asset_eligibility_snapshots aes on aes.market_id = cap_market.id
+      where cap_market.asset_id = ea.id and aes.market_cap_verified is true
+      order by aes.sampled_at desc
+      limit 1
+    ) market_cap on true
     left join lateral (
       select json_agg(case pc.source
         when 'chainlink-direct' then json_build_object(

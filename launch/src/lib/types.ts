@@ -99,7 +99,9 @@ export type AssetRegistryEntry = {
   verified: boolean;
   priceSource: "robinhood-bid" | "coinbase-eth-usd-bid" | "coingecko-usd";
   latestPriceUsd: number | null;
+  latestPriceUsdExact: string | null;
   latestPriceAt: string | null;
+  marketCapUsd: string | null;
   pricingConfigs: KnownPricingConfig[];
   markets: {
     id: string;

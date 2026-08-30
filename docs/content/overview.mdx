@@ -1,154 +1,122 @@
 ---
 title: Protocol overview
-description: Architecture, formation, accounting, routing, and application disclosures.
+description: Architecture, creation, bootstrap accounting, routing, and application disclosures.
 ---
 
 # Protocol overview
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. This repository describes a
-pre-mainnet, oracleless architecture: an OTF is weighted by market capitalization once, at
-formation, and then holds a fixed ordered basket. It does not calculate NAV, refresh prices, or
-rebalance from a runtime oracle.
+Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. The current pre-mainnet
+architecture is oracleless: a creator commits an ordered constituent list and immutable raw-token
+bootstrap units for one OTF. The app's fixed `$1` initial basket target, prices, market caps, and
+percentage weights stay offchain. The contracts do not calculate NAV, refresh market data, or
+rebalance, and the `$1` target is not a peg.
 
-The contracts are unaudited and are not production-ready. Do not deploy them to mainnet. The
-active protocol is separate from `launch/`, which is a prelaunch competition and is not fund
-governance.
-
-Normative requirements are in the [protocol security specification](/protocol-security-spec).
-Threats, trust assumptions, and unresolved production work are in [Security and risk](/security).
-The token and fee policy is in [Token and fee incentives](/token-and-fee-incentives).
+The contracts are unaudited and are not production-ready. `launch/` is a separate prelaunch
+competition and is not fund governance.
 
 ## Architecture
 
 ```text
-AUTHORITY-signed, creator-bound formation snapshot
-             |
-             v
-        OTFFactory ---- one-time clone ----> ManagedOTFVault
-             |                                      |
-             |                                      +-- fixed basket/share accounting
-             |                                      +-- creator expense shares
-             |                                      +-- FeeCollector protocol shares
-             v
-      OTFEntryExitRouter ---- typed, factory-authenticated Uniswap V3 swaps
+offchain asset data + creator target/percentages
+                  |
+                  v
+       fixed-point bootstrap calculation
+                  |
+                  | constituents + raw units only
+                  v
+             OTFFactory ---- Clones.clone ----> ManagedOTFVault
+                  |                                  |
+                  |                                  +-- immutable bootstrap basket
+                  |                                  +-- accounted-balance settlement
+                  |                                  +-- creator expense shares
+                  v
+         OTFEntryExitRouter ---- authenticated Uniswap V3 swaps
 ```
 
-### Formation
+## Creation application
 
-Formation is authority-attested and creator-submitted. The configured authority (an EOA or
-ERC-1271 contract) authenticates one EIP-712 `FormationSnapshot` for a specific chain ID, factory,
-intended creator, ordered constituent array, market-cap array, unit-price array, snapshot time,
-expiry, calculation version, and nonce. An ordered token-decimals array is signed alongside the
-constituents. The factory rejects a zero creator or any caller other than the signed creator before
-the one-use nonce can be consumed. It also checks the signature, expiry/domain, token
-contracts, uniqueness, positive data, and that each live `decimals()` result exactly matches the
-signed value and is at most 36. Relative quantities use the signed decimals. The signed creator
-separately supplies unsigned name, symbol, beneficiary, and immutable
-`annualCreatorExpenseRatioBps`; unsigned market data is never accepted.
+The connected wallet is the creator. It selects assets while the app uses a fixed `$1` target
+initial basket value based on current offchain prices. This calculation target is not a peg or a
+guaranteed market price. The app loads current prices, market caps, and token decimals from its
+existing offchain asset source. Defaults are market-cap weights normalized deterministically at
+18-decimal percentage precision to exactly 100%. Every percentage remains editable, must be
+positive, and must produce an exact internal 100% total. Adding or removing an asset preserves all
+existing percentages; only the explicit reset action renormalizes the selection.
 
-The authority and data-provider arrangement is not yet a production configuration. The authority
-must be independently controlled and the source, methodology, timestamp, and evidence for every
-signed data set must be disclosed before deployment. A valid signature proves authorization of the
-snapshot, not that market-cap or price data is economically correct.
+If every final percentage unit equals that precise default, the creation methodology is
+`Market-cap weighted`; any exact-unit difference is `Modified market-cap weighted`. Neutral
+fixed-point multipliers compare each final percentage with its market-cap default. These labels
+describe initialization only and do not create an ongoing onchain rebalance.
 
-The offline formation helper validates a fixture and emits relative quantities, typed data, and a
-digest. It intentionally never accepts private-key material or signs. Production signing belongs in
-the chosen Safe, HSM, MPC, or offline authority workflow.
-
-Calculation version 1 derives the relative quantity for each asset for a $1 formation notional and
-`1e18` fund shares:
+The app uses integer fixed-point arithmetic. With percentage units totaling `T`, fixed target
+`V = 1e18` USD WAD, price `P_i` in USD WAD, and token decimals `d_i`:
 
 ```text
-totalMarketCap = sum(marketCapUsdWad[i])
-weightWad[i]   = floor(marketCapUsdWad[i] * 1e18 / totalMarketCap)
-quantity[i]    = floor(weightWad[i] * 10**tokenDecimals[i] / unitPriceUsdWad[i])
+allocationUsdWad_i = floor(V * percentageUnits_i / T)
+bootstrapUnits_i   = floor(allocationUsdWad_i * 10**d_i / P_i)
 ```
 
-The ordered quantities are persisted as formation metadata. Market-cap weights are not maintained
-after formation; asset values can drift without an automatic rebalance.
+Every raw `bootstrapUnits_i` must be nonzero. The app shows the minimum percentage needed to
+produce one raw unit and explains when token precision makes inclusion in a `$1` OTF impossible.
+The review step shows the raw quantity, formatted token quantity, and realized percentage after
+integer rounding. Prices, market caps, the fixed target, and percentages remain application
+metadata. Only the ordered constituents and calculated
+`bootstrapBasketUnitsPerOTF` are included as onchain basket inputs.
 
-## Vault accounting
+After confirmation, the app can associate versioned informational creation metadata with the
+vault in the creator browser. If that record is unavailable on a fund detail route, the app shows
+`Weighting method unavailable` and does not infer methodology from current balances.
 
-- An OTF has at most 20 immutable constituents and 18-decimal shares. It is not ERC-4626.
-- The first basket mint must be at least `1e18` shares. Later mint requirements round up
-  pro-rata; redemption amounts round down pro-rata.
-- Fee shares are checkpointed before supply math. `accountedBalance` is the vault's ledger, not a
-  live valuation. Transfers that do not pass the exact balance-delta checks revert.
-- Tracked-token donations are not added to the ledger and do not create a privileged claim. Normal
-  mint/redeem uses accounted balances. After final shutdown, anyone may use the public in-kind
-  emergency path: distributable backing is capped at `min(actual, accounted)`, so donations above
-  the ledger are excluded and deficits cannot be overpaid.
-- The creator can irreversibly shut down a sound vault. Any caller can do so when a readable
-  constituent balance proves `actual < accounted`; a failed read or donation is not proof. Normal
-  mint/redeem stops, and emergency in-kind redemption remains available.
+`OTFFactory.createVault` uses `Clones.clone`, sets `msg.sender` as creator, and initializes an empty
+vault. Creation requires no constituent transfer and has no deterministic address promise.
 
-## Creator expense and protocol token
+## Bootstrap and ongoing accounting
 
-`annualCreatorExpenseRatioBps` is immutable per vault, named exactly as in the ABI, and limited to
-0..1000 bps. It mints shares to the fixed beneficiary (and, where configured, the protocol
-collector's share) rather than transferring assets. The fee is lazy and cadence-independent. At
-10% for one 365-day year, a pre-fee supply `S` mints approximately `S * 10% / 90%`, or 11.111%,
-so existing holders retain 90% of the post-fee supply. Final shutdown stops further accrual.
-
-`OTFToken` is a fixed 1 billion token supply with no privileged minter. `FeeCollector` holds
-protocol fee shares and permits claims only by its treasury. The optional formation-allocation
-rebate only reallocates protocol fee shares to the creator when the signed formation allocation is
-covered by accounted OTF tokens; it never lowers the creator-selected fee paid by holders.
-
-## Entry, exit, and routing
-
-The permissionless router uses restricted basket mint/redemption primitives internally to mint
-from one input token, redeem to one output token, or swap between OTF baskets. The application does
-not expose a separate in-kind workflow. The offchain client compares only the direct and basket
-routes it actually queries. Discovery and quote comparison are permissionless and offchain; the UI
-does not claim global price optimality.
-
-The onchain boundary is one immutable, typed Uniswap V3 factory/SwapRouter02 pair:
-
-- packed V3 paths are parsed hop-by-hop, not treated as opaque commands;
-- routes allow at most 40 legs and 3 hops per leg, with at most 20 vault constituents;
-- every pool is authenticated against the configured V3 factory, token ordering, and fee;
-- deadlines, per-leg minimums, aggregate minimums, exact sender/receiver balance deltas,
-  temporary approvals, sender-only recipients/refunds, reentrancy protection, and atomic rollback
-  are enforced;
-- fee-on-transfer, rebasing, malicious callback, or otherwise non-exact tokens are rejected.
-
-Production must use the four-field SwapRouter02 `exactInput` ABI and a factory/router/pool bytecode
-family that agrees on the V3 pool init-code hash. Reported `factory()` equality alone is not enough;
-funded fork smoke tests in both directions and through a multihop path are a deployment blocker.
-
-There is no adapter registry or pool allowlist in this architecture. Uniswap V4 is not integrated:
-there is no configured PoolManager. Pool fees belong to LPs; the creator makes no liquidity or
-execution-price promise.
-
-## Application and liquidity disclosures
-
-The app's operating routes are `/` (Swap), `/funds` (Funds), `/funds/<address>` (fund detail),
-`/create` (Create), `/verified` (Verified), `/wallet` (Wallet), and `/liquidity` (legacy testnet
-LP utility). The Docs control opens this documentation site externally. Wallet, quote,
-approval, simulation, submission, success, and failure states should be shown explicitly;
-unavailable configuration must not look executable.
-
-Production pool creation and liquidity-position management happen on the external network venue,
-and the Swap route uses a leaving-app action. The `/liquidity` route is a separate, testnet-only
-utility for minting wallet-owned, full-range positions in the legacy Synthra V3 USDG pools used by
-the configured test assets; it must never be presented as a production market or deployment path.
-The canonical mainnet USDG address is configured separately from testnet. Mainnet OTF addresses,
-new production deployments, and the production typed quote service remain unresolved.
-
-## Repository layout
+Vault shares use 18 decimals. When total supply is zero, any requested mint of at least `1e18`
+shares is allowed. Each required constituent amount is:
 
 ```text
-contracts/src/       Solidity implementation
-contracts/test/      Foundry tests and malicious-token fixtures
-app/                  Operating UI and route disclosures
-docs/                 Nextra website and protocol documentation
-docs/content/         Protocol, security, and incentive source documents
+amountIn_i = ceil(bootstrapBasketUnitsPerOTF_i * requestedShares / 1e18)
 ```
+
+The first depositor can therefore mint one or multiple OTF units with a proportionally scaled
+basket. Once supply is nonzero, later mints use current accounted balances:
+
+```text
+amountIn_i = ceil(accountedBalance_i * requestedShares / totalSupply)
+```
+
+Normal redemption returns each holder's floored pro-rata accounted balance. A full redemption
+returns every accounted balance exactly and leaves supply and the accounting ledger at zero. A
+later depositor bootstraps again from the same immutable bootstrap units.
+
+Fees are accrued before normal mint and redemption math. A normal redemption may leave either zero
+supply or at least `1e18`; otherwise it reverts with `ResidualSupplyTooSmall`. Emergency redemption
+does not apply this floor because holder exit takes priority after shutdown. The normal-settlement
+invariant is `totalSupply == 0 || totalSupply >= 1e18`.
+
+`accountedBalance` is the vault ledger, not a live valuation. Tracked-token donations do not enter
+the ledger. Normal settlement fails closed on a backing deficit. After irreversible shutdown,
+permissionless in-kind emergency redemption distributes at most `min(actual, accounted)`.
+
+## Fees, routing, and liquidity
+
+Each vault has an immutable annual creator expense ratio from 0 to 1000 bps and a fixed beneficiary.
+Expenses are paid through lazy, cadence-independent share inflation. The factory's immutable
+`protocolFeeShareBps` splits fee shares between the beneficiary and `FeeCollector`; there is no
+portfolio-dependent rebate.
+
+The permissionless entry/exit router supports typed Uniswap V3 basket routes. It authenticates
+pools against one immutable factory/router pair, parses packed paths, bounds legs and hops, enforces
+deadlines and minimums, clears temporary approvals, checks exact token deltas, prevents reentrancy,
+and rolls the whole transaction back on failure. Offchain quoting compares only queried routes and
+does not promise global optimality.
+
+Production liquidity is managed at the external venue. `/liquidity` remains a visibly testnet-only
+utility for explicitly configured legacy pools and is not a production deployment path.
 
 ## Verification
 
-The Solidity workflow runs formatting, the contract security gate, the full Foundry suite, fuzz
-and invariant campaigns where current test targets exist, and the advisory coverage summary. A
-local or CI result is not an audit or a deployment approval. See the workflow and the protocol
-specification for the exact gates.
+The repository runs Solidity formatting, compilation, security gates, unit/fuzz/invariant tests,
+coverage reporting, application tests, typechecking, and builds. Passing local or CI checks is not
+an audit or deployment approval.

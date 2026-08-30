@@ -31,11 +31,11 @@ function safePositiveInteger(value: unknown): number | undefined {
 const testnet = record(testnetDeployment);
 const testnetContracts = record(testnet.contracts) as Record<string, ContractDeployment | undefined>;
 const testnetExternalContracts = record(testnet.externalContracts);
-const testnetFormation = record(testnet.formation);
+const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
 const testnetQuote = record(testnet.quoteService);
-const testnetCompatible = Number(testnet.schemaVersion) === 10
-  && testnet.architecture === "oracleless-market-cap-at-formation-v1";
+const testnetCompatible = Number(testnet.schemaVersion) === 11
+  && testnet.architecture === "immutable-bootstrap-basket-v1";
 
 function deployedTestnetContract(name: string): Address | undefined {
   return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;
@@ -64,7 +64,12 @@ export const robinhoodTestnetQuote = Object.freeze({
   endpoint: httpsUrl(testnetQuote.endpoint),
 });
 
-const robinhoodTestnetFormationSnapshotAuthority = address(testnetFormation.snapshotAuthority);
+export const robinhoodTestnetCreation = Object.freeze({
+  assetDataEndpoint: httpsUrl(testnetCreation.assetDataEndpoint),
+});
+
+export const robinhoodTestnetCreationReady = testnet.status === "deployed"
+  && Boolean(robinhoodTestnetAddresses.factory);
 
 export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
   && Boolean(
@@ -72,7 +77,6 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     && robinhoodTestnetAddresses.entryRouter
     && robinhoodTestnetAddresses.feeCollector
     && robinhoodTestnetAddresses.otfToken
-    && robinhoodTestnetFormationSnapshotAuthority
     && robinhoodTestnetQuote.endpoint,
   );
 

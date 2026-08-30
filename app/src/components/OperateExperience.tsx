@@ -7,14 +7,11 @@ import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfBrandMark } from "@onchaintradedfunds/brand";
 import {
   ArrowLeft,
-  ArrowRight,
   ArrowDown,
   ArrowUpRight,
-  BadgeCheck,
   Check,
   CheckCircle,
   ChevronDown,
-  CircleAlert,
   CircleDollarSign,
   Copy,
   Droplets,
@@ -24,17 +21,14 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
-  LockKeyhole,
   Monitor,
   Network,
   Palette,
-  Plus,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sun,
-  Trash2,
   UserCog,
   Wallet,
   X,
@@ -51,12 +45,10 @@ import { robinhoodMainnetAddresses, robinhoodTestnetAddresses, robinhoodTestnetD
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
-  creationValidation,
   decimalInputValue,
   ERC20_APPROVE_ABI,
   executionPlanForQuote,
   isPositiveDecimalAmount,
-  MAX_OTF_MANDATE_BYTES,
   pastedAsset,
   quoteIsFresh,
   quoteServiceForChain,
@@ -70,8 +62,20 @@ import {
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
+import {
+  formatMarketCapMultiplier,
+  formatMarketCapSnapshotTimestamp,
+  formatStoredPercentage,
+  formatStoredPercentageExact,
+  loadCreationMetadata,
+  multiplierPosition,
+  weightingMethodDetailCopy,
+  weightingMethodLabel,
+  type OtfCreationMetadata,
+} from "@/lib/creation-metadata";
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
+import { CreateOTFForm } from "./CreateOTFForm";
 
 export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
 
@@ -79,57 +83,6 @@ type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
-const MAX_CONSTITUENT_DECIMALS = 36;
-const ERC20_METADATA_READ_ABI = [
-  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
-  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
-  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint8" }] },
-] as const;
-
-type TokenMetadata = { name: string; symbol: string; decimals: number };
-
-function useTokenMetadataLookup(chainId: number, address: Address | undefined) {
-  const publicClient = usePublicClient({ chainId });
-  const [metadata, setMetadata] = useState<TokenMetadata>();
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!address || !publicClient) {
-      setMetadata(undefined);
-      setLoading(false);
-      setFailed(false);
-      return;
-    }
-    let cancelled = false;
-    setMetadata(undefined);
-    setLoading(true);
-    setFailed(false);
-    void (async () => {
-      try {
-        const decimals = await publicClient.readContract({ address, abi: ERC20_METADATA_READ_ABI, functionName: "decimals" });
-        const [name, symbol] = await Promise.all([
-          publicClient.readContract({ address, abi: ERC20_METADATA_READ_ABI, functionName: "name" }).catch(() => "Unindexed token"),
-          publicClient.readContract({ address, abi: ERC20_METADATA_READ_ABI, functionName: "symbol" }).catch(() => "TOKEN"),
-        ]);
-        if (cancelled) return;
-        setMetadata({
-          name: String(name).trim().slice(0, 80) || "Unindexed token",
-          symbol: String(symbol).trim().slice(0, 16) || "TOKEN",
-          decimals: Number(decimals),
-        });
-      } catch {
-        if (!cancelled) setFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [address, publicClient]);
-
-  return { metadata, loading, failed };
-}
-
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
   symbol: "Select token",
@@ -920,22 +873,6 @@ function SwapSurface() {
   );
 }
 
-type ConstituentInput = {
-  address: string;
-  symbol: string;
-  name: string;
-  decimals?: number;
-  verified: boolean;
-};
-
-function constituentFromAsset(asset: SwapAsset): ConstituentInput {
-  return { address: asset.address, symbol: asset.symbol, name: asset.name, decimals: asset.decimals, verified: asset.verified === true };
-}
-
-function emptyConstituent(): ConstituentInput {
-  return { address: "", symbol: "Select asset", name: "Search verified assets or add by address", verified: false };
-}
-
 function DashboardPage({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className="operateShell"><OperateNav /><main className={`dashboardMain${className ? ` ${className}` : ""}`}>{children}<OperateFooter /></main></div>;
 }
@@ -949,350 +886,21 @@ function LiquiditySurface() {
 }
 
 function CreateSurface() {
-  const chainId = useChainId();
-  const configuredConstituentAssets = useMemo(() => configuredAssetsFor(chainId), [chainId]);
-  const steps = [
-    { label: "Basics", description: "Identity and mandate" },
-    { label: "Constituents", description: "Ordered assets" },
-    { label: "Economics", description: "Fee and beneficiary" },
-    { label: "Review", description: "Confirm formation" },
-  ] as const;
-  const [step, setStep] = useState(0);
-  const [furthestStep, setFurthestStep] = useState(0);
-  const [name, setName] = useState("");
-  const [symbol, setSymbol] = useState("");
-  const [mandate, setMandate] = useState("");
-  const [expenseRatio, setExpenseRatio] = useState("0");
-  const [beneficiary, setBeneficiary] = useState("");
-  const [constituents, setConstituents] = useState<ConstituentInput[]>(() => {
-    const initialAssets = configuredAssetsFor(chainId).slice(0, 2).map(constituentFromAsset);
-    return initialAssets.length ? initialAssets : [emptyConstituent()];
-  });
   const [returnDestination, setReturnDestination] = useState<"funds" | "wallet">("funds");
-  const [openAssetPickerIndex, setOpenAssetPickerIndex] = useState<number>();
-  const [assetPickerSearch, setAssetPickerSearch] = useState("");
-  const [unverifiedAssetIndex, setUnverifiedAssetIndex] = useState<number>();
-  const [manualAssetAddress, setManualAssetAddress] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const annualExpenseRatioBps = expenseRatio === "" ? Number.NaN : Number(expenseRatio);
-  const errors = creationValidation({ name, symbol, mandate, constituents, annualExpenseRatioBps, beneficiary });
-  const structurallyValid = submitted && errors.length === 0;
-  const normalizedName = name.trim();
-  const nameValid = normalizedName.length > 4 && normalizedName.endsWith(" OTF");
-  const tickerValid = /^[A-Z0-9][A-Z0-9-]*$/.test(symbol);
-  const mandateBytes = new TextEncoder().encode(mandate.trim()).length;
-  const mandateValid = mandateBytes > 0 && mandateBytes <= MAX_OTF_MANDATE_BYTES;
-  const basicsIssues = [
-    nameValid ? null : "Enter the complete fund name ending in ' OTF' (for example, 'Technology Leaders OTF').",
-    tickerValid ? null : "Enter a ticker using letters, numbers, or hyphens.",
-    mandateBytes > 0 ? null : "Write an initial strategy rationale.",
-    mandateBytes <= MAX_OTF_MANDATE_BYTES ? null : `Shorten the initial strategy rationale to ${MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes or fewer.`,
-  ].filter((issue): issue is string => Boolean(issue));
-  const normalizedConstituents = constituents.map((asset) => asset.address.trim().toLowerCase()).filter(Boolean);
-  const constituentIssues = [
-    constituents.length > 0 ? null : "Select at least one asset to continue.",
-    constituents.length <= 20 ? null : "Remove assets until the portfolio contains no more than 20.",
-    constituents.every((asset) => isAddress(asset.address)) ? null : "Choose a token contract for every asset row.",
-    new Set(normalizedConstituents).size === normalizedConstituents.length ? null : "Each contract address can appear only once.",
-  ].filter((issue): issue is string => Boolean(issue));
-  const normalizedAssetPickerSearch = assetPickerSearch.trim().toLowerCase();
-  const filteredAssetPickerOptions = configuredConstituentAssets.filter((candidate) => !normalizedAssetPickerSearch
-    || candidate.symbol.toLowerCase().includes(normalizedAssetPickerSearch)
-    || candidate.name.toLowerCase().includes(normalizedAssetPickerSearch)
-    || candidate.address.toLowerCase().includes(normalizedAssetPickerSearch));
-  const assetSearchAddress = isAddress(assetPickerSearch.trim()) ? getAddress(assetPickerSearch.trim()) : undefined;
-  const assetSearchConfigured = assetSearchAddress
-    ? configuredConstituentAssets.some((candidate) => candidate.address.toLowerCase() === assetSearchAddress.toLowerCase())
-    : false;
-  const { metadata: assetSearchMetadata, loading: assetSearchMetadataPending } = useTokenMetadataLookup(chainId, assetSearchAddress && !assetSearchConfigured ? assetSearchAddress : undefined);
-  const manualAssetAddressValue = isAddress(manualAssetAddress) ? getAddress(manualAssetAddress) : undefined;
-  const { metadata: manualAssetMetadata, loading: manualAssetMetadataPending, failed: manualAssetMetadataReadFailed } = useTokenMetadataLookup(chainId, manualAssetAddressValue);
-  const manualVerifiedAsset = manualAssetAddressValue
-    ? configuredConstituentAssets.find((candidate) => candidate.address.toLowerCase() === manualAssetAddressValue.toLowerCase())
-    : undefined;
-  const manualAssetDuplicate = manualAssetAddressValue
-    ? constituents.some((asset, index) => index !== unverifiedAssetIndex && asset.address.toLowerCase() === manualAssetAddressValue.toLowerCase())
-    : false;
-  const manualAssetCompatible = Boolean(manualAssetMetadata && Number.isInteger(manualAssetMetadata.decimals) && manualAssetMetadata.decimals >= 0 && manualAssetMetadata.decimals <= MAX_CONSTITUENT_DECIMALS);
-  const nextAvailableAsset = configuredConstituentAssets.find((candidate) => !constituents.some((asset) => asset.address.toLowerCase() === candidate.address.toLowerCase()));
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("from") === "wallet") {
+      setReturnDestination("wallet");
+    }
+  }, []);
   const returnHref = returnDestination === "wallet" ? "/wallet" : "/funds";
   const returnLabel = returnDestination === "wallet" ? "Wallet" : "Funds";
-  const stepValid = [
-    nameValid && tickerValid && mandateValid,
-    constituentIssues.length === 0,
-    Number.isFinite(annualExpenseRatioBps)
-      && annualExpenseRatioBps >= 0
-      && annualExpenseRatioBps <= 1000
-      && isAddress(beneficiary),
-    true,
-  ];
-
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("from") === "wallet") setReturnDestination("wallet");
-  }, []);
-
-  useEffect(() => {
-    if (openAssetPickerIndex === undefined) return;
-    const closePicker = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".assetPickerShell")) return;
-      setOpenAssetPickerIndex(undefined);
-      setAssetPickerSearch("");
-    };
-    const closePickerOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpenAssetPickerIndex(undefined);
-      setAssetPickerSearch("");
-    };
-    document.addEventListener("pointerdown", closePicker);
-    document.addEventListener("keydown", closePickerOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closePicker);
-      document.removeEventListener("keydown", closePickerOnEscape);
-    };
-  }, [openAssetPickerIndex]);
-
-  useEffect(() => {
-    if (unverifiedAssetIndex === undefined) return;
-    const closeModalOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setUnverifiedAssetIndex(undefined);
-      setManualAssetAddress("");
-    };
-    document.addEventListener("keydown", closeModalOnEscape);
-    return () => document.removeEventListener("keydown", closeModalOnEscape);
-  }, [unverifiedAssetIndex]);
-
-  function updateConstituent(index: number, asset: ConstituentInput) {
-    setConstituents((current) => current.map((item, assetIndex) => assetIndex === index ? asset : item));
-  }
-
-  function selectConfiguredAsset(index: number, asset: SwapAsset) {
-    updateConstituent(index, constituentFromAsset(asset));
-    setOpenAssetPickerIndex(undefined);
-    setAssetPickerSearch("");
-  }
-
-  function addAsset() {
-    if (constituents.length >= 20) return;
-    if (nextAvailableAsset) {
-      setConstituents((current) => [...current, constituentFromAsset(nextAvailableAsset)]);
-      return;
-    }
-    setConstituents((current) => [...current, emptyConstituent()]);
-    setOpenAssetPickerIndex(constituents.length);
-    setAssetPickerSearch("");
-  }
-
-  function removeAsset(index: number) {
-    setConstituents((current) => current.filter((_, assetIndex) => assetIndex !== index));
-    setOpenAssetPickerIndex(undefined);
-    setAssetPickerSearch("");
-  }
-
-  function openUnverifiedAssetModal(index: number, address = "") {
-    setOpenAssetPickerIndex(undefined);
-    setAssetPickerSearch("");
-    setUnverifiedAssetIndex(index);
-    setManualAssetAddress(address);
-  }
-
-  function closeUnverifiedAssetModal() {
-    setUnverifiedAssetIndex(undefined);
-    setManualAssetAddress("");
-  }
-
-  function addManualAsset() {
-    if (unverifiedAssetIndex === undefined || !manualAssetAddressValue || !manualAssetMetadata || !manualAssetCompatible || manualAssetDuplicate) return;
-    updateConstituent(unverifiedAssetIndex, manualVerifiedAsset ? constituentFromAsset(manualVerifiedAsset) : {
-      address: manualAssetAddressValue,
-      symbol: manualAssetMetadata.symbol,
-      name: manualAssetMetadata.name,
-      decimals: manualAssetMetadata.decimals,
-      verified: false,
-    });
-    closeUnverifiedAssetModal();
-  }
-
   return (
     <DashboardPage>
       <div className="appView">
         <div className="vaultBreadcrumb appBreadcrumb"><Link href={returnHref}><ArrowLeft size={12} />Back to {returnLabel}</Link></div>
-        <AppPageHeader title="Create OTF" description="Deploy an onchain traded fund with enforceable portfolio limits." icon={<FilePlus2 size={18} />} />
-        <div className="createLayout">
-          <aside className="createSteps" aria-label="OTF creation progress">
-            {steps.map((item, index) => (
-              <button
-                className={`${step === index ? "active" : ""} ${index < step || structurallyValid ? "complete" : ""}`}
-                key={item.label}
-                type="button"
-                disabled={index > furthestStep}
-                aria-current={step === index ? "step" : undefined}
-                onClick={() => setStep(index)}
-              >
-                <span>{index < step || structurallyValid ? <CheckCircle size={14} /> : index + 1}</span>
-                <div><strong>{item.label}</strong><small>{item.description}</small></div>
-              </button>
-            ))}
-            <div className="createNotice"><LockKeyhole size={14} /><span>Constituent weights are calculated from the authenticated formation snapshot. They are not entered by the creator.</span></div>
-          </aside>
-
-          <section className="sectionCard createForm">
-            <div className="sectionTitle">
-              <div className="sectionHeading"><div className="sectionTitleLine"><span className="stepNumber">{step + 1}</span><h2>{steps[step].label}</h2></div><p>{steps[step].description}</p></div>
-              <span className="stateBadge muted">Step {step + 1} of {steps.length}</span>
-            </div>
-            <div className="sectionBody">
-              {step === 0 ? (
-                <div className="formSection">
-                  <div className="formGrid twoColumns">
-                    <label><span>OTF name</span><input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => setName((current) => current.trimEnd())} placeholder="Technology Leaders OTF" aria-label="OTF name" /><small>Must end in &apos; OTF&apos;. The name cannot be changed after formation.</small></label>
-                    <label><span>OTF ticker</span><input value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 16))} placeholder="TECH" /><small>The ticker cannot be changed after formation.</small></label>
-                  </div>
-                  <label>
-                    <div className="subHeader">
-                      <span>Initial strategy rationale</span>
-                      <small className={mandateValid ? "successText" : mandateBytes > MAX_OTF_MANDATE_BYTES ? "dangerText" : "warningText"}>{mandateBytes.toLocaleString("en-US")} / {MAX_OTF_MANDATE_BYTES.toLocaleString("en-US")} bytes</small>
-                    </div>
-                    <textarea value={mandate} onChange={(event) => setMandate(event.target.value)} placeholder="Describe the portfolio mandate and investment rationale." rows={4} maxLength={MAX_OTF_MANDATE_BYTES} aria-invalid={!mandateValid} />
-                    <small>This becomes the fund&apos;s initial mandate and cannot be empty.</small>
-                  </label>
-                  {basicsIssues.length ? (
-                    <div className="validationSummary" role="status" aria-live="polite">
-                      <CircleAlert size={15} />
-                      <div>
-                        <strong>{basicsIssues.length} required item{basicsIssues.length === 1 ? "" : "s"} remaining</strong>
-                        <ul>{basicsIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {step === 1 ? (
-                <div className="formSection">
-                  <div className="formIntro"><div><strong>Initial portfolio</strong></div><span className={`stateBadge ${constituentIssues.length ? "danger" : "success"}`}>{constituents.length} / 20 assets</span></div>
-                  <div className="createAssetList">
-                    {constituents.map((asset, index) => (
-                      <div className="createAssetRow noWeights constituentAssetRow" key={`${asset.address || "new"}-${index}`}>
-                        <div className="assetSelectField">
-                          <span className="createAssetFieldLabel">Asset</span>
-                          <div className="assetPickerShell">
-                            <button className={`createAssetPicker ${openAssetPickerIndex === index ? "active" : ""}`} type="button" aria-label={`Choose asset ${index + 1}`} aria-haspopup="listbox" aria-expanded={openAssetPickerIndex === index} onClick={() => { setAssetPickerSearch(""); setOpenAssetPickerIndex((current) => current === index ? undefined : index); }}>
-                              <span className="createAssetPickerIdentity">
-                                <span className="createAssetPickerName">
-                                  <strong>{asset.symbol}</strong>
-                                  {asset.address ? asset.verified ? <BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Verified asset"><title>Verified</title></BadgeCheck> : <CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset"><title>Unverified</title></CircleAlert> : null}
-                                </span>
-                                <small>{asset.address ? `${asset.name} · ${shortAddress(asset.address)}` : asset.name}</small>
-                              </span>
-                              <ChevronDown aria-hidden="true" size={14} />
-                            </button>
-                            {openAssetPickerIndex === index ? (
-                              <div className="createAssetPickerMenu">
-                                <label className="createAssetPickerSearch"><Search size={14} aria-hidden="true" /><input autoFocus value={assetPickerSearch} onChange={(event) => setAssetPickerSearch(event.target.value)} placeholder="Search name, ticker, or contract address" aria-label={`Search assets for position ${index + 1}`} autoComplete="off" spellCheck={false} /></label>
-                                <div className="createAssetPickerOptions" role="listbox" aria-label={`Assets for position ${index + 1}`}>
-                                  {filteredAssetPickerOptions.map((candidate) => (
-                                    <button key={candidate.address} type="button" role="option" aria-selected={candidate.address.toLowerCase() === asset.address.toLowerCase()} onClick={() => selectConfiguredAsset(index, candidate)}>
-                                      <span className="createAssetOptionIdentity"><span className="createAssetOptionTicker"><strong>{candidate.symbol}</strong><BadgeCheck className="createAssetVerificationIcon" size={13} aria-label="Verified asset"><title>Verified</title></BadgeCheck></span><small>{candidate.name}</small><small>{shortAddress(candidate.address)}</small></span>
-                                      {candidate.address.toLowerCase() === asset.address.toLowerCase() ? <Check size={13} aria-hidden="true" /> : null}
-                                    </button>
-                                  ))}
-                                  {assetSearchMetadataPending ? <div className="createAssetPickerStatus" role="status"><LoaderCircle className="createAssetSpinner" size={14} />Reading token metadata…</div> : null}
-                                  {assetSearchAddress && !assetSearchMetadataPending && assetSearchMetadata ? (
-                                    <button className="createAssetDiscoveredOption" type="button" role="option" aria-selected={assetSearchAddress.toLowerCase() === asset.address.toLowerCase()} disabled={assetSearchMetadata.decimals > MAX_CONSTITUENT_DECIMALS} onClick={() => openUnverifiedAssetModal(index, assetSearchAddress)}>
-                                      <span className="createAssetOptionIdentity"><span className="createAssetOptionTicker"><strong>{assetSearchMetadata.symbol}</strong><CircleAlert className="createAssetVerificationIcon unverified" size={13} aria-label="Unverified asset"><title>Unverified</title></CircleAlert></span><small>{assetSearchMetadata.name}</small><small>{shortAddress(assetSearchAddress)} · {assetSearchMetadata.decimals} decimals</small></span>
-                                      {assetSearchMetadata.decimals <= MAX_CONSTITUENT_DECIMALS ? <Plus size={13} aria-hidden="true" /> : null}
-                                    </button>
-                                  ) : null}
-                                  {normalizedAssetPickerSearch && filteredAssetPickerOptions.length === 0 && !assetSearchMetadataPending && !assetSearchMetadata ? (
-                                    <div className="createAssetPickerEmpty" role="status"><strong>No configured asset found</strong><p>Add another compatible ERC-20 by contract address. Token details are read directly onchain.</p><button className="secondaryAction" type="button" onClick={() => openUnverifiedAssetModal(index, assetSearchAddress ?? "")}>{assetSearchAddress ? "Continue with this address" : "Add by contract address"}</button></div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        <button className="removeCreateAsset" type="button" title={`Remove ${asset.symbol}`} aria-label={`Remove ${asset.symbol} from portfolio`} onClick={() => removeAsset(index)}><Trash2 size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" className="secondaryAction addCreateAsset" disabled={constituents.length >= 20} onClick={addAsset}><Plus size={14} />Add asset</button>
-                  {constituentIssues.length ? <div className="validationSummary" role="status" aria-live="polite"><CircleAlert size={15} /><div><strong>Portfolio needs attention</strong><ul>{constituentIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div> : null}
-                </div>
-              ) : null}
-
-              {step === 2 ? (
-                <div className="formSection">
-                  <div className="formGrid twoColumns">
-                    <label><span>Annual creator expense ratio</span><div className="inputWithSuffix"><input inputMode="numeric" value={expenseRatio} onChange={(event) => setExpenseRatio(event.target.value)} /><span>bps</span></div><small>0–1000 bps. The value is immutable after formation.</small></label>
-                    <label><span>Fixed beneficiary</span><input value={beneficiary} onChange={(event) => setBeneficiary(event.target.value)} placeholder="0x…" /><small>The beneficiary is fixed in the formation transaction.</small></label>
-                  </div>
-                  <aside className="riskCallout warning"><CircleAlert size={15} /><div><strong>10% is the protocol maximum and is not recommended.</strong><span>Creator expense shares can dilute holders. The formation-allocation rebate benefits the creator and does not reduce the holder fee.</span></div></aside>
-                </div>
-              ) : null}
-
-              {step === 3 ? (
-                <div className="formSection reviewSection">
-                  <div className="reviewHero"><span className="vaultMonogram">NEW</span><div><h2>{name.trim() || "Unnamed OTF"}</h2><span>{symbol.trim() || "No ticker"} · {constituents.length} constituent{constituents.length === 1 ? "" : "s"}</span></div></div>
-                  <div className="reviewGrid">
-                    <div className="reviewKeyMetric"><span>Annual creator expense ratio</span><strong>{Number.isFinite(annualExpenseRatioBps) ? `${annualExpenseRatioBps} bps` : "Not set"}</strong></div>
-                    <div><span>Beneficiary</span><strong>{isAddress(beneficiary) ? shortAddress(beneficiary) : "Invalid address"}</strong></div>
-                    <div><span>Formation</span><strong>Authenticated snapshot</strong></div>
-                  </div>
-                  <div><div className="subHeader"><span>Ordered constituents</span><small>No weights entered</small></div><div className="reviewPortfolio">{constituents.map((asset, index) => <span key={`${asset.address}-${index}`}><strong>{index + 1}</strong><small>{isAddress(asset.address) ? `${asset.symbol} · ${shortAddress(asset.address)}` : "Select an asset"}</small></span>)}</div></div>
-                  <aside className="snapshotNote"><History size={17} /><div><strong>Authenticated formation snapshot required</strong><p>The authority signature binds the chain, factory, creator, ordered constituents, expected decimals, market caps, unit prices, snapshot time, expiry, calculation version, and nonce.</p></div></aside>
-                  {submitted && errors.length ? <div className="formErrors" role="alert">{errors.map((error) => <span key={error}>{error}</span>)}</div> : null}
-                  {structurallyValid ? <div className="validationSummary success" role="status"><CheckCircle size={15} /><div><strong>Formation input is structurally valid</strong><span>No transaction or formation snapshot has been prepared.</span></div></div> : null}
-                  <p className="createBlocked">Creation remains unavailable until the redesigned contracts, authenticated snapshot service, and typed create transaction are configured.</p>
-                </div>
-              ) : null}
-
-              <div className="createFormActions">
-                <button className="secondaryAction" type="button" onClick={() => step === 0 ? window.location.assign(returnHref) : setStep((current) => current - 1)}><ArrowLeft size={14} />{step === 0 ? `Back to ${returnLabel}` : "Back"}</button>
-                {step < steps.length - 1 ? (
-                  <button className="primaryAction" type="button" disabled={!stepValid[step]} onClick={() => { setSubmitted(false); setFurthestStep((current) => Math.max(current, step + 1)); setStep((current) => current + 1); }}>Continue<ArrowRight size={14} /></button>
-                ) : <button className="primaryAction" type="button" onClick={() => setSubmitted(true)}><FilePlus2 size={14} />Validate formation input</button>}
-              </div>
-            </div>
-          </section>
-        </div>
+        <AppPageHeader title="Create OTF" description="Build a fixed $1 target initial basket from current off-chain prices and commit only its raw token units." icon={<FilePlus2 size={18} />} />
+        <CreateOTFForm returnHref={returnHref} />
       </div>
-      {unverifiedAssetIndex !== undefined ? (
-        <div className="swapDialogBackdrop createAssetDialogBackdrop" onMouseDown={(event) => event.target === event.currentTarget && closeUnverifiedAssetModal()}>
-          <section className="unverifiedAssetModal" role="dialog" aria-modal="true" aria-labelledby="unverified-asset-title" aria-describedby="unverified-asset-description" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
-            if (event.key !== "Tab") return;
-            const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])"));
-            const first = focusable.at(0);
-            const last = focusable.at(-1);
-            if (!first || !last) return;
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-          }}>
-            <header className="unverifiedAssetModalHeader">
-              <div><h2 id="unverified-asset-title">{manualVerifiedAsset ? "Add a verified asset" : "Add an unverified asset"}</h2><p id="unverified-asset-description">{manualVerifiedAsset ? "This contract matches a verified asset record. Its token details are still checked onchain before it is added." : "Enter an ERC-20 contract. Its token details are read directly onchain before the asset is added."}</p></div>
-              <button className="unverifiedAssetModalClose" type="button" aria-label="Close unverified asset configuration" autoFocus onClick={closeUnverifiedAssetModal}><X size={16} /></button>
-            </header>
-            <div className="unverifiedAssetModalBody">
-              <label className="unverifiedTokenAddressField"><span>Token contract</span><input className={manualAssetAddress && !isAddress(manualAssetAddress) ? "invalid" : undefined} value={manualAssetAddress} onChange={(event) => setManualAssetAddress(event.target.value.trim())} placeholder="0x ERC-20 address" autoComplete="off" /><small>The app checks the token contract and reads its name, symbol, and decimals.</small></label>
-              {manualAssetMetadataPending ? <div className="unverifiedAssetLookup" role="status"><LoaderCircle className="createAssetSpinner" size={16} /><div><strong>Reading token details</strong><small>Checking the ERC-20 contract onchain…</small></div></div> : null}
-              {manualAssetMetadata ? (
-                <div className={`unverifiedAssetDetected ${manualAssetCompatible ? "valid" : "invalid"}`}>
-                  {manualAssetCompatible ? <BadgeCheck size={18} aria-label="Valid token contract"><title>Valid token contract</title></BadgeCheck> : <CircleAlert size={18} />}
-                  <div><span>{manualVerifiedAsset?.symbol ?? manualAssetMetadata.symbol}</span><strong>{manualVerifiedAsset?.name ?? manualAssetMetadata.name}</strong><small>{manualAssetAddressValue ? shortAddress(manualAssetAddressValue) : manualAssetAddress} · {manualVerifiedAsset ? "Verified" : `${manualAssetMetadata.decimals} decimals`}</small></div>
-                </div>
-              ) : null}
-              {manualAssetMetadataReadFailed ? <span className="fieldError">No ERC-20 metadata was found at this address.</span> : null}
-              {manualAssetMetadata && !manualAssetCompatible ? <span className="fieldError">Constituents support token decimals from 0 to {MAX_CONSTITUENT_DECIMALS}.</span> : null}
-              {manualAssetDuplicate ? <span className="fieldError">This token contract is already in the portfolio.</span> : null}
-              {!manualVerifiedAsset ? <div className="manualAssetRiskNotice" role="note"><CircleAlert size={15} /><span>Unverified assets are not blocked by the protocol. Review ownership, upgradeability, liquidity, and transfer behavior before using one.</span></div> : null}
-            </div>
-            <footer className="unverifiedAssetModalActions">
-              <button type="button" className="secondaryAction" onClick={closeUnverifiedAssetModal}>Cancel</button>
-              <button type="button" className="primaryAction" onClick={addManualAsset} disabled={!manualAssetAddressValue || manualAssetMetadataPending || !manualAssetMetadata || !manualAssetCompatible || manualAssetDuplicate}><Plus size={14} />{manualVerifiedAsset ? `Add ${manualVerifiedAsset.symbol}` : "Add asset"}</button>
-            </footer>
-          </section>
-        </div>
-      ) : null}
     </DashboardPage>
   );
 }
@@ -1302,15 +910,45 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const chainId = useChainId();
   const testnet = chainId === robinhoodChainTestnet.id;
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
+  const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
+  useEffect(() => {
+    if (!detail || !routeAddress) {
+      setCreationMetadata(null);
+      return;
+    }
+    setCreationMetadata(loadCreationMetadata(window.localStorage, chainId, routeAddress) ?? null);
+  }, [chainId, detail, routeAddress]);
   if (detail) {
+    const methodologyLabel = creationMetadata
+      ? weightingMethodLabel(creationMetadata.weightingMethod)
+      : "Weighting method unavailable";
     return (
       <DashboardPage>
         <div className="appView fundsView">
           <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
-          <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and formation history for this address-routed fund." icon={<LayoutGrid size={18} />} />
+          <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and creation history for this address-routed fund." icon={<LayoutGrid size={18} />} actions={<span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>} />
           <section className="sectionCard detailIdentityCard">
             <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>Onchain reads are not configured for the redesigned deployment.</p></div><span className="stateBadge muted">Unavailable</span></div>
             <dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>History</dt><dd>No activity is substituted while the typed history reader is unavailable.</dd></div><div><dt>Metadata</dt><dd>Name and symbol must resolve onchain before an identity result is shown.</dd></div></dl>
+          </section>
+          <section className="sectionCard creationAllocationPanel">
+            <div className="directoryPanelHeading">
+              <div><h2>Allocation at creation</h2><p>{creationMetadata ? weightingMethodDetailCopy(creationMetadata.weightingMethod) : "No application creation metadata is stored for this vault."}</p></div>
+              {creationMetadata ? <span className="stateBadge muted">{formatMarketCapSnapshotTimestamp(creationMetadata.marketCapSnapshotAt)}</span> : null}
+            </div>
+            {creationMetadata ? (
+              <>
+                <div className="creationAllocationTableWrap">
+                  <table className="creationAllocationTable">
+                    <thead><tr><th>Constituent</th><th>Market-cap weight</th><th>Creator-selected weight</th><th>Multiplier</th></tr></thead>
+                    <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong><small>{position[0].toUpperCase()}{position.slice(1)}</small></td></tr>; })}</tbody>
+                  </table>
+                </div>
+                <div className="creationMethodologyNote" role="note"><SlidersHorizontal size={15} /><span>The methodology describes initialization and is not an ongoing on-chain rebalance. This browser-stored application metadata is informational and does not affect settlement.</span></div>
+              </>
+            ) : (
+              <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
+            )}
           </section>
         </div>
       </DashboardPage>

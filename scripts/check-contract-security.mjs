@@ -10,6 +10,7 @@ const initcodeLimit = 49_152;
 const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "FeeCollector", "OTFToken"];
 const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry/i;
 const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry)\b/i;
+const removedCreationAbiWords = /\b(?:formation|snapshot|signature|price|market.?cap|weight|expiry|nonce|predict)\b/i;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -90,9 +91,8 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
   "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
-  "_feeCollector", "_entryExitRouter", "_annualCreatorExpenseRatioBps", "_formationOtfWeightBps",
-  "_formationSnapshotTime", "_formationCalculationVersion", "_formationSnapshotDigest", "_shutdownAt",
-  "_assets", "_relativeQuantity", "_accountedBalance", "_feeEpochTimestamp",
+  "_feeCollector", "_entryExitRouter", "_annualCreatorExpenseRatioBps", "_shutdownAt",
+  "_assets", "_bootstrapBasketUnitsPerOTF", "_accountedBalance", "_feeEpochTimestamp",
   "_lastFeeCheckpointTimestamp", "_feeEpochSupply", "_feeEpochAccruedShares", "_feeShareRemainderWad",
   "_protocolFeeSplitRemainderBps",
 ];
@@ -115,7 +115,7 @@ const expectedConstructors = {
   ManagedOTFVault: [],
   FeeCollector: ["initialTreasury"],
   OTFToken: ["initialHolder"],
-  OTFFactory: ["vaultImplementation_", "feeCollector_", "formationSnapshotAuthority_", "protocolToken_", "baseProtocolFeeShareBps_", "protocolTokenFullRebateThresholdBps_"],
+  OTFFactory: ["vaultImplementation_", "feeCollector_", "protocolFeeShareBps_"],
   OTFEntryExitRouter: ["factory_", "uniswapV3Factory_", "uniswapV3Router_"],
 };
 for (const [name, expected] of Object.entries(expectedConstructors)) {
@@ -125,15 +125,25 @@ for (const [name, expected] of Object.entries(expectedConstructors)) {
 }
 
 const factoryNames = functionNames(compiled.OTFFactory);
-for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "formationSnapshotDigest", "predictVaultAddress", "previewRelativeQuantities", "createVault", "effectiveProtocolFeeShareBps", "otfTokenURI", "isVault", "formationNonceUsed"]) {
+for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "createVault", "protocolFeeShareBps", "otfTokenURI", "isVault"]) {
   assert(factoryNames.has(name), `factory function ${name} is absent`);
 }
 const createVault = functions(compiled.OTFFactory).find((item) => item.name === "createVault");
-assert(createVault.inputs.length === 3 && createVault.inputs[0].type === "tuple" && createVault.inputs[1].type === "tuple" && createVault.inputs[2].type === "bytes", "createVault does not accept params, snapshot, signature");
-const snapshotComponents = createVault.inputs[1].components.map((input) => `${input.name}:${input.type}`);
-assert(snapshotComponents.join("|") === "chainId:uint256|factory:address|creator:address|constituents:address[]|tokenDecimals:uint8[]|marketCapsUsdWad:uint256[]|unitPricesUsdWad:uint256[]|snapshotTime:uint64|expiry:uint64|calculationVersion:uint32|nonce:uint256", "FormationSnapshot ABI is not the canonical array form");
+assert(createVault.inputs.length === 1 && createVault.inputs[0].type === "tuple", "createVault must accept one creation tuple");
+const creationComponents = createVault.inputs[0].components.map((input) => `${input.name}:${input.type}`);
+assert(creationComponents.join("|") === "name:string|symbol:string|expenseBeneficiary:address|annualCreatorExpenseRatioBps:uint16|constituents:address[]|bootstrapBasketUnitsPerOTF:uint256[]", "createVault tuple is not the canonical bootstrap form");
+assert(!JSON.stringify(compiled.OTFFactory.abi).match(removedCreationAbiWords), "factory ABI contains a removed creation input or API");
 const factoryCtor = constructor(compiled.OTFFactory);
-assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,address,address,address,uint16,uint16", "factory immutable dependency constructor changed");
+assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,address,uint16", "factory immutable dependency constructor changed");
+const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "utf8");
+assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
+assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
+
+const vaultErrorNames = new Set(compiled.ManagedOTFVault.abi.filter((item) => item.type === "error").map((item) => item.name));
+assert(vaultErrorNames.has("ResidualSupplyTooSmall"), "vault is missing the normal-redemption residual supply guard");
+for (const name of ["bootstrapBasketUnits", "bootstrapBasketUnitsPerOTF"]) {
+  assert(functionNames(compiled.ManagedOTFVault).has(name), `vault bootstrap surface ${name} is absent`);
+}
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
@@ -143,6 +153,7 @@ for (const name of ["swapDirect", "mintFromToken", "redeemToToken", "swapBasketT
 const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
 assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents is not 20");
+assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e18/u.test(sourceConstants), "normal share supply floor is not 1e18");
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
 
@@ -153,8 +164,7 @@ assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].in
 
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
 assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
-assert(/schemaVersion:\s*10/u.test(deploySource), "deployment script does not write schema 10");
+assert(/schemaVersion:\s*11/u.test(deploySource), "deployment script does not write schema 11");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
-const formationCliSource = readFileSync(join(root, "scripts", "formation-snapshot.mjs"), "utf8");
-assert(!/privateKeyToAccount|\.signTypedData\s*\(/u.test(formationCliSource), "offline formation CLI must not handle raw authority keys");
+assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");
 console.log(`Security checks passed for ${production.join(", ")}.`);

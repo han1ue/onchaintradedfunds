@@ -5,19 +5,18 @@ import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
-import { FormationSnapshot } from "../src/VaultTypes.sol";
 import { MockAdversarialERC20 } from "./mocks/MockAdversarialERC20.sol";
 import { MockFeeOnTransferToken } from "./mocks/MockFeeOnTransferToken.sol";
 import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
 import {
+    BootstrapTestBase,
     CrossMutatingToken,
-    FormationTestBase,
     MockCoreRouter,
     SlashableToken
-} from "./FormationTestBase.sol";
+} from "./BootstrapTestBase.sol";
 
-contract VaultAccountingTest is FormationTestBase {
+contract VaultAccountingTest is BootstrapTestBase {
     OTFFactory internal factory;
     FeeCollector internal collector;
     MockCoreRouter internal router;
@@ -25,7 +24,7 @@ contract VaultAccountingTest is FormationTestBase {
     MockStockToken internal tokenB;
 
     function setUp() public {
-        (factory, collector, router) = _deployFactory(address(0), 4_000, 0);
+        (factory, collector, router) = _deployFactory(4_000);
         tokenA = new MockStockToken("Asset A", "A", 18);
         tokenB = new MockStockToken("Asset B", "B", 18);
     }
@@ -75,12 +74,15 @@ contract VaultAccountingTest is FormationTestBase {
         _bootstrap(exactBoundary, router, assets, 100 * WAD);
         _bootstrap(afterBoundary, router, assets, 100 * WAD);
         uint256 start = block.timestamp;
+        uint256 beforeTimestamp = start + 365 days - 1;
+        uint256 exactTimestamp = start + 365 days;
+        uint256 afterTimestamp = start + 365 days + 1;
 
-        vm.warp(start + 365 days - 1);
+        vm.warp(beforeTimestamp);
         uint256 beforeShares = beforeBoundary.pendingExpenseFeeShares();
-        vm.warp(start + 365 days);
+        vm.warp(exactTimestamp);
         uint256 exactShares = exactBoundary.pendingExpenseFeeShares();
-        vm.warp(start + 365 days + 1);
+        vm.warp(afterTimestamp);
         uint256 afterShares = afterBoundary.pendingExpenseFeeShares();
 
         assertLe(beforeShares, exactShares);
@@ -200,9 +202,8 @@ contract VaultAccountingTest is FormationTestBase {
     function testEmergencyRedeemHandlesDeficitButNormalRedeemFailsClosed() public {
         SlashableToken lossToken = new SlashableToken("Lossy", "LOSS", 18);
         SlashableToken soundToken = new SlashableToken("Sound", "SOUND", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(lossToken), address(soundToken), WAD, WAD, 7);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(lossToken), address(soundToken), WAD, WAD, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         lossToken.mint(address(router), amounts[0]);
         soundToken.mint(address(router), amounts[1]);
@@ -237,9 +238,8 @@ contract VaultAccountingTest is FormationTestBase {
 
     function testPermissionlessDeficitShutdownCheckpointsThenPermanentlyStopsFees() public {
         SlashableToken lossToken = new SlashableToken("Lossy", "LOSS", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(lossToken), address(tokenB), WAD, WAD, 8);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 1_000);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(lossToken), address(tokenB), WAD, WAD, 1_000);
         _bootstrap(vault, router, _assets(address(lossToken), address(tokenB)), WAD);
         vm.warp(block.timestamp + 180 days);
         uint256 pendingAtShutdown = vault.pendingExpenseFeeShares();
@@ -270,14 +270,11 @@ contract VaultAccountingTest is FormationTestBase {
         assets[0] = address(unreadable);
         assets[1] = address(deficient);
         assets[2] = address(sound);
-        uint256[] memory caps = new uint256[](3);
-        uint256[] memory prices = new uint256[](3);
+        uint256[] memory units = new uint256[](3);
         for (uint256 i = 0; i < 3; i++) {
-            caps[i] = WAD;
-            prices[i] = WAD;
+            units[i] = WAD;
         }
-        ManagedOTFVault vault =
-            _createVault(factory, _snapshot(factory, assets, caps, prices, 16), 0);
+        ManagedOTFVault vault = _createVault(factory, assets, units, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         for (uint256 i = 0; i < 3; i++) {
             SlashableToken(assets[i]).mint(address(router), amounts[i]);
@@ -296,9 +293,8 @@ contract VaultAccountingTest is FormationTestBase {
 
     function testUnreadableOnlyFailureNeedsCreatorAndCanBlockExit() public {
         SlashableToken unreadable = new SlashableToken("Unreadable", "UNREAD", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(unreadable), address(tokenB), WAD, WAD, 17);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(unreadable), address(tokenB), WAD, WAD, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         unreadable.mint(address(router), amounts[0]);
         tokenB.mint(address(router), amounts[1]);
@@ -320,9 +316,8 @@ contract VaultAccountingTest is FormationTestBase {
 
     function testFeeOnTransferAndRebasingConstituentsRevertByExactDeltas() public {
         MockFeeOnTransferToken taxed = new MockFeeOnTransferToken("Taxed", "TAX", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(taxed), address(tokenA), WAD, WAD, 9);
-        ManagedOTFVault taxedVault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault taxedVault =
+            _createTwoAssetVault(factory, address(taxed), address(tokenA), WAD, WAD, 0);
         uint256[] memory amounts = taxedVault.previewMint(WAD);
         taxed.mint(address(router), amounts[0]);
         tokenA.mint(address(router), amounts[1]);
@@ -333,8 +328,8 @@ contract VaultAccountingTest is FormationTestBase {
         router.mint(taxedVault, WAD, ALICE, amounts);
 
         MockAdversarialERC20 rebasing = new MockAdversarialERC20("Rebasing", "REB", 18);
-        snapshot = _twoAssetSnapshot(factory, address(rebasing), address(tokenB), WAD, WAD, 10);
-        ManagedOTFVault rebasingVault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault rebasingVault =
+            _createTwoAssetVault(factory, address(rebasing), address(tokenB), WAD, WAD, 0);
         amounts = rebasingVault.previewMint(WAD);
         rebasing.mint(address(router), amounts[0] + 1);
         tokenB.mint(address(router), amounts[1]);
@@ -347,9 +342,8 @@ contract VaultAccountingTest is FormationTestBase {
 
     function testReentrantConstituentCallbackCannotEnterVault() public {
         MockReentrantToken reentrant = new MockReentrantToken("Reentrant", "RE", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(reentrant), address(tokenA), WAD, WAD, 11);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(reentrant), address(tokenA), WAD, WAD, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         reentrant.mint(address(router), amounts[0]);
         tokenA.mint(address(router), amounts[1]);
@@ -367,9 +361,8 @@ contract VaultAccountingTest is FormationTestBase {
     function testCrossTokenCallbackMutationRevertsTheWholeBasket() public {
         SlashableToken first = new SlashableToken("First", "FIRST", 18);
         CrossMutatingToken last = new CrossMutatingToken("Last", "LAST", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(first), address(last), WAD, WAD, 12);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(first), address(last), WAD, WAD, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         first.mint(address(router), amounts[0]);
         last.mint(address(router), amounts[1]);
@@ -389,9 +382,8 @@ contract VaultAccountingTest is FormationTestBase {
     function testEmergencyFinalBasketCheckRejectsLastTokenMutatingEarlierToken() public {
         SlashableToken first = new SlashableToken("First", "FIRST", 18);
         CrossMutatingToken last = new CrossMutatingToken("Last", "LAST", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(first), address(last), WAD, WAD, 13);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(first), address(last), WAD, WAD, 0);
         uint256[] memory amounts = vault.previewMint(WAD);
         first.mint(address(router), amounts[0]);
         last.mint(address(router), amounts[1]);
@@ -415,33 +407,67 @@ contract VaultAccountingTest is FormationTestBase {
     function testLastTokenCannotBurnEarlierAssetFromRedemptionReceiver() public {
         SlashableToken first = new SlashableToken("First", "FIRST", 18);
         CrossMutatingToken last = new CrossMutatingToken("Last", "LAST", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(first), address(last), WAD, WAD, 14);
-        ManagedOTFVault vault = _createVault(factory, snapshot, 0);
-        uint256[] memory amounts = vault.previewMint(WAD);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(first), address(last), WAD, WAD, 0);
+        uint256[] memory amounts = vault.previewMint(2 * WAD);
         first.mint(address(router), amounts[0]);
         last.mint(address(router), amounts[1]);
         router.approveAsset(address(first), address(vault), amounts[0]);
         router.approveAsset(address(last), address(vault), amounts[1]);
-        router.mint(vault, WAD, ALICE, amounts);
+        router.mint(vault, 2 * WAD, ALICE, amounts);
         last.configureCallback(
             address(first), abi.encodeWithSelector(first.slash.selector, ALICE, 1), true
         );
         vm.prank(ALICE);
-        vault.approve(address(router), WAD / 2);
+        vault.approve(address(router), WAD);
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.BasketAccountBalanceChanged.selector);
-        router.redeem(vault, WAD / 2, ALICE, ALICE, _zeroes(2));
+        router.redeem(vault, WAD, ALICE, ALICE, _zeroes(2));
         assertEq(first.balanceOf(ALICE), 0);
         assertEq(last.balanceOf(ALICE), 0);
-        assertEq(vault.balanceOf(ALICE), WAD);
+        assertEq(vault.balanceOf(ALICE), 2 * WAD);
     }
 
-    function _newVault(uint256 nonce, uint16 expenseRatioBps) private returns (ManagedOTFVault) {
-        return _createVault(
-            factory,
-            _twoAssetSnapshot(factory, address(tokenA), address(tokenB), WAD, WAD, nonce),
-            expenseRatioBps
+    function testNormalRedemptionRejectsUnsafeResidualSupplyAfterFeeAccrual() public {
+        ManagedOTFVault vault = _newVault(23, 1_000);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
+        vm.warp(block.timestamp + 365 days);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.ResidualSupplyTooSmall.selector);
+        vault.previewRedeem(WAD);
+
+        vm.prank(ALICE);
+        vault.approve(address(router), WAD);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.ResidualSupplyTooSmall.selector);
+        router.redeem(vault, WAD, ALICE, ALICE, _zeroes(2));
+    }
+
+    function testNormalRedemptionAllowsExactlyOneOTFResidualSupply() public {
+        ManagedOTFVault vault = _newVault(24, 0);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), 2 * WAD);
+        vm.prank(ALICE);
+        vault.approve(address(router), WAD);
+
+        router.redeem(vault, WAD, ALICE, ALICE, _zeroes(2));
+
+        assertEq(vault.totalSupply(), WAD);
+    }
+
+    function testEmergencyRedemptionDoesNotApplyResidualSupplyFloor() public {
+        ManagedOTFVault vault = _newVault(25, 0);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
+        vm.prank(CREATOR);
+        vault.activateEmergencyShutdown();
+
+        vm.prank(ALICE);
+        vault.emergencyRedeem(WAD - 1, ALICE, _zeroes(2));
+
+        assertEq(vault.totalSupply(), 1);
+    }
+
+    function _newVault(uint256, uint16 expenseRatioBps) private returns (ManagedOTFVault) {
+        return _createTwoAssetVault(
+            factory, address(tokenA), address(tokenB), WAD, WAD, expenseRatioBps
         );
     }
 

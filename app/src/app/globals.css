@@ -1245,6 +1245,24 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .detailIdentityCard dl > div { min-width: 0; padding-right: 16px; }
 .detailIdentityCard dt { color: var(--text-muted); font-size: 0.61rem; font-weight: 600; text-transform: uppercase; }
 .detailIdentityCard dd { overflow-wrap: anywhere; color: var(--text-soft); margin: 6px 0 0; font-size: 0.68rem; }
+.methodologyBadge { text-transform: none; }
+.creationAllocationPanel { overflow: hidden; }
+.creationAllocationTableWrap { overflow-x: auto; border-top: 1px solid var(--border); scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent; scrollbar-width: thin; }
+.creationAllocationTable { width: 100%; min-width: 680px; border-collapse: collapse; }
+.creationAllocationTable th { background: var(--background); color: var(--text-muted); padding: 9px 14px; font-size: 0.58rem; font-weight: 650; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.creationAllocationTable td { border-top: 1px solid var(--border); color: var(--text-soft); padding: 11px 14px; font-size: 0.68rem; font-variant-numeric: tabular-nums; vertical-align: middle; }
+.creationAllocationTable td > strong,
+.creationAllocationTable td > small { display: block; }
+.creationAllocationTable td > strong { color: var(--text); font-size: 0.7rem; }
+.creationAllocationTable td > small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
+.creationMethodologyNote,
+.creationMetadataUnavailable { display: flex; align-items: flex-start; gap: 9px; border-top: 1px solid var(--border); color: var(--text-muted); padding: 12px 14px; font-size: 0.66rem; line-height: 1.5; }
+.creationMethodologyNote svg,
+.creationMetadataUnavailable svg { flex: 0 0 auto; margin-top: 1px; color: var(--accent-text); }
+.creationMetadataUnavailable strong,
+.creationMetadataUnavailable span { display: block; }
+.creationMetadataUnavailable strong { color: var(--text); font-size: 0.72rem; }
+.creationMetadataUnavailable span { margin-top: 3px; }
 
 .createLayout { display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 16px; }
 .createSteps { display: grid; gap: 2px; }
@@ -1345,7 +1363,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .reviewHero h2 { margin: 0; font-size: 0.94rem; }
 .reviewHero > div > span { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.67rem; }
 .vaultMonogram { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: rgb(var(--accent-rgb) / 11%); color: var(--accent-text); font-size: 0.65rem; font-weight: 700; }
-.reviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.reviewGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .reviewGrid > div { border: 1px solid var(--border); border-radius: 5px; background: var(--background); padding: 10px; }
 .reviewGrid > .reviewKeyMetric { border-color: rgb(var(--accent-rgb) / 34%); background: rgb(var(--accent-rgb) / 7%); }
 .reviewGrid span,
@@ -1364,6 +1382,69 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .formErrors { display: grid; border-color: rgb(235 101 112 / 35%); background: rgb(235 101 112 / 6%); color: var(--danger); font-size: 0.67rem; }
 .createBlocked { margin: 0; }
 .createFormActions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; }
+.basketControlBar { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 14px; }
+.basketFixedTarget { display: grid; align-content: center; gap: 4px; min-width: 0; border-block: 1px solid var(--border); padding: 10px 0; }
+.basketFixedTarget > span { color: var(--text-muted); font-size: 0.61rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.basketFixedTarget > strong { color: var(--text); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.basketFixedTarget > small { max-width: 58ch; color: var(--text-soft); font-size: 0.64rem; line-height: 1.5; }
+.formSection select { width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--card-raised); color: var(--text); padding: 0 30px 0 10px; font-size: 0.72rem; letter-spacing: normal; text-transform: none; }
+.formSection select:focus { border-color: rgb(var(--accent-rgb) / 62%); box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 9%); }
+.formSection select:disabled { color: var(--text-muted); cursor: not-allowed; opacity: 0.72; }
+.basketAllocationHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.basketAllocationHeader > div:first-child strong,
+.basketAllocationHeader > div:first-child span { display: block; }
+.basketAllocationHeader > div:first-child strong { color: var(--text); font-size: 0.78rem; }
+.basketAllocationHeader > div:first-child span { margin-top: 4px; color: var(--text-muted); font-size: 0.66rem; line-height: 1.45; }
+.basketAllocationHeader > div:first-child .basketMethodologyLabel { margin: 0 0 4px; color: var(--text-muted); font-size: 0.58rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.basketAllocationHeader > div:first-child small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.59rem; line-height: 1.4; }
+.basketAllocationActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.compactAction { min-height: 30px; padding: 0 9px; font-size: 0.63rem; }
+.basketAllocationList { display: grid; border-top: 1px solid var(--border); }
+.basketAllocationRow { display: grid; grid-template-columns: minmax(145px, 1.1fr) minmax(100px, 0.66fr) minmax(104px, 0.62fr) minmax(95px, 0.58fr) minmax(155px, 0.95fr) 32px; align-items: center; gap: 12px; min-width: 0; border-bottom: 1px solid var(--border); padding: 12px 4px; }
+.basketAssetIdentity { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.basketAssetIdentity > div,
+.basketSourceData,
+.basketMultiplier,
+.basketRoundedResult { min-width: 0; }
+.basketAssetIdentity > div > span { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.basketAssetIdentity strong { overflow: hidden; color: var(--text); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+.basketAssetIdentity svg { flex: 0 0 auto; color: var(--green); }
+.basketAssetIdentity small,
+.basketSourceData span,
+.basketSourceData small,
+.basketMultiplier span,
+.basketMultiplier small,
+.basketRoundedResult span,
+.basketRoundedResult small { display: block; overflow: hidden; color: var(--text-muted); font-size: 0.61rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.basketSourceData strong,
+.basketMultiplier strong,
+.basketRoundedResult strong { display: block; overflow: hidden; margin: 4px 0 2px; color: var(--text-soft); font-size: 0.7rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.basketMultiplier strong { color: var(--text); }
+.basketMultiplier small + small { margin-top: 2px; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.basketPercentageField { min-width: 0; }
+.basketPercentageField .inputWithSuffix input { padding: 8px; font-variant-numeric: tabular-nums; }
+.basketPercentageField > small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.59rem; line-height: 1.4; overflow-wrap: anywhere; }
+.basketRoundedResult small { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.basketAssetError { display: flex; grid-column: 1 / -1; align-items: flex-start; gap: 7px; border-top: 1px solid rgb(235 101 112 / 24%); color: var(--danger); padding: 9px 0 0; font-size: 0.64rem; line-height: 1.45; }
+.basketAssetError svg { flex: 0 0 auto; margin-top: 1px; }
+.basketAllocationRow > .removeCreateAsset { display: grid; width: 32px; height: 34px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); }
+.basketAllocationRow > .removeCreateAsset:hover { background: rgb(235 101 112 / 9%); color: var(--danger); }
+.basketAllocationRow > .removeCreateAsset:focus-visible { outline: 2px solid rgb(var(--accent-rgb) / 42%); outline-offset: 2px; }
+.basketRealizedLedger { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text-muted); padding: 10px 0; font-size: 0.65rem; }
+.basketRealizedLedger strong { color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.reviewBasketTableWrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent; scrollbar-width: thin; }
+.reviewBasketTable { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.66rem; }
+.reviewBasketTable th { background: var(--background); color: var(--text-muted); padding: 9px 10px; font-size: 0.58rem; font-weight: 650; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.reviewBasketTable td { border-top: 1px solid var(--border); color: var(--text-soft); padding: 10px; font-variant-numeric: tabular-nums; vertical-align: top; }
+.reviewBasketTable td strong,
+.reviewBasketTable td small { display: block; }
+.reviewBasketTable td small { margin-top: 3px; color: var(--text-muted); }
+.bootstrapCommitNote { display: flex; align-items: flex-start; gap: 9px; border: 1px solid rgb(var(--accent-rgb) / 30%); border-radius: 6px; background: rgb(var(--accent-rgb) / 6%); padding: 10px 11px; }
+.bootstrapCommitNote svg { flex: 0 0 auto; color: var(--accent-text); }
+.bootstrapCommitNote strong { color: var(--text); font-size: 0.7rem; }
+.bootstrapCommitNote p { max-width: 72ch; margin: 4px 0 0; color: var(--text-soft); font-size: 0.67rem; line-height: 1.5; }
+.validationSummary.danger { border-color: rgb(235 101 112 / 35%); background: rgb(235 101 112 / 6%); color: var(--danger); }
+.validationSummary a { display: inline-flex; margin-top: 6px; color: var(--utility-action); font-size: 0.65rem; text-underline-offset: 3px; }
 .createAssetDialogBackdrop { z-index: 140; }
 .unverifiedAssetModal { display: grid; width: min(720px, 100%); max-height: calc(100dvh - 40px); gap: 0; overflow-y: auto; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--card-raised); box-shadow: 0 24px 72px rgb(0 0 0 / 48%); }
 .unverifiedAssetModalHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 20px 22px 17px; }
@@ -1832,6 +1913,24 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .createNotice { display: none; }
   .formGrid.twoColumns,
   .reviewGrid { grid-template-columns: 1fr; }
+  .basketControlBar { grid-template-columns: 1fr; }
+  .basketAllocationHeader { align-items: flex-start; flex-direction: column; }
+  .basketAllocationActions { width: 100%; justify-content: space-between; }
+  .basketAllocationRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; align-items: start; }
+  .basketAssetIdentity { grid-column: 1 / 3; }
+  .basketAllocationRow > .removeCreateAsset { grid-column: 3; grid-row: 1; }
+  .basketSourceData { grid-column: 1; }
+  .basketPercentageField { grid-column: 2; }
+  .basketMultiplier { grid-column: 1; }
+  .basketRoundedResult { grid-column: 2 / 4; }
+  .creationAllocationTableWrap { overflow: visible; }
+  .creationAllocationTable { display: block; min-width: 0; }
+  .creationAllocationTable thead { display: none; }
+  .creationAllocationTable tbody { display: grid; }
+  .creationAllocationTable tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 14px; border-top: 1px solid var(--border); padding: 13px 14px; }
+  .creationAllocationTable td { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border: 0; padding: 0; text-align: right; }
+  .creationAllocationTable td[data-label]::before { flex: 0 0 auto; color: var(--text-muted); content: attr(data-label); font-size: 0.62rem; font-weight: 600; }
+  .creationAllocationTable td:first-child { grid-column: 1 / -1; }
   .directoryPanel .directoryTableWrap { overflow: visible; }
   .directoryPanel .directoryTable { display: block; min-width: 0; }
   .directoryPanel .directoryTable thead { display: none; }
@@ -1876,8 +1975,26 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .walletMetrics { grid-template-columns: 1fr; }
   .directoryPanelHeading { align-items: flex-start; flex-direction: column; }
   .detailIdentityCard dl { grid-template-columns: 1fr; gap: 14px; }
+  .creationAllocationTable tr { grid-template-columns: 1fr; }
+  .creationAllocationTable td:first-child { grid-column: 1; }
   .createFormActions { align-items: stretch; flex-direction: column; }
-  .createFormActions button { width: 100%; }
+  .createFormActions button { width: 100%; min-height: 44px; }
+  .basketAllocationActions { align-items: stretch; flex-direction: column; }
+  .basketAllocationActions > * { width: 100%; min-height: 44px; justify-content: center; }
+  .basketAllocationRow { grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; }
+  .formSection input,
+  .formSection textarea,
+  .formSection select { font-size: 1rem; }
+  .formSection input,
+  .formSection select,
+  .basketAllocationRow > .removeCreateAsset { min-height: 44px; }
+  .basketAllocationRow > .removeCreateAsset { width: 44px; height: 44px; }
+  .basketAssetIdentity,
+  .basketSourceData,
+  .basketPercentageField,
+  .basketMultiplier,
+  .basketRoundedResult { grid-column: 1; }
+  .basketAllocationRow > .removeCreateAsset { grid-column: 2; grid-row: 1; }
   .createAssetRow.noWeights { gap: 10px; padding: 11px; }
   .createAssetPicker { padding-top: 7px; padding-bottom: 7px; }
   .unverifiedAssetModal { max-height: calc(100dvh - 20px); }

@@ -13,7 +13,9 @@ const AMD: AssetRegistryEntry = {
   verified: true,
   priceSource: "robinhood-bid",
   latestPriceUsd: null,
+  latestPriceUsdExact: null,
   latestPriceAt: null,
+  marketCapUsd: null,
   pricingConfigs: [],
   markets: [],
 };

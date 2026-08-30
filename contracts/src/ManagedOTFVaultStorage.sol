@@ -7,16 +7,16 @@ import {
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 
 interface IOTFFactoryFeePolicy {
-    function effectiveProtocolFeeShareBps(address vault) external view returns (uint16);
+    function protocolFeeShareBps() external view returns (uint16);
     function otfTokenURI() external pure returns (string memory);
 }
 
-/// @dev Clone-safe vault storage. Formation and fee-policy fields have no mutation path.
+/// @dev Clone-safe vault storage. Bootstrap basket units and fee policy have no mutation path.
 abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     uint256 internal constant BPS = ProtocolConstants.BPS;
     uint256 internal constant WAD = ProtocolConstants.WAD;
     uint256 internal constant YEAR = ProtocolConstants.YEAR;
-    uint256 internal constant FORMATION_SHARE_UNIT = ProtocolConstants.FORMATION_SHARE_UNIT;
+    uint256 internal constant MINIMUM_SHARE_SUPPLY = ProtocolConstants.MINIMUM_SHARE_SUPPLY;
 
     error NotInitialized();
     error UnauthorizedFactory();
@@ -29,12 +29,12 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error InvalidArrayLength(uint256 expected, uint256 actual);
     error InvalidConstituent(address constituent);
     error DuplicateConstituent(address constituent);
-    error InvalidRelativeQuantity(address constituent);
-    error InvalidFormationMetadata(uint16 formationOtfWeightBps, uint32 calculationVersion);
+    error InvalidBootstrapBasketUnit(address constituent);
     error ExpenseRatioTooHigh(uint16 supplied, uint16 maximum);
     error ZeroShares();
     error SharesExceedSupply(uint256 shares, uint256 supply);
     error BootstrapSharesTooSmall(uint256 supplied, uint256 minimum);
+    error ResidualSupplyTooSmall(uint256 residualSupply, uint256 minimum);
     error AmountTooHigh(address asset, uint256 required, uint256 maximum);
     error AmountTooLow(address asset, uint256 actual, uint256 minimum);
     error AssetTransferMismatch(
@@ -49,10 +49,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error VaultNotShutdown();
 
     event VaultInitialized(
-        address indexed factory,
-        address indexed creator,
-        address indexed expenseBeneficiary,
-        bytes32 formationSnapshotDigest
+        address indexed factory, address indexed creator, address indexed expenseBeneficiary
     );
     event BasketMinted(
         address indexed router, address indexed receiver, uint256 shares, uint256[] amountsIn
@@ -86,14 +83,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     address internal _entryExitRouter;
 
     uint16 internal _annualCreatorExpenseRatioBps;
-    uint16 internal _formationOtfWeightBps;
-    uint64 internal _formationSnapshotTime;
-    uint32 internal _formationCalculationVersion;
-    bytes32 internal _formationSnapshotDigest;
     uint64 internal _shutdownAt;
 
     address[] internal _assets;
-    mapping(address => uint256) internal _relativeQuantity;
+    mapping(address => uint256) internal _bootstrapBasketUnitsPerOTF;
     mapping(address => uint256) internal _accountedBalance;
 
     // Manual fee checkpoints do not reset this epoch, making growth independent of checkpoint cadence.

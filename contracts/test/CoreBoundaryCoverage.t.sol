@@ -1,53 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
-import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
-import { FormationSnapshot, VaultCreationParams, VaultInitParams } from "../src/VaultTypes.sol";
+import { VaultCreationParams } from "../src/VaultTypes.sol";
 import { MockFeeOnTransferToken } from "./mocks/MockFeeOnTransferToken.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
-import { FormationTestBase, MockCoreRouter } from "./FormationTestBase.sol";
+import { BootstrapTestBase, MockCoreRouter } from "./BootstrapTestBase.sol";
 
-contract PredictedSelfConstituentInitializer {
-    function initializePredictedSelfConstituent(
-        address implementation,
-        address router,
-        address collector
-    ) external {
-        bytes32 salt = keccak256("predicted-self-constituent");
-        address predicted = Clones.predictDeterministicAddress(implementation, salt, address(this));
-        address clone = Clones.cloneDeterministic(implementation, salt);
-        require(clone == predicted, "prediction mismatch");
-
-        address[] memory constituents = new address[](1);
-        constituents[0] = predicted;
-        uint256[] memory quantities = new uint256[](1);
-        quantities[0] = 1e18;
-        ManagedOTFVault(clone)
-            .initialize(
-                VaultInitParams({
-                name: "Self OTF",
-                symbol: "SELF",
-                creator: msg.sender,
-                expenseBeneficiary: msg.sender,
-                entryExitRouter: router,
-                feeCollector: collector,
-                constituents: constituents,
-                relativeQuantities: quantities,
-                annualCreatorExpenseRatioBps: 0,
-                formationOtfWeightBps: 0,
-                formationSnapshotTime: uint64(block.timestamp),
-                formationCalculationVersion: 1,
-                formationSnapshotDigest: keccak256("self")
-            })
-            );
-    }
-}
-
-contract CoreBoundaryCoverageTest is FormationTestBase {
+contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testFeeCollectorClaimsAreTreasuryOnlyAndClaimAllDrainsCustody() public {
         FeeCollector collector = new FeeCollector(TREASURY);
         MockStockToken token = new MockStockToken("Custody", "CUST", 18);
@@ -118,15 +80,11 @@ contract CoreBoundaryCoverageTest is FormationTestBase {
     }
 
     function testCreatorAndTreasuryRedeemAllAccruedFeeSharesProRata() public {
-        (OTFFactory factory, FeeCollector collector, MockCoreRouter router) =
-            _deployFactory(address(0), 4_000, 0);
+        (OTFFactory factory, FeeCollector collector, MockCoreRouter router) = _deployFactory(4_000);
         MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
         MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        ManagedOTFVault vault = _createVault(
-            factory,
-            _twoAssetSnapshot(factory, address(tokenA), address(tokenB), WAD, WAD, 1),
-            1_000
-        );
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 1_000);
         address[] memory assets = new address[](2);
         assets[0] = address(tokenA);
         assets[1] = address(tokenB);
@@ -176,32 +134,15 @@ contract CoreBoundaryCoverageTest is FormationTestBase {
         assertEq(tokenA.balanceOf(address(vault)), vault.accountedBalance(address(tokenA)));
         assertEq(tokenB.balanceOf(address(vault)), vault.accountedBalance(address(tokenB)));
         assertEq(vault.accountedBalance(address(tokenA)), vault.accountedBalance(address(tokenB)));
-        assertApproxEqAbs(vault.accountedBalance(address(tokenA)), 45 * WAD, 2);
+        assertApproxEqAbs(vault.accountedBalance(address(tokenA)), 90 * WAD, 2);
         assertEq(vault.totalSupply(), 100 * WAD);
     }
 
-    function testPredictedVaultShareCannotInitializeAsOwnConstituent() public {
-        ManagedOTFVault implementation = new ManagedOTFVault();
-        FeeCollector collector = new FeeCollector(TREASURY);
-        MockCoreRouter router = new MockCoreRouter(address(this));
-        PredictedSelfConstituentInitializer initializer = new PredictedSelfConstituentInitializer();
-
-        vm.expectPartialRevert(ManagedOTFVaultStorage.InvalidConstituent.selector);
-        initializer.initializePredictedSelfConstituent(
-            address(implementation), address(router), address(collector)
-        );
-    }
-
     function testCreationBoundsAndRouterConfigurationBoundaries() public {
-        authority = vm.addr(AUTHORITY_KEY);
         ManagedOTFVault implementation = new ManagedOTFVault();
         FeeCollector collector = new FeeCollector(TREASURY);
-        OTFFactory unconfigured = new OTFFactory(
-            address(implementation), address(collector), authority, address(0), 0, 0
-        );
-        OTFFactory otherFactory = new OTFFactory(
-            address(implementation), address(collector), authority, address(0), 0, 0
-        );
+        OTFFactory unconfigured = new OTFFactory(address(implementation), address(collector), 0);
+        OTFFactory otherFactory = new OTFFactory(address(implementation), address(collector), 0);
         MockCoreRouter wrongRouter = new MockCoreRouter(address(otherFactory));
         vm.expectPartialRevert(OTFFactory.RouterFactoryMismatch.selector);
         unconfigured.configureEntryExitRouter(address(wrongRouter));
@@ -213,68 +154,21 @@ contract CoreBoundaryCoverageTest is FormationTestBase {
 
         MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
         MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(unconfigured, address(tokenA), address(tokenB), WAD, WAD, 10);
-        bytes memory signature = _sign(unconfigured, snapshot);
-        VaultCreationParams memory invalidRatio = VaultCreationParams({
-            name: "Formation OTF",
-            symbol: "FOTF",
-            expenseBeneficiary: BENEFICIARY,
-            annualCreatorExpenseRatioBps: 1_001
-        });
+        address[] memory assets = new address[](2);
+        assets[0] = address(tokenA);
+        assets[1] = address(tokenB);
+        uint256[] memory units = new uint256[](2);
+        units[0] = WAD;
+        units[1] = WAD;
+        VaultCreationParams memory invalidRatio = _creationParams(assets, units, 1_001);
         vm.prank(CREATOR);
         vm.expectPartialRevert(OTFFactory.ExpenseRatioTooHigh.selector);
-        unconfigured.createVault(invalidRatio, snapshot, signature);
+        unconfigured.createVault(invalidRatio);
 
-        VaultCreationParams memory zeroBeneficiary = VaultCreationParams({
-            name: "Formation OTF",
-            symbol: "FOTF",
-            expenseBeneficiary: address(0),
-            annualCreatorExpenseRatioBps: 0
-        });
+        VaultCreationParams memory zeroBeneficiary = _creationParams(assets, units, 0);
+        zeroBeneficiary.expenseBeneficiary = address(0);
         vm.prank(CREATOR);
         vm.expectRevert(OTFFactory.InvalidVaultMetadata.selector);
-        unconfigured.createVault(zeroBeneficiary, snapshot, signature);
-    }
-
-    function testFormationDigestUsesStandardArrayTypedDataEncoding() public {
-        (OTFFactory factory,,) = _deployFactory(address(0), 0, 0);
-        MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
-        MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(tokenA), address(tokenB), 3 * WAD, WAD, 20);
-        bytes32 typeHash = keccak256(
-            "FormationSnapshot(uint256 chainId,address factory,address creator,address[] constituents,uint8[] tokenDecimals,uint256[] marketCapsUsdWad,uint256[] unitPricesUsdWad,uint64 snapshotTime,uint64 expiry,uint32 calculationVersion,uint256 nonce)"
-        );
-        assertEq(factory.FORMATION_SNAPSHOT_TYPEHASH(), typeHash);
-        bytes32 structHash = keccak256(
-            abi.encode(
-                typeHash,
-                snapshot.chainId,
-                snapshot.factory,
-                snapshot.creator,
-                keccak256(abi.encodePacked(snapshot.constituents)),
-                keccak256(abi.encodePacked(snapshot.tokenDecimals)),
-                keccak256(abi.encodePacked(snapshot.marketCapsUsdWad)),
-                keccak256(abi.encodePacked(snapshot.unitPricesUsdWad)),
-                snapshot.snapshotTime,
-                snapshot.expiry,
-                snapshot.calculationVersion,
-                snapshot.nonce
-            )
-        );
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                keccak256(
-                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-                ),
-                keccak256("OTFFactory"),
-                keccak256("1"),
-                block.chainid,
-                address(factory)
-            )
-        );
-        bytes32 expected = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        assertEq(factory.formationSnapshotDigest(snapshot), expected);
+        unconfigured.createVault(zeroBeneficiary);
     }
 }

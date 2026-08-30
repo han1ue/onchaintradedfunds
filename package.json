@@ -5,8 +5,6 @@
   "scripts": {
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:abi": "node scripts/generate-contract-abis.mjs",
-    "contracts:formation": "node scripts/formation-snapshot.mjs",
-    "contracts:formation:test": "node --test scripts/formation-snapshot.test.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
     "launch:dev": "corepack pnpm --filter @onchaintradedfunds/launch dev",
     "launch:build": "corepack pnpm --filter @onchaintradedfunds/launch build",

@@ -7,7 +7,7 @@ import { Callout, Cards } from 'nextra/components'
 
 # Onchain Traded Funds documentation
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. An OTF is weighted by market capitalization once, at formation, then holds a fixed ordered basket without a runtime oracle, automatic rebalance, or ongoing market-cap refresh.
+Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator commits an ordered constituent list and immutable raw-token bootstrap units for one OTF. The app derives those units from a fixed `$1` target initial basket value based on current offchain prices—not a peg—while prices, market caps, the target, and percentage weights remain offchain metadata.
 
 <Callout type="warning" emoji="">
   The contracts are unaudited and are not production-ready. Do not deploy them to mainnet.

@@ -8,6 +8,7 @@ const appConfiguration = {
     baseUrl: "https://app.synthra.org/",
   },
   quoteService: { endpoint: null },
+  creation: { assetDataEndpoint: "https://launch.onchaintradedfunds.com/api/v1/assets" },
 };
 
 test("preserves validated app-owned deployment integrations", () => {
@@ -30,9 +31,23 @@ test("accepts a disabled quote service and rejects unsafe integration URLs", () 
     }),
     /externalLiquidity\.baseUrl must be an HTTPS URL/,
   );
+  assert.throws(
+    () => appOwnedIntegrationConfiguration({
+      ...appConfiguration,
+      creation: { assetDataEndpoint: "http://launch.example/api/v1/assets" },
+    }),
+    /creation\.assetDataEndpoint must be an HTTPS URL/,
+  );
 });
 
 test("rejects missing integration sections instead of silently erasing them", () => {
   assert.throws(() => appOwnedIntegrationConfiguration({ quoteService: { endpoint: null } }), /externalLiquidity must be an object/);
   assert.throws(() => appOwnedIntegrationConfiguration({ externalLiquidity: appConfiguration.externalLiquidity }), /quoteService must be an object/);
+  assert.throws(
+    () => appOwnedIntegrationConfiguration({
+      externalLiquidity: appConfiguration.externalLiquidity,
+      quoteService: appConfiguration.quoteService,
+    }),
+    /creation must be an object/,
+  );
 });

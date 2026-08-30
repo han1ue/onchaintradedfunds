@@ -33,8 +33,8 @@ const { createPublicClient, createWalletClient, getAddress, http, isAddress, non
 const { privateKeyToAccount } = accounts;
 
 const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
-if (config.schemaVersion !== 10 || config.architecture !== "oracleless-market-cap-at-formation-v1") {
-  throw new Error("Deployment config must use schema 10 oracleless-market-cap-at-formation-v1");
+if (config.schemaVersion !== 11 || config.architecture !== "immutable-bootstrap-basket-v1") {
+  throw new Error("Deployment config must use schema 11 immutable-bootstrap-basket-v1");
 }
 const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
 const env = (name) => {
@@ -63,9 +63,7 @@ const json = (value) => JSON.stringify(value, (_key, current) => typeof current 
 
 const privateKey = env("DEPLOYER_PRIVATE_KEY");
 const treasury = address("TREASURY", env("TREASURY"));
-const formationSnapshotAuthority = address("FORMATION_SNAPSHOT_AUTHORITY", env("FORMATION_SNAPSHOT_AUTHORITY"));
-const baseProtocolFeeShareBps = bps("BASE_PROTOCOL_FEE_SHARE_BPS", env("BASE_PROTOCOL_FEE_SHARE_BPS"));
-const protocolTokenFullRebateThresholdBps = bps("PROTOCOL_TOKEN_FULL_REBATE_THRESHOLD_BPS", env("PROTOCOL_TOKEN_FULL_REBATE_THRESHOLD_BPS"));
+const protocolFeeShareBps = bps("PROTOCOL_FEE_SHARE_BPS", env("PROTOCOL_FEE_SHARE_BPS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
 const initialHolder = address("OTF_TOKEN_INITIAL_HOLDER", process.env.OTF_TOKEN_INITIAL_HOLDER?.trim() || treasury);
 const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim() || config.rpcUrl || "https://rpc.testnet.chain.robinhood.com";
@@ -86,7 +84,7 @@ const chain = {
 };
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
-if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match schema-10 config");
+if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match schema-11 config");
 
 async function deploy(name, args = []) {
   const compiled = artifact(name);
@@ -116,10 +114,7 @@ const otfToken = await deploy("OTFToken", [initialHolder]);
 const factory = await deploy("OTFFactory", [
   vaultImplementation.address,
   feeCollector.address,
-  formationSnapshotAuthority,
-  otfToken.address,
-  baseProtocolFeeShareBps,
-  protocolTokenFullRebateThresholdBps,
+  protocolFeeShareBps,
 ]);
 const entryRouter = await deploy("OTFEntryExitRouter", [
   factory.address,
@@ -129,8 +124,8 @@ const entryRouter = await deploy("OTFEntryExitRouter", [
 const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
-  schemaVersion: 10,
-  architecture: "oracleless-market-cap-at-formation-v1",
+  schemaVersion: 11,
+  architecture: "immutable-bootstrap-basket-v1",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -139,8 +134,7 @@ const deployment = {
   deployer: account.address,
   contracts: { feeCollector, otfToken, vaultImplementation, factory, entryRouter },
   externalContracts: { ...external, uniswapV3Factory, uniswapV3SwapRouter02 },
-  formation: { calculationVersion: 1, snapshotAuthority: formationSnapshotAuthority, dataSource: null },
-  policy: { baseProtocolFeeShareBps, protocolTokenFullRebateThresholdBps },
+  policy: { protocolFeeShareBps },
   routing: {
     integration: "uniswap-v3-swap-router-02",
     exactInputTuple: "(bytes,address,uint256,uint256)",
@@ -149,7 +143,7 @@ const deployment = {
   },
   setupTransactions: { routerConfiguration },
   ...appOwnedIntegrations,
-  note: "Formation data provider integration is intentionally unconfigured; only authority-signed snapshots may form vaults.",
+  note: "Creation commits only ordered constituents and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });
 writeFileSync(deploymentPath, `${json(deployment)}\n`);

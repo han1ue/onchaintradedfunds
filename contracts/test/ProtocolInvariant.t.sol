@@ -5,9 +5,8 @@ import { IERC20 } from "../src/interfaces/IERC20.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
-import { FormationSnapshot } from "../src/VaultTypes.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
-import { FormationTestBase, MockCoreRouter } from "./FormationTestBase.sol";
+import { BootstrapTestBase, MockCoreRouter } from "./BootstrapTestBase.sol";
 import { InvariantTestBase } from "./TestBase.sol";
 
 interface VmWarp {
@@ -66,7 +65,7 @@ contract VaultInvariantHandler {
     }
 }
 
-contract ProtocolInvariantTest is FormationTestBase, InvariantTestBase {
+contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
     ManagedOTFVault internal vault;
     FeeCollector internal collector;
     MockCoreRouter internal router;
@@ -76,12 +75,10 @@ contract ProtocolInvariantTest is FormationTestBase, InvariantTestBase {
 
     function setUp() public {
         OTFFactory factory;
-        (factory, collector, router) = _deployFactory(address(0), 4_000, 0);
+        (factory, collector, router) = _deployFactory(4_000);
         tokenA = new MockStockToken("Asset A", "A", 18);
         tokenB = new MockStockToken("Asset B", "B", 18);
-        FormationSnapshot memory snapshot =
-            _twoAssetSnapshot(factory, address(tokenA), address(tokenB), WAD, WAD, 1);
-        vault = _createVault(factory, snapshot, 1_000);
+        vault = _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 1_000);
         handler = new VaultInvariantHandler(vault, router, tokenA, tokenB);
 
         uint256[] memory amounts = vault.previewMint(WAD);
@@ -93,7 +90,7 @@ contract ProtocolInvariantTest is FormationTestBase, InvariantTestBase {
         targetContract(address(handler));
     }
 
-    function invariantAccountedBasketEqualsActualAndKeepsFormationRatio() public view {
+    function invariantAccountedBasketEqualsActualAndKeepsBasketRatio() public view {
         uint256 accountedA = vault.accountedBalance(address(tokenA));
         uint256 accountedB = vault.accountedBalance(address(tokenB));
         assertEq(tokenA.balanceOf(address(vault)), accountedA);
@@ -107,6 +104,11 @@ contract ProtocolInvariantTest is FormationTestBase, InvariantTestBase {
         assertEq(vault.totalSupply(), balances);
     }
 
+    function invariantNormalSettlementSupplyIsZeroOrAtLeastOneOTF() public view {
+        uint256 supply = vault.totalSupply();
+        assertTrue(supply == 0 || supply >= WAD);
+    }
+
     function invariantFullRedemptionPreviewMatchesAccountedAfterCheckpoint() public {
         vault.checkpointFees();
         uint256 supply = vault.totalSupply();
@@ -117,14 +119,13 @@ contract ProtocolInvariantTest is FormationTestBase, InvariantTestBase {
     }
 }
 
-contract VaultFuzzTest is FormationTestBase {
+contract VaultFuzzTest is BootstrapTestBase {
     function testFuzzMintRedeemPreservesBasket(uint256 mintSeed, uint256 redeemSeed) public {
-        (OTFFactory factory,, MockCoreRouter router) = _deployFactory(address(0), 0, 0);
+        (OTFFactory factory,, MockCoreRouter router) = _deployFactory(0);
         MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
         MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        ManagedOTFVault vault = _createVault(
-            factory, _twoAssetSnapshot(factory, address(tokenA), address(tokenB), WAD, WAD, 1), 0
-        );
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 0);
         uint256 shares = bound(mintSeed, WAD, 1_000_000 * WAD);
         uint256[] memory amounts = vault.previewMint(shares);
         tokenA.mint(address(router), amounts[0]);
@@ -133,7 +134,8 @@ contract VaultFuzzTest is FormationTestBase {
         router.approveAsset(address(tokenB), address(vault), amounts[1]);
         router.mint(vault, shares, ALICE, amounts);
 
-        uint256 redeemShares = bound(redeemSeed, 1, shares);
+        uint256 redeemShares =
+            redeemSeed % 2 == 0 || shares == WAD ? shares : bound(redeemSeed, 1, shares - WAD);
         vm.prank(ALICE);
         vault.approve(address(router), redeemShares);
         router.redeem(vault, redeemShares, ALICE, ALICE, new uint256[](2));

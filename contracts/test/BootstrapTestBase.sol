@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20, IERC20Metadata } from "../src/interfaces/IERC20.sol";
+import { IERC20 } from "../src/interfaces/IERC20.sol";
 import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
-import { OTFToken } from "../src/OTFToken.sol";
-import { FormationSnapshot, VaultCreationParams } from "../src/VaultTypes.sol";
+import { VaultCreationParams } from "../src/VaultTypes.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
 import { TestBase } from "./TestBase.sol";
@@ -120,105 +119,67 @@ contract CrossMutatingToken is ERC20 {
     }
 }
 
-abstract contract FormationTestBase is TestBase {
+abstract contract BootstrapTestBase is TestBase {
     uint256 internal constant WAD = 1e18;
-    uint256 internal constant AUTHORITY_KEY = 0xA11CE;
     address internal constant CREATOR = address(0xC0FFEE);
     address internal constant BENEFICIARY = address(0xBEEF);
     address internal constant TREASURY = address(0x7000);
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
 
-    address internal authority;
-
-    function _deployFactory(address protocolToken, uint16 protocolShareBps, uint16 thresholdBps)
+    function _deployFactory(uint16 protocolShareBps)
         internal
         returns (OTFFactory factory, FeeCollector collector, MockCoreRouter router)
     {
-        authority = vm.addr(AUTHORITY_KEY);
         ManagedOTFVault implementation = new ManagedOTFVault();
         collector = new FeeCollector(TREASURY);
-        factory = new OTFFactory(
-            address(implementation),
-            address(collector),
-            authority,
-            protocolToken,
-            protocolShareBps,
-            thresholdBps
-        );
+        factory = new OTFFactory(address(implementation), address(collector), protocolShareBps);
         router = new MockCoreRouter(address(factory));
         factory.configureEntryExitRouter(address(router));
     }
 
-    function _snapshot(
-        OTFFactory factory,
+    function _creationParams(
         address[] memory assets,
-        uint256[] memory marketCaps,
-        uint256[] memory prices,
-        uint256 nonce
-    ) internal view returns (FormationSnapshot memory snapshot) {
-        uint8[] memory tokenDecimals = new uint8[](assets.length);
-        for (uint256 i = 0; i < assets.length; i++) {
-            tokenDecimals[i] = IERC20Metadata(assets[i]).decimals();
-        }
-        snapshot = FormationSnapshot({
-            chainId: block.chainid,
-            factory: address(factory),
-            creator: CREATOR,
+        uint256[] memory bootstrapUnits,
+        uint16 expenseRatioBps
+    ) internal pure returns (VaultCreationParams memory params) {
+        params = VaultCreationParams({
+            name: "Bootstrap OTF",
+            symbol: "BOTF",
+            expenseBeneficiary: BENEFICIARY,
+            annualCreatorExpenseRatioBps: expenseRatioBps,
             constituents: assets,
-            tokenDecimals: tokenDecimals,
-            marketCapsUsdWad: marketCaps,
-            unitPricesUsdWad: prices,
-            snapshotTime: uint64(block.timestamp),
-            expiry: uint64(block.timestamp + 1 days),
-            calculationVersion: 1,
-            nonce: nonce
+            bootstrapBasketUnitsPerOTF: bootstrapUnits
         });
-    }
-
-    function _sign(OTFFactory factory, FormationSnapshot memory snapshot)
-        internal
-        returns (bytes memory signature)
-    {
-        bytes32 digest = factory.formationSnapshotDigest(snapshot);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(AUTHORITY_KEY, digest);
-        signature = abi.encodePacked(r, s, v);
     }
 
     function _createVault(
         OTFFactory factory,
-        FormationSnapshot memory snapshot,
+        address[] memory assets,
+        uint256[] memory bootstrapUnits,
         uint16 expenseRatioBps
     ) internal returns (ManagedOTFVault vault) {
-        VaultCreationParams memory params = VaultCreationParams({
-            name: "Formation OTF",
-            symbol: "FOTF",
-            expenseBeneficiary: BENEFICIARY,
-            annualCreatorExpenseRatioBps: expenseRatioBps
-        });
-        bytes memory signature = _sign(factory, snapshot);
         vm.prank(CREATOR);
-        vault = ManagedOTFVault(factory.createVault(params, snapshot, signature));
+        vault = ManagedOTFVault(
+            factory.createVault(_creationParams(assets, bootstrapUnits, expenseRatioBps))
+        );
     }
 
-    function _twoAssetSnapshot(
+    function _createTwoAssetVault(
         OTFFactory factory,
         address first,
         address second,
-        uint256 firstCap,
-        uint256 secondCap,
-        uint256 nonce
-    ) internal view returns (FormationSnapshot memory snapshot) {
+        uint256 firstUnits,
+        uint256 secondUnits,
+        uint16 expenseRatioBps
+    ) internal returns (ManagedOTFVault vault) {
         address[] memory assets = new address[](2);
         assets[0] = first;
         assets[1] = second;
-        uint256[] memory caps = new uint256[](2);
-        caps[0] = firstCap;
-        caps[1] = secondCap;
-        uint256[] memory prices = new uint256[](2);
-        prices[0] = WAD;
-        prices[1] = WAD;
-        snapshot = _snapshot(factory, assets, caps, prices, nonce);
+        uint256[] memory units = new uint256[](2);
+        units[0] = firstUnits;
+        units[1] = secondUnits;
+        vault = _createVault(factory, assets, units, expenseRatioBps);
     }
 
     function _bootstrap(

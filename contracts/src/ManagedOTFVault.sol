@@ -10,7 +10,7 @@ import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { VaultInitParams } from "./VaultTypes.sol";
 
 /// @notice Oracleless fixed-basket OTF share token.
-/// @dev Formation data and the expense policy are immutable after clone initialization.
+/// @dev Bootstrap basket units and the expense policy are immutable after clone initialization.
 contract ManagedOTFVault is ManagedOTFVaultStorage {
     using SafeTransferLib for address;
 
@@ -36,8 +36,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (length == 0 || length > ProtocolConstants.MAX_CONSTITUENTS) {
             revert InvalidArrayLength(ProtocolConstants.MAX_CONSTITUENTS, length);
         }
-        if (params.relativeQuantities.length != length) {
-            revert InvalidArrayLength(length, params.relativeQuantities.length);
+        if (params.bootstrapBasketUnitsPerOTF.length != length) {
+            revert InvalidArrayLength(length, params.bootstrapBasketUnitsPerOTF.length);
         }
         if (
             params.annualCreatorExpenseRatioBps
@@ -48,16 +48,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
             );
         }
-        if (
-            params.formationOtfWeightBps > BPS
-                || params.formationCalculationVersion
-                    != ProtocolConstants.FORMATION_CALCULATION_VERSION
-        ) {
-            revert InvalidFormationMetadata(
-                params.formationOtfWeightBps, params.formationCalculationVersion
-            );
-        }
-
         _initialized = true;
         __ERC20_init(params.name, params.symbol);
         _factory = msg.sender;
@@ -66,32 +56,26 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _entryExitRouter = params.entryExitRouter;
         _feeCollector = params.feeCollector;
         _annualCreatorExpenseRatioBps = params.annualCreatorExpenseRatioBps;
-        _formationOtfWeightBps = params.formationOtfWeightBps;
-        _formationSnapshotTime = params.formationSnapshotTime;
-        _formationCalculationVersion = params.formationCalculationVersion;
-        _formationSnapshotDigest = params.formationSnapshotDigest;
 
         for (uint256 i = 0; i < length; i++) {
             address asset = params.constituents[i];
             if (asset == address(0) || asset == address(this) || asset.code.length == 0) {
                 revert InvalidConstituent(asset);
             }
-            if (_relativeQuantity[asset] != 0) revert DuplicateConstituent(asset);
-            uint256 quantity = params.relativeQuantities[i];
-            if (quantity == 0) revert InvalidRelativeQuantity(asset);
+            if (_bootstrapBasketUnitsPerOTF[asset] != 0) revert DuplicateConstituent(asset);
+            uint256 quantity = params.bootstrapBasketUnitsPerOTF[i];
+            if (quantity == 0) revert InvalidBootstrapBasketUnit(asset);
             _assets.push(asset);
-            _relativeQuantity[asset] = quantity;
+            _bootstrapBasketUnitsPerOTF[asset] = quantity;
         }
 
         uint64 timestamp = uint64(block.timestamp);
         _feeEpochTimestamp = timestamp;
         _lastFeeCheckpointTimestamp = timestamp;
-        emit VaultInitialized(
-            msg.sender, params.creator, params.expenseBeneficiary, params.formationSnapshotDigest
-        );
+        emit VaultInitialized(msg.sender, params.creator, params.expenseBeneficiary);
     }
 
-    // Formation and policy views
+    // Bootstrap and policy views
 
     function assets() external view returns (address[] memory) {
         return _assets;
@@ -121,24 +105,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _annualCreatorExpenseRatioBps;
     }
 
-    function formationOtfWeightBps() external view returns (uint16) {
-        return _formationOtfWeightBps;
+    function bootstrapBasketUnitsPerOTF(address asset) external view returns (uint256) {
+        return _bootstrapBasketUnitsPerOTF[asset];
     }
 
-    function formationSnapshotTime() external view returns (uint64) {
-        return _formationSnapshotTime;
-    }
-
-    function formationCalculationVersion() external view returns (uint32) {
-        return _formationCalculationVersion;
-    }
-
-    function formationSnapshotDigest() external view returns (bytes32) {
-        return _formationSnapshotDigest;
-    }
-
-    function relativeQuantity(address asset) external view returns (uint256) {
-        return _relativeQuantity[asset];
+    function bootstrapBasketUnits() external view returns (uint256[] memory units) {
+        uint256 length = _assets.length;
+        units = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            units[i] = _bootstrapBasketUnitsPerOTF[_assets[i]];
+        }
     }
 
     function accountedBalance(address asset) external view returns (uint256) {
@@ -213,8 +189,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         )
     {
         totalFeeShares = pendingExpenseFeeShares();
-        effectiveProtocolShareBps =
-            IOTFFactoryFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
+        effectiveProtocolShareBps = IOTFFactoryFeePolicy(_factory).protocolFeeShareBps();
         if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
         (creatorShares, protocolShares,) =
             _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);
@@ -247,12 +222,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             revert InvalidArrayLength(length, maxAmountsIn.length);
         }
         uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
-        uint256 denominator = effectiveSupply == 0 ? FORMATION_SHARE_UNIT : effectiveSupply;
+        uint256 denominator = effectiveSupply == 0 ? MINIMUM_SHARE_SUPPLY : effectiveSupply;
         shares = type(uint256).max;
         bool anyQuantity;
         for (uint256 i = 0; i < length; i++) {
             uint256 quantity = effectiveSupply == 0
-                ? _relativeQuantity[_assets[i]]
+                ? _bootstrapBasketUnitsPerOTF[_assets[i]]
                 : _accountedBalance[_assets[i]];
             if (quantity == 0) continue;
             anyQuantity = true;
@@ -260,7 +235,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             if (assetShares < shares) shares = assetShares;
         }
         if (!anyQuantity) shares = 0;
-        if (effectiveSupply == 0 && shares < FORMATION_SHARE_UNIT) shares = 0;
+        if (effectiveSupply == 0 && shares < MINIMUM_SHARE_SUPPLY) shares = 0;
         if (shares == 0) return (0, new uint256[](length));
         amountsIn = _previewMintWithSupply(shares, effectiveSupply);
     }
@@ -419,15 +394,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         view
         returns (uint256[] memory amountsIn)
     {
-        if (supply == 0 && shares < FORMATION_SHARE_UNIT) {
-            revert BootstrapSharesTooSmall(shares, FORMATION_SHARE_UNIT);
+        if (supply == 0 && shares < MINIMUM_SHARE_SUPPLY) {
+            revert BootstrapSharesTooSmall(shares, MINIMUM_SHARE_SUPPLY);
         }
         uint256 length = _assets.length;
         amountsIn = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
-            uint256 quantity =
-                supply == 0 ? _relativeQuantity[_assets[i]] : _accountedBalance[_assets[i]];
-            uint256 denominator = supply == 0 ? FORMATION_SHARE_UNIT : supply;
+            uint256 quantity = supply == 0
+                ? _bootstrapBasketUnitsPerOTF[_assets[i]]
+                : _accountedBalance[_assets[i]];
+            uint256 denominator = supply == 0 ? MINIMUM_SHARE_SUPPLY : supply;
             amountsIn[i] = Math.mulDiv(quantity, shares, denominator, Math.Rounding.Ceil);
         }
     }
@@ -438,6 +414,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (uint256[] memory amountsOut)
     {
         if (supply == 0 || shares > supply) revert SharesExceedSupply(shares, supply);
+        uint256 residualSupply = supply - shares;
+        if (residualSupply != 0 && residualSupply < MINIMUM_SHARE_SUPPLY) {
+            revert ResidualSupplyTooSmall(residualSupply, MINIMUM_SHARE_SUPPLY);
+        }
         uint256 length = _assets.length;
         amountsOut = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
@@ -488,8 +468,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         totalFeeShares = targetShares - _feeEpochAccruedShares;
         _feeEpochAccruedShares = targetShares;
 
-        uint16 effectiveProtocolShareBps =
-            IOTFFactoryFeePolicy(_factory).effectiveProtocolFeeShareBps(address(this));
+        uint16 effectiveProtocolShareBps = IOTFFactoryFeePolicy(_factory).protocolFeeShareBps();
         if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
         (uint256 creatorShares, uint256 protocolShares, uint16 splitRemainder) =
             _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);

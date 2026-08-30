@@ -1,6 +1,6 @@
 ---
 title: Token and fee incentives
-description: OTF token supply, creator expenses, protocol fees, and formation-allocation rebates.
+description: OTF token supply, creator expenses, and the fixed protocol fee share.
 ---
 
 # OTF token and fee incentives
@@ -17,64 +17,36 @@ governance, liquidity, and treasury custody remain deployment decisions.
 
 ## Annual creator expense ratio
 
-Each vault stores the exact ABI field `annualCreatorExpenseRatioBps` as an immutable 0..1000 bps
-annual creator expense ratio. Its beneficiary is fixed at formation. The expense is paid by minting
-shares, not by transferring basket assets. Fees are lazy and cadence-independent: the fee epoch,
-fixed-point growth, and fractional remainders ensure that checkpoint timing does not materially
-change dilution. Every supply-changing operation checkpoints fees before supply math, and final
-shutdown stops accrual.
+Each vault stores immutable `annualCreatorExpenseRatioBps` from 0 to 1000 bps and a fixed expense
+beneficiary. The expense is paid by minting shares rather than transferring basket assets. Fees are
+lazy and cadence-independent: fee epochs, fixed-point growth, and fractional remainders prevent
+checkpoint timing from materially changing dilution. Supply-changing operations checkpoint fees
+before settlement math, and final shutdown stops accrual.
 
-If `S` is pre-fee supply and `r` is the annual ratio, the one-year target is:
+If `S` is pre-fee supply and `r` is the annual ratio expressed as a fraction of post-fee supply,
+the one-year target is:
 
 ```text
 feeShares = S * r / (1 - r)
 ```
 
-At 10% for a 365-day year, this is approximately 11.111% of pre-fee supply, leaving existing
-holders with 90% of post-fee supply. This is a share-dilution policy, not a promise of asset value
-or performance.
+At 10% for one 365-day year this mints about 11.111% of pre-fee supply, leaving existing holders
+with 90% of post-fee supply.
 
-## FeeCollector
+## Fixed protocol split
 
-The factory's base protocol fee split is minted as shares of the relevant OTF to `FeeCollector`.
-The collector does not hold underlying assets for investors. Only its treasury may call `claim` or
-`claimAll`; treasury changes use a two-step handoff. The treasury may redeem claimed OTF shares and
-execute any subsequent token purchase through its own reviewed multisig process.
+The factory stores one immutable `protocolFeeShareBps` between 0 and 10,000. Each vault reads that
+value when splitting newly accrued fee shares between its expense beneficiary and `FeeCollector`.
+The split does not depend on constituents, offchain allocations, token holdings, prices, or current
+portfolio value.
 
-## Formation-allocation rebate
-
-The optional rebate only reallocates protocol fee shares to the creator. It never lowers the total
-creator-selected fee paid by holders and does not use a runtime NAV or price oracle. Define:
-
-- `G`: signed formation OTF allocation in basis points;
-- `coverage`: `min(floor(actualOtf * 10,000 / accountedOtf), 10,000)`;
-- `W`: `floor(G * coverage / 10,000)`;
-- `T`: configured full-rebate threshold in basis points; and
-- `P`: normal/base protocol fee share in basis points.
-
-```text
-effective protocol share = P                      when disabled or T == 0
-effective protocol share = 0                      when valid W >= T and T > 0
-effective protocol share = ceil(P * (T - W) / T)  when valid W < T and T > 0
-```
-
-Coverage is based on the signed formation allocation and actual/accounted OTF token balance. The
-coverage and `W` steps floor; the final ceiling prevents integer rounding from over-rebating. A
-donation above `accountedOtf` is capped out and cannot manufacture coverage. If OTF is absent or
-duplicated, the accounted balance is zero, a balance read fails, any constituent is under-backed,
-or policy data is malformed, the normal `P` split applies (fail closed). Formation allocation does
-not follow post-formation value drift.
+`FeeCollector` holds protocol fee shares, not underlying investor assets. Only its treasury may
+claim them, and treasury changes use a two-step handoff.
 
 ## Trust and unresolved decisions
 
-The formation authority/data provider is unresolved and must be independently controlled before
-production. The creator's beneficiary and expense ratio are visible at formation but are not a
-guarantee of performance. Factory/collector governance, token distribution, treasury policy,
-mainnet OTF addresses, typed quote service, liquidity policy, and the creator-dependent sound-vault
-emergency path are unresolved. Canonical mainnet USDG identity is configured separately from
-testnet deployment state.
-
-Pool fees belong to external LPs. The creator promises no pool liquidity, price, execution quality,
-or buyback. The app's external-liquidity handoff must disclose that it does not custody LP positions
-or submit pool-management transactions. Synthra publishes no documented OTF/USDG pair-prefill URL
-and is not production evidence.
+The creator-selected beneficiary and expense ratio are visible at creation but do not guarantee
+performance. Factory/collector governance, token distribution, treasury policy, new production
+deployments, mainnet OTF addresses, typed quote service, liquidity policy, and the creator-dependent
+sound-vault emergency path remain unresolved. Pool fees belong to external LPs; an OTF creator
+promises no pool liquidity, execution quality, or buyback.

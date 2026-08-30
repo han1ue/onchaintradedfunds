@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 10,
-  "architecture": "oracleless-market-cap-at-formation-v1",
+  "schemaVersion": 11,
+  "architecture": "immutable-bootstrap-basket-v1",
   "network": "robinhood-testnet",
   "chainId": 46630,
   "status": "not-deployed",
@@ -27,14 +27,8 @@
     "uniswapV3Factory": null,
     "uniswapV3SwapRouter02": null
   },
-  "formation": {
-    "calculationVersion": 1,
-    "snapshotAuthority": null,
-    "dataSource": null
-  },
   "policy": {
-    "baseProtocolFeeShareBps": 1500,
-    "protocolTokenFullRebateThresholdBps": 1000
+    "protocolFeeShareBps": 1500
   },
   "externalLiquidity": {
     "venue": "Synthra",
@@ -43,5 +37,8 @@
   "quoteService": {
     "endpoint": null
   },
-  "note": "The previous testnet contracts implement a different pre-mainnet architecture and are intentionally not exposed by this configuration. Deploy the redesigned contracts and configure a production formation authority before enabling writes or quotes."
+  "creation": {
+    "assetDataEndpoint": "https://launch.onchaintradedfunds.com/api/v1/assets"
+  },
+  "note": "The previous testnet contracts implement a different pre-mainnet architecture and are intentionally not exposed. Deploy the immutable-bootstrap contracts before enabling writes."
 }
