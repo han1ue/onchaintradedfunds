@@ -1,0 +1,119 @@
+:root {
+  --otf-background: #f5f8f7;
+  --otf-surface: #eef3f1;
+  --otf-foreground: #14201f;
+  --otf-muted: #526460;
+  --otf-border: rgb(31 58 54 / 18%);
+  --otf-teal: #187f76;
+}
+
+html.dark {
+  --otf-background: #0e1218;
+  --otf-surface: #131820;
+  --otf-foreground: #edf2f7;
+  --otf-muted: #9ba8ba;
+  --otf-border: rgb(135 148 167 / 22%);
+  --otf-teal: #57cfc2;
+}
+
+html {
+  background: var(--otf-background);
+  color-scheme: light;
+  scrollbar-color: var(--otf-muted) var(--otf-background);
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--otf-background);
+  color: var(--otf-foreground);
+  font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgb(55 183 170 / 30%);
+  color: var(--otf-foreground);
+}
+
+:focus-visible {
+  outline: 2px solid var(--otf-teal);
+  outline-offset: 3px;
+}
+
+.otf-docs-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--otf-foreground);
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.otf-docs-mark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid rgb(55 183 170 / 45%);
+  border-radius: 7px;
+  background: rgb(55 183 170 / 13%);
+  color: var(--otf-teal);
+  font-size: 0.57rem;
+  font-weight: 800;
+}
+
+.otf-open-app {
+  border: 1px solid var(--otf-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: var(--otf-foreground);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  transition: border-color 160ms ease-out, background-color 160ms ease-out;
+}
+
+.otf-open-app:hover {
+  border-color: rgb(55 183 170 / 55%);
+  background: rgb(55 183 170 / 11%);
+}
+
+article {
+  max-width: 74ch;
+}
+
+article :where(h1, h2, h3) {
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+article :where(a) {
+  text-underline-offset: 0.2em;
+}
+
+article :where(code) {
+  font-variant-ligatures: none;
+}
+
+@media (max-width: 640px) {
+  .otf-docs-brand > span:last-child,
+  .otf-open-app {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

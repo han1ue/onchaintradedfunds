@@ -1,0 +1,31 @@
+{
+  "name": "@onchaintradedfunds/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
+    "dev": "next dev",
+    "start": "next start",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.3",
+    "nextra": "4.6.0",
+    "nextra-theme-docs": "4.6.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/mdx": "2.0.13",
+    "@types/node": "24.1.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "eslint": "9.32.0",
+    "eslint-config-next": "16.3.3",
+    "pagefind": "1.5.2",
+    "typescript": "5.9.2"
+  }
+}

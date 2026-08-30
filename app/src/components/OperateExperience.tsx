@@ -72,15 +72,13 @@ import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 
-export type OperateView = "landing" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
+export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
 
 type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
 const MAX_CONSTITUENT_DECIMALS = 36;
-const SPLASH_ENTRY_KEY = "otf-splash-entered";
-
 const ERC20_METADATA_READ_ABI = [
   { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
@@ -1392,31 +1390,7 @@ function WalletSurface() {
 }
 
 function OperateRouter({ initialView }: { initialView: OperateView }) {
-  const [enteredApp, setEnteredApp] = useState(() => {
-    if (initialView !== "landing") return true;
-    if (typeof window === "undefined") return false;
-    try {
-      return window.sessionStorage.getItem(SPLASH_ENTRY_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  if (initialView === "landing" && !enteredApp) {
-    return (
-      <SplashPage
-        onEnter={() => {
-          try {
-            window.sessionStorage.setItem(SPLASH_ENTRY_KEY, "true");
-          } catch {
-            // The splash still works when browser storage is unavailable.
-          }
-          window.scrollTo({ top: 0, behavior: "auto" });
-          setEnteredApp(true);
-        }}
-      />
-    );
-  }
+  if (initialView === "landing") return <SplashPage />;
 
   if (initialView === "liquidity") return <LiquiditySurface />;
   if (initialView === "create") return <CreateSurface />;

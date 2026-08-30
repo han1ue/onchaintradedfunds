@@ -332,6 +332,7 @@ a { color: inherit; }
   font-size: 0.78rem;
   font-weight: 720;
   letter-spacing: 0.015em;
+  text-decoration: none;
   transition: background 180ms ease-out, box-shadow 180ms ease-out, transform 180ms ease-out;
 }
 

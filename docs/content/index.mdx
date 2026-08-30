@@ -1,0 +1,27 @@
+---
+title: Documentation
+description: Protocol, security, and incentive documentation for Onchain Traded Funds.
+---
+
+import { Callout, Cards } from 'nextra/components'
+
+# Onchain Traded Funds documentation
+
+Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. An OTF is weighted by market capitalization once, at formation, then holds a fixed ordered basket without a runtime oracle, automatic rebalance, or ongoing market-cap refresh.
+
+<Callout type="warning" emoji="">
+  The contracts are unaudited and are not production-ready. Do not deploy them to mainnet.
+</Callout>
+
+## Start here
+
+<Cards num={2}>
+  <Cards.Card title="Protocol overview" href="/overview" arrow />
+  <Cards.Card title="Protocol security specification" href="/protocol-security-spec" arrow />
+  <Cards.Card title="Security and risk" href="/security" arrow />
+  <Cards.Card title="Token and fee incentives" href="/token-and-fee-incentives" arrow />
+</Cards>
+
+## Scope
+
+The active protocol is separate from `launch/`, which is a prelaunch competition and is not fund governance. These documents describe the current pre-mainnet architecture and do not certify the implementation or any deployment.

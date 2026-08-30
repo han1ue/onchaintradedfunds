@@ -1,9 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import type { CSSProperties } from "react";
-
-type SplashPageProps = {
-  onEnter: () => void;
-};
+import { APP_ORIGIN } from "@/lib/app-host-routing";
 
 const FLOW_LINES = Array.from({ length: 24 }, (_, index) => {
   const startY = 86 + index * 31;
@@ -23,7 +20,7 @@ const ORBIT_LINES = Array.from({ length: 14 }, (_, index) => ({
   rotation: -24 + index * 2.2,
 }));
 
-export function SplashPage({ onEnter }: SplashPageProps) {
+export function SplashPage() {
   return (
     <main className="splashPage">
       <div className="splashEffect" aria-hidden="true">
@@ -98,10 +95,10 @@ export function SplashPage({ onEnter }: SplashPageProps) {
         <p>the standard for the new era</p>
       </section>
 
-      <button className="splashEnter" type="button" onClick={onEnter}>
+      <a className="splashEnter" href={APP_ORIGIN}>
         <span>Go to app</span>
         <ArrowRight aria-hidden="true" size={18} strokeWidth={1.8} />
-      </button>
+      </a>
     </main>
   );
 }
