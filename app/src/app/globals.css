@@ -1116,13 +1116,19 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageHeader p a { color: var(--text-soft); text-decoration-color: rgb(var(--accent-rgb) / 48%); text-underline-offset: 2px; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
-.fundsSummary { display: flex; min-height: 88px; align-items: center; justify-content: space-between; gap: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 15px 16px; }
-.fundsSummary dl { display: grid; min-width: min(520px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0; }
-.fundsSummary dl > div { min-width: 0; padding: 1px 24px 1px 0; }
-.fundsSummary dl > div + div { border-left: 1px solid var(--border); padding-right: 0; padding-left: 24px; }
-.fundsSummary dt { color: var(--text-muted); font-size: 0.64rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
-.fundsSummary dd { margin: 7px 0 0; color: var(--text); font-size: 1.3rem; font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
-.fundsSummary small { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.62rem; }
+.fundsSummary { display: flex; min-height: 80px; align-items: center; justify-content: space-between; gap: 24px; padding: 6px 4px 10px; }
+.fundsAum strong,
+.fundsAum span { display: block; }
+.fundsAum strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
+.fundsAum span { margin-top: 8px; color: var(--text-muted); font-size: 0.7rem; }
+.fundsSummary .primaryAction,
+.fundsSummary .secondaryAction { border-radius: 8px; }
+.fundsView .sectionCard { border-radius: 20px; }
+.fundsView .directoryDataNotice { border-radius: 14px; }
+.fundsView .directoryPanel { overflow: hidden; border-color: var(--border-strong); }
+.fundsView .searchField,
+.fundsView .directoryViewToggle { border-radius: 8px; }
+.fundsView .directoryViewToggle button { border-radius: 6px; }
 
 .primaryAction,
 .secondaryAction { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; font-size: 0.72rem; font-weight: 600; text-decoration: none; }

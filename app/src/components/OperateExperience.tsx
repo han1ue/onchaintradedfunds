@@ -1305,7 +1305,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   if (detail) {
     return (
       <DashboardPage>
-        <div className="appView">
+        <div className="appView fundsView">
           <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
           <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and formation history for this address-routed fund." icon={<LayoutGrid size={18} />} />
           <section className="sectionCard detailIdentityCard">
@@ -1318,12 +1318,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
   }
   return (
     <DashboardPage>
-      <div className="appView">
+      <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <dl>
-            <div><dt>Total AUM</dt><dd>Unavailable</dd><small>Waiting for the onchain directory</small></div>
-            <div><dt>OTFs</dt><dd>0</dd><small>Deployed funds indexed</small></div>
-          </dl>
+          <div className="fundsAum"><strong>Unavailable</strong><span>in 0 OTFs</span></div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (
