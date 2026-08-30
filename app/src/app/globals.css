@@ -196,9 +196,10 @@ a { color: inherit; }
 }
 
 .topNavInner {
-  display: flex;
+  display: grid;
   width: min(1120px, calc(100% - 32px));
   min-height: 58px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 20px;
   margin: 0 auto;
@@ -206,7 +207,7 @@ a { color: inherit; }
   border-radius: 999px;
   background: rgb(15 20 27 / 88%);
   box-shadow: 0 12px 32px rgb(0 0 0 / 24%);
-  padding: 0 12px 0 16px;
+  padding: 0 20px;
   backdrop-filter: blur(12px);
 }
 
@@ -215,6 +216,7 @@ a { color: inherit; }
   flex: 0 0 auto;
   align-items: center;
   gap: 10px;
+  justify-self: start;
   color: var(--text);
   text-decoration: none;
 }
@@ -229,9 +231,9 @@ a { color: inherit; }
 
 .navTabs {
   display: flex;
-  flex: 1 1 auto;
   align-items: center;
   gap: 3px;
+  justify-self: center;
 }
 
 .navTabs a {
@@ -258,12 +260,13 @@ a { color: inherit; }
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  justify-self: end;
 }
 
 .swapMain {
   width: min(480px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 48px 0 84px;
+  padding: 80px 0 84px;
 }
 
 .swapIntro,
@@ -581,7 +584,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   .navTabs { min-width: 0; gap: 0; }
   .navTabs a { min-height: 36px; padding-right: 10px; padding-left: 10px; font-weight: 600; }
   .navActions { min-width: 0; }
-  .swapMain { width: min(100% - 28px, 480px); padding-top: 40px; }
+  .swapMain { width: min(100% - 28px, 480px); padding-top: 64px; }
 }
 
 @media (max-width: 560px) {
@@ -590,6 +593,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   .testnetWarningDesktop { display: none; }
   .testnetWarningMobile { display: inline; }
   .logoGroup { display: none; }
+  .swapMain { padding-top: 56px; }
   .swapQuoteMetrics { grid-template-columns: 1fr; gap: 0; }
   .createForm fieldset { grid-template-columns: 1fr; }
   .createForm label.full { grid-column: auto; }

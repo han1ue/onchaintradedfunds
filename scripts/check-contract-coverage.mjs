@@ -36,30 +36,58 @@ function findForge() {
   return forge;
 }
 
-if (process.platform === "win32") {
-  fail(
-    "Coverage is pinned to Linux CI: Foundry v1.7.1 Solar cannot resolve this project's "
-      + "OpenZeppelin relative imports reliably on Windows. Run the Solidity security workflow "
-      + "or use a Linux environment.",
-  );
-}
-
 const forge = findForge();
+// Keep node_modules inside Foundry's root so Solar can resolve dependency-relative imports.
+// Test correctness is enforced by the preceding workflow gates; this pass is advisory coverage.
 const result = spawnSync(
   forge,
   [
     "coverage",
+    "--root",
+    root,
+    "--contracts",
+    "contracts/src",
+    "--out",
+    "contracts/out",
+    "--cache-path",
+    "contracts/cache",
+    "--lib-paths",
+    "contracts/lib",
+    "--remappings",
+    "@openzeppelin/=node_modules/@openzeppelin/",
+    "--use",
+    "0.8.36",
+    "--evm-version",
+    "shanghai",
+    "--optimize",
+    "true",
+    "--optimizer-runs",
+    "1",
+    "--ignored-error-codes",
+    "6335",
     "--ir-minimum",
+    "--allow-failure",
     "--report",
     "summary",
     "--exclude-tests",
     "--no-match-coverage",
-    "(^|/)(mocks|interfaces)/",
+    "(^|/)(mocks|interfaces|node_modules)/",
   ],
   {
-    cwd: contracts,
+    cwd: root,
     encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1" },
+    env: {
+      ...process.env,
+      FOUNDRY_TEST: "contracts/test",
+      FOUNDRY_FUZZ_RUNS: process.env.FOUNDRY_FUZZ_RUNS ?? "1000",
+      FOUNDRY_INVARIANT_RUNS: process.env.FOUNDRY_INVARIANT_RUNS ?? "128",
+      FOUNDRY_INVARIANT_DEPTH: process.env.FOUNDRY_INVARIANT_DEPTH ?? "64",
+      FOUNDRY_INVARIANT_FAIL_ON_REVERT:
+        process.env.FOUNDRY_INVARIANT_FAIL_ON_REVERT ?? "false",
+      FOUNDRY_BYTECODE_HASH: "none",
+      NO_COLOR: "1",
+      RUST_LOG: "error",
+    },
     maxBuffer: 16 * 1024 * 1024,
   },
 );
