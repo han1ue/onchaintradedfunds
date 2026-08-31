@@ -1,5 +1,4 @@
 {
-  "schemaVersion": 11,
   "architecture": "immutable-bootstrap-basket-v1",
   "network": "robinhood-testnet",
   "chainId": 46630,

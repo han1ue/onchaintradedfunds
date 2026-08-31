@@ -166,7 +166,6 @@ assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].in
 
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
 assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
-assert(/schemaVersion:\s*11/u.test(deploySource), "deployment script does not write schema 11");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
 assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");
 console.log(`Security checks passed for ${production.join(", ")}.`);

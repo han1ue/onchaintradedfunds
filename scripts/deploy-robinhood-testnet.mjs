@@ -33,8 +33,8 @@ const { createPublicClient, createWalletClient, getAddress, http, isAddress, non
 const { privateKeyToAccount } = accounts;
 
 const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
-if (config.schemaVersion !== 11 || config.architecture !== "immutable-bootstrap-basket-v1") {
-  throw new Error("Deployment config must use schema 11 immutable-bootstrap-basket-v1");
+if (config.architecture !== "immutable-bootstrap-basket-v1") {
+  throw new Error("Deployment config must use the immutable-bootstrap-basket-v1 architecture");
 }
 const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
 const env = (name) => {
@@ -84,7 +84,7 @@ const chain = {
 };
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
-if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match schema-11 config");
+if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match deployment config");
 
 async function deploy(name, args = []) {
   const compiled = artifact(name);
@@ -124,7 +124,6 @@ const entryRouter = await deploy("OTFEntryExitRouter", [
 const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
-  schemaVersion: 11,
   architecture: "immutable-bootstrap-basket-v1",
   network: "robinhood-testnet",
   chainId,

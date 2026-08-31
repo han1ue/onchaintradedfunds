@@ -24,4 +24,4 @@ The application is an operating surface for creating, trading, and inspecting or
 
 ## Current limits
 
-The app must keep writes disabled until a schema-11 bootstrap-basket deployment, typed quote/calldata service, and factory directory/history services are configured. Unavailable states should name that limitation plainly.
+The app must keep writes disabled until a compatible bootstrap-basket deployment, typed quote/calldata service, and factory directory/history services are configured. Unavailable states should name that limitation plainly.

@@ -1003,7 +1003,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Canonical USDG is configured, but no OTF deployments or typed execution service are available on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
         ) : (
           <>
-            {!directoryDeploymentReady ? <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The schema-11 testnet deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div> : null}
+            {!directoryDeploymentReady ? <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The testnet deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div> : null}
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
                 <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name or symbol" disabled /></label>

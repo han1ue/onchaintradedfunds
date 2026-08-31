@@ -34,8 +34,7 @@ const testnetExternalContracts = record(testnet.externalContracts);
 const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
 const testnetQuote = record(testnet.quoteService);
-const testnetCompatible = Number(testnet.schemaVersion) === 11
-  && testnet.architecture === "immutable-bootstrap-basket-v1";
+const testnetCompatible = testnet.architecture === "immutable-bootstrap-basket-v1";
 
 function deployedTestnetContract(name: string): Address | undefined {
   return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;
