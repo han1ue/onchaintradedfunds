@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
-  ArrowLeft,
   ArrowDown,
   ArrowUpRight,
   ArrowRight,
@@ -39,7 +38,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { encodeFunctionData, formatUnits, getAddress, isAddress, parseAbiItem, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
@@ -73,7 +72,7 @@ import {
 import { navigationItemForPath } from "@/lib/operate-navigation";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
-import { formatAnnualExpenseRatioPercentage } from "@/lib/creation-model";
+import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
   formatMarketCapMultiplier,
   formatMarketCapSnapshotTimestamp,
@@ -96,7 +95,6 @@ type AppearancePreference = "default" | "light" | "dark";
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
 const X_URL = "https://x.com/OTFProtocol";
-const ERC20_TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
   symbol: "Select token",
@@ -375,7 +373,7 @@ function OperateNav() {
         <nav className="navTabs" aria-label="Primary navigation">
           <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
           <Link className={current === "funds" ? "active" : ""} href="/funds">Funds</Link>
-          <Link className={current === "token" ? "active" : ""} href="/token">OTF Token</Link>
+          <Link className={current === "token" ? "active" : ""} href="/token">$OTF</Link>
         </nav>
         <div className="navActions">
           <div className="networkControl" ref={networkRef}>
@@ -496,7 +494,7 @@ function HeaderWalletControl({ active }: { active: boolean }) {
       {({ account, mounted, authenticationStatus, openConnectModal }) => {
         const ready = mounted && authenticationStatus !== "loading";
         const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
-        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Loading wallet" disabled><Wallet size={14} /><span>Wallet</span></button>;
+        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Loading wallet" disabled><Wallet size={14} /><span>Connect wallet</span></button>;
         if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
         return (
           <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
@@ -922,10 +920,10 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
               <div className="swapAmountTop"><span>You pay</span></div>
               <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn"><button type="button" className="swapAssetButton" aria-label="Select token to pay" onClick={() => setPicker("input")}><AssetMark asset={input} /><strong className={isUnselectedOtf(input) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(input) ? "—" : input.symbol}</strong><ChevronDown size={15} /></button><span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(inputBalance.formatted)} /></span></div></div>
             </div>
-            <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
+            {!embedded ? <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button> : null}
             <div className="swapAmountBox receive">
               <div className="swapAmountTop"><span>You receive</span></div>
-              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn"><button type="button" className="swapAssetButton" aria-label="Select token to receive" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong className={isUnselectedOtf(output) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(output) ? "—" : output.symbol}</strong><ChevronDown size={15} /></button><span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
+              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{embedded ? <div className="swapAssetButton locked" aria-label={`${output.symbol} fund token`}><AssetMark asset={output} /><strong>{output.symbol}</strong></div> : <button type="button" className="swapAssetButton" aria-label="Select token to receive" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong className={isUnselectedOtf(output) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(output) ? "—" : output.symbol}</strong><ChevronDown size={15} /></button>}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
             </div>
           </div>
           <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{primaryLabel}</button>
@@ -933,7 +931,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
         </section>
   );
-  const pickerDialog = picker ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} /> : null;
+  const pickerDialog = picker && (!embedded || picker === "input") ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} /> : null;
 
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 
@@ -971,7 +969,7 @@ function CreateSurface() {
   return (
     <DashboardPage className="createPage">
       <div className="appView">
-        <div className="vaultBreadcrumb appBreadcrumb"><Link href={returnHref}><ArrowLeft size={12} />Back to {returnLabel}</Link></div>
+        <div className="vaultBreadcrumb appBreadcrumb"><Link href={returnHref}>Back to {returnLabel}</Link></div>
         <AppPageHeader title="Create OTF" description="Choose the assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
         <CreateOTFForm returnHref={returnHref} />
       </div>
@@ -1076,7 +1074,7 @@ function CreatedFundSurface() {
           {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View creation transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
             <Link className="secondaryAction" href="/create"><FilePlus2 size={14} />Create another</Link>
-            {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF now</Link> : <Link className="primaryAction" href="/funds"><ArrowLeft size={14} />Back to Funds</Link>}
+            {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF now</Link> : <Link className="primaryAction" href="/funds">Back to Funds</Link>}
           </div>
         </section>
       </div>
@@ -1089,54 +1087,137 @@ function FundRouteSurface() {
   return pathname.endsWith("/created") ? <CreatedFundSurface /> : <FundsSurface detail />;
 }
 
-type SupplyHistoryPoint = { block: bigint; supply: bigint };
-
 function formatShareSupply(value: bigint): string {
   return Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-function VaultSupplyHistory({ address, symbol, totalSupply }: { address: Address; symbol: string; totalSupply: bigint }) {
+type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
+
+type FundValuation = {
+  state: "loading" | "ready" | "unavailable";
+  current?: FundValuationSnapshot;
+  history: FundValuationSnapshot[];
+  usesBootstrapNav: boolean;
+};
+
+function valuationAsset(value: unknown): CreationAssetData | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const asset = value as Record<string, unknown>;
+  if (
+    typeof asset.address !== "string" || !isAddress(asset.address)
+    || typeof asset.symbol !== "string" || typeof asset.name !== "string"
+    || typeof asset.priceUsd !== "string" || typeof asset.marketCapUsd !== "string"
+    || !Number.isInteger(asset.decimals)
+  ) return undefined;
+  return {
+    address: getAddress(asset.address),
+    symbol: asset.symbol,
+    name: asset.name,
+    decimals: Number(asset.decimals),
+    priceUsd: asset.priceUsd,
+    marketCapUsd: asset.marketCapUsd,
+    priceUpdatedAt: typeof asset.priceUpdatedAt === "string" ? asset.priceUpdatedAt : undefined,
+    verified: asset.verified === true,
+  };
+}
+
+function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
-  const [state, setState] = useState<"loading" | "ready" | "failure">("loading");
-  const [points, setPoints] = useState<SupplyHistoryPoint[]>([]);
-  const [eventCount, setEventCount] = useState(0);
+  const [valuation, setValuation] = useState<FundValuation>({ state: "loading", history: [], usesBootstrapNav: false });
 
   useEffect(() => {
     let cancelled = false;
-    if (!publicClient) {
-      setState("failure");
+    if (!fund || !publicClient || chainId !== robinhoodChainTestnet.id) {
+      setValuation({ state: fund ? "unavailable" : "loading", history: [], usesBootstrapNav: false });
       return;
     }
-    setState("loading");
-    void publicClient.getBlockNumber().then(async (latestBlock) => {
-      const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
-      const logs = await publicClient.getLogs({ address, event: ERC20_TRANSFER_EVENT, fromBlock, toBlock: latestBlock });
-      const supplyLogs = logs.filter((log) => log.args.value !== undefined && (log.args.from === zeroAddress || log.args.to === zeroAddress));
-      const netChange = supplyLogs.reduce((total, log) => total + (log.args.from === zeroAddress ? log.args.value! : -log.args.value!), 0n);
-      let runningSupply = totalSupply - netChange;
-      const nextPoints: SupplyHistoryPoint[] = [{ block: fromBlock, supply: runningSupply }];
-      for (const log of supplyLogs) {
-        runningSupply += log.args.from === zeroAddress ? log.args.value! : -log.args.value!;
-        nextPoints.push({ block: log.blockNumber, supply: runningSupply });
+    setValuation((current) => ({ ...current, state: "loading" }));
+    const assetRequest = fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
+      return response.json() as Promise<{ data?: unknown[]; marketCapSnapshotAt?: unknown }>;
+    });
+    void Promise.all([
+      assetRequest,
+      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "accountedBalances" }),
+      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "bootstrapBasketUnits" }),
+    ]).then(([payload, accountedBalances, bootstrapUnits]) => {
+      const prices = (payload.data ?? []).flatMap((value) => {
+        const parsed = valuationAsset(value);
+        return parsed ? [parsed] : [];
+      });
+      const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
+      const pricedAssets = fund.assets.map((address) => priceByAddress.get(address.toLowerCase()));
+      if (pricedAssets.some((asset) => !asset) || accountedBalances.length !== fund.assets.length || bootstrapUnits.length !== fund.assets.length) {
+        throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
       }
-      if (nextPoints.at(-1)?.block !== latestBlock) nextPoints.push({ block: latestBlock, supply: totalSupply });
-      return { eventCount: supplyLogs.length, points: nextPoints };
-    }).then((history) => {
+      const usdWadFor = (quantities: readonly bigint[]) => quantities.reduce((total, quantity, index) => {
+        const asset = pricedAssets[index]!;
+        const priceUsdWad = parseFixedDecimal(asset.priceUsd, 18);
+        if (!priceUsdWad) throw new Error("VALUATION_PRICE_INVALID");
+        return total + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
+      }, 0n);
+      const aumUsdWad = usdWadFor(accountedBalances);
+      const usesBootstrapNav = fund.totalSupply === 0n;
+      const navUsdWad = usesBootstrapNav
+        ? usdWadFor(bootstrapUnits)
+        : aumUsdWad * 10n ** 18n / fund.totalSupply;
+      const at = typeof payload.marketCapSnapshotAt === "string" && Number.isFinite(Date.parse(payload.marketCapSnapshotAt))
+        ? Date.parse(payload.marketCapSnapshotAt)
+        : Date.now();
+      const current = {
+        at,
+        navUsd: Number(formatUnits(navUsdWad, 18)),
+        aumUsd: Number(formatUnits(aumUsdWad, 18)),
+      };
+      const storageKey = `otf:valuation-history:v1:${chainId}:${fund.address.toLowerCase()}`;
+      let history: FundValuationSnapshot[] = [];
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
+        if (Array.isArray(stored)) {
+          history = stored.flatMap((value) => {
+            if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+            const row = value as Record<string, unknown>;
+            return typeof row.at === "number" && Number.isFinite(row.at)
+              && typeof row.navUsd === "number" && Number.isFinite(row.navUsd) && row.navUsd >= 0
+              && typeof row.aumUsd === "number" && Number.isFinite(row.aumUsd) && row.aumUsd >= 0
+              ? [{ at: row.at, navUsd: row.navUsd, aumUsd: row.aumUsd }]
+              : [];
+          });
+        }
+      } catch {
+        history = [];
+      }
+      const previous = history.at(-1);
+      const nextHistory = (previous && Math.abs(current.at - previous.at) < 5 * 60_000
+        ? [...history.slice(0, -1), current]
+        : [...history, current]).slice(-180);
+      window.localStorage.setItem(storageKey, JSON.stringify(nextHistory));
+      return { current, history: nextHistory, usesBootstrapNav };
+    }).then((result) => {
       if (!cancelled) {
-        setPoints(history.points);
-        setEventCount(history.eventCount);
-        setState("ready");
+        setValuation({ state: "ready", ...result });
       }
     }).catch(() => {
       if (!cancelled) {
-        setPoints([]);
-        setEventCount(0);
-        setState("failure");
+        setValuation({ state: "unavailable", history: [], usesBootstrapNav: false });
       }
     });
     return () => { cancelled = true; };
-  }, [address, publicClient, totalSupply]);
+  }, [chainId, fund, publicClient]);
+
+  return valuation;
+}
+
+function formatUsd(value: number | undefined, maximumFractionDigits = 2): string {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits });
+}
+
+function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: FundValuation }) {
+  const [mode, setMode] = useState<"nav" | "aum">("nav");
+  const points = valuation.history;
+  const values = points.map((point) => mode === "nav" ? point.navUsd : point.aumUsd);
 
   const width = 720;
   const height = 190;
@@ -1144,39 +1225,43 @@ function VaultSupplyHistory({ address, symbol, totalSupply }: { address: Address
   const right = 14;
   const top = 18;
   const bottom = 25;
-  const values = points.map((point) => Number(formatUnits(point.supply, 18)));
   const minimumValue = values.length ? Math.min(...values) : 0;
   const maximumValue = values.length ? Math.max(...values) : 1;
   const padding = Math.max((maximumValue - minimumValue) * 0.16, maximumValue * 0.025, 0.01);
   const minimum = Math.max(0, minimumValue - padding);
   const maximum = maximumValue + padding;
   const spread = Math.max(maximum - minimum, 0.01);
-  const firstBlock = points.at(0)?.block ?? 0n;
-  const lastBlock = points.at(-1)?.block ?? firstBlock + 1n;
-  const blockSpread = Number(lastBlock - firstBlock || 1n);
+  const firstTimestamp = points.at(0)?.at ?? 0;
+  const lastTimestamp = points.at(-1)?.at ?? firstTimestamp + 1;
+  const timeSpread = Math.max(lastTimestamp - firstTimestamp, 1);
   const chartPoints = points.map((point) => ({
-    x: left + (Number(point.block - firstBlock) / blockSpread) * (width - left - right),
-    y: top + ((maximum - Number(formatUnits(point.supply, 18))) / spread) * (height - top - bottom),
+    x: points.length === 1 ? width - right : left + ((point.at - firstTimestamp) / timeSpread) * (width - left - right),
+    y: top + ((maximum - (mode === "nav" ? point.navUsd : point.aumUsd)) / spread) * (height - top - bottom),
   }));
   const linePath = chartPoints.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
   const baseline = height - bottom;
-  const areaPath = chartPoints.length ? `${linePath} L ${chartPoints.at(-1)!.x} ${baseline} L ${chartPoints[0].x} ${baseline} Z` : "";
+  const areaPath = chartPoints.length > 1 ? `${linePath} L ${chartPoints.at(-1)!.x} ${baseline} L ${chartPoints[0].x} ${baseline} Z` : "";
   const ticks = Array.from({ length: 4 }, (_, index) => maximum - ((maximum - minimum) * index) / 3);
+  const selectedValue = valuation.current ? mode === "nav" ? valuation.current.navUsd : valuation.current.aumUsd : undefined;
+  const firstDate = points.length ? new Date(firstTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const lastDate = points.length ? new Date(lastTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
   return (
-    <section className="sectionCard supplyHistoryPanel">
-      <div className="directoryPanelHeading"><div><h2>Share supply</h2><p>Mint and redemption history from onchain Transfer events.</p></div><span className="stateBadge muted">500K blocks</span></div>
-      {state === "loading" ? <div className="supplyHistoryState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading recent supply events…</span></div> : state === "failure" ? <div className="supplyHistoryState"><History size={17} /><span>Recent supply history is unavailable from the configured RPC.</span></div> : (
+    <section className="sectionCard valuationPanel">
+      <div className="directoryPanelHeading"><div><h2>Valuation</h2><p>Informational USD snapshots from current constituent prices and onchain balances.</p></div><div className="valuationModeToggle" role="group" aria-label="Valuation metric"><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button><button className={mode === "aum" ? "active" : ""} type="button" aria-pressed={mode === "aum"} onClick={() => setMode("aum")}>AUM</button></div></div>
+      {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
         <>
-          <div className="supplyHistorySummary"><span>Current supply</span><strong>{formatShareSupply(totalSupply)} {symbol}</strong><small>{eventCount} mint or redemption event{eventCount === 1 ? "" : "s"} in this window</small></div>
-          <div className="supplyChartWrap">
-            <svg className="supplyChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} recent onchain share supply ending at ${formatShareSupply(totalSupply)}`}>
-              {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="supplyChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="supplyChartLabel" x={left - 8} y={y + 3} textAnchor="end">{tick.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text></g>; })}
-              <path className="supplyChartArea" d={areaPath} />
-              <path className="supplyChartLine" d={linePath} />
-              {chartPoints.map((point, index) => <circle className="supplyChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r="3" />)}
+          <div className="valuationSummary"><span>{mode === "nav" ? "NAV per share" : "Assets under management"}</span><strong>{formatUsd(selectedValue, mode === "nav" ? 4 : 2)}</strong><small>{valuation.usesBootstrapNav && mode === "nav" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"}.`}</small></div>
+          <div className="valuationChartWrap">
+            <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "nav" ? "NAV per share" : "assets under management"} chart ending at ${formatUsd(selectedValue)}`}>
+              {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
+              <path className="valuationChartArea" d={areaPath} />
+              <path className="valuationChartLine" d={linePath} />
+              {chartPoints.map((point, index) => <circle className="valuationChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === chartPoints.length - 1 ? "4" : "3"} />)}
             </svg>
+            {points.length ? <div className="valuationDates"><span>{firstDate}</span><span>{lastDate}</span></div> : null}
           </div>
+          <p className="valuationDisclosure">This browser stores observed snapshots for the chart. Valuation is offchain information, not a protocol oracle or guaranteed execution price.</p>
         </>
       )}
     </section>
@@ -1196,6 +1281,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
+  const valuation = useFundValuation(detail ? vaultDetails : undefined);
   useEffect(() => {
     if (!detail || !routeAddress) {
       setCreationMetadata(null);
@@ -1251,7 +1337,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     return (
       <DashboardPage className="fundsPage">
         <div className="appView fundsView">
-          <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
+          <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds">OTFs</Link></div>
           <section className="fundDetailHero" aria-labelledby="fund-detail-title">
             <div className="fundDetailIdentity">
               <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
@@ -1259,31 +1345,30 @@ function FundsSurface({ detail }: { detail: boolean }) {
                 <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1>{vaultDetails ? <span className="fundSymbolBadge">{vaultDetails.symbol}</span> : null}</div>
                 <div className="fundDetailMeta">
                   {routeAddress ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
-                  <span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>
                 </div>
               </div>
             </div>
+            <div className="fundMethodology">
+              <span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>
+              <p>{creationMetadata ? weightingMethodDetailCopy(creationMetadata.weightingMethod) : "The creation methodology is unavailable in this browser and is not inferred from current balances."}</p>
+            </div>
             <div className="fundDetailMetrics" aria-label="Fund metrics">
-              <div><span>Share supply</span><strong>{vaultDetails ? formatShareSupply(vaultDetails.totalSupply) : "—"}</strong></div>
-              <div><span>Constituents</span><strong>{vaultDetails?.assetCount ?? "—"}</strong></div>
+              <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
+              <div><span>AUM</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
               <div><span>Creator fee</span><strong>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</strong></div>
               <div><span>Creator</span><strong>{vaultDetails ? shortAddress(vaultDetails.creator) : "—"}</strong></div>
             </div>
           </section>
           <div className="fundDetailPrimaryGrid">
-            {routeAddress && vaultDetails ? <VaultSupplyHistory address={routeAddress} symbol={vaultDetails.symbol} totalSupply={vaultDetails.totalSupply} /> : <section className="sectionCard supplyHistoryPanel"><div className="directoryPanelHeading"><div><h2>Share supply</h2><p>Mint and redemption history from onchain Transfer events.</p></div></div><div className="supplyHistoryState">{directoryState === "failure" ? <History size={17} /> : <LoaderCircle className="createAssetSpinner" size={17} />}<span>{directoryState === "failure" ? "The OTF contract could not be read from the configured RPC." : "Loading onchain fund history…"}</span></div></section>}
+            <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} />
             <section className="fundTradePanel" aria-labelledby="fund-trade-title">
               <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Use the fund&apos;s own share token.</p></div></div><span className="stateBadge success">Direct</span></div>
-              {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="supplyHistoryState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading the fund token…</span></div>}
+              {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading the fund token…</span></div>}
             </section>
           </div>
-          <section className="sectionCard detailIdentityCard">
-            <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>{directoryState === "failure" ? "The OTF contract details could not be read from the configured testnet RPC." : "Identity and immutable creation settings read directly from the OTF contract."}</p></div><span className={`stateBadge ${directoryState === "ready" ? "success" : directoryState === "failure" ? "danger" : "muted"}`}>{directoryState === "ready" ? "Onchain" : directoryState === "failure" ? "Unavailable" : "Loading"}</span></div>
-            <dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>Symbol</dt><dd>{vaultDetails?.symbol ?? "—"}</dd></div><div><dt>Creator</dt><dd>{vaultDetails?.creator ?? "—"}</dd></div><div><dt>Constituents</dt><dd>{vaultDetails?.assetCount ?? "—"}</dd></div><div><dt>Creator fee</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</dd></div></dl>
-          </section>
           <section className="sectionCard creationAllocationPanel">
             <div className="directoryPanelHeading">
-              <div><h2>Allocation at creation</h2><p>{creationMetadata ? weightingMethodDetailCopy(creationMetadata.weightingMethod) : "No application creation metadata is stored for this vault."}</p></div>
+              <div><h2>Allocation at creation</h2><p>{creationMetadata ? "Precise creator-selected weights recorded at creation." : "No application creation metadata is stored for this vault."}</p></div>
               {creationMetadata ? <span className="stateBadge muted">{formatMarketCapSnapshotTimestamp(creationMetadata.marketCapSnapshotAt)}</span> : null}
             </div>
             {creationMetadata ? (
@@ -1348,7 +1433,7 @@ function VerifiedSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />Funds</Link></div>
+        <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds">Funds</Link></div>
         <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction utilityAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">
@@ -1465,7 +1550,7 @@ function WalletSurface() {
               {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
             </section>
             <section className="sectionCard managedVaultsPanel">
-              <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>OTFs you manage</h2><p>OTFs created by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><span className="stateBadge muted">{vaultDirectoryState === "loading" ? "Loading" : `${managedVaults.length} OTF${managedVaults.length === 1 ? "" : "s"}`}</span><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div>
+              <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds created by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div>
               {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs created by this wallet" : vaultDirectoryState === "failure" ? "Could not load created OTFs" : "No created OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet creates them through the factory."}</span></div></div>}
             </section>
           </>
