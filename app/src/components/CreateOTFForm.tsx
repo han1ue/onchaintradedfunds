@@ -135,7 +135,7 @@ function selectionForWeightMode(
   });
 }
 
-export function CreateOTFForm({ returnHref }: { returnHref: string }) {
+export function CreateOTFForm() {
   const chainId = useChainId();
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -583,7 +583,6 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
           ) : null}
 
           <div className="createFormActions">
-            <button className="secondaryAction" type="button" disabled={creationLocked} onClick={() => step === 0 ? window.location.assign(returnHref) : setStep((current) => current - 1)}>Back</button>
             {step < steps.length - 1 ? <button className="primaryAction" type="button" disabled={!stepValid[step]} onClick={continueToNextStep}>Continue<ArrowRight size={14} /></button> : <button className="primaryAction" type="button" disabled={submitDisabled} onClick={() => void submitCreation()}>{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={14} /> : submission === "success" ? <CheckCircle size={14} /> : submission === "unknown" ? <CircleAlert size={14} /> : <FilePlus2 size={14} />}{submission === "submitting" ? "Creating OTF…" : submission === "success" ? "OTF created" : submission === "unknown" ? "Confirmation unknown" : !deploymentReady ? "Creation unavailable" : !address ? "Connect wallet to create" : "Create OTF"}</button>}
           </div>
         </div>

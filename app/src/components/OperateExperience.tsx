@@ -186,7 +186,7 @@ function XSocialIcon({ size = 12 }: { size?: number }) {
 
 function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
-  if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={asset.symbol} />;
+  if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={isUnselectedOtf(asset) ? "OTF" : asset.symbol} />;
   const tokenIcon = asset.symbol.toUpperCase() === "WETH"
     ? "/assets/tokens/weth.png"
     : asset.symbol.toUpperCase() === "USDG"
@@ -226,6 +226,7 @@ function TokenPicker({
   configuredAssets,
   otfAssets,
   otfDirectoryState,
+  fixedKind,
 }: {
   title: string;
   onClose: () => void;
@@ -236,9 +237,10 @@ function TokenPicker({
   configuredAssets: readonly SwapAsset[];
   otfAssets: readonly SwapAsset[];
   otfDirectoryState: "unavailable" | "loading" | "ready" | "failure";
+  fixedKind?: SwapAssetKind;
 }) {
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<SwapAssetKind>(selected?.kind ?? "erc20");
+  const [kind, setKind] = useState<SwapAssetKind>(fixedKind ?? selected?.kind ?? "erc20");
   const searchRef = useRef<HTMLInputElement>(null);
   const addressAsset = pastedAsset(query);
   const options: SwapAsset[] = [...configuredAssets, ...otfAssets];
@@ -268,10 +270,12 @@ function TokenPicker({
           <Search size={16} />
           <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search or paste a token address" />
         </label>
-        <div className="swapKindToggle" aria-label="Asset kind">
-          <button type="button" aria-pressed={kind === "erc20"} className={kind === "erc20" ? "selected" : ""} onClick={() => setKind("erc20")}>Token</button>
-          <button type="button" aria-pressed={kind === "otf"} className={kind === "otf" ? "selected" : ""} onClick={() => setKind("otf")}>OTF share</button>
-        </div>
+        {!fixedKind ? (
+          <div className="swapKindToggle" aria-label="Asset kind">
+            <button type="button" aria-pressed={kind === "erc20"} className={kind === "erc20" ? "selected" : ""} onClick={() => setKind("erc20")}>Token</button>
+            <button type="button" aria-pressed={kind === "otf"} className={kind === "otf" ? "selected" : ""} onClick={() => setKind("otf")}>OTF share</button>
+          </div>
+        ) : null}
         <div className="swapTokenList">
           {searchable.map((asset) => (
             <button type="button" key={asset.address} className="swapTokenOption" onClick={() => onSelect(asset)}>
@@ -901,6 +905,14 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
     void executeSwap();
   }
 
+  function assetControl(which: "input" | "output", asset: SwapAsset) {
+    const lockedFund = Boolean(embeddedFund && sameAsset(asset, embeddedFund));
+    if (lockedFund) {
+      return <div className="swapAssetButton locked" aria-label={`${asset.symbol} fund token`}><AssetMark asset={asset} /><strong>{asset.symbol}</strong></div>;
+    }
+    return <button type="button" className="swapAssetButton" aria-label={`Select token to ${which === "input" ? "pay" : "receive"}`} onClick={() => setPicker(which)}><AssetMark asset={asset} /><strong className={isUnselectedOtf(asset) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(asset) ? "—" : asset.symbol}</strong><ChevronDown size={15} /></button>;
+  }
+
   const swapCard = (
         <section className="swapCard" aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
           <div className="swapCardHeader">
@@ -918,12 +930,12 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           <div className="swapPair">
             <div className="swapAmountBox">
               <div className="swapAmountTop"><span>You pay</span></div>
-              <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn"><button type="button" className="swapAssetButton" aria-label="Select token to pay" onClick={() => setPicker("input")}><AssetMark asset={input} /><strong className={isUnselectedOtf(input) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(input) ? "—" : input.symbol}</strong><ChevronDown size={15} /></button><span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(inputBalance.formatted)} /></span></div></div>
+              <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(inputBalance.formatted)} /></span></div></div>
             </div>
-            {!embedded ? <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button> : null}
+            <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
             <div className="swapAmountBox receive">
               <div className="swapAmountTop"><span>You receive</span></div>
-              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{embedded ? <div className="swapAssetButton locked" aria-label={`${output.symbol} fund token`}><AssetMark asset={output} /><strong>{output.symbol}</strong></div> : <button type="button" className="swapAssetButton" aria-label="Select token to receive" onClick={() => setPicker("output")}><AssetMark asset={output} /><strong className={isUnselectedOtf(output) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(output) ? "—" : output.symbol}</strong><ChevronDown size={15} /></button>}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
+              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
             </div>
           </div>
           <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{primaryLabel}</button>
@@ -931,7 +943,8 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
         </section>
   );
-  const pickerDialog = picker && (!embedded || picker === "input") ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} /> : null;
+  const pickerAsset = picker === "input" ? input : output;
+  const pickerDialog = picker && !(embeddedFund && sameAsset(pickerAsset, embeddedFund)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
 
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 
@@ -958,20 +971,11 @@ function LiquiditySurface() {
 }
 
 function CreateSurface() {
-  const [returnDestination, setReturnDestination] = useState<"funds" | "wallet">("funds");
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("from") === "wallet") {
-      setReturnDestination("wallet");
-    }
-  }, []);
-  const returnHref = returnDestination === "wallet" ? "/wallet" : "/funds";
-  const returnLabel = returnDestination === "wallet" ? "Wallet" : "Funds";
   return (
     <DashboardPage className="createPage">
       <div className="appView">
-        <div className="vaultBreadcrumb appBreadcrumb"><Link href={returnHref}>Back to {returnLabel}</Link></div>
         <AppPageHeader title="Create OTF" description="Choose the assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
-        <CreateOTFForm returnHref={returnHref} />
+        <CreateOTFForm />
       </div>
     </DashboardPage>
   );
@@ -1074,7 +1078,7 @@ function CreatedFundSurface() {
           {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View creation transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
             <Link className="secondaryAction" href="/create"><FilePlus2 size={14} />Create another</Link>
-            {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF now</Link> : <Link className="primaryAction" href="/funds">Back to Funds</Link>}
+            {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF now</Link> : null}
           </div>
         </section>
       </div>
@@ -1337,7 +1341,6 @@ function FundsSurface({ detail }: { detail: boolean }) {
     return (
       <DashboardPage className="fundsPage">
         <div className="appView fundsView">
-          <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds">OTFs</Link></div>
           <section className="fundDetailHero" aria-labelledby="fund-detail-title">
             <div className="fundDetailIdentity">
               <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
@@ -1433,7 +1436,6 @@ function VerifiedSurface() {
   return (
     <DashboardPage>
       <div className="appView">
-        <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds">Funds</Link></div>
         <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction utilityAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">

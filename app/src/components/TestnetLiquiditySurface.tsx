@@ -11,7 +11,6 @@ import {
   LoaderCircle,
   ShieldCheck,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   formatUnits,
@@ -331,7 +330,6 @@ export function TestnetLiquiditySurface() {
 
   return (
     <>
-      <div className="liquidityBreadcrumb"><Link href="/funds">Funds</Link><span>/</span><strong>Testnet liquidity</strong></div>
       <section className="liquidityIntro">
         <div><h1>Testnet pools liquidity</h1><p>Add wallet-owned, full-range Synthra V3 liquidity to the configured test-asset and OTF pools. Every market is paired only with USDG.</p></div>
         <div className="liquidityBadges" aria-label="Liquidity constraints"><span>Synthra V3</span><span>USDG only</span><span>Testnet</span></div>
