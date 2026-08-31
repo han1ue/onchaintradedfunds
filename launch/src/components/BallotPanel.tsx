@@ -123,7 +123,7 @@ export function BallotPanel({ initialPage, totalProposalCount, ballot, eligibili
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (search) params.set("q", search);
     if (cursor) params.set("cursor", cursor);
-    const response = await fetch(`/api/v1/leaderboard?${params.toString()}`);
+    const response = await fetch(`/api/leaderboard?${params.toString()}`);
     const json = await response.json().catch(() => null);
     if (!response.ok || !json?.data) throw new Error("PROPOSAL_LIST_LOAD_FAILED");
     return json.data as LeaderboardPage;
@@ -215,7 +215,7 @@ export function BallotPanel({ initialPage, totalProposalCount, ballot, eligibili
       ? { action, reason, additions: voteAdditions, revealVotes, turnstileToken }
       : { action, challengeId: challenge?.challengeId, postUrl };
     try {
-      const ballotRequest = () => fetch("/api/v1/ballot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const ballotRequest = () => fetch("/api/ballot", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const outcome = action === "verify" && challenge
         ? await requestWithChallengeReconciliation(
           ballotRequest,

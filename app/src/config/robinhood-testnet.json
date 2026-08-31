@@ -1,9 +1,9 @@
 {
-  "architecture": "immutable-bootstrap-basket-v1",
+  "architecture": "immutable-bootstrap-basket",
   "network": "robinhood-testnet",
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
-  "status": "deployed",
+  "status": "requires-redeployment",
   "deployedAt": "2026-08-31T01:37:15.058Z",
   "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "contracts": {
@@ -68,7 +68,7 @@
     "endpoint": null
   },
   "creation": {
-    "assetDataEndpoint": "https://launch.onchaintradedfunds.com/api/v1/assets"
+    "assetDataEndpoint": "https://launch.onchaintradedfunds.com/api/assets"
   },
-  "note": "Creation commits only ordered constituents and immutable raw bootstrap basket units. Valuation inputs remain application metadata."
+  "note": "This deployment predates the permanent onchain fund thesis field and is incompatible with the current creation tuple. A fresh testnet deployment is required."
 }

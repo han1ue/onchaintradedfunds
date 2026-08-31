@@ -29,7 +29,7 @@ describe("asset validation abuse controls", () => {
   });
 
   it("requires an eligible actor and rate-limits before external validation", async () => {
-    const request = new Request(`https://launch.example/api/v1/assets/validate?assetAddress=${assetAddress}`);
+    const request = new Request(`https://launch.example/api/assets/validate?assetAddress=${assetAddress}`);
     const response = await GET(request);
 
     expect(mocks.assertSameOrigin).toHaveBeenCalledWith(request);
@@ -43,7 +43,7 @@ describe("asset validation abuse controls", () => {
   it("does not validate assets for unauthenticated callers", async () => {
     mocks.requireEligibleActor.mockRejectedValueOnce(new Error("UNAUTHENTICATED"));
 
-    const response = await GET(new Request(`https://launch.example/api/v1/assets/validate?assetAddress=${assetAddress}`));
+    const response = await GET(new Request(`https://launch.example/api/assets/validate?assetAddress=${assetAddress}`));
 
     expect(response.status).toBe(400);
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();

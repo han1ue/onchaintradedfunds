@@ -12,8 +12,9 @@ the current immutable-bootstrap architecture; it is not an audit, warranty, or i
 
 `OTFFactory` is permissionless once its entry/exit router is configured. `createVault` makes
 `msg.sender` the creator, deploys a nondeterministic EIP-1167 clone with `Clones.clone`, and commits
-the ordered constituents and creator-supplied `bootstrapBasketUnitsPerOTF`. Creation does not move
-constituents into the vault.
+the non-empty fund thesis, ordered constituents, and creator-supplied
+`bootstrapBasketUnitsPerOTF`. The thesis is limited to 2,048 UTF-8 bytes and has no mutation path
+after initialization. Creation does not move constituents into the vault.
 
 The factory and vault deliberately do not receive or validate prices, market caps, percentage
 weights, or the fixed `$1` initial basket target. The application uses these values offchain to calculate raw bootstrap
@@ -23,8 +24,9 @@ The `$1` target is not a peg or guaranteed market price.
 
 `Market-cap weighted` and `Modified market-cap weighted` describe the initialization calculation,
 not an ongoing onchain rebalance. Market-cap defaults, final percentages, multipliers, timestamps,
-and methodology labels are informational application metadata. If that creation record is missing,
-the interface does not reconstruct it from current balances.
+and methodology labels are informational application metadata. The fund thesis is separate onchain
+vault metadata. If the browser methodology record is missing, the interface does not reconstruct it
+from current balances.
 
 There is no runtime NAV, price oracle, Chainlink feed, TWAP, keeper, market-data refresh, or
 automatic rebalance. Prices and composition can drift without any contract response.

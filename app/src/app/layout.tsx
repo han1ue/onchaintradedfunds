@@ -5,6 +5,9 @@ import "@onchaintradedfunds/brand/styles.css";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
+import { PersistentAppShell } from "@/components/PersistentAppShell";
+import { rootViewForHost } from "@/lib/app-host-routing";
+import { headers } from "next/headers";
 
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
@@ -12,7 +15,10 @@ export const metadata: Metadata = {
   icons: { icon: OTF_FAVICON_DATA_URL },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const requestHeaders = await headers();
+  const showOperatingRoot = rootViewForHost(requestHeaders.get("host")) === "swap";
+
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
@@ -45,7 +51,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         />
         <InputBehaviorGuard />
         <AppTopBanner />
-        {children}
+        <PersistentAppShell showOnRoot={showOperatingRoot}>{children}</PersistentAppShell>
       </body>
     </html>
   );

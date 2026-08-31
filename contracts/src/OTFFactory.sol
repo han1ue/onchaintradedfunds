@@ -23,6 +23,8 @@ contract OTFFactory {
     error UnauthorizedRouterConfigurator(address caller);
     error RouterFactoryMismatch(address expected, address actual);
     error InvalidVaultMetadata();
+    error FundThesisRequired();
+    error FundThesisTooLong(uint256 suppliedBytes, uint256 maximumBytes);
     error ExpenseRatioTooHigh(uint16 supplied, uint16 maximum);
     error InvalidProtocolFeeShare(uint16 supplied);
     error Reentrancy();
@@ -97,6 +99,13 @@ contract OTFFactory {
             bytes(params.name).length == 0 || bytes(params.symbol).length == 0
                 || params.expenseBeneficiary == address(0)
         ) revert InvalidVaultMetadata();
+        uint256 fundThesisBytes = bytes(params.fundThesis).length;
+        if (fundThesisBytes == 0) revert FundThesisRequired();
+        if (fundThesisBytes > ProtocolConstants.MAX_FUND_THESIS_BYTES) {
+            revert FundThesisTooLong(
+                fundThesisBytes, ProtocolConstants.MAX_FUND_THESIS_BYTES
+            );
+        }
         if (
             params.annualCreatorExpenseRatioBps
                 > ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
@@ -113,6 +122,7 @@ contract OTFFactory {
                 VaultInitParams({
                 name: params.name,
                 symbol: params.symbol,
+                fundThesis: params.fundThesis,
                 creator: msg.sender,
                 expenseBeneficiary: params.expenseBeneficiary,
                 entryExitRouter: router,

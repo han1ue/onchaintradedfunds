@@ -6,6 +6,7 @@ pragma solidity ^0.8.24;
 struct VaultCreationParams {
     string name;
     string symbol;
+    string fundThesis;
     address expenseBeneficiary;
     uint16 annualCreatorExpenseRatioBps;
     address[] constituents;
@@ -16,6 +17,7 @@ struct VaultCreationParams {
 struct VaultInitParams {
     string name;
     string symbol;
+    string fundThesis;
     address creator;
     address expenseBeneficiary;
     address entryExitRouter;

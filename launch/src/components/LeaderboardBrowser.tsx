@@ -24,7 +24,7 @@ export function LeaderboardBrowser({ initialPage, submissionsOpen }: {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (search) params.set("q", search);
     if (cursor) params.set("cursor", cursor);
-    const response = await fetch(`/api/v1/leaderboard?${params.toString()}`);
+    const response = await fetch(`/api/leaderboard?${params.toString()}`);
     const json = await response.json().catch(() => null);
     if (!response.ok || !json?.data) throw new Error("LEADERBOARD_LOAD_FAILED");
     return json.data as LeaderboardPage;

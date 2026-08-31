@@ -91,6 +91,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     address internal _expenseBeneficiary;
     address internal _feeCollector;
     address internal _entryExitRouter;
+    string internal _fundThesis;
 
     uint16 internal _annualCreatorExpenseRatioBps;
     uint64 internal _shutdownAt;

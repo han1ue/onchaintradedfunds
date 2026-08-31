@@ -11,7 +11,6 @@ import {
   marketCapMultiplierUnits,
   multiplierPosition,
   persistCreationMetadata,
-  weightingMethodDetailCopy,
   weightingMethodLabel,
 } from "./creation-metadata";
 
@@ -89,20 +88,34 @@ describe("creation metadata persistence", () => {
         expect.objectContaining({ marketCapDefaultPercentageUnits: pct("25").toString(), finalPercentageUnits: pct("25").toString(), multiplierUnits: MULTIPLIER_SCALE.toString() }),
       ],
     }));
+    expect(draft).not.toHaveProperty("thesis");
   });
 
   it("returns unavailable for missing or malformed metadata instead of fabricating it", () => {
     const storage = memoryStorage();
     const vaultAddress = getAddress("0x00000000000000000000000000000000000000AA");
     expect(loadCreationMetadata(storage, 46630, vaultAddress)).toBeUndefined();
-    storage.setItem(`otf:creation-metadata:v1:46630:${vaultAddress.toLowerCase()}`, "{broken");
+    storage.setItem(`otf:creation-metadata:46630:${vaultAddress.toLowerCase()}`, "{broken");
     expect(loadCreationMetadata(storage, 46630, vaultAddress)).toBeUndefined();
   });
 
-  it("provides both detail-page methodology labels and modified-fund explanation", () => {
+  it("rejects the removed browser-metadata thesis shape without a compatibility fallback", () => {
+    const storage = memoryStorage();
+    const vaultAddress = getAddress("0x00000000000000000000000000000000000000AA");
+    const metadata = persistCreationMetadata(storage, 46630, vaultAddress, buildCreationMetadataDraft({
+      marketCapSnapshotAt: "2026-08-30T12:34:56.000Z",
+      assets,
+    }));
+    storage.setItem(
+      `otf:creation-metadata:46630:${vaultAddress.toLowerCase()}`,
+      JSON.stringify({ ...metadata, thesis: "Removed browser thesis" }),
+    );
+
+    expect(loadCreationMetadata(storage, 46630, vaultAddress)).toBeUndefined();
+  });
+
+  it("provides both detail-page methodology labels", () => {
     expect(weightingMethodLabel(WeightingMethod.MarketCapWeighted)).toBe("Market-cap weighted");
     expect(weightingMethodLabel(WeightingMethod.ModifiedMarketCapWeighted)).toBe("Modified market-cap weighted");
-    expect(weightingMethodDetailCopy(WeightingMethod.ModifiedMarketCapWeighted))
-      .toBe("Creator-defined tilts were applied at creation.");
   });
 });

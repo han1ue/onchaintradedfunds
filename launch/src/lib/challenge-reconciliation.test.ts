@@ -26,7 +26,7 @@ describe("permanent X action reconciliation", () => {
       kind: "status",
       status: expect.objectContaining({ status: "succeeded", action: "submission", slug: "durable-otf" }),
     });
-    expect(fetchStatus).toHaveBeenCalledWith(`/api/v1/x-challenges/${challengeId}`, { method: "GET", cache: "no-store" });
+    expect(fetchStatus).toHaveBeenCalledWith(`/api/x-challenges/${challengeId}`, { method: "GET", cache: "no-store" });
   });
 
   it("permits a safe retry when the request fails before the transaction commits", async () => {

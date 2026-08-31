@@ -33,8 +33,8 @@ const { createPublicClient, createWalletClient, getAddress, http, isAddress, non
 const { privateKeyToAccount } = accounts;
 
 const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
-if (config.architecture !== "immutable-bootstrap-basket-v1") {
-  throw new Error("Deployment config must use the immutable-bootstrap-basket-v1 architecture");
+if (config.architecture !== "immutable-bootstrap-basket") {
+  throw new Error("Deployment config must use the immutable-bootstrap-basket architecture");
 }
 const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
 const env = (name) => {
@@ -124,7 +124,7 @@ const entryRouter = await deploy("OTFEntryExitRouter", [
 const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
-  architecture: "immutable-bootstrap-basket-v1",
+  architecture: "immutable-bootstrap-basket",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -142,7 +142,7 @@ const deployment = {
   },
   setupTransactions: { routerConfiguration },
   ...appOwnedIntegrations,
-  note: "Creation commits only ordered constituents and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
+  note: "Creation permanently commits the fund thesis, ordered constituents, and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });
 writeFileSync(deploymentPath, `${json(deployment)}\n`);

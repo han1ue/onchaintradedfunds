@@ -28,7 +28,7 @@ function isChallengeStatus(value: unknown): value is ChallengeStatus {
 
 async function readChallengeStatus(challengeId: string, fetcher: typeof fetch): Promise<ChallengeStatus | null> {
   try {
-    const response = await fetcher(`/api/v1/x-challenges/${encodeURIComponent(challengeId)}`, {
+    const response = await fetcher(`/api/x-challenges/${encodeURIComponent(challengeId)}`, {
       method: "GET",
       cache: "no-store",
     });

@@ -59,13 +59,17 @@ bootstrapUnits_i   = floor(allocationUsdWad_i * 10**d_i / P_i)
 Every raw `bootstrapUnits_i` must be nonzero. The app shows the minimum percentage needed to
 produce one raw unit and explains when token precision makes inclusion in a `$1` OTF impossible.
 The review step shows the raw quantity, formatted token quantity, and realized percentage after
-integer rounding. Prices, market caps, the fixed target, and percentages remain application
-metadata. Only the ordered constituents and calculated
-`bootstrapBasketUnitsPerOTF` are included as onchain basket inputs.
+integer rounding. Prices, market caps, the fixed target, percentages, and weighting methodology
+remain application metadata. The trimmed fund thesis, ordered constituents, and calculated
+`bootstrapBasketUnitsPerOTF` are included in the onchain creation payload.
 
-After confirmation, the app can associate versioned informational creation metadata with the
+After confirmation, the app can associate informational creation metadata with the
 vault in the creator browser. If that record is unavailable on a fund detail route, the app shows
 `Weighting method unavailable` and does not infer methodology from current balances.
+
+The factory requires a non-empty fund thesis of at most 2,048 UTF-8 bytes. The vault stores it once
+during initialization, exposes it through `fundThesis()`, and provides no mutation path. Fund detail
+therefore reads the thesis from the vault rather than browser metadata.
 
 `OTFFactory.createVault` uses `Clones.clone`, sets `msg.sender` as creator, and initializes an empty
 vault. Creation requires no constituent transfer and has no deterministic address promise.

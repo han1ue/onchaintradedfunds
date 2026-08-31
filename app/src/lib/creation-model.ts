@@ -56,6 +56,22 @@ export type CreationAssetData = {
   verified: boolean;
 };
 
+export type VaultCreationTransactionParams = {
+  name: string;
+  symbol: string;
+  fundThesis: string;
+  expenseBeneficiary: Address;
+  annualCreatorExpenseRatioBps: number;
+  constituents: Address[];
+  bootstrapBasketUnitsPerOTF: bigint[];
+};
+
+export function vaultCreationTransactionParams(
+  input: VaultCreationTransactionParams,
+): VaultCreationTransactionParams {
+  return { ...input, fundThesis: input.fundThesis.trim() };
+}
+
 export type PercentageSelectionCurrent = {
   key: string;
   percentageUnits: bigint;

@@ -6,7 +6,7 @@ type State = "checking" | "connected" | "unavailable";
 type Health = { database: boolean; redis: boolean };
 type CachedHealth = Health & { checkedAt: number };
 
-const healthCacheKey = "otf-launch.infrastructure-health.v1";
+const healthCacheKey = "otf-launch.infrastructure-health";
 const healthCacheTtlMs = 60_000;
 
 function readCachedHealth(): CachedHealth | null {

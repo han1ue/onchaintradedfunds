@@ -21,27 +21,21 @@ import {
   LayoutGrid,
   List,
   LoaderCircle,
-  Monitor,
   Network,
-  Palette,
   ReceiptText,
   Search,
-  Settings,
   ShieldCheck,
   SlidersHorizontal,
-  Sun,
   TrendingUp,
   UserCog,
   Wallet,
   X,
   XCircle,
-  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
-import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
@@ -69,7 +63,6 @@ import {
   type SwapAssetKind,
   type SwapQuote,
 } from "@/lib/swap-model";
-import { navigationItemForPath } from "@/lib/operate-navigation";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
@@ -80,7 +73,6 @@ import {
   formatStoredPercentageExact,
   loadCreationMetadata,
   multiplierPosition,
-  weightingMethodDetailCopy,
   weightingMethodLabel,
   type OtfCreationMetadata,
 } from "@/lib/creation-metadata";
@@ -89,8 +81,6 @@ import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
 
 export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity" | "token";
-
-type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const X_URL = "https://x.com/OTFProtocol";
@@ -299,218 +289,6 @@ function TokenPicker({
         <p className="swapTokenFootnote">Pasting an address only selects it. It does not resolve metadata, establish verification, or enable a route.</p>
       </section>
     </div>
-  );
-}
-
-function OperateNav() {
-  const pathname = usePathname();
-  const current = navigationItemForPath(pathname);
-  const [networkOpen, setNetworkOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<AppearancePreference>("default");
-  const [palette, setPalette] = useState<"default" | "robinhood">("default");
-  const chainId = useChainId();
-  const testnetMode = chainId === robinhoodChainTestnet.id;
-  const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
-  const networkRef = useRef<HTMLDivElement>(null);
-  const settingsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const savedTheme = window.localStorage.getItem("otf-theme");
-    const initialTheme: AppearancePreference = savedTheme === "light" || savedTheme === "dark" ? savedTheme : "default";
-    const savedPalette = window.localStorage.getItem("otf-palette");
-    const initialPalette = savedPalette === "robinhood" ? "robinhood" : "default";
-    setTheme(initialTheme);
-    setPalette(initialPalette);
-    document.documentElement.dataset.palette = initialPalette;
-  }, []);
-
-  useEffect(() => {
-    const browserPreference = window.matchMedia("(prefers-color-scheme: light)");
-    const applyTheme = () => {
-      document.documentElement.dataset.theme = theme === "default"
-        ? browserPreference.matches ? "light" : "dark"
-        : theme;
-    };
-    applyTheme();
-    if (theme !== "default") return;
-    browserPreference.addEventListener("change", applyTheme);
-    return () => browserPreference.removeEventListener("change", applyTheme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (!networkOpen && !settingsOpen) return;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (networkOpen && !networkRef.current?.contains(target)) setNetworkOpen(false);
-      if (settingsOpen && !settingsRef.current?.contains(target)) setSettingsOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setNetworkOpen(false);
-        setSettingsOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePress);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePress);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [networkOpen, settingsOpen]);
-
-  function changeTheme(nextTheme: AppearancePreference) {
-    setTheme(nextTheme);
-    window.localStorage.setItem("otf-theme", nextTheme);
-  }
-
-  function changePalette(nextPalette: "default" | "robinhood") {
-    setPalette(nextPalette);
-    document.documentElement.dataset.palette = nextPalette;
-    window.localStorage.setItem("otf-palette", nextPalette);
-  }
-
-  return (
-    <header className="topNav">
-      <div className="topNavInner">
-        <Link className="logoGroup" href="/" aria-label="Onchain Traded Funds">
-          <OtfBrandMark />
-          <span className="brandText"><strong>Onchain Traded Funds</strong></span>
-        </Link>
-        <nav className="navTabs" aria-label="Primary navigation">
-          <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
-          <Link className={current === "funds" ? "active" : ""} href="/funds">Funds</Link>
-          <Link className={current === "token" ? "active" : ""} href="/token">$OTF</Link>
-        </nav>
-        <div className="navActions">
-          <div className="networkControl" ref={networkRef}>
-            <button
-              className={`networkButton ${networkOpen ? "active" : ""}`}
-              type="button"
-              title="Robinhood Chain"
-              aria-label="Current network: Robinhood Chain. Open networks"
-              aria-expanded={networkOpen}
-              aria-haspopup="menu"
-              onClick={() => {
-                setSettingsOpen(false);
-                setNetworkOpen((open) => !open);
-              }}
-            >
-              <span className="robinhoodNetworkIcon" aria-hidden="true" />
-            </button>
-            {networkOpen ? (
-              <div className="networkMenu" role="menu" aria-label="Networks">
-                <div className="settingsMenuHeader"><strong>Networks</strong><span>Choose a supported ecosystem</span></div>
-                <div className="settingsGroup">
-                  <button
-                    className="settingsOption selected"
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={chainId === robinhoodChain.id || testnetMode}
-                    disabled={networkSwitchPending}
-                    onClick={() => {
-                      const nextChainId = testnetMode ? robinhoodChainTestnet.id : robinhoodChain.id;
-                      if (chainId !== nextChainId) switchChain({ chainId: nextChainId });
-                      setNetworkOpen(false);
-                    }}
-                  >
-                    <span className="settingsOptionIcon network"><span className="robinhoodNetworkIcon" aria-hidden="true" /></span>
-                    <span className="settingsOptionText"><strong>Robinhood Chain</strong><small>Selected network</small></span>
-                    <Check className="settingsCheck" size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <HeaderWalletControl active={pathname === "/wallet"} />
-          <div className="settingsControl" ref={settingsRef}>
-            <button
-              className={`iconOnly ${settingsOpen ? "active" : ""}`}
-              type="button"
-              title="Settings"
-              aria-label="Open settings"
-              aria-expanded={settingsOpen}
-              aria-haspopup="dialog"
-              onClick={() => {
-                setNetworkOpen(false);
-                setSettingsOpen((open) => !open);
-              }}
-            >
-              <Settings size={16} />
-            </button>
-            {settingsOpen ? (
-              <div className="settingsMenu" role="dialog" aria-label="Application settings">
-                <div className="settingsMenuHeader"><strong>Settings</strong></div>
-                <div className="settingsGroup">
-                  <span className="settingsLabel">Environment</span>
-                  <button
-                    className="settingsEnvironmentToggle"
-                    type="button"
-                    aria-pressed={testnetMode}
-                    disabled={networkSwitchPending}
-                    onClick={() => switchChain({ chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id })}
-                  >
-                    <span className="settingsOptionIcon"><Zap size={15} /></span>
-                    <span className="settingsOptionText"><strong>Testnet mode</strong><small>Uses the testnet of the currently selected chain.</small></span>
-                    <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true"><span /></span>
-                  </button>
-                </div>
-                <div className="settingsGroup">
-                  <span className="settingsLabel">Appearance</span>
-                  <div className="settingsThemeHeading">
-                    <span className="settingsOptionIcon"><Sun size={15} /></span>
-                    <span className="settingsOptionText"><strong>Mode</strong><small>Follow your browser or choose a mode</small></span>
-                  </div>
-                  <div className="settingsThemeChoices appearance" role="radiogroup" aria-label="Application appearance">
-                    {(["default", "light", "dark"] as const).map((value) => (
-                      <button className={`settingsThemeChoice ${theme === value ? "selected" : ""}`} key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => changeTheme(value)}>
-                        {value === "default" ? <Monitor className="settingsSystemIcon" size={13} /> : <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />}
-                        <span>{value === "default" ? "Browser" : value[0].toUpperCase() + value.slice(1)}</span>
-                        {theme === value ? <Check size={12} /> : null}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="settingsThemePicker">
-                    <div className="settingsThemeHeading">
-                      <span className="settingsOptionIcon"><Palette size={15} /></span>
-                      <span className="settingsOptionText"><strong>Theme</strong><small>Choose the application color palette</small></span>
-                    </div>
-                    <div className="settingsThemeChoices palette" role="radiogroup" aria-label="Application theme">
-                      {(["default", "robinhood"] as const).map((value) => (
-                        <button className={`settingsThemeChoice ${palette === value ? "selected" : ""}`} key={value} type="button" role="radio" aria-checked={palette === value} onClick={() => changePalette(value)}>
-                          <span className={`settingsThemeSwatch ${value}`} aria-hidden="true" />
-                          <span>{value === "default" ? "Default" : "Robinhood"}</span>
-                          {palette === value ? <Check size={13} /> : null}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function HeaderWalletControl({ active }: { active: boolean }) {
-  return (
-    <ConnectButton.Custom>
-      {({ account, mounted, authenticationStatus, openConnectModal }) => {
-        const ready = mounted && authenticationStatus !== "loading";
-        const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
-        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Wallet connection pending" disabled><ActivitySpinner size={14} /><span>Connect wallet</span></button>;
-        if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
-        return (
-          <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
-            <Wallet size={14} />
-            <span>{account.displayName}</span>
-          </Link>
-        );
-      }}
-    </ConnectButton.Custom>
   );
 }
 
@@ -951,17 +729,16 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 
   return (
-    <div className="operateShell">
-      <OperateNav />
+    <>
       <main className="swapMain">{swapCard}</main>
       <div className="swapFooterFrame"><OperateFooter /></div>
       {pickerDialog}
-    </div>
+    </>
   );
 }
 
 function DashboardPage({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className="operateShell"><OperateNav /><main className={`dashboardMain${className ? ` ${className}` : ""}`}>{children}<OperateFooter /></main></div>;
+  return <main className={`dashboardMain${className ? ` ${className}` : ""}`}>{children}<OperateFooter /></main>;
 }
 
 function LiquiditySurface() {
@@ -976,7 +753,7 @@ function CreateSurface() {
   return (
     <DashboardPage className="createPage">
       <div className="appView">
-        <AppPageHeader title="Create OTF" description="Choose the assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
+        <AppPageHeader title="Create OTF" description="Choose the identity, thesis, assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
         <CreateOTFForm />
       </div>
     </DashboardPage>
@@ -1176,7 +953,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
         navUsd: Number(formatUnits(navUsdWad, 18)),
         aumUsd: Number(formatUnits(aumUsdWad, 18)),
       };
-      const storageKey = `otf:valuation-history:v1:${chainId}:${fund.address.toLowerCase()}`;
+      const storageKey = `otf:valuation-history:${chainId}:${fund.address.toLowerCase()}`;
       let history: FundValuationSnapshot[] = [];
       try {
         const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
@@ -1221,9 +998,9 @@ function formatUsd(value: number | undefined, maximumFractionDigits = 2): string
 }
 
 function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: FundValuation }) {
-  const [mode, setMode] = useState<"nav" | "aum">("nav");
+  const [mode, setMode] = useState<"share" | "nav">("share");
   const points = valuation.history;
-  const values = points.map((point) => mode === "nav" ? point.navUsd : point.aumUsd);
+  const values = points.map((point) => mode === "share" ? point.navUsd : point.aumUsd);
 
   const width = 720;
   const height = 190;
@@ -1242,24 +1019,24 @@ function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: 
   const timeSpread = Math.max(lastTimestamp - firstTimestamp, 1);
   const chartPoints = points.map((point) => ({
     x: points.length === 1 ? width - right : left + ((point.at - firstTimestamp) / timeSpread) * (width - left - right),
-    y: top + ((maximum - (mode === "nav" ? point.navUsd : point.aumUsd)) / spread) * (height - top - bottom),
+    y: top + ((maximum - (mode === "share" ? point.navUsd : point.aumUsd)) / spread) * (height - top - bottom),
   }));
   const linePath = chartPoints.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
   const baseline = height - bottom;
   const areaPath = chartPoints.length > 1 ? `${linePath} L ${chartPoints.at(-1)!.x} ${baseline} L ${chartPoints[0].x} ${baseline} Z` : "";
   const ticks = Array.from({ length: 4 }, (_, index) => maximum - ((maximum - minimum) * index) / 3);
-  const selectedValue = valuation.current ? mode === "nav" ? valuation.current.navUsd : valuation.current.aumUsd : undefined;
+  const selectedValue = valuation.current ? mode === "share" ? valuation.current.navUsd : valuation.current.aumUsd : undefined;
   const firstDate = points.length ? new Date(firstTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const lastDate = points.length ? new Date(lastTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
   return (
     <section className="sectionCard valuationPanel">
-      <div className="directoryPanelHeading"><div><h2>Valuation</h2><p>Informational USD snapshots from current constituent prices and onchain balances.</p></div><div className="valuationModeToggle" role="group" aria-label="Valuation metric"><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button><button className={mode === "aum" ? "active" : ""} type="button" aria-pressed={mode === "aum"} onClick={() => setMode("aum")}>AUM</button></div></div>
+      <div className="valuationToolbar"><div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div></div>
       {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
         <>
-          <div className="valuationSummary"><span>{mode === "nav" ? "NAV per share" : "Assets under management"}</span><strong>{formatUsd(selectedValue, mode === "nav" ? 4 : 2)}</strong><small>{valuation.usesBootstrapNav && mode === "nav" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"}.`}</small></div>
+          <div className="valuationSummary"><span>{mode === "share" ? "NAV/share" : "NAV"}</span><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong><small>{valuation.usesBootstrapNav && mode === "share" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"}.`}</small></div>
           <div className="valuationChartWrap">
-            <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "nav" ? "NAV per share" : "assets under management"} chart ending at ${formatUsd(selectedValue)}`}>
+            <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "share" ? "NAV per share" : "total NAV"} chart ending at ${formatUsd(selectedValue)}`}>
               {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
               <path className="valuationChartArea" d={areaPath} />
               <path className="valuationChartLine" d={linePath} />
@@ -1267,7 +1044,6 @@ function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: 
             </svg>
             {points.length ? <div className="valuationDates"><span>{firstDate}</span><span>{lastDate}</span></div> : null}
           </div>
-          <p className="valuationDisclosure">This browser stores observed snapshots for the chart. Valuation is offchain information, not a protocol oracle or guaranteed execution price.</p>
         </>
       )}
     </section>
@@ -1344,22 +1120,23 @@ function FundsSurface({ detail }: { detail: boolean }) {
       <DashboardPage className="fundsPage">
         <div className="appView fundsView">
           <section className="fundDetailHero" aria-labelledby="fund-detail-title">
-            <div className="fundDetailIdentity">
-              <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
-              <div>
-                <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1>{vaultDetails ? <span className="fundSymbolBadge">{vaultDetails.symbol}</span> : null}</div>
-                <div className="fundDetailMeta">
-                  {routeAddress ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
+            <div className="fundDetailHeader">
+              <div className="fundDetailIdentity">
+                <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
+                <div>
+                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1>{vaultDetails ? <span className="fundSymbolBadge">{vaultDetails.symbol}</span> : null}</div>
+                  <div className="fundDetailMeta">
+                    {routeAddress ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="fundMethodology">
+              <span className="fundDetailSeparator" aria-hidden="true" />
+              <div className="fundThesis"><h2>Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div>
               <span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>
-              <p>{creationMetadata ? weightingMethodDetailCopy(creationMetadata.weightingMethod) : "The creation methodology is unavailable in this browser and is not inferred from current balances."}</p>
             </div>
             <div className="fundDetailMetrics" aria-label="Fund metrics">
-              <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
-              <div><span>AUM</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
+              <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
+              <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
               <div><span>Creator fee</span><strong>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</strong></div>
               <div><span>Creator</span><strong>{vaultDetails ? shortAddress(vaultDetails.creator) : "—"}</strong></div>
             </div>
@@ -1367,7 +1144,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
           <div className="fundDetailPrimaryGrid">
             <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} />
             <section className="fundTradePanel" aria-labelledby="fund-trade-title">
-              <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Use the fund&apos;s own share token.</p></div></div><span className="stateBadge success">Direct</span></div>
+              <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Buy or sell shares in the fund</p></div></div></div>
               {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><ActivitySpinner size={17} /></div>}
             </section>
           </div>
@@ -1381,10 +1158,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
                 <div className="creationAllocationTableWrap">
                   <table className="creationAllocationTable">
                     <thead><tr><th>Constituent</th><th>Market-cap weight</th><th>Creator-selected weight</th><th>Multiplier</th></tr></thead>
-                    <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong><small>{position[0].toUpperCase()}{position.slice(1)}</small></td></tr>; })}</tbody>
+                    <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong>{position === "unchanged" ? null : <small>{position[0].toUpperCase()}{position.slice(1)}</small>}</td></tr>; })}</tbody>
                   </table>
                 </div>
-                <div className="creationMethodologyNote" role="note"><SlidersHorizontal size={15} /><span>The methodology describes initialization and is not an ongoing on-chain rebalance. This browser-stored application metadata is informational and does not affect settlement.</span></div>
               </>
             ) : (
               <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
@@ -1592,5 +1368,5 @@ function OperateRouter({ initialView }: { initialView: OperateView }) {
 }
 
 export function OperateExperience({ initialView = "landing" }: { initialView?: OperateView }) {
-  return <Providers><OperateRouter initialView={initialView} /></Providers>;
+  return <OperateRouter initialView={initialView} />;
 }

@@ -170,7 +170,7 @@ export function SubmitWizard({ competition, assets, eligibility, initialDraft = 
     try {
       if (challenge && draftId) {
         const outcome = await requestWithChallengeReconciliation(
-          () => fetch(`/api/v1/submissions/${draftId}/publish`, {
+          () => fetch(`/api/submissions/${draftId}/publish`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ challengeId: challenge.challengeId, postUrl }),
@@ -224,7 +224,7 @@ export function SubmitWizard({ competition, assets, eligibility, initialDraft = 
       let draftResponse: Response;
       let draftJson: { data?: { id?: string }; error?: { code?: string } };
       try {
-        draftResponse = await fetch("/api/v1/submissions", {
+        draftResponse = await fetch("/api/submissions", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -260,7 +260,7 @@ export function SubmitWizard({ competition, assets, eligibility, initialDraft = 
       const currentDraftId = draftJson.data!.id!;
       setDraftId(currentDraftId);
       try {
-        const publishResponse = await fetch(`/api/v1/submissions/${currentDraftId}/publish`, {
+        const publishResponse = await fetch(`/api/submissions/${currentDraftId}/publish`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ reason, turnstileToken }),

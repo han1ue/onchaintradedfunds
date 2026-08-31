@@ -126,7 +126,7 @@ export function AssetMarketPicker({ assets, assetId, assetMetadata, pricingConfi
       setLookupState("loading");
       const query = new URLSearchParams({ assetAddress: assetAddress.trim() });
       if (hasPoolAddress) query.set("poolAddress", poolAddress.trim());
-      fetch(`/api/v1/assets/validate?${query.toString()}`, { signal: controller.signal })
+      fetch(`/api/assets/validate?${query.toString()}`, { signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error?.code ?? "ASSET_MARKET_VALIDATION_UNAVAILABLE");

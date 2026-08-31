@@ -24,7 +24,7 @@ describe("authenticated X challenge status route", () => {
       acceptedAt: "2026-08-23T12:00:00.000Z",
     });
 
-    const response = await GET(new Request(`https://launch.example/api/v1/x-challenges/${challengeId}`), {
+    const response = await GET(new Request(`https://launch.example/api/x-challenges/${challengeId}`), {
       params: Promise.resolve({ challengeId }),
     });
 
@@ -44,7 +44,7 @@ describe("authenticated X challenge status route", () => {
   it("does not reveal a challenge rejected by the owner-scoped lookup", async () => {
     mocks.getXActionChallengeStatus.mockRejectedValue(new Error("CHALLENGE_NOT_FOUND"));
 
-    const response = await GET(new Request(`https://launch.example/api/v1/x-challenges/${challengeId}`), {
+    const response = await GET(new Request(`https://launch.example/api/x-challenges/${challengeId}`), {
       params: Promise.resolve({ challengeId }),
     });
 

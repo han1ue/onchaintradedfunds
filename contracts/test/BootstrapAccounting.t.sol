@@ -38,6 +38,34 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         assertTrue(factory.isVault(address(vault)));
     }
 
+    function testEmptyFundThesisIsRejected() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        params.fundThesis = "";
+
+        vm.prank(CREATOR);
+        vm.expectRevert(OTFFactory.FundThesisRequired.selector);
+        factory.createVault(params);
+    }
+
+    function testFundThesisOverByteLimitIsRejected() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        params.fundThesis = string(new bytes(2_049));
+
+        vm.prank(CREATOR);
+        vm.expectPartialRevert(OTFFactory.FundThesisTooLong.selector);
+        factory.createVault(params);
+    }
+
+    function testCreationStoresExactFundThesis() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        params.fundThesis = unicode"Permanent tokenized infrastructure exposure — café 🚀";
+
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+
+        assertEq(vault.fundThesis(), params.fundThesis);
+    }
+
     function testCloneAddressesAreNotDeterministicAndCreatorIsCaller() public {
         address[] memory assets = _assets();
         uint256[] memory units = _units(3, 5);

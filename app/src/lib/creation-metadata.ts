@@ -39,7 +39,6 @@ export type CreationMetadataConstituent = {
 };
 
 export type OtfCreationMetadataDraft = {
-  version: 1;
   weightingMethod: WeightingMethod;
   marketCapSnapshotAt: string;
   constituents: CreationMetadataConstituent[];
@@ -53,7 +52,7 @@ export type OtfCreationMetadata = OtfCreationMetadataDraft & {
 export type StorageReader = Pick<Storage, "getItem">;
 export type StorageWriter = Pick<Storage, "setItem">;
 
-const STORAGE_PREFIX = "otf:creation-metadata:v1";
+const STORAGE_PREFIX = "otf:creation-metadata";
 
 function roundedFixedDecimal(value: bigint, decimals: number, displayedDecimals: number): string {
   if (displayedDecimals >= decimals) return formatFixedDecimal(value, decimals);
@@ -69,12 +68,6 @@ export function weightingMethodLabel(method: WeightingMethod): WeightingMethodLa
   return method === WeightingMethod.MarketCapWeighted
     ? MARKET_CAP_WEIGHTED_LABEL
     : MODIFIED_MARKET_CAP_WEIGHTED_LABEL;
-}
-
-export function weightingMethodDetailCopy(method: WeightingMethod): string {
-  return method === WeightingMethod.MarketCapWeighted
-    ? "Creator-selected weights matched the precise market-cap snapshot at creation."
-    : "Creator-defined tilts were applied at creation.";
 }
 
 export function classifyWeightingMethod(
@@ -142,7 +135,6 @@ export function buildCreationMetadataDraft(input: {
     throw new Error("Final percentages must total exactly 100%.");
   }
   return {
-    version: 1,
     weightingMethod: classifyWeightingMethod(finals, defaults),
     marketCapSnapshotAt: new Date(input.marketCapSnapshotAt).toISOString(),
     constituents: input.assets.map((asset, index) => ({
@@ -184,7 +176,8 @@ function parseCreationMetadata(value: unknown, chainId: number, vaultAddress: Ad
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   if (
-    record.version !== 1 || record.chainId !== chainId
+    record.chainId !== chainId
+    || Object.hasOwn(record, "thesis")
     || typeof record.vaultAddress !== "string" || !isAddress(record.vaultAddress)
     || getAddress(record.vaultAddress) !== getAddress(vaultAddress)
     || !Object.values(WeightingMethod).includes(record.weightingMethod as WeightingMethod)
@@ -227,7 +220,6 @@ function parseCreationMetadata(value: unknown, chainId: number, vaultAddress: Ad
   const weightingMethod = record.weightingMethod as WeightingMethod;
   if (classifyWeightingMethod(finals, defaults) !== weightingMethod) return undefined;
   return {
-    version: 1,
     chainId,
     vaultAddress: getAddress(vaultAddress),
     weightingMethod,

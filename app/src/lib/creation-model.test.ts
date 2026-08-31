@@ -13,6 +13,7 @@ import {
   percentageUnitsForSelectionChange,
   previewBootstrapBasketUnits,
   submitAndConfirmCreation,
+  vaultCreationTransactionParams,
   zeroRawUnitError,
 } from "./creation-model";
 
@@ -24,6 +25,20 @@ describe("creator expense ratio percentage", () => {
     expect(annualExpenseRatioBpsFromPercentage("1.234")).toBeNaN();
     expect(formatAnnualExpenseRatioPercentage(125)).toBe("1.25%");
     expect(formatAnnualExpenseRatioPercentage(1_000)).toBe("10%");
+  });
+});
+
+describe("vault creation transaction params", () => {
+  it("trims the permanent onchain fund thesis", () => {
+    expect(vaultCreationTransactionParams({
+      name: "Technology OTF",
+      symbol: "TECH",
+      fundThesis: "  Permanent technology exposure.  ",
+      expenseBeneficiary: "0x0000000000000000000000000000000000000001",
+      annualCreatorExpenseRatioBps: 100,
+      constituents: ["0x0000000000000000000000000000000000000002"],
+      bootstrapBasketUnitsPerOTF: [1n],
+    }).fundThesis).toBe("Permanent technology exposure.");
   });
 });
 

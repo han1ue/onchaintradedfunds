@@ -21,14 +21,18 @@ not fund governance.
 salt-based creation API. The creator MUST be `msg.sender`. Creation MUST NOT pull or require a
 constituent deposit.
 
-The creation struct MUST contain name, symbol, expense beneficiary, annual creator expense ratio,
-ordered constituents, and ordered `bootstrapBasketUnitsPerOTF`. It MUST NOT accept prices, market
-caps, percentages, signed data, signatures, timestamps, expiries, nonces, or an authority.
+The creation struct MUST contain name, symbol, fund thesis, expense beneficiary, annual creator
+expense ratio, ordered constituents, and ordered `bootstrapBasketUnitsPerOTF`. It MUST NOT accept
+prices, market caps, percentages, signed data, signatures, timestamps, expiries, nonces, or an
+authority.
 
-The factory and vault MUST reject empty metadata, a zero beneficiary, more than 20 constituents,
-array length mismatch, duplicate/zero/non-contract/self constituents, and zero bootstrap units.
-The annual ratio MUST remain in `0..1000` bps. Initialization MUST occur exactly once and the
-constituent order and bootstrap units MUST remain immutable.
+The factory MUST reject an empty fund thesis and any thesis longer than 2,048 UTF-8 bytes. The
+vault MUST store the thesis during its one-time initialization, expose it through `fundThesis()`,
+and provide no mutation path. The factory and vault MUST also reject empty name or symbol metadata,
+a zero beneficiary, more than 20 constituents, array length mismatch,
+duplicate/zero/non-contract/self constituents, and zero bootstrap units. The annual ratio MUST
+remain in `0..1000` bps. Initialization MUST occur exactly once and the fund thesis, constituent
+order, and bootstrap units MUST remain immutable.
 
 ## 3. Application bootstrap calculation
 

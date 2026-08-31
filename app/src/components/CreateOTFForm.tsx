@@ -37,6 +37,7 @@ import {
   previewBootstrapBasketUnits,
   resetToMarketCapPercentageUnits,
   submitAndConfirmCreation,
+  vaultCreationTransactionParams,
   zeroRawUnitError,
   type BasketCalculation,
   type CreationAssetData,
@@ -68,7 +69,7 @@ const MAX_MANDATE_BYTES = 2_048;
 const ALLOCATION_COLORS = ["#37b7aa", "#6f8cff", "#f1b93d", "#d879d8", "#eb6570", "#65c982"];
 
 const steps = [
-  { label: "Identity", description: "Name and application metadata" },
+  { label: "Identity", description: "Onchain identity and thesis" },
   { label: "Constituents", description: "Choose assets and weights" },
   { label: "Economics", description: "Fee and beneficiary" },
   { label: "Review", description: "Confirm OTF details" },
@@ -198,7 +199,8 @@ export function CreateOTFForm() {
     return () => controller.abort();
   }, [chainId]);
 
-  const mandateBytes = new TextEncoder().encode(mandate.trim()).length;
+  const normalizedFundThesis = mandate.trim();
+  const mandateBytes = new TextEncoder().encode(normalizedFundThesis).length;
   const normalizedName = name.trim();
   const nameValid = normalizedName.length > 4 && normalizedName.endsWith(" OTF");
   const symbolValid = /^[A-Z0-9][A-Z0-9-]*$/u.test(symbol);
@@ -383,14 +385,15 @@ export function CreateOTFForm() {
           address: factory,
           abi: otfFactoryAbi,
           functionName: "createVault",
-          args: [{
+          args: [vaultCreationTransactionParams({
             name: normalizedName,
             symbol,
+            fundThesis: normalizedFundThesis,
             expenseBeneficiary: getAddress(beneficiary),
             annualCreatorExpenseRatioBps: annualExpenseRatioBps,
             constituents: selectedAssets.map((asset) => asset.address),
             bootstrapBasketUnitsPerOTF: calculation.bootstrapBasketUnitsPerOTF,
-          }],
+          })],
         });
         if (!hash) throw new Error("The wallet did not return a transaction hash.");
         return hash;
@@ -421,7 +424,7 @@ export function CreateOTFForm() {
     if (outcome.status === "success") {
       setSubmission("success");
       if (!confirmedVaultAddress) {
-        setSubmissionMessage("OTF created, but its application metadata could not be associated because the creation event was unavailable.");
+        setSubmissionMessage("OTF created, but its informational methodology could not be associated because the creation event was unavailable.");
         return;
       }
       setCreatedVaultAddress(confirmedVaultAddress);
@@ -461,7 +464,7 @@ export function CreateOTFForm() {
         ))}
         <div className="createNotice">
           <CheckCircle size={14} />
-          <span>Creation deploys an empty OTF. Only token addresses and raw bootstrap units enter the portfolio payload.</span>
+          <span>Creation deploys an empty OTF. Its thesis, token addresses, and raw bootstrap units are committed onchain.</span>
         </div>
       </aside>
 
@@ -481,11 +484,11 @@ export function CreateOTFForm() {
                 <label><span>OTF ticker</span><input value={symbol} onChange={(event) => { setSymbol(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/gu, "").slice(0, 16)); resetSubmission(); }} placeholder="TECH" aria-invalid={!symbolValid} aria-describedby="create-symbol-help" /><small id="create-symbol-help">Uppercase letters, numbers and hyphens.</small></label>
               </div>
               <label>
-                <div className="subHeader"><span>Strategy rationale</span><small>{mandateBytes.toLocaleString()} / {MAX_MANDATE_BYTES.toLocaleString()} bytes</small></div>
+                <div className="subHeader"><span>Fund thesis</span><small>{mandateBytes.toLocaleString()} / {MAX_MANDATE_BYTES.toLocaleString()} bytes</small></div>
                 <textarea value={mandate} onChange={(event) => { setMandate(event.target.value); resetSubmission(); }} rows={4} maxLength={MAX_MANDATE_BYTES} placeholder="Describe what this basket is designed to represent." aria-invalid={mandateBytes === 0 || mandateBytes > MAX_MANDATE_BYTES} aria-describedby="create-mandate-help" />
-                <small id="create-mandate-help">Application metadata only. It is not sent to the factory.</small>
+                <small id="create-mandate-help">Stored permanently onchain when the fund is created and cannot be changed.</small>
               </label>
-              {!identityValid ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Complete the identity</strong><span>Use a valid name and ticker, and add a rationale within the byte limit.</span></div></div> : null}
+              {!identityValid ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Complete the identity</strong><span>Use a valid name and ticker, and add a thesis within the byte limit.</span></div></div> : null}
             </div>
           ) : null}
 
@@ -575,7 +578,7 @@ export function CreateOTFForm() {
                   <tbody>{reviewSnapshot.selectedAssets.map((asset) => <tr key={asset.address}><td><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></td><td title={`${formatPercentageExact(asset.percentageUnits)}%`}>{formatPercentageDisplay(asset.percentageUnits)}</td></tr>)}</tbody>
                 </table>
               </div>
-              <aside className="bootstrapCommitNote"><CheckCircle size={16} /><div><strong>Ready to create</strong><p>The transaction creates the OTF with these constituents, initial percentages, identity, and fee settings.</p></div></aside>
+              <aside className="bootstrapCommitNote"><CheckCircle size={16} /><div><strong>Ready to create</strong><p>The transaction creates the OTF with these constituents, initial percentages, identity, fund thesis, and fee settings.</p></div></aside>
               <p className="createBlocked">No constituent tokens are transferred during creation. With zero supply, the first depositor must mint at least 0.01 OTF, with no maximum, by supplying the bootstrap basket ceiling-scaled against one full OTF.</p>
               {!deploymentReady && !creationLocked ? <div className="validationSummary"><CircleAlert size={15} /><div><strong>Creation deployment unavailable</strong><span>The factory is not configured on this network. Review remains available, but submission is disabled.</span></div></div> : null}
               {submissionMessage ? <div className={`validationSummary ${submission === "success" ? "success" : submission === "failure" ? "danger" : ""}`} role="status" aria-live="polite">{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={15} /> : submission === "success" ? <CheckCircle size={15} /> : <CircleAlert size={15} />}<div><strong>{submission === "success" ? "Creation confirmed" : submission === "failure" ? "Creation failed" : submission === "unknown" ? "Confirmation unavailable" : "Creation pending"}</strong><span>{submissionMessage}</span>{transactionHash ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer">View transaction</a> : null}{createdVaultAddress ? <a href={`/funds/${createdVaultAddress}`}>View fund details</a> : null}</div></div> : null}

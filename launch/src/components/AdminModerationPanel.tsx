@@ -22,7 +22,7 @@ export function AdminModerationPanel({ proposals: initialProposals }: { proposal
     setBusy(true);
     setResult(null);
     try {
-      const response = await fetch(`/api/v1/admin/proposals/${encodeURIComponent(proposalId)}/moderate`, {
+      const response = await fetch(`/api/admin/proposals/${encodeURIComponent(proposalId)}/moderate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: action, reason: reason.trim() }),

@@ -188,7 +188,7 @@ The navigation surface floats away from the viewport edges with rounded ends, a 
 - **Do** show current price, market cap, minimum viable percentage, and final token quantity while composing the basket; keep Review focused on the final initial percentage for each constituent.
 - **Do** describe the fixed `$1` target as an initial basket value based on current offchain prices, never as a peg or guaranteed market price.
 - **Do** label fund-page NAV-per-share and AUM as informational offchain valuation snapshots derived from current prices and onchain accounted balances; browser-local history never becomes a protocol oracle.
-- **Do** distinguish offchain prices, market caps, percentages, and the fixed `$1` target from the small onchain creation payload.
+- **Do** distinguish the permanent onchain fund thesis from offchain prices, market caps, percentages, methodology, and the fixed `$1` target.
 - **Do** render creation confirmation from the captured submitted payload, keeping navigation and resubmission locked while pending, successful, or receipt status is unknown; only a pre-broadcast failure or explicit onchain revert unlocks retry.
 - **Do** open a dedicated confirmation route only after verifying the successful factory event, show the transaction and new OTF address, and redirect to the live fund page after five seconds.
 - **Do** keep route, fee, gas, and price-impact information separate.
@@ -201,7 +201,7 @@ The navigation surface floats away from the viewport edges with rounded ends, a 
 
 - **Don't** use verification language for pools, routes, liquidity, economics, or investment safety.
 - **Don't** report a fixture or preview as a quote, simulation, or submitted transaction.
-- **Don't** imply that creation metadata is authenticated by or stored in the contracts.
+- **Don't** imply that offchain methodology metadata is authenticated by or stored in the contracts.
 - **Don't** classify methodology from touched fields, raw-token rounding, or current portfolio weights.
 - **Don't** rebuild the route around equal-sized dashboard cards or a marketing hero.
 - **Don't** expand the splash into a long marketing page, card-based hero, proof block, or additional product claim.

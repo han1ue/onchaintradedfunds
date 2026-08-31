@@ -1086,6 +1086,19 @@ export const managedOtfVaultAbi = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "fundThesis",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "components": [
@@ -1097,6 +1110,11 @@ export const managedOtfVaultAbi = [
           {
             "internalType": "string",
             "name": "symbol",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "fundThesis",
             "type": "string"
           },
           {
@@ -1548,6 +1566,27 @@ export const otfFactoryAbi = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "FundThesisRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "suppliedBytes",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maximumBytes",
+        "type": "uint256"
+      }
+    ],
+    "name": "FundThesisTooLong",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1732,6 +1771,11 @@ export const otfFactoryAbi = [
           {
             "internalType": "string",
             "name": "symbol",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "fundThesis",
             "type": "string"
           },
           {

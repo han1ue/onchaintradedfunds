@@ -8,7 +8,7 @@ const appConfiguration = {
     baseUrl: "https://app.synthra.org/",
   },
   quoteService: { endpoint: null },
-  creation: { assetDataEndpoint: "https://launch.onchaintradedfunds.com/api/v1/assets" },
+  creation: { assetDataEndpoint: "https://launch.onchaintradedfunds.com/api/assets" },
 };
 
 test("preserves validated app-owned deployment integrations", () => {
@@ -34,7 +34,7 @@ test("accepts a disabled quote service and rejects unsafe integration URLs", () 
   assert.throws(
     () => appOwnedIntegrationConfiguration({
       ...appConfiguration,
-      creation: { assetDataEndpoint: "http://launch.example/api/v1/assets" },
+      creation: { assetDataEndpoint: "http://launch.example/api/assets" },
     }),
     /creation\.assetDataEndpoint must be an HTTPS URL/,
   );

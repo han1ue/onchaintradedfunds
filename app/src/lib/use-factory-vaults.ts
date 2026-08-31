@@ -1,45 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { managedOtfVaultAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
-import type { Address, PublicClient } from "viem";
+import { otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { useChainId, usePublicClient } from "wagmi";
 import { robinhoodChainTestnet } from "@/lib/chains";
 import { robinhoodTestnetAddresses, robinhoodTestnetCreationReady } from "@/lib/deployment";
+import { readVaultSummary, type FactoryVaultSummary } from "./vault-summary";
 
-export type FactoryVaultSummary = {
-  address: Address;
-  name: string;
-  symbol: string;
-  assets: readonly Address[];
-  assetCount: number;
-  totalSupply: bigint;
-  annualCreatorExpenseRatioBps: number;
-  creator: Address;
-};
+export { readVaultSummary, type FactoryVaultSummary } from "./vault-summary";
 
 export type FactoryVaultDirectoryState = "unavailable" | "loading" | "ready" | "failure";
-
-export async function readVaultSummary(publicClient: PublicClient, address: Address): Promise<FactoryVaultSummary> {
-  const [name, symbol, assets, totalSupply, annualCreatorExpenseRatioBps, creator] = await Promise.all([
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "name" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "symbol" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "assets" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "totalSupply" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "annualCreatorExpenseRatioBps" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "creator" }),
-  ]);
-  return {
-    address,
-    name,
-    symbol,
-    assets,
-    assetCount: assets.length,
-    totalSupply,
-    annualCreatorExpenseRatioBps,
-    creator,
-  };
-}
 
 export function useFactoryVaults({ enabled = true }: { enabled?: boolean } = {}) {
   const chainId = useChainId();

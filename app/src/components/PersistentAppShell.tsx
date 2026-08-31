@@ -1,0 +1,240 @@
+"use client";
+
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { OtfBrandMark } from "@onchaintradedfunds/brand";
+import { Check, LoaderCircle, Monitor, Palette, Settings, Sun, Wallet, Zap } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useChainId, useSwitchChain } from "wagmi";
+import { Providers } from "@/app/providers";
+import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
+import { navigationItemForPath } from "@/lib/operate-navigation";
+
+type AppearancePreference = "default" | "light" | "dark";
+
+function HeaderWalletControl({ active }: { active: boolean }) {
+  return (
+    <ConnectButton.Custom>
+      {({ account, mounted, authenticationStatus, openConnectModal }) => {
+        const ready = mounted && authenticationStatus !== "loading";
+        const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
+        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Wallet connection pending" disabled><LoaderCircle className="createAssetSpinner" size={14} /><span>Connect wallet</span></button>;
+        if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
+        return (
+          <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
+            <Wallet size={14} />
+            <span>{account.displayName}</span>
+          </Link>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
+}
+
+function OperateNav() {
+  const pathname = usePathname();
+  const current = navigationItemForPath(pathname);
+  const [networkOpen, setNetworkOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<AppearancePreference>("default");
+  const [palette, setPalette] = useState<"default" | "robinhood">("default");
+  const chainId = useChainId();
+  const testnetMode = chainId === robinhoodChainTestnet.id;
+  const { switchChain, isPending: networkSwitchPending } = useSwitchChain();
+  const networkRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("otf-theme");
+    const initialTheme: AppearancePreference = savedTheme === "light" || savedTheme === "dark" ? savedTheme : "default";
+    const savedPalette = window.localStorage.getItem("otf-palette");
+    const initialPalette = savedPalette === "robinhood" ? "robinhood" : "default";
+    setTheme(initialTheme);
+    setPalette(initialPalette);
+    document.documentElement.dataset.palette = initialPalette;
+  }, []);
+
+  useEffect(() => {
+    const browserPreference = window.matchMedia("(prefers-color-scheme: light)");
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = theme === "default"
+        ? browserPreference.matches ? "light" : "dark"
+        : theme;
+    };
+    applyTheme();
+    if (theme !== "default") return;
+    browserPreference.addEventListener("change", applyTheme);
+    return () => browserPreference.removeEventListener("change", applyTheme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!networkOpen && !settingsOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (networkOpen && !networkRef.current?.contains(target)) setNetworkOpen(false);
+      if (settingsOpen && !settingsRef.current?.contains(target)) setSettingsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setNetworkOpen(false);
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [networkOpen, settingsOpen]);
+
+  function changeTheme(nextTheme: AppearancePreference) {
+    setTheme(nextTheme);
+    window.localStorage.setItem("otf-theme", nextTheme);
+  }
+
+  function changePalette(nextPalette: "default" | "robinhood") {
+    setPalette(nextPalette);
+    document.documentElement.dataset.palette = nextPalette;
+    window.localStorage.setItem("otf-palette", nextPalette);
+  }
+
+  return (
+    <header className="topNav">
+      <div className="topNavInner">
+        <Link className="logoGroup" href="/" aria-label="Onchain Traded Funds">
+          <OtfBrandMark />
+          <span className="brandText"><strong>Onchain Traded Funds</strong></span>
+        </Link>
+        <nav className="navTabs" aria-label="Primary navigation">
+          <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
+          <Link className={current === "funds" ? "active" : ""} href="/funds">Funds</Link>
+          <Link className={current === "token" ? "active" : ""} href="/token">$OTF</Link>
+        </nav>
+        <div className="navActions">
+          <div className="networkControl" ref={networkRef}>
+            <button
+              className={`networkButton ${networkOpen ? "active" : ""}`}
+              type="button"
+              title="Robinhood Chain"
+              aria-label="Current network: Robinhood Chain. Open networks"
+              aria-expanded={networkOpen}
+              aria-haspopup="menu"
+              onClick={() => {
+                setSettingsOpen(false);
+                setNetworkOpen((open) => !open);
+              }}
+            >
+              <span className="robinhoodNetworkIcon" aria-hidden="true" />
+            </button>
+            {networkOpen ? (
+              <div className="networkMenu" role="menu" aria-label="Networks">
+                <div className="settingsMenuHeader"><strong>Networks</strong><span>Choose a supported ecosystem</span></div>
+                <div className="settingsGroup">
+                  <button
+                    className="settingsOption selected"
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chainId === robinhoodChain.id || testnetMode}
+                    disabled={networkSwitchPending}
+                    onClick={() => {
+                      const nextChainId = testnetMode ? robinhoodChainTestnet.id : robinhoodChain.id;
+                      if (chainId !== nextChainId) switchChain({ chainId: nextChainId });
+                      setNetworkOpen(false);
+                    }}
+                  >
+                    <span className="settingsOptionIcon network"><span className="robinhoodNetworkIcon" aria-hidden="true" /></span>
+                    <span className="settingsOptionText"><strong>Robinhood Chain</strong><small>Selected network</small></span>
+                    <Check className="settingsCheck" size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <HeaderWalletControl active={pathname === "/wallet"} />
+          <div className="settingsControl" ref={settingsRef}>
+            <button
+              className={`iconOnly ${settingsOpen ? "active" : ""}`}
+              type="button"
+              title="Settings"
+              aria-label="Open settings"
+              aria-expanded={settingsOpen}
+              aria-haspopup="dialog"
+              onClick={() => {
+                setNetworkOpen(false);
+                setSettingsOpen((open) => !open);
+              }}
+            >
+              <Settings size={16} />
+            </button>
+            {settingsOpen ? (
+              <div className="settingsMenu" role="dialog" aria-label="Application settings">
+                <div className="settingsMenuHeader"><strong>Settings</strong></div>
+                <div className="settingsGroup">
+                  <span className="settingsLabel">Environment</span>
+                  <button
+                    className="settingsEnvironmentToggle"
+                    type="button"
+                    aria-pressed={testnetMode}
+                    disabled={networkSwitchPending}
+                    onClick={() => switchChain({ chainId: testnetMode ? robinhoodChain.id : robinhoodChainTestnet.id })}
+                  >
+                    <span className="settingsOptionIcon"><Zap size={15} /></span>
+                    <span className="settingsOptionText"><strong>Testnet mode</strong><small>Uses the testnet of the currently selected chain.</small></span>
+                    <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true"><span /></span>
+                  </button>
+                </div>
+                <div className="settingsGroup">
+                  <span className="settingsLabel">Appearance</span>
+                  <div className="settingsThemeHeading">
+                    <span className="settingsOptionIcon"><Sun size={15} /></span>
+                    <span className="settingsOptionText"><strong>Mode</strong><small>Follow your browser or choose a mode</small></span>
+                  </div>
+                  <div className="settingsThemeChoices appearance" role="radiogroup" aria-label="Application appearance">
+                    {(["default", "light", "dark"] as const).map((value) => (
+                      <button className={`settingsThemeChoice ${theme === value ? "selected" : ""}`} key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => changeTheme(value)}>
+                        {value === "default" ? <Monitor className="settingsSystemIcon" size={13} /> : <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />}
+                        <span>{value === "default" ? "Browser" : value[0].toUpperCase() + value.slice(1)}</span>
+                        {theme === value ? <Check size={12} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="settingsThemePicker">
+                    <div className="settingsThemeHeading">
+                      <span className="settingsOptionIcon"><Palette size={15} /></span>
+                      <span className="settingsOptionText"><strong>Theme</strong><small>Choose the application color palette</small></span>
+                    </div>
+                    <div className="settingsThemeChoices palette" role="radiogroup" aria-label="Application theme">
+                      {(["default", "robinhood"] as const).map((value) => (
+                        <button className={`settingsThemeChoice ${palette === value ? "selected" : ""}`} key={value} type="button" role="radio" aria-checked={palette === value} onClick={() => changePalette(value)}>
+                          <span className={`settingsThemeSwatch ${value}`} aria-hidden="true" />
+                          <span>{value === "default" ? "Default" : "Robinhood"}</span>
+                          {palette === value ? <Check size={13} /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export function PersistentAppShell({ children, showOnRoot }: { children: ReactNode; showOnRoot: boolean }) {
+  const pathname = usePathname();
+  const showHeader = pathname !== "/" || showOnRoot;
+
+  return (
+    <Providers>
+      <div className={showHeader ? "operateShell" : undefined}>
+        {showHeader ? <OperateNav /> : null}
+        {children}
+      </div>
+    </Providers>
+  );
+}

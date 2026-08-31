@@ -55,6 +55,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _expenseBeneficiary = params.expenseBeneficiary;
         _entryExitRouter = params.entryExitRouter;
         _feeCollector = params.feeCollector;
+        _fundThesis = params.fundThesis;
         _annualCreatorExpenseRatioBps = params.annualCreatorExpenseRatioBps;
 
         for (uint256 i = 0; i < length; i++) {
@@ -87,6 +88,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function creator() external view returns (address) {
         return _creator;
+    }
+
+    function fundThesis() external view returns (string memory) {
+        return _fundThesis;
     }
 
     function expenseBeneficiary() external view returns (address) {

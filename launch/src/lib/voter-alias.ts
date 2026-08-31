@@ -11,7 +11,7 @@ const creatures = [
 ] as const;
 
 export function generatedVoterAlias(userId: string) {
-  const digest = createHash("sha256").update(`otf-voter-alias-v1:${userId}`).digest();
+  const digest = createHash("sha256").update(`otf-voter-alias:${userId}`).digest();
   const adjective = adjectives[digest[0] % adjectives.length];
   const creature = creatures[digest[1] % creatures.length];
   const suffix = 100 + digest.readUInt16BE(2) % 900;

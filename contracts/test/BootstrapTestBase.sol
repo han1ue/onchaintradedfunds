@@ -146,6 +146,7 @@ abstract contract BootstrapTestBase is TestBase {
         params = VaultCreationParams({
             name: "Bootstrap OTF",
             symbol: "BOTF",
+            fundThesis: "A fixed basket of tokenized assets.",
             expenseBeneficiary: BENEFICIARY,
             annualCreatorExpenseRatioBps: expenseRatioBps,
             constituents: assets,
