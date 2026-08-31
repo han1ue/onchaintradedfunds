@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
-import { OtfBrandMark } from "@onchaintradedfunds/brand";
+import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   ArrowLeft,
   ArrowDown,
@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  TrendingUp,
   UserCog,
   Wallet,
   X,
@@ -38,8 +39,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { encodeFunctionData, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
-import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
+import { encodeFunctionData, formatUnits, getAddress, isAddress, parseAbiItem, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
@@ -71,6 +72,7 @@ import {
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
+import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage } from "@/lib/creation-model";
 import {
   formatMarketCapMultiplier,
@@ -87,12 +89,14 @@ import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
 
-export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity";
+export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity" | "token";
 
 type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
+const X_URL = "https://x.com/OTFProtocol";
+const ERC20_TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
   symbol: "Select token",
@@ -164,51 +168,27 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-type FactoryVaultSummary = {
-  address: Address;
-  name: string;
-  symbol: string;
-  assetCount: number;
-  annualCreatorExpenseRatioBps: number;
-  creator: Address;
-};
-
-async function readVaultSummary(publicClient: PublicClient, address: Address): Promise<FactoryVaultSummary> {
-  const [name, symbol, assets, annualCreatorExpenseRatioBps, creator] = await Promise.all([
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "name" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "symbol" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "assets" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "annualCreatorExpenseRatioBps" }),
-    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "creator" }),
-  ]);
-  return {
-    address,
-    name,
-    symbol,
-    assetCount: assets.length,
-    annualCreatorExpenseRatioBps,
-    creator,
-  };
-}
-
 function transactionHashFromLocation(): Hex | undefined {
   if (typeof window === "undefined") return undefined;
   const value = new URLSearchParams(window.location.search).get("tx");
   return value && /^0x[0-9a-f]{64}$/iu.test(value) ? value as Hex : undefined;
 }
 
-function symbolMonogram(symbol: string): string {
-  const value = symbol.replace(/^OTF-/, "").replace(/[^A-Z0-9]/gi, "");
-  return (value || "OTF").slice(0, 2).toUpperCase();
+function AssetLogo({ symbol }: { symbol: string }) {
+  return <OtfTokenIcon className="assetLogoFallback" size={32} ticker={symbol} />;
 }
 
-function AssetLogo({ symbol }: { symbol: string }) {
-  return <span className="assetLogoFallback" aria-hidden="true">{symbolMonogram(symbol)}</span>;
+function XSocialIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
 }
 
 function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
-  if (asset.kind === "otf") mark = <OtfBrandMark className="swapAssetBrandMark" />;
+  if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={asset.symbol} />;
   const tokenIcon = asset.symbol.toUpperCase() === "WETH"
     ? "/assets/tokens/weth.png"
     : asset.symbol.toUpperCase() === "USDG"
@@ -246,6 +226,8 @@ function TokenPicker({
   exclude,
   routeFund,
   configuredAssets,
+  otfAssets,
+  otfDirectoryState,
 }: {
   title: string;
   onClose: () => void;
@@ -254,12 +236,15 @@ function TokenPicker({
   exclude?: SwapAsset;
   routeFund?: SwapAsset;
   configuredAssets: readonly SwapAsset[];
+  otfAssets: readonly SwapAsset[];
+  otfDirectoryState: "unavailable" | "loading" | "ready" | "failure";
 }) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<SwapAssetKind>(selected?.kind ?? "erc20");
   const searchRef = useRef<HTMLInputElement>(null);
   const addressAsset = pastedAsset(query);
-  const options: SwapAsset[] = routeFund ? [...configuredAssets, routeFund] : [...configuredAssets];
+  const options: SwapAsset[] = [...configuredAssets, ...otfAssets];
+  if (routeFund && !options.some((asset) => sameAsset(asset, routeFund))) options.push(routeFund);
   const searchable = options
     .filter((asset) => asset.kind === kind && !sameAsset(asset, exclude))
     .filter((asset) => !query || asset.symbol.toLowerCase().includes(query.trim().toLowerCase()) || asset.address.toLowerCase() === query.trim().toLowerCase());
@@ -304,7 +289,7 @@ function TokenPicker({
               <small>Unresolved</small>
             </button>
           ) : null}
-          {!searchable.length && !canSelectAddress ? <p className="swapPickerEmpty">No configured {kind === "otf" ? "OTF shares" : "tokens"} match this search.</p> : null}
+          {!searchable.length && !canSelectAddress ? <p className="swapPickerEmpty">{kind === "otf" && otfDirectoryState === "loading" ? "Loading OTF shares from the factory…" : kind === "otf" && otfDirectoryState === "failure" ? "The factory OTF directory could not be loaded." : `No configured ${kind === "otf" ? "OTF shares" : "tokens"} match this search.`}</p> : null}
         </div>
         <p className="swapTokenFootnote">Pasting an address only selects it. It does not resolve metadata, establish verification, or enable a route.</p>
       </section>
@@ -390,7 +375,7 @@ function OperateNav() {
         <nav className="navTabs" aria-label="Primary navigation">
           <Link className={current === "swap" ? "active" : ""} href="/">Swap</Link>
           <Link className={current === "funds" ? "active" : ""} href="/funds">Funds</Link>
-          <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
+          <Link className={current === "token" ? "active" : ""} href="/token">OTF Token</Link>
         </nav>
         <div className="navActions">
           <div className="networkControl" ref={networkRef}>
@@ -511,7 +496,7 @@ function HeaderWalletControl({ active }: { active: boolean }) {
       {({ account, mounted, authenticationStatus, openConnectModal }) => {
         const ready = mounted && authenticationStatus !== "loading";
         const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
-        if (!ready) return <button className="headerWalletButton" type="button" disabled>Wallet</button>;
+        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Loading wallet" disabled><Wallet size={14} /><span>Wallet</span></button>;
         if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
         return (
           <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
@@ -534,6 +519,7 @@ function OperateFooter() {
       <div className="footerLinks">
         {showLiquidity ? <Link href="/liquidity">Testnet liquidity</Link> : null}
         <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
+        <a href={X_URL} target="_blank" rel="noreferrer" aria-label="OTF Protocol on X"><XSocialIcon />OTF Protocol</a>
         <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub<ExternalLink size={12} /></a>
       </div>
     </footer>
@@ -639,7 +625,7 @@ function QuoteReview({
   );
 }
 
-function SwapSurface() {
+function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAsset; embedded?: boolean } = {}) {
   const chainId = useChainId();
   const { address } = useAccount();
   const { openConnectModal } = useConnectModal();
@@ -647,10 +633,20 @@ function SwapSurface() {
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
   const configuredAssets = useMemo(() => configuredAssetsFor(chainId), [chainId]);
+  const { state: otfDirectoryState, vaults: factoryVaults } = useFactoryVaults();
+  const otfAssets = useMemo<SwapAsset[]>(() => factoryVaults.map((vault) => ({
+    address: vault.address,
+    symbol: vault.symbol,
+    name: vault.name,
+    kind: "otf",
+    decimals: 18,
+    metadataResolved: true,
+    isFactoryVault: true,
+  })), [factoryVaults]);
   const routeFundAddress = addressFromLocation();
-  const routeFund = routeFundAddress ? { address: routeFundAddress, symbol: "OTF", name: "Unresolved fund route address", kind: "otf" as const, decimals: 18, metadataResolved: false } : undefined;
+  const routeFund = embeddedFund ?? (routeFundAddress ? { address: routeFundAddress, symbol: "OTF", name: "Unresolved fund route address", kind: "otf" as const, decimals: 18, metadataResolved: false } : undefined);
   const [input, setInput] = useState<SwapAsset>(() => configuredUsdgFor(robinhoodChainTestnet.id) ?? EMPTY_ERC20);
-  const [output, setOutput] = useState<SwapAsset>(EMPTY_OTF);
+  const [output, setOutput] = useState<SwapAsset>(() => embeddedFund ?? EMPTY_OTF);
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
   const [swapSettingsOpen, setSwapSettingsOpen] = useState(false);
@@ -907,11 +903,8 @@ function SwapSurface() {
     void executeSwap();
   }
 
-  return (
-    <div className="operateShell">
-      <OperateNav />
-      <main className="swapMain">
-        <section className="swapCard" aria-label="Swap tokens">
+  const swapCard = (
+        <section className="swapCard" aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
           <div className="swapCardHeader">
             <strong>Swap</strong>
             <div className="swapSettingsControl" ref={swapSettingsRef}>
@@ -939,9 +932,17 @@ function SwapSurface() {
           {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{statusMessage}</p> : null}
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
         </section>
-      </main>
+  );
+  const pickerDialog = picker ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} /> : null;
+
+  if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
+
+  return (
+    <div className="operateShell">
+      <OperateNav />
+      <main className="swapMain">{swapCard}</main>
       <div className="swapFooterFrame"><OperateFooter /></div>
-      {picker ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={picker === "input" ? input : output} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} /> : null}
+      {pickerDialog}
     </div>
   );
 }
@@ -1088,16 +1089,111 @@ function FundRouteSurface() {
   return pathname.endsWith("/created") ? <CreatedFundSurface /> : <FundsSurface detail />;
 }
 
+type SupplyHistoryPoint = { block: bigint; supply: bigint };
+
+function formatShareSupply(value: bigint): string {
+  return Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function VaultSupplyHistory({ address, symbol, totalSupply }: { address: Address; symbol: string; totalSupply: bigint }) {
+  const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
+  const [state, setState] = useState<"loading" | "ready" | "failure">("loading");
+  const [points, setPoints] = useState<SupplyHistoryPoint[]>([]);
+  const [eventCount, setEventCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!publicClient) {
+      setState("failure");
+      return;
+    }
+    setState("loading");
+    void publicClient.getBlockNumber().then(async (latestBlock) => {
+      const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
+      const logs = await publicClient.getLogs({ address, event: ERC20_TRANSFER_EVENT, fromBlock, toBlock: latestBlock });
+      const supplyLogs = logs.filter((log) => log.args.value !== undefined && (log.args.from === zeroAddress || log.args.to === zeroAddress));
+      const netChange = supplyLogs.reduce((total, log) => total + (log.args.from === zeroAddress ? log.args.value! : -log.args.value!), 0n);
+      let runningSupply = totalSupply - netChange;
+      const nextPoints: SupplyHistoryPoint[] = [{ block: fromBlock, supply: runningSupply }];
+      for (const log of supplyLogs) {
+        runningSupply += log.args.from === zeroAddress ? log.args.value! : -log.args.value!;
+        nextPoints.push({ block: log.blockNumber, supply: runningSupply });
+      }
+      if (nextPoints.at(-1)?.block !== latestBlock) nextPoints.push({ block: latestBlock, supply: totalSupply });
+      return { eventCount: supplyLogs.length, points: nextPoints };
+    }).then((history) => {
+      if (!cancelled) {
+        setPoints(history.points);
+        setEventCount(history.eventCount);
+        setState("ready");
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setPoints([]);
+        setEventCount(0);
+        setState("failure");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [address, publicClient, totalSupply]);
+
+  const width = 720;
+  const height = 190;
+  const left = 54;
+  const right = 14;
+  const top = 18;
+  const bottom = 25;
+  const values = points.map((point) => Number(formatUnits(point.supply, 18)));
+  const minimumValue = values.length ? Math.min(...values) : 0;
+  const maximumValue = values.length ? Math.max(...values) : 1;
+  const padding = Math.max((maximumValue - minimumValue) * 0.16, maximumValue * 0.025, 0.01);
+  const minimum = Math.max(0, minimumValue - padding);
+  const maximum = maximumValue + padding;
+  const spread = Math.max(maximum - minimum, 0.01);
+  const firstBlock = points.at(0)?.block ?? 0n;
+  const lastBlock = points.at(-1)?.block ?? firstBlock + 1n;
+  const blockSpread = Number(lastBlock - firstBlock || 1n);
+  const chartPoints = points.map((point) => ({
+    x: left + (Number(point.block - firstBlock) / blockSpread) * (width - left - right),
+    y: top + ((maximum - Number(formatUnits(point.supply, 18))) / spread) * (height - top - bottom),
+  }));
+  const linePath = chartPoints.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
+  const baseline = height - bottom;
+  const areaPath = chartPoints.length ? `${linePath} L ${chartPoints.at(-1)!.x} ${baseline} L ${chartPoints[0].x} ${baseline} Z` : "";
+  const ticks = Array.from({ length: 4 }, (_, index) => maximum - ((maximum - minimum) * index) / 3);
+
+  return (
+    <section className="sectionCard supplyHistoryPanel">
+      <div className="directoryPanelHeading"><div><h2>Share supply</h2><p>Mint and redemption history from onchain Transfer events.</p></div><span className="stateBadge muted">500K blocks</span></div>
+      {state === "loading" ? <div className="supplyHistoryState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading recent supply events…</span></div> : state === "failure" ? <div className="supplyHistoryState"><History size={17} /><span>Recent supply history is unavailable from the configured RPC.</span></div> : (
+        <>
+          <div className="supplyHistorySummary"><span>Current supply</span><strong>{formatShareSupply(totalSupply)} {symbol}</strong><small>{eventCount} mint or redemption event{eventCount === 1 ? "" : "s"} in this window</small></div>
+          <div className="supplyChartWrap">
+            <svg className="supplyChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} recent onchain share supply ending at ${formatShareSupply(totalSupply)}`}>
+              {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="supplyChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="supplyChartLabel" x={left - 8} y={y + 3} textAnchor="end">{tick.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text></g>; })}
+              <path className="supplyChartArea" d={areaPath} />
+              <path className="supplyChartLine" d={linePath} />
+              {chartPoints.map((point, index) => <circle className="supplyChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r="3" />)}
+            </svg>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function FundsSurface({ detail }: { detail: boolean }) {
   const routeAddress = addressFromLocation();
+  const router = useRouter();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
   const testnet = chainId === robinhoodChainTestnet.id;
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
+  const { state: factoryDirectoryState, vaults } = useFactoryVaults({ enabled: !detail });
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
   const [directorySearch, setDirectorySearch] = useState("");
-  const [directoryState, setDirectoryState] = useState<"loading" | "ready" | "failure">("loading");
-  const [vaults, setVaults] = useState<FactoryVaultSummary[]>([]);
+  const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   useEffect(() => {
@@ -1109,52 +1205,32 @@ function FundsSurface({ detail }: { detail: boolean }) {
   }, [chainId, detail, routeAddress]);
   useEffect(() => {
     let cancelled = false;
-    const factory = robinhoodTestnetAddresses.factory;
-    if (!directoryDeploymentReady || !publicClient || !factory) {
-      setDirectoryState("failure");
-      setVaults([]);
+    if (!detail) return;
+    if (!directoryDeploymentReady || !publicClient) {
+      setDetailState("failure");
       setVaultDetails(undefined);
       return;
     }
-    setDirectoryState("loading");
-    if (detail) {
-      if (!routeAddress) {
-        setDirectoryState("failure");
-        setVaultDetails(undefined);
-        return;
-      }
-      void readVaultSummary(publicClient, routeAddress).then((value) => {
-        if (!cancelled) {
-          setVaultDetails(value);
-          setDirectoryState("ready");
-        }
-      }).catch(() => {
-        if (!cancelled) {
-          setVaultDetails(undefined);
-          setDirectoryState("failure");
-        }
-      });
-      return () => { cancelled = true; };
+    setDetailState("loading");
+    if (!routeAddress) {
+      setDetailState("failure");
+      setVaultDetails(undefined);
+      return;
     }
-    void publicClient.readContract({ address: factory, abi: otfFactoryAbi, functionName: "vaultCount" }).then(async (count) => {
-      if (count > 500n) throw new Error("Factory directory exceeds the supported testnet page size.");
-      const addresses = await Promise.all(Array.from({ length: Number(count) }, (_, index) => (
-        publicClient.readContract({ address: factory, abi: otfFactoryAbi, functionName: "vaultAt", args: [BigInt(index)] })
-      )));
-      return Promise.all(addresses.reverse().map((vaultAddress) => readVaultSummary(publicClient, vaultAddress)));
-    }).then((values) => {
+    void readVaultSummary(publicClient, routeAddress).then((value) => {
       if (!cancelled) {
-        setVaults(values);
-        setDirectoryState("ready");
+        setVaultDetails(value);
+        setDetailState("ready");
       }
     }).catch(() => {
       if (!cancelled) {
-        setVaults([]);
-        setDirectoryState("failure");
+        setVaultDetails(undefined);
+        setDetailState("failure");
       }
     });
     return () => { cancelled = true; };
   }, [detail, directoryDeploymentReady, publicClient, routeAddress]);
+  const directoryState = detail ? detailState : factoryDirectoryState;
   const normalizedSearch = directorySearch.trim().toLowerCase();
   const filteredVaults = normalizedSearch
     ? vaults.filter((vault) => `${vault.name} ${vault.symbol} ${vault.address}`.toLowerCase().includes(normalizedSearch))
@@ -1163,11 +1239,44 @@ function FundsSurface({ detail }: { detail: boolean }) {
     const methodologyLabel = creationMetadata
       ? weightingMethodLabel(creationMetadata.weightingMethod)
       : "Weighting method unavailable";
+    const embeddedFund: SwapAsset | undefined = vaultDetails ? {
+      address: vaultDetails.address,
+      symbol: vaultDetails.symbol,
+      name: vaultDetails.name,
+      kind: "otf",
+      decimals: 18,
+      metadataResolved: true,
+      isFactoryVault: true,
+    } : undefined;
     return (
       <DashboardPage className="fundsPage">
         <div className="appView fundsView">
           <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
-          <AppPageHeader title={vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")} description={vaultDetails ? `${vaultDetails.symbol} · ${vaultDetails.assetCount} constituent${vaultDetails.assetCount === 1 ? "" : "s"} · created by ${shortAddress(vaultDetails.creator)}` : "Loading identity directly from the OTF contract."} icon={<LayoutGrid size={18} />} actions={<span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>} />
+          <section className="fundDetailHero" aria-labelledby="fund-detail-title">
+            <div className="fundDetailIdentity">
+              <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
+              <div>
+                <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1>{vaultDetails ? <span className="fundSymbolBadge">{vaultDetails.symbol}</span> : null}</div>
+                <div className="fundDetailMeta">
+                  {routeAddress ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
+                  <span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>
+                </div>
+              </div>
+            </div>
+            <div className="fundDetailMetrics" aria-label="Fund metrics">
+              <div><span>Share supply</span><strong>{vaultDetails ? formatShareSupply(vaultDetails.totalSupply) : "—"}</strong></div>
+              <div><span>Constituents</span><strong>{vaultDetails?.assetCount ?? "—"}</strong></div>
+              <div><span>Creator fee</span><strong>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</strong></div>
+              <div><span>Creator</span><strong>{vaultDetails ? shortAddress(vaultDetails.creator) : "—"}</strong></div>
+            </div>
+          </section>
+          <div className="fundDetailPrimaryGrid">
+            {routeAddress && vaultDetails ? <VaultSupplyHistory address={routeAddress} symbol={vaultDetails.symbol} totalSupply={vaultDetails.totalSupply} /> : <section className="sectionCard supplyHistoryPanel"><div className="directoryPanelHeading"><div><h2>Share supply</h2><p>Mint and redemption history from onchain Transfer events.</p></div></div><div className="supplyHistoryState">{directoryState === "failure" ? <History size={17} /> : <LoaderCircle className="createAssetSpinner" size={17} />}<span>{directoryState === "failure" ? "The OTF contract could not be read from the configured RPC." : "Loading onchain fund history…"}</span></div></section>}
+            <section className="fundTradePanel" aria-labelledby="fund-trade-title">
+              <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Use the fund&apos;s own share token.</p></div></div><span className="stateBadge success">Direct</span></div>
+              {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="supplyHistoryState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading the fund token…</span></div>}
+            </section>
+          </div>
           <section className="sectionCard detailIdentityCard">
             <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>{directoryState === "failure" ? "The OTF contract details could not be read from the configured testnet RPC." : "Identity and immutable creation settings read directly from the OTF contract."}</p></div><span className={`stateBadge ${directoryState === "ready" ? "success" : directoryState === "failure" ? "danger" : "muted"}`}>{directoryState === "ready" ? "Onchain" : directoryState === "failure" ? "Unavailable" : "Loading"}</span></div>
             <dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>Symbol</dt><dd>{vaultDetails?.symbol ?? "—"}</dd></div><div><dt>Creator</dt><dd>{vaultDetails?.creator ?? "—"}</dd></div><div><dt>Constituents</dt><dd>{vaultDetails?.assetCount ?? "—"}</dd></div><div><dt>Creator fee</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</dd></div></dl>
@@ -1217,7 +1326,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
-                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>NAV</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => <tr key={vault.address}><td><Link className="directoryFundLink" href={`/funds/${vault.address}`}><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></Link></td><td data-label="NAV">—</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>)}</tbody></table>
+                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
                 </div>
               ) : (
                 <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
@@ -1252,14 +1361,85 @@ function VerifiedSurface() {
   );
 }
 
+function TokenSurface() {
+  const chainId = useChainId();
+  const testnet = chainId === robinhoodChainTestnet.id;
+  const tokenAddress = robinhoodTestnetAddresses.otfToken;
+  const explorerUrl = tokenAddress ? `${robinhoodChainTestnet.blockExplorers.default.url}/address/${tokenAddress}` : undefined;
+
+  return (
+    <DashboardPage>
+      <div className="appView tokenView">
+        <AppPageHeader
+          title="OTF Token"
+          description="The fixed-supply protocol token for Onchain Traded Funds. It is separate from the share token issued by each individual OTF."
+          icon={<OtfBrandMark />}
+          actions={<a className="secondaryAction" href={`${DOCS_URL}/token-and-fee-incentives`} target="_blank" rel="noreferrer"><ReceiptText size={14} />Technical specification<ExternalLink size={12} /></a>}
+        />
+        <div className="validationSummary tokenStatusNotice" role="note">
+          <History size={15} />
+          <div><strong>Pre-mainnet status</strong><span>The token contract is unaudited. Distribution, vesting, governance, liquidity, and treasury custody have not been finalized.</span></div>
+        </div>
+        <section className="sectionCard tokenPanel">
+          <div className="directoryPanelHeading">
+            <div><h2>Token design</h2><p>Contract-enforced properties, without projected utility or market claims.</p></div>
+            <span className="stateBadge muted">ERC-20</span>
+          </div>
+          <dl className="tokenFacts">
+            <div><dt>Name</dt><dd>Onchain Traded Funds</dd></div>
+            <div><dt>Symbol</dt><dd>OTF</dd></div>
+            <div><dt>Maximum supply</dt><dd>1,000,000,000 OTF</dd></div>
+            <div><dt>Decimals</dt><dd>18</dd></div>
+          </dl>
+          <div className="tokenContent">
+            <section>
+              <h3>Fixed by the contract</h3>
+              <p>The full supply is minted once to the constructor-supplied initial holder. The token has no privileged minter, inflation switch, transfer tax, blacklist, or upgrade hook.</p>
+            </section>
+            <section>
+              <h3>Not fixed by the contract</h3>
+              <p>Distribution, vesting, governance rights, liquidity, and treasury policy are deployment decisions. This page does not imply an allocation, a launch schedule, or an investment outcome.</p>
+            </section>
+            <section>
+              <h3>OTF token versus OTF shares</h3>
+              <p>OTF is the protocol token. A fund created through the factory issues its own ERC-20 share token representing that fund&apos;s basket; those fund shares have separate supply and economics.</p>
+            </section>
+          </div>
+          <div className="tokenContractRecord">
+            <div><span>Contract</span><strong>{testnet ? "Robinhood Testnet deployment" : "No Robinhood Mainnet deployment"}</strong></div>
+            {testnet && tokenAddress ? <a href={explorerUrl} target="_blank" rel="noreferrer"><code>{tokenAddress}</code><ExternalLink size={13} /></a> : <span className="tokenContractUnavailable">Enable Testnet mode in Settings to inspect the current deployment.</span>}
+          </div>
+        </section>
+      </div>
+    </DashboardPage>
+  );
+}
+
 function WalletSurface() {
   const chainId = useChainId();
   const testnet = chainId === robinhoodChainTestnet.id;
   const { address } = useAccount();
   const [addressCopied, setAddressCopied] = useState(false);
+  const { state: vaultDirectoryState, vaults } = useFactoryVaults({ enabled: testnet && Boolean(address) });
   const usdg = configuredUsdgFor(chainId);
   const { data: nativeBalance, isLoading: nativeBalanceLoading } = useBalance({ address, chainId, query: { enabled: Boolean(address && testnet) } });
   const { data: usdgBalance, isLoading: usdgBalanceLoading } = useBalance({ address, token: usdg?.address, chainId, query: { enabled: Boolean(address && testnet && usdg) } });
+  const balanceContracts = useMemo(() => address ? vaults.map((vault) => ({
+    address: vault.address,
+    abi: managedOtfVaultAbi,
+    functionName: "balanceOf" as const,
+    args: [address] as const,
+  })) : [], [address, vaults]);
+  const { data: vaultBalanceReads, isLoading: vaultBalancesLoading } = useReadContracts({
+    contracts: balanceContracts,
+    query: { enabled: Boolean(address && testnet && balanceContracts.length) },
+  });
+  const positions = vaults.flatMap((vault, index) => {
+    const balance = vaultBalanceReads?.[index]?.result;
+    return typeof balance === "bigint" && balance > 0n ? [{ vault, balance }] : [];
+  });
+  const managedVaults = address ? vaults.filter((vault) => vault.creator.toLowerCase() === address.toLowerCase()) : [];
+  const vaultDataLoading = vaultDirectoryState === "loading" || (vaultDirectoryState === "ready" && vaultBalancesLoading);
 
   async function copyWalletAddress() {
     if (!address) return;
@@ -1276,12 +1456,18 @@ function WalletSurface() {
           <>
             <div className="depositMetrics walletMetrics">
               <div className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}<button className="iconOnly compact" type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></div></div><div className="walletAddressValue"><strong title={address}>{shortAddress(address)}</strong></div></div>
-              <MetricCard label="OTF Positions" value="0" />
+              <MetricCard label="OTF Positions" value={vaultDataLoading ? "Loading" : vaultDirectoryState === "failure" ? "Unavailable" : String(positions.length)} />
               <MetricCard label="USDG Balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
               <MetricCard label="ETH Balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
             </div>
-            <section className="sectionCard depositPositions"><div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Shares held by the connected wallet.</p></div></div><span className="stateBadge muted">0 positions</span></div><div className="inlineEmptyState walletPositionEmpty"><CircleDollarSign size={18} /><div><strong>No OTF positions found</strong><span>Your OTF shares will appear here after a purchase or deposit.</span></div></div></section>
-            <section className="sectionCard managedVaultsPanel"><div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>OTFs you manage</h2><p>Manager controls and protocol operations for OTFs currently managed by this wallet.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div><div className="inlineEmptyState"><UserCog size={18} /><div><strong>No managed OTFs found</strong><span>OTFs will appear here whenever this wallet is their current manager.</span></div></div></section>
+            <section className="sectionCard depositPositions">
+              <div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Share-token balances held by the connected wallet.</p></div></div><span className="stateBadge muted">{vaultDataLoading ? "Loading" : `${positions.length} position${positions.length === 1 ? "" : "s"}`}</span></div>
+              {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
+            </section>
+            <section className="sectionCard managedVaultsPanel">
+              <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>OTFs you manage</h2><p>OTFs created by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><span className="stateBadge muted">{vaultDirectoryState === "loading" ? "Loading" : `${managedVaults.length} OTF${managedVaults.length === 1 ? "" : "s"}`}</span><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div>
+              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs created by this wallet" : vaultDirectoryState === "failure" ? "Could not load created OTFs" : "No created OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet creates them through the factory."}</span></div></div>}
+            </section>
           </>
         ) : (
           <section className="sectionCard depositsEmpty">
@@ -1312,6 +1498,7 @@ function OperateRouter({ initialView }: { initialView: OperateView }) {
   if (initialView === "detail") return <FundRouteSurface />;
   if (initialView === "verified") return <VerifiedSurface />;
   if (initialView === "wallet") return <WalletSurface />;
+  if (initialView === "token") return <TokenSurface />;
   return <SwapSurface />;
 }
 

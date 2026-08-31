@@ -1,0 +1,66 @@
+---
+title: Deployment addresses
+description: Canonical protocol and integration contract addresses by Robinhood Chain network.
+---
+
+# Deployment addresses
+
+Treat this page as the canonical address book for the current application configuration. Verify the
+network and address before interacting with a contract. The protocol is unaudited and pre-mainnet.
+
+## Robinhood Chain Mainnet
+
+**Chain ID:** `4663`  
+**Explorer:** [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com/)
+
+No OTF protocol contracts are deployed on Robinhood Chain Mainnet yet. The app only configures the
+canonical external USDG token on this network.
+
+| Contract | Address | Status |
+| --- | --- | --- |
+| OTF Factory | — | Not deployed |
+| Managed OTF Vault implementation | — | Not deployed |
+| Entry/Exit Router | — | Not deployed |
+| Fee Collector | — | Not deployed |
+| OTF protocol token | — | Not deployed |
+| External USDG | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) | External dependency |
+
+## Robinhood Chain Testnet
+
+**Chain ID:** `46630`  
+**Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/)  
+**Deployment timestamp:** `2026-08-31T01:37:15.058Z`
+
+### Protocol contracts
+
+| Contract | Address |
+| --- | --- |
+| OTF Factory | [`0x16555b009E42198D549e82cCe00Dd8edBA215007`](https://explorer.testnet.chain.robinhood.com/address/0x16555b009E42198D549e82cCe00Dd8edBA215007) |
+| Managed OTF Vault implementation | [`0xa3D2ceF7b38c420117C92455F05cB26366A9c6c2`](https://explorer.testnet.chain.robinhood.com/address/0xa3D2ceF7b38c420117C92455F05cB26366A9c6c2) |
+| Entry/Exit Router | [`0x8C682f51716308ECdeBA9d7cC3cF18baEE7a9662`](https://explorer.testnet.chain.robinhood.com/address/0x8C682f51716308ECdeBA9d7cC3cF18baEE7a9662) |
+| Fee Collector | [`0x4953FCed3e5a2bbdE314157EBB9Af4A230AD28fD`](https://explorer.testnet.chain.robinhood.com/address/0x4953FCed3e5a2bbdE314157EBB9Af4A230AD28fD) |
+| OTF protocol token | [`0x609289054188B682A711F6Fd0eF04A4E36E46361`](https://explorer.testnet.chain.robinhood.com/address/0x609289054188B682A711F6Fd0eF04A4E36E46361) |
+| Deployer | [`0xc340D7085E321B82CF550904310EE44bae9e4CD2`](https://explorer.testnet.chain.robinhood.com/address/0xc340D7085E321B82CF550904310EE44bae9e4CD2) |
+
+### External integration contracts
+
+| Contract | Address |
+| --- | --- |
+| USDG | [`0x7E955252E15c84f5768B83c41a71F9eba181802F`](https://explorer.testnet.chain.robinhood.com/address/0x7E955252E15c84f5768B83c41a71F9eba181802F) |
+| Wrapped ETH | [`0x33e4191705c386532ba27cBF171Db86919200B94`](https://explorer.testnet.chain.robinhood.com/address/0x33e4191705c386532ba27cBF171Db86919200B94) |
+| Uniswap V3 Factory | [`0x911b4000D3422F482F4062a913885f7b035382Df`](https://explorer.testnet.chain.robinhood.com/address/0x911b4000D3422F482F4062a913885f7b035382Df) |
+| SwapRouter02 | [`0x3Ce954107b1A675826B33bF23060Dd655e3758fE`](https://explorer.testnet.chain.robinhood.com/address/0x3Ce954107b1A675826B33bF23060Dd655e3758fE) |
+| Legacy V3 position manager | [`0x54A0EF7da351cb8fD1998E7945cc51E5825fB233`](https://explorer.testnet.chain.robinhood.com/address/0x54A0EF7da351cb8fD1998E7945cc51E5825fB233) |
+
+### Test-market tokens
+
+| Token | Address |
+| --- | --- |
+| TSLA | [`0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E`](https://explorer.testnet.chain.robinhood.com/address/0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E) |
+| AMZN | [`0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02`](https://explorer.testnet.chain.robinhood.com/address/0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02) |
+| PLTR | [`0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0`](https://explorer.testnet.chain.robinhood.com/address/0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0) |
+| NFLX | [`0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93`](https://explorer.testnet.chain.robinhood.com/address/0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93) |
+| AMD | [`0x71178BAc73cBeb415514eB542a8995b82669778d`](https://explorer.testnet.chain.robinhood.com/address/0x71178BAc73cBeb415514eB542a8995b82669778d) |
+
+Factory-created OTF share-token addresses are dynamic. The Funds directory reads them directly from
+the OTF Factory, so individual OTF addresses are not duplicated in this static deployment table.
