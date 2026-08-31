@@ -6,6 +6,19 @@ export const TOTAL_PERCENT_UNITS = 100n * PERCENT_SCALE;
 export const USD_DECIMALS = 18;
 export const FIXED_TARGET_USD_WAD = 10n ** BigInt(USD_DECIMALS);
 
+export function annualExpenseRatioBpsFromPercentage(value: string): number {
+  if (!/^\d+(?:\.\d{0,2})?$/u.test(value)) return Number.NaN;
+  const [whole, fraction = ""] = value.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+}
+
+export function formatAnnualExpenseRatioPercentage(bps: number): string {
+  if (!Number.isInteger(bps)) return "Invalid";
+  const whole = Math.floor(bps / 100);
+  const fraction = String(bps % 100).padStart(2, "0").replace(/0+$/u, "");
+  return `${whole}${fraction ? `.${fraction}` : ""}%`;
+}
+
 export type BasketCalculationAsset = {
   symbol: string;
   decimals: number;

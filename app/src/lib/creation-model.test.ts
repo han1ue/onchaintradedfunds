@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   TOTAL_PERCENT_UNITS,
+  annualExpenseRatioBpsFromPercentage,
   calculateBootstrapBasketUnits,
   creationAssetsFromApi,
+  formatAnnualExpenseRatioPercentage,
   formatPercentageDisplay,
   minimumPercentageUnitsForOneRaw,
   normalizeMarketCapPercentageUnits,
@@ -14,6 +16,17 @@ import {
   submitAndConfirmCreation,
   zeroRawUnitError,
 } from "./creation-model";
+
+describe("creator expense ratio percentage", () => {
+  it("converts percentage input to exact integer basis points", () => {
+    expect(annualExpenseRatioBpsFromPercentage("0")).toBe(0);
+    expect(annualExpenseRatioBpsFromPercentage("1.25")).toBe(125);
+    expect(annualExpenseRatioBpsFromPercentage("10")).toBe(1_000);
+    expect(annualExpenseRatioBpsFromPercentage("1.234")).toBeNaN();
+    expect(formatAnnualExpenseRatioPercentage(125)).toBe("1.25%");
+    expect(formatAnnualExpenseRatioPercentage(1_000)).toBe("10%");
+  });
+});
 
 function pct(value: string): bigint {
   const units = percentageUnits(value);
