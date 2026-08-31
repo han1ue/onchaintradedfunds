@@ -102,9 +102,7 @@ contract OTFFactory {
         uint256 fundThesisBytes = bytes(params.fundThesis).length;
         if (fundThesisBytes == 0) revert FundThesisRequired();
         if (fundThesisBytes > ProtocolConstants.MAX_FUND_THESIS_BYTES) {
-            revert FundThesisTooLong(
-                fundThesisBytes, ProtocolConstants.MAX_FUND_THESIS_BYTES
-            );
+            revert FundThesisTooLong(fundThesisBytes, ProtocolConstants.MAX_FUND_THESIS_BYTES);
         }
         if (
             params.annualCreatorExpenseRatioBps
