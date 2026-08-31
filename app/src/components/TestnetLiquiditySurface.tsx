@@ -6,6 +6,7 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   CheckCircle,
+  ChevronDown,
   Droplets,
   ExternalLink,
   LoaderCircle,
@@ -342,10 +343,13 @@ export function TestnetLiquiditySurface() {
           <div className="liquidityPanelHeading"><Droplets size={17} /><div><strong>Market</strong><span>Select the test pool your position will use.</span></div></div>
           <label className="liquidityField">
             <span>Pool</span>
-            <select value={marketChoice} onChange={(event) => setMarketChoice(event.target.value)}>
-              {markets.map((market) => <option key={market.token} value={market.token}>{market.symbol}/USDG · {(market.fee / 10_000).toFixed(2)}%</option>)}
-              <option value="otf">OTF/USDG · {(liquidityConfig.otfFee / 10_000).toFixed(2)}%</option>
-            </select>
+            <div className="selectControl">
+              <select value={marketChoice} onChange={(event) => setMarketChoice(event.target.value)} aria-label="Liquidity pool">
+                {markets.map((market) => <option key={market.token} value={market.token}>{market.symbol}/USDG · {(market.fee / 10_000).toFixed(2)}%</option>)}
+                <option value="otf">OTF/USDG · {(liquidityConfig.otfFee / 10_000).toFixed(2)}%</option>
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </div>
           </label>
           {isOtfMarket ? (
             <label className="liquidityField">

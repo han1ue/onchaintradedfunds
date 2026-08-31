@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   ArrowDown,
   ArrowUpRight,
+  ArrowRight,
   Check,
   CheckCircle,
   ChevronDown,
@@ -24,6 +25,7 @@ import {
   Monitor,
   Network,
   Palette,
+  ReceiptText,
   Search,
   Settings,
   ShieldCheck,
@@ -36,9 +38,9 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { encodeFunctionData, getAddress, isAddress, zeroAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
-import { managedOtfVaultAbi, otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
+import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
@@ -69,6 +71,7 @@ import {
 } from "@/lib/swap-model";
 import { navigationItemForPath } from "@/lib/operate-navigation";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
+import { formatAnnualExpenseRatioPercentage } from "@/lib/creation-model";
 import {
   formatMarketCapMultiplier,
   formatMarketCapSnapshotTimestamp,
@@ -159,6 +162,39 @@ function sameAsset(left: SwapAsset | undefined, right: SwapAsset | undefined): b
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+type FactoryVaultSummary = {
+  address: Address;
+  name: string;
+  symbol: string;
+  assetCount: number;
+  annualCreatorExpenseRatioBps: number;
+  creator: Address;
+};
+
+async function readVaultSummary(publicClient: PublicClient, address: Address): Promise<FactoryVaultSummary> {
+  const [name, symbol, assets, annualCreatorExpenseRatioBps, creator] = await Promise.all([
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "name" }),
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "symbol" }),
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "assets" }),
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "annualCreatorExpenseRatioBps" }),
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "creator" }),
+  ]);
+  return {
+    address,
+    name,
+    symbol,
+    assetCount: assets.length,
+    annualCreatorExpenseRatioBps,
+    creator,
+  };
+}
+
+function transactionHashFromLocation(): Hex | undefined {
+  if (typeof window === "undefined") return undefined;
+  const value = new URLSearchParams(window.location.search).get("tx");
+  return value && /^0x[0-9a-f]{64}$/iu.test(value) ? value as Hex : undefined;
 }
 
 function symbolMonogram(symbol: string): string {
@@ -882,7 +918,7 @@ function SwapSurface() {
               <button type="button" className={`swapIconButton ${swapSettingsOpen ? "active" : ""}`} title="Swap settings" aria-label="Open swap settings" aria-haspopup="dialog" aria-expanded={swapSettingsOpen} onClick={() => setSwapSettingsOpen((open) => !open)}><SlidersHorizontal size={16} /></button>
               {swapSettingsOpen ? (
                 <div className="swapSettingsPopover" role="dialog" aria-label="Swap settings">
-                  <label><span>Maximum slippage</span><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))}><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select></label>
+                  <label><span>Maximum slippage</span><div className="selectControl swapSlippageSelect"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} aria-label="Maximum slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={14} aria-hidden="true" /></div></label>
                   <small>The quote&apos;s minimum received amount reflects this tolerance.</small>
                 </div>
               ) : null}
@@ -942,12 +978,127 @@ function CreateSurface() {
   );
 }
 
+function CreatedFundSurface() {
+  const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
+  const address = addressFromLocation();
+  const transactionHash = transactionHashFromLocation();
+  const [confirmation, setConfirmation] = useState<"checking" | "confirmed" | "failure">("checking");
+  const [details, setDetails] = useState<FactoryVaultSummary>();
+  const [copied, setCopied] = useState(false);
+  const [redirectSeconds, setRedirectSeconds] = useState(5);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!address || !transactionHash || chainId !== robinhoodChainTestnet.id || !publicClient) {
+      setConfirmation("failure");
+      return;
+    }
+    void publicClient.getTransactionReceipt({ hash: transactionHash }).then(async (receipt) => {
+      const createdEvent = receipt.status === "success"
+        ? parseEventLogs({ abi: otfFactoryAbi, eventName: "VaultCreated", logs: receipt.logs, strict: true })
+          .find((event) => event.args.vault.toLowerCase() === address.toLowerCase())
+        : undefined;
+      if (cancelled) return;
+      if (!createdEvent) {
+        setConfirmation("failure");
+        return;
+      }
+      setConfirmation("confirmed");
+      try {
+        const nextDetails = await readVaultSummary(publicClient, address);
+        if (!cancelled) setDetails(nextDetails);
+      } catch {
+        // The confirmed address and transaction remain authoritative if detail reads are temporarily unavailable.
+      }
+    }).catch(() => {
+      if (!cancelled) setConfirmation("failure");
+    });
+    return () => { cancelled = true; };
+  }, [address, chainId, publicClient, transactionHash]);
+
+  useEffect(() => {
+    if (confirmation !== "confirmed" || !address) return;
+    const destination = `/funds/${address}`;
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setRedirectSeconds(Math.max(1, Math.ceil((5_000 - (Date.now() - startedAt)) / 1_000)));
+    }, 250);
+    const timeout = window.setTimeout(() => window.location.replace(destination), 5_000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [address, confirmation]);
+
+  async function copyAddress() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_600);
+  }
+
+  const destination = address ? `/funds/${address}` : "/funds";
+  return (
+    <DashboardPage className="fundsPage">
+      <div className="appView">
+        <AppPageHeader
+          title={confirmation === "confirmed" ? "OTF created" : confirmation === "failure" ? "Confirmation unavailable" : "Confirming OTF creation"}
+          description={confirmation === "confirmed" ? "The creation transaction is confirmed on Robinhood Testnet." : confirmation === "failure" ? "The transaction and created address could not be verified from this URL." : "Checking the creation transaction and deployed OTF address."}
+          icon={confirmation === "confirmed" ? <CheckCircle size={18} /> : confirmation === "failure" ? <XCircle size={18} /> : <LoaderCircle className="createAssetSpinner" size={18} />}
+        />
+        <section className="createdConfirmation" aria-labelledby="created-otf-title">
+          <div className="createdStatus">
+            <span className={`createdStatusIcon ${confirmation === "failure" ? "failure" : ""}`}>{confirmation === "confirmed" ? <Check size={24} /> : confirmation === "failure" ? <X size={22} /> : <LoaderCircle className="createAssetSpinner" size={22} />}</span>
+            <div>
+              <h2 id="created-otf-title">{confirmation === "confirmed" ? details?.name ?? "Deployment confirmed" : confirmation === "failure" ? "Unable to verify creation" : "Verifying onchain confirmation"}</h2>
+              <p>{confirmation === "confirmed" ? `${details?.symbol ?? "The new OTF"} is live. Redirecting to its fund page in ${redirectSeconds} second${redirectSeconds === 1 ? "" : "s"}.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "This page will redirect only after the factory creation event is verified."}</p>
+            </div>
+          </div>
+          {address ? (
+            <div className="createdAddressBlock">
+              <div><span>OTF contract address</span><code>{address}</code></div>
+              <div className="createdAddressActions">
+                <button className="iconOnly" type="button" onClick={() => void copyAddress()} title="Copy OTF address" aria-label="Copy OTF address">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+                <a className="iconOnly" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open OTF in explorer" aria-label="Open OTF in explorer"><ExternalLink size={15} /></a>
+              </div>
+            </div>
+          ) : null}
+          {copied ? <span className="createdCopyFeedback" role="status" aria-live="polite">Address copied</span> : null}
+          <div className="createdDetails" aria-label="Created OTF details">
+            <div><span>Symbol</span><strong>{details?.symbol ?? "—"}</strong></div>
+            <div><span>Network</span><strong>Robinhood Testnet</strong></div>
+            <div><span>Assets</span><strong>{details?.assetCount ?? "—"}</strong></div>
+            <div><span>Creator</span><strong>{details ? shortAddress(details.creator) : "—"}</strong></div>
+            <div><span>Creator fee</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.annualCreatorExpenseRatioBps) : "—"}</strong></div>
+          </div>
+          {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View creation transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
+          <div className="createdActions">
+            <Link className="secondaryAction" href="/create"><FilePlus2 size={14} />Create another</Link>
+            {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF now</Link> : <Link className="primaryAction" href="/funds"><ArrowLeft size={14} />Back to Funds</Link>}
+          </div>
+        </section>
+      </div>
+    </DashboardPage>
+  );
+}
+
+function FundRouteSurface() {
+  const pathname = usePathname();
+  return pathname.endsWith("/created") ? <CreatedFundSurface /> : <FundsSurface detail />;
+}
+
 function FundsSurface({ detail }: { detail: boolean }) {
   const routeAddress = addressFromLocation();
   const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
   const testnet = chainId === robinhoodChainTestnet.id;
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [directoryState, setDirectoryState] = useState<"loading" | "ready" | "failure">("loading");
+  const [vaults, setVaults] = useState<FactoryVaultSummary[]>([]);
+  const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   useEffect(() => {
     if (!detail || !routeAddress) {
@@ -956,6 +1107,58 @@ function FundsSurface({ detail }: { detail: boolean }) {
     }
     setCreationMetadata(loadCreationMetadata(window.localStorage, chainId, routeAddress) ?? null);
   }, [chainId, detail, routeAddress]);
+  useEffect(() => {
+    let cancelled = false;
+    const factory = robinhoodTestnetAddresses.factory;
+    if (!directoryDeploymentReady || !publicClient || !factory) {
+      setDirectoryState("failure");
+      setVaults([]);
+      setVaultDetails(undefined);
+      return;
+    }
+    setDirectoryState("loading");
+    if (detail) {
+      if (!routeAddress) {
+        setDirectoryState("failure");
+        setVaultDetails(undefined);
+        return;
+      }
+      void readVaultSummary(publicClient, routeAddress).then((value) => {
+        if (!cancelled) {
+          setVaultDetails(value);
+          setDirectoryState("ready");
+        }
+      }).catch(() => {
+        if (!cancelled) {
+          setVaultDetails(undefined);
+          setDirectoryState("failure");
+        }
+      });
+      return () => { cancelled = true; };
+    }
+    void publicClient.readContract({ address: factory, abi: otfFactoryAbi, functionName: "vaultCount" }).then(async (count) => {
+      if (count > 500n) throw new Error("Factory directory exceeds the supported testnet page size.");
+      const addresses = await Promise.all(Array.from({ length: Number(count) }, (_, index) => (
+        publicClient.readContract({ address: factory, abi: otfFactoryAbi, functionName: "vaultAt", args: [BigInt(index)] })
+      )));
+      return Promise.all(addresses.reverse().map((vaultAddress) => readVaultSummary(publicClient, vaultAddress)));
+    }).then((values) => {
+      if (!cancelled) {
+        setVaults(values);
+        setDirectoryState("ready");
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setVaults([]);
+        setDirectoryState("failure");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [detail, directoryDeploymentReady, publicClient, routeAddress]);
+  const normalizedSearch = directorySearch.trim().toLowerCase();
+  const filteredVaults = normalizedSearch
+    ? vaults.filter((vault) => `${vault.name} ${vault.symbol} ${vault.address}`.toLowerCase().includes(normalizedSearch))
+    : vaults;
   if (detail) {
     const methodologyLabel = creationMetadata
       ? weightingMethodLabel(creationMetadata.weightingMethod)
@@ -964,10 +1167,10 @@ function FundsSurface({ detail }: { detail: boolean }) {
       <DashboardPage className="fundsPage">
         <div className="appView fundsView">
           <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
-          <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and creation history for this address-routed fund." icon={<LayoutGrid size={18} />} actions={<span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>} />
+          <AppPageHeader title={vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")} description={vaultDetails ? `${vaultDetails.symbol} · ${vaultDetails.assetCount} constituent${vaultDetails.assetCount === 1 ? "" : "s"} · created by ${shortAddress(vaultDetails.creator)}` : "Loading identity directly from the OTF contract."} icon={<LayoutGrid size={18} />} actions={<span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>} />
           <section className="sectionCard detailIdentityCard">
-            <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>Onchain reads are not configured for the redesigned deployment.</p></div><span className="stateBadge muted">Unavailable</span></div>
-            <dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>History</dt><dd>No activity is substituted while the typed history reader is unavailable.</dd></div><div><dt>Metadata</dt><dd>Name and symbol must resolve onchain before an identity result is shown.</dd></div></dl>
+            <div className="directoryPanelHeading"><div><h2>Fund details</h2><p>{directoryState === "failure" ? "The OTF contract details could not be read from the configured testnet RPC." : "Identity and immutable creation settings read directly from the OTF contract."}</p></div><span className={`stateBadge ${directoryState === "ready" ? "success" : directoryState === "failure" ? "danger" : "muted"}`}>{directoryState === "ready" ? "Onchain" : directoryState === "failure" ? "Unavailable" : "Loading"}</span></div>
+            <dl><div><dt>Fund address</dt><dd>{routeAddress ?? "No valid fund address appears in this route."}</dd></div><div><dt>Symbol</dt><dd>{vaultDetails?.symbol ?? "—"}</dd></div><div><dt>Creator</dt><dd>{vaultDetails?.creator ?? "—"}</dd></div><div><dt>Constituents</dt><dd>{vaultDetails?.assetCount ?? "—"}</dd></div><div><dt>Creator fee</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</dd></div></dl>
           </section>
           <section className="sectionCard creationAllocationPanel">
             <div className="directoryPanelHeading">
@@ -996,7 +1199,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     <DashboardPage className="fundsPage">
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in 0 OTFs</span></div>
+          <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span></div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (
@@ -1006,16 +1209,21 @@ function FundsSurface({ detail }: { detail: boolean }) {
             {!directoryDeploymentReady ? <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The testnet deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div> : null}
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
-                <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name or symbol" disabled /></label>
+                <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name, symbol, or address" value={directorySearch} onChange={(event) => setDirectorySearch(event.target.value)} disabled={directoryState !== "ready" || !vaults.length} /></label>
                 <div className="directoryViewToggle" role="group" aria-label="OTF directory view">
                   <button className={directoryView === "rows" ? "active" : ""} type="button" aria-label="Show OTFs as rows" aria-pressed={directoryView === "rows"} onClick={() => setDirectoryView("rows")}><List size={15} /></button>
                   <button className={directoryView === "cards" ? "active" : ""} type="button" aria-label="Show OTFs as cards" aria-pressed={directoryView === "cards"} onClick={() => setDirectoryView("cards")}><LayoutGrid size={15} /></button>
                 </div>
               </div>
-              <div className={directoryView === "cards" ? "directoryCardsWrap" : "directoryTableWrap"}>
-                <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>NAV</th><th>Assets</th><th>Manager fee</th><th>Manager</th></tr></thead><tbody /></table>
-                <div className="emptyDirectory"><Search size={18} /><strong>No testnet OTFs yet</strong><span>New OTFs will appear here automatically.</span></div>
-              </div>
+              {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
+                <div className="directoryTableWrap">
+                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>NAV</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => <tr key={vault.address}><td><Link className="directoryFundLink" href={`/funds/${vault.address}`}><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></Link></td><td data-label="NAV">—</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>)}</tbody></table>
+                </div>
+              ) : (
+                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
+              ) : (
+                <div className="emptyDirectory">{directoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <Search size={18} />}<strong>{directoryState === "loading" ? "Loading testnet OTFs" : directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their creation transaction is confirmed."}</span></div>
+              )}
             </section>
           </>
         )}
@@ -1101,7 +1309,7 @@ function OperateRouter({ initialView }: { initialView: OperateView }) {
   if (initialView === "liquidity") return <LiquiditySurface />;
   if (initialView === "create") return <CreateSurface />;
   if (initialView === "vaults") return <FundsSurface detail={false} />;
-  if (initialView === "detail") return <FundsSurface detail />;
+  if (initialView === "detail") return <FundRouteSurface />;
   if (initialView === "verified") return <VerifiedSurface />;
   if (initialView === "wallet") return <WalletSurface />;
   return <SwapSurface />;

@@ -1208,6 +1208,26 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .directoryTable th:first-child,
 .directoryTable td:first-child { padding-left: 14px; text-align: left; }
 .directoryTable tbody tr:last-child td { border-bottom: 0; }
+.directoryFundLink { display: inline-flex; min-width: 0; align-items: center; gap: 9px; color: var(--text); text-decoration: none; }
+.directoryFundLink:hover strong { color: var(--accent-text); }
+.directoryFundLink > span,
+.directoryFundLink strong,
+.directoryFundLink small { display: block; min-width: 0; }
+.directoryFundLink strong { overflow: hidden; max-width: 360px; text-overflow: ellipsis; white-space: nowrap; }
+.directoryFundLink small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
+.directoryFundCards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; padding: 12px; }
+.directoryFundCard { display: grid; min-width: 0; gap: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--text); padding: 14px; text-decoration: none; }
+.directoryFundCard:hover { border-color: var(--border-strong); background: var(--surface); }
+.directoryFundCard > div:first-child { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.directoryFundCard > div:first-child > span,
+.directoryFundCard > div:first-child strong,
+.directoryFundCard > div:first-child small { display: block; min-width: 0; }
+.directoryFundCard > div:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directoryFundCard > div:first-child small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
+.directoryFundCard dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.directoryFundCard dl > div { min-width: 0; border-top: 1px solid var(--border); padding-top: 9px; }
+.directoryFundCard dt { color: var(--text-muted); font-size: 0.58rem; text-transform: uppercase; }
+.directoryFundCard dd { overflow: hidden; margin: 5px 0 0; color: var(--text-soft); font-size: 0.68rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .assetLogoFallback { display: grid; width: 32px; height: 32px; box-sizing: border-box; flex: 0 0 auto; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 28%); border-radius: 7px; background: rgb(var(--accent-rgb) / 8%); color: var(--accent-text); font-size: 0.58rem; font-weight: 700; }
 .rwaAssetIdentity { display: flex; align-items: center; gap: 9px; }
 .rwaAssetIdentity strong,
@@ -1397,7 +1417,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .reviewHero h2 { margin: 0; font-size: 0.94rem; }
 .reviewHero > div > span { display: block; margin-top: 5px; color: var(--text-muted); font-size: 0.67rem; }
 .vaultMonogram { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: rgb(var(--accent-rgb) / 11%); color: var(--accent-text); font-size: 0.65rem; font-weight: 700; }
-.reviewGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.reviewGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .reviewGrid > div { border: 1px solid var(--border); border-radius: 5px; background: var(--background); padding: 10px; }
 .reviewGrid > .reviewKeyMetric { border-color: rgb(var(--accent-rgb) / 34%); background: rgb(var(--accent-rgb) / 7%); }
 .reviewGrid span,
@@ -1467,7 +1487,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .basketRealizedLedger { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text-muted); padding: 10px 0; font-size: 0.65rem; }
 .basketRealizedLedger strong { color: var(--text-soft); font-variant-numeric: tabular-nums; }
 .reviewBasketTableWrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent; scrollbar-width: thin; }
-.reviewBasketTable { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.66rem; }
+.reviewBasketTable { width: 100%; border-collapse: collapse; font-size: 0.66rem; }
+.reviewBasketTable th:last-child,
+.reviewBasketTable td:last-child { width: 160px; text-align: right; }
 .reviewBasketTable th { background: var(--background); color: var(--text-muted); padding: 9px 10px; font-size: 0.58rem; font-weight: 650; text-align: left; text-transform: uppercase; white-space: nowrap; }
 .reviewBasketTable td { border-top: 1px solid var(--border); color: var(--text-soft); padding: 10px; font-variant-numeric: tabular-nums; vertical-align: top; }
 .reviewBasketTable td strong,
@@ -1477,6 +1499,32 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .bootstrapCommitNote svg { flex: 0 0 auto; color: var(--accent-text); }
 .bootstrapCommitNote strong { color: var(--text); font-size: 0.7rem; }
 .bootstrapCommitNote p { max-width: 72ch; margin: 4px 0 0; color: var(--text-soft); font-size: 0.67rem; line-height: 1.5; }
+.createdConfirmation { display: grid; width: min(900px, 100%); margin: 0 auto; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.createdStatus { display: flex; align-items: center; gap: 14px; padding: 24px; }
+.createdStatusIcon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border: 1px solid rgb(46 208 154 / 34%); border-radius: 8px; background: rgb(46 208 154 / 9%); color: var(--green); }
+.createdStatusIcon.failure { border-color: rgb(235 101 112 / 34%); background: rgb(235 101 112 / 9%); color: var(--danger); }
+.createdStatus > div { min-width: 0; }
+.createdStatus h2 { margin: 0; overflow-wrap: anywhere; font-size: 1.15rem; }
+.createdStatus p { margin: 6px 0 0; color: var(--text-muted); font-size: 0.76rem; line-height: 1.5; }
+.createdAddressBlock { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--background); padding: 15px 24px; }
+.createdAddressBlock > div:first-child { min-width: 0; }
+.createdAddressBlock span,
+.createdAddressBlock code { display: block; }
+.createdAddressBlock span { color: var(--text-muted); font-size: 0.62rem; font-weight: 600; text-transform: uppercase; }
+.createdAddressBlock code { margin-top: 7px; overflow-wrap: anywhere; color: var(--text); font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 0.75rem; }
+.createdAddressActions { display: flex; flex: 0 0 auto; gap: 7px; }
+.createdAddressActions a { text-decoration: none; }
+.createdCopyFeedback { margin: -1px 24px 0; color: var(--green); font-size: 0.65rem; }
+.createdDetails { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 8px 24px; }
+.createdDetails > div { min-width: 0; border-bottom: 1px solid var(--border); padding: 14px 10px; }
+.createdDetails span,
+.createdDetails strong { display: block; }
+.createdDetails span { color: var(--text-muted); font-size: 0.61rem; text-transform: uppercase; }
+.createdDetails strong { margin-top: 6px; overflow: hidden; color: var(--text); font-size: 0.75rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.createdTransactionLink { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; margin: 8px 24px 0; color: var(--text-soft); padding: 10px; font-size: 0.7rem; text-decoration: none; }
+.createdTransactionLink:hover { color: var(--accent-text); }
+.createdTransactionLink code { color: var(--text-muted); font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 0.65rem; }
+.createdActions { display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--border); margin-top: 14px; padding: 16px 24px; }
 .validationSummary.danger { border-color: rgb(235 101 112 / 35%); background: rgb(235 101 112 / 6%); color: var(--danger); }
 .validationSummary a { display: inline-flex; margin-top: 6px; color: var(--utility-action); font-size: 0.65rem; text-underline-offset: 3px; }
 .createAssetDialogBackdrop { z-index: 140; }
@@ -1778,6 +1826,60 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .liquiditySlippage input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); padding: 0; font-size: 0.7rem; text-align: right; }
 .liquiditySlippage > div > span { color: var(--text-muted); font-size: 0.65rem; }
 
+.selectControl {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card-raised);
+  transition: border-color 150ms ease-out, background 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.selectControl:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.selectControl:focus-within {
+  border-color: rgb(var(--accent-rgb) / 62%);
+  background: var(--card-raised);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 10%);
+}
+
+.selectControl > select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0 34px 0 11px;
+  font-size: 0.72rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.selectControl > select:disabled { color: var(--text-muted); cursor: not-allowed; opacity: 0.72; }
+.selectControl > select:disabled + svg { opacity: 0.48; }
+.selectControl > select option { background: var(--card); color: var(--text); }
+.selectControl > svg {
+  position: absolute;
+  right: 11px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  pointer-events: none;
+  transition: color 150ms ease-out, transform 150ms ease-out;
+}
+.selectControl:hover > svg,
+.selectControl:focus-within > svg { color: var(--accent-text); transform: translateY(1px); }
+.swapSlippageSelect { width: 104px; flex: 0 0 auto; }
+.swapSlippageSelect > select { min-height: 34px; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+
 .liquidityTxStatus { display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--text-muted); padding: 10px 11px; }
 .liquidityTxStatus > svg { flex: 0 0 auto; margin-top: 1px; }
 .liquidityTxStatus strong,
@@ -1981,6 +2083,12 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .directoryPanel .directoryTableWrap { overflow: visible; }
   .directoryPanel .directoryTable { display: block; min-width: 0; }
   .directoryPanel .directoryTable thead { display: none; }
+  .directoryPanel .directoryTable tbody { display: grid; }
+  .directoryPanel .directoryTable tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; border-bottom: 1px solid var(--border); padding: 13px 14px; }
+  .directoryPanel .directoryTable td { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; width: auto; border: 0; padding: 0; text-align: right; white-space: normal; }
+  .directoryPanel .directoryTable td[data-label]::before { flex: 0 0 auto; color: var(--text-muted); content: attr(data-label); font-size: 0.65rem; font-weight: 600; }
+  .directoryPanel .directoryTable td:first-child { grid-column: 1 / -1; }
+  .createdDetails { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .walletAssets .directoryTableWrap { overflow: visible; }
   .walletAssets .directoryTable { display: block; min-width: 0; }
   .walletAssets .directoryTable thead { display: none; }
@@ -2020,12 +2128,22 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .headerWalletButton svg { display: none; }
   .directoryMetrics,
   .walletMetrics { grid-template-columns: 1fr; }
+  .directoryFundCard dl { grid-template-columns: 1fr; }
   .directoryPanelHeading { align-items: flex-start; flex-direction: column; }
   .detailIdentityCard dl { grid-template-columns: 1fr; gap: 14px; }
   .creationAllocationTable tr { grid-template-columns: 1fr; }
   .creationAllocationTable td:first-child { grid-column: 1; }
   .createFormActions { align-items: stretch; flex-direction: column; }
   .createFormActions button { width: 100%; min-height: 44px; }
+  .createdStatus { align-items: flex-start; padding: 18px; }
+  .createdAddressBlock { align-items: flex-start; flex-direction: column; padding: 14px 18px; }
+  .createdAddressActions { width: 100%; justify-content: flex-end; }
+  .createdCopyFeedback { margin-right: 18px; margin-left: 18px; }
+  .createdDetails { grid-template-columns: 1fr; padding-right: 18px; padding-left: 18px; }
+  .createdTransactionLink { grid-template-columns: auto minmax(0, 1fr) auto; margin-right: 18px; margin-left: 18px; }
+  .createdTransactionLink code { display: none; }
+  .createdActions { align-items: stretch; flex-direction: column; padding-right: 18px; padding-left: 18px; }
+  .createdActions a { width: 100%; min-height: 44px; }
   .constituentsActions { align-items: stretch; flex-direction: column; }
   .constituentsActions > * { width: 100%; min-height: 44px; justify-content: center; }
   .allocationChartPanel { grid-template-columns: 1fr; justify-items: center; }
@@ -2046,6 +2164,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .formSection input,
   .formSection select,
   .basketAllocationRow > .removeCreateAsset { min-height: 44px; }
+  .selectControl > select { min-height: 44px; font-size: 1rem; }
   .basketAllocationRow > .removeCreateAsset { width: 44px; height: 44px; }
   .basketAssetIdentity,
   .basketSourceData,

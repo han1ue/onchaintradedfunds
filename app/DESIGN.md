@@ -185,10 +185,11 @@ The navigation surface floats away from the viewport edges with rounded ends, a 
 - **Do** make market-cap weighting an explicit selected mode: automatically renormalize on constituent changes while selected, switch to manual mode on any weight edit, add new manual constituents at 0%, and leave remaining manual weights untouched when a constituent is removed.
 - **Do** label exact default weights `Market-cap weighted` and any exact-unit tilt `Modified market-cap weighted`; show neutral fixed-point multipliers as unchanged, overweight, or underweight.
 - **Do** describe creation methodology as informational initialization metadata, never an ongoing onchain rebalance, and show `Weighting method unavailable` rather than infer it from balances.
-- **Do** show current price, market cap, minimum viable percentage, final token quantity, raw units, and realized percentage before submitting the immutable bootstrap basket.
+- **Do** show current price, market cap, minimum viable percentage, and final token quantity while composing the basket; keep Review focused on the final initial percentage for each constituent.
 - **Do** describe the fixed `$1` target as an initial basket value based on current offchain prices, never as a peg or guaranteed market price.
 - **Do** distinguish offchain prices, market caps, percentages, and the fixed `$1` target from the small onchain creation payload.
 - **Do** render creation confirmation from the captured submitted payload, keeping navigation and resubmission locked while pending, successful, or receipt status is unknown; only a pre-broadcast failure or explicit onchain revert unlocks retry.
+- **Do** open a dedicated confirmation route only after verifying the successful factory event, show the transaction and new OTF address, and redirect to the live fund page after five seconds.
 - **Do** keep route, fee, gas, and price-impact information separate.
 - **Do** leave production liquidity in its official venue with a leaving-app disclosure; keep the internal liquidity utility visibly testnet-only and USDG-only.
 - **Do** keep the splash to the product name, the fixed tagline, and one entry action within the first viewport below the warning.

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle,
+  ChevronDown,
   CircleAlert,
   FilePlus2,
   LoaderCircle,
@@ -43,7 +44,6 @@ import {
 } from "@/lib/creation-model";
 import {
   buildCreationMetadataDraft,
-  formatMarketCapMultiplier,
   formatMarketCapSnapshotTimestamp,
   persistCreationMetadata,
   weightingMethodLabel,
@@ -72,7 +72,7 @@ const steps = [
   { label: "Identity", description: "Name and application metadata" },
   { label: "Constituents", description: "Choose assets and weights" },
   { label: "Economics", description: "Fee and beneficiary" },
-  { label: "Review", description: "Raw immutable bootstrap units" },
+  { label: "Review", description: "Confirm OTF details" },
 ] as const;
 
 function shortAddress(address: string) {
@@ -375,7 +375,7 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
       creationMetadata,
     });
     setSubmission("submitting");
-    setSubmissionMessage("Confirm the empty OTF creation transaction in your wallet.");
+    setSubmissionMessage("Confirm the OTF creation transaction in your wallet.");
     setTransactionHash(undefined);
     let confirmedVaultAddress: Address | undefined;
     const outcome = await submitAndConfirmCreation({
@@ -428,10 +428,11 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
       setCreatedVaultAddress(confirmedVaultAddress);
       try {
         persistCreationMetadata(window.localStorage, chainId, confirmedVaultAddress, creationMetadata);
-        setSubmissionMessage("OTF created empty. Its informational creation methodology is stored in this browser.");
+        setSubmissionMessage("OTF created. Opening its confirmation page.");
       } catch {
-        setSubmissionMessage("OTF created, but its informational creation methodology could not be stored in this browser.");
+        setSubmissionMessage("OTF created. Its informational methodology could not be stored in this browser.");
       }
+      window.location.assign(`/funds/${confirmedVaultAddress}/created?tx=${outcome.hash}`);
       return;
     }
     if (outcome.status === "failure") {
@@ -520,10 +521,13 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
                     <div className="constituentWeightRow" key={asset.address}>
                       <label className="assetSelectField">
                         <span>Asset</span>
-                        <select value={asset.address} onChange={(event) => replaceAsset(asset.address, event.target.value)} aria-label={`Constituent ${index + 1} asset`}>
-                          <option value={asset.address}>{asset.symbol} — {asset.name}</option>
-                          {remainingAssets.map((candidate) => <option key={candidate.address} value={candidate.address}>{candidate.symbol} — {candidate.name}</option>)}
-                        </select>
+                        <div className="selectControl">
+                          <select value={asset.address} onChange={(event) => replaceAsset(asset.address, event.target.value)} aria-label={`Constituent ${index + 1} asset`}>
+                            <option value={asset.address}>{asset.symbol} — {asset.name}</option>
+                            {remainingAssets.map((candidate) => <option key={candidate.address} value={candidate.address}>{candidate.symbol} — {candidate.name}</option>)}
+                          </select>
+                          <ChevronDown size={14} aria-hidden="true" />
+                        </div>
                         <small>{shortAddress(asset.address)}{asset.verified ? " · Verified asset" : ""}</small>
                       </label>
                       <label className="constituentWeightField">
@@ -563,18 +567,16 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
             <div className="formSection reviewSection">
               <div className="reviewHero"><span className="vaultMonogram">NEW</span><div><h2>{reviewSnapshot.name || "Unnamed OTF"}</h2><span>{reviewSnapshot.symbol || "No ticker"} · created empty by {reviewSnapshot.creator ? shortAddress(reviewSnapshot.creator) : "the connected wallet"}</span></div></div>
               <div className="reviewGrid">
-                <div className="reviewKeyMetric"><span>Initial basket target</span><strong>$1.00 per OTF</strong></div>
-                <div><span>Rounded basket value</span><strong>{reviewSnapshot.calculation ? `$${reviewSnapshot.calculation.realizedValueUsd}` : "Invalid basket"}</strong></div>
                 <div><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.annualExpenseRatioBps)}</strong></div>
                 <div><span>Weighting method</span><strong>{reviewSnapshot.creationMetadata ? weightingMethodLabel(reviewSnapshot.creationMetadata.weightingMethod) : "Weighting method unavailable"}</strong></div>
               </div>
               <div className="reviewBasketTableWrap">
                 <table className="reviewBasketTable">
-                  <thead><tr><th>Constituent</th><th>Market-cap %</th><th>Selected %</th><th>Multiplier</th><th>Realized %</th><th>Raw unit committed</th></tr></thead>
-                  <tbody>{reviewSnapshot.selectedAssets.map((asset, index) => { const metadataRow = reviewSnapshot.creationMetadata?.constituents[index]; return <tr key={asset.address}><td><strong>{asset.symbol}</strong><small>{shortAddress(asset.address)}</small></td><td>{metadataRow ? formatPercentageDisplay(BigInt(metadataRow.marketCapDefaultPercentageUnits)) : "—"}</td><td title={`${formatPercentageExact(asset.percentageUnits)}%`}>{formatPercentageDisplay(asset.percentageUnits)}</td><td>{metadataRow ? formatMarketCapMultiplier(BigInt(metadataRow.multiplierUnits)) : "—"}</td><td>{reviewSnapshot.calculation?.rows[index]?.realizedPercentage ?? "—"}</td><td className="monoValue">{reviewSnapshot.calculation?.rows[index]?.rawQuantity.toString() ?? "—"}</td></tr>; })}</tbody>
+                  <thead><tr><th>Constituent</th><th>Percentage</th></tr></thead>
+                  <tbody>{reviewSnapshot.selectedAssets.map((asset) => <tr key={asset.address}><td><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></td><td title={`${formatPercentageExact(asset.percentageUnits)}%`}>{formatPercentageDisplay(asset.percentageUnits)}</td></tr>)}</tbody>
                 </table>
               </div>
-              <aside className="bootstrapCommitNote"><CheckCircle size={16} /><div><strong>Onchain payload is deliberately small</strong><p>The transaction commits the ordered constituent addresses and raw bootstrap units above, plus identity and fee settings. Prices, market caps, precise percentages, the $1 target and rationale stay in the application.</p></div></aside>
+              <aside className="bootstrapCommitNote"><CheckCircle size={16} /><div><strong>Ready to create</strong><p>The transaction creates the OTF with these constituents, initial percentages, identity, and fee settings.</p></div></aside>
               <p className="createBlocked">No constituent tokens are transferred during creation. With zero supply, the first depositor must mint at least 0.01 OTF, with no maximum, by supplying the bootstrap basket ceiling-scaled against one full OTF.</p>
               {!deploymentReady && !creationLocked ? <div className="validationSummary"><CircleAlert size={15} /><div><strong>Creation deployment unavailable</strong><span>The factory is not configured on this network. Review remains available, but submission is disabled.</span></div></div> : null}
               {submissionMessage ? <div className={`validationSummary ${submission === "success" ? "success" : submission === "failure" ? "danger" : ""}`} role="status" aria-live="polite">{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={15} /> : submission === "success" ? <CheckCircle size={15} /> : <CircleAlert size={15} />}<div><strong>{submission === "success" ? "Creation confirmed" : submission === "failure" ? "Creation failed" : submission === "unknown" ? "Confirmation unavailable" : "Creation pending"}</strong><span>{submissionMessage}</span>{transactionHash ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer">View transaction</a> : null}{createdVaultAddress ? <a href={`/funds/${createdVaultAddress}`}>View fund details</a> : null}</div></div> : null}
@@ -583,7 +585,7 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
 
           <div className="createFormActions">
             <button className="secondaryAction" type="button" disabled={creationLocked} onClick={() => step === 0 ? window.location.assign(returnHref) : setStep((current) => current - 1)}><ArrowLeft size={14} />Back</button>
-            {step < steps.length - 1 ? <button className="primaryAction" type="button" disabled={!stepValid[step]} onClick={continueToNextStep}>Continue<ArrowRight size={14} /></button> : <button className="primaryAction" type="button" disabled={submitDisabled} onClick={() => void submitCreation()}>{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={14} /> : submission === "success" ? <CheckCircle size={14} /> : submission === "unknown" ? <CircleAlert size={14} /> : <FilePlus2 size={14} />}{submission === "submitting" ? "Creating OTF…" : submission === "success" ? "OTF created" : submission === "unknown" ? "Confirmation unknown" : !deploymentReady ? "Creation unavailable" : !address ? "Connect wallet to create" : "Create empty OTF"}</button>}
+            {step < steps.length - 1 ? <button className="primaryAction" type="button" disabled={!stepValid[step]} onClick={continueToNextStep}>Continue<ArrowRight size={14} /></button> : <button className="primaryAction" type="button" disabled={submitDisabled} onClick={() => void submitCreation()}>{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={14} /> : submission === "success" ? <CheckCircle size={14} /> : submission === "unknown" ? <CircleAlert size={14} /> : <FilePlus2 size={14} />}{submission === "submitting" ? "Creating OTF…" : submission === "success" ? "OTF created" : submission === "unknown" ? "Confirmation unknown" : !deploymentReady ? "Creation unavailable" : !address ? "Connect wallet to create" : "Create OTF"}</button>}
           </div>
         </div>
       </section>
