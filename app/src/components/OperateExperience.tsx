@@ -41,7 +41,12 @@ import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, use
 import { managedOtfVaultAbi, otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodMainnetAddresses, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
+import {
+  robinhoodMainnetAddresses,
+  robinhoodTestnetAddresses,
+  robinhoodTestnetCreationReady,
+  robinhoodTestnetDeploymentReady,
+} from "@/lib/deployment";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -941,6 +946,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const routeAddress = addressFromLocation();
   const chainId = useChainId();
   const testnet = chainId === robinhoodChainTestnet.id;
+  const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   useEffect(() => {
@@ -990,14 +996,14 @@ function FundsSurface({ detail }: { detail: boolean }) {
     <DashboardPage>
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <div className="fundsAum"><strong aria-label="Total AUM unavailable">-.-- $</strong><span>in 0 OTFs</span></div>
+          <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in 0 OTFs</span></div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Canonical USDG is configured, but no OTF deployments or typed execution service are available on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
         ) : (
           <>
-            <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The redesigned deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div>
+            {!directoryDeploymentReady ? <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory data</strong><span>The schema-11 testnet deployment is not configured. No preview funds or aggregate values are substituted.</span></div></div> : null}
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
                 <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name or symbol" disabled /></label>
