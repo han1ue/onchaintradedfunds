@@ -1104,7 +1104,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 :root[data-theme="light"] .headerWalletButton,
 :root[data-theme="light"] .iconOnly { background: rgb(248 250 251 / 92%); }
 
-.dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 64px 24px 32px; }
+.dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 52px 24px 32px; }
 .dashboardMain h1,
 .dashboardMain h2 { font-weight: 600; letter-spacing: 0; }
 .appView { display: grid; gap: 16px; }
