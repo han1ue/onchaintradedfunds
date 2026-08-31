@@ -12,7 +12,6 @@ import {
   percentageUnits,
   percentageUnitsForSelectionChange,
   previewBootstrapBasketUnits,
-  resetToMarketCapPercentageUnits,
   submitAndConfirmCreation,
   zeroRawUnitError,
 } from "./creation-model";
@@ -77,7 +76,7 @@ describe("creation market-cap defaults", () => {
 });
 
 describe("selection percentage behavior", () => {
-  it("preserves every existing manual percentage when an asset is added or removed", () => {
+  it("adds new manual constituents at 0% and deletes removed weights without rebalancing", () => {
     const current = [
       { key: "A", percentageUnits: pct("71.123456789012345678") },
       { key: "B", percentageUnits: pct("28.876543210987654322") },
@@ -86,18 +85,26 @@ describe("selection percentage behavior", () => {
       { key: "A", marketCapUsd: "8" },
       { key: "B", marketCapUsd: "1" },
       { key: "C", marketCapUsd: "1" },
-    ]);
+    ], false);
     expect(added.slice(0, 2)).toEqual(current.map((item) => item.percentageUnits));
+    expect(added[2]).toBe(0n);
 
     const removed = percentageUnitsForSelectionChange(
       [...current, { key: "C", percentageUnits: added[2] }],
       [{ key: "A", marketCapUsd: "8" }, { key: "C", marketCapUsd: "1" }],
+      false,
     );
     expect(removed).toEqual([current[0].percentageUnits, added[2]]);
   });
 
-  it("resets the full selection to exact current market-cap weights only when requested", () => {
-    const reset = resetToMarketCapPercentageUnits(["3", "1", "1"]);
+  it("automatically realigns the full selection while market-cap weighting is selected", () => {
+    const reset = percentageUnitsForSelectionChange([
+      { key: "A", percentageUnits: pct("100") },
+    ], [
+      { key: "A", marketCapUsd: "3" },
+      { key: "B", marketCapUsd: "1" },
+      { key: "C", marketCapUsd: "1" },
+    ], true);
     expect(reset).toEqual([pct("60"), pct("20"), pct("20")]);
     expect(reset.reduce((sum, value) => sum + value, 0n)).toBe(TOTAL_PERCENT_UNITS);
   });

@@ -182,7 +182,7 @@ The navigation surface floats away from the viewport edges with rounded ends, a 
 
 - **Do** make unavailable chain data visibly unavailable.
 - **Do** default creator allocations from current market caps at 18-decimal precision, keep every positive percentage editable, and require an exact internal 100% total.
-- **Do** preserve manual percentages when assets are added or removed; renormalize only through the explicit market-cap reset action.
+- **Do** make market-cap weighting an explicit selected mode: automatically renormalize on constituent changes while selected, switch to manual mode on any weight edit, add new manual constituents at 0%, and leave remaining manual weights untouched when a constituent is removed.
 - **Do** label exact default weights `Market-cap weighted` and any exact-unit tilt `Modified market-cap weighted`; show neutral fixed-point multipliers as unchanged, overweight, or underweight.
 - **Do** describe creation methodology as informational initialization metadata, never an ongoing onchain rebalance, and show `Weighting method unavailable` rather than infer it from balances.
 - **Do** show current price, market cap, minimum viable percentage, final token quantity, raw units, and realized percentage before submitting the immutable bootstrap basket.

@@ -268,11 +268,12 @@ export function formatPercentageDisplay(units: bigint): string {
 export function percentageUnitsForSelectionChange(
   current: readonly PercentageSelectionCurrent[],
   next: readonly PercentageSelectionNext[],
+  marketCapWeighted: boolean,
 ): bigint[] {
   const defaults = normalizeMarketCapPercentageUnits(next.map((item) => item.marketCapUsd));
-  if (!current.length) return defaults;
+  if (marketCapWeighted) return defaults;
   const existing = new Map(current.map((item) => [item.key.toLowerCase(), item.percentageUnits]));
-  return next.map((item, index) => existing.get(item.key.toLowerCase()) ?? defaults[index]);
+  return next.map((item) => existing.get(item.key.toLowerCase()) ?? 0n);
 }
 
 function ceilingDivide(value: bigint, denominator: bigint): bigint {

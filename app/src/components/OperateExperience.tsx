@@ -932,10 +932,10 @@ function CreateSurface() {
   const returnHref = returnDestination === "wallet" ? "/wallet" : "/funds";
   const returnLabel = returnDestination === "wallet" ? "Wallet" : "Funds";
   return (
-    <DashboardPage>
+    <DashboardPage className="createPage">
       <div className="appView">
         <div className="vaultBreadcrumb appBreadcrumb"><Link href={returnHref}><ArrowLeft size={12} />Back to {returnLabel}</Link></div>
-        <AppPageHeader title="Create OTF" description="Build a fixed $1 target initial basket from current off-chain prices and commit only its raw token units." icon={<FilePlus2 size={18} />} />
+        <AppPageHeader title="Create OTF" description="Choose the assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
         <CreateOTFForm returnHref={returnHref} />
       </div>
     </DashboardPage>
@@ -961,7 +961,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
       ? weightingMethodLabel(creationMetadata.weightingMethod)
       : "Weighting method unavailable";
     return (
-      <DashboardPage>
+      <DashboardPage className="fundsPage">
         <div className="appView fundsView">
           <div className="vaultBreadcrumb appBreadcrumb"><Link href="/funds"><ArrowLeft size={12} />OTFs</Link></div>
           <AppPageHeader title={routeAddress ? shortAddress(routeAddress) : "No OTF connected"} description="Identity and creation history for this address-routed fund." icon={<LayoutGrid size={18} />} actions={<span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>} />
@@ -993,7 +993,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     );
   }
   return (
-    <DashboardPage>
+    <DashboardPage className="fundsPage">
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
           <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in 0 OTFs</span></div>
