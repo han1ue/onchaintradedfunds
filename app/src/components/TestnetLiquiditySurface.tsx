@@ -357,7 +357,7 @@ export function TestnetLiquiditySurface() {
           ) : null}
           <div className="liquidityPoolRecord">
             <div><span>Selected market</span><strong>{marketLabel}</strong></div>
-            <div><span>Pool</span><strong>{poolLoading ? "Resolving…" : shortAddress(poolAddress)}</strong></div>
+            <div><span>Pool</span><strong>{poolLoading ? <LoaderCircle className="createAssetSpinner" size={15} aria-label="Please wait" /> : shortAddress(poolAddress)}</strong></div>
             <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
             <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity && poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
           </div>

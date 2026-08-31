@@ -1,5 +1,6 @@
 "use client";
 
+import { LoaderCircle } from "lucide-react";
 import dynamic from "next/dynamic";
 import type { OperateView } from "./OperateExperience";
 
@@ -8,8 +9,8 @@ const OperateExperience = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="landingLoading" role="status" aria-label="Loading Onchain Traded Funds">
-        <span>OTF</span>
+      <div className="landingLoading" role="status" aria-label="Onchain Traded Funds is starting">
+        <LoaderCircle className="landingLoadingSpinner" size={24} />
         <strong>Onchain Traded Funds</strong>
       </div>
     ),

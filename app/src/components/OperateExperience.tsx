@@ -93,7 +93,6 @@ export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | 
 type AppearancePreference = "default" | "light" | "dark";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
-const REPOSITORY_URL = "https://github.com/han1ue/onchaintradedfunds";
 const X_URL = "https://x.com/OTFProtocol";
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
@@ -197,6 +196,10 @@ function AssetMark({ asset }: { asset: SwapAsset }) {
   return <span className="swapAssetIconFrame" aria-hidden="true">{mark}</span>;
 }
 
+function ActivitySpinner({ size = 16 }: { size?: number }) {
+  return <LoaderCircle className="createAssetSpinner" size={size} role="img" aria-label="Please wait" />;
+}
+
 function SwapBalance({ active, loading, balance, symbol, onUse }: {
   active: boolean;
   loading: boolean;
@@ -205,7 +208,7 @@ function SwapBalance({ active, loading, balance, symbol, onUse }: {
   onUse?: () => void;
 }) {
   if (!active) return null;
-  if (loading) return <>Loading…</>;
+  if (loading) return <ActivitySpinner size={12} />;
   if (!balance) return null;
   const label = `${balance.formatted} ${symbol}`;
   if (!onUse || balance.value === 0n) return <>{label}</>;
@@ -291,7 +294,7 @@ function TokenPicker({
               <small>Unresolved</small>
             </button>
           ) : null}
-          {!searchable.length && !canSelectAddress ? <p className="swapPickerEmpty">{kind === "otf" && otfDirectoryState === "loading" ? "Loading OTF shares from the factory…" : kind === "otf" && otfDirectoryState === "failure" ? "The factory OTF directory could not be loaded." : `No configured ${kind === "otf" ? "OTF shares" : "tokens"} match this search.`}</p> : null}
+          {!searchable.length && !canSelectAddress ? <p className="swapPickerEmpty">{kind === "otf" && otfDirectoryState === "loading" ? <ActivitySpinner size={18} /> : kind === "otf" && otfDirectoryState === "failure" ? "The factory OTF directory could not be loaded." : `No configured ${kind === "otf" ? "OTF shares" : "tokens"} match this search.`}</p> : null}
         </div>
         <p className="swapTokenFootnote">Pasting an address only selects it. It does not resolve metadata, establish verification, or enable a route.</p>
       </section>
@@ -498,7 +501,7 @@ function HeaderWalletControl({ active }: { active: boolean }) {
       {({ account, mounted, authenticationStatus, openConnectModal }) => {
         const ready = mounted && authenticationStatus !== "loading";
         const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
-        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Loading wallet" disabled><Wallet size={14} /><span>Connect wallet</span></button>;
+        if (!ready) return <button className="headerWalletButton isLoading" type="button" aria-label="Wallet connection pending" disabled><ActivitySpinner size={14} /><span>Connect wallet</span></button>;
         if (!connected) return <button className="headerWalletButton" type="button" onClick={openConnectModal}><Wallet size={14} /><span>Connect wallet</span></button>;
         return (
           <Link className={`headerWalletButton ${active ? "active" : ""}`} href="/wallet" title={`Open wallet: ${account.displayName}`}>
@@ -520,9 +523,8 @@ function OperateFooter() {
       <span>Onchain Traded Funds · experimental, unaudited software</span>
       <div className="footerLinks">
         {showLiquidity ? <Link href="/liquidity">Testnet liquidity</Link> : null}
+        <a href={X_URL} target="_blank" rel="noreferrer" aria-label="X @OTFProtocol"><XSocialIcon />X @OTFProtocol</a>
         <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
-        <a href={X_URL} target="_blank" rel="noreferrer" aria-label="OTF Protocol on X"><XSocialIcon />OTF Protocol</a>
-        <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub<ExternalLink size={12} /></a>
       </div>
     </footer>
   );
@@ -537,7 +539,7 @@ function AppPageHeader({ title, description, icon, actions }: { title: string; d
   );
 }
 
-function MetricCard({ label, value, action }: { label: string; value: string; action?: React.ReactNode }) {
+function MetricCard({ label, value, action }: { label: string; value: React.ReactNode; action?: React.ReactNode }) {
   return <div className={`metricCard${action ? " hasMetricAction" : ""}`}><span className="metricLabel">{label}</span><strong>{value}</strong>{action}</div>;
 }
 
@@ -548,7 +550,7 @@ function WalletConnectionAction() {
       {({ account, mounted, authenticationStatus, openConnectModal }) => {
         const ready = mounted && authenticationStatus !== "loading";
         const connected = ready && account && (!authenticationStatus || authenticationStatus === "authenticated");
-        if (!ready) return <button className="secondaryAction" type="button" disabled>Loading wallet</button>;
+        if (!ready) return <button className="secondaryAction" type="button" aria-label="Wallet connection pending" disabled><ActivitySpinner /></button>;
         if (!connected) return <button className="primaryAction" type="button" onClick={openConnectModal}><Wallet size={14} />Connect wallet</button>;
         return <button className="secondaryAction walletDisconnectAction" type="button" onClick={() => disconnect()}><XCircle size={14} />Disconnect</button>;
       }}
@@ -587,7 +589,7 @@ function QuoteReview({
             return (
               <button key={quote.id} type="button" className={`swapRoute ${activeQuote?.id === quote.id ? "selected" : ""}`} disabled={!valid} onClick={() => onChoose(quote)}>
                 <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (valid ? "Quoted route" : "Unavailable")}</small></span>
-                <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? activeQuote?.id === quote.id ? "Selected" : "Use route" : quote.state}</span>
+                <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? activeQuote?.id === quote.id ? "Selected" : "Use route" : quote.state === "loading" ? <ActivitySpinner size={13} /> : quote.state}</span>
               </button>
             );
           })}
@@ -938,8 +940,8 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
               <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
             </div>
           </div>
-          <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{primaryLabel}</button>
-          {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{statusMessage}</p> : null}
+          <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
+          {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
         </section>
   );
@@ -1366,7 +1368,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} />
             <section className="fundTradePanel" aria-labelledby="fund-trade-title">
               <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Use the fund&apos;s own share token.</p></div></div><span className="stateBadge success">Direct</span></div>
-              {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Loading the fund token…</span></div>}
+              {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><ActivitySpinner size={17} /></div>}
             </section>
           </div>
           <section className="sectionCard creationAllocationPanel">
@@ -1419,7 +1421,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               ) : (
                 <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
               ) : (
-                <div className="emptyDirectory">{directoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <Search size={18} />}<strong>{directoryState === "loading" ? "Loading testnet OTFs" : directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their creation transaction is confirmed."}</span></div>
+                <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their creation transaction is confirmed."}</span></>}</div>
               )}
             </section>
           </>
@@ -1543,17 +1545,17 @@ function WalletSurface() {
           <>
             <div className="depositMetrics walletMetrics">
               <div className="metricCard walletAddressMetric"><div className="metricLabel"><span>Wallet address</span><div className="walletAddressActions">{addressCopied ? <span className="walletAddressCopyFeedback" role="status" aria-live="polite">Copied</span> : null}<button className="iconOnly compact" type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></div></div><div className="walletAddressValue"><strong title={address}>{shortAddress(address)}</strong></div></div>
-              <MetricCard label="OTF Positions" value={vaultDataLoading ? "Loading" : vaultDirectoryState === "failure" ? "Unavailable" : String(positions.length)} />
-              <MetricCard label="USDG Balance" value={usdgBalanceLoading ? "Loading" : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
-              <MetricCard label="ETH Balance" value={nativeBalanceLoading ? "Loading" : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
+              <MetricCard label="OTF Positions" value={vaultDataLoading ? <ActivitySpinner /> : vaultDirectoryState === "failure" ? "Unavailable" : String(positions.length)} />
+              <MetricCard label="USDG Balance" value={usdgBalanceLoading ? <ActivitySpinner /> : usdgBalance ? `${Number(usdgBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDG` : "0 USDG"} action={<a className="metricCardFaucetAction" href="https://faucet.paxos.com/" target="_blank" rel="noreferrer" title="Open USDG faucet" aria-label="Open USDG faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
+              <MetricCard label="ETH Balance" value={nativeBalanceLoading ? <ActivitySpinner /> : nativeBalance ? `${Number(nativeBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${nativeBalance.symbol}` : "Unavailable"} action={<a className="metricCardFaucetAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer" title="Open Robinhood testnet ETH faucet" aria-label="Open Robinhood testnet ETH faucet in a new tab"><Droplets className="metricCardFaucetIcon" size={14} aria-hidden="true" /><span>Faucet</span><ExternalLink className="metricCardFaucetExternalIcon" size={10} aria-hidden="true" /></a>} />
             </div>
             <section className="sectionCard depositPositions">
-              <div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Share-token balances held by the connected wallet.</p></div></div><span className="stateBadge muted">{vaultDataLoading ? "Loading" : `${positions.length} position${positions.length === 1 ? "" : "s"}`}</span></div>
+              <div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Share-token balances held by the connected wallet.</p></div></div><span className="stateBadge muted">{vaultDataLoading ? <ActivitySpinner size={13} /> : `${positions.length} position${positions.length === 1 ? "" : "s"}`}</span></div>
               {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
             </section>
             <section className="sectionCard managedVaultsPanel">
               <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds created by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div>
-              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div><ArrowRight size={15} /></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs created by this wallet" : vaultDirectoryState === "failure" ? "Could not load created OTFs" : "No created OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet creates them through the factory."}</span></div></div>}
+              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs created by this wallet" : vaultDirectoryState === "failure" ? "Could not load created OTFs" : "No created OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet creates them through the factory."}</span></div></div>}
             </section>
           </>
         ) : (
@@ -1562,7 +1564,7 @@ function WalletSurface() {
             <h2>
               <ConnectButton.Custom>
                 {({ mounted, openConnectModal }) => (
-                  <button className="depositsConnectLink" type="button" disabled={!mounted} onClick={openConnectModal}>Connect your wallet</button>
+                  mounted ? <button className="depositsConnectLink" type="button" onClick={openConnectModal}>Connect your wallet</button> : <ActivitySpinner size={18} />
                 )}
               </ConnectButton.Custom>{" "}
               to view positions
