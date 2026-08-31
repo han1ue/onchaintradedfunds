@@ -5,7 +5,6 @@ import { otfFactoryAbi } from "@onchaintradedfunds/generated";
 import {
   ArrowLeft,
   ArrowRight,
-  BadgeCheck,
   Check,
   CheckCircle,
   CircleAlert,
@@ -42,11 +41,8 @@ import {
 } from "@/lib/creation-model";
 import {
   buildCreationMetadataDraft,
-  classifyWeightingMethod,
   formatMarketCapMultiplier,
   formatMarketCapSnapshotTimestamp,
-  marketCapMultiplierUnits,
-  multiplierPosition,
   persistCreationMetadata,
   weightingMethodLabel,
   type OtfCreationMetadataDraft,
@@ -71,7 +67,7 @@ const MAX_MANDATE_BYTES = 2_048;
 
 const steps = [
   { label: "Identity", description: "Name and application metadata" },
-  { label: "Basket", description: "Assets and precise $1 basket allocations" },
+  { label: "Constituents", description: "Assets and weights" },
   { label: "Economics", description: "Fee and beneficiary" },
   { label: "Review", description: "Raw immutable bootstrap units" },
 ] as const;
@@ -186,7 +182,7 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
       });
       if (controller.signal.aborted) return;
       setAvailableAssets(assets);
-      const initial = applyMarketCapDefaults(assets.slice(0, Math.min(3, assets.length)));
+      const initial = applyMarketCapDefaults(assets.slice(0, 1));
       setSelectedAssets(initial);
       setMarketCapSnapshotAt(new Date(payload.marketCapSnapshotAt).toISOString());
       setAssetLoadState(assets.length ? "ready" : "empty");
@@ -205,25 +201,6 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
   const totalPercentage = selectedAssets.reduce((sum, asset) => sum + asset.percentageUnits, 0n);
   const positivePercentages = selectedAssets.every((asset) => asset.percentageUnits > 0n);
   const percentagesValid = positivePercentages && totalPercentage === TOTAL_PERCENT_UNITS;
-  const marketCapDefaultPercentages = useMemo(() => {
-    try {
-      return resetToMarketCapPercentageUnits(selectedAssets.map((asset) => asset.marketCapUsd));
-    } catch {
-      return [];
-    }
-  }, [selectedAssets]);
-  const weightingMethod = selectedAssets.length
-    && marketCapDefaultPercentages.length === selectedAssets.length
-    ? classifyWeightingMethod(
-      selectedAssets.map((asset) => asset.percentageUnits),
-      marketCapDefaultPercentages,
-    )
-    : undefined;
-  const marketCapMultipliers = selectedAssets.map((asset, index) => (
-    marketCapDefaultPercentages[index] === undefined
-      ? undefined
-      : marketCapMultiplierUnits(asset.percentageUnits, marketCapDefaultPercentages[index])
-  ));
   const calculationAssets = useMemo(() => selectedAssets.map((asset) => ({
     symbol: asset.symbol,
     decimals: asset.decimals,
@@ -307,6 +284,17 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
     const asset = availableAssets.find((candidate) => candidate.address === addressValue);
     if (!asset || selectedAssets.length >= 20) return;
     setSelectedAssets((current) => preserveSelectionPercentages(current, [...current, asset]));
+    resetSubmission();
+  }
+
+  function replaceAsset(addressValue: Address, nextAddressValue: string) {
+    const replacement = availableAssets.find((candidate) => candidate.address === nextAddressValue);
+    if (!replacement) return;
+    setSelectedAssets((current) => current.map((asset) => (
+      asset.address === addressValue
+        ? { ...replacement, percentageInput: asset.percentageInput, percentageUnits: asset.percentageUnits }
+        : asset
+    )));
     resetSubmission();
   }
 
@@ -474,62 +462,53 @@ export function CreateOTFForm({ returnHref }: { returnHref: string }) {
 
           {step === 1 ? (
             <div className="formSection">
-              <div className="basketControlBar">
-                <div className="basketFixedTarget" role="note">
-                  <span>Fixed initial basket target</span>
-                  <strong>$1.00 per OTF</strong>
-                  <small>A $1 target initial basket value based on current off-chain prices. This is not a peg or guaranteed market price.</small>
-                </div>
-                <label>
-                  <span>Add asset</span>
-                  <select value="" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onChange={(event) => addAsset(event.target.value)}>
-                    <option value="">{assetLoadState === "loading" ? "Loading asset data…" : assetLoadState === "failure" ? "Asset data unavailable" : assetLoadState === "empty" ? "No priced assets for this chain" : remainingAssets.length ? "Select an asset" : "All available assets selected"}</option>
-                    {remainingAssets.map((asset) => <option key={asset.address} value={asset.address}>{asset.symbol} — {asset.name}</option>)}
-                  </select>
-                  <small>Current prices and market caps come from the application asset source.</small>
-                </label>
-              </div>
-
-              <div className="basketAllocationHeader">
+              <div className="formIntro constituentsIntro">
                 <div>
-                  <span className="basketMethodologyLabel">Weighting method</span>
-                  <strong>{weightingMethod ? weightingMethodLabel(weightingMethod) : "Weighting method unavailable"}</strong>
-                  <span>Multipliers compare your selected weight with the asset&apos;s market-cap weight at creation.</span>
-                  {marketCapSnapshotAt ? <small>Market-cap snapshot {formatMarketCapSnapshotTimestamp(marketCapSnapshotAt)}</small> : null}
+                  <strong>Initial portfolio</strong>
+                  <span>Choose up to 20 assets and set the weight of each constituent.</span>
                 </div>
-                <div className="basketAllocationActions">
+                <div className="constituentsActions">
+                  <span className="stateBadge muted">{selectedAssets.length} / 20 assets</span>
                   <span id="basket-percentage-total" className={`stateBadge ${percentagesValid ? "success" : "danger"}`} role="status" aria-live="polite">{percentagesValid ? "100.0000%" : `${formatPercentageExact(totalPercentage)}% total`}</span>
                   <button className="secondaryAction compactAction" type="button" disabled={!selectedAssets.length} onClick={resetMarketCapWeights}><RotateCcw size={13} />Reset to market-cap weights</button>
                 </div>
               </div>
 
-              <div className="basketAllocationList">
+              <div className="createAssetList">
                 {selectedAssets.map((asset, index) => {
                   const result = previewRows?.[index];
                   const assetError = assetErrors[index];
-                  const defaultPercentage = marketCapDefaultPercentages[index];
-                  const multiplier = marketCapMultipliers[index];
-                  const position = multiplier === undefined ? undefined : multiplierPosition(multiplier);
                   const percentageHelpId = `basket-percentage-help-${asset.address.slice(2)}`;
                   return (
-                    <div className="basketAllocationRow" key={asset.address}>
-                      <div className="basketAssetIdentity">
-                        <span className="assetLogoFallback" aria-hidden="true">{asset.symbol.slice(0, 2)}</span>
-                        <div><span><strong>{asset.symbol}</strong>{asset.verified ? <BadgeCheck size={13} aria-label="Verified asset" /> : null}</span><small>{asset.name} · {shortAddress(asset.address)}</small></div>
+                    <div className="createAssetRow constituentWeightRow" key={asset.address}>
+                      <label className="assetSelectField">
+                        <span>Asset</span>
+                        <select value={asset.address} onChange={(event) => replaceAsset(asset.address, event.target.value)} aria-label={`Constituent ${index + 1} asset`}>
+                          <option value={asset.address}>{asset.symbol} — {asset.name}</option>
+                          {remainingAssets.map((candidate) => <option key={candidate.address} value={candidate.address}>{candidate.symbol} — {candidate.name}</option>)}
+                        </select>
+                        <small>{shortAddress(asset.address)}{asset.verified ? " · Verified asset" : ""}</small>
+                      </label>
+                      <label className="constituentWeightField">
+                        <span>Weight</span>
+                        <div className="inputWithSuffix"><input inputMode="decimal" value={focusedPercentage === asset.address ? asset.percentageInput : formatPercentageInput(asset.percentageUnits)} onFocus={(event) => { flushSync(() => setFocusedPercentage(asset.address)); event.currentTarget.select(); }} onBlur={() => setFocusedPercentage(undefined)} onChange={(event) => editPercentage(asset.address, event.target.value)} aria-label={`${asset.symbol} percentage`} aria-invalid={!percentagesValid || Boolean(assetError)} aria-describedby={`basket-percentage-total ${percentageHelpId}`} title={`Exact internal weight: ${formatPercentageExact(asset.percentageUnits)}%`} /><span>%</span></div>
+                        <small id={percentageHelpId}>{result ? `Minimum ${result.minimumPercentage}` : "Minimum unavailable"}</small>
+                      </label>
+                      <div className="constituentAssetFacts">
+                        <span>Current price <strong>${asset.priceUsd}</strong></span>
+                        <span>Market cap <strong>${asset.marketCapUsd}</strong></span>
+                        <span>Quantity per OTF <strong>{result && result.rawQuantity > 0n ? `${result.tokenQuantity} ${asset.symbol}` : "—"}</strong></span>
                       </div>
-                      <div className="basketSourceData"><span>Current off-chain price</span><strong title={`$${asset.priceUsd}`}>${asset.priceUsd}</strong><small title={`Market cap $${asset.marketCapUsd}`}>Market cap ${asset.marketCapUsd}</small></div>
-                      <label className="basketPercentageField"><span>Percentage</span><div className="inputWithSuffix"><input inputMode="decimal" value={focusedPercentage === asset.address ? asset.percentageInput : formatPercentageInput(asset.percentageUnits)} onFocus={(event) => { flushSync(() => setFocusedPercentage(asset.address)); event.currentTarget.select(); }} onBlur={() => setFocusedPercentage(undefined)} onChange={(event) => editPercentage(asset.address, event.target.value)} aria-label={`${asset.symbol} percentage`} aria-invalid={!percentagesValid || Boolean(assetError)} aria-describedby={`basket-percentage-total ${percentageHelpId}`} title={`Exact internal weight: ${formatPercentageExact(asset.percentageUnits)}%`} /><span>%</span></div><small id={percentageHelpId}>{result ? `Minimum for one raw unit: ${result.minimumPercentage}` : "Minimum unavailable"}</small></label>
-                      <div className="basketMultiplier"><span>Market-cap multiplier</span><strong>{multiplier === undefined ? "—" : formatMarketCapMultiplier(multiplier)}</strong><small>{position ? `${position[0].toUpperCase()}${position.slice(1)}` : "Unavailable"}</small>{defaultPercentage === undefined ? null : <small title={`${formatPercentageExact(defaultPercentage)}% exact market-cap default`}>Default {formatPercentageDisplay(defaultPercentage)}</small>}</div>
-                      <div className="basketRoundedResult"><span>Quantity per OTF</span><strong title={result ? `${result.tokenQuantity} ${asset.symbol}` : undefined}>{result && result.rawQuantity > 0n ? result.tokenQuantity : "—"} {asset.symbol}</strong><small title={result ? `${result.rawQuantity.toString()} raw token units` : undefined}>{result ? `${result.rawQuantity.toString()} raw token units` : "Calculation unavailable"}</small><small>{result && result.rawQuantity > 0n ? `${result.realizedPercentage} realized after rounding` : "No representable quantity"}</small></div>
                       <button className="removeCreateAsset" type="button" aria-label={`Remove ${asset.symbol}`} onClick={() => removeAsset(asset.address)}><Trash2 size={14} /></button>
                       {assetError ? <div className="basketAssetError" role="status" aria-live="polite"><CircleAlert size={14} /><span>{assetError}</span></div> : null}
                     </div>
                   );
                 })}
               </div>
+              <button type="button" className="secondaryAction addCreateAsset" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onClick={() => remainingAssets[0] && addAsset(remainingAssets[0].address)}><Plus size={14} />Add constituent</button>
               {!selectedAssets.length ? <div className="inlineEmptyState"><Plus size={17} /><div><strong>Select at least one priced asset</strong><span>The app needs current price, market cap and token decimals before it can calculate raw bootstrap units.</span></div></div> : null}
               {basketGlobalError && selectedAssets.length ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Basket calculation needs attention</strong><span>{basketGlobalError}</span></div></div> : null}
-              {calculation ? <div className="basketRealizedLedger"><span>Fixed target <strong>$1.00 initial basket value</strong></span><span>Rounded basket value <strong>${calculation.realizedValueUsd}</strong></span><span>Pricing basis <strong>Current off-chain prices</strong></span><span>Market price <strong>Not pegged or guaranteed</strong></span></div> : null}
+              {marketCapSnapshotAt ? <small className="constituentsSnapshot">Prices and market caps: {formatMarketCapSnapshotTimestamp(marketCapSnapshotAt)}. The $1.00 initial basket target is not a peg or guaranteed market price.</small> : null}
             </div>
           ) : null}
 

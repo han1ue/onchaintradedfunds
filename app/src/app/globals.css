@@ -1104,7 +1104,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 :root[data-theme="light"] .headerWalletButton,
 :root[data-theme="light"] .iconOnly { background: rgb(248 250 251 / 92%); }
 
-.dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 20px 24px 32px; }
+.dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 40px 24px 32px; }
 .dashboardMain h1,
 .dashboardMain h2 { font-weight: 600; letter-spacing: 0; }
 .appView { display: grid; gap: 16px; }
@@ -1349,6 +1349,14 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .createAssetPickerEmpty > p { max-width: 58ch; margin: 5px 0 12px; color: var(--text-muted); font-size: 0.69rem; line-height: 1.5; }
 .createAssetPickerEmpty > .secondaryAction { min-height: 32px; }
 .createAssetRow.constituentAssetRow > .removeCreateAsset { height: 50px; }
+.constituentsIntro { align-items: flex-start; }
+.constituentsActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.constituentWeightRow { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(130px, 0.48fr) minmax(220px, 0.9fr) 32px; align-items: start; gap: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); padding: 14px; }
+.constituentWeightRow > .removeCreateAsset { margin-top: 18px; }
+.constituentAssetFacts { display: grid; min-width: 0; gap: 5px; padding-top: 19px; }
+.constituentAssetFacts span { display: flex; min-width: 0; justify-content: space-between; gap: 10px; color: var(--text-muted); font-size: 0.62rem; line-height: 1.35; }
+.constituentAssetFacts strong { overflow: hidden; color: var(--text-soft); font-variant-numeric: tabular-nums; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.constituentsSnapshot { color: var(--text-muted); font-size: 0.63rem; line-height: 1.5; }
 .inputWithSuffix { display: flex; min-width: 0; align-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 5px; background: var(--card-raised); }
 .inputWithSuffix input { border: 0; box-shadow: none; }
 .inputWithSuffix > span { flex: 0 0 auto; color: var(--text-muted); padding-right: 10px; font-size: 0.66rem; text-transform: none; }
@@ -1913,6 +1921,12 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .createNotice { display: none; }
   .formGrid.twoColumns,
   .reviewGrid { grid-template-columns: 1fr; }
+  .constituentsIntro { align-items: stretch; flex-direction: column; }
+  .constituentsActions { justify-content: flex-start; }
+  .constituentWeightRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; }
+  .constituentWeightRow > .assetSelectField { grid-column: 1 / 3; }
+  .constituentWeightRow > .removeCreateAsset { grid-column: 3; grid-row: 1; }
+  .constituentAssetFacts { grid-column: 1 / 3; padding-top: 0; }
   .basketControlBar { grid-template-columns: 1fr; }
   .basketAllocationHeader { align-items: flex-start; flex-direction: column; }
   .basketAllocationActions { width: 100%; justify-content: space-between; }
@@ -1979,6 +1993,13 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .creationAllocationTable td:first-child { grid-column: 1; }
   .createFormActions { align-items: stretch; flex-direction: column; }
   .createFormActions button { width: 100%; min-height: 44px; }
+  .constituentsActions { align-items: stretch; flex-direction: column; }
+  .constituentsActions > * { width: 100%; min-height: 44px; justify-content: center; }
+  .constituentWeightRow { grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; padding: 11px; }
+  .constituentWeightRow > .assetSelectField,
+  .constituentWeightField,
+  .constituentAssetFacts { grid-column: 1; }
+  .constituentWeightRow > .removeCreateAsset { grid-column: 2; grid-row: 1; width: 44px; height: 44px; min-height: 44px; }
   .basketAllocationActions { align-items: stretch; flex-direction: column; }
   .basketAllocationActions > * { width: 100%; min-height: 44px; justify-content: center; }
   .basketAllocationRow { grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; }
