@@ -140,10 +140,12 @@ assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory cre
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
 
 const vaultErrorNames = new Set(compiled.ManagedOTFVault.abi.filter((item) => item.type === "error").map((item) => item.name));
-assert(vaultErrorNames.has("ResidualSupplyTooSmall"), "vault is missing the normal-redemption residual supply guard");
-for (const name of ["bootstrapBasketUnits", "bootstrapBasketUnitsPerOTF"]) {
+assert(!vaultErrorNames.has("ResidualSupplyTooSmall"), "vault retains the removed residual supply revert");
+for (const name of ["bootstrapBasketUnits", "bootstrapBasketUnitsPerOTF", "redeemInKind"]) {
   assert(functionNames(compiled.ManagedOTFVault).has(name), `vault bootstrap surface ${name} is absent`);
 }
+const redeemInKind = functions(compiled.ManagedOTFVault).find((item) => item.name === "redeemInKind");
+assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,address,uint256[],uint256", "redeemInKind signature changed");
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
@@ -153,7 +155,7 @@ for (const name of ["swapDirect", "mintFromToken", "redeemToToken", "swapBasketT
 const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
 assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents is not 20");
-assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e18/u.test(sourceConstants), "normal share supply floor is not 1e18");
+assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and shutdown threshold is not 0.01 OTF");
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
 

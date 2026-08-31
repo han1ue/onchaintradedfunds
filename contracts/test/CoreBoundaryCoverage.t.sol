@@ -6,8 +6,10 @@ import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { VaultCreationParams } from "../src/VaultTypes.sol";
 import { MockFeeOnTransferToken } from "./mocks/MockFeeOnTransferToken.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
 import { BootstrapTestBase, MockCoreRouter } from "./BootstrapTestBase.sol";
+import { Vm } from "./TestBase.sol";
 
 contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testFeeCollectorClaimsAreTreasuryOnlyAndClaimAllDrainsCustody() public {
@@ -77,6 +79,43 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         collector.claimAll(address(taxed));
         assertEq(taxed.balanceOf(address(collector)), 100 * WAD);
         assertEq(taxed.balanceOf(TREASURY), 0);
+    }
+
+    function testFeeCollectorClaimBlocksCallbackTreasuryAcceptance() public {
+        FeeCollector collector = new FeeCollector(TREASURY);
+        MockReentrantToken token = new MockReentrantToken("Callback", "CB", 18);
+        token.mint(address(collector), WAD);
+
+        vm.prank(TREASURY);
+        collector.beginTreasuryTransfer(address(token));
+        token.configureCallback(
+            address(collector), abi.encodeCall(FeeCollector.acceptTreasuryTransfer, ()), true
+        );
+
+        vm.recordLogs();
+        vm.prank(TREASURY);
+        collector.claimAll(address(token));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertFalse(token.callbackSucceeded());
+        assertEq(collector.treasury(), TREASURY);
+        assertEq(collector.pendingTreasury(), address(token));
+        assertEq(token.balanceOf(TREASURY), WAD);
+        assertEq(token.balanceOf(address(token)), 0);
+
+        bytes32 eventSignature = keccak256("TokenClaimed(address,address,uint256)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            Vm.Log memory log = logs[i];
+            if (
+                log.emitter != address(collector) || log.topics.length == 0
+                    || log.topics[0] != eventSignature
+            ) continue;
+
+            assertEq(address(uint160(uint256(log.topics[2]))), TREASURY);
+            assertEq(abi.decode(log.data, (uint256)), WAD);
+            return;
+        }
+        revert("TokenClaimed missing");
     }
 
     function testCreatorAndTreasuryRedeemAllAccruedFeeSharesProRata() public {

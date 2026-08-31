@@ -7,6 +7,7 @@ import {
   classifySwapDirection,
   decimalAmount,
   decimalInputValue,
+  enforceFirstPurchaseMinimum,
   executionPlanForQuote,
   executionStages,
   isPositiveDecimalAmount,
@@ -43,7 +44,7 @@ const FUND_A: SwapAsset = {
 const FUND_B: SwapAsset = { ...FUND_A, address: "0x0000000000000000000000000000000000000003", symbol: "NEXT" };
 const NOW = 1_750_000_000_000;
 
-function quote(route: "direct" | "basket", outputAmount: string, queriedAt = NOW): SwapQuote {
+function quote(route: "direct" | "basket", outputAmount: string, queriedAt = NOW, minimumReceived = outputAmount): SwapQuote {
   return {
     id: route,
     route,
@@ -52,7 +53,8 @@ function quote(route: "direct" | "basket", outputAmount: string, queriedAt = NOW
     inputAmount: "10",
     outputAmount,
     expectedOutput: outputAmount,
-    minimumReceived: outputAmount,
+    minimumReceived,
+    minimumReceivedRaw: decimalAmount(minimumReceived)!,
     routeLabel: route,
   };
 }
@@ -199,6 +201,33 @@ describe("swap state model", () => {
     expect(bestQueriedQuote([smaller, larger], NOW)?.route).toBe("basket");
   });
 
+  it("rejects an empty-OTF quote unless its guaranteed minimum output is at least 0.01 OTF", () => {
+    const belowMinimum = quote("basket", "1", NOW, "0.009999999999999999");
+    const exactMinimum = quote("basket", "0.01");
+    const uncappedPurchase = quote("basket", "10.000000000000000001");
+
+    expect(enforceFirstPurchaseMinimum([belowMinimum], FUND_A, 0n)[0]).toMatchObject({
+      state: "unavailable",
+      reason: "The first purchase must guarantee at least 0.01 OTF.",
+    });
+    expect(enforceFirstPurchaseMinimum([exactMinimum], FUND_A, 0n)[0]?.state).toBe("available");
+    expect(enforceFirstPurchaseMinimum([uncappedPurchase], FUND_A, 0n)[0]?.state).toBe("available");
+  });
+
+  it("removes the special first-purchase minimum once OTF supply is nonzero", () => {
+    const belowMinimum = quote("basket", "0.009", NOW, "0.008");
+    expect(enforceFirstPurchaseMinimum([belowMinimum], FUND_A, 1n)[0]).toBe(belowMinimum);
+    expect(enforceFirstPurchaseMinimum([belowMinimum], USDG, 0n)[0]).toBe(belowMinimum);
+  });
+
+  it("fails closed when the output OTF supply cannot be confirmed", () => {
+    const candidate = quote("basket", "1");
+    expect(enforceFirstPurchaseMinimum([candidate], FUND_A, undefined)[0]).toMatchObject({
+      state: "unavailable",
+      reason: "The output OTF supply could not be confirmed, so this quote cannot be used safely.",
+    });
+  });
+
   it("returns explicit unavailable results when no live endpoint is configured", async () => {
     const [direct, basket] = await requestConcurrentQuotes(unavailableQuoteService, {
       chainId: 46630,
@@ -227,6 +256,7 @@ describe("typed entry-router quote boundary", () => {
   it("maps an authenticated direct response to one typed router method and exact approval", () => {
     const parsed = parseTypedQuoteResponse(typedDirectResponse(), typedDirectContext());
     expect(parsed.execution?.method).toBe("swapDirect");
+    expect(parsed.minimumReceivedRaw).toBe(9_000_000_000_000_000_000n);
     expect(parsed.hops).toEqual([expect.objectContaining({ venue: "Uniswap V3", tokenIn: USDG.address, tokenOut: FUND_A.address, feeTier: 3_000 })]);
     const plan = executionPlanForQuote(parsed, 46630, NOW);
     expect(plan).toMatchObject({ router: ROUTER, approval: { token: USDG.address, spender: ROUTER, amount: 10_000_000_000_000_000_000n } });

@@ -66,18 +66,20 @@ MUST NOT infer methodology from current balances or raw-token rounding, and MUST
 
 The vault MUST use 18-decimal shares and satisfy these normal-settlement rules:
 
-1. At zero supply, any mint of at least `1e18` shares is permitted.
+1. At zero supply, a live vault MUST permit a mint of at least `1e16` shares and MUST reject a
+   smaller mint. It MUST impose no maximum first-mint size.
 2. A zero-supply mint requires `ceil(bootstrapUnits_i * shares / 1e18)` of each constituent.
 3. A nonzero-supply mint requires `ceil(accounted_i * shares / supply)` of each constituent.
 4. Normal redemption returns `floor(accounted_i * shares / supply)` for each asset.
 5. Full normal redemption returns every `accounted_i` exactly and reduces all ledgers and supply
    to zero.
-6. After returning to zero supply, a later bootstrap reuses the immutable bootstrap units.
-7. Fees MUST be checkpointed before normal mint or redemption supply math.
-8. After fee accrual, a normal redemption MUST leave either zero supply or at least `1e18`; an
-   unsafe positive residual MUST revert with `ResidualSupplyTooSmall`.
-9. Normal settlement MUST maintain `totalSupply == 0 || totalSupply >= 1e18`.
-10. Caller maximum inputs, minimum outputs, exact sender/receiver deltas, and backing soundness
+6. A redemption leaving supply below `1e16`, including zero, MUST complete and then enter permanent
+   shutdown. A residual supply exactly equal to `1e16` MUST remain live.
+7. A shutdown vault MUST never restart or clear shutdown, including at zero supply. It MUST reject
+   every mint and prevent all fee growth or fee-share issuance while continuing to permit holder
+   exits; a fee-checkpoint call MAY return zero rather than revert.
+8. Fees MUST be checkpointed before live mint or redemption supply math.
+9. Caller maximum inputs, minimum outputs, exact sender/receiver deltas, and backing soundness
     MUST be enforced.
 
 `accountedBalance(asset)` changes only through accepted settlement or emergency accounting. A
@@ -88,7 +90,27 @@ settlement.
 
 Shutdown is irreversible. The creator MAY activate it while backing is sound. Any caller MAY do so
 only when a readable constituent balance proves `actual < accounted`; unreadable state or donation
-excess MUST NOT qualify. Shutdown checkpoints fees once and prevents later fee growth.
+excess MUST NOT qualify. Any successful redemption MUST also activate shutdown when post-burn
+supply is below `1e16`, including zero. Shutdown checkpoints fees once and prevents later fee
+growth or minting.
+
+The vault MUST expose a non-reentrant direct holder exit equivalent to
+`redeemInKind(shares, receiver, minAmountsOut, skipMask)` in both live and shutdown states. It MUST
+burn only `msg.sender`'s shares, use the existing basket order, reject out-of-range skip bits, and
+calculate every accounted reduction from pre-burn supply. Full redemption MUST remove the complete
+accounted balance.
+
+For each non-skipped asset, direct redemption MUST calculate `distributable_i = min(actual_i,
+accounted_i)` and pay the full distributable amount on full redemption or its floored pro-rata
+amount otherwise. It MUST respect the corresponding minimum and preserve exact sender/receiver
+delta checks. The accounted reduction is instead the complete `accounted_i` on full redemption or
+the holder's floored pro-rata accounted entitlement otherwise.
+
+For each skipped asset, direct redemption MUST require a zero minimum, transfer zero, make no
+external call of any kind—including `balanceOf`—and apply that same normal accounted reduction.
+The physical skipped balance MUST remain permanently unaccounted, MUST NOT be swept or credited
+later, and MUST NOT increase any remaining holder's entitlement. A skip alone MUST NOT trigger
+shutdown unless the post-redemption supply threshold does.
 
 Emergency redemption MUST be permissionless and in kind. For each asset:
 
@@ -100,7 +122,7 @@ amountOut_i     = shares == supply
 ```
 
 Accounted reductions use the corresponding full or floored pro-rata rule. Emergency redemption
-MUST NOT apply the `1e18` residual-supply floor. Donation excess is excluded, deficits cap payment,
+MUST NOT revert based on residual supply. Donation excess is excluded, deficits cap payment,
 unexpected balance movement reverts, and outgoing transfers require exact deltas.
 
 ## 6. Creator expense and protocol split
@@ -113,7 +135,9 @@ is `S * r / (1 - r)`.
 The factory MUST store one immutable `protocolFeeShareBps` in `0..10000`. Fee shares MUST be split
 using that value only; basket composition, creator metadata, offchain weights, prices, token
 holdings, and market value MUST NOT modify it. `FeeCollector` MUST permit claims only by its
-treasury through the existing two-step treasury-control model.
+treasury through the existing two-step treasury-control model. Treasury acceptance MUST share the
+collector's reentrancy guard with token claims so callback execution cannot change the event
+recipient during a claim.
 
 ## 7. Typed V3 router boundary
 
@@ -139,6 +163,12 @@ quote, approval, simulation, submission, success, and failure states truthfully.
 LP management belong to the external venue. The internal `/liquidity` route MAY remain enabled only
 as a visibly testnet-only utility for explicitly configured legacy pools.
 
+When the output OTF has zero supply, the Swap screen MUST reject a quote unless its guaranteed
+minimum output is at least `1e16` share units (`0.01` OTF). It MUST inspect the guaranteed minimum,
+not only expected output, and MUST impose no maximum first-purchase size. Once supply is nonzero,
+the special minimum MUST NOT apply. Direct `redeemInKind` and skip controls MUST NOT be added to the
+normal application UI.
+
 ## 9. Verification and change control
 
 Before deployment, the repository SHOULD run Solidity formatting and compilation, Solhint and
@@ -146,9 +176,11 @@ Foundry lint with warnings denied, ABI/storage/security boundary checks, the ful
 suite, advisory coverage, frontend unit tests, typechecking, linting, and relevant production builds.
 
 Regression coverage MUST include market-cap default normalization, edited percentages, bootstrap
-unit calculation, first mints below/at/above `1e18`, multi-OTF bootstrap, fractional ceiling
-rounding, unsafe residual supply, exact `1e18` residual supply, full redemption to zero,
-rebootstrap, and the normal-settlement supply invariant.
+unit calculation, first mints below/at/above `1e16`, the fixed `1e18` bootstrap denominator,
+multi-OTF bootstrap, fractional ceiling rounding, exact and below-`1e16` residual supply, full
+redemption to permanent shutdown, mint/fee/restart rejection after shutdown, direct in-kind exit,
+single and multiple skipped constituents with no external calls, unaccounted forfeiture, remaining
+holder entitlement, empty-vault minimum-output quote rejection, and treasury-acceptance callbacks.
 
 Any change to bootstrap math, storage, token movement, fee math, shutdown, router paths, configured
 dependencies, or trust roles requires fresh review and a fresh pre-mainnet deployment. Passing

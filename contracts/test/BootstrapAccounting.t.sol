@@ -76,35 +76,48 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         assertEq(factory.vaultCount(), 0);
     }
 
-    function testFirstMintBelowAtAndAboveOneOTFUsesCeilingRounding() public {
+    function testFirstMintMinimumUsesWadDenominatorAndCeilingRounding() public {
         ManagedOTFVault vault =
-            _createTwoAssetVault(factory, address(tokenA), address(tokenB), 3, 5, 0);
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), 300, 500, 0);
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.BootstrapSharesTooSmall.selector);
-        vault.previewMint(WAD - 1);
+        vault.previewMint(1e16 - 1);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.BootstrapSharesTooSmall.selector);
+        router.mint(vault, 1e16 - 1, ALICE, _zeroes(2));
+
+        uint256[] memory minimum = vault.previewMint(1e16);
+        assertEq(minimum[0], 3);
+        assertEq(minimum[1], 5);
 
         uint256[] memory oneOtf = vault.previewMint(WAD);
-        assertEq(oneOtf[0], 3);
-        assertEq(oneOtf[1], 5);
+        assertEq(oneOtf[0], 300);
+        assertEq(oneOtf[1], 500);
+
+        uint256[] memory deposited = _bootstrap(vault, router, _assets(), 1e16);
+        assertEq(deposited[0], 3);
+        assertEq(deposited[1], 5);
+        assertEq(vault.totalSupply(), 1e16);
+        assertEq(vault.accountedBalance(address(tokenA)), 3);
+        assertEq(vault.accountedBalance(address(tokenB)), 5);
 
         uint256[] memory fractional = vault.previewMint(2.5e18);
-        assertEq(fractional[0], 8);
-        assertEq(fractional[1], 13);
+        assertEq(fractional[0], 750);
+        assertEq(fractional[1], 1_250);
     }
 
-    function testFirstDepositorCanBootstrapMultipleOTFs() public {
+    function testFirstDepositorHasNoMaximumPurchaseSize() public {
         ManagedOTFVault vault =
             _createTwoAssetVault(factory, address(tokenA), address(tokenB), 7, 11, 0);
         address[] memory assets = _assets();
 
-        uint256[] memory amounts = _bootstrap(vault, router, assets, 4 * WAD);
+        uint256[] memory amounts = _bootstrap(vault, router, assets, 25 * WAD);
 
-        assertEq(amounts[0], 28);
-        assertEq(amounts[1], 44);
-        assertEq(vault.totalSupply(), 4 * WAD);
-        assertEq(vault.balanceOf(ALICE), 4 * WAD);
-        assertEq(vault.accountedBalance(address(tokenA)), 28);
-        assertEq(vault.accountedBalance(address(tokenB)), 44);
+        assertEq(amounts[0], 175);
+        assertEq(amounts[1], 275);
+        assertEq(vault.totalSupply(), 25 * WAD);
+        assertEq(vault.balanceOf(ALICE), 25 * WAD);
+        assertEq(vault.accountedBalance(address(tokenA)), 175);
+        assertEq(vault.accountedBalance(address(tokenB)), 275);
     }
 
     function testLaterMintUsesCurrentAccountedBalancesAndSupply() public {
@@ -121,7 +134,24 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         assertEq(next[1], 11);
     }
 
-    function testFullRedemptionEmptiesAccountingAndRebootstrapReusesImmutableUnits() public {
+    function testSpecialMinimumDoesNotApplyAfterBootstrap() public {
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), 7, 11, 0);
+        address[] memory assets = _assets();
+        _bootstrap(vault, router, assets, WAD);
+
+        uint256[] memory amounts = vault.previewMint(1);
+        tokenA.mint(address(router), amounts[0]);
+        tokenB.mint(address(router), amounts[1]);
+        router.approveAsset(address(tokenA), address(vault), amounts[0]);
+        router.approveAsset(address(tokenB), address(vault), amounts[1]);
+        router.mint(vault, 1, BOB, amounts);
+
+        assertEq(vault.balanceOf(BOB), 1);
+        assertEq(vault.totalSupply(), WAD + 1);
+    }
+
+    function testFullRedemptionEmptiesAccountingAndPermanentlyDisablesRebootstrap() public {
         ManagedOTFVault vault =
             _createTwoAssetVault(factory, address(tokenA), address(tokenB), 7, 11, 0);
         address[] memory assets = _assets();
@@ -136,24 +166,36 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         assertEq(vault.accountedBalance(address(tokenB)), 0);
         assertEq(tokenA.balanceOf(address(vault)), 0);
         assertEq(tokenB.balanceOf(address(vault)), 0);
+        assertTrue(vault.shutdown());
 
         uint256[] memory rebootstrap = vault.previewMint(WAD);
         assertEq(rebootstrap[0], 7);
         assertEq(rebootstrap[1], 11);
-        _bootstrap(vault, router, assets, WAD);
-        assertEq(vault.totalSupply(), WAD);
+        tokenA.mint(address(router), rebootstrap[0]);
+        tokenB.mint(address(router), rebootstrap[1]);
+        router.approveAsset(address(tokenA), address(vault), rebootstrap[0]);
+        router.approveAsset(address(tokenB), address(vault), rebootstrap[1]);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.VaultShutdown.selector);
+        router.mint(vault, WAD, ALICE, rebootstrap);
+        assertEq(vault.totalSupply(), 0);
     }
 
     function testPreviewMaxMintEnforcesBootstrapFloorAndSupportsFractionalScaling() public {
         ManagedOTFVault vault =
-            _createTwoAssetVault(factory, address(tokenA), address(tokenB), 3, 5, 0);
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), 300, 500, 0);
         uint256[] memory maxima = _units(2, 4);
         (uint256 tooSmall,) = vault.previewMaxMint(maxima);
         assertEq(tooSmall, 0);
 
+        maxima = _units(3, 5);
+        (uint256 minimumShares, uint256[] memory minimumRequired) = vault.previewMaxMint(maxima);
+        assertEq(minimumShares, 1e16);
+        assertEq(minimumRequired[0], 3);
+        assertEq(minimumRequired[1], 5);
+
         maxima = _units(7, 12);
         (uint256 shares, uint256[] memory required) = vault.previewMaxMint(maxima);
-        assertEq(shares, 7 * WAD / 3);
+        assertEq(shares, 7 * WAD / 300);
         assertEq(required[0], 7);
         assertEq(required[1], 12);
     }

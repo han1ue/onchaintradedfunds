@@ -34,7 +34,8 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error ZeroShares();
     error SharesExceedSupply(uint256 shares, uint256 supply);
     error BootstrapSharesTooSmall(uint256 supplied, uint256 minimum);
-    error ResidualSupplyTooSmall(uint256 residualSupply, uint256 minimum);
+    error InvalidSkipMask(uint256 skipMask, uint256 constituentCount);
+    error SkippedAssetMinimumNotZero(address asset, uint256 minimum);
     error AmountTooHigh(address asset, uint256 required, uint256 maximum);
     error AmountTooLow(address asset, uint256 actual, uint256 minimum);
     error AssetTransferMismatch(
@@ -64,6 +65,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     event EmergencyRedeemed(
         address indexed owner, address indexed receiver, uint256 shares, uint256[] amountsOut
     );
+    event InKindRedeemed(
+        address indexed owner,
+        address indexed receiver,
+        uint256 shares,
+        uint256[] amountsOut,
+        uint256[] forfeitedAmounts,
+        uint256 skipMask
+    );
     event ExpenseFeesCheckpointed(
         uint256 totalFeeShares,
         uint256 creatorShares,
@@ -71,6 +80,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
         uint16 effectiveProtocolShareBps
     );
     event EmergencyShutdown(address indexed caller, uint64 timestamp);
+    event LowSupplyShutdown(address indexed caller, uint64 timestamp, uint256 remainingSupply);
 
     bool internal _initialized;
     bool internal _shutdown;

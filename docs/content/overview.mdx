@@ -72,8 +72,9 @@ vault. Creation requires no constituent transfer and has no deterministic addres
 
 ## Bootstrap and ongoing accounting
 
-Vault shares use 18 decimals. When total supply is zero, any requested mint of at least `1e18`
-shares is allowed. Each required constituent amount is:
+Vault shares use 18 decimals. When total supply is zero, the first mint must request at least
+`1e16` shares (`0.01` OTF). This minimum is not the calculation denominator. Each required
+constituent amount is always:
 
 ```text
 amountIn_i = ceil(bootstrapBasketUnitsPerOTF_i * requestedShares / 1e18)
@@ -87,13 +88,18 @@ amountIn_i = ceil(accountedBalance_i * requestedShares / totalSupply)
 ```
 
 Normal redemption returns each holder's floored pro-rata accounted balance. A full redemption
-returns every accounted balance exactly and leaves supply and the accounting ledger at zero. A
-later depositor bootstraps again from the same immutable bootstrap units.
+returns every accounted balance exactly. A redemption that leaves supply below `1e16`, including
+zero, completes and then permanently shuts down the vault. A remaining supply exactly equal to
+`1e16` stays live. Shutdown can never be cleared, so a vault that reaches zero through redemption
+cannot bootstrap again; minting and fee accrual remain disabled while holder exits stay available.
 
-Fees are accrued before normal mint and redemption math. A normal redemption may leave either zero
-supply or at least `1e18`; otherwise it reverts with `ResidualSupplyTooSmall`. Emergency redemption
-does not apply this floor because holder exit takes priority after shutdown. The normal-settlement
-invariant is `totalSupply == 0 || totalSupply >= 1e18`.
+Holders may call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly in both live and
+shutdown states, without the router or swap liquidity. For each non-skipped asset, payout is pro
+rata from `min(actual, accounted)` while the ledger reduction remains the holder's normal pro-rata
+accounted entitlement. Each set bit permanently forfeits that constituent: the vault makes no
+external call to the skipped token, reduces its accounted balance by that normal entitlement, and
+leaves the physical tokens as permanently unaccounted excess. The skipped minimum must be zero.
+This recovery control is intentionally not exposed in the normal application UI.
 
 `accountedBalance` is the vault ledger, not a live valuation. Tracked-token donations do not enter
 the ledger. Normal settlement fails closed on a backing deficit. After irreversible shutdown,
@@ -111,6 +117,11 @@ pools against one immutable factory/router pair, parses packed paths, bounds leg
 deadlines and minimums, clears temporary approvals, checks exact token deltas, prevents reentrancy,
 and rolls the whole transaction back on failure. Offchain quoting compares only queried routes and
 does not promise global optimality.
+
+Before accepting a quote whose output OTF has zero supply, the Swap screen reads that supply and
+requires the quote's guaranteed minimum output—not merely its expected output—to be at least
+`0.01` OTF. There is no first-purchase maximum. Once supply is nonzero, the special quote minimum
+does not apply.
 
 Production liquidity is managed at the external venue. `/liquidity` remains a visibly testnet-only
 utility for explicitly configured legacy pools and is not a production deployment path.

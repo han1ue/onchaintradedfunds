@@ -6,6 +6,29 @@
 **Compiler target:** Solidity 0.8.36, Shanghai EVM, optimizer enabled, `viaIR`  
 **Assessment type:** Manual adversarial review, automated checks, unit/fuzz/invariant testing
 
+## Post-review remediation note — 31 August 2026
+
+The findings and verification figures below are the historical review record for the source
+snapshot identified above; they have not been rewritten or re-audited. Subsequent uncommitted
+remediation work addresses the four findings as follows:
+
+- **OTF-01:** Redemptions no longer revert solely because they leave dust supply. A redemption that
+  leaves less than `0.01` OTF, including zero, completes and permanently shuts down the vault;
+  exactly `0.01` OTF remains live. Shutdown cannot be cleared and disables minting and fee accrual.
+- **OTF-02:** Holders receive a direct, router-independent `redeemInKind` exit in live and shutdown
+  states.
+- **OTF-03:** Direct in-kind redemption accepts an explicit skip mask. A skipped token is never
+  called, its pro-rata accounted entitlement is removed, and its physical balance becomes
+  permanently unaccounted excess. This is an irreversible holder forfeiture, not deferred recovery.
+- **OTF-04:** `acceptTreasuryTransfer` shares the collector's reentrancy guard with claims, preventing
+  callback-time treasury changes from misidentifying the recipient in `TokenClaimed`.
+
+The same remediation sets the zero-supply mint minimum to `0.01` OTF while retaining `1e18` as the
+bootstrap-math denominator. The Swap application rejects an empty-output-vault quote unless its
+guaranteed minimum output is at least `0.01` OTF; it imposes no maximum first-purchase size and
+removes the special minimum once supply is nonzero. The advanced direct in-kind/skip controls are
+documented but intentionally absent from the normal application UI.
+
 ## Executive summary
 
 The review covered the complete OTF smart-contract implementation under `contracts/src`, together

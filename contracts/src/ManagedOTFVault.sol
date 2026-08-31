@@ -222,7 +222,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             revert InvalidArrayLength(length, maxAmountsIn.length);
         }
         uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
-        uint256 denominator = effectiveSupply == 0 ? MINIMUM_SHARE_SUPPLY : effectiveSupply;
+        uint256 denominator = effectiveSupply == 0 ? WAD : effectiveSupply;
         shares = type(uint256).max;
         bool anyQuantity;
         for (uint256 i = 0; i < length; i++) {
@@ -316,8 +316,93 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         _requireExpectedBalances(balancesBefore, amountsOut, false);
         _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
-        _resetFeeEpoch();
         emit BasketRedeemed(msg.sender, owner, receiver, shares, amountsOut);
+        _shutdownIfSupplyTooLow();
+        if (!_shutdown) _resetFeeEpoch();
+    }
+
+    /// @notice Burns the caller's shares for basket assets without using swap liquidity.
+    /// @dev Skipped entitlements are irrevocably forfeited and become unaccounted vault excess.
+    function redeemInKind(
+        uint256 shares,
+        address receiver,
+        uint256[] calldata minAmountsOut,
+        uint256 skipMask
+    ) external onlyInitialized nonReentrant returns (uint256[] memory amountsOut) {
+        if (receiver == address(0)) revert ZeroAddress();
+        if (receiver == address(this)) revert InvalidReceiver(receiver);
+        if (shares == 0) revert ZeroShares();
+        uint256 length = _assets.length;
+        if (minAmountsOut.length != length) {
+            revert InvalidArrayLength(length, minAmountsOut.length);
+        }
+        if (skipMask >> length != 0) revert InvalidSkipMask(skipMask, length);
+        for (uint256 i = 0; i < length; i++) {
+            if (_isSkipped(skipMask, i) && minAmountsOut[i] != 0) {
+                revert SkippedAssetMinimumNotZero(_assets[i], minAmountsOut[i]);
+            }
+        }
+
+        if (!_shutdown) _accrueFees();
+        uint256 supply = totalSupply();
+        if (shares > supply) revert SharesExceedSupply(shares, supply);
+
+        amountsOut = new uint256[](length);
+        uint256[] memory forfeitedAmounts = new uint256[](length);
+        uint256[] memory accountedReductions = new uint256[](length);
+        uint256[] memory vaultBalancesBefore = new uint256[](length);
+        uint256[] memory receiverBalancesBefore = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            address asset = _assets[i];
+            uint256 accounted = _accountedBalance[asset];
+            uint256 reduction =
+                shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
+            accountedReductions[i] = reduction;
+            if (_isSkipped(skipMask, i)) {
+                forfeitedAmounts[i] = reduction;
+                continue;
+            }
+
+            uint256 actual = IERC20(asset).balanceOf(address(this));
+            vaultBalancesBefore[i] = actual;
+            receiverBalancesBefore[i] = IERC20(asset).balanceOf(receiver);
+            uint256 distributable = actual < accounted ? actual : accounted;
+            uint256 amount =
+                shares == supply ? distributable : Math.mulDiv(distributable, shares, supply);
+            amountsOut[i] = amount;
+            if (amount < minAmountsOut[i]) {
+                revert AmountTooLow(asset, amount, minAmountsOut[i]);
+            }
+        }
+
+        _burn(msg.sender, shares);
+        for (uint256 i = 0; i < length; i++) {
+            _accountedBalance[_assets[i]] -= accountedReductions[i];
+        }
+        _shutdownIfSupplyTooLow();
+
+        for (uint256 i = 0; i < length; i++) {
+            if (_isSkipped(skipMask, i)) continue;
+            address asset = _assets[i];
+            uint256 currentVaultBalance = IERC20(asset).balanceOf(address(this));
+            if (currentVaultBalance != vaultBalancesBefore[i]) {
+                revert AssetTransferMismatch(
+                    asset, vaultBalancesBefore[i], vaultBalancesBefore[i], currentVaultBalance
+                );
+            }
+            uint256 currentReceiverBalance = IERC20(asset).balanceOf(receiver);
+            if (currentReceiverBalance != receiverBalancesBefore[i]) {
+                revert BasketAccountBalanceChanged(
+                    asset, receiver, receiverBalancesBefore[i], currentReceiverBalance
+                );
+            }
+            _pushExact(asset, receiver, amountsOut[i]);
+        }
+        _requireExpectedUnskippedBalances(
+            receiver, vaultBalancesBefore, receiverBalancesBefore, amountsOut, skipMask
+        );
+        if (!_shutdown) _resetFeeEpoch();
+        emit InKindRedeemed(msg.sender, receiver, shares, amountsOut, forfeitedAmounts, skipMask);
     }
 
     // Emergency path
@@ -403,7 +488,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             uint256 quantity = supply == 0
                 ? _bootstrapBasketUnitsPerOTF[_assets[i]]
                 : _accountedBalance[_assets[i]];
-            uint256 denominator = supply == 0 ? MINIMUM_SHARE_SUPPLY : supply;
+            uint256 denominator = supply == 0 ? WAD : supply;
             amountsIn[i] = Math.mulDiv(quantity, shares, denominator, Math.Rounding.Ceil);
         }
     }
@@ -414,10 +499,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (uint256[] memory amountsOut)
     {
         if (supply == 0 || shares > supply) revert SharesExceedSupply(shares, supply);
-        uint256 residualSupply = supply - shares;
-        if (residualSupply != 0 && residualSupply < MINIMUM_SHARE_SUPPLY) {
-            revert ResidualSupplyTooSmall(residualSupply, MINIMUM_SHARE_SUPPLY);
-        }
         uint256 length = _assets.length;
         amountsOut = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
@@ -503,6 +584,18 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _feeEpochAccruedShares = 0;
     }
 
+    function _shutdownIfSupplyTooLow() internal {
+        uint256 remainingSupply = totalSupply();
+        if (_shutdown || remainingSupply >= MINIMUM_SHARE_SUPPLY) return;
+        _shutdown = true;
+        _shutdownAt = uint64(block.timestamp);
+        emit LowSupplyShutdown(msg.sender, _shutdownAt, remainingSupply);
+    }
+
+    function _isSkipped(uint256 skipMask, uint256 index) internal pure returns (bool) {
+        return ((skipMask >> index) & 1) != 0;
+    }
+
     function _requireBackingSound() internal view {
         uint256 length = _assets.length;
         for (uint256 i = 0; i < length; i++) {
@@ -564,6 +657,32 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             uint256 actual = IERC20(_assets[i]).balanceOf(account);
             if (actual != expected) {
                 revert BasketAccountBalanceChanged(_assets[i], account, expected, actual);
+            }
+        }
+    }
+
+    function _requireExpectedUnskippedBalances(
+        address receiver,
+        uint256[] memory vaultBalancesBefore,
+        uint256[] memory receiverBalancesBefore,
+        uint256[] memory amountsOut,
+        uint256 skipMask
+    ) internal view {
+        uint256 length = _assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (_isSkipped(skipMask, i)) continue;
+            address asset = _assets[i];
+            uint256 expectedVaultBalance = vaultBalancesBefore[i] - amountsOut[i];
+            uint256 actualVaultBalance = IERC20(asset).balanceOf(address(this));
+            if (actualVaultBalance != expectedVaultBalance) {
+                revert BasketBalanceChanged(asset, expectedVaultBalance, actualVaultBalance);
+            }
+            uint256 expectedReceiverBalance = receiverBalancesBefore[i] + amountsOut[i];
+            uint256 actualReceiverBalance = IERC20(asset).balanceOf(receiver);
+            if (actualReceiverBalance != expectedReceiverBalance) {
+                revert BasketAccountBalanceChanged(
+                    asset, receiver, expectedReceiverBalance, actualReceiverBalance
+                );
             }
         }
     }

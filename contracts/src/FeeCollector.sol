@@ -47,7 +47,7 @@ contract FeeCollector {
         emit TreasuryTransferStarted(treasury, newTreasury);
     }
 
-    function acceptTreasuryTransfer() external {
+    function acceptTreasuryTransfer() external nonReentrant {
         if (msg.sender != pendingTreasury) revert NotPendingTreasury();
         address oldTreasury = treasury;
         treasury = msg.sender;

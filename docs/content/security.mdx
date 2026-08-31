@@ -44,17 +44,20 @@ The creator and one-time router configurator remain trust roles. A creator can i
 down a sound vault. Any caller can shut down a vault when a readable constituent balance proves a
 backing deficit; a failed read or donation is not proof.
 
-### Bootstrap, supply floor, and rounding
+### Bootstrap, low supply, and rounding
 
-The first mint after any zero-supply state requires at least `1e18` shares and uses ceiling-rounded
-immutable bootstrap units. Later mints use ceiling-rounded current accounted balances per share.
+An empty live vault requires a first mint of at least `1e16` shares (`0.01` OTF). Bootstrap inputs
+remain `ceil(bootstrapUnits_i * shares / 1e18)`: the minimum is never used as the denominator.
+There is no maximum first purchase. Later mints use ceiling-rounded current accounted balances per
+share and have no special minimum.
+
 Normal redemption uses floor rounding, except full redemption returns every accounted balance
-exactly. After fee accrual, a partial normal redemption cannot leave supply between 1 and
-`1e18 - 1`; `ResidualSupplyTooSmall` protects the normal-settlement invariant
-`totalSupply == 0 || totalSupply >= 1e18`.
+exactly. A redemption that leaves less than `0.01` OTF, including zero, succeeds and then places the
+vault in permanent shutdown; exactly `0.01` OTF remains live. Shutdown cannot be cleared and blocks
+all minting and fee accrual, including any attempted zero-supply restart, while preserving exits.
 
-Emergency redemption intentionally has no residual-supply floor. Following shutdown, preserving a
-holder's ability to exit is more important than keeping the normal settlement invariant.
+On the Swap screen, an empty output OTF quote is unusable unless its guaranteed minimum output is
+at least `0.01` OTF. A larger expected output does not compensate for a smaller executable minimum.
 
 ### Basket accounting and tokens
 
@@ -68,12 +71,28 @@ rebasing, callback-mutating, and otherwise non-exact ERC-20s are unsupported. Th
 make proxy implementations, decimals, or future token behavior immutable; production asset policy
 must exclude unsuitable tokens even if an application labels them verified.
 
+### Direct in-kind exit and irreversible forfeiture
+
+Any holder can redeem their own shares directly in kind in either live or shutdown state without
+the router or external liquidity. With no skip bits, each payout is pro rata from
+`min(actual, accounted)` while the ledger reduction uses the holder's normal pro-rata accounted
+entitlement. Non-skipped transfers retain the existing exact-delta protections.
+
+The optional `skipMask` is a last-resort direct-contract recovery mechanism for a failing token.
+For every skipped constituent, the vault transfers nothing and makes no external call, including
+`balanceOf`. It still removes the holder's normal pro-rata entitlement from `accountedBalance`, so
+the physical tokens left behind become permanently unaccounted excess and cannot be swept, credited,
+or inherited by remaining holders. Skipping is therefore an irreversible forfeiture. The normal
+application deliberately does not expose this control.
+
 ### Expense dilution and protocol shares
 
 The creator expense is share inflation, not an asset transfer. Its ratio and beneficiary are fixed
 at initialization. Fee growth is lazy and cadence-independent. The factory supplies one immutable
 protocol fee share for every vault; there is no constituent- or allocation-based adjustment.
 Protocol shares are held by `FeeCollector`, whose treasury is the only claimant.
+Treasury acceptance uses the same reentrancy guard as claims, preventing a token callback from
+changing the live treasury while `TokenClaimed` is being reconciled with the actual receiver.
 
 ### Router, pools, and external liquidity
 
@@ -87,9 +106,9 @@ expected V3 pool bytecode family. Production needs funded direct-buy, direct-sel
 tests against exact deployment addresses. Pool fees belong to LPs; creators promise neither
 liquidity nor execution price.
 
-If all usable routes disappear while backing is sound, only the creator can activate emergency
-in-kind redemption. A lost or hostile creator can therefore strand holders until a backing deficit
-becomes provable. This is an explicit liveness limitation.
+If all usable routes disappear while backing is sound, holders can still use direct in-kind
+redemption. A failing constituent may still require that holder to make the explicit, irreversible
+choice to skip and forfeit it in order to recover healthy assets.
 
 ## Explicit limitations and unresolved blockers
 
@@ -99,7 +118,6 @@ becomes provable. This is an explicit liveness limitation.
   unresolved.
 - Production quote services, mainnet OTF addresses, and funded venue fork evidence are unresolved.
 - Malicious, rebasing, fee-on-transfer, and mutable tokens remain unsupported.
-- Sound-vault emergency exit still depends on the creator.
 - No share is promised to track a dollar, percentage target, or current index.
 - `launch/` is a separate prelaunch competition and is outside this threat model.
 

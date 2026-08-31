@@ -89,6 +89,8 @@ export type SwapQuote = {
   outputAmount?: string;
   expectedOutput?: string;
   minimumReceived?: string;
+  /** Guaranteed output in the output token's raw units, retained for safety checks. */
+  minimumReceivedRaw?: bigint;
   venueFeeBps?: number;
   priceImpactBps?: number;
   gasEstimate?: string;
@@ -125,6 +127,7 @@ export const MAX_V3_LEGS = 40;
 export const MAX_V3_HOPS_PER_LEG = 3;
 export const QUOTE_MAX_AGE_MS = 20_000;
 export const QUOTE_MAX_FUTURE_DEADLINE_SECONDS = 300;
+export const FIRST_PURCHASE_MINIMUM_SHARES = 10_000_000_000_000_000n;
 
 const FORBIDDEN_RESPONSE_FIELDS = new Set([
   "adapter", "adapterdata", "calldata", "commands", "delegatecall", "recipient", "target", "universalrouter",
@@ -257,6 +260,41 @@ export function decimalAmount(value: string, decimals = 18): bigint | undefined 
   const fractional = (match[2] ?? "").padEnd(decimals, "0");
   const amount = BigInt(match[1]) * 10n ** BigInt(decimals) + BigInt(fractional || "0");
   return amount <= maxUint256 ? amount : undefined;
+}
+
+/**
+ * Empty OTFs reject quotes whose executable minimum can mint less than 0.01 OTF.
+ * Established OTFs have no special purchase-size restriction.
+ */
+export function enforceFirstPurchaseMinimum(
+  quotes: readonly SwapQuote[],
+  output: SwapAsset,
+  outputTotalSupply: bigint | undefined,
+): SwapQuote[] {
+  if (output.kind !== "otf") return [...quotes];
+  if (outputTotalSupply === undefined) {
+    return quotes.map((quote) => quote.state === "available" ? {
+      ...quote,
+      state: "unavailable",
+      reason: "The output OTF supply could not be confirmed, so this quote cannot be used safely.",
+      execution: undefined,
+    } : quote);
+  }
+  if (outputTotalSupply !== 0n) return [...quotes];
+  return quotes.map((quote) => {
+    if (
+      quote.state !== "available"
+      || (quote.minimumReceivedRaw !== undefined && quote.minimumReceivedRaw >= FIRST_PURCHASE_MINIMUM_SHARES)
+    ) {
+      return quote;
+    }
+    return {
+      ...quote,
+      state: "unavailable",
+      reason: "The first purchase must guarantee at least 0.01 OTF.",
+      execution: undefined,
+    };
+  });
 }
 
 /** Selects only between returned, usable route quotes—not all liquidity in the market. */
@@ -540,7 +578,7 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
     throw new Error("Quote uses an unsupported entry-router method.");
   }
   return {
-    id: common.id, route: context.route, state: "available", queriedAt: common.queriedAt, expiresAt: common.expiresAt, inputAmount: context.request.inputAmount, outputAmount: common.outputAmount, expectedOutput: common.expectedOutput, minimumReceived: common.minimumReceived, ...parseOptionalMetrics(response), routeLabel: routeLabel(context.route), hops: common.legs.flatMap((leg) => leg.hops), execution, router: context.entryRouter, caller: context.request.caller, chainId: context.chainId,
+    id: common.id, route: context.route, state: "available", queriedAt: common.queriedAt, expiresAt: common.expiresAt, inputAmount: context.request.inputAmount, outputAmount: common.outputAmount, expectedOutput: common.expectedOutput, minimumReceived: common.minimumReceived, minimumReceivedRaw: common.minimumReceivedRaw, ...parseOptionalMetrics(response), routeLabel: routeLabel(context.route), hops: common.legs.flatMap((leg) => leg.hops), execution, router: context.entryRouter, caller: context.request.caller, chainId: context.chainId,
   };
 }
 

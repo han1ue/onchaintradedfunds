@@ -428,41 +428,72 @@ contract VaultAccountingTest is BootstrapTestBase {
         assertEq(vault.balanceOf(ALICE), 2 * WAD);
     }
 
-    function testNormalRedemptionRejectsUnsafeResidualSupplyAfterFeeAccrual() public {
+    function testFeeResidualBelowMinimumShutsDownAndStopsFurtherFees() public {
         ManagedOTFVault vault = _newVault(23, 1_000);
         _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
-        vm.warp(block.timestamp + 365 days);
+        vm.warp(block.timestamp + 1 days);
 
-        vm.expectPartialRevert(ManagedOTFVaultStorage.ResidualSupplyTooSmall.selector);
-        vault.previewRedeem(WAD);
+        uint256[] memory expected = vault.previewRedeem(WAD);
+        assertGt(expected[0], 0);
 
         vm.prank(ALICE);
         vault.approve(address(router), WAD);
-        vm.expectPartialRevert(ManagedOTFVaultStorage.ResidualSupplyTooSmall.selector);
-        router.redeem(vault, WAD, ALICE, ALICE, _zeroes(2));
-    }
-
-    function testNormalRedemptionAllowsExactlyOneOTFResidualSupply() public {
-        ManagedOTFVault vault = _newVault(24, 0);
-        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), 2 * WAD);
-        vm.prank(ALICE);
-        vault.approve(address(router), WAD);
-
         router.redeem(vault, WAD, ALICE, ALICE, _zeroes(2));
 
-        assertEq(vault.totalSupply(), WAD);
-    }
+        assertTrue(vault.shutdown());
+        assertGt(vault.totalSupply(), 0);
+        assertLt(vault.totalSupply(), 1e16);
+        uint256 stoppedSupply = vault.totalSupply();
+        vm.warp(block.timestamp + 10 * 365 days);
+        assertEq(vault.pendingExpenseFeeShares(), 0);
+        assertEq(vault.checkpointFees(), 0);
+        assertEq(vault.totalSupply(), stoppedSupply);
 
-    function testEmergencyRedemptionDoesNotApplyResidualSupplyFloor() public {
-        ManagedOTFVault vault = _newVault(25, 0);
-        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.VaultShutdown.selector);
+        router.mint(vault, 1, BOB, _zeroes(2));
+
         vm.prank(CREATOR);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.VaultShutdown.selector);
         vault.activateEmergencyShutdown();
+    }
 
+    function testNormalRedemptionLeavingExactlyMinimumSupplyStaysLive() public {
+        ManagedOTFVault vault = _newVault(24, 0);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), 2e16);
         vm.prank(ALICE);
-        vault.emergencyRedeem(WAD - 1, ALICE, _zeroes(2));
+        vault.approve(address(router), 1e16);
 
-        assertEq(vault.totalSupply(), 1);
+        router.redeem(vault, 1e16, ALICE, ALICE, _zeroes(2));
+
+        assertEq(vault.totalSupply(), 1e16);
+        assertFalse(vault.shutdown());
+    }
+
+    function testNormalRedemptionLeavingLessThanMinimumSucceedsAndShutsDown() public {
+        ManagedOTFVault vault = _newVault(25, 0);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), 2e16);
+        vm.prank(ALICE);
+        vault.approve(address(router), 1e16 + 1);
+
+        router.redeem(vault, 1e16 + 1, ALICE, ALICE, _zeroes(2));
+
+        assertEq(vault.totalSupply(), 1e16 - 1);
+        assertTrue(vault.shutdown());
+        assertEq(vault.shutdownAt(), block.timestamp);
+    }
+
+    function testFullRedemptionFromTwoMinimumUnitsSucceedsAndShutsDown() public {
+        ManagedOTFVault vault = _newVault(26, 0);
+        _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), 2e16);
+        vm.prank(ALICE);
+        vault.approve(address(router), 2e16);
+
+        router.redeem(vault, 2e16, ALICE, ALICE, _zeroes(2));
+
+        assertEq(vault.totalSupply(), 0);
+        assertTrue(vault.shutdown());
+        assertEq(vault.accountedBalance(address(tokenA)), 0);
+        assertEq(vault.accountedBalance(address(tokenB)), 0);
     }
 
     function _newVault(uint256, uint16 expenseRatioBps) private returns (ManagedOTFVault) {

@@ -38,7 +38,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { encodeFunctionData, getAddress, isAddress, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
-import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
+import { managedOtfVaultAbi, otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import { robinhoodMainnetAddresses, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "@/lib/deployment";
@@ -47,6 +47,7 @@ import {
   assetHasExecutableMetadata,
   decimalInputValue,
   ERC20_APPROVE_ABI,
+  enforceFirstPurchaseMinimum,
   executionPlanForQuote,
   isPositiveDecimalAmount,
   pastedAsset,
@@ -55,6 +56,7 @@ import {
   requestConcurrentQuotes,
   routerArgsForExecution,
   supportedSwapDirection,
+  unavailableQuote,
   validSwapPair,
   type SwapAsset,
   type SwapAssetKind,
@@ -701,15 +703,45 @@ function SwapSurface() {
     ]);
     setActiveQuote(undefined);
     let cancelled = false;
-    requestConcurrentQuotes(quoteService, request).then((nextQuotes) => {
+    void (async () => {
+      let outputTotalSupply: bigint | undefined;
+      if (output.kind === "otf") {
+        const rejectUnconfirmedSupply = () => {
+          const reason = "The output OTF supply could not be confirmed, so this quote cannot be used safely.";
+          setQuotes([
+            unavailableQuote("direct", request, reason),
+            unavailableQuote("basket", request, reason),
+          ]);
+        };
+        if (!publicClient) {
+          rejectUnconfirmedSupply();
+          return;
+        }
+        try {
+          outputTotalSupply = await publicClient.readContract({
+            address: output.address,
+            abi: managedOtfVaultAbi,
+            functionName: "totalSupply",
+          });
+        } catch {
+          if (cancelled) return;
+          rejectUnconfirmedSupply();
+          return;
+        }
+      }
+      const nextQuotes = enforceFirstPurchaseMinimum(
+        await requestConcurrentQuotes(quoteService, request),
+        output,
+        outputTotalSupply,
+      );
       if (cancelled) return;
       setQuotes(nextQuotes);
       setActiveQuote(bestQueriedQuote(nextQuotes, Date.now()));
-    }).catch(() => {
+    })().catch(() => {
       if (!cancelled) setQuotes([]);
     });
     return () => { cancelled = true; };
-  }, [address, amount, amountValid, chainId, directionSupported, input, output, pairExecutable, pairValid, quoteRequest, quoteService, slippageBps, supportedNetwork]);
+  }, [address, amount, amountValid, chainId, directionSupported, input, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
 
   function selectAsset(which: "input" | "output", asset: SwapAsset) {
     if ((which === "input" && sameAsset(asset, output)) || (which === "output" && sameAsset(asset, input))) return;

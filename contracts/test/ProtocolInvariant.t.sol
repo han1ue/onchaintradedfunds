@@ -34,7 +34,8 @@ contract VaultInvariantHandler {
     }
 
     function mint(uint256 seed) external {
-        uint256 minimum = vault.totalSupply() == 0 ? 1e18 : 1;
+        if (vault.shutdown()) return;
+        uint256 minimum = vault.totalSupply() == 0 ? 1e16 : 1;
         uint256 shares = minimum + seed % (100e18 - minimum + 1);
         uint256[] memory amounts = vault.previewMint(shares);
         tokenA.mint(address(router), amounts[0]);
@@ -48,6 +49,10 @@ contract VaultInvariantHandler {
         uint256 balance = vault.balanceOf(address(this));
         if (balance == 0) return;
         uint256 shares = 1 + seed % balance;
+        if (vault.shutdown()) {
+            vault.redeemInKind(shares, address(this), new uint256[](2), 0);
+            return;
+        }
         vault.approve(address(router), 0);
         vault.approve(address(router), shares);
         router.redeem(vault, shares, address(this), address(this), new uint256[](2));
@@ -104,9 +109,9 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
         assertEq(vault.totalSupply(), balances);
     }
 
-    function invariantNormalSettlementSupplyIsZeroOrAtLeastOneOTF() public view {
+    function invariantLiveSupplyIsAtLeastBootstrapMinimum() public view {
         uint256 supply = vault.totalSupply();
-        assertTrue(supply == 0 || supply >= WAD);
+        assertTrue(vault.shutdown() || supply >= 1e16);
     }
 
     function invariantFullRedemptionPreviewMatchesAccountedAfterCheckpoint() public {
@@ -126,7 +131,7 @@ contract VaultFuzzTest is BootstrapTestBase {
         MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
         ManagedOTFVault vault =
             _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 0);
-        uint256 shares = bound(mintSeed, WAD, 1_000_000 * WAD);
+        uint256 shares = bound(mintSeed, 1e16, 1_000_000 * WAD);
         uint256[] memory amounts = vault.previewMint(shares);
         tokenA.mint(address(router), amounts[0]);
         tokenB.mint(address(router), amounts[1]);
@@ -134,8 +139,7 @@ contract VaultFuzzTest is BootstrapTestBase {
         router.approveAsset(address(tokenB), address(vault), amounts[1]);
         router.mint(vault, shares, ALICE, amounts);
 
-        uint256 redeemShares =
-            redeemSeed % 2 == 0 || shares == WAD ? shares : bound(redeemSeed, 1, shares - WAD);
+        uint256 redeemShares = redeemSeed % 2 == 0 ? shares : bound(redeemSeed, 1, shares - 1);
         vm.prank(ALICE);
         vault.approve(address(router), redeemShares);
         router.redeem(vault, redeemShares, ALICE, ALICE, new uint256[](2));
