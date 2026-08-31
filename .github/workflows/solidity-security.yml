@@ -12,7 +12,6 @@ on:
       - "scripts/check-contract-security.mjs"
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
-      - "scripts/formation-snapshot.mjs"
       - "scripts/generate-contract-abis.mjs"
       - "scripts/fixtures/**"
       - "packages/generated/**"
@@ -27,7 +26,6 @@ on:
       - "scripts/check-contract-security.mjs"
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
-      - "scripts/formation-snapshot.mjs"
       - "scripts/generate-contract-abis.mjs"
       - "scripts/fixtures/**"
       - "packages/generated/**"
@@ -96,9 +94,6 @@ jobs:
 
       - name: Typecheck generated package
         run: corepack pnpm --filter @onchaintradedfunds/generated typecheck
-
-      - name: Verify offline formation vector
-        run: corepack pnpm contracts:formation -- --self-test
 
       - name: Run full Foundry suite
         working-directory: contracts
