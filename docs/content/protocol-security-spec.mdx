@@ -172,13 +172,24 @@ router, clear approval, verify exact input consumption and reported/observed/min
 preserve pre-existing donations. Arbitrary targets, recipients, commands, and delegatecall are
 forbidden.
 
+`UniswapV4Adapter` MUST bind immutable entry-router, PoolManager, StateView, Universal Router, and
+Permit2 addresses. StateView and Universal Router MUST report the configured PoolManager in the
+constructor and during execution. Adapter data MUST be only an ABI-encoded V4 `PathKey[]` matching
+the leg endpoints, with at most three ERC-20-only hops and bounded hook data. Every pool key MUST
+have valid fee/tick-spacing fields and an initialized StateView slot. The adapter MUST construct the
+fixed exact-input, settle-all, and take-all actions itself; arbitrary Universal Router commands are
+forbidden. ERC-20 and Permit2 approvals MUST equal one leg input and be cleared after execution.
+Input/output deltas, minimum output, donation preservation, and the final transfer to the bound
+entry router MUST be independently verified.
+
 The same-origin quote API MUST keep `UNISWAP_API_KEY` server-only. Production direct swaps MUST use
 exact-input BEST_PRICE V3/V4 CLASSIC single-chain ERC-20 routes and validate supported Permit2,
 approval, sender, recipient, token, amount, deadline, value, and Universal Router targets. Testnet
 direct swaps MUST use only cataloged, factory-confirmed, liquid Synthra V3 pools; generated
 SwapRouter02 calldata MUST be bound to the requested caller, tokens, exact input, minimum output,
 and configured target. Basket responses MUST be exact typed requests with ordered legs using only
-the configured `UniswapV3Adapter`. The user-facing Swap API MUST reject a pair unless at least one
+adapters and pools configured by the server; the current testnet planner uses `UniswapV3Adapter`
+until liquid V4 pool keys are added to the route catalog. The user-facing Swap API MUST reject a pair unless at least one
 side is a factory OTF. OTF directions MUST request direct and basket candidates independently.
 Selection MUST use integer expected output and
 be described as the best queried route. Before submission, the app MUST `eth_call` and `estimateGas`

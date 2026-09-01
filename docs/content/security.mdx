@@ -106,15 +106,18 @@ leg to transient balance above a pre-call baseline, verifies exact router input/
 checks the adapter's reported output, refunds every harmless surplus to the caller, blocks
 reentrancy, and rolls back atomically.
 
-`UniswapV3Adapter` is the only current implementation. Its data is exclusively a packed V3 path
+`UniswapV3Adapter` accepts data exclusively as a packed V3 path
 of at most three hops. It authenticates each pool against an immutable V3 factory, fixes the
 SwapRouter02 recipient to the entry router, approves exactly one leg input and clears that
 approval, verifies exact consumption and output, and never sweeps pre-existing donations. The
-router exposes no direct pool swap; ordinary secondary-market swaps use the server-side Uniswap
-Trading API.
+`UniswapV4Adapter` accepts only typed V4 pool-key paths, authenticates initialized pools through
+StateView, constructs its fixed Universal Router action stream internally, uses exact temporary
+ERC-20 and Permit2 approvals, and verifies the final balance deltas. The router exposes no direct
+pool swap; ordinary secondary-market swaps use the server-side Uniswap Trading API.
 
-The configured venue must implement SwapRouter02's four-field `exactInput` ABI and share the
-expected V3 pool bytecode family. Production needs funded direct-buy, direct-sell, and multihop fork
+The configured V3 venue must implement SwapRouter02's four-field `exactInput` ABI and share the
+expected V3 pool bytecode family. The configured V4 Universal Router and StateView must both report
+the immutable PoolManager recorded by the adapter. Production needs funded direct-buy, direct-sell, and multihop fork
 tests against exact deployment addresses. Pool fees belong to LPs; creators promise neither
 liquidity nor execution price.
 

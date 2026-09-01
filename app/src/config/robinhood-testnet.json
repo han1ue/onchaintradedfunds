@@ -4,7 +4,7 @@
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
   "status": "deployed",
-  "deployedAt": "2026-09-01T12:11:19.654Z",
+  "deployedAt": "2026-09-01T20:12:19.551Z",
   "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "contracts": {
     "feeCollector": {
@@ -42,11 +42,21 @@
       "transactionHash": "0xe0eea4165722ea96ecd669cb8f5bafb3dc8e32d6b64753e52d54998e67eb4a71",
       "blockNumber": "111133728",
       "gasUsed": "1101096"
+    },
+    "uniswapV4Adapter": {
+      "address": "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe",
+      "transactionHash": "0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c",
+      "blockNumber": "111317310",
+      "gasUsed": "1730565"
     }
   },
   "externalContracts": {
     "uniswapV3Factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
-    "uniswapV3SwapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE"
+    "uniswapV3SwapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
+    "uniswapV4PoolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "uniswapV4StateView": "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+    "uniswapUniversalRouter": "0x8876789976dEcBfCbBbe364623C63652db8C0904",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
   },
   "policy": {
     "protocolFeeShareBps": 1500
@@ -54,23 +64,32 @@
   "routing": {
     "integration": "approved-trade-adapters",
     "approvedAdapters": [
-      "0x9373cA2022E6746ee9A64701630Eb45b7E179875"
+      "0x9373cA2022E6746ee9A64701630Eb45b7E179875",
+      "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe"
     ],
     "uniswapV3Adapter": "0x9373cA2022E6746ee9A64701630Eb45b7E179875",
     "exactInputTuple": "(bytes,address,uint256,uint256)",
     "maxHopsPerLeg": 3,
-    "maxLegs": 40
+    "maxLegs": 40,
+    "uniswapV4Adapter": "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe",
+    "v4RouteData": "abi.encode((address,uint24,int24,address,bytes)[])",
+    "maxV4HopsPerLeg": 3
   },
   "setupTransactions": {
-    "adapterApproval": {
-      "transactionHash": "0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb",
-      "blockNumber": "111133741",
-      "gasUsed": "57013"
-    },
     "routerConfiguration": {
       "transactionHash": "0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874",
       "blockNumber": "111133755",
       "gasUsed": "53484"
+    },
+    "v3AdapterApproval": {
+      "transactionHash": "0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb",
+      "blockNumber": "111133741",
+      "gasUsed": "57013"
+    },
+    "v4AdapterApproval": {
+      "transactionHash": "0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9",
+      "blockNumber": "111317327",
+      "gasUsed": "55620"
     }
   },
   "externalLiquidity": {

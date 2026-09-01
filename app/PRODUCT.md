@@ -26,4 +26,4 @@ The application is an operating surface for creating, trading, and inspecting or
 
 ## Current limits
 
-The Robinhood testnet deployment records the generic router, its bound `UniswapV3Adapter`, the adapter approval, and the factory router configuration, so application writes are no longer deployment-disabled. Its server planner returns exact typed direct and basket routes for configured liquid Synthra pools. Robinhood mainnet direct-pool quotes remain unavailable when the server API key is absent.
+The Robinhood testnet deployment records the generic router, bound `UniswapV3Adapter` and `UniswapV4Adapter` contracts, both adapter approvals, and the factory router configuration, so application writes are no longer deployment-disabled. Its server planner currently returns exact typed direct and basket routes only for configured liquid Synthra V3 pools; the V4 adapter is available onchain but remains unused until V4 pool keys and liquidity are added to the route catalog. Robinhood mainnet direct-pool quotes remain unavailable when the server API key is absent.

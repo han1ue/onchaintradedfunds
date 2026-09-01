@@ -52,6 +52,7 @@ export const robinhoodTestnetAddresses = Object.freeze({
   factory: deployedTestnetContract("factory"),
   entryRouter: deployedTestnetContract("entryRouter"),
   uniswapV3Adapter: deployedTestnetContract("uniswapV3Adapter"),
+  uniswapV4Adapter: deployedTestnetContract("uniswapV4Adapter"),
   usdg: testnetAssetById("usdg")?.address,
   weth: testnetAssetById("weth")?.address,
 });
@@ -67,6 +68,27 @@ export const robinhoodTestnetV3 = Object.freeze({
   quoter: testnetVenue.quoter,
   positionManager: testnetVenue.positionManager,
 });
+
+export const robinhoodTestnetV4 = Object.freeze({
+  poolManager: address(testnetExternalContracts.uniswapV4PoolManager),
+  stateView: address(testnetExternalContracts.uniswapV4StateView),
+  universalRouter: address(testnetExternalContracts.uniswapUniversalRouter),
+  permit2: address(testnetExternalContracts.permit2),
+});
+
+export const robinhoodTestnetV4AdapterReady = testnet.status === "deployed"
+  && Boolean(
+    robinhoodTestnetAddresses.entryRouter
+    && robinhoodTestnetAddresses.uniswapV4Adapter
+    && robinhoodTestnetV4.poolManager
+    && robinhoodTestnetV4.stateView
+    && robinhoodTestnetV4.universalRouter
+    && robinhoodTestnetV4.permit2
+    && Array.isArray(testnetRouting.approvedAdapters)
+    && testnetRouting.approvedAdapters.some((candidate) => (
+      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapV4Adapter?.toLowerCase()
+    )),
+  );
 
 export const robinhoodTestnetCreation = Object.freeze({
   assetDataEndpoint: httpsUrl(testnetCreation.assetDataEndpoint),

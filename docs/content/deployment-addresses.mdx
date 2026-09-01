@@ -29,13 +29,16 @@ No OTF protocol contracts are deployed on Robinhood Chain Mainnet yet.
 
 **Chain ID:** `46630`  
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/)  
-**Deployment timestamp:** `2026-09-01T12:11:19.654Z`
+**Base deployment timestamp:** `2026-09-01T12:11:19.654Z` <br />
+**Uniswap V4 adapter added:** `2026-09-01T20:12:19.551Z`
 
 **Status:** Deployed; application deployment gate enabled
 
 These addresses use the generic router/adapter architecture. Onchain verification confirms that
-the factory points to the entry router, the adapter points back to that router and the configured
-Uniswap V3 contracts, and the router has approved the adapter.
+the factory points to the entry router, both adapters point back to that router and their configured
+venue contracts, and the router has approved both adapters. Current application-generated testnet
+routes still use the cataloged Synthra V3 pools; V4 routing remains dormant until liquid V4 pool
+keys are configured.
 
 ### Protocol contracts
 
@@ -45,6 +48,7 @@ Uniswap V3 contracts, and the router has approved the adapter.
 | Managed OTF Vault implementation | [`0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3`](https://explorer.testnet.chain.robinhood.com/address/0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3) |
 | Entry/Exit Router | [`0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a`](https://explorer.testnet.chain.robinhood.com/address/0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a) |
 | Uniswap V3 Adapter | [`0x9373cA2022E6746ee9A64701630Eb45b7E179875`](https://explorer.testnet.chain.robinhood.com/address/0x9373cA2022E6746ee9A64701630Eb45b7E179875) |
+| Uniswap V4 Adapter | [`0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe`](https://explorer.testnet.chain.robinhood.com/address/0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe) |
 | Fee Collector | [`0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF`](https://explorer.testnet.chain.robinhood.com/address/0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF) |
 | OTF protocol token | [`0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5`](https://explorer.testnet.chain.robinhood.com/address/0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5) |
 
@@ -53,6 +57,8 @@ Uniswap V3 contracts, and the router has approved the adapter.
 | Action | Transaction |
 | --- | --- |
 | Approve Uniswap V3 Adapter | [`0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb`](https://explorer.testnet.chain.robinhood.com/tx/0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb) |
+| Deploy Uniswap V4 Adapter | [`0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c`](https://explorer.testnet.chain.robinhood.com/tx/0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c) |
+| Approve Uniswap V4 Adapter | [`0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9`](https://explorer.testnet.chain.robinhood.com/tx/0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9) |
 | Configure factory Entry/Exit Router | [`0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874`](https://explorer.testnet.chain.robinhood.com/tx/0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874) |
 
 Factory-created OTF and share-token addresses are dynamic and are intentionally excluded from this

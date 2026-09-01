@@ -4,5 +4,5 @@ The project security policy, threat model, trust assumptions, and production blo
 
 The adapter manager and every approved adapter are explicit settlement trust boundaries. The
 current Robinhood testnet deployment uses the generic adapter architecture and its recorded router,
-adapter, and factory bindings have been verified onchain. The 30 August 2026 review snapshot does
+V3/V4 adapter, and venue bindings have been verified onchain. The 30 August 2026 review snapshot does
 not cover this change; fresh review is required before any production use.

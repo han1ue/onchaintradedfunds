@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 const contracts = join(root, "contracts");
 const runtimeLimit = 24_576;
 const initcodeLimit = 49_152;
-const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "FeeCollector", "OTFToken"];
+const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "UniswapV4Adapter", "FeeCollector", "OTFToken"];
 const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry/i;
 const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry)\b/i;
 const removedCreationAbiWords = /\b(?:formation|snapshot|signature|price|market.?cap|weight|expiry|nonce|predict)\b/i;
@@ -118,6 +118,7 @@ const expectedConstructors = {
   OTFFactory: ["vaultImplementation_", "feeCollector_", "protocolFeeShareBps_"],
   OTFEntryExitRouter: ["factory_", "initialAdapterManager"],
   UniswapV3Adapter: ["entryExitRouter_", "uniswapV3Factory_", "uniswapV3Router_"],
+  UniswapV4Adapter: ["entryExitRouter_", "uniswapV4PoolManager_", "uniswapV4StateView_", "uniswapUniversalRouter_", "permit2_"],
 };
 for (const [name, expected] of Object.entries(expectedConstructors)) {
   const actual = constructor(compiled[name]);
@@ -164,6 +165,9 @@ assert(swapLeg.components.map((input) => `${input.name}:${input.type}`).join("|"
 const adapterNames = functionNames(compiled.UniswapV3Adapter);
 for (const name of ["entryExitRouter", "uniswapV3Factory", "uniswapV3Router", "executeSwap", "MAX_HOPS"]) assert(adapterNames.has(name), `UniswapV3Adapter surface ${name} is absent`);
 assert(functions(compiled.UniswapV3Adapter).filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).join(",") === "executeSwap", "UniswapV3Adapter exposes an unexpected mutating entrypoint");
+const v4AdapterNames = functionNames(compiled.UniswapV4Adapter);
+for (const name of ["entryExitRouter", "uniswapV4PoolManager", "uniswapV4StateView", "uniswapUniversalRouter", "permit2", "executeSwap", "MAX_HOPS", "MAX_HOOK_DATA_LENGTH"]) assert(v4AdapterNames.has(name), `UniswapV4Adapter surface ${name} is absent`);
+assert(functions(compiled.UniswapV4Adapter).filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).join(",") === "executeSwap", "UniswapV4Adapter exposes an unexpected mutating entrypoint");
 
 const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
 assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
@@ -173,9 +177,12 @@ assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and 
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
 const adapterSource = readFileSync(join(contracts, "src", "UniswapV3Adapter.sol"), "utf8");
-assert(!/delegatecall/u.test(routerSource + adapterSource), "router or adapter contains delegatecall execution");
-assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource), "router or adapter exposes an arbitrary target");
+const v4AdapterSource = readFileSync(join(contracts, "src", "UniswapV4Adapter.sol"), "utf8");
+assert(!/delegatecall/u.test(routerSource + adapterSource + v4AdapterSource), "router or adapter contains delegatecall execution");
+assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource + v4AdapterSource), "router or adapter exposes an arbitrary target");
 assert(/recipient:\s*entryExitRouter/u.test(adapterSource), "V3 adapter recipient is not fixed to the entry router");
+assert(/abi\.decode\(data,\s*\(UniswapV4PathKey\[\]\)\)/u.test(v4AdapterSource), "V4 adapter data is not a typed pool-key path");
+assert(/SWAP_EXACT_IN_ACTION,\s*SETTLE_ALL_ACTION,\s*TAKE_ALL_ACTION/u.test(v4AdapterSource), "V4 adapter does not construct the fixed swap/settle/take action stream");
 
 const tokenNames = functionNames(compiled.OTFToken);
 assert(tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "fixed OTF supply surface is incomplete");
@@ -183,9 +190,14 @@ assert(![...tokenNames].some((name) => /^(mint|burn|set.*Supply|increaseSupply|d
 assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].inputs[0].type === "address", "OTF token holder constructor changed");
 
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
+const v4DeploySource = readFileSync(join(root, "scripts", "deploy-uniswap-v4-adapter-robinhood-testnet.mjs"), "utf8");
 assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
 assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
-assert(/functionName:\s*"setAdapterApproved"/u.test(deploySource), "deployment does not approve the V3 adapter");
+assert(/deploy\("UniswapV4Adapter"/u.test(deploySource), "deployment does not deploy UniswapV4Adapter");
+assert((deploySource.match(/approveAdapter\(entryRouter,/gu) ?? []).length === 2, "deployment does not approve both adapters");
+assert(/artifact\("UniswapV4Adapter"\)/u.test(v4DeploySource), "adapter-only deployment does not compile UniswapV4Adapter");
+assert(/functionName:\s*"setAdapterApproved"/u.test(v4DeploySource), "adapter-only deployment does not approve UniswapV4Adapter");
+assert(/functionName:\s*"isAdapterApproved"/u.test(v4DeploySource), "adapter-only deployment does not verify approval");
 assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");
 console.log(`Security checks passed for ${production.join(", ")}.`);

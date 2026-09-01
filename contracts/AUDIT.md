@@ -8,7 +8,7 @@
 
 > **Superseded routing snapshot — 1 September 2026:** The router and Uniswap boundary reviewed
 > below were replaced by a generic `SwapLeg[]` router, an owner-managed approved-adapter registry,
-> and a new router-bound `UniswapV3Adapter`. None of that architecture is covered by this audit
+> and new router-bound `UniswapV3Adapter` and `UniswapV4Adapter` contracts. None of that architecture is covered by this audit
 > snapshot. The historical findings remain unchanged; a fresh independent review of the new
 > contracts, adapter-manager trust boundary, quote API, and exact deployment configuration is
 > required before deployment.

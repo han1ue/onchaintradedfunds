@@ -75,6 +75,19 @@ const uniswapV3SwapRouter02 = address(
   "externalContracts.uniswapV3SwapRouter02",
   external.uniswapV3SwapRouter02,
 );
+const uniswapV4PoolManager = address(
+  "externalContracts.uniswapV4PoolManager",
+  external.uniswapV4PoolManager,
+);
+const uniswapV4StateView = address(
+  "externalContracts.uniswapV4StateView",
+  external.uniswapV4StateView,
+);
+const uniswapUniversalRouter = address(
+  "externalContracts.uniswapUniversalRouter",
+  external.uniswapUniversalRouter,
+);
+const permit2 = address("externalContracts.permit2", external.permit2);
 
 const chain = {
   id: chainId,
@@ -138,7 +151,15 @@ const uniswapV3Adapter = await deploy("UniswapV3Adapter", [
   uniswapV3Factory,
   uniswapV3SwapRouter02,
 ]);
-const adapterApproval = await approveAdapter(entryRouter, uniswapV3Adapter);
+const uniswapV4Adapter = await deploy("UniswapV4Adapter", [
+  entryRouter.address,
+  uniswapV4PoolManager,
+  uniswapV4StateView,
+  uniswapUniversalRouter,
+  permit2,
+]);
+const v3AdapterApproval = await approveAdapter(entryRouter, uniswapV3Adapter);
+const v4AdapterApproval = await approveAdapter(entryRouter, uniswapV4Adapter);
 const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
@@ -156,18 +177,29 @@ const deployment = {
     factory,
     entryRouter,
     uniswapV3Adapter,
+    uniswapV4Adapter,
   },
-  externalContracts: { ...external, uniswapV3Factory, uniswapV3SwapRouter02 },
+  externalContracts: {
+    ...external,
+    uniswapV3Factory,
+    uniswapV3SwapRouter02,
+    uniswapV4PoolManager,
+    uniswapV4StateView,
+    uniswapUniversalRouter,
+    permit2,
+  },
   policy: { protocolFeeShareBps },
   routing: {
     integration: "approved-trade-adapters",
-    approvedAdapters: [uniswapV3Adapter.address],
+    approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
     uniswapV3Adapter: uniswapV3Adapter.address,
+    uniswapV4Adapter: uniswapV4Adapter.address,
     exactInputTuple: "(bytes,address,uint256,uint256)",
+    v4RouteData: "abi.encode((address,uint24,int24,address,bytes)[])",
     maxHopsPerLeg: 3,
     maxLegs: 40,
   },
-  setupTransactions: { adapterApproval, routerConfiguration },
+  setupTransactions: { v3AdapterApproval, v4AdapterApproval, routerConfiguration },
   ...appOwnedIntegrations,
   note: "Creation permanently commits the fund thesis, ordered constituents, and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
 };

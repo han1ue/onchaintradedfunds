@@ -33,6 +33,7 @@ offchain asset data + creator target/percentages
          OTFEntryExitRouter ---- approved ITradeAdapter
                                       |
                                       +---- UniswapV3Adapter ---- SwapRouter02
+                                      +---- UniswapV4Adapter ---- UniversalRouter ---- PoolManager
 ```
 
 ## Creation application
@@ -124,10 +125,14 @@ leg can spend only transient balance above the router's pre-call baseline, so ex
 fund or be refunded by a route. The router owner is the adapter manager; approval requires a
 contract immutably bound back to that router and revocation takes effect immediately.
 
-The first approved implementation is `UniswapV3Adapter`. It accepts only packed V3 paths of at
+The approved implementations are `UniswapV3Adapter` and `UniswapV4Adapter`. The V3 adapter accepts only packed V3 paths of at
 most three hops, authenticates every pool against its immutable factory, fixes the SwapRouter02
 recipient to the entry router, uses exact temporary approvals, and preserves pre-existing adapter
-donations. The entry router itself contains no V3 parsing and no direct pool-swap method.
+donations. The V4 adapter accepts only typed pool-key paths of at most three hops, authenticates
+initialized pools through its immutable StateView, constructs a fixed swap/settle/take action
+stream, and clears both ERC-20 and Permit2 allowances. The entry router itself contains no
+venue-specific parsing and no direct pool-swap method. Current testnet basket quotes still use only
+the cataloged liquid Synthra V3 pools; V4 routing stays dormant until V4 pool keys are configured.
 
 The application Swap product requires an OTF share on at least one side; it is not a general
 token-to-token exchange. Production uses the Uniswap Trading API for exact-input BEST_PRICE V3/V4
