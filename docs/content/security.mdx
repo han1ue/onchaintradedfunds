@@ -1,143 +1,100 @@
 ---
-title: Security and risk
-description: Threat model, assumptions, known limitations, and unresolved production work.
+title: Security
+description: Trust boundaries, known assumptions, and production blockers for the OTF protocol.
 ---
 
-# Security and risk
+# Security
 
-Status: pre-mainnet, unaudited, experimental. No deployment is approved. This document describes
-the current immutable-bootstrap architecture; it is not an audit, warranty, or investment advice.
+The protocol is pre-mainnet and unaudited. The token-economics v2 contracts require a fresh review,
+deployment rehearsal, and independent production configuration review before they hold value.
 
-## Security boundary
+## Contract-enforced boundaries
 
-`OTFFactory` is permissionless once its entry/exit router is configured. `createVault` makes
-`msg.sender` the creator, deploys a nondeterministic EIP-1167 clone with `Clones.clone`, and commits
-the non-empty fund thesis, ordered constituents, and creator-supplied
-`bootstrapBasketUnitsPerOTF`. The thesis is limited to 2,048 UTF-8 bytes and has no mutation path
-after initialization. Creation does not move constituents into the vault.
+- OTF is issued once at one billion tokens. No post-construction mint, tax, blacklist, seizure, or
+  upgrade path exists. Holder burns reduce live supply.
+- Fund fee rates and beneficiaries are immutable. All settlement paths checkpoint annual fees and
+  apply the appropriate mint or redeem fee. Shutdown exits are fee-free.
+- Raw constituent donations are excluded from fund accounting and the OTF fee-benefit calculation.
+- The buyback collector can use only the protocol router's typed routes and approved adapters. Its
+  final pool key is the immutable canonical OTF/WETH V4 pool. It has no asset withdrawal or arbitrary
+  call path.
+- The rewards distributor has no principal withdrawal or time gate. A valid proof can pay only its
+  committed user and only the unclaimed cumulative amount.
+- Permanent V4 liquidity remains owned by the launch manager, which exposes no removal, repricing,
+  migration, or replacement function.
 
-The factory and vault deliberately do not receive or validate prices, market caps, percentage
-weights, or the fixed `$1` initial basket target. The application uses these values offchain to calculate raw bootstrap
-units and displays the integer-rounding result before submission. Users must treat that calculation
-and its data source as economic inputs chosen by the creator, not as authenticated onchain facts.
-The `$1` target is not a peg or guaranteed market price.
+## Trusted roles
 
-`Market-cap weighted` and `Modified market-cap weighted` describe the initialization calculation,
-not an ongoing onchain rebalance. Market-cap defaults, final percentages, multipliers, timestamps,
-and methodology labels are informational application metadata. The fund thesis is separate onchain
-vault metadata. If the browser methodology record is missing, the interface does not reconstruct it
-from current balances.
+### Root-publishing multisig
 
-There is no runtime NAV, price oracle, Chainlink feed, TWAP, keeper, market-data refresh, or
-automatic rebalance. Prices and composition can drift without any contract response.
+The multisig is fully trusted to choose cumulative reward allocations. A valid root can allocate the
+entire remaining rewards balance. The contract prevents proof forgery and double claims, not unfair
+allocations or a compromised publisher.
 
-## Main risks and mitigations
+### Route executor
 
-### Creator-selected bootstrap basket
+The route executor chooses when buybacks occur and which approved typed routes convert fee-share
+baskets to WETH. Deadlines, exact token identities, adapter approval, minimum output, and observed
+balance-delta checks limit mistakes and compromise. They do not guarantee optimal execution.
 
-A creator can submit inaccurate, stale, manipulated, or economically unsuitable bootstrap units.
-The contract validates array shape, unique contract constituents, the basket-size cap, and nonzero
-units, but it cannot prove that a unit corresponds to any dollar target or percentage. The UI's
-current prices, market caps, percentages, realized allocation, fixed `$1` target, and source timestamp
-must remain visible application metadata. Asset-source policy and monitoring require independent
-production review.
+### Adapter manager and external venues
 
-The creator and one-time router configurator remain trust roles. A creator can irreversibly shut
-down a sound vault. Any caller can shut down a vault when a readable constituent balance proves a
-backing deficit; a failed read or donation is not proof.
+The entry/exit router owner can approve or revoke adapters. Approved adapter code, V3/V4 venue code,
+constituent tokens, WETH, Permit2, and Universal Router are external trust boundaries. Routes are not
+discovered onchain.
 
-### Bootstrap, low supply, and rounding
+### ETH/USD oracle
 
-An empty live vault requires a first mint of at least `1e16` shares (`0.01` OTF). Bootstrap inputs
-remain `ceil(bootstrapUnits_i * shares / 1e18)`: the minimum is never used as the denominator.
-There is no maximum first purchase. Later mints use ceiling-rounded current accounted balances per
-share and have no special minimum.
+The production oracle is trusted for team vesting. The contract rejects nonpositive, future, or
+stale answers, but a fresh incorrect answer can unlock a milestone. The V4 price is intentionally the
+current spot price in a potentially thin pool; no TWAP, liquidity threshold, delay, or manipulation
+protection is provided.
 
-Normal redemption uses floor rounding, except full redemption returns every accounted balance
-exactly. A redemption that leaves less than `0.01` OTF, including zero, succeeds and then places the
-vault in permanent shutdown; exactly `0.01` OTF remains live. Shutdown cannot be cleared and blocks
-all minting and fee accrual, including any attempted zero-supply restart, while preserving exits.
+## Market and launch assumptions
 
-On the Swap screen, an empty output OTF quote is unusable unless its guaranteed minimum output is
-at least `0.01` OTF. A larger expected output does not compensate for a smaller executable minimum.
+The pool initializes at exactly 10 ETH launch reference FDV; its one-sided position boundary and
+approximately 90 ETH final price use deterministic discrete ticks. The final tick marks graduation
+in its swap callback; a separate permissionless
+transaction finalizes positions because V4 remains locked during the callback. Transaction ordering,
+slippage, and pool price impact remain market risks even though the LP fee is 0%.
 
-### Basket accounting and tokens
+The launch manager locks principal by omitting every administrative liquidity-control path. That
+also means no recovery exists for permanent liquidity or deterministic residual dust.
 
-`accountedBalance` is an internal ledger. Direct tracked-token donations increase actual balance
-without increasing the ledger or creating a donor claim. Normal settlement fails closed when
-actual backing is below accounted backing. After shutdown, public in-kind emergency redemption
-pays at most `min(actual, accounted)` per asset, excludes donation excess, and handles deficits.
+## Fund accounting assumptions
 
-Transfers require exact sender and receiver balance deltas. Fee-on-transfer, sender-taxed,
-rebasing, callback-mutating, and otherwise non-exact ERC-20s are unsupported. The protocol cannot
-make proxy implementations, decimals, or future token behavior immutable; production asset policy
-must exclude unsuitable tokens even if an application labels them verified.
+Vaults use accounted balances rather than raw balances. They assume constituent token transfers and
+approved adapters behave according to observed balance deltas. Deflationary, rebasing, callback, or
+administratively mutable assets may create deficit or liveness risks. Users must evaluate every
+constituent and venue independently.
 
-### Direct in-kind exit and irreversible forfeiture
+Mint fees calculate the gross backing required for the requested net investor shares and round up.
+Redeem fees round up and redeem the remaining net shares. Creator split basis points and
+mint/redeem creator fee shares round down; the residual goes to buyback. Annual expense splitting
+carries a fractional remainder across checkpoints so cadence does not change cumulative allocation.
+These directions avoid unbacked shares and fee undercharging but can make small operations pay one
+raw unit more.
 
-Any holder can redeem their own shares directly in kind in either live or shutdown state without
-the router or external liquidity. With no skip bits, each payout is pro rata from
-`min(actual, accounted)` while the ledger reduction uses the holder's normal pro-rata accounted
-entitlement. Non-skipped transfers retain the existing exact-delta protections.
+## Deployment controls
 
-The optional `skipMask` is a last-resort direct-contract recovery mechanism for a failing token.
-For every skipped constituent, the vault transfers nothing and makes no external call, including
-`balanceOf`. It still removes the holder's normal pro-rata entitlement from `accountedBalance`, so
-the physical tokens left behind become permanently unaccounted excess and cannot be swept, credited,
-or inherited by remaining holders. Skipping is therefore an irreversible forfeiture. The normal
-application deliberately does not expose this control.
+Production WETH, PoolManager, StateView, PositionManager, Universal Router, Permit2, and ETH/USD
+oracle addresses are mandatory inputs. No production address is embedded as a fallback. Testnet uses
+an unofficial V4 mirror only after configured runtime bytecode hashes match. A hash match verifies
+the reviewed bytes at that address; it is not an endorsement of the mirror or its operational
+security.
 
-### Expense dilution and protocol shares
+The old testnet deployment is incompatible and disabled in the application. No migration or legacy
+claim path exists.
 
-The creator expense is share inflation, not an asset transfer. Its ratio and beneficiary are fixed
-at initialization. Fee growth is lazy and cadence-independent. The factory supplies one immutable
-protocol fee share for every vault; there is no constituent- or allocation-based adjustment.
-Protocol shares are held by `FeeCollector`, whose treasury is the only claimant.
-Treasury acceptance uses the same reentrancy guard as claims, preventing a token callback from
-changing the live treasury while `TokenClaimed` is being reconciled with the actual receiver.
+## Production blockers
 
-### Router, adapters, pools, and external liquidity
+- independent audit of all v2 contracts and economic arithmetic;
+- fork/integration tests against the exact official production V4 deployments;
+- verified production multisig, beneficiary, route-executor, WETH, and oracle selections;
+- deployed-code verification and complete one-billion-token allocation reconciliation;
+- operational procedures for route generation, minimum outputs, root publication, and artifact
+  availability;
+- frontend browser and wallet testing against the final deployed addresses.
 
-`OTFEntryExitRouter` is venue-agnostic. Its owner is the adapter manager and can approve or
-immediately revoke adapters that are contracts and report this router as their immutable
-`entryExitRouter`. The manager and every approved adapter are explicit trust boundaries. Before
-moving user funds, the router validates every leg's approval and binding. It then restricts each
-leg to transient balance above a pre-call baseline, verifies exact router input/output deltas,
-checks the adapter's reported output, refunds every harmless surplus to the caller, blocks
-reentrancy, and rolls back atomically.
-
-`UniswapV3Adapter` accepts data exclusively as a packed V3 path
-of at most three hops. It authenticates each pool against an immutable V3 factory, fixes the
-SwapRouter02 recipient to the entry router, approves exactly one leg input and clears that
-approval, verifies exact consumption and output, and never sweeps pre-existing donations. The
-`UniswapV4Adapter` accepts only typed V4 pool-key paths, authenticates initialized pools through
-StateView, constructs its fixed Universal Router action stream internally, uses exact temporary
-ERC-20 and Permit2 approvals, and verifies the final balance deltas. The router exposes no direct
-pool swap; ordinary secondary-market swaps use the server-side Uniswap Trading API.
-
-The configured V3 venue must implement SwapRouter02's four-field `exactInput` ABI and share the
-expected V3 pool bytecode family. The configured V4 Universal Router and StateView must both report
-the immutable PoolManager recorded by the adapter. Production needs funded direct-buy, direct-sell, and multihop fork
-tests against exact deployment addresses. Pool fees belong to LPs; creators promise neither
-liquidity nor execution price.
-
-If all usable routes disappear while backing is sound, holders can still use direct in-kind
-redemption. A failing constituent may still require that holder to make the explicit, irreversible
-choice to skip and forfeit it in order to recover healthy assets.
-
-## Explicit limitations and unresolved blockers
-
-- No formal audit or independent economic review has been completed.
-- Creator-selected bootstrap units and offchain asset data remain economic trust inputs.
-- New production deployments, governance/key management, monitoring, and incident procedures are
-  unresolved.
-- Production quote services, mainnet OTF addresses, and funded venue fork evidence are unresolved.
-- The adapter-manager key, approved-adapter monitoring, and independent review of the new generic
-  adapter boundary are unresolved production requirements.
-- Malicious, rebasing, fee-on-transfer, and mutable tokens remain unsupported.
-- No share is promised to track a dollar, percentage target, or current index.
-- `launch/` is a separate prelaunch competition and is outside this threat model.
-
-Report suspected vulnerabilities privately to the repository maintainers. Include the affected
-contract, chain/commit, reproduction steps, impact, and whether funds or keys may be at risk. Never
-include seed phrases or private keys.
+Report vulnerabilities privately to the maintainers. Do not test against public deployments with
+real user funds.

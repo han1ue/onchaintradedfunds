@@ -36,9 +36,15 @@ describe("vault creation transaction params", () => {
       fundThesis: "  Permanent technology exposure.  ",
       expenseBeneficiary: "0x0000000000000000000000000000000000000001",
       annualCreatorExpenseRatioBps: 100,
+      mintFeeBps: 25,
+      redeemFeeBps: 10,
       constituents: ["0x0000000000000000000000000000000000000002"],
       bootstrapBasketUnitsPerOTF: [1n],
-    }).fundThesis).toBe("Permanent technology exposure.");
+    })).toEqual(expect.objectContaining({
+      fundThesis: "Permanent technology exposure.",
+      mintFeeBps: 25,
+      redeemFeeBps: 10,
+    }));
   });
 });
 

@@ -1,187 +1,138 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { VaultCreationParams } from "../src/VaultTypes.sol";
-import { MockFeeOnTransferToken } from "./mocks/MockFeeOnTransferToken.sol";
-import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
-import { BootstrapTestBase, MockCoreRouter } from "./BootstrapTestBase.sol";
-import { Vm } from "./TestBase.sol";
+import { BootstrapTestBase, MockBuybackReceiver, MockCoreRouter } from "./BootstrapTestBase.sol";
 
 contract CoreBoundaryCoverageTest is BootstrapTestBase {
-    function testFeeCollectorClaimsAreTreasuryOnlyAndClaimAllDrainsCustody() public {
-        FeeCollector collector = new FeeCollector(TREASURY);
-        MockStockToken token = new MockStockToken("Custody", "CUST", 18);
-        token.mint(address(collector), 200 * WAD);
+    function testFeeBenefitCurveReferenceValuesAndDonationDoesNotCount() public {
+        (OTFFactory factory,, MockCoreRouter router) = _deployFactory();
+        MockStockToken protocolOtf = MockStockToken(factory.otfToken());
+        MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
 
-        vm.prank(ALICE);
-        vm.expectRevert(FeeCollector.NotTreasury.selector);
-        collector.claim(address(token), 50 * WAD);
+        ManagedOTFVault zero = _newOtfVault(factory, protocolOtf, asset, 1, router);
+        assertEq(zero.feeCreatorShareBps(), 5_000);
+        protocolOtf.mint(address(zero), 10_000_000 ether);
+        assertEq(zero.feeCreatorShareBps(), 5_000);
 
-        vm.prank(TREASURY);
-        collector.claim(address(token), 50 * WAD);
-        assertEq(token.balanceOf(TREASURY), 50 * WAD);
-        assertEq(token.balanceOf(address(collector)), 150 * WAD);
-
-        vm.prank(ALICE);
-        vm.expectRevert(FeeCollector.NotTreasury.selector);
-        collector.claimAll(address(token));
-
-        vm.prank(TREASURY);
-        uint256 claimed = collector.claimAll(address(token));
-        assertEq(claimed, 150 * WAD);
-        assertEq(token.balanceOf(TREASURY), 200 * WAD);
-        assertEq(token.balanceOf(address(collector)), 0);
-    }
-
-    function testFeeCollectorTreasuryTransferIsTwoStep() public {
-        FeeCollector collector = new FeeCollector(TREASURY);
-        MockStockToken token = new MockStockToken("Custody", "CUST", 18);
-        token.mint(address(collector), WAD);
-
-        vm.prank(ALICE);
-        vm.expectRevert(FeeCollector.NotTreasury.selector);
-        collector.beginTreasuryTransfer(BOB);
-
-        vm.prank(TREASURY);
-        collector.beginTreasuryTransfer(BOB);
-        assertEq(collector.treasury(), TREASURY);
-        assertEq(collector.pendingTreasury(), BOB);
-
-        vm.prank(ALICE);
-        vm.expectRevert(FeeCollector.NotPendingTreasury.selector);
-        collector.acceptTreasuryTransfer();
-
-        vm.prank(BOB);
-        collector.acceptTreasuryTransfer();
-        assertEq(collector.treasury(), BOB);
-        assertEq(collector.pendingTreasury(), address(0));
-
-        vm.prank(TREASURY);
-        vm.expectRevert(FeeCollector.NotTreasury.selector);
-        collector.claimAll(address(token));
-        vm.prank(BOB);
-        collector.claimAll(address(token));
-        assertEq(token.balanceOf(BOB), WAD);
-    }
-
-    function testFeeCollectorRejectsInexactFeeOnTransferClaim() public {
-        FeeCollector collector = new FeeCollector(TREASURY);
-        MockFeeOnTransferToken taxed = new MockFeeOnTransferToken("Taxed", "TAX", 18);
-        taxed.mint(address(collector), 100 * WAD);
-        taxed.setFeeBps(100);
-
-        vm.prank(TREASURY);
-        vm.expectPartialRevert(FeeCollector.TokenTransferMismatch.selector);
-        collector.claimAll(address(taxed));
-        assertEq(taxed.balanceOf(address(collector)), 100 * WAD);
-        assertEq(taxed.balanceOf(TREASURY), 0);
-    }
-
-    function testFeeCollectorClaimBlocksCallbackTreasuryAcceptance() public {
-        FeeCollector collector = new FeeCollector(TREASURY);
-        MockReentrantToken token = new MockReentrantToken("Callback", "CB", 18);
-        token.mint(address(collector), WAD);
-
-        vm.prank(TREASURY);
-        collector.beginTreasuryTransfer(address(token));
-        token.configureCallback(
-            address(collector), abi.encodeCall(FeeCollector.acceptTreasuryTransfer, ()), true
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 1_000_000 ether, router).feeCreatorShareBps(),
+            6_264
         );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 2_500_000 ether, router).feeCreatorShareBps(),
+            7_000
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 5_000_000 ether, router).feeCreatorShareBps(),
+            7_828
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 10_000_000 ether, router)
+                .feeCreatorShareBps(),
+            9_000
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 11_000_000 ether, router)
+                .feeCreatorShareBps(),
+            9_000
+        );
+    }
 
-        vm.recordLogs();
-        vm.prank(TREASURY);
-        collector.claimAll(address(token));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
+    function testImmutableMintAndRedeemFeesMatchPreviewsAndExecution() public {
+        (OTFFactory factory, address collector, MockCoreRouter router) = _deployFactory();
+        MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
+        address[] memory assets = new address[](1);
+        assets[0] = address(asset);
+        uint256[] memory units = new uint256[](1);
+        units[0] = WAD;
+        VaultCreationParams memory params = _creationParams(assets, units, 0);
+        params.mintFeeBps = 200;
+        params.redeemFeeBps = 100;
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
 
-        assertFalse(token.callbackSucceeded());
-        assertEq(collector.treasury(), TREASURY);
-        assertEq(collector.pendingTreasury(), address(token));
-        assertEq(token.balanceOf(TREASURY), WAD);
-        assertEq(token.balanceOf(address(token)), 0);
-
-        bytes32 eventSignature = keccak256("TokenClaimed(address,address,uint256)");
-        for (uint256 i = 0; i < logs.length; i++) {
-            Vm.Log memory log = logs[i];
-            if (
-                log.emitter != address(collector) || log.topics.length == 0
-                    || log.topics[0] != eventSignature
-            ) continue;
-
-            assertEq(address(uint160(uint256(log.topics[2]))), TREASURY);
-            assertEq(abi.decode(log.data, (uint256)), WAD);
-            return;
+        uint256 grossShares;
+        uint256 creatorMint;
+        uint256 buybackMint;
+        {
+            uint256 mintFee;
+            (grossShares, mintFee, creatorMint, buybackMint,) = vault.previewMintFee(100 ether);
+            uint256[] memory amounts = vault.previewMint(100 ether);
+            asset.mint(address(router), amounts[0]);
+            router.approveAsset(address(asset), address(vault), amounts[0]);
+            router.mint(vault, 100 ether, ALICE, amounts);
+            assertEq(vault.totalSupply(), grossShares);
+            assertEq(vault.balanceOf(ALICE), 100 ether);
+            assertEq(vault.balanceOf(BENEFICIARY), creatorMint);
+            assertEq(vault.balanceOf(collector), buybackMint);
+            assertEq(creatorMint + buybackMint, mintFee);
         }
-        revert("TokenClaimed missing");
+        assertEq(vault.mintFeeBps(), 200);
+        assertEq(vault.redeemFeeBps(), 100);
+
+        {
+            (
+                uint256 redeemedShares,
+                uint256 redeemFee,
+                uint256 creatorRedeem,
+                uint256 buybackRedeem,
+            ) = vault.previewRedeemFee(50 ether);
+            uint256[] memory preview = vault.previewRedeem(50 ether);
+            vm.prank(ALICE);
+            vault.approve(address(router), 50 ether);
+            router.redeem(vault, 50 ether, ALICE, ALICE, preview);
+            assertEq(asset.balanceOf(ALICE), preview[0]);
+            assertEq(vault.balanceOf(ALICE), 50 ether);
+            assertEq(vault.balanceOf(BENEFICIARY), creatorMint + creatorRedeem);
+            assertEq(vault.balanceOf(collector), buybackMint + buybackRedeem);
+            assertEq(creatorRedeem + buybackRedeem, redeemFee);
+            assertEq(vault.totalSupply(), grossShares - redeemedShares);
+        }
     }
 
-    function testCreatorAndTreasuryRedeemAllAccruedFeeSharesProRata() public {
-        (OTFFactory factory, FeeCollector collector, MockCoreRouter router) = _deployFactory(4_000);
-        MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
-        MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        ManagedOTFVault vault =
-            _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 1_000);
-        address[] memory assets = new address[](2);
-        assets[0] = address(tokenA);
-        assets[1] = address(tokenB);
-        _bootstrap(vault, router, assets, 100 * WAD);
-        uint256 initialAccountedA = vault.accountedBalance(address(tokenA));
-        uint256 initialAccountedB = vault.accountedBalance(address(tokenB));
+    function testNormalInKindRedeemChargesFeeButShutdownRedeemIsFree() public {
+        (OTFFactory factory,, MockCoreRouter router) = _deployFactory();
+        MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
+        address[] memory assets = new address[](1);
+        assets[0] = address(asset);
+        uint256[] memory units = new uint256[](1);
+        units[0] = WAD;
+        VaultCreationParams memory params = _creationParams(assets, units, 0);
+        params.redeemFeeBps = 100;
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        _bootstrap(vault, router, assets, 100 ether);
 
-        vm.warp(block.timestamp + 365 days);
-        vault.checkpointFees();
-        uint256 beneficiaryShares = vault.balanceOf(BENEFICIARY);
-        uint256 protocolShares = vault.balanceOf(address(collector));
-        assertGt(beneficiaryShares, 0);
-        assertGt(protocolShares, 0);
-        uint256 supplyBeforeBeneficiary = vault.totalSupply();
-        uint256[] memory beneficiaryOut = vault.previewRedeem(beneficiaryShares);
-        assertEq(beneficiaryOut[0], initialAccountedA * beneficiaryShares / supplyBeforeBeneficiary);
-        assertEq(beneficiaryOut[1], initialAccountedB * beneficiaryShares / supplyBeforeBeneficiary);
+        (, uint256 feeShares,,,) = vault.previewRedeemFee(10 ether);
+        vm.prank(ALICE);
+        vault.redeemInKind(10 ether, ALICE, new uint256[](1), 0);
+        assertGt(feeShares, 0);
 
-        vm.prank(BENEFICIARY);
-        vault.approve(address(router), beneficiaryShares);
-        router.redeem(vault, beneficiaryShares, BENEFICIARY, BENEFICIARY, new uint256[](2));
-        assertEq(tokenA.balanceOf(BENEFICIARY), beneficiaryOut[0]);
-        assertEq(tokenB.balanceOf(BENEFICIARY), beneficiaryOut[1]);
-        assertEq(vault.accountedBalance(address(tokenA)), initialAccountedA - beneficiaryOut[0]);
-        assertEq(vault.accountedBalance(address(tokenB)), initialAccountedB - beneficiaryOut[1]);
-        assertEq(tokenA.balanceOf(address(vault)), vault.accountedBalance(address(tokenA)));
-        assertEq(tokenB.balanceOf(address(vault)), vault.accountedBalance(address(tokenB)));
-
-        vm.prank(TREASURY);
-        uint256 claimedShares = collector.claimAll(address(vault));
-        assertEq(claimedShares, protocolShares);
-        assertEq(vault.balanceOf(TREASURY), protocolShares);
-        uint256 accountedBeforeTreasuryA = vault.accountedBalance(address(tokenA));
-        uint256 accountedBeforeTreasuryB = vault.accountedBalance(address(tokenB));
-        uint256 supplyBeforeTreasury = vault.totalSupply();
-        uint256[] memory treasuryOut = vault.previewRedeem(protocolShares);
-        assertEq(treasuryOut[0], accountedBeforeTreasuryA * protocolShares / supplyBeforeTreasury);
-        assertEq(treasuryOut[1], accountedBeforeTreasuryB * protocolShares / supplyBeforeTreasury);
-
-        vm.prank(TREASURY);
-        vault.approve(address(router), protocolShares);
-        router.redeem(vault, protocolShares, TREASURY, TREASURY, new uint256[](2));
-        assertEq(tokenA.balanceOf(TREASURY), treasuryOut[0]);
-        assertEq(tokenB.balanceOf(TREASURY), treasuryOut[1]);
-        assertEq(vault.accountedBalance(address(tokenA)), accountedBeforeTreasuryA - treasuryOut[0]);
-        assertEq(vault.accountedBalance(address(tokenB)), accountedBeforeTreasuryB - treasuryOut[1]);
-        assertEq(tokenA.balanceOf(address(vault)), vault.accountedBalance(address(tokenA)));
-        assertEq(tokenB.balanceOf(address(vault)), vault.accountedBalance(address(tokenB)));
-        assertEq(vault.accountedBalance(address(tokenA)), vault.accountedBalance(address(tokenB)));
-        assertApproxEqAbs(vault.accountedBalance(address(tokenA)), 90 * WAD, 2);
-        assertEq(vault.totalSupply(), 100 * WAD);
+        vm.prank(CREATOR);
+        vault.activateEmergencyShutdown();
+        uint256 supplyBefore = vault.totalSupply();
+        uint256 balance = vault.balanceOf(ALICE);
+        (uint256 shutdownRedeemed, uint256 shutdownFee,,,) = vault.previewRedeemFee(balance);
+        assertEq(shutdownRedeemed, balance);
+        assertEq(shutdownFee, 0);
+        assertEq(vault.previewRedeem(balance)[0], balance);
+        vm.prank(ALICE);
+        vault.emergencyRedeem(balance, ALICE, new uint256[](1));
+        assertEq(vault.totalSupply(), supplyBefore - balance);
     }
 
-    function testCreationBoundsAndRouterConfigurationBoundaries() public {
+    function testCreationFeeCapsAndRouterConfigurationBoundaries() public {
         ManagedOTFVault implementation = new ManagedOTFVault();
-        FeeCollector collector = new FeeCollector(TREASURY);
-        OTFFactory unconfigured = new OTFFactory(address(implementation), address(collector), 0);
-        OTFFactory otherFactory = new OTFFactory(address(implementation), address(collector), 0);
+        MockBuybackReceiver collector = new MockBuybackReceiver();
+        MockStockToken protocolOtf = new MockStockToken("OTF", "OTF", 18);
+        OTFFactory unconfigured =
+            new OTFFactory(address(implementation), address(collector), address(protocolOtf));
+        OTFFactory otherFactory =
+            new OTFFactory(address(implementation), address(collector), address(protocolOtf));
         MockCoreRouter wrongRouter = new MockCoreRouter(address(otherFactory));
         vm.expectPartialRevert(OTFFactory.RouterFactoryMismatch.selector);
         unconfigured.configureEntryExitRouter(address(wrongRouter));
@@ -191,23 +142,42 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         vm.expectRevert(OTFFactory.RouterAlreadyConfigured.selector);
         unconfigured.configureEntryExitRouter(address(router));
 
-        MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
-        MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
-        address[] memory assets = new address[](2);
-        assets[0] = address(tokenA);
-        assets[1] = address(tokenB);
-        uint256[] memory units = new uint256[](2);
+        MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
+        address[] memory assets = new address[](1);
+        assets[0] = address(asset);
+        uint256[] memory units = new uint256[](1);
         units[0] = WAD;
-        units[1] = WAD;
-        VaultCreationParams memory invalidRatio = _creationParams(assets, units, 1_001);
+
+        VaultCreationParams memory invalid = _creationParams(assets, units, 1_001);
         vm.prank(CREATOR);
         vm.expectPartialRevert(OTFFactory.ExpenseRatioTooHigh.selector);
-        unconfigured.createVault(invalidRatio);
-
-        VaultCreationParams memory zeroBeneficiary = _creationParams(assets, units, 0);
-        zeroBeneficiary.expenseBeneficiary = address(0);
+        unconfigured.createVault(invalid);
+        invalid = _creationParams(assets, units, 0);
+        invalid.mintFeeBps = 201;
         vm.prank(CREATOR);
-        vm.expectRevert(OTFFactory.InvalidVaultMetadata.selector);
-        unconfigured.createVault(zeroBeneficiary);
+        vm.expectPartialRevert(OTFFactory.MintFeeTooHigh.selector);
+        unconfigured.createVault(invalid);
+        invalid = _creationParams(assets, units, 0);
+        invalid.redeemFeeBps = 101;
+        vm.prank(CREATOR);
+        vm.expectPartialRevert(OTFFactory.RedeemFeeTooHigh.selector);
+        unconfigured.createVault(invalid);
+    }
+
+    function _newOtfVault(
+        OTFFactory factory,
+        MockStockToken protocolOtf,
+        MockStockToken asset,
+        uint256 otfUnits,
+        MockCoreRouter router
+    ) private returns (ManagedOTFVault vault) {
+        address[] memory assets = new address[](2);
+        assets[0] = address(protocolOtf);
+        assets[1] = address(asset);
+        uint256[] memory units = new uint256[](2);
+        units[0] = otfUnits;
+        units[1] = WAD;
+        vault = _createVault(factory, assets, units, 0);
+        if (otfUnits > 1) _bootstrap(vault, router, assets, WAD);
     }
 }

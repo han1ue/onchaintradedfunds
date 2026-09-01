@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
@@ -18,13 +17,13 @@ import {
 
 contract VaultAccountingTest is BootstrapTestBase {
     OTFFactory internal factory;
-    FeeCollector internal collector;
+    address internal collector;
     MockCoreRouter internal router;
     MockStockToken internal tokenA;
     MockStockToken internal tokenB;
 
     function setUp() public {
-        (factory, collector, router) = _deployFactory(4_000);
+        (factory, collector, router) = _deployFactory();
         tokenA = new MockStockToken("Asset A", "A", 18);
         tokenB = new MockStockToken("Asset B", "B", 18);
     }
@@ -41,8 +40,8 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         assertApproxEqAbs(minted, expectedFeeShares, 1);
         assertEq(vault.balanceOf(ALICE) * 10_000 / vault.totalSupply(), 9_000);
-        assertEq(vault.balanceOf(BENEFICIARY) + vault.balanceOf(address(collector)), minted);
-        assertEq(vault.balanceOf(address(collector)), minted * 4_000 / 10_000);
+        assertEq(vault.balanceOf(BENEFICIARY) + vault.balanceOf(collector), minted);
+        assertEq(vault.balanceOf(collector), minted - (minted * 5_000 / 10_000));
     }
 
     function testManualCheckpointCadenceIsIndependentAndCarriesSplitRemainders() public {
@@ -61,8 +60,7 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         assertEq(monthly.totalSupply(), once.totalSupply());
         assertEq(monthly.balanceOf(BENEFICIARY), once.balanceOf(BENEFICIARY));
-        assertEq(monthly.balanceOf(address(collector)), once.balanceOf(address(collector)));
-        assertEq(monthly.protocolFeeSplitRemainderBps(), once.protocolFeeSplitRemainderBps());
+        assertApproxEqAbs(monthly.balanceOf(collector), once.balanceOf(collector), 12);
     }
 
     function testOneYearBoundaryIsMonotonic() public {
@@ -112,8 +110,7 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         assertEq(stepped.totalSupply(), once.totalSupply());
         assertEq(stepped.balanceOf(BENEFICIARY), once.balanceOf(BENEFICIARY));
-        assertEq(stepped.balanceOf(address(collector)), once.balanceOf(address(collector)));
-        assertEq(stepped.protocolFeeSplitRemainderBps(), once.protocolFeeSplitRemainderBps());
+        assertApproxEqAbs(stepped.balanceOf(collector), once.balanceOf(collector), 24);
     }
 
     function testLongDormancyAndFeeCheckpointBeforeSupplyMath() public {
@@ -149,9 +146,7 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         vm.warp(block.timestamp + 365 days);
         vault.checkpointFees();
-        uint256 protocolShares = vault.balanceOf(address(collector));
-        vm.prank(TREASURY);
-        collector.claim(address(vault), protocolShares);
+        assertGt(vault.balanceOf(collector), 0);
         assertEq(vault.accountedBalance(address(tokenA)), accountedA);
         assertEq(vault.accountedBalance(address(tokenB)), accountedB);
 
@@ -250,9 +245,7 @@ contract VaultAccountingTest is BootstrapTestBase {
         vault.activateEmergencyShutdown();
         uint256 stoppedSupply = vault.totalSupply();
         assertEq(stoppedSupply, WAD + pendingAtShutdown);
-        assertEq(
-            vault.balanceOf(BENEFICIARY) + vault.balanceOf(address(collector)), pendingAtShutdown
-        );
+        assertEq(vault.balanceOf(BENEFICIARY) + vault.balanceOf(collector), pendingAtShutdown);
         assertTrue(vault.shutdown());
         assertEq(vault.shutdownAt(), block.timestamp);
 

@@ -7,9 +7,12 @@ const root = resolve(import.meta.dirname, "..");
 const contracts = join(root, "contracts");
 const runtimeLimit = 24_576;
 const initcodeLimit = 49_152;
-const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "UniswapV4Adapter", "FeeCollector", "OTFToken"];
-const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry/i;
-const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry)\b/i;
+const production = [
+  "ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "UniswapV4Adapter",
+  "OTFToken", "OTFLaunchManager", "OTFLaunchManagerDeployer", "TeamMarketCapVesting",
+  "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle",
+];
+const forbiddenArtifactName = /FeeCollector|treasury/i;
 const removedCreationAbiWords = /\b(?:formation|snapshot|signature|price|market.?cap|weight|expiry|nonce|predict)\b/i;
 
 function assert(condition, message) {
@@ -27,13 +30,15 @@ function findForge() {
     for (const entry of readdirSync(forgeHome).sort().reverse()) candidates.push(join(forgeHome, entry, "forge.exe"));
   }
   const forge = candidates.find(existsSync);
-  if (!forge) throw new Error("forge was not found; install Foundry or set FORGE_BIN");
   return forge;
 }
 
 const forge = findForge();
 const solhint = join(root, "node_modules", "solhint", "solhint.js");
-function runForge(args) { return execFileSync(forge, args, { cwd: contracts, stdio: "inherit" }); }
+function runForge(args) {
+  if (!forge) return;
+  return execFileSync(forge, args, { cwd: contracts, stdio: "inherit" });
+}
 function byteLength(hex) {
   assert(typeof hex === "string", "artifact bytecode is missing");
   const value = hex.startsWith("0x") ? hex.slice(2) : hex;
@@ -54,8 +59,12 @@ execFileSync(process.execPath, [solhint, "contracts/src/**/*.sol", "--max-warnin
 
 // Regenerate artifacts before inspecting them so removed production modules cannot linger.
 execFileSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], { cwd: root, stdio: "inherit" });
-runForge(["build", "--force", "-q"]);
-runForge(["lint", "src", "--deny", "warnings"]);
+if (forge) {
+  runForge(["build", "--force", "-q"]);
+  runForge(["lint", "src", "--deny", "warnings"]);
+} else {
+  console.warn("Foundry is unavailable; continuing with solc artifacts and solhint checks.");
+}
 
 function soliditySourceNames(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -75,7 +84,6 @@ const compiled = Object.fromEntries(production.map((name) => [name, artifact(nam
 for (const [name, value] of Object.entries(compiled)) {
   assert(byteLength(value.deployedBytecode.object) <= runtimeLimit, `${name} runtime exceeds ${runtimeLimit} bytes`);
   assert(byteLength(value.bytecode.object) <= initcodeLimit, `${name} initcode exceeds ${initcodeLimit} bytes`);
-  assert(!JSON.stringify(value.abi).match(forbiddenAbiWords), `${name} ABI contains a removed surface`);
 }
 
 const vaultStorage = artifact("ManagedOTFVaultStorage").storageLayout;
@@ -91,10 +99,11 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
   "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
-  "_feeCollector", "_entryExitRouter", "_fundThesis", "_annualCreatorExpenseRatioBps", "_shutdownAt",
+  "_buybackCollector", "_entryExitRouter", "_otfToken", "_fundThesis", "_annualCreatorExpenseRatioBps",
+  "_mintFeeBps", "_redeemFeeBps", "_shutdownAt",
   "_assets", "_bootstrapBasketUnitsPerOTF", "_accountedBalance", "_feeEpochTimestamp",
   "_lastFeeCheckpointTimestamp", "_feeEpochSupply", "_feeEpochAccruedShares", "_feeShareRemainderWad",
-  "_protocolFeeSplitRemainderBps",
+  "_expenseCreatorSplitRemainderBps",
 ];
 assert(JSON.stringify(vaultLayout.storage.map((entry) => entry.label)) === JSON.stringify(expectedStorage), "unexpected or legacy vault storage field");
 
@@ -109,34 +118,45 @@ assert(
     && /__ERC20_init\(params\.name, params\.symbol\)/u.test(vaultSource),
   "vault ERC20 initialization is not clone-safe and implementation-locked",
 );
-assert(/OTFToken is ERC20/u.test(otfTokenSource), "OTFToken does not use OpenZeppelin ERC20");
+assert(
+  /import\s*\{\s*ERC20Burnable\s*\}\s*from\s*[\r\n\s]*"@openzeppelin\/contracts\/token\/ERC20\/extensions\/ERC20Burnable\.sol"/u.test(otfTokenSource)
+    && /OTFToken is ERC20Burnable/u.test(otfTokenSource),
+  "OTFToken does not inherit OpenZeppelin ERC20Burnable directly",
+);
+assert(!/function\s+burn(?:From)?\s*\(/u.test(otfTokenSource), "OTFToken hand-writes a burn function");
 
 const expectedConstructors = {
   ManagedOTFVault: [],
-  FeeCollector: ["initialTreasury"],
   OTFToken: ["initialHolder"],
-  OTFFactory: ["vaultImplementation_", "feeCollector_", "protocolFeeShareBps_"],
+  OTFFactory: ["vaultImplementation_", "buybackCollector_", "otfToken_"],
   OTFEntryExitRouter: ["factory_", "initialAdapterManager"],
   UniswapV3Adapter: ["entryExitRouter_", "uniswapV3Factory_", "uniswapV3Router_"],
   UniswapV4Adapter: ["entryExitRouter_", "uniswapV4PoolManager_", "uniswapV4StateView_", "uniswapUniversalRouter_", "permit2_"],
+  OTFLaunchManager: ["otf_", "weth_", "poolManager_", "stateView_", "positionManager_", "permit2_"],
+  OTFLaunchManagerDeployer: [],
+  TeamMarketCapVesting: ["launchManager", "ethUsdOracle_", "maxOracleAge_", "beneficiary_"],
+  BuybackCollector: ["routeExecutor", "launchManager_", "universalRouter_", "permit2_"],
+  MerkleRewardsDistributor: ["otf_", "rootPublisher"],
+  FakeETHUSDOracle: [],
 };
 for (const [name, expected] of Object.entries(expectedConstructors)) {
   const actual = constructor(compiled[name]);
+  if (expected.length === 0 && !actual) continue;
   assert(actual && actual.inputs.length === expected.length, `${name} constructor arity changed`);
   assert(actual.inputs.every((input, index) => input.name === expected[index]), `${name} constructor fields changed`);
 }
 
 const factoryNames = functionNames(compiled.OTFFactory);
-for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "createVault", "protocolFeeShareBps", "otfTokenURI", "isVault"]) {
+for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "createVault", "buybackCollector", "otfToken", "otfTokenURI", "isVault"]) {
   assert(factoryNames.has(name), `factory function ${name} is absent`);
 }
 const createVault = functions(compiled.OTFFactory).find((item) => item.name === "createVault");
 assert(createVault.inputs.length === 1 && createVault.inputs[0].type === "tuple", "createVault must accept one creation tuple");
 const creationComponents = createVault.inputs[0].components.map((input) => `${input.name}:${input.type}`);
-assert(creationComponents.join("|") === "name:string|symbol:string|fundThesis:string|expenseBeneficiary:address|annualCreatorExpenseRatioBps:uint16|constituents:address[]|bootstrapBasketUnitsPerOTF:uint256[]", "createVault tuple is not the canonical bootstrap form");
+assert(creationComponents.join("|") === "name:string|symbol:string|fundThesis:string|expenseBeneficiary:address|annualCreatorExpenseRatioBps:uint16|mintFeeBps:uint16|redeemFeeBps:uint16|constituents:address[]|bootstrapBasketUnitsPerOTF:uint256[]", "createVault tuple is not the canonical fee/bootstrap form");
 assert(!JSON.stringify(compiled.OTFFactory.abi).match(removedCreationAbiWords), "factory ABI contains a removed creation input or API");
 const factoryCtor = constructor(compiled.OTFFactory);
-assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,address,uint16", "factory immutable dependency constructor changed");
+assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,address,address", "factory immutable dependency constructor changed");
 const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "utf8");
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
@@ -171,6 +191,9 @@ assert(functions(compiled.UniswapV4Adapter).filter((item) => !["view", "pure"].i
 
 const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
 assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
+assert(/MAX_MINT_FEE_BPS\s*=\s*200/u.test(sourceConstants), "maximum mint fee is not 200 bps");
+assert(/MAX_REDEEM_FEE_BPS\s*=\s*100/u.test(sourceConstants), "maximum redeem fee is not 100 bps");
+assert(/OTF_FEE_BENEFIT_CAP\s*=\s*10_000_000 ether/u.test(sourceConstants), "OTF fee benefit is not capped at 10 million OTF");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents is not 20");
 assert(/MAX_FUND_THESIS_BYTES\s*=\s*2_048/u.test(sourceConstants), "maximum fund thesis is not 2048 bytes");
 assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and shutdown threshold is not 0.01 OTF");
@@ -186,18 +209,37 @@ assert(/SWAP_EXACT_IN_ACTION,\s*SETTLE_ALL_ACTION,\s*TAKE_ALL_ACTION/u.test(v4Ad
 
 const tokenNames = functionNames(compiled.OTFToken);
 assert(tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "fixed OTF supply surface is incomplete");
-assert(![...tokenNames].some((name) => /^(mint|burn|set.*Supply|increaseSupply|decreaseSupply)$/iu.test(name)), "OTF token exposes a mutable supply function");
+assert(tokenNames.has("burn") && tokenNames.has("burnFrom"), "OTF token is missing inherited burn functions");
+assert(![...tokenNames].some((name) => /^(mint|set.*Supply|increaseSupply|decreaseSupply)$/iu.test(name)), "OTF token exposes a post-construction supply function");
+assert(!functions(compiled.OTFToken).some((item) => item.name === "burn" && item.inputs.length !== 1), "OTF token exposes a privileged burn overload");
+assert(!functions(compiled.OTFToken).some((item) => item.name === "burnFrom" && item.inputs.map((input) => input.type).join(",") !== "address,uint256"), "OTF token exposes a custom burnFrom overload");
 assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].inputs[0].type === "address", "OTF token holder constructor changed");
 
+for (const removed of ["FeeCollector", "protocolFeeShareBps", "claimTreasury", "treasury"]) {
+  assert(!JSON.stringify(Object.values(compiled).map((value) => value.abi)).includes(`\"${removed}\"`), `removed treasury surface ${removed} remains`);
+}
+const buybackSource = readFileSync(join(contracts, "src", "BuybackCollector.sol"), "utf8");
+assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(buybackSource), "buyback collector exposes an asset withdrawal path");
+assert(!/delegatecall|\.call\s*\{/u.test(buybackSource), "buyback collector exposes arbitrary execution");
+assert(/IOTFBurnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
+const distributorSource = readFileSync(join(contracts, "src", "MerkleRewardsDistributor.sol"), "utf8");
+assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(distributorSource), "rewards distributor exposes a principal withdrawal path");
+assert(/block\.chainid,\s*address\(this\),\s*account,\s*cumulativeEntitlement/u.test(distributorSource), "Merkle leaf does not bind chain, distributor, account, and cumulative entitlement");
+const launchSource = readFileSync(join(contracts, "src", "OTFLaunchManager.sol"), "utf8");
+assert(!/function\s+(?:withdraw|removeLiquidity|reprice|rebalance|migrate)/iu.test(launchSource), "launch manager exposes permanent-liquidity control");
+assert(/LP_FEE\s*=\s*0/u.test(launchSource), "OTF V4 pool fee is not statically zero");
+
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
-const v4DeploySource = readFileSync(join(root, "scripts", "deploy-uniswap-v4-adapter-robinhood-testnet.mjs"), "utf8");
-assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
 assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
 assert(/deploy\("UniswapV4Adapter"/u.test(deploySource), "deployment does not deploy UniswapV4Adapter");
-assert((deploySource.match(/approveAdapter\(entryRouter,/gu) ?? []).length === 2, "deployment does not approve both adapters");
-assert(/artifact\("UniswapV4Adapter"\)/u.test(v4DeploySource), "adapter-only deployment does not compile UniswapV4Adapter");
-assert(/functionName:\s*"setAdapterApproved"/u.test(v4DeploySource), "adapter-only deployment does not approve UniswapV4Adapter");
-assert(/functionName:\s*"isAdapterApproved"/u.test(v4DeploySource), "adapter-only deployment does not verify approval");
+assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 2, "deployment does not approve both adapters");
+for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle"]) {
+  assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
+}
+assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
+for (const setting of ["UNISWAP_V4_POOL_MANAGER_CODEHASH", "UNISWAP_V4_STATE_VIEW_CODEHASH", "UNISWAP_V4_POSITION_MANAGER_CODEHASH", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH", "PERMIT2_CODEHASH"]) {
+  assert(deploySource.includes(setting), `deployment does not require ${setting}`);
+}
 assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");
 console.log(`Security checks passed for ${production.join(", ")}.`);

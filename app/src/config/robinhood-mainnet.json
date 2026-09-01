@@ -1,6 +1,23 @@
 {
+  "architecture": "otf-token-economics-v2",
   "network": "robinhood-mainnet",
   "chainId": 4663,
+  "protocolStatus": "configuration-required",
+  "protocolContracts": {},
+  "requiredProductionInputs": [
+    "WETH",
+    "UNISWAP_V3_FACTORY",
+    "UNISWAP_V3_SWAP_ROUTER02",
+    "UNISWAP_V4_POOL_MANAGER",
+    "UNISWAP_V4_STATE_VIEW",
+    "UNISWAP_V4_POSITION_MANAGER",
+    "UNISWAP_UNIVERSAL_ROUTER",
+    "PERMIT2",
+    "ETH_USD_ORACLE",
+    "PROTOCOL_MULTISIG",
+    "ROUTE_EXECUTOR",
+    "TEAM_BENEFICIARY"
+  ],
   "externalLiquidity": {
     "venue": "Uniswap",
     "baseUrl": "https://app.uniswap.org/positions/create/v3",

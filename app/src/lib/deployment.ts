@@ -39,15 +39,19 @@ const testnetExternalContracts = record(testnet.externalContracts);
 const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
 const testnetRouting = record(testnet.routing);
-const testnetCompatible = testnet.architecture === "generic-trade-adapter-v1";
+const testnetCompatible = testnet.architecture === "otf-token-economics-v2";
 
 function deployedTestnetContract(name: string): Address | undefined {
   return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;
 }
 
 export const robinhoodTestnetAddresses = Object.freeze({
-  feeCollector: deployedTestnetContract("feeCollector"),
   otfToken: deployedTestnetContract("otfToken"),
+  launchManager: deployedTestnetContract("launchManager"),
+  teamVesting: deployedTestnetContract("teamVesting"),
+  buybackCollector: deployedTestnetContract("buybackCollector"),
+  merkleRewardsDistributor: deployedTestnetContract("merkleRewardsDistributor"),
+  ethUsdOracle: deployedTestnetContract("fakeEthUsdOracle"),
   vaultImplementation: deployedTestnetContract("vaultImplementation"),
   factory: deployedTestnetContract("factory"),
   entryRouter: deployedTestnetContract("entryRouter"),
@@ -73,6 +77,7 @@ export const robinhoodTestnetV4 = Object.freeze({
   poolManager: address(testnetExternalContracts.uniswapV4PoolManager),
   stateView: address(testnetExternalContracts.uniswapV4StateView),
   universalRouter: address(testnetExternalContracts.uniswapUniversalRouter),
+  positionManager: address(testnetExternalContracts.uniswapV4PositionManager),
   permit2: address(testnetExternalContracts.permit2),
 });
 
@@ -101,8 +106,12 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
   && Boolean(
     robinhoodTestnetAddresses.factory
     && robinhoodTestnetAddresses.entryRouter
-    && robinhoodTestnetAddresses.feeCollector
+    && robinhoodTestnetAddresses.buybackCollector
     && robinhoodTestnetAddresses.otfToken
+    && robinhoodTestnetAddresses.launchManager
+    && robinhoodTestnetAddresses.teamVesting
+    && robinhoodTestnetAddresses.merkleRewardsDistributor
+    && robinhoodTestnetAddresses.ethUsdOracle
     && robinhoodTestnetAddresses.uniswapV3Adapter
     && address(testnetExternalContracts.uniswapV3Factory)?.toLowerCase() === testnetVenue.factory.toLowerCase()
     && address(testnetExternalContracts.uniswapV3SwapRouter02)?.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()

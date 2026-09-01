@@ -1,55 +1,10 @@
 {
-  "architecture": "generic-trade-adapter-v1",
+  "architecture": "otf-token-economics-v2",
   "network": "robinhood-testnet",
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
-  "status": "deployed",
-  "deployedAt": "2026-09-01T20:12:19.551Z",
-  "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
-  "contracts": {
-    "feeCollector": {
-      "address": "0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF",
-      "transactionHash": "0xf2a926dae0104d78cfdf625979cd208370115dc058b454b40944fd885dd3aa05",
-      "blockNumber": "111133674",
-      "gasUsed": "513946"
-    },
-    "otfToken": {
-      "address": "0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5",
-      "transactionHash": "0x0f51dc8bc0bce681c49d53e8bf1ad5f33ae41ce98dd585fec7fe1170d05c5b45",
-      "blockNumber": "111133690",
-      "gasUsed": "861690"
-    },
-    "vaultImplementation": {
-      "address": "0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3",
-      "transactionHash": "0x0e63eca7cda9f8e2b186bcee3b56522b94a5f265c412b0998e19ac9f1f958904",
-      "blockNumber": "111133659",
-      "gasUsed": "4488303"
-    },
-    "factory": {
-      "address": "0x1147089d16486e4D3149F6Dc1E9D915c28346d99",
-      "transactionHash": "0x09b1658ba3d0cdf425ebf72f1621d713ecec4d388d5dd0377eadf619e6ba8497",
-      "blockNumber": "111133702",
-      "gasUsed": "836852"
-    },
-    "entryRouter": {
-      "address": "0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a",
-      "transactionHash": "0x927af896ed7c9b31adfa783156482d5dd5362f134b5a1f41ae81ec6422fe56c7",
-      "blockNumber": "111133714",
-      "gasUsed": "3284435"
-    },
-    "uniswapV3Adapter": {
-      "address": "0x9373cA2022E6746ee9A64701630Eb45b7E179875",
-      "transactionHash": "0xe0eea4165722ea96ecd669cb8f5bafb3dc8e32d6b64753e52d54998e67eb4a71",
-      "blockNumber": "111133728",
-      "gasUsed": "1101096"
-    },
-    "uniswapV4Adapter": {
-      "address": "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe",
-      "transactionHash": "0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c",
-      "blockNumber": "111317310",
-      "gasUsed": "1730565"
-    }
-  },
+  "status": "redeployment-required",
+  "contracts": {},
   "externalContracts": {
     "uniswapV3Factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
     "uniswapV3SwapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
@@ -58,39 +13,17 @@
     "uniswapUniversalRouter": "0x8876789976dEcBfCbBbe364623C63652db8C0904",
     "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
   },
-  "policy": {
-    "protocolFeeShareBps": 1500
+  "expectedCodehashes": {
+    "uniswapV4PoolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "uniswapV4StateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+    "uniswapUniversalRouter": "0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f",
+    "permit2": "0x0117e0ed818bc3f2a8729ffc336c837e63e965f04b473047b39b35ad86aac259"
   },
   "routing": {
     "integration": "approved-trade-adapters",
-    "approvedAdapters": [
-      "0x9373cA2022E6746ee9A64701630Eb45b7E179875",
-      "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe"
-    ],
-    "uniswapV3Adapter": "0x9373cA2022E6746ee9A64701630Eb45b7E179875",
-    "exactInputTuple": "(bytes,address,uint256,uint256)",
-    "maxHopsPerLeg": 3,
-    "maxLegs": 40,
-    "uniswapV4Adapter": "0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe",
-    "v4RouteData": "abi.encode((address,uint24,int24,address,bytes)[])",
-    "maxV4HopsPerLeg": 3
-  },
-  "setupTransactions": {
-    "routerConfiguration": {
-      "transactionHash": "0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874",
-      "blockNumber": "111133755",
-      "gasUsed": "53484"
-    },
-    "v3AdapterApproval": {
-      "transactionHash": "0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb",
-      "blockNumber": "111133741",
-      "gasUsed": "57013"
-    },
-    "v4AdapterApproval": {
-      "transactionHash": "0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9",
-      "blockNumber": "111317327",
-      "gasUsed": "55620"
-    }
+    "approvedAdapters": [],
+    "maxV4HopsPerLeg": 3,
+    "maxLegs": 40
   },
   "externalLiquidity": {
     "venue": "Synthra",
@@ -99,5 +32,5 @@
   "creation": {
     "assetDataEndpoint": "https://launch.onchaintradedfunds.com/api/assets"
   },
-  "note": "Creation permanently commits the fund thesis, ordered constituents, and immutable raw bootstrap basket units. Valuation inputs remain application metadata."
+  "note": "The breaking OTF token-economics v2 contracts require a fresh testnet deployment. Earlier generic-trade-adapter-v1 addresses are intentionally unsupported."
 }

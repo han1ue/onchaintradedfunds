@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
-import { OtfBrandMark, OtfTokenIcon } from "@onchaintradedfunds/brand";
+import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   ArrowDown,
   ArrowUpRight,
@@ -83,6 +83,7 @@ import {
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
+import { OTFTokenSurface } from "./OTFTokenSurface";
 
 export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity" | "token";
 
@@ -952,6 +953,8 @@ function CreatedFundSurface() {
             <div><span>Assets</span><strong>{details?.assetCount ?? "—"}</strong></div>
             <div><span>Creator</span><strong>{details ? shortAddress(details.creator) : "—"}</strong></div>
             <div><span>Creator fee</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.annualCreatorExpenseRatioBps) : "—"}</strong></div>
+            <div><span>Mint fee</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.mintFeeBps) : "—"}</strong></div>
+            <div><span>Redeem fee</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.redeemFeeBps) : "—"}</strong></div>
           </div>
           {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View creation transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
@@ -1276,7 +1279,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <div className="fundDetailMetrics" aria-label="Fund metrics">
               <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
               <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-              <div><span>Creator fee</span><strong>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</strong></div>
+              <div><span>Immutable fees</span><strong>{vaultDetails ? `${formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps)} / ${formatAnnualExpenseRatioPercentage(vaultDetails.mintFeeBps)} / ${formatAnnualExpenseRatioPercentage(vaultDetails.redeemFeeBps)}` : "—"}</strong><small>Annual / mint / redeem</small></div>
               <div><span>Creator</span><strong>{vaultDetails ? shortAddress(vaultDetails.creator) : "—"}</strong></div>
             </div>
           </section>
@@ -1348,57 +1351,7 @@ function VerifiedSurface() {
 }
 
 function TokenSurface() {
-  const chainId = useChainId();
-  const testnet = chainId === robinhoodChainTestnet.id;
-  const tokenAddress = robinhoodTestnetAddresses.otfToken;
-  const explorerUrl = tokenAddress ? `${robinhoodChainTestnet.blockExplorers.default.url}/address/${tokenAddress}` : undefined;
-
-  return (
-    <DashboardPage>
-      <div className="appView tokenView">
-        <AppPageHeader
-          title="OTF Token"
-          description="The fixed-supply protocol token for Onchain Traded Funds. It is separate from the share token issued by each individual OTF."
-          icon={<OtfBrandMark />}
-          actions={<a className="secondaryAction" href={`${DOCS_URL}/token-and-fee-incentives`} target="_blank" rel="noreferrer"><ReceiptText size={14} />Technical specification<ExternalLink size={12} /></a>}
-        />
-        <div className="validationSummary tokenStatusNotice" role="note">
-          <History size={15} />
-          <div><strong>Pre-mainnet status</strong><span>The token contract is unaudited. Distribution, vesting, governance, liquidity, and treasury custody have not been finalized.</span></div>
-        </div>
-        <section className="sectionCard tokenPanel">
-          <div className="directoryPanelHeading">
-            <div><h2>Token design</h2><p>Contract-enforced properties, without projected utility or market claims.</p></div>
-            <span className="stateBadge muted">ERC-20</span>
-          </div>
-          <dl className="tokenFacts">
-            <div><dt>Name</dt><dd>Onchain Traded Funds</dd></div>
-            <div><dt>Symbol</dt><dd>OTF</dd></div>
-            <div><dt>Maximum supply</dt><dd>1,000,000,000 OTF</dd></div>
-            <div><dt>Decimals</dt><dd>18</dd></div>
-          </dl>
-          <div className="tokenContent">
-            <section>
-              <h3>Fixed by the contract</h3>
-              <p>The full supply is minted once to the constructor-supplied initial holder. The token has no privileged minter, inflation switch, transfer tax, blacklist, or upgrade hook.</p>
-            </section>
-            <section>
-              <h3>Not fixed by the contract</h3>
-              <p>Distribution, vesting, governance rights, liquidity, and treasury policy are deployment decisions. This page does not imply an allocation, a launch schedule, or an investment outcome.</p>
-            </section>
-            <section>
-              <h3>OTF token versus OTF shares</h3>
-              <p>OTF is the protocol token. A fund created through the factory issues its own ERC-20 share token representing that fund&apos;s basket; those fund shares have separate supply and economics.</p>
-            </section>
-          </div>
-          <div className="tokenContractRecord">
-            <div><span>Contract</span><strong>{testnet ? "Robinhood Testnet deployment" : "No Robinhood Mainnet deployment"}</strong></div>
-            {testnet && tokenAddress ? <a href={explorerUrl} target="_blank" rel="noreferrer"><code>{tokenAddress}</code><ExternalLink size={13} /></a> : <span className="tokenContractUnavailable">Enable Testnet mode in Settings to inspect the current deployment.</span>}
-          </div>
-        </section>
-      </div>
-    </DashboardPage>
-  );
+  return <DashboardPage><OTFTokenSurface /></DashboardPage>;
 }
 
 function WalletSurface() {

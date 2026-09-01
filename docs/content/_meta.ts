@@ -6,7 +6,7 @@ const meta: MetaRecord = {
   "deployment-addresses": "Deployment addresses",
   "protocol-security-spec": "Protocol security specification",
   security: "Security and risk",
-  "token-and-fee-incentives": "Token and fee incentives",
+  "token-and-fee-incentives": "OTF token economics",
 };
 
 export default meta;

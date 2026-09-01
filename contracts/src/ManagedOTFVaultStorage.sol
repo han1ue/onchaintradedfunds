@@ -6,8 +6,8 @@ import {
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 
-interface IOTFFactoryFeePolicy {
-    function protocolFeeShareBps() external view returns (uint16);
+interface IOTFFactoryTokenPolicy {
+    function otfToken() external view returns (address);
     function otfTokenURI() external pure returns (string memory);
 }
 
@@ -31,7 +31,10 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error DuplicateConstituent(address constituent);
     error InvalidBootstrapBasketUnit(address constituent);
     error ExpenseRatioTooHigh(uint16 supplied, uint16 maximum);
+    error MintFeeTooHigh(uint16 supplied, uint16 maximum);
+    error RedeemFeeTooHigh(uint16 supplied, uint16 maximum);
     error ZeroShares();
+    error ZeroNetShares();
     error SharesExceedSupply(uint256 shares, uint256 supply);
     error BootstrapSharesTooSmall(uint256 supplied, uint256 minimum);
     error InvalidSkipMask(uint256 skipMask, uint256 constituentCount);
@@ -74,10 +77,21 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
         uint256 skipMask
     );
     event ExpenseFeesCheckpointed(
-        uint256 totalFeeShares,
+        uint256 totalFeeShares, uint256 creatorShares, uint256 buybackShares, uint16 creatorShareBps
+    );
+    event MintFeeCharged(
+        uint256 grossShares,
+        uint256 investorShares,
         uint256 creatorShares,
-        uint256 protocolShares,
-        uint16 effectiveProtocolShareBps
+        uint256 buybackShares,
+        uint16 creatorShareBps
+    );
+    event RedeemFeeCharged(
+        uint256 investorShares,
+        uint256 redeemedShares,
+        uint256 creatorShares,
+        uint256 buybackShares,
+        uint16 creatorShareBps
     );
     event EmergencyShutdown(address indexed caller, uint64 timestamp);
     event LowSupplyShutdown(address indexed caller, uint64 timestamp, uint256 remainingSupply);
@@ -89,11 +103,14 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     address internal _factory;
     address internal _creator;
     address internal _expenseBeneficiary;
-    address internal _feeCollector;
+    address internal _buybackCollector;
     address internal _entryExitRouter;
+    address internal _otfToken;
     string internal _fundThesis;
 
     uint16 internal _annualCreatorExpenseRatioBps;
+    uint16 internal _mintFeeBps;
+    uint16 internal _redeemFeeBps;
     uint64 internal _shutdownAt;
 
     address[] internal _assets;
@@ -106,7 +123,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     uint256 internal _feeEpochSupply;
     uint256 internal _feeEpochAccruedShares;
     uint256 internal _feeShareRemainderWad;
-    uint16 internal _protocolFeeSplitRemainderBps;
+    uint256 internal _expenseCreatorSplitRemainderBps;
 
     modifier onlyInitialized() {
         if (!_initialized) revert NotInitialized();

@@ -62,6 +62,8 @@ export type VaultCreationTransactionParams = {
   fundThesis: string;
   expenseBeneficiary: Address;
   annualCreatorExpenseRatioBps: number;
+  mintFeeBps: number;
+  redeemFeeBps: number;
   constituents: Address[];
   bootstrapBasketUnitsPerOTF: bigint[];
 };

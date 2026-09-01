@@ -14,6 +14,8 @@ describe("onchain fund thesis wiring", () => {
       assets: [getAddress("0x0000000000000000000000000000000000000001")],
       totalSupply: 0n,
       annualCreatorExpenseRatioBps: 100,
+      mintFeeBps: 25,
+      redeemFeeBps: 10,
       creator: getAddress("0x0000000000000000000000000000000000000002"),
     };
     const readContract = vi.fn(async ({ functionName }: { functionName: string }) => values[functionName]);
@@ -21,6 +23,7 @@ describe("onchain fund thesis wiring", () => {
     const summary = await readVaultSummary({ readContract } as unknown as PublicClient, address);
 
     expect(summary.fundThesis).toBe(thesis);
+    expect(summary).toMatchObject({ mintFeeBps: 25, redeemFeeBps: 10 });
     expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ functionName: "fundThesis" }));
   });
 

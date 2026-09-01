@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "../src/interfaces/IERC20.sol";
-import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
@@ -72,7 +71,7 @@ contract VaultInvariantHandler {
 
 contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
     ManagedOTFVault internal vault;
-    FeeCollector internal collector;
+    address internal collector;
     MockCoreRouter internal router;
     MockStockToken internal tokenA;
     MockStockToken internal tokenB;
@@ -80,7 +79,7 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
 
     function setUp() public {
         OTFFactory factory;
-        (factory, collector, router) = _deployFactory(4_000);
+        (factory, collector, router) = _deployFactory();
         tokenA = new MockStockToken("Asset A", "A", 18);
         tokenB = new MockStockToken("Asset B", "B", 18);
         vault = _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 1_000);
@@ -105,7 +104,7 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
 
     function invariantAllShareSupplyIsAccountedFor() public view {
         uint256 balances = vault.balanceOf(address(handler)) + vault.balanceOf(BENEFICIARY)
-            + vault.balanceOf(address(collector)) + vault.balanceOf(address(0xB0B));
+            + vault.balanceOf(collector) + vault.balanceOf(address(0xB0B));
         assertEq(vault.totalSupply(), balances);
     }
 
@@ -126,7 +125,7 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
 
 contract VaultFuzzTest is BootstrapTestBase {
     function testFuzzMintRedeemPreservesBasket(uint256 mintSeed, uint256 redeemSeed) public {
-        (OTFFactory factory,, MockCoreRouter router) = _deployFactory(0);
+        (OTFFactory factory,, MockCoreRouter router) = _deployFactory();
         MockStockToken tokenA = new MockStockToken("Asset A", "A", 18);
         MockStockToken tokenB = new MockStockToken("Asset B", "B", 18);
         ManagedOTFVault vault =

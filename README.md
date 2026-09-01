@@ -13,8 +13,19 @@ Robinhood testnet quotes currently use the configured Synthra V3 pools and Quote
 testnet deployment binds both adapters to the generic router; V4 basket routing remains dormant
 until supported V4 pool keys and liquidity are added to the route catalog.
 
+The protocol token is issued once at one billion OTF. Its live supply falls when holders or the
+buyback collector burn tokens. A canonical 0%-fee OTF/WETH V4 pool launches with 150 million OTF
+one-sided liquidity and graduates at its final tick into permanently locked full-range liquidity.
+The launch manager also reserves 50 million OTF, team spot-FDV vesting holds 100 million, and the
+cumulative Merkle distributor holds 700 million.
+
+Each fund has immutable annual, mint, and redeem rates. Accounted OTF held as a real constituent
+changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 million OTF. The
+buyback collector redeems fee shares through typed adapter routes, converts proceeds to WETH, buys
+only through the canonical pool, and burns the purchased OTF.
+
 The Swap product requires an OTF share on at least one side. It is not a general token-to-token
-exchange: mainnet OTF routes use the Uniswap Trading API, while testnet OTF routes use Synthra V3.
+exchange. The dedicated `$OTF` page trades WETH/OTF directly through the canonical V4 pool.
 
 `app/src/config/robinhood-testnet-assets.json` is the testnet routing catalog. It separates USDG and WETH
 quote assets from the five supported fund constituents and records their active Synthra pools. The
@@ -22,3 +33,6 @@ constituent pools fund basket mint/burn routes and the testnet liquidity utility
 constituent-to-quote swaps in the user-facing Swap product.
 `app/src/config/assets.json` is a chain-indexed list of featured production assets for app discovery;
 it is not an onchain allowlist and does not limit the permissionless protocol.
+
+The v2 contracts require a fresh testnet deployment. The earlier recorded addresses are deliberately
+disabled; no compatibility or migration layer is provided.

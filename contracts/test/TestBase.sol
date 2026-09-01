@@ -21,6 +21,10 @@ interface Vm {
     function etch(address target, bytes calldata newRuntimeBytecode) external;
     function mockCall(address callee, bytes calldata data, bytes calldata returnData) external;
     function clearMockedCalls() external;
+    function computeCreate2Address(bytes32 salt, bytes32 initCodeHash, address deployer)
+        external
+        pure
+        returns (address);
     function addr(uint256 privateKey) external returns (address);
     function sign(uint256 privateKey, bytes32 digest)
         external

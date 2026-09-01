@@ -114,10 +114,12 @@ permissionless in-kind emergency redemption distributes at most `min(actual, acc
 
 ## Fees, routing, and liquidity
 
-Each vault has an immutable annual creator expense ratio from 0 to 1000 bps and a fixed beneficiary.
-Expenses are paid through lazy, cadence-independent share inflation. The factory's immutable
-`protocolFeeShareBps` splits fee shares between the beneficiary and `FeeCollector`; there is no
-portfolio-dependent rebate.
+Each vault has immutable annual creator-expense, mint, and redeem rates capped at 1,000, 200, and
+100 bps, plus a fixed beneficiary. Expenses are paid through lazy, cadence-independent share
+inflation. Mint and normal redeem fees are also issued as fee shares; shutdown redemptions are free.
+The creator receives 50% to 90% of each fee according to the vault's accounted OTF constituent
+balance. The remainder goes only to `BuybackCollector`. Direct token donations do not affect that
+balance or the split.
 
 The permissionless entry/exit router supports ordered generic basket `SwapLeg[]` routes. Legs can
 split one token across adapters, accumulate into one output, or spend an earlier leg's output. Each
@@ -153,7 +155,9 @@ general Swap pairs; every configured pool is checked against the Synthra factory
 The separate chain-indexed production catalog only pre-populates convenient assets; it does not gate
 the permissionless contracts. Production liquidity is managed at the external venue. `/liquidity`
 remains a visibly testnet-only utility for explicitly configured Synthra V3 pools and is not a
-production deployment path.
+production deployment path. OTF itself is immediately usable as a normal constituent through the
+canonical 0%-fee V4 pool. Buyback routes redeem fee shares, convert basket assets to WETH through
+these typed adapters, buy OTF only from that canonical pool, and burn the purchased OTF.
 
 ## Verification
 

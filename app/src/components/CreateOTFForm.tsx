@@ -59,6 +59,8 @@ type SubmittedSnapshot = {
   name: string;
   symbol: string;
   annualExpenseRatioBps: number;
+  mintFeeBps: number;
+  redeemFeeBps: number;
   creator: Address;
   selectedAssets: SelectedAsset[];
   calculation: BasketCalculation;
@@ -148,6 +150,8 @@ export function CreateOTFForm() {
   const [symbol, setSymbol] = useState("");
   const [mandate, setMandate] = useState("");
   const [expenseRatio, setExpenseRatio] = useState("0");
+  const [mintFee, setMintFee] = useState("0");
+  const [redeemFee, setRedeemFee] = useState("0");
   const [beneficiary, setBeneficiary] = useState("");
   const [availableAssets, setAvailableAssets] = useState<CreationAssetData[]>([]);
   const [selectedAssets, setSelectedAssets] = useState<SelectedAsset[]>([]);
@@ -272,8 +276,12 @@ export function CreateOTFForm() {
   const basketValid = selectedAssets.length > 0 && selectedAssets.length <= 20
     && percentagesValid && !assetErrors.some(Boolean) && Boolean(calculation && creationMetadata);
   const annualExpenseRatioBps = annualExpenseRatioBpsFromPercentage(expenseRatio);
+  const mintFeeBps = annualExpenseRatioBpsFromPercentage(mintFee);
+  const redeemFeeBps = annualExpenseRatioBpsFromPercentage(redeemFee);
   const economicsValid = Number.isInteger(annualExpenseRatioBps)
     && annualExpenseRatioBps >= 0 && annualExpenseRatioBps <= 1_000
+    && Number.isInteger(mintFeeBps) && mintFeeBps >= 0 && mintFeeBps <= 200
+    && Number.isInteger(redeemFeeBps) && redeemFeeBps >= 0 && redeemFeeBps <= 100
     && isAddress(beneficiary) && beneficiary.toLowerCase() !== zeroAddress;
   const stepValid = [identityValid, basketValid, economicsValid, true];
   const remainingAssets = availableAssets.filter((candidate) => (
@@ -287,6 +295,8 @@ export function CreateOTFForm() {
     name: normalizedName,
     symbol,
     annualExpenseRatioBps,
+    mintFeeBps,
+    redeemFeeBps,
     creator: address,
     selectedAssets,
     calculation,
@@ -370,6 +380,8 @@ export function CreateOTFForm() {
       name: normalizedName,
       symbol,
       annualExpenseRatioBps,
+      mintFeeBps,
+      redeemFeeBps,
       creator: address,
       selectedAssets: selectedAssets.map((asset) => ({ ...asset })),
       calculation,
@@ -391,6 +403,8 @@ export function CreateOTFForm() {
             fundThesis: normalizedFundThesis,
             expenseBeneficiary: getAddress(beneficiary),
             annualCreatorExpenseRatioBps: annualExpenseRatioBps,
+            mintFeeBps,
+            redeemFeeBps,
             constituents: selectedAssets.map((asset) => asset.address),
             bootstrapBasketUnitsPerOTF: calculation.bootstrapBasketUnitsPerOTF,
           })],
@@ -561,9 +575,11 @@ export function CreateOTFForm() {
             <div className="formSection">
               <div className="formGrid twoColumns">
                 <label><span>Annual creator expense ratio</span><div className="inputWithSuffix"><input inputMode="decimal" value={expenseRatio} onChange={(event) => { const next = fixedInput(event.target.value, 2); if (next !== undefined) { setExpenseRatio(next); resetSubmission(); } }} aria-invalid={!Number.isInteger(annualExpenseRatioBps) || annualExpenseRatioBps < 0 || annualExpenseRatioBps > 1_000} aria-describedby="create-expense-help" /><span>%</span></div><small id="create-expense-help">Immutable; 0–10%.</small></label>
+                <label><span>Mint fee</span><div className="inputWithSuffix"><input inputMode="decimal" value={mintFee} onChange={(event) => { const next = fixedInput(event.target.value, 2); if (next !== undefined) { setMintFee(next); resetSubmission(); } }} aria-invalid={!Number.isInteger(mintFeeBps) || mintFeeBps < 0 || mintFeeBps > 200} aria-describedby="create-mint-fee-help" /><span>%</span></div><small id="create-mint-fee-help">Immutable; defaults to 0%, maximum 2%.</small></label>
+                <label><span>Redeem fee</span><div className="inputWithSuffix"><input inputMode="decimal" value={redeemFee} onChange={(event) => { const next = fixedInput(event.target.value, 2); if (next !== undefined) { setRedeemFee(next); resetSubmission(); } }} aria-invalid={!Number.isInteger(redeemFeeBps) || redeemFeeBps < 0 || redeemFeeBps > 100} aria-describedby="create-redeem-fee-help" /><span>%</span></div><small id="create-redeem-fee-help">Immutable; defaults to 0%, maximum 1%. Shutdown exits are free.</small></label>
                 <label><span>Fixed beneficiary</span><input value={beneficiary} onChange={(event) => { setBeneficiary(event.target.value.trim()); resetSubmission(); }} placeholder="0x…" aria-invalid={!isAddress(beneficiary) || beneficiary.toLowerCase() === zeroAddress} aria-describedby="create-beneficiary-help" /><small id="create-beneficiary-help">Receives the creator share of accrued fee shares.</small></label>
               </div>
-              <aside className="riskCallout warning"><CircleAlert size={15} /><div><strong>Fee shares dilute every existing holder.</strong><span>10% is the protocol maximum and is not recommended. The protocol split is fixed by the factory.</span></div></aside>
+              <aside className="riskCallout warning"><CircleAlert size={15} /><div><strong>All three fee rates are permanent.</strong><span>Accounted OTF changes only the creator versus buyback-and-burn split; it never changes the investor&apos;s configured fee rate.</span></div></aside>
             </div>
           ) : null}
 
@@ -572,6 +588,8 @@ export function CreateOTFForm() {
               <div className="reviewHero"><span className="vaultMonogram">NEW</span><div><h2>{reviewSnapshot.name || "Unnamed OTF"}</h2><span>{reviewSnapshot.symbol || "No ticker"} · created empty by {reviewSnapshot.creator ? shortAddress(reviewSnapshot.creator) : "the connected wallet"}</span></div></div>
               <div className="reviewGrid">
                 <div><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.annualExpenseRatioBps)}</strong></div>
+                <div><span>Mint fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.mintFeeBps)}</strong></div>
+                <div><span>Redeem fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.redeemFeeBps)}</strong></div>
                 <div><span>Weighting method</span><strong>{reviewSnapshot.creationMetadata ? weightingMethodLabel(reviewSnapshot.creationMetadata.weightingMethod) : "Weighting method unavailable"}</strong></div>
               </div>
               <div className="reviewBasketTableWrap">

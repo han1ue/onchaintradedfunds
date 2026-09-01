@@ -5,7 +5,8 @@ import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
     IUniswapV4StateView,
-    UniswapV4ExactInputParams
+    UniswapV4ExactInputParams,
+    UniswapV4PathKey
 } from "../../src/interfaces/IUniswapV4.sol";
 import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
@@ -51,6 +52,7 @@ contract MockPermit2 is IPermit2AllowanceTransfer {
 contract MockUniswapV4StateView is IUniswapV4StateView {
     address public poolManager;
     mapping(bytes32 poolId => uint160 sqrtPriceX96) public sqrtPrices;
+    mapping(bytes32 poolId => int24 tick) public ticks;
 
     constructor(address poolManager_) {
         poolManager = poolManager_;
@@ -64,12 +66,17 @@ contract MockUniswapV4StateView is IUniswapV4StateView {
         sqrtPrices[poolId] = sqrtPriceX96;
     }
 
+    function setPoolState(bytes32 poolId, uint160 sqrtPriceX96, int24 tick_) external {
+        sqrtPrices[poolId] = sqrtPriceX96;
+        ticks[poolId] = tick_;
+    }
+
     function getSlot0(bytes32 poolId)
         external
         view
         returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)
     {
-        return (sqrtPrices[poolId], 0, 0, 0);
+        return (sqrtPrices[poolId], ticks[poolId], 0, 0);
     }
 }
 
@@ -80,6 +87,10 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
     IPermit2AllowanceTransfer public immutable permit2;
     uint256 public outputMultiplier = 1;
     bool public skipInputPull;
+    address public lastIntermediateCurrency;
+    uint24 public lastFee;
+    int24 public lastTickSpacing;
+    address public lastHooks;
 
     constructor(address poolManager_, address permit2_) {
         poolManager = poolManager_;
@@ -115,6 +126,11 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
             abi.decode(actionParams[1], (address, uint256));
         (address takeToken, uint256 takeMinimum) = abi.decode(actionParams[2], (address, uint256));
         require(params.path.length != 0 && params.maxHopSlippage.length == 0, "PATH");
+        UniswapV4PathKey memory finalKey = params.path[params.path.length - 1];
+        lastIntermediateCurrency = finalKey.intermediateCurrency;
+        lastFee = finalKey.fee;
+        lastTickSpacing = finalKey.tickSpacing;
+        lastHooks = finalKey.hooks;
         require(settleToken == params.currencyIn && settleMaximum == params.amountIn, "SETTLE");
         require(
             takeToken == params.path[params.path.length - 1].intermediateCurrency

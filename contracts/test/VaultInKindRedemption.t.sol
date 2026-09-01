@@ -56,7 +56,7 @@ contract VaultInKindRedemptionTest is BootstrapTestBase {
     MockStockToken internal tokenB;
 
     function setUp() public {
-        (factory,, router) = _deployFactory(4_000);
+        (factory,, router) = _deployFactory();
         tokenA = new MockStockToken("Asset A", "A", 18);
         tokenB = new MockStockToken("Asset B", "B", 18);
     }

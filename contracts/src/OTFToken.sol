@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
-/// @notice Fixed-supply protocol token for Onchain Traded Funds.
-/// @dev Distribution and governance can be layered around this token without introducing a
-///      privileged minting key into the token itself.
-contract OTFToken is ERC20 {
+/// @notice Fixed-original-issuance, holder-burnable token for Onchain Traded Funds.
+/// @dev MAX_SUPPLY records the one-time issuance; totalSupply is the live amount after burns.
+contract OTFToken is ERC20Burnable {
     uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
 
     string private constant OTF_TOKEN_METADATA_URI = "data:application/json;base64,eyJuYW1lIjoiT25jaGFpbiBUcmFkZWQgRnVuZHMiLCJzeW1ib2wiOiJPVEYiLCJpbnRlcm9"

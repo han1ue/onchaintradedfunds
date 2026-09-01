@@ -5,7 +5,6 @@ import {
   testnetPoolForPair,
   testnetVenue,
 } from "./asset-catalog";
-import { robinhoodTestnetAddresses } from "./deployment";
 import { parseTypedQuoteResponse, type SwapAsset, type SwapQuoteRequest } from "./swap-model";
 import {
   encodeV3Path,
@@ -20,6 +19,11 @@ const OTF_A = "0x00000000000000000000000000000000000000f1" as const;
 const OTF_B = "0x00000000000000000000000000000000000000f2" as const;
 const OTF_POOL = "0x00000000000000000000000000000000000000a1" as const;
 const NOW = 1_750_000_000_000;
+const TEST_DEPLOYMENT = {
+  factory: "0x00000000000000000000000000000000000000d1",
+  entryRouter: "0x00000000000000000000000000000000000000d2",
+  uniswapV3Adapter: "0x00000000000000000000000000000000000000d3",
+} as const;
 
 const usdg = testnetAssetById("usdg")!;
 const weth = testnetAssetById("weth")!;
@@ -74,6 +78,10 @@ function routingClient(overrides: Partial<TestnetRoutingClient> = {}): TestnetRo
   };
 }
 
+function dependencies(client = routingClient()) {
+  return { now: () => NOW, client, deployment: TEST_DEPLOYMENT };
+}
+
 function swapAsset(value: TestnetPlannerRequest["input"], symbol: string): SwapAsset {
   return {
     address: value.address,
@@ -101,8 +109,8 @@ function parseResponse(response: unknown, request: TestnetPlannerRequest) {
     request: modelRequest,
     chainId: 46630,
     now: NOW,
-    entryRouter: robinhoodTestnetAddresses.entryRouter,
-    adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
+    entryRouter: TEST_DEPLOYMENT.entryRouter,
+    adapter: TEST_DEPLOYMENT.uniswapV3Adapter,
     swapRouter02: testnetVenue.swapRouter02,
   });
 }
@@ -110,7 +118,7 @@ function parseResponse(response: unknown, request: TestnetPlannerRequest) {
 describe("Synthra testnet quote planner", () => {
   it("returns a validated direct exact-input plan for an OTF pool", async () => {
     const request = plannerRequest();
-    const result = await quoteTestnetSwap(request, { now: () => NOW, client: routingClient() });
+    const result = await quoteTestnetSwap(request, dependencies());
     expect(result.status).toBe(200);
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
     expect(execution).toMatchObject({ kind: "direct-v3", swapRouter02: testnetVenue.swapRouter02 });
@@ -125,7 +133,7 @@ describe("Synthra testnet quote planner", () => {
 
   it("rejects a tampered direct router target before execution", async () => {
     const request = plannerRequest();
-    const result = await quoteTestnetSwap(request, { now: () => NOW, client: routingClient() });
+    const result = await quoteTestnetSwap(request, dependencies());
     const body = result.body as Record<string, unknown>;
     const execution = body.execution as Record<string, unknown>;
     expect(() => parseResponse({
@@ -136,7 +144,7 @@ describe("Synthra testnet quote planner", () => {
 
   it("routes WETH to an OTF through USDG", async () => {
     const request = plannerRequest(asset(weth), otf(OTF_A));
-    const result = await quoteTestnetSwap(request, { now: () => NOW, client: routingClient() });
+    const result = await quoteTestnetSwap(request, dependencies());
     expect(result.status).toBe(200);
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
     expect(execution.path).toBe(encodeV3Path([weth.address, usdg.address, OTF_A], [100, 500]));
@@ -144,22 +152,22 @@ describe("Synthra testnet quote planner", () => {
 
   it("rejects disallowed pairs without touching the routing client", async () => {
     const client = routingClient();
-    const result = await quoteTestnetSwap(plannerRequest(asset(tsla), asset(amzn)), { now: () => NOW, client });
+    const result = await quoteTestnetSwap(plannerRequest(asset(tsla), asset(amzn)), dependencies(client));
     expect(result.body).toMatchObject({ state: "unavailable", reason: "This pair is outside the configured testnet asset policy." });
     expect(client.poolFor).not.toHaveBeenCalled();
-    expect((await quoteTestnetSwap(plannerRequest(otf(OTF_A), asset(tsla), "basket"), { now: () => NOW, client })).status).toBe(503);
+    expect((await quoteTestnetSwap(plannerRequest(otf(OTF_A), asset(tsla), "basket"), dependencies(client))).status).toBe(503);
   });
 
   it("rejects token decimals that do not match the catalog", async () => {
     const client = routingClient();
-    const result = await quoteTestnetSwap(plannerRequest({ ...asset(usdg), decimals: 18 }, otf(OTF_A)), { now: () => NOW, client });
+    const result = await quoteTestnetSwap(plannerRequest({ ...asset(usdg), decimals: 18 }, otf(OTF_A)), dependencies(client));
     expect(result.body).toMatchObject({ state: "unavailable", reason: "The selected asset metadata does not match the testnet catalog." });
     expect(client.poolFor).not.toHaveBeenCalled();
   });
 
   it("refuses a constituent pool that does not match the Synthra factory", async () => {
     const client = routingClient({ poolFor: vi.fn(async () => OTF_POOL) });
-    const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), { now: () => NOW, client });
+    const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client));
     expect(result.body).toMatchObject({ state: "unavailable", reason: "No executable basket route is currently available." });
   });
 
@@ -169,9 +177,9 @@ describe("Synthra testnet quote planner", () => {
     const redeem = plannerRequest(otf(OTF_A), asset(usdg), "basket");
     const convert = plannerRequest(otf(OTF_A), otf(OTF_B), "basket");
 
-    const mintResult = await quoteTestnetSwap(mint, { now: () => NOW, client });
-    const redeemResult = await quoteTestnetSwap(redeem, { now: () => NOW, client });
-    const convertResult = await quoteTestnetSwap(convert, { now: () => NOW, client });
+    const mintResult = await quoteTestnetSwap(mint, dependencies(client));
+    const redeemResult = await quoteTestnetSwap(redeem, dependencies(client));
+    const convertResult = await quoteTestnetSwap(convert, dependencies(client));
 
     expect(parseResponse(mintResult.body, mint).execution).toMatchObject({ kind: "basket-router", call: { method: "mintFromToken" } });
     expect(parseResponse(redeemResult.body, redeem).execution).toMatchObject({ kind: "basket-router", call: { method: "redeemToToken" } });
@@ -180,10 +188,10 @@ describe("Synthra testnet quote planner", () => {
   });
 
   it("normalizes zero-liquidity routes as unavailable", async () => {
-    const result = await quoteTestnetSwap(plannerRequest(), {
-      now: () => NOW,
-      client: routingClient({ poolLiquidity: vi.fn(async () => 0n) }),
-    });
+    const result = await quoteTestnetSwap(
+      plannerRequest(),
+      dependencies(routingClient({ poolLiquidity: vi.fn(async () => 0n) })),
+    );
     expect(result.status).toBe(503);
   });
 });

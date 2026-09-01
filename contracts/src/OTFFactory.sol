@@ -15,6 +15,8 @@ contract OTFFactory {
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
     uint16 public constant MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS =
         ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS;
+    uint16 public constant MAX_MINT_FEE_BPS = ProtocolConstants.MAX_MINT_FEE_BPS;
+    uint16 public constant MAX_REDEEM_FEE_BPS = ProtocolConstants.MAX_REDEEM_FEE_BPS;
 
     error InvalidImplementation();
     error InvalidDependency(address dependency);
@@ -26,32 +28,31 @@ contract OTFFactory {
     error FundThesisRequired();
     error FundThesisTooLong(uint256 suppliedBytes, uint256 maximumBytes);
     error ExpenseRatioTooHigh(uint16 supplied, uint16 maximum);
-    error InvalidProtocolFeeShare(uint16 supplied);
+    error MintFeeTooHigh(uint16 supplied, uint16 maximum);
+    error RedeemFeeTooHigh(uint16 supplied, uint16 maximum);
     error Reentrancy();
 
     event EntryExitRouterConfigured(address indexed router);
     event VaultCreated(address indexed creator, address indexed vault, string name, string symbol);
 
     address public immutable vaultImplementation;
-    address public immutable feeCollector;
+    address public immutable buybackCollector;
+    address public immutable otfToken;
     address public immutable routerConfigurator;
-    uint16 public immutable protocolFeeShareBps;
 
     address public entryExitRouter;
     address[] private _vaults;
     mapping(address => bool) public isVault;
     bool private _creating;
 
-    constructor(address vaultImplementation_, address feeCollector_, uint16 protocolFeeShareBps_) {
+    constructor(address vaultImplementation_, address buybackCollector_, address otfToken_) {
         if (vaultImplementation_.code.length == 0) revert InvalidImplementation();
-        if (feeCollector_.code.length == 0) revert InvalidDependency(feeCollector_);
-        if (protocolFeeShareBps_ > ProtocolConstants.BPS) {
-            revert InvalidProtocolFeeShare(protocolFeeShareBps_);
-        }
+        if (buybackCollector_.code.length == 0) revert InvalidDependency(buybackCollector_);
+        if (otfToken_.code.length == 0) revert InvalidDependency(otfToken_);
 
         vaultImplementation = vaultImplementation_;
-        feeCollector = feeCollector_;
-        protocolFeeShareBps = protocolFeeShareBps_;
+        buybackCollector = buybackCollector_;
+        otfToken = otfToken_;
         routerConfigurator = msg.sender;
     }
 
@@ -113,6 +114,12 @@ contract OTFFactory {
                 ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
             );
         }
+        if (params.mintFeeBps > ProtocolConstants.MAX_MINT_FEE_BPS) {
+            revert MintFeeTooHigh(params.mintFeeBps, ProtocolConstants.MAX_MINT_FEE_BPS);
+        }
+        if (params.redeemFeeBps > ProtocolConstants.MAX_REDEEM_FEE_BPS) {
+            revert RedeemFeeTooHigh(params.redeemFeeBps, ProtocolConstants.MAX_REDEEM_FEE_BPS);
+        }
 
         vault = Clones.clone(vaultImplementation);
         ManagedOTFVault(vault)
@@ -124,10 +131,13 @@ contract OTFFactory {
                 creator: msg.sender,
                 expenseBeneficiary: params.expenseBeneficiary,
                 entryExitRouter: router,
-                feeCollector: feeCollector,
+                buybackCollector: buybackCollector,
+                otfToken: otfToken,
                 constituents: params.constituents,
                 bootstrapBasketUnitsPerOTF: params.bootstrapBasketUnitsPerOTF,
-                annualCreatorExpenseRatioBps: params.annualCreatorExpenseRatioBps
+                annualCreatorExpenseRatioBps: params.annualCreatorExpenseRatioBps,
+                mintFeeBps: params.mintFeeBps,
+                redeemFeeBps: params.redeemFeeBps
             })
             );
 

@@ -19,6 +19,22 @@ struct UniswapV4ExactInputParams {
     uint128 amountOutMinimum;
 }
 
+/// @dev ABI-compatible with Uniswap v4-core's PoolKey (Currency and IHooks encode as addresses).
+struct UniswapV4PoolKey {
+    address currency0;
+    address currency1;
+    uint24 fee;
+    int24 tickSpacing;
+    address hooks;
+}
+
+/// @dev ABI-compatible with IPoolManager.SwapParams.
+struct UniswapV4SwapParams {
+    bool zeroForOne;
+    int256 amountSpecified;
+    uint160 sqrtPriceLimitX96;
+}
+
 interface IUniswapV4ImmutableState {
     function poolManager() external view returns (address);
 }
@@ -28,6 +44,18 @@ interface IUniswapV4StateView is IUniswapV4ImmutableState {
         external
         view
         returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee);
+}
+
+interface IUniswapV4PoolManager {
+    function initialize(UniswapV4PoolKey calldata key, uint160 sqrtPriceX96)
+        external
+        returns (int24 tick);
+}
+
+interface IUniswapV4PositionManager is IUniswapV4ImmutableState {
+    function nextTokenId() external view returns (uint256);
+
+    function modifyLiquidities(bytes calldata unlockData, uint256 deadline) external payable;
 }
 
 interface IUniswapUniversalRouter is IUniswapV4ImmutableState {

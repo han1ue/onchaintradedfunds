@@ -15,7 +15,7 @@ contract BootstrapAccountingTest is BootstrapTestBase {
     MockStockToken internal tokenB;
 
     function setUp() public {
-        (factory,, router) = _deployFactory(1_500);
+        (factory,, router) = _deployFactory();
         tokenA = new MockStockToken("Token A", "A", 18);
         tokenB = new MockStockToken("Token B", "B", 6);
     }

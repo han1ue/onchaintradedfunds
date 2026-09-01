@@ -9,6 +9,8 @@ struct VaultCreationParams {
     string fundThesis;
     address expenseBeneficiary;
     uint16 annualCreatorExpenseRatioBps;
+    uint16 mintFeeBps;
+    uint16 redeemFeeBps;
     address[] constituents;
     uint256[] bootstrapBasketUnitsPerOTF;
 }
@@ -21,8 +23,11 @@ struct VaultInitParams {
     address creator;
     address expenseBeneficiary;
     address entryExitRouter;
-    address feeCollector;
+    address buybackCollector;
+    address otfToken;
     address[] constituents;
     uint256[] bootstrapBasketUnitsPerOTF;
     uint16 annualCreatorExpenseRatioBps;
+    uint16 mintFeeBps;
+    uint16 redeemFeeBps;
 }

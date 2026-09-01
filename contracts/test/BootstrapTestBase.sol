@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "../src/interfaces/IERC20.sol";
-import { FeeCollector } from "../src/FeeCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { VaultCreationParams } from "../src/VaultTypes.sol";
@@ -41,6 +40,8 @@ contract MockCoreRouter {
         return vault.routerRedeem(shares, owner, receiver, minimums);
     }
 }
+
+contract MockBuybackReceiver { }
 
 contract SlashableToken is ERC20 {
     error BalanceReadsDisabled();
@@ -123,17 +124,17 @@ abstract contract BootstrapTestBase is TestBase {
     uint256 internal constant WAD = 1e18;
     address internal constant CREATOR = address(0xC0FFEE);
     address internal constant BENEFICIARY = address(0xBEEF);
-    address internal constant TREASURY = address(0x7000);
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
 
-    function _deployFactory(uint16 protocolShareBps)
+    function _deployFactory()
         internal
-        returns (OTFFactory factory, FeeCollector collector, MockCoreRouter router)
+        returns (OTFFactory factory, address collector, MockCoreRouter router)
     {
         ManagedOTFVault implementation = new ManagedOTFVault();
-        collector = new FeeCollector(TREASURY);
-        factory = new OTFFactory(address(implementation), address(collector), protocolShareBps);
+        collector = address(new MockBuybackReceiver());
+        MockStockToken protocolOtf = new MockStockToken("Onchain Traded Funds", "OTF", 18);
+        factory = new OTFFactory(address(implementation), collector, address(protocolOtf));
         router = new MockCoreRouter(address(factory));
         factory.configureEntryExitRouter(address(router));
     }
@@ -149,6 +150,8 @@ abstract contract BootstrapTestBase is TestBase {
             fundThesis: "A fixed basket of tokenized assets.",
             expenseBeneficiary: BENEFICIARY,
             annualCreatorExpenseRatioBps: expenseRatioBps,
+            mintFeeBps: 0,
+            redeemFeeBps: 0,
             constituents: assets,
             bootstrapBasketUnitsPerOTF: bootstrapUnits
         });

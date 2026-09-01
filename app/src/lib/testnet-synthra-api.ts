@@ -438,9 +438,13 @@ async function directQuote(request: TestnetPlannerRequest, client: TestnetRoutin
   }, route.hops);
 }
 
-async function basketQuote(request: TestnetPlannerRequest, client: TestnetRoutingClient, now: number) {
-  const router = robinhoodTestnetAddresses.entryRouter!;
-  const adapter = robinhoodTestnetAddresses.uniswapV3Adapter!;
+async function basketQuote(
+  request: TestnetPlannerRequest,
+  client: TestnetRoutingClient,
+  now: number,
+  router: Address,
+  adapter: Address,
+) {
   const deadline = BigInt(Math.floor(now / 1_000) + ROUTER_DEADLINE_SECONDS);
   const approval = { token: request.input.address, spender: router, amount: request.inputAmountRaw.toString() };
   if (request.input.kind === "erc20" && request.output.kind === "otf") {
@@ -504,9 +508,23 @@ async function basketQuote(request: TestnetPlannerRequest, client: TestnetRoutin
 
 export async function quoteTestnetSwap(
   request: TestnetPlannerRequest,
-  dependencies: { now?: () => number; client?: TestnetRoutingClient } = {},
+  dependencies: {
+    now?: () => number;
+    client?: TestnetRoutingClient;
+    deployment?: { factory: Address; entryRouter: Address; uniswapV3Adapter: Address };
+  } = {},
 ) {
-  if (!robinhoodTestnetDeploymentReady || !robinhoodTestnetAddresses.factory || !robinhoodTestnetAddresses.entryRouter || !robinhoodTestnetAddresses.uniswapV3Adapter) {
+  const deployment = dependencies.deployment ?? (robinhoodTestnetDeploymentReady
+    && robinhoodTestnetAddresses.factory
+    && robinhoodTestnetAddresses.entryRouter
+    && robinhoodTestnetAddresses.uniswapV3Adapter
+    ? {
+        factory: robinhoodTestnetAddresses.factory,
+        entryRouter: robinhoodTestnetAddresses.entryRouter,
+        uniswapV3Adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
+      }
+    : undefined);
+  if (!deployment) {
     return { status: 503, body: { state: "unavailable", route: request.route, reason: "The testnet router deployment is unavailable." } };
   }
   if (request.chainId !== 46630 || !testnetSwapPairAllowed(request.input, request.output)) {
@@ -524,7 +542,9 @@ export async function quoteTestnetSwap(
   const client = dependencies.client ?? defaultRoutingClient();
   try {
     await assertVaults(request, client);
-    return request.route === "direct" ? await directQuote(request, client, now) : await basketQuote(request, client, now);
+    return request.route === "direct"
+      ? await directQuote(request, client, now)
+      : await basketQuote(request, client, now, deployment.entryRouter, deployment.uniswapV3Adapter);
   } catch {
     return { status: 503, body: { state: "unavailable", route: request.route, reason: request.route === "direct" ? "No executable Synthra V3 route is currently available." : "No executable basket route is currently available." } };
   }

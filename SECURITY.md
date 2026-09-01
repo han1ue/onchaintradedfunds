@@ -2,7 +2,7 @@
 
 The project security policy, threat model, trust assumptions, and production blockers are maintained in the [documentation site](https://docs.onchaintradedfunds.com/security) and its [source document](docs/content/security.mdx).
 
-The adapter manager and every approved adapter are explicit settlement trust boundaries. The
-current Robinhood testnet deployment uses the generic adapter architecture and its recorded router,
-V3/V4 adapter, and venue bindings have been verified onchain. The 30 August 2026 review snapshot does
-not cover this change; fresh review is required before any production use.
+The root-publishing multisig, buyback route executor, adapter manager, production ETH/USD oracle,
+approved adapters, and configured Uniswap deployments are explicit trust boundaries. The current v2
+scope is unaudited and requires a fresh testnet deployment; superseded addresses are disabled. Fresh
+independent review is required before any production use.

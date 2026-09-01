@@ -1,233 +1,80 @@
 ---
 title: Protocol security specification
-description: Normative pre-mainnet safety properties and trust boundaries for the current contracts.
+description: Normative invariants for OTF token economics, fund fees, launch, buybacks, and rewards.
 ---
 
 # Protocol security specification
 
-Status: normative pre-mainnet specification. The implementation is unaudited. This document records
-intended safety properties and trust boundaries; it does not certify code or a deployment.
+The keywords MUST, MUST NOT, and SHOULD describe required v2 behavior.
 
-## 1. Scope and non-goals
+## OTF supply
 
-An OTF is an ERC-20 share token over an ordered immutable basket of ERC-20 constituents. The
-contracts have no runtime NAV, price feed, market-cap input, percentage-weight input, keeper,
-market-data refresh, or automatic rebalance. `launch/` is a separate prelaunch competition and is
-not fund governance.
+`OTFToken` MUST mint exactly `1,000,000,000 ether` in its constructor and MUST expose no later mint
+path. `MAX_SUPPLY` MUST remain fixed while `totalSupply()` MUST fall when a holder burns owned or
+properly allowed tokens. Deployment MUST allocate exactly 100 million to team vesting, 200 million
+to the launch manager, and 700 million to rewards, leaving the deployer with zero OTF.
 
-## 2. Permissionless creation
+## Canonical launch
 
-`OTFFactory` MUST deploy vaults with `Clones.clone`; it MUST NOT expose a deterministic address or
-salt-based creation API. The creator MUST be `msg.sender`. Creation MUST NOT pull or require a
-constituent deposit.
+The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST use
+`MAX_SUPPLY`, not live supply, to construct deterministic start and final ticks. Bootstrap MUST hold
+150 million one-sided OTF and no supplied WETH. The reserved 50 million OTF MUST be used only for
+post-graduation permanent liquidity.
 
-The creation struct MUST contain name, symbol, fund thesis, expense beneficiary, annual creator
-expense ratio, ordered constituents, and ordered `bootstrapBasketUnitsPerOTF`. It MUST NOT accept
-prices, market caps, percentages, signed data, signatures, timestamps, expiries, nonces, or an
-authority.
+Only reaching or crossing the final bootstrap tick MAY mark graduation ready. Finalization MUST be
+permissionless, settle the completed bootstrap position, combine its WETH proceeds with up to the
+reserve, and mint effectively full-range liquidity. No callable path may remove, reprice, rebalance,
+migrate, or replace that principal. Dust MUST remain locked and MUST NOT block graduation.
 
-The factory MUST reject an empty fund thesis and any thesis longer than 2,048 UTF-8 bytes. The
-vault MUST store the thesis during its one-time initialization, expose it through `fundThesis()`,
-and provide no mutation path. The factory and vault MUST also reject empty name or symbol metadata,
-a zero beneficiary, more than 20 constituents, array length mismatch,
-duplicate/zero/non-contract/self constituents, and zero bootstrap units. The annual ratio MUST
-remain in `0..1000` bps. Initialization MUST occur exactly once and the fund thesis, constituent
-order, and bootstrap units MUST remain immutable.
+## Team vesting
 
-## 3. Application bootstrap calculation
+Live FDV MUST use canonical V4 spot state, the configured ETH/USD answer, and the current token
+`totalSupply()`. Both currency orderings MUST produce the same economic price. The oracle answer MUST
+be positive, no older than `maxOracleAge`, and not from the future. Checkpoints MUST round down to a
+completed $1 million milestone, unlock 10 million OTF per milestone through $10 million, and never
+decrease. Claims MUST go only to the fixed beneficiary and MUST NOT exceed unlocked less claimed.
 
-The application SHOULD load current price, market cap, and decimals from the configured offchain
-asset source. Market-cap default percentages MUST normalize deterministically at 18-decimal
-percentage precision to exactly 100%. The creator MAY edit every percentage at that precision.
-Every selected percentage MUST be positive and the final internal sum MUST equal exactly 100%.
-Adding or removing a constituent MUST preserve existing percentages; only an explicit reset MAY
-renormalize the selection.
+## Fund fees and accounted OTF
 
-The target MUST be the fixed value `V = 1e18` USD WAD. It MUST be described as a `$1` target
-initial basket value based on current offchain prices, not as a peg or guaranteed market price.
-For percentage units totaling `T`, asset price `P_i` in USD WAD, and token decimals `d_i`, the
-application MUST calculate:
+Annual creator expense, mint, and redeem rates MUST be immutable and capped at 1,000, 200, and 100
+bps. Mint fees MUST apply to direct and routed minting. Redeem fees MUST apply to direct, routed, and
+normal in-kind redemption. Shutdown and final emergency exits MUST charge no redeem fee. Preview and
+execution functions MUST use identical integer arithmetic.
+
+Every operation that changes accounted OTF MUST checkpoint accrued annual fees first. Direct token
+donations MUST NOT change accounted balance or fee benefit. The creator share MUST be:
 
 ```text
-allocationUsdWad_i = floor(V * percentageUnits_i / T)
-bootstrapUnits_i   = floor(allocationUsdWad_i * 10**d_i / P_i)
+5000 bps + floor(4000 bps × sqrt(min(accounted OTF, 10m OTF) / 10m OTF))
 ```
 
-All arithmetic MUST use integers; floating-point numbers MUST NOT determine the committed units.
-Raw units MUST round down and every result MUST be nonzero. The UI MUST show an asset-specific
-zero-unit error plus the minimum percentage required for one raw unit, including when that minimum
-exceeds 100%. Before submission, it MUST display current price, market cap, raw and formatted token
-quantities, and realized percentages after rounding. Prices, market caps, the fixed target,
-editable percentages, and realized percentages MUST remain offchain metadata.
+The creator share MUST remain between 5,000 and 9,000 bps. Mint and redeem creator fee shares MUST
+round down; annual expense splitting MUST carry its fractional remainder across checkpoints. All
+remaining collected fee shares MUST go to the buyback collector. No fund-owned constituent OTF may
+be transferred to the collector merely because it is OTF.
 
-Weighting-method labels, precise market-cap default percentages, creator-selected percentages,
-implied multipliers, and the market-cap snapshot timestamp MUST remain informational offchain
-application metadata. The app MUST classify from exact final and default percentage units only,
-MUST NOT infer methodology from current balances or raw-token rounding, and MUST show
-`Weighting method unavailable` when the creation record is absent.
+## Buyback collector
 
-## 4. Vault and share accounting
+Only the configured route executor MAY submit buyback routes. Every leg MUST name exact input and
+output tokens, an adapter currently approved by the entry/exit router, positive minimum output, and
+typed adapter data. The operation MUST enforce a deadline, minimum aggregate WETH, observed WETH
+delta, minimum final OTF, and observed OTF delta.
 
-The vault MUST use 18-decimal shares and satisfy these normal-settlement rules:
+The WETH-to-OTF swap MUST use only the immutable canonical V4 pool key. All OTF acquired by that
+execution MUST be burned before success. The collector MUST NOT expose arbitrary calls, token
+withdrawals, rescue functions, or configurable final routes.
 
-1. At zero supply, a live vault MUST permit a mint of at least `1e16` shares and MUST reject a
-   smaller mint. It MUST impose no maximum first-mint size.
-2. A zero-supply mint requires `ceil(bootstrapUnits_i * shares / 1e18)` of each constituent.
-3. A nonzero-supply mint requires `ceil(accounted_i * shares / supply)` of each constituent.
-4. Normal redemption returns `floor(accounted_i * shares / supply)` for each asset.
-5. Full normal redemption returns every `accounted_i` exactly and reduces all ledgers and supply
-   to zero.
-6. A redemption leaving supply below `1e16`, including zero, MUST complete and then enter permanent
-   shutdown. A residual supply exactly equal to `1e16` MUST remain live.
-7. A shutdown vault MUST never restart or clear shutdown, including at zero supply. It MUST reject
-   every mint and prevent all fee growth or fee-share issuance while continuing to permit holder
-   exits; a fee-checkpoint call MAY return zero rather than revert.
-8. Fees MUST be checkpointed before live mint or redemption supply math.
-9. Caller maximum inputs, minimum outputs, exact sender/receiver deltas, and backing soundness
-    MUST be enforced.
+## Cumulative rewards
 
-`accountedBalance(asset)` changes only through accepted settlement or emergency accounting. A
-tracked-token donation MUST NOT increase it or affect normal previews. A deficit MUST block normal
-settlement.
+Only the configured publisher MAY set a root. A new root MUST be active immediately. Leaves MUST
+commit to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree
+encoding. Anyone MAY submit a proof, but tokens MUST go to the committed user. A claim MUST equal the
+proven cumulative entitlement less stored prior claims. Invalid proofs, double claims, and decreasing
+cumulative values MUST revert. The publisher MUST have no rewards-principal withdrawal path.
 
-## 5. Shutdown and emergency redemption
+## Deployment and verification
 
-Shutdown is irreversible. The creator MAY activate it while backing is sound. Any caller MAY do so
-only when a readable constituent balance proves `actual < accounted`; unreadable state or donation
-excess MUST NOT qualify. Any successful redemption MUST also activate shutdown when post-burn
-supply is below `1e16`, including zero. Shutdown checkpoints fees once and prevents later fee
-growth or minting.
-
-The vault MUST expose a non-reentrant direct holder exit equivalent to
-`redeemInKind(shares, receiver, minAmountsOut, skipMask)` in both live and shutdown states. It MUST
-burn only `msg.sender`'s shares, use the existing basket order, reject out-of-range skip bits, and
-calculate every accounted reduction from pre-burn supply. Full redemption MUST remove the complete
-accounted balance.
-
-For each non-skipped asset, direct redemption MUST calculate `distributable_i = min(actual_i,
-accounted_i)` and pay the full distributable amount on full redemption or its floored pro-rata
-amount otherwise. It MUST respect the corresponding minimum and preserve exact sender/receiver
-delta checks. The accounted reduction is instead the complete `accounted_i` on full redemption or
-the holder's floored pro-rata accounted entitlement otherwise.
-
-For each skipped asset, direct redemption MUST require a zero minimum, transfer zero, make no
-external call of any kind—including `balanceOf`—and apply that same normal accounted reduction.
-The physical skipped balance MUST remain permanently unaccounted, MUST NOT be swept or credited
-later, and MUST NOT increase any remaining holder's entitlement. A skip alone MUST NOT trigger
-shutdown unless the post-redemption supply threshold does.
-
-Emergency redemption MUST be permissionless and in kind. For each asset:
-
-```text
-distributable_i = min(actual_i, accounted_i)
-amountOut_i     = shares == supply
-  ? distributable_i
-  : floor(distributable_i * shares / supply)
-```
-
-Accounted reductions use the corresponding full or floored pro-rata rule. Emergency redemption
-MUST NOT revert based on residual supply. Donation excess is excluded, deficits cap payment,
-unexpected balance movement reverts, and outgoing transfers require exact deltas.
-
-## 6. Creator expense and protocol split
-
-`annualCreatorExpenseRatioBps` MUST be immutable per vault with a fixed beneficiary and represent
-share inflation, not an asset transfer. Fee math MUST be lazy, retain fractional remainders, and be
-materially cadence-independent. For pre-fee supply `S` and annual fraction `r`, the one-year target
-is `S * r / (1 - r)`.
-
-The factory MUST store one immutable `protocolFeeShareBps` in `0..10000`. Fee shares MUST be split
-using that value only; basket composition, creator metadata, offchain weights, prices, token
-holdings, and market value MUST NOT modify it. `FeeCollector` MUST permit claims only by its
-treasury through the existing two-step treasury-control model. Treasury acceptance MUST share the
-collector's reentrancy guard with token claims so callback execution cannot change the event
-recipient during a claim.
-
-## 7. Generic router and adapter boundary
-
-`OTFEntryExitRouter` MUST bind only the OTF factory and an initial adapter manager. The manager
-MUST act through `Ownable2Step` and MUST control only adapter authorization. Approval MUST require
-nonzero code and `ITradeAdapter(adapter).entryExitRouter() == address(router)`; revocation MUST
-take effect immediately. The manager and every approved adapter MUST be documented as trust
-boundaries.
-
-Every route leg MUST contain exactly `adapter`, `tokenIn`, `tokenOut`, `amountIn`,
-`minAmountOut`, and `data`. Ordered legs MAY split one token, use different adapters for the
-same pair, accumulate output, and consume earlier output. `type(uint256).max` MUST mean the
-complete current transient balance. No leg may spend pre-existing router dust. The router MUST
-validate all adapters before taking user funds, transfer exactly one leg input, verify its own
-input/output deltas and the adapter-reported output, enforce the 40-leg/tracked-token bounds,
-deadlines, aggregate minimums, complete liquidation, two-pass residual checks, caller-only
-refunds, reentrancy protection, and atomic rollback. Every harmless surplus MUST be refunded and
-reported by token. `mintFromToken` MUST reject another factory OTF, and the router MUST expose no
-direct pool-swap function.
-
-`UniswapV3Adapter` MUST bind immutable entry-router, factory, and SwapRouter02 addresses and
-verify the router's factory in its constructor and again during execution. Only the bound entry
-router may call it. Adapter data MUST be only a packed token/fee/token V3 path matching the leg
-endpoints with at most three hops. Zero fees, adjacent repeated tokens, malformed paths, and
-missing or forged pools MUST fail. Every pool MUST match the factory, sorted pair, and fee. The
-adapter MUST approve exactly the leg input, fix the four-field `exactInput` recipient to the entry
-router, clear approval, verify exact input consumption and reported/observed/minimum output, and
-preserve pre-existing donations. Arbitrary targets, recipients, commands, and delegatecall are
-forbidden.
-
-`UniswapV4Adapter` MUST bind immutable entry-router, PoolManager, StateView, Universal Router, and
-Permit2 addresses. StateView and Universal Router MUST report the configured PoolManager in the
-constructor and during execution. Adapter data MUST be only an ABI-encoded V4 `PathKey[]` matching
-the leg endpoints, with at most three ERC-20-only hops and bounded hook data. Every pool key MUST
-have valid fee/tick-spacing fields and an initialized StateView slot. The adapter MUST construct the
-fixed exact-input, settle-all, and take-all actions itself; arbitrary Universal Router commands are
-forbidden. ERC-20 and Permit2 approvals MUST equal one leg input and be cleared after execution.
-Input/output deltas, minimum output, donation preservation, and the final transfer to the bound
-entry router MUST be independently verified.
-
-The same-origin quote API MUST keep `UNISWAP_API_KEY` server-only. Production direct swaps MUST use
-exact-input BEST_PRICE V3/V4 CLASSIC single-chain ERC-20 routes and validate supported Permit2,
-approval, sender, recipient, token, amount, deadline, value, and Universal Router targets. Testnet
-direct swaps MUST use only cataloged, factory-confirmed, liquid Synthra V3 pools; generated
-SwapRouter02 calldata MUST be bound to the requested caller, tokens, exact input, minimum output,
-and configured target. Basket responses MUST be exact typed requests with ordered legs using only
-adapters and pools configured by the server; the current testnet planner uses `UniswapV3Adapter`
-until liquid V4 pool keys are added to the route catalog. The user-facing Swap API MUST reject a pair unless at least one
-side is a factory OTF. OTF directions MUST request direct and basket candidates independently.
-Selection MUST use integer expected output and
-be described as the best queried route. Before submission, the app MUST `eth_call` and `estimateGas`
-the exact final sender, target, value, and calldata; basket return output and refunds MUST be decoded
-and surfaced.
-
-## 8. Application and liquidity disclosures
-
-The app MUST distinguish asset-source metadata from onchain inputs and show unavailable deployment,
-quote, approval, simulation, submission, success, and failure states truthfully. Pool creation and
-LP management belong to the external venue. The internal `/liquidity` route MAY remain enabled only
-as a visibly testnet-only utility for explicitly configured Synthra V3 pools.
-
-The testnet catalog MUST separate quote assets from fund constituents. The user-facing app and quote
-server MUST allow OTFs only against quote assets or another OTF. Constituent-to-quote paths MAY be
-used only as internal basket-settlement legs and by the explicit testnet liquidity utility; creation
-MUST remain limited to configured fund constituents. The production asset catalog is chain-indexed
-discovery metadata only and MUST NOT be treated as an onchain authorization boundary.
-
-When the output OTF has zero supply, the Swap screen MUST reject a quote unless its guaranteed
-minimum output is at least `1e16` share units (`0.01` OTF). It MUST inspect the guaranteed minimum,
-not only expected output, and MUST impose no maximum first-purchase size. Once supply is nonzero,
-the special minimum MUST NOT apply. Direct `redeemInKind` and skip controls MUST NOT be added to the
-normal application UI.
-
-## 9. Verification and change control
-
-Before deployment, the repository SHOULD run Solidity formatting and compilation, Solhint and
-Foundry lint with warnings denied, ABI/storage/security boundary checks, the full unit/fuzz/invariant
-suite, advisory coverage, frontend unit tests, typechecking, linting, and relevant production builds.
-
-Regression coverage MUST include market-cap default normalization, edited percentages, bootstrap
-unit calculation, first mints below/at/above `1e16`, the fixed `1e18` bootstrap denominator,
-multi-OTF bootstrap, fractional ceiling rounding, exact and below-`1e16` residual supply, full
-redemption to permanent shutdown, mint/fee/restart rejection after shutdown, direct in-kind exit,
-single and multiple skipped constituents with no external calls, unaccounted forfeiture, remaining
-holder entitlement, empty-vault minimum-output quote rejection, and treasury-acceptance callbacks.
-
-Any change to bootstrap math, storage, token movement, fee math, shutdown, router paths, configured
-dependencies, or trust roles requires fresh review and a fresh pre-mainnet deployment. Passing
-tests is not an audit or production approval.
+All production dependencies MUST be explicit. Production MUST use official Uniswap V4 deployments.
+Testnet mirror dependencies MUST match operator-supplied expected bytecode hashes before deployment.
+Generated ABIs, frontend configuration, tests, and documentation MUST describe only v2. Earlier
+testnet contracts MUST NOT be treated as compatible.

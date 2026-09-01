@@ -37,7 +37,7 @@ const input = {
     evmVersion: "shanghai",
     optimizer: { enabled: true, runs: 1 },
     metadata: { bytecodeHash: "none" },
-    viaIR: true,
+    viaIR: process.env.SOLC_VIA_IR !== "false",
     outputSelection: {
       "*": {
         "*": [

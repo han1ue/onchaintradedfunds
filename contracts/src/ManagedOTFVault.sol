@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { ManagedOTFVaultStorage, IOTFFactoryFeePolicy } from "./ManagedOTFVaultStorage.sol";
+import { ManagedOTFVaultStorage, IOTFFactoryTokenPolicy } from "./ManagedOTFVaultStorage.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -23,7 +23,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (msg.sender.code.length == 0) revert UnauthorizedFactory();
         if (
             params.creator == address(0) || params.expenseBeneficiary == address(0)
-                || params.entryExitRouter == address(0) || params.feeCollector == address(0)
+                || params.entryExitRouter == address(0) || params.buybackCollector == address(0)
+                || params.otfToken == address(0)
         ) revert ZeroAddress();
         if (params.creator == address(this) || params.expenseBeneficiary == address(this)) {
             revert InvalidReceiver(address(this));
@@ -31,7 +32,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (params.entryExitRouter.code.length == 0) {
             revert InvalidDependency(params.entryExitRouter);
         }
-        if (params.feeCollector.code.length == 0) revert InvalidDependency(params.feeCollector);
+        if (params.buybackCollector.code.length == 0) {
+            revert InvalidDependency(params.buybackCollector);
+        }
+        if (params.otfToken.code.length == 0) revert InvalidDependency(params.otfToken);
         uint256 length = params.constituents.length;
         if (length == 0 || length > ProtocolConstants.MAX_CONSTITUENTS) {
             revert InvalidArrayLength(ProtocolConstants.MAX_CONSTITUENTS, length);
@@ -48,15 +52,24 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
                 ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
             );
         }
+        if (params.mintFeeBps > ProtocolConstants.MAX_MINT_FEE_BPS) {
+            revert MintFeeTooHigh(params.mintFeeBps, ProtocolConstants.MAX_MINT_FEE_BPS);
+        }
+        if (params.redeemFeeBps > ProtocolConstants.MAX_REDEEM_FEE_BPS) {
+            revert RedeemFeeTooHigh(params.redeemFeeBps, ProtocolConstants.MAX_REDEEM_FEE_BPS);
+        }
         _initialized = true;
         __ERC20_init(params.name, params.symbol);
         _factory = msg.sender;
         _creator = params.creator;
         _expenseBeneficiary = params.expenseBeneficiary;
         _entryExitRouter = params.entryExitRouter;
-        _feeCollector = params.feeCollector;
+        _buybackCollector = params.buybackCollector;
+        _otfToken = params.otfToken;
         _fundThesis = params.fundThesis;
         _annualCreatorExpenseRatioBps = params.annualCreatorExpenseRatioBps;
+        _mintFeeBps = params.mintFeeBps;
+        _redeemFeeBps = params.redeemFeeBps;
 
         for (uint256 i = 0; i < length; i++) {
             address asset = params.constituents[i];
@@ -98,8 +111,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return _expenseBeneficiary;
     }
 
-    function feeCollector() external view returns (address) {
-        return _feeCollector;
+    function buybackCollector() external view returns (address) {
+        return _buybackCollector;
     }
 
     function entryExitRouter() external view returns (address) {
@@ -108,6 +121,18 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function annualCreatorExpenseRatioBps() external view returns (uint16) {
         return _annualCreatorExpenseRatioBps;
+    }
+
+    function mintFeeBps() external view returns (uint16) {
+        return _mintFeeBps;
+    }
+
+    function redeemFeeBps() external view returns (uint16) {
+        return _redeemFeeBps;
+    }
+
+    function otfToken() external view returns (address) {
+        return _otfToken;
     }
 
     function bootstrapBasketUnitsPerOTF(address asset) external view returns (uint256) {
@@ -151,12 +176,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return remainderWad;
     }
 
-    function protocolFeeSplitRemainderBps() external view returns (uint16) {
-        return _protocolFeeSplitRemainderBps;
-    }
-
     function tokenURI() external view returns (string memory) {
-        return IOTFFactoryFeePolicy(_factory).otfTokenURI();
+        return IOTFFactoryTokenPolicy(_factory).otfTokenURI();
     }
 
     /// @notice Returns false (rather than crediting donations) if any constituent is under-backed.
@@ -189,15 +210,24 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (
             uint256 totalFeeShares,
             uint256 creatorShares,
-            uint256 protocolShares,
-            uint16 effectiveProtocolShareBps
+            uint256 buybackShares,
+            uint16 creatorShareBps
         )
     {
         totalFeeShares = pendingExpenseFeeShares();
-        effectiveProtocolShareBps = IOTFFactoryFeePolicy(_factory).protocolFeeShareBps();
-        if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
-        (creatorShares, protocolShares,) =
-            _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);
+        creatorShareBps = feeCreatorShareBps();
+        (creatorShares, buybackShares,) = _splitExpenseFeeShares(totalFeeShares, creatorShareBps);
+    }
+
+    /// @notice Creator portion of every collected fee, rounded down to whole basis points.
+    function feeCreatorShareBps() public view returns (uint16 creatorShareBps) {
+        uint256 accountedOtf = _accountedBalance[_otfToken];
+        uint256 capped = accountedOtf < ProtocolConstants.OTF_FEE_BENEFIT_CAP
+            ? accountedOtf
+            : ProtocolConstants.OTF_FEE_BENEFIT_CAP;
+        uint256 ratioWad = Math.mulDiv(capped, WAD, ProtocolConstants.OTF_FEE_BENEFIT_CAP);
+        uint256 sqrtRatioWad = Math.sqrt(ratioWad * WAD);
+        creatorShareBps = uint16(5_000 + Math.mulDiv(4_000, sqrtRatioWad, WAD));
     }
 
     function checkpointFees()
@@ -214,7 +244,28 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function previewMint(uint256 shares) public view returns (uint256[] memory amountsIn) {
         if (shares == 0) revert ZeroShares();
         uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
-        amountsIn = _previewMintWithSupply(shares, effectiveSupply);
+        if (effectiveSupply == 0 && shares < MINIMUM_SHARE_SUPPLY) {
+            revert BootstrapSharesTooSmall(shares, MINIMUM_SHARE_SUPPLY);
+        }
+        amountsIn = _previewMintWithSupply(_grossMintShares(shares), effectiveSupply);
+    }
+
+    function previewMintFee(uint256 investorShares)
+        external
+        view
+        returns (
+            uint256 grossShares,
+            uint256 feeShares,
+            uint256 creatorShares,
+            uint256 buybackShares,
+            uint16 creatorShareBps
+        )
+    {
+        if (investorShares == 0) revert ZeroShares();
+        grossShares = _grossMintShares(investorShares);
+        feeShares = grossShares - investorShares;
+        creatorShareBps = feeCreatorShareBps();
+        (creatorShares, buybackShares) = _splitFeeShares(feeShares, creatorShareBps);
     }
 
     function previewMaxMint(uint256[] calldata maxAmountsIn)
@@ -228,7 +279,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
         uint256 denominator = effectiveSupply == 0 ? WAD : effectiveSupply;
-        shares = type(uint256).max;
+        uint256 grossShares = type(uint256).max;
         bool anyQuantity;
         for (uint256 i = 0; i < length; i++) {
             uint256 quantity = effectiveSupply == 0
@@ -237,18 +288,40 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             if (quantity == 0) continue;
             anyQuantity = true;
             uint256 assetShares = Math.mulDiv(maxAmountsIn[i], denominator, quantity);
-            if (assetShares < shares) shares = assetShares;
+            if (assetShares < grossShares) grossShares = assetShares;
         }
-        if (!anyQuantity) shares = 0;
+        if (!anyQuantity) grossShares = 0;
+        shares = Math.mulDiv(grossShares, BPS - _mintFeeBps, BPS);
         if (effectiveSupply == 0 && shares < MINIMUM_SHARE_SUPPLY) shares = 0;
         if (shares == 0) return (0, new uint256[](length));
-        amountsIn = _previewMintWithSupply(shares, effectiveSupply);
+        amountsIn = _previewMintWithSupply(_grossMintShares(shares), effectiveSupply);
     }
 
     function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
         if (shares == 0) revert ZeroShares();
-        uint256 effectiveSupply = totalSupply() + pendingExpenseFeeShares();
-        amountsOut = _previewRedeemWithSupply(shares, effectiveSupply);
+        uint256 effectiveSupply =
+            _shutdown ? totalSupply() : totalSupply() + pendingExpenseFeeShares();
+        amountsOut = _previewRedeemWithSupply(
+            _shutdown ? shares : _netRedeemShares(shares), effectiveSupply
+        );
+    }
+
+    function previewRedeemFee(uint256 investorShares)
+        external
+        view
+        returns (
+            uint256 redeemedShares,
+            uint256 feeShares,
+            uint256 creatorShares,
+            uint256 buybackShares,
+            uint16 creatorShareBps
+        )
+    {
+        if (investorShares == 0) revert ZeroShares();
+        redeemedShares = _shutdown ? investorShares : _netRedeemShares(investorShares);
+        feeShares = investorShares - redeemedShares;
+        creatorShareBps = feeCreatorShareBps();
+        (creatorShares, buybackShares) = _splitFeeShares(feeShares, creatorShareBps);
     }
 
     function routerMint(uint256 shares, address receiver, uint256[] calldata maxAmountsIn)
@@ -268,10 +341,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
 
         _accrueFees();
+        uint16 creatorShareBps = feeCreatorShareBps();
         _requireBackingSound();
+        if (totalSupply() == 0 && shares < MINIMUM_SHARE_SUPPLY) {
+            revert BootstrapSharesTooSmall(shares, MINIMUM_SHARE_SUPPLY);
+        }
         uint256[] memory balancesBefore = _actualBalances();
         uint256[] memory senderBalancesBefore = _basketBalances(msg.sender);
-        amountsIn = _previewMintWithSupply(shares, totalSupply());
+        uint256 grossShares = _grossMintShares(shares);
+        amountsIn = _previewMintWithSupply(grossShares, totalSupply());
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
             uint256 amount = amountsIn[i];
@@ -282,8 +360,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _requireExpectedBalances(balancesBefore, amountsIn, true);
         _requireExpectedAccountBalances(msg.sender, senderBalancesBefore, amountsIn, false);
         _mint(receiver, shares);
+        (uint256 creatorShares, uint256 buybackShares) =
+            _mintFeeShares(grossShares - shares, creatorShareBps);
         _resetFeeEpoch();
         emit BasketMinted(msg.sender, receiver, shares, amountsIn);
+        emit MintFeeCharged(grossShares, shares, creatorShares, buybackShares, creatorShareBps);
     }
 
     function routerRedeem(
@@ -302,10 +383,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
 
         _accrueFees();
+        uint16 creatorShareBps = feeCreatorShareBps();
         _requireBackingSound();
         uint256[] memory balancesBefore = _actualBalances();
         uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
-        amountsOut = _previewRedeemWithSupply(shares, totalSupply());
+        uint256 redeemedShares = _netRedeemShares(shares);
+        amountsOut = _previewRedeemWithSupply(redeemedShares, totalSupply());
         for (uint256 i = 0; i < length; i++) {
             if (amountsOut[i] < minAmountsOut[i]) {
                 revert AmountTooLow(_assets[i], amountsOut[i], minAmountsOut[i]);
@@ -313,6 +396,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
         _burn(owner, shares);
+        (uint256 creatorShares, uint256 buybackShares) =
+            _mintFeeShares(shares - redeemedShares, creatorShareBps);
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
             uint256 amount = amountsOut[i];
@@ -322,6 +407,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _requireExpectedBalances(balancesBefore, amountsOut, false);
         _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
         emit BasketRedeemed(msg.sender, owner, receiver, shares, amountsOut);
+        emit RedeemFeeCharged(shares, redeemedShares, creatorShares, buybackShares, creatorShareBps);
         _shutdownIfSupplyTooLow();
         if (!_shutdown) _resetFeeEpoch();
     }
@@ -348,9 +434,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
         }
 
-        if (!_shutdown) _accrueFees();
+        uint16 creatorShareBps;
+        if (!_shutdown) {
+            _accrueFees();
+            creatorShareBps = feeCreatorShareBps();
+        }
         uint256 supply = totalSupply();
         if (shares > supply) revert SharesExceedSupply(shares, supply);
+        uint256 redeemedShares = _shutdown ? shares : _netRedeemShares(shares);
 
         amountsOut = new uint256[](length);
         uint256[] memory forfeitedAmounts = new uint256[](length);
@@ -360,8 +451,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         for (uint256 i = 0; i < length; i++) {
             address asset = _assets[i];
             uint256 accounted = _accountedBalance[asset];
-            uint256 reduction =
-                shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
+            uint256 reduction = redeemedShares == supply
+                ? accounted
+                : Math.mulDiv(accounted, redeemedShares, supply);
             accountedReductions[i] = reduction;
             if (_isSkipped(skipMask, i)) {
                 forfeitedAmounts[i] = reduction;
@@ -372,8 +464,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             vaultBalancesBefore[i] = actual;
             receiverBalancesBefore[i] = IERC20(asset).balanceOf(receiver);
             uint256 distributable = actual < accounted ? actual : accounted;
-            uint256 amount =
-                shares == supply ? distributable : Math.mulDiv(distributable, shares, supply);
+            uint256 amount = redeemedShares == supply
+                ? distributable
+                : Math.mulDiv(distributable, redeemedShares, supply);
             amountsOut[i] = amount;
             if (amount < minAmountsOut[i]) {
                 revert AmountTooLow(asset, amount, minAmountsOut[i]);
@@ -381,6 +474,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
 
         _burn(msg.sender, shares);
+        (uint256 creatorShares, uint256 buybackShares) = _shutdown
+            ? (uint256(0), uint256(0))
+            : _mintFeeShares(shares - redeemedShares, creatorShareBps);
         for (uint256 i = 0; i < length; i++) {
             _accountedBalance[_assets[i]] -= accountedReductions[i];
         }
@@ -408,6 +504,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         );
         if (!_shutdown) _resetFeeEpoch();
         emit InKindRedeemed(msg.sender, receiver, shares, amountsOut, forfeitedAmounts, skipMask);
+        if (shares != redeemedShares) {
+            emit RedeemFeeCharged(
+                shares, redeemedShares, creatorShares, buybackShares, creatorShareBps
+            );
+        }
     }
 
     // Emergency path
@@ -554,31 +655,66 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         totalFeeShares = targetShares - _feeEpochAccruedShares;
         _feeEpochAccruedShares = targetShares;
 
-        uint16 effectiveProtocolShareBps = IOTFFactoryFeePolicy(_factory).protocolFeeShareBps();
-        if (effectiveProtocolShareBps > BPS) effectiveProtocolShareBps = 10_000;
-        (uint256 creatorShares, uint256 protocolShares, uint16 splitRemainder) =
-            _splitFeeShares(totalFeeShares, effectiveProtocolShareBps);
-        _protocolFeeSplitRemainderBps = splitRemainder;
-        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
-        if (protocolShares != 0) _mint(_feeCollector, protocolShares);
-        emit ExpenseFeesCheckpointed(
-            totalFeeShares, creatorShares, protocolShares, effectiveProtocolShareBps
-        );
+        uint16 creatorShareBps = feeCreatorShareBps();
+        (uint256 creatorShares, uint256 buybackShares) =
+            _mintExpenseFeeShares(totalFeeShares, creatorShareBps);
+        emit ExpenseFeesCheckpointed(totalFeeShares, creatorShares, buybackShares, creatorShareBps);
     }
 
-    function _splitFeeShares(uint256 feeShares, uint16 protocolShareBps)
+    function _splitFeeShares(uint256 feeShares, uint16 creatorShareBps)
+        internal
+        pure
+        returns (uint256 creatorShares, uint256 buybackShares)
+    {
+        creatorShares = Math.mulDiv(feeShares, creatorShareBps, BPS);
+        buybackShares = feeShares - creatorShares;
+    }
+
+    function _mintFeeShares(uint256 feeShares, uint16 creatorShareBps)
+        internal
+        returns (uint256 creatorShares, uint256 buybackShares)
+    {
+        (creatorShares, buybackShares) = _splitFeeShares(feeShares, creatorShareBps);
+        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
+        if (buybackShares != 0) _mint(_buybackCollector, buybackShares);
+    }
+
+    /// @dev Carries only the annual-expense split remainder so checkpoint cadence cannot change it.
+    function _splitExpenseFeeShares(uint256 feeShares, uint16 creatorShareBps)
         internal
         view
-        returns (uint256 creatorShares, uint256 protocolShares, uint16 newRemainderBps)
+        returns (uint256 creatorShares, uint256 buybackShares, uint256 nextRemainderBps)
     {
-        protocolShares = Math.mulDiv(feeShares, protocolShareBps, BPS);
-        uint256 fractional =
-            mulmod(feeShares, protocolShareBps, BPS) + _protocolFeeSplitRemainderBps;
-        protocolShares += fractional / BPS;
-        // The modulo result is strictly below 10,000 and therefore fits uint16.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        newRemainderBps = uint16(fractional % BPS);
-        creatorShares = feeShares - protocolShares;
+        creatorShares = Math.mulDiv(feeShares, creatorShareBps, BPS);
+        nextRemainderBps =
+            mulmod(feeShares, creatorShareBps, BPS) + _expenseCreatorSplitRemainderBps;
+        creatorShares += nextRemainderBps / BPS;
+        nextRemainderBps %= BPS;
+        buybackShares = feeShares - creatorShares;
+    }
+
+    function _mintExpenseFeeShares(uint256 feeShares, uint16 creatorShareBps)
+        internal
+        returns (uint256 creatorShares, uint256 buybackShares)
+    {
+        uint256 nextRemainderBps;
+        (creatorShares, buybackShares, nextRemainderBps) =
+            _splitExpenseFeeShares(feeShares, creatorShareBps);
+        _expenseCreatorSplitRemainderBps = nextRemainderBps;
+        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
+        if (buybackShares != 0) _mint(_buybackCollector, buybackShares);
+    }
+
+    function _grossMintShares(uint256 investorShares) internal view returns (uint256) {
+        if (_mintFeeBps == 0) return investorShares;
+        return Math.mulDiv(investorShares, BPS, BPS - _mintFeeBps, Math.Rounding.Ceil);
+    }
+
+    function _netRedeemShares(uint256 investorShares) internal view returns (uint256 redeemed) {
+        if (_redeemFeeBps == 0) return investorShares;
+        uint256 feeShares = Math.mulDiv(investorShares, _redeemFeeBps, BPS, Math.Rounding.Ceil);
+        redeemed = investorShares - feeShares;
+        if (redeemed == 0) revert ZeroNetShares();
     }
 
     function _resetFeeEpoch() internal {

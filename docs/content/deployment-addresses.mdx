@@ -1,65 +1,59 @@
 ---
 title: Deployment addresses
-description: Canonical OTF protocol deployment addresses by Robinhood Chain network.
+description: OTF v2 deployment status and required external configuration.
 ---
 
 # Deployment addresses
 
-This page lists only the canonical protocol contracts created by an OTF protocol deployment. It
-does not list user-created OTFs, deployer accounts, tokens, liquidity venues, or other external
-integrations. Verify the network and address before interacting with a contract. The protocol is
-unaudited and pre-mainnet.
+The OTF token-economics v2 architecture requires a fresh deployment. No production or replacement
+testnet protocol address is recorded until that deployment is performed and verified.
 
 ## Robinhood Chain Mainnet
 
-**Chain ID:** `4663`  
-**Explorer:** [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com/)
+**Chain ID:** `4663` <br />
+**Explorer:** [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com/) <br />
+**Status:** Not deployed
 
-No OTF protocol contracts are deployed on Robinhood Chain Mainnet yet.
-
-| Contract | Address | Status |
-| --- | --- | --- |
-| OTF Factory | — | Not deployed |
-| Managed OTF Vault implementation | — | Not deployed |
-| Entry/Exit Router | — | Not deployed |
-| Fee Collector | — | Not deployed |
-| OTF protocol token | — | Not deployed |
+Before a production deployment, operators must supply explicit addresses for WETH, the existing
+Uniswap V3 factory and SwapRouter02, the official Uniswap V4 PoolManager, StateView,
+PositionManager, Universal Router, Permit2, and the selected ETH/USD oracle. The protocol multisig,
+team beneficiary, and authorized route executor must also be chosen. The repository does not invent
+or default these values.
 
 ## Robinhood Chain Testnet
 
-**Chain ID:** `46630`  
-**Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/)  
-**Base deployment timestamp:** `2026-09-01T12:11:19.654Z` <br />
-**Uniswap V4 adapter added:** `2026-09-01T20:12:19.551Z`
+**Chain ID:** `46630` <br />
+**Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
+**Status:** Redeployment required
 
-**Status:** Deployed; application deployment gate enabled
+The old generic-adapter deployment and its fee collector are intentionally unsupported. The
+application therefore disables protocol reads and transactions instead of falling back to stale
+addresses.
 
-These addresses use the generic router/adapter architecture. Onchain verification confirms that
-the factory points to the entry router, both adapters point back to that router and their configured
-venue contracts, and the router has approved both adapters. Current application-generated testnet
-routes still use the cataloged Synthra V3 pools; V4 routing remains dormant until liquid V4 pool
-keys are configured.
+The deployment script uses the repository's documented Robinhood Testnet V4 mirror addresses for
+PoolManager, StateView, Universal Router, and Permit2. PositionManager is an explicit operator input.
+Expected bytecode hashes for all five dependencies are mandatory and checked before any protocol
+contract is deployed. Testnet ETH/USD uses `FakeETHUSDOracle`, fixed at exactly `$2,000`.
 
-### Protocol contracts
+The following runtime hashes were read from Robinhood Testnet on 1 September 2026 and are pinned in
+the application configuration:
 
-| Contract | Address |
-| --- | --- |
-| OTF Factory | [`0x1147089d16486e4D3149F6Dc1E9D915c28346d99`](https://explorer.testnet.chain.robinhood.com/address/0x1147089d16486e4D3149F6Dc1E9D915c28346d99) |
-| Managed OTF Vault implementation | [`0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3`](https://explorer.testnet.chain.robinhood.com/address/0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3) |
-| Entry/Exit Router | [`0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a`](https://explorer.testnet.chain.robinhood.com/address/0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a) |
-| Uniswap V3 Adapter | [`0x9373cA2022E6746ee9A64701630Eb45b7E179875`](https://explorer.testnet.chain.robinhood.com/address/0x9373cA2022E6746ee9A64701630Eb45b7E179875) |
-| Uniswap V4 Adapter | [`0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe`](https://explorer.testnet.chain.robinhood.com/address/0x0e7551e31fBBfbfE11eA4abEb68cDCe4FD6B4ADe) |
-| Fee Collector | [`0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF`](https://explorer.testnet.chain.robinhood.com/address/0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF) |
-| OTF protocol token | [`0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5`](https://explorer.testnet.chain.robinhood.com/address/0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5) |
+| Dependency | Address | Runtime bytecode hash |
+| --- | --- | --- |
+| PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` | `0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626` |
+| StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` | `0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6` |
+| Universal Router | `0x8876789976dEcBfCbBbe364623C63652db8C0904` | `0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f` |
+| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | `0x0117e0ed818bc3f2a8729ffc336c837e63e965f04b473047b39b35ad86aac259` |
 
-### Setup transactions
+These observations verify identity against the pinned bytes at deployment time; they do not make
+the unofficial mirror an official Uniswap deployment. The operator must separately provide and pin
+the chosen testnet PositionManager address and hash.
 
-| Action | Transaction |
-| --- | --- |
-| Approve Uniswap V3 Adapter | [`0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb`](https://explorer.testnet.chain.robinhood.com/tx/0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb) |
-| Deploy Uniswap V4 Adapter | [`0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c`](https://explorer.testnet.chain.robinhood.com/tx/0x2ba2d2627a82ce02a8e7170e1864bc506965d32077f5c1ffa21436b882bab64c) |
-| Approve Uniswap V4 Adapter | [`0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9`](https://explorer.testnet.chain.robinhood.com/tx/0x8fe5672742c47f4a5ff220409f4e4290fbb83383670933d9e04f756de0f068f9) |
-| Configure factory Entry/Exit Router | [`0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874`](https://explorer.testnet.chain.robinhood.com/tx/0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874) |
+After a successful deployment, `app/src/config/robinhood-testnet.json` records:
 
-Factory-created OTF and share-token addresses are dynamic and are intentionally excluded from this
-directory. The Funds page discovers them directly from the OTF Factory.
+- OTF token, launch manager, team vesting, buyback collector, Merkle distributor;
+- vault implementation, factory, entry/exit router, and V3/V4 adapters;
+- verified periphery dependencies and code hashes;
+- adapter approvals, initialization transactions, and exact initial allocations.
+
+Factory-created fund vault addresses remain dynamic and are discovered onchain.

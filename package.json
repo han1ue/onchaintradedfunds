@@ -6,7 +6,7 @@
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:abi": "node scripts/generate-contract-abis.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
-    "contracts:deploy:v4-adapter:robinhood-testnet": "node scripts/deploy-uniswap-v4-adapter-robinhood-testnet.mjs",
+    "rewards:tree": "node scripts/build-merkle-rewards.mjs",
     "launch:dev": "corepack pnpm --filter @onchaintradedfunds/launch dev",
     "launch:build": "corepack pnpm --filter @onchaintradedfunds/launch build",
     "launch:test": "corepack pnpm --filter @onchaintradedfunds/launch test",
@@ -20,6 +20,7 @@
     "build": "corepack pnpm -r build"
   },
   "devDependencies": {
+    "@openzeppelin/merkle-tree": "1.0.8",
     "solc": "0.8.36",
     "solhint": "6.2.3"
   },

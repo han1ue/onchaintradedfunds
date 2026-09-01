@@ -9,8 +9,12 @@ const contracts = [
   ["OTFEntryExitRouter", "otfEntryExitRouterAbi"],
   ["UniswapV3Adapter", "uniswapV3AdapterAbi"],
   ["UniswapV4Adapter", "uniswapV4AdapterAbi"],
-  ["FeeCollector", "feeCollectorAbi"],
+  ["BuybackCollector", "buybackCollectorAbi"],
   ["OTFToken", "otfTokenAbi"],
+  ["OTFLaunchManager", "otfLaunchManagerAbi"],
+  ["TeamMarketCapVesting", "teamMarketCapVestingAbi"],
+  ["MerkleRewardsDistributor", "merkleRewardsDistributorAbi"],
+  ["FakeETHUSDOracle", "fakeEthUsdOracleAbi"],
 ];
 
 function artifact(name) {

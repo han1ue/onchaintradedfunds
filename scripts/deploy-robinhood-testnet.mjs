@@ -19,7 +19,6 @@ if (existsSync(localEnvPath)) {
   }
 }
 
-// Compile before creating a client; this script never uses stale or deleted artifacts.
 execFileSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")], {
   cwd: root,
   stdio: "inherit",
@@ -29,14 +28,24 @@ execFileSync(process.execPath, [join(root, "scripts", "compile-contracts.mjs")],
 const appRequire = createRequire(new URL("../app/package.json", import.meta.url));
 const viem = await import(pathToFileURL(appRequire.resolve("viem")).href);
 const accounts = await import(pathToFileURL(appRequire.resolve("viem/accounts")).href);
-const { createPublicClient, createWalletClient, getAddress, http, isAddress, nonceManager } = viem;
+const {
+  concatHex,
+  createPublicClient,
+  createWalletClient,
+  encodeAbiParameters,
+  getAddress,
+  getCreate2Address,
+  http,
+  isAddress,
+  keccak256,
+  nonceManager,
+  parseAbiParameters,
+  toHex,
+} = viem;
 const { privateKeyToAccount } = accounts;
 
-const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
-if (!["superseded-v3-router", "generic-trade-adapter-v1"].includes(config.architecture)) {
-  throw new Error("Deployment config has an unsupported source architecture");
-}
-const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
+const previous = JSON.parse(readFileSync(deploymentPath, "utf8"));
+const appOwnedIntegrations = appOwnedIntegrationConfiguration(previous);
 const env = (name) => {
   const value = process.env[name];
   if (!value || !value.trim()) throw new Error(`Missing required env var ${name}`);
@@ -46,31 +55,53 @@ const address = (name, value) => {
   if (!isAddress(value)) throw new Error(`${name} is not a valid address: ${value}`);
   return getAddress(value);
 };
-const bps = (name, value) => {
-  if (!/^\d+$/u.test(value)) throw new Error(`${name} must be an integer`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
-    throw new Error(`${name} must be between 0 and 10000`);
-  }
+const positiveInteger = (name, value) => {
+  if (!/^\d+$/u.test(value)) throw new Error(`${name} must be a positive integer`);
+  const parsed = BigInt(value);
+  if (parsed <= 0n) throw new Error(`${name} must be positive`);
   return parsed;
+};
+const bytes32 = (name, value) => {
+  if (!/^0x[0-9a-fA-F]{64}$/u.test(value)) throw new Error(`${name} must be bytes32`);
+  return value.toLowerCase();
+};
+const pinnedCodehash = (config, key, envName) => {
+  const pinned = bytes32(`expectedCodehashes.${key}`, config?.[key]);
+  const confirmed = bytes32(envName, env(envName));
+  if (confirmed !== pinned) throw new Error(`${envName} does not match the repository-pinned hash`);
+  return pinned;
 };
 const artifact = (name) => {
   const path = join(root, "contracts", "out", `${name}.sol`, `${name}.json`);
   if (!existsSync(path)) throw new Error(`Missing artifact ${path}`);
   return JSON.parse(readFileSync(path, "utf8"));
 };
-const json = (value) => JSON.stringify(value, (_key, current) => typeof current === "bigint" ? current.toString() : current, 2);
+const bytecode = (name) => {
+  const object = artifact(name).bytecode.object;
+  return object.startsWith("0x") ? object : `0x${object}`;
+};
+const json = (value) => JSON.stringify(
+  value,
+  (_key, current) => typeof current === "bigint" ? current.toString() : current,
+  2,
+);
 
 const privateKey = env("DEPLOYER_PRIVATE_KEY");
-const treasury = address("TREASURY", env("TREASURY"));
-const protocolFeeShareBps = bps("PROTOCOL_FEE_SHARE_BPS", env("PROTOCOL_FEE_SHARE_BPS"));
+const protocolMultisig = address("PROTOCOL_MULTISIG", env("PROTOCOL_MULTISIG"));
+const routeExecutor = address("ROUTE_EXECUTOR", env("ROUTE_EXECUTOR"));
+const teamBeneficiary = address("TEAM_BENEFICIARY", env("TEAM_BENEFICIARY"));
+const weth = address("WETH", env("WETH"));
+const oracleMaxAge = positiveInteger("ORACLE_MAX_AGE_SECONDS", env("ORACLE_MAX_AGE_SECONDS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
-const initialHolder = address("OTF_TOKEN_INITIAL_HOLDER", process.env.OTF_TOKEN_INITIAL_HOLDER?.trim() || treasury);
-const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim() || config.rpcUrl || "https://rpc.testnet.chain.robinhood.com";
-const chainId = Number(config.chainId ?? 46630);
-if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error(`Invalid chain ID ${chainId}`);
-const external = config.externalContracts ?? {};
-const uniswapV3Factory = address("externalContracts.uniswapV3Factory", external.uniswapV3Factory);
+const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim()
+  || previous.rpcUrl
+  || "https://rpc.testnet.chain.robinhood.com";
+const chainId = 46630;
+const external = previous.externalContracts ?? {};
+const uniswapV3Factory = address(
+  "externalContracts.uniswapV3Factory",
+  external.uniswapV3Factory,
+);
 const uniswapV3SwapRouter02 = address(
   "externalContracts.uniswapV3SwapRouter02",
   external.uniswapV3SwapRouter02,
@@ -88,6 +119,19 @@ const uniswapUniversalRouter = address(
   external.uniswapUniversalRouter,
 );
 const permit2 = address("externalContracts.permit2", external.permit2);
+const uniswapV4PositionManager = address(
+  "UNISWAP_V4_POSITION_MANAGER",
+  env("UNISWAP_V4_POSITION_MANAGER"),
+);
+const pinnedCodehashes = previous.expectedCodehashes ?? {};
+
+const expectedCodehashes = {
+  uniswapV4PoolManager: pinnedCodehash(pinnedCodehashes, "uniswapV4PoolManager", "UNISWAP_V4_POOL_MANAGER_CODEHASH"),
+  uniswapV4StateView: pinnedCodehash(pinnedCodehashes, "uniswapV4StateView", "UNISWAP_V4_STATE_VIEW_CODEHASH"),
+  uniswapV4PositionManager: bytes32("UNISWAP_V4_POSITION_MANAGER_CODEHASH", env("UNISWAP_V4_POSITION_MANAGER_CODEHASH")),
+  uniswapUniversalRouter: pinnedCodehash(pinnedCodehashes, "uniswapUniversalRouter", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH"),
+  permit2: pinnedCodehash(pinnedCodehashes, "permit2", "PERMIT2_CODEHASH"),
+};
 
 const chain = {
   id: chainId,
@@ -97,55 +141,106 @@ const chain = {
 };
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
-if (await publicClient.getChainId() !== chainId) throw new Error("RPC chain ID does not match deployment config");
+if (await publicClient.getChainId() !== chainId) {
+  throw new Error("RPC chain ID does not match Robinhood Testnet");
+}
+
+async function verifyCodehash(name, contractAddress, expected) {
+  const code = await publicClient.getCode({ address: contractAddress });
+  if (!code || code === "0x") throw new Error(`${name} has no code`);
+  const actual = keccak256(code).toLowerCase();
+  if (actual !== expected) {
+    throw new Error(`${name} codehash mismatch: expected ${expected}, received ${actual}`);
+  }
+}
+
+await verifyCodehash("Uniswap V4 PoolManager", uniswapV4PoolManager, expectedCodehashes.uniswapV4PoolManager);
+await verifyCodehash("Uniswap V4 StateView", uniswapV4StateView, expectedCodehashes.uniswapV4StateView);
+await verifyCodehash("Uniswap V4 PositionManager", uniswapV4PositionManager, expectedCodehashes.uniswapV4PositionManager);
+await verifyCodehash("Uniswap Universal Router", uniswapUniversalRouter, expectedCodehashes.uniswapUniversalRouter);
+await verifyCodehash("Permit2", permit2, expectedCodehashes.permit2);
 
 async function deploy(name, args = []) {
   const compiled = artifact(name);
-  const bytecode = compiled.bytecode.object.startsWith("0x") ? compiled.bytecode.object : `0x${compiled.bytecode.object}`;
-  const hash = await wallet.deployContract({ abi: compiled.abi, bytecode, args, chain, account });
+  const hash = await wallet.deployContract({ abi: compiled.abi, bytecode: bytecode(name), args, chain, account });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`${name} deployment reverted`);
-  return { address: getAddress(receipt.contractAddress), transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
+  if (receipt.status !== "success" || !receipt.contractAddress) {
+    throw new Error(`${name} deployment reverted`);
+  }
+  return {
+    address: getAddress(receipt.contractAddress),
+    transactionHash: hash,
+    blockNumber: receipt.blockNumber,
+    gasUsed: receipt.gasUsed,
+  };
 }
-async function configureRouter(factory, router) {
+
+async function transact(contract, functionName, args = []) {
   const hash = await wallet.writeContract({
-    address: factory.address,
-    abi: artifact("OTFFactory").abi,
-    functionName: "configureEntryExitRouter",
-    args: [router.address],
+    address: contract.address,
+    abi: artifact(contract.name).abi,
+    functionName,
+    args,
     chain,
     account,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("configureEntryExitRouter reverted");
-  return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
-}
-async function approveAdapter(router, adapter) {
-  const hash = await wallet.writeContract({
-    address: router.address,
-    abi: artifact("OTFEntryExitRouter").abi,
-    functionName: "setAdapterApproved",
-    args: [adapter.address, true],
-    chain,
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("setAdapterApproved reverted");
+  if (receipt.status !== "success") throw new Error(`${contract.name}.${functionName} reverted`);
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
 
+const otfToken = await deploy("OTFToken", [account.address]);
+const fakeEthUsdOracle = await deploy("FakeETHUSDOracle");
+const launchManagerDeployer = await deploy("OTFLaunchManagerDeployer");
+const launchConstructorArgs = [
+  otfToken.address,
+  weth,
+  uniswapV4PoolManager,
+  uniswapV4StateView,
+  uniswapV4PositionManager,
+  permit2,
+];
+const encodedConstructorArgs = encodeAbiParameters(
+  parseAbiParameters("address,address,address,address,address,address"),
+  launchConstructorArgs,
+);
+const launchInitCodeHash = keccak256(concatHex([bytecode("OTFLaunchManager"), encodedConstructorArgs]));
+let launchSalt;
+let launchAddress;
+for (let candidate = 0n; candidate < 1_000_000n; candidate++) {
+  const salt = toHex(candidate, { size: 32 });
+  const predicted = getCreate2Address({
+    from: launchManagerDeployer.address,
+    salt,
+    bytecodeHash: launchInitCodeHash,
+  });
+  if ((BigInt(predicted) & 0x3fffn) === 0x40n) {
+    launchSalt = salt;
+    launchAddress = getAddress(predicted);
+    break;
+  }
+}
+if (!launchSalt || !launchAddress) throw new Error("Could not mine afterSwap hook address");
+const launchDeploymentTx = await transact(
+  { ...launchManagerDeployer, name: "OTFLaunchManagerDeployer" },
+  "deploy",
+  [launchSalt, ...launchConstructorArgs],
+);
+const launchManager = { address: launchAddress, ...launchDeploymentTx, salt: launchSalt };
+
+const buybackCollector = await deploy("BuybackCollector", [
+  routeExecutor,
+  launchManager.address,
+  uniswapUniversalRouter,
+  permit2,
+]);
 const vaultImplementation = await deploy("ManagedOTFVault");
-const feeCollector = await deploy("FeeCollector", [treasury]);
-const otfToken = await deploy("OTFToken", [initialHolder]);
 const factory = await deploy("OTFFactory", [
   vaultImplementation.address,
-  feeCollector.address,
-  protocolFeeShareBps,
+  buybackCollector.address,
+  otfToken.address,
 ]);
-const entryRouter = await deploy("OTFEntryExitRouter", [
-  factory.address,
-  account.address,
-]);
+const entryRouter = await deploy("OTFEntryExitRouter", [factory.address, protocolMultisig]);
 const uniswapV3Adapter = await deploy("UniswapV3Adapter", [
   entryRouter.address,
   uniswapV3Factory,
@@ -158,21 +253,95 @@ const uniswapV4Adapter = await deploy("UniswapV4Adapter", [
   uniswapUniversalRouter,
   permit2,
 ]);
-const v3AdapterApproval = await approveAdapter(entryRouter, uniswapV3Adapter);
-const v4AdapterApproval = await approveAdapter(entryRouter, uniswapV4Adapter);
-const routerConfiguration = await configureRouter(factory, entryRouter);
+const teamVesting = await deploy("TeamMarketCapVesting", [
+  launchManager.address,
+  fakeEthUsdOracle.address,
+  oracleMaxAge,
+  teamBeneficiary,
+]);
+const merkleRewardsDistributor = await deploy("MerkleRewardsDistributor", [
+  otfToken.address,
+  protocolMultisig,
+]);
+
+const setupTransactions = {};
+setupTransactions.factoryRouter = await transact(
+  { ...factory, name: "OTFFactory" },
+  "configureEntryExitRouter",
+  [entryRouter.address],
+);
+setupTransactions.collectorRouter = await transact(
+  { ...buybackCollector, name: "BuybackCollector" },
+  "configureEntryExitRouter",
+  [entryRouter.address],
+);
+setupTransactions.v3AdapterApproval = await transact(
+  { ...entryRouter, name: "OTFEntryExitRouter" },
+  "setAdapterApproved",
+  [uniswapV3Adapter.address, true],
+);
+setupTransactions.v4AdapterApproval = await transact(
+  { ...entryRouter, name: "OTFEntryExitRouter" },
+  "setAdapterApproved",
+  [uniswapV4Adapter.address, true],
+);
+
+const transfer = async (to, amount) => transact(
+  { ...otfToken, name: "OTFToken" },
+  "transfer",
+  [to, amount],
+);
+setupTransactions.teamAllocation = await transfer(teamVesting.address, 100_000_000n * 10n ** 18n);
+setupTransactions.launchAllocation = await transfer(launchManager.address, 200_000_000n * 10n ** 18n);
+setupTransactions.rewardsAllocation = await transfer(
+  merkleRewardsDistributor.address,
+  700_000_000n * 10n ** 18n,
+);
+setupTransactions.launchInitialization = await transact(
+  { ...launchManager, name: "OTFLaunchManager" },
+  "initializeLaunch",
+);
+
+const tokenBalance = (holder) => publicClient.readContract({
+  address: otfToken.address,
+  abi: artifact("OTFToken").abi,
+  functionName: "balanceOf",
+  args: [holder],
+});
+const [deployerOtfBalance, teamOtfBalance, launchReserveBalance, rewardsOtfBalance, totalSupply] =
+  await Promise.all([
+    tokenBalance(account.address),
+    tokenBalance(teamVesting.address),
+    tokenBalance(launchManager.address),
+    tokenBalance(merkleRewardsDistributor.address),
+    publicClient.readContract({
+      address: otfToken.address,
+      abi: artifact("OTFToken").abi,
+      functionName: "totalSupply",
+    }),
+  ]);
+if (deployerOtfBalance !== 0n) throw new Error("Unrestricted deployer retained OTF");
+if (teamOtfBalance !== 100_000_000n * 10n ** 18n) throw new Error("Team allocation mismatch");
+if (launchReserveBalance !== 50_000_000n * 10n ** 18n) throw new Error("Launch reserve mismatch");
+if (rewardsOtfBalance !== 700_000_000n * 10n ** 18n) throw new Error("Rewards allocation mismatch");
+if (totalSupply !== 1_000_000_000n * 10n ** 18n) throw new Error("Original OTF issuance mismatch");
 
 const deployment = {
-  architecture: "generic-trade-adapter-v1",
+  architecture: "otf-token-economics-v2",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
   status: "deployed",
   deployedAt: new Date().toISOString(),
   deployer: account.address,
+  trustedRoles: { protocolMultisig, routeExecutor, teamBeneficiary },
   contracts: {
-    feeCollector,
     otfToken,
+    launchManager,
+    teamVesting,
+    buybackCollector,
+    merkleRewardsDistributor,
+    fakeEthUsdOracle,
     vaultImplementation,
     factory,
     entryRouter,
@@ -180,28 +349,40 @@ const deployment = {
     uniswapV4Adapter,
   },
   externalContracts: {
-    ...external,
     uniswapV3Factory,
     uniswapV3SwapRouter02,
     uniswapV4PoolManager,
     uniswapV4StateView,
+    uniswapV4PositionManager,
     uniswapUniversalRouter,
     permit2,
+    weth,
   },
-  policy: { protocolFeeShareBps },
+  expectedCodehashes,
+  launch: {
+    poolFee: 0,
+    tickSpacing: 1,
+    bootstrapOtf: "150000000000000000000000000",
+    permanentLiquidityReserveOtf: "50000000000000000000000000",
+  },
+  allocations: {
+    teamVestingOtf: "100000000000000000000000000",
+    launchSystemOtf: "200000000000000000000000000",
+    merkleRewardsOtf: "700000000000000000000000000",
+    unrestrictedDeployerOtf: "0",
+  },
   routing: {
     integration: "approved-trade-adapters",
     approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
     uniswapV3Adapter: uniswapV3Adapter.address,
     uniswapV4Adapter: uniswapV4Adapter.address,
-    exactInputTuple: "(bytes,address,uint256,uint256)",
     v4RouteData: "abi.encode((address,uint24,int24,address,bytes)[])",
-    maxHopsPerLeg: 3,
+    maxV4HopsPerLeg: 3,
     maxLegs: 40,
   },
-  setupTransactions: { v3AdapterApproval, v4AdapterApproval, routerConfiguration },
+  setupTransactions,
   ...appOwnedIntegrations,
-  note: "Creation permanently commits the fund thesis, ordered constituents, and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
+  note: "Breaking v2 testnet deployment; earlier protocol contracts are unsupported.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });
 writeFileSync(deploymentPath, `${json(deployment)}\n`);
