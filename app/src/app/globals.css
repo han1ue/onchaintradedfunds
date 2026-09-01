@@ -91,23 +91,109 @@ a { color: inherit; }
 
 .landingLoading {
   display: grid;
-  min-height: 100vh;
+  min-height: calc(100dvh - var(--testnet-banner-height));
   place-items: center;
   align-content: center;
   gap: 10px;
   background: var(--background);
 }
 
-.landingLoadingSpinner { color: var(--accent-text); animation: createAssetSpin 800ms linear infinite; }
+.operateShell > .landingLoading {
+  min-height: 0;
+  flex: 1;
+}
+
+.landingLoadingMark {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgb(var(--accent-rgb) / 42%);
+  border-radius: 6px;
+  background: rgb(var(--accent-rgb) / 12%);
+  color: var(--accent-text);
+  font-size: 0.65rem;
+  font-weight: 700;
+  animation: otfLoadingBreath 1.8s ease-in-out infinite;
+  box-shadow:
+    0 0 0 0 rgb(var(--accent-rgb) / 0%),
+    0 8px 28px rgb(0 0 0 / 22%);
+}
+
+.landingLoadingMark::before {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgb(var(--accent-rgb) / 36%);
+  border-radius: 6px;
+  content: "";
+  animation: otfLoadingRing 1.8s ease-out infinite;
+}
 
 .landingLoading strong {
   color: var(--text-soft);
   font-size: 0.78rem;
   font-weight: 600;
+  animation: otfLoadingText 1.8s ease-in-out infinite;
+}
+
+.landingLoading::after {
+  width: 34px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  background-size: 200% 100%;
+  content: "";
+  animation: otfLoadingSweep 1.25s linear infinite;
+}
+
+@keyframes otfLoadingBreath {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(var(--accent-rgb) / 0%),
+      0 8px 28px rgb(0 0 0 / 22%);
+    transform: scale(0.97);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 8px rgb(var(--accent-rgb) / 7%),
+      0 10px 34px rgb(0 0 0 / 28%);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes otfLoadingRing {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+
+  35% { opacity: 0.7; }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes otfLoadingText {
+  0%,
+  100% { opacity: 0.52; }
+  50% { opacity: 1; }
+}
+
+@keyframes otfLoadingSweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landingLoadingSpinner { animation: none; }
+  .landingLoadingMark,
+  .landingLoadingMark::before,
+  .landingLoading strong,
+  .landingLoading::after { animation: none; }
 }
 
 .splashPage {
@@ -919,7 +1005,7 @@ body {
 .testnetWarningBanner strong { color: inherit; font-weight: 720; }
 .testnetWarningBanner svg { flex: 0 0 auto; }
 
-.operateShell { min-height: 100vh; }
+.operateShell { min-height: calc(100dvh - var(--testnet-banner-height)); }
 .topNav { z-index: 20; }
 .topNavInner { width: min(1120px, calc(100% - 32px)); }
 .logoGroup { display: flex; color: var(--text); }
