@@ -16,9 +16,18 @@ testnet protocol address is recorded until that deployment is performed and veri
 
 Before a production deployment, operators must supply explicit addresses for WETH, the existing
 Uniswap V3 factory and SwapRouter02, the official Uniswap V4 PoolManager, StateView,
-PositionManager, Universal Router, Permit2, and the selected ETH/USD oracle. The protocol multisig,
-team beneficiary, and authorized route executor must also be chosen. The repository does not invent
+PositionManager, Universal Router, and Permit2. The protocol multisig, team beneficiary, authorized
+route executor, and maximum accepted oracle age must also be chosen. The repository does not invent
 or default these values.
+
+The configured Robinhood mainnet ETH/USD AggregatorV3-compatible proxy is
+[`0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`](https://robinhoodchain.blockscout.com/address/0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9).
+On 2 September 2026, direct reads on chain ID 4663 confirmed deployed code, an `ETH / USD`
+description, 8 decimals, a positive current answer, and a populated update timestamp. Production
+deployment must repeat those identity and freshness checks and configure `ORACLE_MAX_AGE_SECONDS`;
+the address is the feed proxy and must not be replaced with its current underlying aggregator.
+Run `pnpm oracle:verify:robinhood-mainnet` with `ORACLE_MAX_AGE_SECONDS` and, optionally,
+`RH_MAINNET_RPC_URL` set immediately before deploying.
 
 ## Robinhood Chain Testnet
 

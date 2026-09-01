@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
-import { IETHUSDOracle } from "./interfaces/IETHUSDOracle.sol";
+import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IUniswapV4StateView } from "./interfaces/IUniswapV4.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
@@ -40,7 +40,7 @@ contract TeamMarketCapVesting {
     address public immutable stateView;
     bytes32 public immutable poolId;
     bool public immutable otfIsCurrency0;
-    address public immutable ethUsdOracle;
+    AggregatorV3Interface public immutable ethUsdOracle;
     uint256 public immutable maxOracleAge;
     address public immutable beneficiary;
 
@@ -63,14 +63,14 @@ contract TeamMarketCapVesting {
         address stateView_ = launch.stateView();
         _requireContract(otf_);
         _requireContract(stateView_);
-        uint8 oracleDecimals = IETHUSDOracle(ethUsdOracle_).decimals();
+        uint8 oracleDecimals = AggregatorV3Interface(ethUsdOracle_).decimals();
         if (oracleDecimals > 18) revert InvalidOracleDecimals(oracleDecimals);
 
         otf = otf_;
         stateView = stateView_;
         poolId = launch.poolId();
         otfIsCurrency0 = launch.otfIsCurrency0();
-        ethUsdOracle = ethUsdOracle_;
+        ethUsdOracle = AggregatorV3Interface(ethUsdOracle_);
         maxOracleAge = maxOracleAge_;
         beneficiary = beneficiary_;
     }
@@ -85,7 +85,7 @@ contract TeamMarketCapVesting {
         view
         returns (uint256 ethUsdPriceWad, uint256 updatedAt, uint256 updateAge)
     {
-        (, int256 answer,, uint256 oracleUpdatedAt,) = IETHUSDOracle(ethUsdOracle).latestRoundData();
+        (, int256 answer,, uint256 oracleUpdatedAt,) = ethUsdOracle.latestRoundData();
         updatedAt = oracleUpdatedAt;
         if (answer <= 0) revert InvalidOracleAnswer(answer);
         // Oracle freshness is intentionally evaluated against the current block timestamp.
@@ -95,7 +95,7 @@ contract TeamMarketCapVesting {
         }
         updateAge = block.timestamp - updatedAt;
         if (updateAge > maxOracleAge) revert StaleOracle(updatedAt, maxOracleAge);
-        uint8 oracleDecimals = IETHUSDOracle(ethUsdOracle).decimals();
+        uint8 oracleDecimals = ethUsdOracle.decimals();
         // answer is proven positive above.
         // forge-lint: disable-next-line(unsafe-typecast)
         ethUsdPriceWad = uint256(answer) * (10 ** (18 - oracleDecimals));

@@ -69,6 +69,15 @@ contract TeamMarketCapVestingTest is TestBase {
         FakeETHUSDOracle fake = new FakeETHUSDOracle();
         (, int256 answer,,,) = fake.latestRoundData();
         assertEq(uint256(answer), 2_000e8);
+        assertEq(uint256(fake.decimals()), 8);
+        assertEq(fake.description(), "ETH / USD");
+        assertEq(fake.version(), 1);
+        (uint80 roundId, int256 roundAnswer,, uint256 updatedAt, uint80 answeredInRound) =
+            fake.getRoundData(7);
+        assertEq(uint256(roundId), 7);
+        assertEq(uint256(roundAnswer), 2_000e8);
+        assertEq(updatedAt, block.timestamp);
+        assertEq(uint256(answeredInRound), 7);
     }
 
     function testUnlocksBelowAtAndAboveEveryMillionAndNeverRelocks() public {

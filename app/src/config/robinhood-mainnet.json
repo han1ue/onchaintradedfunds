@@ -4,6 +4,15 @@
   "chainId": 4663,
   "protocolStatus": "configuration-required",
   "protocolContracts": {},
+  "externalContracts": {
+    "ethUsdOracle": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9"
+  },
+  "oracleValidation": {
+    "interface": "AggregatorV3",
+    "description": "ETH / USD",
+    "decimals": 8,
+    "verifiedOnchainAt": "2026-09-02"
+  },
   "requiredProductionInputs": [
     "WETH",
     "UNISWAP_V3_FACTORY",
@@ -13,7 +22,7 @@
     "UNISWAP_V4_POSITION_MANAGER",
     "UNISWAP_UNIVERSAL_ROUTER",
     "PERMIT2",
-    "ETH_USD_ORACLE",
+    "ORACLE_MAX_AGE_SECONDS",
     "PROTOCOL_MULTISIG",
     "ROUTE_EXECUTOR",
     "TEAM_BENEFICIARY"
