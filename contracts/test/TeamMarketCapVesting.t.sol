@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { FakeETHUSDOracle } from "../src/FakeETHUSDOracle.sol";
+import { FakeETHUSDOracle } from "../src/mocks/FakeETHUSDOracle.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { TeamMarketCapVesting } from "../src/TeamMarketCapVesting.sol";
 import { MockUniswapV4PoolManager, MockUniswapV4StateView } from "./mocks/MockUniswapV4.sol";

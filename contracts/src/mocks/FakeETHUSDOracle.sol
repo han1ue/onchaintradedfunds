@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
+import { AggregatorV3Interface } from "../interfaces/AggregatorV3Interface.sol";
 
 /// @notice Robinhood Testnet-only ETH/USD oracle fixed at exactly $2,000.
 contract FakeETHUSDOracle is AggregatorV3Interface {
