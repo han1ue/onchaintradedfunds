@@ -30,7 +30,9 @@ offchain asset data + creator target/percentages
                   |                                  +-- accounted-balance settlement
                   |                                  +-- creator expense shares
                   v
-         OTFEntryExitRouter ---- authenticated Uniswap V3 swaps
+         OTFEntryExitRouter ---- approved ITradeAdapter
+                                      |
+                                      +---- UniswapV3Adapter ---- SwapRouter02
 ```
 
 ## Creation application
@@ -116,11 +118,22 @@ Expenses are paid through lazy, cadence-independent share inflation. The factory
 `protocolFeeShareBps` splits fee shares between the beneficiary and `FeeCollector`; there is no
 portfolio-dependent rebate.
 
-The permissionless entry/exit router supports typed Uniswap V3 basket routes. It authenticates
-pools against one immutable factory/router pair, parses packed paths, bounds legs and hops, enforces
-deadlines and minimums, clears temporary approvals, checks exact token deltas, prevents reentrancy,
-and rolls the whole transaction back on failure. Offchain quoting compares only queried routes and
-does not promise global optimality.
+The permissionless entry/exit router supports ordered generic basket `SwapLeg[]` routes. Legs can
+split one token across adapters, accumulate into one output, or spend an earlier leg's output. Each
+leg can spend only transient balance above the router's pre-call baseline, so existing dust cannot
+fund or be refunded by a route. The router owner is the adapter manager; approval requires a
+contract immutably bound back to that router and revocation takes effect immediately.
+
+The first approved implementation is `UniswapV3Adapter`. It accepts only packed V3 paths of at
+most three hops, authenticates every pool against its immutable factory, fixes the SwapRouter02
+recipient to the entry router, uses exact temporary approvals, and preserves pre-existing adapter
+donations. The entry router itself contains no V3 parsing and no direct pool-swap method.
+
+The application sends ordinary direct pool swaps through a same-origin server API backed only by
+the Uniswap Trading API. Direct plans are exact-input BEST_PRICE V3/V4 CLASSIC routes; basket plans
+are exact typed router requests and ordered adapter legs. The UI compares only returned candidates,
+selects the best queried route by integer output, and performs exact calldata `eth_call` plus
+`estimateGas` before submission.
 
 Before accepting a quote whose output OTF has zero supply, the Swap screen reads that supply and
 requires the quote's guaranteed minimum output—not merely its expected output—to be at least

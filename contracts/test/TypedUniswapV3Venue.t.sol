@@ -1,64 +1,60 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { DirectSwapRequest, OTFEntryExitRouter, V3Swap } from "../src/OTFEntryExitRouter.sol";
+import { SwapLeg } from "../src/OTFEntryExitRouter.sol";
+import { UniswapV3Adapter } from "../src/UniswapV3Adapter.sol";
 import { MockUniswapV3Pool } from "./mocks/MockUniswapV3Factory.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
 
-/// @dev Tests the router's immutable, typed, factory-authenticated V3 execution boundary.
 contract TypedUniswapV3VenueTest is AtomicRouterTestBase {
     function setUp() public {
         _setUpAtomicRouter();
     }
 
-    function testConstructorBindsRouterToItsReportedFactory() public {
+    function testConstructorAndExecutionBindSwapRouterToFactory() public {
         venue.setFactory(address(protocolFactory));
         vm.expectRevert(
             abi.encodeWithSelector(
-                OTFEntryExitRouter.RouterFactoryMismatch.selector,
+                UniswapV3Adapter.RouterFactoryMismatch.selector,
                 address(v3Factory),
                 address(protocolFactory)
             )
         );
-        new OTFEntryExitRouter(address(protocolFactory), address(v3Factory), address(venue));
-    }
+        new UniswapV3Adapter(address(router), address(v3Factory), address(venue));
 
-    function testVenueCannotChangeItsReportedFactoryAfterDeployment() public {
         venue.setFactory(address(protocolFactory));
-        V3Swap[] memory legs = new V3Swap[](1);
-        legs[0] = _leg(address(input), address(sourceVault), ONE, 1);
+        input.mint(address(v3Adapter), ONE);
+        vm.prank(address(router));
         vm.expectRevert(
             abi.encodeWithSelector(
-                OTFEntryExitRouter.RouterFactoryMismatch.selector,
+                UniswapV3Adapter.RouterFactoryMismatch.selector,
                 address(v3Factory),
                 address(protocolFactory)
             )
         );
-        router.swapDirect(_request(ONE, 1), legs);
-    }
-
-    function testEveryPackedPathHopIsStructurallyParsedAndFactoryAuthenticated() public {
-        V3Swap[] memory malformed = new V3Swap[](1);
-        malformed[0] = V3Swap({ amountIn: ONE, minAmountOut: 1, path: hex"deadbeef" });
-        vm.expectRevert(abi.encodeWithSelector(OTFEntryExitRouter.InvalidPath.selector, uint256(0)));
-        router.swapDirect(_request(ONE, 1), malformed);
-
-        V3Swap[] memory missing = new V3Swap[](1);
-        missing[0] = _leg(address(assetD), address(sourceVault), ONE, 1);
-        vm.expectPartialRevert(OTFEntryExitRouter.UnauthenticatedPool.selector);
-        router.swapDirect(_requestWithInput(address(assetD), ONE, 1), missing);
-
-        MockUniswapV3Pool mismatched = new MockUniswapV3Pool(
-            address(protocolFactory), address(input), address(sourceVault), FEE
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
         );
-        v3Factory.setPool(address(input), address(sourceVault), FEE, address(mismatched));
-        V3Swap[] memory mismatchedLeg = new V3Swap[](1);
-        mismatchedLeg[0] = _leg(address(input), address(sourceVault), ONE, 1);
-        vm.expectPartialRevert(OTFEntryExitRouter.UnauthenticatedPool.selector);
-        router.swapDirect(_request(ONE, 1), mismatchedLeg);
     }
 
-    function testPathHopAndFeeBoundsAreEnforcedBeforeFundsMove() public {
+    function testOnlyBoundEntryRouterCanExecute() public {
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(UniswapV3Adapter.UnauthorizedCaller.selector, ALICE));
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
+        );
+    }
+
+    function testMalformedWrongEndpointZeroFeeAndHopLimitPathsAreRejected() public {
+        _expectPathFailure(hex"deadbeef", UniswapV3Adapter.InvalidPath.selector);
+        _expectPathFailure(
+            _path(address(assetA), address(assetC)), UniswapV3Adapter.InvalidPath.selector
+        );
+        _expectPathFailure(
+            abi.encodePacked(address(input), bytes3(uint24(0)), address(assetC)),
+            UniswapV3Adapter.InvalidPath.selector
+        );
+
         bytes memory fourHop = abi.encodePacked(
             address(input),
             bytes3(FEE),
@@ -66,67 +62,97 @@ contract TypedUniswapV3VenueTest is AtomicRouterTestBase {
             bytes3(FEE),
             address(assetB),
             bytes3(FEE),
-            address(assetC),
+            address(assetD),
             bytes3(FEE),
-            address(sourceVault)
+            address(assetC)
         );
-        V3Swap[] memory legs = new V3Swap[](1);
-        legs[0] = V3Swap({ amountIn: ONE, minAmountOut: 1, path: fourHop });
-        vm.expectRevert(
-            abi.encodeWithSelector(OTFEntryExitRouter.TooManyHops.selector, uint256(4), uint256(3))
-        );
-        router.swapDirect(_request(ONE, 1), legs);
-
-        legs[0].path = abi.encodePacked(address(input), bytes3(uint24(0)), address(sourceVault));
-        vm.expectRevert(abi.encodeWithSelector(OTFEntryExitRouter.InvalidPath.selector, uint256(0)));
-        router.swapDirect(_request(ONE, 1), legs);
+        input.mint(address(v3Adapter), ONE);
+        vm.prank(address(router));
+        vm.expectRevert(abi.encodeWithSelector(UniswapV3Adapter.TooManyHops.selector, 4, 3));
+        v3Adapter.executeSwap(address(input), address(assetC), ONE, ONE, fourHop);
     }
 
-    function testVenueInputAndReportedOutputMustMatchObservedDeltas() public {
-        V3Swap[] memory legs = new V3Swap[](1);
-        legs[0] = _leg(address(input), address(sourceVault), 10 * ONE, 10 * ONE);
-        uint256 beforeInput = input.balanceOf(ALICE);
+    function testMissingAndForgedPoolsAreRejected() public {
+        input.mint(address(v3Adapter), 2 * ONE);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV3Adapter.UnauthenticatedPool.selector);
+        v3Adapter.executeSwap(
+            address(input),
+            address(sourceVault),
+            ONE,
+            ONE,
+            _path(address(input), address(sourceVault))
+        );
 
+        MockUniswapV3Pool forged =
+            new MockUniswapV3Pool(address(protocolFactory), address(input), address(assetC), FEE);
+        v3Factory.setPool(address(input), address(assetC), FEE, address(forged));
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV3Adapter.UnauthenticatedPool.selector);
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
+        );
+    }
+
+    function testInputOutputSlippageAndReportedDeltasAreIndependentlyChecked() public {
+        input.mint(address(v3Adapter), ONE);
         venue.setReportedOutputBonus(1);
-        vm.startPrank(ALICE);
-        input.approve(address(router), 10 * ONE);
-        vm.expectPartialRevert(OTFEntryExitRouter.SwapOutputMismatch.selector);
-        router.swapDirect(_request(10 * ONE, 10 * ONE), legs);
-        vm.stopPrank();
-        assertEq(input.balanceOf(ALICE), beforeInput);
-        assertEq(input.allowance(address(router), address(venue)), 0);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV3Adapter.OutputMismatch.selector);
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
+        );
 
         venue.setReportedOutputBonus(0);
         venue.setSkipInputPull(true);
-        vm.startPrank(ALICE);
-        input.approve(address(router), 0);
-        input.approve(address(router), 10 * ONE);
-        vm.expectPartialRevert(OTFEntryExitRouter.SwapInputMismatch.selector);
-        router.swapDirect(_request(10 * ONE, 10 * ONE), legs);
-        vm.stopPrank();
-        assertEq(input.balanceOf(ALICE), beforeInput);
-        assertEq(input.allowance(address(router), address(venue)), 0);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV3Adapter.InputMismatch.selector);
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
+        );
+
+        venue.setSkipInputPull(false);
+        vm.prank(address(router));
+        vm.expectRevert(bytes("SLIPPAGE"));
+        v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, 2 * ONE, _path(address(input), address(assetC))
+        );
     }
 
-    function _request(uint256 amountIn, uint256 minOut)
-        private
-        view
-        returns (DirectSwapRequest memory)
-    {
-        return _requestWithInput(address(input), amountIn, minOut);
+    function testAdapterPreservesDonationsAndClearsAllowance() public {
+        input.mint(address(v3Adapter), 6 * ONE);
+        assetC.mint(address(v3Adapter), 7 * ONE);
+        vm.prank(address(router));
+        uint256 amountOut = v3Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _path(address(input), address(assetC))
+        );
+
+        assertEq(amountOut, ONE);
+        assertEq(input.balanceOf(address(v3Adapter)), 5 * ONE);
+        assertEq(assetC.balanceOf(address(v3Adapter)), 7 * ONE);
+        assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
     }
 
-    function _requestWithInput(address tokenIn, uint256 amountIn, uint256 minOut)
-        private
-        view
-        returns (DirectSwapRequest memory request)
-    {
-        request = DirectSwapRequest({
-            tokenIn: tokenIn,
-            tokenOut: address(sourceVault),
-            amountIn: amountIn,
-            minAmountOut: minOut,
-            deadline: block.timestamp + 1
-        });
+    function testV3AdapterIntegratesWithGenericBasketRouter() public {
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = _v3Leg(address(input), address(assetC), ONE, ONE);
+        legs[1] = _v3Leg(address(input), address(assetD), ONE, ONE);
+
+        vm.prank(ALICE);
+        (uint256 shares, address[] memory refundTokens,) =
+            router.mintFromToken(_mintRequest(2 * ONE, ONE), legs);
+
+        assertEq(shares, ONE);
+        assertEq(refundTokens.length, 0);
+        assertEq(input.balanceOf(address(v3Adapter)), 0);
+        assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
+        _assertRouterClean();
+    }
+
+    function _expectPathFailure(bytes memory path, bytes4 selector) private {
+        input.mint(address(v3Adapter), ONE);
+        vm.prank(address(router));
+        vm.expectRevert(selector);
+        v3Adapter.executeSwap(address(input), address(assetC), ONE, ONE, path);
     }
 }

@@ -29,17 +29,31 @@ No OTF protocol contracts are deployed on Robinhood Chain Mainnet yet.
 
 **Chain ID:** `46630`  
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/)  
-**Deployment timestamp:** `2026-08-31T23:27:30.601Z`
+**Deployment timestamp:** `2026-09-01T12:11:19.654Z`
+
+**Status:** Deployed; application deployment gate enabled
+
+These addresses use the generic router/adapter architecture. Onchain verification confirms that
+the factory points to the entry router, the adapter points back to that router and the configured
+Uniswap V3 contracts, and the router has approved the adapter.
 
 ### Protocol contracts
 
 | Contract | Address |
 | --- | --- |
-| OTF Factory | [`0x3e4354d1eD6aB6BAd236f960c46321227B452Fce`](https://explorer.testnet.chain.robinhood.com/address/0x3e4354d1eD6aB6BAd236f960c46321227B452Fce) |
-| Managed OTF Vault implementation | [`0xc918352f54b0F2B029252ff7B08d884C46C8DddF`](https://explorer.testnet.chain.robinhood.com/address/0xc918352f54b0F2B029252ff7B08d884C46C8DddF) |
-| Entry/Exit Router | [`0x1a77744564718753e4D65F7506CdC1105e7cdDb0`](https://explorer.testnet.chain.robinhood.com/address/0x1a77744564718753e4D65F7506CdC1105e7cdDb0) |
-| Fee Collector | [`0x02Db8aeAd0Bd3db1F85e59c904B70e39722598AD`](https://explorer.testnet.chain.robinhood.com/address/0x02Db8aeAd0Bd3db1F85e59c904B70e39722598AD) |
-| OTF protocol token | [`0xF130D52687ef62d19145b148dE6BA389Bf3b4f70`](https://explorer.testnet.chain.robinhood.com/address/0xF130D52687ef62d19145b148dE6BA389Bf3b4f70) |
+| OTF Factory | [`0x1147089d16486e4D3149F6Dc1E9D915c28346d99`](https://explorer.testnet.chain.robinhood.com/address/0x1147089d16486e4D3149F6Dc1E9D915c28346d99) |
+| Managed OTF Vault implementation | [`0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3`](https://explorer.testnet.chain.robinhood.com/address/0x830e1aDf0E8aF93b4339863cB902Bc80D3F984C3) |
+| Entry/Exit Router | [`0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a`](https://explorer.testnet.chain.robinhood.com/address/0xD8Ba23d7b5e734Ef6aB63B376FBd4EB4D152349a) |
+| Uniswap V3 Adapter | [`0x9373cA2022E6746ee9A64701630Eb45b7E179875`](https://explorer.testnet.chain.robinhood.com/address/0x9373cA2022E6746ee9A64701630Eb45b7E179875) |
+| Fee Collector | [`0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF`](https://explorer.testnet.chain.robinhood.com/address/0x594CEb52Af1F7C90b02B9ec57D8f58A1bc06CefF) |
+| OTF protocol token | [`0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5`](https://explorer.testnet.chain.robinhood.com/address/0x5041F56c141aac7B9aAB4F84C9b3110d9177e9F5) |
+
+### Setup transactions
+
+| Action | Transaction |
+| --- | --- |
+| Approve Uniswap V3 Adapter | [`0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb`](https://explorer.testnet.chain.robinhood.com/tx/0x0e7035518f15e7fe24b1e5d410ce65ae5b2313d77191c14ce0518218c26d4cfb) |
+| Configure factory Entry/Exit Router | [`0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874`](https://explorer.testnet.chain.robinhood.com/tx/0xb5959be91e01a0827f34f87d552cccdba5be49f81fd799a29aecfe1d1d4ef874) |
 
 Factory-created OTF and share-token addresses are dynamic and are intentionally excluded from this
 directory. The Funds page discovers them directly from the OTF Factory.

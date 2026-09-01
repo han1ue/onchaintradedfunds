@@ -1,9 +1,9 @@
+import { encodeFunctionData, getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import type { SwapAsset, SwapQuote, SwapQuoteService } from "./swap-model";
-import { robinhoodMainnetAddresses, robinhoodTestnetAddresses } from "./deployment";
 import {
-  bestQueriedQuote,
+  ERC20_APPROVE_ABI,
   assetHasExecutableMetadata,
+  bestQueriedQuote,
   classifySwapDirection,
   decimalAmount,
   decimalInputValue,
@@ -12,22 +12,31 @@ import {
   executionStages,
   isPositiveDecimalAmount,
   liquidityActionLabel,
-  liquidityVenueFor,
   pastedAsset,
   parseTypedQuoteResponse,
   quoteNeedsRefresh,
-  quoteServiceForChain,
   requestConcurrentQuotes,
   routerArgsForExecution,
   supportedSwapDirection,
   swapDirectionLabel,
-  unavailableQuoteService,
+  type SwapAsset,
+  type SwapQuote,
+  type SwapQuoteRequest,
+  type SwapQuoteService,
 } from "./swap-model";
 
 const USDG: SwapAsset = {
   address: "0x0000000000000000000000000000000000000001",
   symbol: "USDG",
   name: "USDG",
+  kind: "erc20",
+  decimals: 18,
+  metadataResolved: true,
+};
+const TOKEN: SwapAsset = {
+  address: "0x0000000000000000000000000000000000000004",
+  symbol: "TOKEN",
+  name: "Token",
   kind: "erc20",
   decimals: 18,
   metadataResolved: true,
@@ -42,294 +51,258 @@ const FUND_A: SwapAsset = {
   isFactoryVault: true,
 };
 const FUND_B: SwapAsset = { ...FUND_A, address: "0x0000000000000000000000000000000000000003", symbol: "NEXT" };
+const BACKING = "0x0000000000000000000000000000000000000005" as const;
+const CALLER = "0x00000000000000000000000000000000000000c0" as const;
+const ROUTER = "0x00000000000000000000000000000000000000e1" as const;
+const ADAPTER = "0x00000000000000000000000000000000000000a1" as const;
+const PERMIT2 = "0x00000000000000000000000000000000000000b1" as const;
+const UNIVERSAL_ROUTER = "0x00000000000000000000000000000000000000b2" as const;
 const NOW = 1_750_000_000_000;
+const PATH = `0x${USDG.address.slice(2)}000bb8${BACKING.slice(2)}` as const;
 
-function quote(route: "direct" | "basket", outputAmount: string, queriedAt = NOW, minimumReceived = outputAmount): SwapQuote {
+function request(input = USDG, output = FUND_A, chainId = 46630): SwapQuoteRequest {
+  return { chainId, input, output, inputAmount: "10", slippageBps: 50, requestedAt: NOW - 1_000, caller: CALLER };
+}
+
+function quote(route: "direct" | "basket", expectedOutputRaw: bigint, queriedAt = NOW): SwapQuote {
   return {
     id: route,
     route,
     state: "available",
     queriedAt,
+    expiresAt: NOW + 10_000,
     inputAmount: "10",
-    outputAmount,
-    expectedOutput: outputAmount,
-    minimumReceived,
-    minimumReceivedRaw: decimalAmount(minimumReceived)!,
-    routeLabel: route,
+    outputAmount: expectedOutputRaw.toString(),
+    expectedOutput: expectedOutputRaw.toString(),
+    expectedOutputRaw,
+    minimumReceived: expectedOutputRaw.toString(),
+    minimumReceivedRaw: expectedOutputRaw,
+    routeLabel: route === "direct" ? "Direct pool" : "Mint basket",
   };
 }
 
-const CALLER = "0x00000000000000000000000000000000000000c0" as const;
-const ROUTER = "0x00000000000000000000000000000000000000e1" as const;
-const DIRECT_PATH = `0x${USDG.address.slice(2)}000bb8${FUND_A.address.slice(2)}` as const;
-
-function typedDirectResponse(overrides: Record<string, unknown> = {}) {
+function service(direct: () => Promise<SwapQuote>, basket: () => Promise<SwapQuote>): SwapQuoteService {
   return {
-    id: "typed-direct",
+    quoteDirect: direct,
+    quoteBasket: basket,
+    finalizeDirect: async (plan) => plan,
+  };
+}
+
+function directResponse(overrides: Record<string, unknown> = {}) {
+  const amount = 10n * 10n ** 18n;
+  const minimum = 9n * 10n ** 18n;
+  return {
+    state: "available",
+    id: "direct",
     route: "direct",
-    chainId: 46630,
-    router: ROUTER,
+    chainId: 4663,
     caller: CALLER,
     quotedAtMs: NOW - 1_000,
-    expiresAtMs: NOW + 5_000,
-    deadline: "1750000100",
-    inputAmountRaw: "10000000000000000000",
+    expiresAtMs: NOW + 10_000,
+    inputAmountRaw: amount.toString(),
     outputAmount: "9.5",
     expectedOutput: "9.5",
-    minimumReceived: "9",
     expectedOutputRaw: "9500000000000000000",
-    minimumReceivedRaw: "9000000000000000000",
-    method: "swapDirect",
-    request: {
-      tokenIn: USDG.address,
-      tokenOut: FUND_A.address,
-      amountIn: "10000000000000000000",
-      minAmountOut: "9000000000000000000",
-      deadline: "1750000100",
+    minimumReceived: "9",
+    minimumReceivedRaw: minimum.toString(),
+    routeLabel: "Direct pool",
+    hops: [],
+    execution: {
+      kind: "direct-api",
+      chainId: 4663,
+      caller: CALLER,
+      inputToken: USDG.address,
+      outputToken: TOKEN.address,
+      universalRouter: UNIVERSAL_ROUTER,
+      amountIn: amount.toString(),
+      minAmountOut: minimum.toString(),
+      expiresAtMs: NOW + 10_000,
+      quoteToken: "sealed",
+      approval: {
+        chainId: 4663,
+        from: CALLER,
+        to: USDG.address,
+        data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [PERMIT2, amount] }),
+        value: "0",
+      },
     },
-    legs: [{ amountIn: "10000000000000000000", minAmountOut: "9000000000000000000", path: DIRECT_PATH }],
     ...overrides,
   };
 }
 
-function typedDirectContext() {
+function directContext() {
   return {
     route: "direct" as const,
-    request: { chainId: 46630, input: USDG, output: FUND_A, inputAmount: "10", slippageBps: 50, requestedAt: NOW - 2_000, caller: CALLER },
-    entryRouter: ROUTER,
-    chainId: 46630,
+    request: request(USDG, TOKEN, 4663),
+    permit2: PERMIT2,
+    universalRouter: UNIVERSAL_ROUTER,
+    chainId: 4663,
     now: NOW,
   };
 }
 
+function basketResponse(overrides: Record<string, unknown> = {}) {
+  const amount = 10n * 10n ** 18n;
+  const half = 5n * 10n ** 18n;
+  return {
+    state: "available",
+    id: "basket",
+    route: "basket",
+    chainId: 46630,
+    caller: CALLER,
+    quotedAtMs: NOW - 1_000,
+    expiresAtMs: NOW + 10_000,
+    inputAmountRaw: amount.toString(),
+    outputAmount: "9.5",
+    expectedOutput: "9.5",
+    expectedOutputRaw: "9500000000000000000",
+    minimumReceived: "9",
+    minimumReceivedRaw: "9000000000000000000",
+    routeLabel: "Mint basket",
+    residualRefunds: [{ token: BACKING, amount: "3", displayAmount: "0.000000000000000003" }],
+    execution: {
+      kind: "basket-router",
+      chainId: 46630,
+      caller: CALLER,
+      router: ROUTER,
+      adapter: ADAPTER,
+      approval: { token: USDG.address, spender: ROUTER, amount: amount.toString() },
+      funding: [{ token: USDG.address, amount: amount.toString() }],
+      method: "mintFromToken",
+      request: {
+        inputToken: USDG.address,
+        vault: FUND_A.address,
+        amountIn: amount.toString(),
+        minShares: "9000000000000000000",
+        deadline: "1750000100",
+      },
+      legs: [
+        { adapter: ADAPTER, tokenIn: USDG.address, tokenOut: BACKING, amountIn: half.toString(), minAmountOut: "4", data: PATH },
+        { adapter: ADAPTER, tokenIn: USDG.address, tokenOut: BACKING, amountIn: half.toString(), minAmountOut: "4", data: PATH },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+function basketContext() {
+  return { route: "basket" as const, request: request(), entryRouter: ROUTER, adapter: ADAPTER, chainId: 46630, now: NOW };
+}
+
 describe("swap state model", () => {
-  it("accepts a pasted address but makes no metadata or verification claim", () => {
+  it("keeps pasted tokens non-executable until metadata is resolved", () => {
     const asset = pastedAsset(" 0x0000000000000000000000000000000000000001 ");
     expect(asset).toMatchObject({ symbol: "0x0000…0001", kind: "erc20", verified: false });
     expect(assetHasExecutableMetadata(asset!)).toBe(false);
-    expect(asset?.isFactoryVault).toBeUndefined();
     expect(pastedAsset("not-an-address")).toBeUndefined();
   });
 
-  it("requires resolved decimals and factory OTF identity without using informational verification", () => {
-    expect(assetHasExecutableMetadata({ ...USDG, verified: false })).toBe(true);
-    expect(assetHasExecutableMetadata({ ...USDG, metadataResolved: false })).toBe(false);
-    expect(assetHasExecutableMetadata({ ...FUND_A, isFactoryVault: false })).toBe(false);
-  });
-
-  it("does not repair malformed decimal input into a quoteable amount", () => {
-    expect(decimalInputValue("1.25")).toBe("1.25");
-    expect(decimalInputValue("1..2")).toBeUndefined();
-    expect(decimalInputValue("1e3")).toBeUndefined();
-    expect(isPositiveDecimalAmount("1..2")).toBe(false);
-    expect(isPositiveDecimalAmount("0")).toBe(false);
-    expect(decimalAmount((1n << 256n).toString(), 0)).toBeUndefined();
-  });
-
-  it("models ERC20-to-OTF, OTF-to-ERC20 and OTF-to-OTF directions", () => {
+  it("models all four swap directions, including ERC20 to ERC20", () => {
     expect(classifySwapDirection(USDG, FUND_A)).toBe("erc20-to-otf");
     expect(classifySwapDirection(FUND_A, USDG)).toBe("otf-to-erc20");
     expect(classifySwapDirection(FUND_A, FUND_B)).toBe("otf-to-otf");
-    expect(supportedSwapDirection(USDG, FUND_A)).toBe(true);
-    expect(supportedSwapDirection(USDG, { ...USDG, address: FUND_B.address })).toBe(false);
-    expect(swapDirectionLabel(USDG, FUND_A)).toBe("ERC-20 → OTF");
-    expect(swapDirectionLabel(FUND_A, USDG)).toBe("OTF → ERC-20");
-    expect(swapDirectionLabel(FUND_A, FUND_B)).toBe("OTF → OTF");
+    expect(classifySwapDirection(USDG, TOKEN)).toBe("erc20-to-erc20");
+    expect(supportedSwapDirection(USDG, TOKEN)).toBe(true);
+    expect(swapDirectionLabel(USDG, TOKEN)).toBe("ERC-20 → ERC-20");
   });
 
-  it("requests direct and basket routes concurrently, then selects the best returned valid quote", async () => {
-    const direct = vi.fn(async () => quote("direct", "9.9"));
-    const basket = vi.fn(async () => quote("basket", "10.1"));
-    const service: SwapQuoteService = { quoteDirect: direct, quoteBasket: basket };
-    const results = await requestConcurrentQuotes(service, {
-      chainId: 46630,
-      input: USDG,
-      output: FUND_A,
-      inputAmount: "10",
-      slippageBps: 50,
-      requestedAt: NOW,
-    });
+  it("requests only a direct quote for ERC20 to ERC20", async () => {
+    const direct = vi.fn(async () => quote("direct", 9n));
+    const basket = vi.fn(async () => quote("basket", 10n));
+    const results = await requestConcurrentQuotes(service(direct, basket), request(USDG, TOKEN, 4663));
     expect(direct).toHaveBeenCalledOnce();
-    expect(basket).toHaveBeenCalledOnce();
-    expect(bestQueriedQuote(results, NOW)?.route).toBe("basket");
-  });
-
-  it("never contacts quote sources for an unresolved pasted token", async () => {
-    const direct = vi.fn(async () => quote("direct", "9.9"));
-    const basket = vi.fn(async () => quote("basket", "10.1"));
-    const unresolved = pastedAsset("0x0000000000000000000000000000000000000004")!;
-    const results = await requestConcurrentQuotes({ quoteDirect: direct, quoteBasket: basket }, {
-      chainId: 46630,
-      input: unresolved,
-      output: FUND_A,
-      inputAmount: "10",
-      slippageBps: 50,
-      requestedAt: NOW,
-    });
-    expect(direct).not.toHaveBeenCalled();
     expect(basket).not.toHaveBeenCalled();
-    expect(results.every((result) => result.state === "unavailable")).toBe(true);
+    expect(results.map((result) => result.route)).toEqual(["direct"]);
   });
 
-  it("keeps a valid route when the other quote source fails", async () => {
-    const service: SwapQuoteService = {
-      quoteDirect: async () => { throw new Error("venue unavailable"); },
-      quoteBasket: async () => quote("basket", "10.1"),
-    };
-    const results = await requestConcurrentQuotes(service, {
-      chainId: 46630,
-      input: USDG,
-      output: FUND_A,
-      inputAmount: "10",
-      slippageBps: 50,
-      requestedAt: NOW,
-    });
+  it("requests direct and basket OTF routes concurrently and keeps an independent success", async () => {
+    let directStarted = false;
+    let basketObservedDirect = false;
+    const results = await requestConcurrentQuotes(service(
+      async () => { directStarted = true; throw new Error("unavailable"); },
+      async () => { basketObservedDirect = directStarted; return quote("basket", 11n); },
+    ), request());
+    expect(basketObservedDirect).toBe(true);
     expect(results[0].state).toBe("failed");
     expect(bestQueriedQuote(results, NOW)?.route).toBe("basket");
   });
 
-  it("never auto-selects a stale quote", () => {
-    const stale = quote("direct", "20", NOW - 20_001);
+  it("selects the best queried route using integer output and permits manual override", () => {
+    const direct = parseTypedQuoteResponse(directResponse(), directContext());
+    const basket = parseTypedQuoteResponse(basketResponse(), basketContext());
+    expect(bestQueriedQuote([direct, { ...basket, expectedOutputRaw: direct.expectedOutputRaw! + 1n }], NOW)?.route).toBe("basket");
+    expect(executionPlanForQuote(direct, 4663, NOW)?.kind).toBe("direct-api");
+  });
+
+  it("rejects stale quotes and preserves the first-mint minimum", () => {
+    const stale = quote("basket", 20n, NOW - 20_001);
     expect(bestQueriedQuote([stale], NOW)).toBeUndefined();
     expect(quoteNeedsRefresh(stale, NOW)).toBe(true);
+    const below = { ...quote("basket", 1n), minimumReceivedRaw: 9_999_999_999_999_999n };
+    expect(enforceFirstPurchaseMinimum([below], FUND_A, 0n)[0].state).toBe("unavailable");
+    expect(enforceFirstPurchaseMinimum([quote("basket", 1n)], FUND_A, undefined)[0].state).toBe("unavailable");
   });
 
-  it("compares quote outputs as fixed-decimal integers rather than JS numbers", () => {
-    const smaller = quote("direct", "9007199254740993.000000000000000001");
-    const larger = quote("basket", "9007199254740993.000000000000000002");
-    expect(decimalAmount(larger.outputAmount!)).toBeGreaterThan(decimalAmount(smaller.outputAmount!)!);
-    expect(bestQueriedQuote([smaller, larger], NOW)?.route).toBe("basket");
+  it("validates decimal input without silently repairing it", () => {
+    expect(decimalInputValue("1.25")).toBe("1.25");
+    expect(decimalInputValue("1..2")).toBeUndefined();
+    expect(isPositiveDecimalAmount("0")).toBe(false);
+    expect(decimalAmount("1.25", 2)).toBe(125n);
   });
 
-  it("rejects an empty-OTF quote unless its guaranteed minimum output is at least 0.01 OTF", () => {
-    const belowMinimum = quote("basket", "1", NOW, "0.009999999999999999");
-    const exactMinimum = quote("basket", "0.01");
-    const uncappedPurchase = quote("basket", "10.000000000000000001");
-
-    expect(enforceFirstPurchaseMinimum([belowMinimum], FUND_A, 0n)[0]).toMatchObject({
-      state: "unavailable",
-      reason: "The first purchase must guarantee at least 0.01 OTF.",
-    });
-    expect(enforceFirstPurchaseMinimum([exactMinimum], FUND_A, 0n)[0]?.state).toBe("available");
-    expect(enforceFirstPurchaseMinimum([uncappedPurchase], FUND_A, 0n)[0]?.state).toBe("available");
+  it("parses an exact direct API plan and its Permit2 approval", () => {
+    const parsed = parseTypedQuoteResponse(directResponse(), directContext());
+    expect(parsed.execution).toMatchObject({ kind: "direct-api", universalRouter: UNIVERSAL_ROUTER, amountIn: 10n * 10n ** 18n });
+    expect(parsed.expectedOutputRaw).toBe(9_500_000_000_000_000_000n);
   });
 
-  it("removes the special first-purchase minimum once OTF supply is nonzero", () => {
-    const belowMinimum = quote("basket", "0.009", NOW, "0.008");
-    expect(enforceFirstPurchaseMinimum([belowMinimum], FUND_A, 1n)[0]).toBe(belowMinimum);
-    expect(enforceFirstPurchaseMinimum([belowMinimum], USDG, 0n)[0]).toBe(belowMinimum);
+  it.each([
+    ["chain", { chainId: 1 }],
+    ["caller", { caller: ROUTER }],
+    ["amount", { inputAmountRaw: "1" }],
+    ["expiry", { expiresAtMs: NOW - 1 }],
+  ])("rejects a direct quote with the wrong %s binding", (_label, override) => {
+    expect(() => parseTypedQuoteResponse(directResponse(override), directContext())).toThrow();
   });
 
-  it("fails closed when the output OTF supply cannot be confirmed", () => {
-    const candidate = quote("basket", "1");
-    expect(enforceFirstPurchaseMinimum([candidate], FUND_A, undefined)[0]).toMatchObject({
-      state: "unavailable",
-      reason: "The output OTF supply could not be confirmed, so this quote cannot be used safely.",
-    });
+  it("rejects wrong direct approval and transaction targets", () => {
+    const wrongApproval = directResponse();
+    const execution = { ...(wrongApproval.execution as Record<string, unknown>), approval: { ...((wrongApproval.execution as Record<string, unknown>).approval as Record<string, unknown>), to: TOKEN.address } };
+    expect(() => parseTypedQuoteResponse({ ...wrongApproval, execution }, directContext())).toThrow(/target/);
+    const wrongTransaction = {
+      ...(directResponse().execution as Record<string, unknown>),
+      transaction: { chainId: 4663, from: CALLER, to: ROUTER, data: "0x1234", value: "0" },
+    };
+    expect(() => parseTypedQuoteResponse(directResponse({ execution: wrongTransaction }), directContext())).toThrow(/target/);
   });
 
-  it("returns explicit unavailable results when no live endpoint is configured", async () => {
-    const [direct, basket] = await requestConcurrentQuotes(unavailableQuoteService, {
-      chainId: 46630,
-      input: USDG,
-      output: FUND_A,
-      inputAmount: "10",
-      slippageBps: 50,
-      requestedAt: NOW,
-    });
-    expect(direct.state).toBe("unavailable");
-    expect(basket.state).toBe("unavailable");
-    expect(bestQueriedQuote([direct, basket], NOW)).toBeUndefined();
+  it("accepts split basket legs, preserves residual refunds, and emits generic adapter calldata", () => {
+    const parsed = parseTypedQuoteResponse(basketResponse(), basketContext());
+    expect(parsed.routeLabel).toBe("Mint basket");
+    expect(parsed.residualRefunds?.[0]).toMatchObject({ token: BACKING, amount: 3n });
+    expect(parsed.execution?.kind).toBe("basket-router");
+    if (parsed.execution?.kind !== "basket-router") throw new Error("missing basket execution");
+    const args = routerArgsForExecution(parsed.execution.call);
+    expect(args[1]).toEqual([
+      { adapter: getAddress(ADAPTER), tokenIn: USDG.address, tokenOut: BACKING, amountIn: 5n * 10n ** 18n, minAmountOut: 4n, data: PATH },
+      { adapter: getAddress(ADAPTER), tokenIn: USDG.address, tokenOut: BACKING, amountIn: 5n * 10n ** 18n, minAmountOut: 4n, data: PATH },
+    ]);
   });
 
-  it("makes wallet, approval, simulation, submission, success and failure states explicit", () => {
-    expect(executionStages({ walletConnected: false, networkSupported: true, usableQuote: false })).toMatchObject({
-      wallet: "blocked", approval: "blocked", simulation: "blocked", submission: "blocked", success: "unavailable", failure: "unavailable",
-    });
-    expect(executionStages({ walletConnected: true, networkSupported: true, usableQuote: false })).toMatchObject({
-      wallet: "ready", approval: "unavailable", simulation: "unavailable", submission: "unavailable", success: "unavailable", failure: "unavailable",
-    });
-  });
-});
-
-describe("typed entry-router quote boundary", () => {
-  it("maps an authenticated direct response to one typed router method and exact approval", () => {
-    const parsed = parseTypedQuoteResponse(typedDirectResponse(), typedDirectContext());
-    expect(parsed.execution?.method).toBe("swapDirect");
-    expect(parsed.minimumReceivedRaw).toBe(9_000_000_000_000_000_000n);
-    expect(parsed.hops).toEqual([expect.objectContaining({ venue: "Uniswap V3", tokenIn: USDG.address, tokenOut: FUND_A.address, feeTier: 3_000 })]);
-    const plan = executionPlanForQuote(parsed, 46630, NOW);
-    expect(plan).toMatchObject({ router: ROUTER, approval: { token: USDG.address, spender: ROUTER, amount: 10_000_000_000_000_000_000n } });
-    expect(routerArgsForExecution(plan!.call)).toHaveLength(2);
+  it("rejects unknown adapters, malformed data, disconnected and overspending legs", () => {
+    const base = basketResponse();
+    const baseExecution = base.execution as Record<string, unknown>;
+    const legs = baseExecution.legs as Record<string, unknown>[];
+    const mutate = (replacement: Record<string, unknown>[]) => ({ ...base, execution: { ...baseExecution, legs: replacement } });
+    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], adapter: ROUTER }, legs[1]]), basketContext())).toThrow(/unknown adapter/);
+    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], data: "0x1234" }, legs[1]]), basketContext())).toThrow(/packed length/);
+    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], tokenIn: TOKEN.address }, legs[1]]), basketContext())).toThrow(/endpoints/);
+    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], amountIn: "10000000000000000001" }, legs[1]]), basketContext())).toThrow(/overspends/);
   });
 
-  it("rejects raw calldata and unknown methods", () => {
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ calldata: "0xdeadbeef" }), typedDirectContext())).toThrow("forbidden field");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ method: "execute" }), typedDirectContext())).toThrow("unsupported entry-router method");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ minBasketAmounts: ["0"] }), typedDirectContext())).toThrow("basket minimums");
-  });
-
-  it("rejects responses for a wrong chain, router, caller, selected token, or deadline", () => {
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ chainId: 1 }), typedDirectContext())).toThrow("wrong chain");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ router: FUND_B.address }), typedDirectContext())).toThrow("wrong entry router");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ caller: FUND_B.address }), typedDirectContext())).toThrow("wrong caller");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ request: { ...typedDirectResponse().request as Record<string, unknown>, tokenOut: USDG.address } }), typedDirectContext())).toThrow("tokens do not match");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ deadline: "1750001000" }), typedDirectContext())).toThrow("allowed horizon");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ quotedAtMs: NOW - 20_001 }), typedDirectContext())).toThrow("stale");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ inputAmountRaw: (1n << 256n).toString() }), typedDirectContext())).toThrow("uint256");
-  });
-
-  it("rejects excess legs, excess hops, malformed paths, and disconnected direct routes", () => {
-    const leg = typedDirectResponse().legs as unknown[];
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ legs: Array.from({ length: 41 }, () => leg[0]) }), typedDirectContext())).toThrow("leg limit");
-    const fourHopPath = `0x${USDG.address.slice(2)}000bb8${FUND_B.address.slice(2)}000bb8${CALLER.slice(2)}000bb8${ROUTER.slice(2)}000bb8${FUND_A.address.slice(2)}`;
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ legs: [{ ...leg[0] as Record<string, unknown>, path: fourHopPath }] }), typedDirectContext())).toThrow("hop limit");
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ legs: [{ ...leg[0] as Record<string, unknown>, path: "0x00" }] }), typedDirectContext())).toThrow("packed length");
-    const disconnected = `0x${FUND_B.address.slice(2)}000bb8${FUND_A.address.slice(2)}`;
-    expect(() => parseTypedQuoteResponse(typedDirectResponse({ legs: [{ ...leg[0] as Record<string, unknown>, path: disconnected }] }), typedDirectContext())).toThrow("not funded");
-  });
-
-  it("keeps execution disabled while deployment quote configuration is absent", async () => {
-    const [direct, basket] = await requestConcurrentQuotes(quoteServiceForChain(46630), {
-      chainId: 46630,
-      input: USDG,
-      output: FUND_A,
-      inputAmount: "10",
-      slippageBps: 50,
-      requestedAt: NOW,
-      caller: CALLER,
-    });
-    expect(direct.state).toBe("unavailable");
-    expect(basket.state).toBe("unavailable");
-  });
-});
-
-describe("liquidity handoff", () => {
-  it("prefills the official Uniswap V3 flow with the selected mainnet OTF/USDG pair", () => {
-    expect(robinhoodMainnetAddresses.usdg).toBe("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168");
-    const mainnetUsdg = { ...USDG, address: robinhoodMainnetAddresses.usdg! };
-    const venue = liquidityVenueFor(4663, FUND_A, mainnetUsdg);
-    const url = new URL(venue!.href);
-
-    expect(venue).toMatchObject({ name: "Uniswap", prefilled: true });
-    expect(url.origin + url.pathname).toBe("https://app.uniswap.org/positions/create/v3");
-    expect(url.searchParams.get("chain")).toBe("robinhood");
-    expect(url.searchParams.get("currencyA")).toBe(FUND_A.address);
-    expect(url.searchParams.get("currencyB")).toBe(robinhoodMainnetAddresses.usdg);
-    expect(JSON.parse(url.searchParams.get("fee")!)).toEqual({ feeAmount: 3_000, tickSpacing: 60, isDynamic: false });
-    expect(url.searchParams.get("step")).toBe("1");
-    expect(liquidityVenueFor(4663, FUND_A, { ...mainnetUsdg, address: robinhoodTestnetAddresses.usdg! })).toBeUndefined();
-  });
-
-  it("uses the official Synthra app without a documented pair prefill on testnet", () => {
-    const testnetUsdg = { ...USDG, address: robinhoodTestnetAddresses.usdg! };
-    expect(liquidityVenueFor(46630, FUND_A, testnetUsdg)).toEqual({
-      name: "Synthra",
-      href: "https://app.synthra.org/",
-      prefilled: false,
-    });
-    expect(liquidityVenueFor(1, FUND_A, USDG)).toBeUndefined();
-    expect(liquidityVenueFor(46630, { ...FUND_A, isFactoryVault: false }, testnetUsdg)).toBeUndefined();
+  it("reports execution stages and product copy precisely", () => {
+    expect(executionStages({ walletConnected: true, networkSupported: true, usableQuote: true, execution: "simulation" }).simulation).toBe("pending");
     expect(liquidityActionLabel("FUND")).toBe("Add liquidity to FUND/USDG");
   });
 });

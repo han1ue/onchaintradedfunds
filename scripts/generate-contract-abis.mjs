@@ -7,6 +7,7 @@ const contracts = [
   ["ManagedOTFVault", "managedOtfVaultAbi"],
   ["OTFFactory", "otfFactoryAbi"],
   ["OTFEntryExitRouter", "otfEntryExitRouterAbi"],
+  ["UniswapV3Adapter", "uniswapV3AdapterAbi"],
   ["FeeCollector", "feeCollectorAbi"],
   ["OTFToken", "otfTokenAbi"],
 ];

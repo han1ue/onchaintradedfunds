@@ -2,7 +2,8 @@
   "network": "robinhood-mainnet",
   "chainId": 4663,
   "externalContracts": {
-    "usdg": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+    "usdg": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
   },
   "externalLiquidity": {
     "venue": "Uniswap",
@@ -11,6 +12,11 @@
     "feeAmount": 3000,
     "tickSpacing": 60,
     "isDynamic": false
+  },
+  "uniswapTradingApi": {
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "universalRouterVersion": "2.1.1"
   },
   "identitySource": "https://docs.robinhood.com/chain/contracts/"
 }

@@ -747,6 +747,10 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapRouteDisclosure,
 .swapPairLine { display: block; color: var(--text-muted); margin: 10px 0 0; font-size: 10px; line-height: 1.45; }
 .swapPairLine { color: var(--text-faint); }
+.swapRouteRefunds { border-top: 1px solid var(--border); margin: 11px 0 0; padding-top: 10px; }
+.swapRouteRefunds > strong { font-size: 10px; }
+.swapRouteRefunds ul { display: grid; gap: 3px; color: var(--text-muted); list-style: none; margin: 5px 0 0; padding: 0; font-size: 9px; font-variant-numeric: tabular-nums; }
+.swapPreflight { border-radius: 10px; background: rgb(55 183 170 / 9%); color: var(--accent-text); margin: 10px 0 0; padding: 9px 10px; font-size: 10px; line-height: 1.5; }
 
 .swapDialogBackdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; background: rgb(4 7 11 / 70%); padding: 18px; }
 .swapTokenDialog { width: min(460px, 100%); max-height: min(610px, calc(100vh - 36px)); overflow-y: auto; border: 1px solid var(--border-strong); border-radius: 13px; background: #151b24; box-shadow: 0 24px 55px rgb(0 0 0 / 42%); padding: 15px; }
@@ -1313,7 +1317,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .walletVaultStat strong { overflow: hidden; margin-top: 4px; color: var(--text-soft); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 
 .fundDetailHero { overflow: hidden; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
-.fundDetailHeader { display: grid; grid-template-columns: minmax(280px, 0.9fr) 1px minmax(260px, 1.1fr) auto; align-items: center; gap: 18px; padding: 18px; }
+.fundDetailHeader { padding: 20px; }
 .fundDetailIdentity { display: flex; min-width: 0; align-items: center; gap: 13px; }
 .fundDetailTokenIcon { display: block; width: 48px; height: 48px; flex: 0 0 auto; }
 .fundDetailIdentity > div { min-width: 0; }
@@ -1324,11 +1328,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMeta > a { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); font-size: 0.66rem; text-decoration: none; }
 .fundDetailMeta > a:hover { color: var(--utility-action-hover); }
 .fundDetailMeta code { font: inherit; }
-.fundDetailSeparator { width: 1px; height: 40px; background: var(--border); }
-.fundThesis { min-width: 0; }
-.fundThesis h2 { margin: 0; font-size: 0.68rem; font-weight: 650; }
-.fundThesis p { max-width: 68ch; margin: 6px 0 0; color: var(--text-muted); font-size: 0.65rem; line-height: 1.5; }
-.fundDetailHeader > .methodologyBadge { align-self: start; justify-self: end; }
+.fundThesis { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 12px; border-top: 1px solid var(--border); background: var(--surface); padding: 16px 20px 18px; }
+.fundThesisMark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); color: var(--text-soft); }
+.fundThesis h2 { margin: 1px 0 0; font-size: 0.72rem; font-weight: 650; }
+.fundThesis p { max-width: 74ch; margin: 6px 0 0; color: var(--text-soft); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; text-wrap: pretty; }
 .fundDetailMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--border); }
 .fundDetailMetrics > div { min-width: 0; border-left: 1px solid var(--border); padding: 12px 16px; }
 .fundDetailMetrics > div:first-child { border-left: 0; }
@@ -1338,18 +1341,29 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMetrics strong { overflow: hidden; margin-top: 5px; color: var(--text); font-size: 0.75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .fundDetailPrimaryGrid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.72fr); align-items: start; gap: 14px; }
 .valuationPanel { min-width: 0; overflow: hidden; }
-.valuationToolbar { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--border); padding: 10px 14px; }
+.valuationHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.valuationHeader h2 { margin: 0; font-size: 0.79rem; font-weight: 650; }
+.valuationHeader p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.62rem; line-height: 1.45; }
+.valuationMetricControl { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.valuationMetricControl > span { color: var(--text-muted); font-size: 0.6rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
 .valuationModeToggle { display: inline-flex; flex: 0 0 auto; gap: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--background); padding: 2px; }
 .valuationModeToggle button { min-width: 45px; height: 27px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 0 8px; font-size: 0.61rem; font-weight: 700; }
 .valuationModeToggle button:hover { color: var(--text); }
 .valuationModeToggle button.active { background: var(--surface); color: var(--accent-text); }
 .valuationModeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .valuationState { display: flex; min-height: 268px; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); padding: 24px; font-size: 0.68rem; text-align: center; }
-.valuationSummary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 5px 14px; padding: 15px 16px 0; }
-.valuationSummary span { color: var(--text-muted); font-size: 0.61rem; font-weight: 600; text-transform: uppercase; }
-.valuationSummary strong { color: var(--text); font-size: 1.05rem; font-weight: 650; text-align: right; }
-.valuationSummary small { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.61rem; }
-.valuationChartWrap { min-height: 218px; padding: 10px 12px 6px; }
+.valuationSummary { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 16px 0; }
+.valuationSummary > div:first-child span,
+.valuationSummary > div:first-child strong { display: block; }
+.valuationSummary > div:first-child span { color: var(--text-muted); font-size: 0.61rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.valuationSummary > div:first-child strong { margin-top: 4px; color: var(--text); font-size: 1.35rem; font-variant-numeric: tabular-nums; font-weight: 650; }
+.valuationRangeToggle { display: inline-flex; flex: 0 0 auto; gap: 2px; }
+.valuationRangeToggle button { min-width: 38px; height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 0 7px; font-size: 0.6rem; font-weight: 700; }
+.valuationRangeToggle button:hover { background: var(--background); color: var(--text); }
+.valuationRangeToggle button.active { background: rgb(var(--accent-rgb) / 12%); color: var(--accent-text); }
+.valuationRangeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.valuationContext { margin: 9px 16px 0; color: var(--text-muted); font-size: 0.61rem; line-height: 1.45; }
+.valuationChartWrap { min-height: 218px; padding: 6px 12px 10px; }
 .valuationChart { display: block; width: 100%; height: 218px; overflow: visible; }
 .valuationChartGrid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .valuationChartLabel { fill: var(--text-muted); font-size: 9px; }
@@ -1357,6 +1371,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationChartLine { fill: none; stroke: var(--teal); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .valuationChartPoint { fill: var(--card); stroke: var(--teal); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .valuationDates { display: flex; justify-content: space-between; color: var(--text-muted); margin: -8px 2px 0 43px; font-size: 0.57rem; }
+.valuationAllocation { border-top: 1px solid var(--border); }
+.allocationPanelHeading { padding-top: 13px; padding-bottom: 13px; }
+.allocationHeadingMeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
 .fundTradePanel { min-width: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
 .fundTradeHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
 .fundTradeHeading > div { display: flex; min-width: 0; align-items: center; gap: 9px; }
@@ -1475,6 +1492,14 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .constituentsActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .weightingModeButton[aria-pressed="true"] { border-color: rgb(var(--accent-rgb) / 42%); background: rgb(var(--accent-rgb) / 12%); color: var(--accent-text); }
 .constituentWeightRow { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(130px, 0.48fr) minmax(220px, 0.9fr) 32px; align-items: start; gap: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); padding: 14px; }
+.allocationComposer .constituentWeightRow { grid-template-columns: minmax(0, 1fr) minmax(122px, 0.42fr) 32px; gap: 10px 12px; }
+.allocationComposer .constituentWeightRow > .assetSelectField { grid-column: 1; }
+.allocationComposer .constituentWeightRow > .constituentWeightField { grid-column: 2; }
+.allocationComposer .constituentWeightRow > .constituentAssetFacts { grid-column: 1 / 3; grid-row: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; padding-top: 2px; }
+.allocationComposer .constituentWeightRow > .constituentAssetFacts span { display: grid; gap: 3px; justify-content: start; }
+.allocationComposer .constituentWeightRow > .removeCreateAsset { display: grid; width: 32px; height: 36px; grid-column: 3; grid-row: 1; margin-top: 18px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); }
+.allocationComposer .constituentWeightRow > .removeCreateAsset:hover { background: rgb(235 101 112 / 9%); color: var(--danger); }
+.allocationComposer .constituentWeightRow > .removeCreateAsset:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .constituentWeightRow > .removeCreateAsset { margin-top: 18px; }
 .constituentWeightRow > .basketAssetError { grid-column: 1 / -1; }
 .constituentAssetFacts { display: grid; min-width: 0; gap: 5px; padding-top: 19px; }
@@ -1482,10 +1507,13 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .constituentAssetFacts strong { overflow: hidden; color: var(--text-soft); font-variant-numeric: tabular-nums; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .constituentsSnapshot { color: var(--text-muted); font-size: 0.63rem; line-height: 1.5; }
 .weightsLayout { display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 16px; }
+.allocationComposer { display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 14px; }
 .allocationChartPanel { display: grid; justify-items: center; gap: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); padding: 18px 14px; }
 .combinedAllocationOverview { grid-template-columns: 168px minmax(0, 1fr); align-items: center; justify-items: stretch; }
+.allocationComposer .combinedAllocationOverview { grid-template-columns: 1fr; align-content: start; justify-items: center; }
 .combinedAllocationOverview .allocationPie { justify-self: center; }
 .combinedAllocationOverview .allocationLegend { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); column-gap: 16px; }
+.allocationComposer .combinedAllocationOverview .allocationLegend { grid-template-columns: 1fr; }
 .allocationPie { position: relative; display: grid; width: 168px; height: 168px; place-items: center; border-radius: 50%; }
 .allocationPie::after { position: absolute; width: 96px; height: 96px; border: 1px solid var(--border); border-radius: 50%; background: var(--background); content: ""; }
 .allocationPie > span { position: relative; z-index: 1; color: var(--text); font-size: 0.78rem; font-variant-numeric: tabular-nums; font-weight: 650; }
@@ -2099,12 +2127,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .topNavInner { grid-template-columns: minmax(0, 1fr) auto; }
   .logoGroup { display: none; }
   .navTabs { justify-self: start; }
-  .fundDetailHeader { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-  .fundDetailIdentity { grid-column: 1; }
-  .fundDetailSeparator { display: none; }
-  .fundThesis { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
-  .fundDetailHeader > .methodologyBadge { grid-column: 2; grid-row: 1; }
   .fundDetailPrimaryGrid { grid-template-columns: 1fr; }
+  .allocationComposer { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -2145,6 +2169,15 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .constituentsActions { justify-content: flex-start; }
   .weightsLayout { grid-template-columns: 1fr; }
   .allocationChartPanel { grid-template-columns: 168px minmax(0, 1fr); align-items: center; justify-items: stretch; }
+  .allocationComposer .allocationChartPanel { grid-template-columns: 1fr; justify-items: center; }
+  .allocationComposer .combinedAllocationOverview .allocationLegend { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+  .allocationComposer .constituentWeightRow { grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; }
+  .allocationComposer .constituentWeightRow > .assetSelectField,
+  .allocationComposer .constituentWeightRow > .constituentWeightField,
+  .allocationComposer .constituentWeightRow > .constituentAssetFacts { grid-column: 1; }
+  .allocationComposer .constituentWeightRow > .constituentWeightField { grid-row: 2; }
+  .allocationComposer .constituentWeightRow > .constituentAssetFacts { grid-row: 3; grid-template-columns: 1fr; }
+  .allocationComposer .constituentWeightRow > .removeCreateAsset { width: 44px; height: 44px; grid-column: 2; grid-row: 1; margin-top: 18px; }
   .weightAllocationRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .weightAssetIdentity,
   .weightAllocationRow .constituentAssetFacts { grid-column: 1 / -1; }
@@ -2229,17 +2262,21 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .walletMetrics { grid-template-columns: 1fr; }
   .directoryFundCard dl { grid-template-columns: 1fr; }
   .directoryPanelHeading { align-items: flex-start; flex-direction: column; }
-  .fundDetailHeader { grid-template-columns: 1fr; padding: 15px; }
-  .fundDetailIdentity { grid-column: 1; grid-row: 1; align-items: flex-start; }
-  .fundThesis { grid-column: 1; grid-row: 3; }
-  .fundDetailHeader > .methodologyBadge { grid-column: 1; grid-row: 2; justify-self: end; }
+  .fundDetailHeader { padding: 15px; }
+  .fundDetailIdentity { align-items: flex-start; }
+  .fundThesis { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; padding: 14px 15px 16px; }
+  .fundThesisMark { width: 30px; height: 30px; border-radius: 7px; }
+  .fundThesis p { margin-top: 5px; font-size: 0.74rem; line-height: 1.6; }
   .fundDetailTitleLine { align-items: flex-start; flex-direction: column; gap: 6px; }
   .fundDetailTitleLine h1 { max-width: 100%; white-space: normal; }
   .fundDetailMetrics { grid-template-columns: 1fr; }
   .fundDetailMetrics > div { border-top: 1px solid var(--border); border-left: 0; }
   .fundDetailMetrics > div:first-child { border-top: 0; }
-  .valuationSummary { grid-template-columns: 1fr; }
-  .valuationSummary strong { text-align: left; }
+  .valuationHeader { align-items: stretch; flex-direction: column; }
+  .valuationMetricControl { justify-content: space-between; }
+  .valuationSummary { align-items: flex-start; flex-direction: column; }
+  .valuationRangeToggle { width: 100%; justify-content: space-between; }
+  .valuationRangeToggle button { min-width: 0; flex: 1; min-height: 36px; }
   .valuationChart { height: 190px; }
   .walletVaultRow { grid-template-columns: minmax(0, 1fr) auto; }
   .walletVaultStat { grid-column: 1; }

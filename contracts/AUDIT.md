@@ -6,6 +6,13 @@
 **Compiler target:** Solidity 0.8.36, Shanghai EVM, optimizer enabled, `viaIR`  
 **Assessment type:** Manual adversarial review, automated checks, unit/fuzz/invariant testing
 
+> **Superseded routing snapshot — 1 September 2026:** The router and Uniswap boundary reviewed
+> below were replaced by a generic `SwapLeg[]` router, an owner-managed approved-adapter registry,
+> and a new router-bound `UniswapV3Adapter`. None of that architecture is covered by this audit
+> snapshot. The historical findings remain unchanged; a fresh independent review of the new
+> contracts, adapter-manager trust boundary, quote API, and exact deployment configuration is
+> required before deployment.
+
 ## Post-review remediation note — 31 August 2026
 
 The findings and verification figures below are the historical review record for the source

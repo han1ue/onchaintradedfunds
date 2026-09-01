@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ArrowUpRight,
   ArrowRight,
+  BookOpenText,
   Check,
   CheckCircle,
   ChevronDown,
@@ -33,12 +34,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
+  robinhoodMainnetUniswap,
   robinhoodTestnetAddresses,
   robinhoodTestnetCreationReady,
   robinhoodTestnetDeploymentReady,
@@ -46,6 +48,7 @@ import {
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
+  classifySwapDirection,
   decimalInputValue,
   ERC20_APPROVE_ABI,
   enforceFirstPurchaseMinimum,
@@ -122,9 +125,9 @@ function configuredAssetsFor(chainId: number): SwapAsset[] {
       verified: true,
     });
   }
-  if (chainId === robinhoodChainTestnet.id && robinhoodTestnetAddresses.weth) {
+  if (addresses.weth) {
     assets.push({
-      address: robinhoodTestnetAddresses.weth,
+      address: addresses.weth,
       symbol: "WETH",
       name: "Wrapped Ether",
       kind: "erc20",
@@ -356,6 +359,9 @@ function QuoteReview({
   executionConfigured: boolean;
 }) {
   const selectedValid = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
+  const executionTarget = activeQuote?.execution?.kind === "direct-api"
+    ? activeQuote.execution.universalRouter
+    : activeQuote?.execution?.router;
   return (
     <details className="swapReview">
       <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : "No executable quote"}</small><ChevronDown size={15} /></summary>
@@ -379,6 +385,7 @@ function QuoteReview({
           <div><dt>Price impact</dt><dd>{selectedValid && activeQuote?.priceImpactBps !== undefined ? `${activeQuote.priceImpactBps / 100}%` : "—"}</dd></div>
           <div><dt>Route</dt><dd>{selectedValid ? activeQuote?.routeLabel : "No valid route selected"}</dd></div>
           <div><dt>Network gas</dt><dd>{selectedValid ? activeQuote?.gasEstimate ?? "Unavailable" : "—"}</dd></div>
+          <div><dt>Execution target</dt><dd>{selectedValid && executionTarget ? shortAddress(executionTarget) : "—"}</dd></div>
         </dl>
         <div className="swapRouteInspection">
           <strong>Route inspection</strong>
@@ -390,17 +397,25 @@ function QuoteReview({
                   <div>
                     <strong>{hop.venue}</strong>
                     <small>{shortAddress(hop.tokenIn)} → {shortAddress(hop.tokenOut)}</small>
-                    <small>V3 fee tier {hop.feeTier / 10_000}% · pool address is authenticated by the onchain V3 factory during execution</small>
+                    <small>{hop.venue === "Uniswap V3" && hop.feeTier !== undefined
+                      ? `V3 fee tier ${hop.feeTier / 10_000}% · pool authenticated by the adapter during execution`
+                      : "Uniswap Classic single-chain route"}</small>
                   </div>
                 </li>
               ))}
             </ol>
           ) : <p>No executable hop details are available for inspection.</p>}
         </div>
-        <p className="swapRouteDisclosure">Only the direct-liquidity and basket-settlement routes queried here are compared. Selection is not a claim of best price across all venues.</p>
+        {selectedValid && activeQuote?.residualRefunds?.length ? (
+          <div className="swapRouteRefunds">
+            <strong>Expected residual refunds</strong>
+            <ul>{activeQuote.residualRefunds.map((refund) => <li key={refund.token}>{refund.displayAmount ?? refund.amount.toString()} · {shortAddress(refund.token)}</li>)}</ul>
+          </div>
+        ) : null}
+        <p className="swapRouteDisclosure">The selected result is the best queried route by integer expected output. It is not a claim of best price across all venues.</p>
         <p className="swapRouteDisclosure">{executionConfigured
-          ? "This response was parsed into a bounded entry-router method. A stale quote is never actionable."
-          : "Typed quote and deployment configuration are incomplete. A stale quote is never actionable, and no approval, simulation, or transaction can start."}</p>
+          ? "The selected typed plan is bound to this wallet, chain, amount, expiry, and configured target. A stale quote is never actionable."
+          : "This route has no compatible execution target. No approval, simulation, or transaction can start."}</p>
         <span className="swapPairLine">Input: {inputSymbol} · Output: {outputSymbol}</span>
       </div>
     </details>
@@ -439,6 +454,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const [now, setNow] = useState(Date.now());
   const [execution, setExecution] = useState<"idle" | "approval" | "simulation" | "submission" | "success" | "failure">("idle");
   const [executionMessage, setExecutionMessage] = useState<string>();
+  const [preflightMessage, setPreflightMessage] = useState<string>();
   const swapSettingsRef = useRef<HTMLDivElement>(null);
   const pairValid = validSwapPair(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
@@ -446,9 +462,12 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const amountValid = isPositiveDecimalAmount(amount, input.decimals);
   const supportedNetwork = chainId === robinhoodChainTestnet.id || chainId === robinhoodChain.id;
   const usableQuote = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
-  const deploymentReady = chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady;
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
+  const executionConfigured = executionPlan?.kind === "direct-api"
+    ? chainId === robinhoodChain.id && robinhoodMainnetUniswap.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase()
+    : executionPlan?.kind === "basket-router" && robinhoodTestnetDeploymentReady;
+  const quoteNetworkConfigured = chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
   const inputBalanceEnabled = Boolean(address && inputSelected && assetHasExecutableMetadata(input));
@@ -512,25 +531,31 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
     if (!pairValid || !pairExecutable || !directionSupported || !amountValid || !supportedNetwork) {
       setQuotes([]);
       setActiveQuote(undefined);
+      setPreflightMessage(undefined);
       return;
     }
     const requestedAt = Date.now();
     const request = { chainId, input, output, inputAmount: amount, slippageBps, requestedAt, caller: address };
-    setQuotes([
-      { id: `direct-loading-${requestedAt}`, route: "direct", state: "loading", queriedAt: requestedAt, inputAmount: amount, routeLabel: "Direct liquidity" },
-      { id: `basket-loading-${requestedAt}`, route: "basket", state: "loading", queriedAt: requestedAt, inputAmount: amount, routeLabel: "Basket settlement" },
-    ]);
+    const direction = classifySwapDirection(input, output);
+    const loadingQuotes: SwapQuote[] = [
+      { id: `direct-loading-${requestedAt}`, route: "direct", state: "loading", queriedAt: requestedAt, inputAmount: amount, routeLabel: "Direct pool" },
+    ];
+    if (direction !== "erc20-to-erc20") {
+      const basketLabel = direction === "erc20-to-otf" ? "Mint basket" : direction === "otf-to-erc20" ? "Burn basket" : "Burn + mint";
+      loadingQuotes.push({ id: `basket-loading-${requestedAt}`, route: "basket", state: "loading", queriedAt: requestedAt, inputAmount: amount, routeLabel: basketLabel });
+    }
+    setQuotes(loadingQuotes);
     setActiveQuote(undefined);
+    setPreflightMessage(undefined);
     let cancelled = false;
     void (async () => {
       let outputTotalSupply: bigint | undefined;
       if (output.kind === "otf") {
         const rejectUnconfirmedSupply = () => {
           const reason = "The output OTF supply could not be confirmed, so this quote cannot be used safely.";
-          setQuotes([
-            unavailableQuote("direct", request, reason),
-            unavailableQuote("basket", request, reason),
-          ]);
+          setQuotes(direction === "erc20-to-erc20"
+            ? [unavailableQuote("direct", request, reason)]
+            : [unavailableQuote("direct", request, reason), unavailableQuote("basket", request, reason)]);
         };
         if (!publicClient) {
           rejectUnconfirmedSupply();
@@ -575,52 +600,94 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
     setActiveQuote(undefined);
     setExecution("idle");
     setExecutionMessage(undefined);
+    setPreflightMessage(undefined);
   }
 
   async function executeSwap() {
-    if (!address || !publicClient || !walletClient || !executionPlan || !deploymentReady) return;
+    if (!address || !publicClient || !walletClient || !executionPlan || !executionConfigured) return;
     if (activeQuote?.caller?.toLowerCase() !== address.toLowerCase()) {
       setExecution("failure");
       setExecutionMessage("Refresh the quote after changing the connected wallet.");
       return;
     }
-    if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) {
-      setExecution("failure");
-      setExecutionMessage("The quote does not target the configured immutable entry router.");
-      return;
-    }
     try {
       setExecutionMessage(undefined);
+      setPreflightMessage(undefined);
       setExecution("approval");
-      const allowance = await publicClient.readContract({
-        address: executionPlan.approval.token,
-        abi: ERC20_APPROVE_ABI,
-        functionName: "allowance",
-        args: [address, executionPlan.approval.spender],
-      });
-      await ensureExactErc20Approval(allowance, executionPlan.approval.amount, async (approvalAmount) => {
-        const approvalHash = await walletClient.writeContract({
-          account: address,
+      let target: Address;
+      let data: Hex;
+      let value = 0n;
+      let preflight: string;
+      if (executionPlan.kind === "direct-api") {
+        if (robinhoodMainnetUniswap.universalRouter?.toLowerCase() !== executionPlan.universalRouter.toLowerCase()) throw new Error("The direct plan has an unsupported Universal Router target.");
+        for (const authorization of [executionPlan.cancel, executionPlan.approval]) {
+          if (!authorization) continue;
+          const authorizationHash = await walletClient.sendTransaction({ account: address, to: authorization.to, data: authorization.data, value: authorization.value });
+          const authorizationReceipt = await publicClient.waitForTransactionReceipt({ hash: authorizationHash });
+          if (authorizationReceipt.status !== "success") throw new Error("The required Permit2 token authorization reverted.");
+        }
+        const signature = executionPlan.permitData
+          ? await walletClient.signTypedData({
+            account: address,
+            domain: executionPlan.permitData.domain,
+            types: executionPlan.permitData.types,
+            primaryType: executionPlan.permitData.primaryType,
+            message: executionPlan.permitData.message,
+          } as never)
+          : undefined;
+        const finalized = await quoteService.finalizeDirect(executionPlan, signature);
+        if (!finalized.transaction) throw new Error("Uniswap did not return a final transaction.");
+        target = finalized.transaction.to;
+        data = finalized.transaction.data;
+        value = finalized.transaction.value;
+        setExecution("simulation");
+        await publicClient.call({ account: address, to: target, data, value });
+        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
+        preflight = `Exact direct-swap preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
+      } else {
+        if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) throw new Error("The basket plan has an unsupported entry-router target.");
+        const allowance = await publicClient.readContract({
           address: executionPlan.approval.token,
           abi: ERC20_APPROVE_ABI,
-          functionName: "approve",
-          args: [executionPlan.approval.spender, approvalAmount],
+          functionName: "allowance",
+          args: [address, executionPlan.approval.spender],
         });
-        const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-        if (approvalReceipt.status !== "success") {
-          throw new Error(approvalAmount === 0n ? "The token approval reset reverted." : "The exact token approval reverted.");
-        }
-      });
-      setExecution("simulation");
-      const data = encodeFunctionData({
-        abi: otfEntryExitRouterAbi,
-        functionName: executionPlan.call.method,
-        args: routerArgsForExecution(executionPlan.call) as never,
-      });
-      await publicClient.call({ account: address, to: executionPlan.router, data: data as Hex });
+        await ensureExactErc20Approval(allowance, executionPlan.approval.amount, async (approvalAmount) => {
+          const approvalHash = await walletClient.writeContract({
+            account: address,
+            address: executionPlan.approval.token,
+            abi: ERC20_APPROVE_ABI,
+            functionName: "approve",
+            args: [executionPlan.approval.spender, approvalAmount],
+          });
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+          if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The token approval reset reverted." : "The exact token approval reverted.");
+        });
+        target = executionPlan.router;
+        data = encodeFunctionData({
+          abi: otfEntryExitRouterAbi,
+          functionName: executionPlan.call.method,
+          args: routerArgsForExecution(executionPlan.call) as never,
+        });
+        setExecution("simulation");
+        const result = await publicClient.call({ account: address, to: target, data });
+        const gas = await publicClient.estimateGas({ account: address, to: target, data });
+        if (!result.data) throw new Error("The basket preflight returned no result data.");
+        const decoded = decodeFunctionResult({
+          abi: otfEntryExitRouterAbi,
+          functionName: executionPlan.call.method,
+          data: result.data,
+        } as never) as unknown as readonly [bigint, readonly Address[], readonly bigint[]];
+        const refundSummary = decoded[1].length
+          ? decoded[1].map((token, index) => `${decoded[2][index]?.toString() ?? "0"} ${shortAddress(token)}`).join(", ")
+          : "none";
+        preflight = `Exact basket preflight passed · output ${formatUnits(decoded[0], output.decimals)} ${output.symbol} · refunds ${refundSummary} · gas estimate ${gas.toLocaleString()}.`;
+      }
+      setPreflightMessage(preflight);
       setExecution("submission");
-      const hash = await walletClient.sendTransaction({ account: address, to: executionPlan.router, data: data as Hex });
-      await publicClient.waitForTransactionReceipt({ hash });
+      const hash = await walletClient.sendTransaction({ account: address, to: target, data, value });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The swap transaction reverted.");
       setExecution("success");
       setExecutionMessage(`Swap submitted and confirmed: ${shortAddress(hash)}.`);
     } catch (error) {
@@ -630,7 +697,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   }
 
   const executionBusy = execution === "approval" || execution === "simulation" || execution === "submission";
-  const canExecute = Boolean(address && publicClient && walletClient && pairExecutable && executionPlan && deploymentReady && !executionBusy);
+  const canExecute = Boolean(address && publicClient && walletClient && pairExecutable && executionPlan && executionConfigured && !executionBusy);
   const primaryLabel = !address
     ? "Connect wallet"
     : !supportedNetwork
@@ -642,9 +709,9 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           : !pairExecutable
             ? "Resolve token metadata"
           : !directionSupported
-            ? "Choose an OTF share"
-            : !deploymentReady
-              ? "Deployment configuration required"
+            ? "Unsupported direction"
+            : !quoteNetworkConfigured
+              ? "Fresh deployment required"
           : !usableQuote
             ? "Quotes unavailable"
             : execution === "approval"
@@ -657,8 +724,8 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const statusMessage = executionMessage
     ?? (!supportedNetwork
       ? "Switch to Robinhood Chain to continue."
-      : !deploymentReady
-        ? "Swaps are unavailable until the entry router and typed quote endpoint are configured."
+      : !quoteNetworkConfigured
+        ? "Basket writes are unavailable until the generic entry router and approved adapter are freshly deployed."
         : amount && !amountValid
           ? "Enter a positive amount within the selected token's decimal precision."
           : !pairValid
@@ -666,7 +733,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
             : !pairExecutable
               ? "Resolve token decimals and OTF factory identity to request a quote."
               : !directionSupported
-                ? "Choose an OTF share for one side of the swap."
+              ? "This swap direction is unsupported."
                 : quotes.some((quote) => quote.state === "loading")
                   ? "Finding the best available queried route…"
                   : quotes.length && !usableQuote
@@ -720,7 +787,8 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           </div>
           <button type="button" className="swapPrimary" disabled={address && supportedNetwork ? !canExecute : false} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
           {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
-          {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={deploymentReady} /> : null}
+          {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
+          {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
         </section>
   );
   const pickerAsset = picker === "input" ? input : output;
@@ -997,9 +1065,25 @@ function formatUsd(value: number | undefined, maximumFractionDigits = 2): string
   return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits });
 }
 
-function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: FundValuation }) {
+type ValuationRange = "24h" | "7d" | "30d" | "all";
+
+const VALUATION_RANGES: { label: string; value: ValuationRange; duration?: number }[] = [
+  { label: "24H", value: "24h", duration: 24 * 60 * 60_000 },
+  { label: "7D", value: "7d", duration: 7 * 24 * 60 * 60_000 },
+  { label: "30D", value: "30d", duration: 30 * 24 * 60 * 60_000 },
+  { label: "ALL", value: "all" },
+];
+
+function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: string; valuation: FundValuation; creationMetadata: OtfCreationMetadata | null }) {
   const [mode, setMode] = useState<"share" | "nav">("share");
-  const points = valuation.history;
+  const [range, setRange] = useState<ValuationRange>("30d");
+  const allPoints = valuation.history;
+  const latestTimestamp = allPoints.at(-1)?.at ?? Date.now();
+  const selectedRange = VALUATION_RANGES.find((option) => option.value === range);
+  const rangeDuration = selectedRange?.duration;
+  const points = rangeDuration
+    ? allPoints.filter((point) => point.at >= latestTimestamp - rangeDuration)
+    : allPoints;
   const values = points.map((point) => mode === "share" ? point.navUsd : point.aumUsd);
 
   const width = 720;
@@ -1026,15 +1110,28 @@ function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: 
   const areaPath = chartPoints.length > 1 ? `${linePath} L ${chartPoints.at(-1)!.x} ${baseline} L ${chartPoints[0].x} ${baseline} Z` : "";
   const ticks = Array.from({ length: 4 }, (_, index) => maximum - ((maximum - minimum) * index) / 3);
   const selectedValue = valuation.current ? mode === "share" ? valuation.current.navUsd : valuation.current.aumUsd : undefined;
-  const firstDate = points.length ? new Date(firstTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  const lastDate = points.length ? new Date(lastTimestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const dateOptions: Intl.DateTimeFormatOptions = range === "24h"
+    ? { hour: "numeric", minute: "2-digit" }
+    : { month: "short", day: "numeric" };
+  const firstDate = points.length ? new Date(firstTimestamp).toLocaleString(undefined, dateOptions) : "";
+  const lastDate = points.length ? new Date(lastTimestamp).toLocaleString(undefined, dateOptions) : "";
+  const methodologyLabel = creationMetadata
+    ? weightingMethodLabel(creationMetadata.weightingMethod)
+    : "Weighting method unavailable";
 
   return (
     <section className="sectionCard valuationPanel">
-      <div className="valuationToolbar"><div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div></div>
+      <div className="valuationHeader">
+        <div><h2>Fund valuation</h2><p>Informational offchain valuation from current prices and onchain balances.</p></div>
+        <div className="valuationMetricControl"><span>{mode === "share" ? "NAV/share" : "NAV"}</span><div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div></div>
+      </div>
       {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
         <>
-          <div className="valuationSummary"><span>{mode === "share" ? "NAV/share" : "NAV"}</span><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong><small>{valuation.usesBootstrapNav && mode === "share" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"}.`}</small></div>
+          <div className="valuationSummary">
+            <div><span>{mode === "share" ? "NAV/share" : "NAV"}</span><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong></div>
+            <div className="valuationRangeToggle" role="group" aria-label="Chart time range">{VALUATION_RANGES.map((option) => <button className={range === option.value ? "active" : ""} key={option.value} type="button" aria-pressed={range === option.value} onClick={() => setRange(option.value)}>{option.label}</button>)}</div>
+          </div>
+          <p className="valuationContext">{valuation.usesBootstrapNav && mode === "share" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"} in this range.`}</p>
           <div className="valuationChartWrap">
             <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "share" ? "NAV per share" : "total NAV"} chart ending at ${formatUsd(selectedValue)}`}>
               {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
@@ -1046,6 +1143,22 @@ function FundValuationChart({ symbol, valuation }: { symbol: string; valuation: 
           </div>
         </>
       )}
+      <div className="valuationAllocation">
+        <div className="directoryPanelHeading allocationPanelHeading">
+          <div><h2>Allocation at creation</h2><p>{creationMetadata ? "Precise creator-selected weights recorded at creation." : "No application creation metadata is stored for this vault."}</p></div>
+          <div className="allocationHeadingMeta"><span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>{creationMetadata ? <span className="stateBadge muted">{formatMarketCapSnapshotTimestamp(creationMetadata.marketCapSnapshotAt)}</span> : null}</div>
+        </div>
+        {creationMetadata ? (
+          <div className="creationAllocationTableWrap">
+            <table className="creationAllocationTable">
+              <thead><tr><th>Constituent</th><th>Market-cap weight</th><th>Creator-selected weight</th><th>Multiplier</th></tr></thead>
+              <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong>{position === "unchanged" ? null : <small>{position[0].toUpperCase()}{position.slice(1)}</small>}</td></tr>; })}</tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
+        )}
+      </div>
     </section>
   );
 }
@@ -1104,9 +1217,6 @@ function FundsSurface({ detail }: { detail: boolean }) {
     ? vaults.filter((vault) => `${vault.name} ${vault.symbol} ${vault.address}`.toLowerCase().includes(normalizedSearch))
     : vaults;
   if (detail) {
-    const methodologyLabel = creationMetadata
-      ? weightingMethodLabel(creationMetadata.weightingMethod)
-      : "Weighting method unavailable";
     const embeddedFund: SwapAsset | undefined = vaultDetails ? {
       address: vaultDetails.address,
       symbol: vaultDetails.symbol,
@@ -1130,10 +1240,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   </div>
                 </div>
               </div>
-              <span className="fundDetailSeparator" aria-hidden="true" />
-              <div className="fundThesis"><h2>Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div>
-              <span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>
             </div>
+            <div className="fundThesis"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2>Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></div>
             <div className="fundDetailMetrics" aria-label="Fund metrics">
               <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
               <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
@@ -1142,30 +1250,12 @@ function FundsSurface({ detail }: { detail: boolean }) {
             </div>
           </section>
           <div className="fundDetailPrimaryGrid">
-            <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} />
+            <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} creationMetadata={creationMetadata} />
             <section className="fundTradePanel" aria-labelledby="fund-trade-title">
               <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Buy or sell shares in the fund</p></div></div></div>
               {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><ActivitySpinner size={17} /></div>}
             </section>
           </div>
-          <section className="sectionCard creationAllocationPanel">
-            <div className="directoryPanelHeading">
-              <div><h2>Allocation at creation</h2><p>{creationMetadata ? "Precise creator-selected weights recorded at creation." : "No application creation metadata is stored for this vault."}</p></div>
-              {creationMetadata ? <span className="stateBadge muted">{formatMarketCapSnapshotTimestamp(creationMetadata.marketCapSnapshotAt)}</span> : null}
-            </div>
-            {creationMetadata ? (
-              <>
-                <div className="creationAllocationTableWrap">
-                  <table className="creationAllocationTable">
-                    <thead><tr><th>Constituent</th><th>Market-cap weight</th><th>Creator-selected weight</th><th>Multiplier</th></tr></thead>
-                    <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong>{position === "unchanged" ? null : <small>{position[0].toUpperCase()}{position.slice(1)}</small>}</td></tr>; })}</tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
-            )}
-          </section>
         </div>
       </DashboardPage>
     );

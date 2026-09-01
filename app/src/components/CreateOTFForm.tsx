@@ -505,17 +505,18 @@ export function CreateOTFForm() {
                 </div>
               </div>
 
-              <div className="allocationChartPanel combinedAllocationOverview">
-                <div className="allocationPie" style={{ background: allocationPieBackground }} role="img" aria-label={`Portfolio allocation chart. ${selectedAssets.map((asset) => `${asset.symbol} ${formatPercentageDisplay(asset.percentageUnits)}`).join(", ")}`}>
-                  <span>{percentagesValid ? "100%" : formatPercentageDisplay(totalPercentage)}</span>
+              <div className="allocationComposer">
+                <div className="allocationChartPanel combinedAllocationOverview">
+                  <div className="allocationPie" style={{ background: allocationPieBackground }} role="img" aria-label={`Portfolio allocation chart. ${selectedAssets.map((asset) => `${asset.symbol} ${formatPercentageDisplay(asset.percentageUnits)}`).join(", ")}`}>
+                    <span>{percentagesValid ? "100%" : formatPercentageDisplay(totalPercentage)}</span>
+                  </div>
+                  <div className="allocationLegend">
+                    {selectedAssets.map((asset, index) => <div key={asset.address}><span style={{ background: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }} /><strong>{asset.symbol}</strong><small>{formatPercentageDisplay(asset.percentageUnits)}</small></div>)}
+                  </div>
                 </div>
-                <div className="allocationLegend">
-                  {selectedAssets.map((asset, index) => <div key={asset.address}><span style={{ background: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }} /><strong>{asset.symbol}</strong><small>{formatPercentageDisplay(asset.percentageUnits)}</small></div>)}
-                </div>
-              </div>
 
-              <div className="createAssetList combinedConstituentList">
-                {selectedAssets.map((asset, index) => {
+                <div className="createAssetList combinedConstituentList">
+                  {selectedAssets.map((asset, index) => {
                   const result = previewRows?.[index];
                   const assetError = assetErrors[index];
                   const percentageHelpId = `basket-percentage-help-${asset.address.slice(2)}`;
@@ -546,7 +547,8 @@ export function CreateOTFForm() {
                       {assetError ? <div className="basketAssetError" role="status" aria-live="polite"><CircleAlert size={14} /><span>{assetError}</span></div> : null}
                     </div>
                   );
-                })}
+                  })}
+                </div>
               </div>
               <button type="button" className="secondaryAction addCreateAsset" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onClick={() => remainingAssets[0] && addAsset(remainingAssets[0].address)}><Plus size={14} />Add constituent</button>
               {!selectedAssets.length ? <div className="inlineEmptyState">{assetLoadState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} aria-label="Please wait" /> : <Plus size={17} />}<div>{assetLoadState === "loading" ? null : <><strong>Select at least one priced asset</strong><span>The app needs current price, market cap and token decimals before it can calculate raw bootstrap units.</span></>}</div></div> : null}

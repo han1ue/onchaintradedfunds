@@ -33,8 +33,8 @@ const { createPublicClient, createWalletClient, getAddress, http, isAddress, non
 const { privateKeyToAccount } = accounts;
 
 const config = JSON.parse(readFileSync(deploymentPath, "utf8"));
-if (config.architecture !== "immutable-bootstrap-basket") {
-  throw new Error("Deployment config must use the immutable-bootstrap-basket architecture");
+if (!["superseded-v3-router", "generic-trade-adapter-v1"].includes(config.architecture)) {
+  throw new Error("Deployment config has an unsupported source architecture");
 }
 const appOwnedIntegrations = appOwnedIntegrationConfiguration(config);
 const env = (name) => {
@@ -107,6 +107,19 @@ async function configureRouter(factory, router) {
   if (receipt.status !== "success") throw new Error("configureEntryExitRouter reverted");
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
+async function approveAdapter(router, adapter) {
+  const hash = await wallet.writeContract({
+    address: router.address,
+    abi: artifact("OTFEntryExitRouter").abi,
+    functionName: "setAdapterApproved",
+    args: [adapter.address, true],
+    chain,
+    account,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("setAdapterApproved reverted");
+  return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
+}
 
 const vaultImplementation = await deploy("ManagedOTFVault");
 const feeCollector = await deploy("FeeCollector", [treasury]);
@@ -118,29 +131,43 @@ const factory = await deploy("OTFFactory", [
 ]);
 const entryRouter = await deploy("OTFEntryExitRouter", [
   factory.address,
+  account.address,
+]);
+const uniswapV3Adapter = await deploy("UniswapV3Adapter", [
+  entryRouter.address,
   uniswapV3Factory,
   uniswapV3SwapRouter02,
 ]);
+const adapterApproval = await approveAdapter(entryRouter, uniswapV3Adapter);
 const routerConfiguration = await configureRouter(factory, entryRouter);
 
 const deployment = {
-  architecture: "immutable-bootstrap-basket",
+  architecture: "generic-trade-adapter-v1",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
   status: "deployed",
   deployedAt: new Date().toISOString(),
   deployer: account.address,
-  contracts: { feeCollector, otfToken, vaultImplementation, factory, entryRouter },
+  contracts: {
+    feeCollector,
+    otfToken,
+    vaultImplementation,
+    factory,
+    entryRouter,
+    uniswapV3Adapter,
+  },
   externalContracts: { ...external, uniswapV3Factory, uniswapV3SwapRouter02 },
   policy: { protocolFeeShareBps },
   routing: {
-    integration: "uniswap-v3-swap-router-02",
+    integration: "approved-trade-adapters",
+    approvedAdapters: [uniswapV3Adapter.address],
+    uniswapV3Adapter: uniswapV3Adapter.address,
     exactInputTuple: "(bytes,address,uint256,uint256)",
     maxHopsPerLeg: 3,
     maxLegs: 40,
   },
-  setupTransactions: { routerConfiguration },
+  setupTransactions: { adapterApproval, routerConfiguration },
   ...appOwnedIntegrations,
   note: "Creation permanently commits the fund thesis, ordered constituents, and immutable raw bootstrap basket units. Valuation inputs remain application metadata.",
 };

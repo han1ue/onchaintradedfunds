@@ -143,22 +143,44 @@ treasury through the existing two-step treasury-control model. Treasury acceptan
 collector's reentrancy guard with token claims so callback execution cannot change the event
 recipient during a claim.
 
-## 7. Typed V3 router boundary
+## 7. Generic router and adapter boundary
 
-`OTFEntryExitRouter` MUST bind immutable addresses for the OTF factory, one authenticated Uniswap
-V3 factory, and its SwapRouter02. It MUST expose no arbitrary call or adapter path. Every packed
-path MUST be parsed and every pool authenticated by factory, sorted token pair, and fee.
+`OTFEntryExitRouter` MUST bind only the OTF factory and an initial adapter manager. The manager
+MUST act through `Ownable2Step` and MUST control only adapter authorization. Approval MUST require
+nonzero code and `ITradeAdapter(adapter).entryExitRouter() == address(router)`; revocation MUST
+take effect immediately. The manager and every approved adapter MUST be documented as trust
+boundaries.
 
-Requests MUST enforce the current 40-leg and 3-hop bounds, tracked-token limits, nonzero inputs,
-distinct endpoints, deadlines, per-leg and aggregate minimums, route balance, sender-only
-recipients/refunds, temporary approval cleanup, exact observed deltas, residual checks,
-reentrancy protection, and atomic rollback. Unsupported fee-on-transfer, rebasing, callback, or
-other non-exact tokens MUST fail at the exact-delta boundary.
+Every route leg MUST contain exactly `adapter`, `tokenIn`, `tokenOut`, `amountIn`,
+`minAmountOut`, and `data`. Ordered legs MAY split one token, use different adapters for the
+same pair, accumulate output, and consume earlier output. `type(uint256).max` MUST mean the
+complete current transient balance. No leg may spend pre-existing router dust. The router MUST
+validate all adapters before taking user funds, transfer exactly one leg input, verify its own
+input/output deltas and the adapter-reported output, enforce the 40-leg/tracked-token bounds,
+deadlines, aggregate minimums, complete liquidation, two-pass residual checks, caller-only
+refunds, reentrancy protection, and atomic rollback. Every harmless surplus MUST be refunded and
+reported by token. `mintFromToken` MUST reject another factory OTF, and the router MUST expose no
+direct pool-swap function.
 
-The production venue MUST implement SwapRouter02's four-field
-`exactInput((bytes,address,uint256,uint256))` shape and use a compatible V3 pool bytecode family.
-Exact configured addresses require funded direct-buy, direct-sell, and multihop fork tests.
-Offchain route comparison MUST describe only queried routes and MUST NOT claim global optimality.
+`UniswapV3Adapter` MUST bind immutable entry-router, factory, and SwapRouter02 addresses and
+verify the router's factory in its constructor and again during execution. Only the bound entry
+router may call it. Adapter data MUST be only a packed token/fee/token V3 path matching the leg
+endpoints with at most three hops. Zero fees, adjacent repeated tokens, malformed paths, and
+missing or forged pools MUST fail. Every pool MUST match the factory, sorted pair, and fee. The
+adapter MUST approve exactly the leg input, fix the four-field `exactInput` recipient to the entry
+router, clear approval, verify exact input consumption and reported/observed/minimum output, and
+preserve pre-existing donations. Arbitrary targets, recipients, commands, and delegatecall are
+forbidden.
+
+The same-origin quote API MUST keep `UNISWAP_API_KEY` server-only. Direct swaps MUST use
+exact-input BEST_PRICE V3/V4 CLASSIC single-chain ERC-20 routes and validate supported Permit2,
+approval, sender, recipient, token, amount, deadline, value, and Universal Router targets. Basket
+responses MUST be exact typed requests with ordered legs using only the configured
+`UniswapV3Adapter`. ERC-20-to-ERC-20 MUST request only direct; OTF directions MUST request direct
+and basket candidates independently. Selection MUST use integer expected output and be described
+as the best queried route. Before submission, the app MUST `eth_call` and `estimateGas` the
+exact final sender, target, value, and calldata; basket return output and refunds MUST be decoded
+and surfaced.
 
 ## 8. Application and liquidity disclosures
 

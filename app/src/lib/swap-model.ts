@@ -1,10 +1,18 @@
-import { getAddress, isAddress, maxUint256, zeroAddress, type Address, type Hex } from "viem";
+import {
+  decodeFunctionData,
+  getAddress,
+  isAddress,
+  maxUint256,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import {
   robinhoodMainnetAddresses,
   robinhoodMainnetLiquidity,
+  robinhoodMainnetUniswap,
   robinhoodTestnetAddresses,
   robinhoodTestnetLiquidity,
-  robinhoodTestnetQuote,
 } from "./deployment";
 
 export type SwapAssetKind = "erc20" | "otf";
@@ -15,11 +23,8 @@ export type SwapAsset = {
   name: string;
   kind: SwapAssetKind;
   decimals: number;
-  /** True only after token decimals and ordinary display metadata have been resolved. */
   metadataResolved?: boolean;
-  /** Informational identity metadata only. It never filters routes. */
   verified?: boolean;
-  /** True only when the configured factory directory identifies this address as an OTF vault. */
   isFactoryVault?: boolean;
 };
 
@@ -28,32 +33,27 @@ export type QuoteRoute = "direct" | "basket";
 export type QuoteState = "available" | "unavailable" | "loading" | "stale" | "failed";
 
 export type SwapRouteHop = {
-  venue: "Uniswap V3";
+  venue: "Uniswap V3" | "Uniswap V4";
   tokenIn: Address;
   tokenOut: Address;
-  feeTier: number;
+  feeTier?: number;
 };
 
-export type V3SwapLeg = {
+export type AdapterSwapLeg = {
+  adapter: Address;
+  tokenIn: Address;
+  tokenOut: Address;
   amountIn: bigint;
   minAmountOut: bigint;
-  path: Hex;
+  data: Hex;
   hops: readonly SwapRouteHop[];
-};
-
-export type DirectRouterCall = {
-  method: "swapDirect";
-  args: readonly [
-    { tokenIn: Address; tokenOut: Address; amountIn: bigint; minAmountOut: bigint; deadline: bigint },
-    readonly V3SwapLeg[],
-  ];
 };
 
 export type MintRouterCall = {
   method: "mintFromToken";
   args: readonly [
     { inputToken: Address; vault: Address; amountIn: bigint; minShares: bigint; deadline: bigint },
-    readonly V3SwapLeg[],
+    readonly AdapterSwapLeg[],
   ];
 };
 
@@ -62,7 +62,7 @@ export type RedeemRouterCall = {
   args: readonly [
     { vault: Address; outputToken: Address; shares: bigint; minAmountOut: bigint; deadline: bigint },
     readonly bigint[],
-    readonly V3SwapLeg[],
+    readonly AdapterSwapLeg[],
   ];
 };
 
@@ -71,35 +71,83 @@ export type BasketToBasketRouterCall = {
   args: readonly [
     { sourceVault: Address; targetVault: Address; sharesIn: bigint; minSharesOut: bigint; deadline: bigint },
     readonly bigint[],
-    readonly V3SwapLeg[],
+    readonly AdapterSwapLeg[],
   ];
 };
 
-/** The only contract calls a quote response can describe. It has no arbitrary target or calldata field. */
-export type TypedRouterCall = DirectRouterCall | MintRouterCall | RedeemRouterCall | BasketToBasketRouterCall;
+export type TypedRouterCall = MintRouterCall | RedeemRouterCall | BasketToBasketRouterCall;
+
+export type PlannedTransaction = {
+  chainId: number;
+  from: Address;
+  to: Address;
+  data: Hex;
+  value: bigint;
+};
+
+export type PermitData = {
+  domain: Record<string, unknown>;
+  types: Record<string, readonly { name: string; type: string }[]>;
+  primaryType: string;
+  message: Record<string, unknown>;
+};
+
+export type DirectApiExecution = {
+  kind: "direct-api";
+  chainId: number;
+  caller: Address;
+  inputToken: Address;
+  outputToken: Address;
+  universalRouter: Address;
+  amountIn: bigint;
+  minAmountOut: bigint;
+  expiresAt: number;
+  quoteToken: string;
+  approval?: PlannedTransaction;
+  cancel?: PlannedTransaction;
+  permitData?: PermitData;
+  transaction?: PlannedTransaction;
+};
+
+export type BasketRouterExecution = {
+  kind: "basket-router";
+  chainId: number;
+  caller: Address;
+  router: Address;
+  adapter: Address;
+  approval: { token: Address; spender: Address; amount: bigint };
+  funding: readonly { token: Address; amount: bigint }[];
+  call: TypedRouterCall;
+};
+
+export type SwapExecutionPlan = DirectApiExecution | BasketRouterExecution;
+
+export type ResidualRefund = {
+  token: Address;
+  amount: bigint;
+  displayAmount?: string;
+};
 
 export type SwapQuote = {
   id: string;
   route: QuoteRoute;
   state: QuoteState;
   queriedAt: number;
-  /** The time after which this response must never be used, even if its normal age has not elapsed. */
   expiresAt?: number;
   inputAmount: string;
   outputAmount?: string;
   expectedOutput?: string;
+  expectedOutputRaw?: bigint;
   minimumReceived?: string;
-  /** Guaranteed output in the output token's raw units, retained for safety checks. */
   minimumReceivedRaw?: bigint;
   venueFeeBps?: number;
   priceImpactBps?: number;
   gasEstimate?: string;
   routeLabel: string;
   hops?: readonly SwapRouteHop[];
+  residualRefunds?: readonly ResidualRefund[];
   reason?: string;
-  /** Present only after the response has passed the typed entry-router validation below. */
-  execution?: TypedRouterCall;
-  router?: Address;
+  execution?: SwapExecutionPlan;
   caller?: Address;
   chainId?: number;
 };
@@ -111,27 +159,23 @@ export type SwapQuoteRequest = {
   inputAmount: string;
   slippageBps: number;
   requestedAt: number;
-  /** OTF settlement pays msg.sender only, so live quotes are bound to the connected wallet. */
   caller?: Address;
 };
 
 export type SwapQuoteService = {
   quoteDirect(request: SwapQuoteRequest): Promise<SwapQuote>;
   quoteBasket(request: SwapQuoteRequest): Promise<SwapQuote>;
+  finalizeDirect(plan: DirectApiExecution, signature?: Hex): Promise<DirectApiExecution>;
 };
 
 export type SwapExecutionStage = "wallet" | "approval" | "simulation" | "submission" | "success" | "failure";
 export type SwapExecutionState = "ready" | "blocked" | "unavailable" | "pending" | "complete" | "failed";
 
-export const MAX_V3_LEGS = 40;
+export const MAX_SWAP_LEGS = 40;
 export const MAX_V3_HOPS_PER_LEG = 3;
 export const QUOTE_MAX_AGE_MS = 20_000;
 export const QUOTE_MAX_FUTURE_DEADLINE_SECONDS = 300;
 export const FIRST_PURCHASE_MINIMUM_SHARES = 10_000_000_000_000_000n;
-
-const FORBIDDEN_RESPONSE_FIELDS = new Set([
-  "adapter", "adapterdata", "calldata", "commands", "delegatecall", "recipient", "target", "universalrouter",
-]);
 
 export const ERC20_APPROVE_ABI = [
   {
@@ -189,14 +233,16 @@ export function swapDirectionLabel(input: SwapAsset, output: SwapAsset): string 
   return "ERC-20 → ERC-20";
 }
 
-export function supportedSwapDirection(input: SwapAsset, output: SwapAsset): boolean {
-  return classifySwapDirection(input, output) !== "erc20-to-erc20";
+export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset): boolean {
+  void input;
+  void output;
+  return true;
 }
 
-export function pastedAsset(address: string): SwapAsset | undefined {
-  const trimmed = address.trim();
-  if (!isAddress(trimmed)) return undefined;
-  const normalized = getAddress(trimmed);
+export function pastedAsset(value: string): SwapAsset | undefined {
+  const candidate = value.trim();
+  if (!isAddress(candidate)) return undefined;
+  const normalized = getAddress(candidate);
   return {
     address: normalized,
     symbol: `${normalized.slice(0, 6)}…${normalized.slice(-4)}`,
@@ -208,10 +254,6 @@ export function pastedAsset(address: string): SwapAsset | undefined {
   };
 }
 
-/**
- * Prevents decimal assumptions and user-selected OTF labels from crossing the quote boundary.
- * Informational verification is intentionally not part of this decision.
- */
 export function assetHasExecutableMetadata(asset: SwapAsset): boolean {
   return asset.address !== zeroAddress
     && asset.metadataResolved === true
@@ -227,33 +269,6 @@ export function validSwapPair(input: SwapAsset, output: SwapAsset): boolean {
     && input.address.toLowerCase() !== output.address.toLowerCase();
 }
 
-/** Keeps the amount field representable as an onchain decimal without silently repairing input. */
-export function isPositiveDecimalAmount(value: string, decimals = 18): boolean {
-  const amount = decimalAmount(value, decimals);
-  return amount !== undefined && amount > 0n;
-}
-
-export function decimalInputValue(value: string): string | undefined {
-  if (value === "" || /^\d*(?:\.\d*)?$/.test(value)) return value;
-  return undefined;
-}
-
-export async function requestConcurrentQuotes(service: SwapQuoteService, request: SwapQuoteRequest): Promise<SwapQuote[]> {
-  if (!assetHasExecutableMetadata(request.input) || !assetHasExecutableMetadata(request.output)) {
-    const reason = "Resolve token decimals and OTF factory identity before requesting an executable route.";
-    return [unavailableQuote("direct", request, reason), unavailableQuote("basket", request, reason)];
-  }
-  const [direct, basket] = await Promise.allSettled([service.quoteDirect(request), service.quoteBasket(request)]);
-  return [
-    direct.status === "fulfilled" ? direct.value : failedQuote("direct", request, "The direct-liquidity quote request failed."),
-    basket.status === "fulfilled" ? basket.value : failedQuote("basket", request, "The basket-settlement quote request failed."),
-  ];
-}
-
-export function quoteIsFresh(quote: SwapQuote, now: number, maxAgeMs = QUOTE_MAX_AGE_MS): boolean {
-  return quote.state === "available" && now >= quote.queriedAt && now - quote.queriedAt <= maxAgeMs && (quote.expiresAt === undefined || now < quote.expiresAt);
-}
-
 export function decimalAmount(value: string, decimals = 18): bigint | undefined {
   const match = value.match(/^(\d+)(?:\.(\d+))?$/);
   if (!match || match[2]?.length > decimals) return undefined;
@@ -262,10 +277,45 @@ export function decimalAmount(value: string, decimals = 18): bigint | undefined 
   return amount <= maxUint256 ? amount : undefined;
 }
 
-/**
- * Empty OTFs reject quotes whose executable minimum can mint less than 0.01 OTF.
- * Established OTFs have no special purchase-size restriction.
- */
+export function decimalInputValue(value: string): string | undefined {
+  if (value === "" || /^\d*(?:\.\d*)?$/.test(value)) return value;
+  return undefined;
+}
+
+export function isPositiveDecimalAmount(value: string, decimals = 18): boolean {
+  const amount = decimalAmount(value, decimals);
+  return amount !== undefined && amount > 0n;
+}
+
+export async function requestConcurrentQuotes(service: SwapQuoteService, request: SwapQuoteRequest): Promise<SwapQuote[]> {
+  if (!assetHasExecutableMetadata(request.input) || !assetHasExecutableMetadata(request.output)) {
+    const reason = "Resolve token decimals and OTF factory identity before requesting an executable route.";
+    return classifySwapDirection(request.input, request.output) === "erc20-to-erc20"
+      ? [unavailableQuote("direct", request, reason)]
+      : [unavailableQuote("direct", request, reason), unavailableQuote("basket", request, reason)];
+  }
+  const directOnly = classifySwapDirection(request.input, request.output) === "erc20-to-erc20";
+  if (directOnly) {
+    try {
+      return [await service.quoteDirect(request)];
+    } catch {
+      return [failedQuote("direct", request, "The direct-pool quote request failed.")];
+    }
+  }
+  const [direct, basket] = await Promise.allSettled([service.quoteDirect(request), service.quoteBasket(request)]);
+  return [
+    direct.status === "fulfilled" ? direct.value : failedQuote("direct", request, "The direct-pool quote request failed."),
+    basket.status === "fulfilled" ? basket.value : failedQuote("basket", request, "The basket quote request failed."),
+  ];
+}
+
+export function quoteIsFresh(quote: SwapQuote, now: number, maxAgeMs = QUOTE_MAX_AGE_MS): boolean {
+  return quote.state === "available"
+    && now >= quote.queriedAt
+    && now - quote.queriedAt <= maxAgeMs
+    && (quote.expiresAt === undefined || now < quote.expiresAt);
+}
+
 export function enforceFirstPurchaseMinimum(
   quotes: readonly SwapQuote[],
   output: SwapAsset,
@@ -282,12 +332,7 @@ export function enforceFirstPurchaseMinimum(
   }
   if (outputTotalSupply !== 0n) return [...quotes];
   return quotes.map((quote) => {
-    if (
-      quote.state !== "available"
-      || (quote.minimumReceivedRaw !== undefined && quote.minimumReceivedRaw >= FIRST_PURCHASE_MINIMUM_SHARES)
-    ) {
-      return quote;
-    }
+    if (quote.state !== "available" || (quote.minimumReceivedRaw ?? 0n) >= FIRST_PURCHASE_MINIMUM_SHARES) return quote;
     return {
       ...quote,
       state: "unavailable",
@@ -297,19 +342,25 @@ export function enforceFirstPurchaseMinimum(
   });
 }
 
-/** Selects only between returned, usable route quotes—not all liquidity in the market. */
 export function bestQueriedQuote(quotes: readonly SwapQuote[], now: number): SwapQuote | undefined {
   return quotes
-    .filter((quote) => quoteIsFresh(quote, now) && (decimalAmount(quote.outputAmount ?? "") ?? 0n) > 0n)
+    .filter((quote) => quoteIsFresh(quote, now) && (quote.expectedOutputRaw ?? 0n) > 0n)
     .sort((left, right) => {
-      const leftAmount = decimalAmount(left.outputAmount ?? "") ?? 0n;
-      const rightAmount = decimalAmount(right.outputAmount ?? "") ?? 0n;
+      const leftAmount = left.expectedOutputRaw ?? 0n;
+      const rightAmount = right.expectedOutputRaw ?? 0n;
       return rightAmount > leftAmount ? 1 : rightAmount < leftAmount ? -1 : 0;
     })[0];
 }
 
 export function quoteNeedsRefresh(quote: SwapQuote | undefined, now: number): boolean {
   return !quote || !quoteIsFresh(quote, now);
+}
+
+function basketRouteLabel(request: SwapQuoteRequest): string {
+  const direction = classifySwapDirection(request.input, request.output);
+  if (direction === "erc20-to-otf") return "Mint basket";
+  if (direction === "otf-to-erc20") return "Burn basket";
+  return "Burn + mint";
 }
 
 export function unavailableQuote(route: QuoteRoute, request: SwapQuoteRequest, reason: string): SwapQuote {
@@ -319,7 +370,7 @@ export function unavailableQuote(route: QuoteRoute, request: SwapQuoteRequest, r
     state: "unavailable",
     queriedAt: request.requestedAt,
     inputAmount: request.inputAmount,
-    routeLabel: route === "direct" ? "Direct liquidity" : "Basket settlement",
+    routeLabel: route === "direct" ? "Direct pool" : basketRouteLabel(request),
     reason,
   };
 }
@@ -328,44 +379,23 @@ export function failedQuote(route: QuoteRoute, request: SwapQuoteRequest, reason
   return { ...unavailableQuote(route, request, reason), id: `${route}-failed-${request.requestedAt}`, state: "failed" };
 }
 
-/** An explicit unavailable service prevents a UI-only quote from looking executable. */
 export const unavailableQuoteService: SwapQuoteService = {
-  quoteDirect: async (request) => unavailableQuote("direct", request, "A direct-liquidity quote endpoint is not configured for this network."),
-  quoteBasket: async (request) => unavailableQuote("basket", request, "A basket-settlement quote endpoint is not configured for this network."),
+  quoteDirect: async (request) => unavailableQuote("direct", request, "Direct pool quotes are unavailable for this network."),
+  quoteBasket: async (request) => unavailableQuote("basket", request, "Basket quotes require a compatible router deployment."),
+  finalizeDirect: async () => { throw new Error("Direct pool execution is unavailable for this network."); },
 };
 
-export type TypedQuoteServiceConfig = { endpoint?: string; chainId: number; entryRouter?: Address; now?: () => number };
-
-/**
- * Builds a narrow network client rather than accepting opaque route calldata.
- * A deployed router and HTTPS endpoint are both required before the UI can ask for executable quotes.
- */
-export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteService {
-  if (!config.endpoint || !config.entryRouter) return unavailableQuoteService;
-  const now = config.now ?? Date.now;
-  const requestQuote = async (route: QuoteRoute, request: SwapQuoteRequest): Promise<SwapQuote> => {
-    if (!request.caller) return unavailableQuote(route, request, "Connect the wallet that will submit this route before requesting it.");
-    const response = await fetch(config.endpoint!, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        route,
-        chainId: request.chainId,
-        caller: request.caller,
-        input: { address: request.input.address, decimals: request.input.decimals },
-        output: { address: request.output.address, decimals: request.output.decimals },
-        inputAmount: request.inputAmount,
-        slippageBps: request.slippageBps,
-      }),
-    });
-    if (!response.ok) throw new Error(`Quote endpoint returned ${response.status}.`);
-    return parseTypedQuoteResponse(await response.json(), { route, request, entryRouter: config.entryRouter!, chainId: config.chainId, now: now() });
-  };
-  return { quoteDirect: (request) => requestQuote("direct", request), quoteBasket: (request) => requestQuote("basket", request) };
-}
-
-type TypedQuoteParseContext = { route: QuoteRoute; request: SwapQuoteRequest; entryRouter: Address; chainId: number; now: number };
 type ObjectRecord = Record<string, unknown>;
+type TypedQuoteParseContext = {
+  route: QuoteRoute;
+  request: SwapQuoteRequest;
+  entryRouter?: Address;
+  adapter?: Address;
+  permit2?: Address;
+  universalRouter?: Address;
+  chainId: number;
+  now: number;
+};
 
 function object(value: unknown, label: string): ObjectRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
@@ -379,12 +409,13 @@ function string(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`${label} must be a string.`);
   return value;
 }
-function number(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isSafeInteger(value)) throw new Error(`${label} must be a safe integer.`);
+function integer(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error(`${label} must be a safe integer.`);
   return value;
 }
-function optionalString(value: unknown, label: string): string | undefined { return value === undefined ? undefined : string(value, label); }
-function optionalNumber(value: unknown, label: string): number | undefined { return value === undefined ? undefined : number(value, label); }
+function optionalInteger(value: unknown, label: string): number | undefined {
+  return value === undefined ? undefined : integer(value, label);
+}
 function address(value: unknown, label: string): Address {
   const candidate = string(value, label);
   if (!isAddress(candidate)) throw new Error(`${label} must be an address.`);
@@ -404,18 +435,14 @@ function hex(value: unknown, label: string): Hex {
   return candidate as Hex;
 }
 function exactKeys(value: ObjectRecord, allowed: readonly string[], label: string): void {
-  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`${label} contains an unsupported field: ${key}.`);
-}
-function rejectForbiddenFields(value: unknown): void {
-  if (Array.isArray(value)) { value.forEach(rejectForbiddenFields); return; }
-  if (value === null || typeof value !== "object") return;
-  for (const [key, nested] of Object.entries(value as ObjectRecord)) {
-    if (FORBIDDEN_RESPONSE_FIELDS.has(key.toLowerCase())) throw new Error(`Quote response contains forbidden field: ${key}.`);
-    rejectForbiddenFields(nested);
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) throw new Error(`${label} contains an unsupported field: ${key}.`);
   }
 }
+function sameAddress(left: Address, right: Address): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
 
-/** Decodes the V3 token/fee/token path before any quote becomes selectable. */
 export function parseV3Path(path: Hex): readonly SwapRouteHop[] {
   const bytes = path.slice(2);
   const byteLength = bytes.length / 2;
@@ -432,181 +459,494 @@ export function parseV3Path(path: Hex): readonly SwapRouteHop[] {
     offset += 6;
     const tokenOut = getAddress(`0x${bytes.slice(offset, offset + 40)}`);
     offset += 40;
-    if (feeTier === 0 || tokenIn === tokenOut || tokenOut === zeroAddress) throw new Error("V3 path has an invalid hop.");
+    if (feeTier === 0 || sameAddress(tokenIn, tokenOut) || tokenOut === zeroAddress) throw new Error("V3 path has an invalid hop.");
     hops.push({ venue: "Uniswap V3", tokenIn, tokenOut, feeTier });
     tokenIn = tokenOut;
   }
   return hops;
 }
 
-function parseLeg(value: unknown, index: number): V3SwapLeg {
+function parseTransaction(
+  value: unknown,
+  label: string,
+  binding: { chainId: number; caller: Address; target: Address; spender?: Address; amount?: bigint },
+): PlannedTransaction {
+  const transaction = object(value, label);
+  exactKeys(transaction, ["chainId", "from", "to", "data", "value"], label);
+  const parsed = {
+    chainId: integer(transaction.chainId, `${label}.chainId`),
+    from: address(transaction.from, `${label}.from`),
+    to: address(transaction.to, `${label}.to`),
+    data: hex(transaction.data, `${label}.data`),
+    value: uint(transaction.value, `${label}.value`),
+  };
+  if (parsed.chainId !== binding.chainId || !sameAddress(parsed.from, binding.caller)) throw new Error(`${label} has the wrong chain or sender.`);
+  if (!sameAddress(parsed.to, binding.target) || parsed.value !== 0n) throw new Error(`${label} has an unsupported target or native value.`);
+  if (binding.spender) {
+    let decoded: ReturnType<typeof decodeFunctionData<typeof ERC20_APPROVE_ABI>>;
+    try {
+      decoded = decodeFunctionData({ abi: ERC20_APPROVE_ABI, data: parsed.data });
+    } catch {
+      throw new Error(`${label} is not an ERC-20 approval.`);
+    }
+    if (decoded.functionName !== "approve") throw new Error(`${label} is not an ERC-20 approval.`);
+    const [spender, amount] = decoded.args;
+    if (!sameAddress(getAddress(spender), binding.spender) || amount !== binding.amount) {
+      throw new Error(`${label} has the wrong approval spender or amount.`);
+    }
+  }
+  return parsed;
+}
+
+function parsePermitData(value: unknown, binding: { chainId: number; permit2: Address; inputToken: Address; universalRouter: Address; amountIn: bigint }): PermitData {
+  const permit = object(value, "permitData");
+  exactKeys(permit, ["domain", "types", "primaryType", "message"], "permitData");
+  const domain = object(permit.domain, "permitData.domain");
+  const message = object(permit.message, "permitData.message");
+  const typesObject = object(permit.types, "permitData.types");
+  const types: Record<string, readonly { name: string; type: string }[]> = {};
+  for (const [name, fieldsValue] of Object.entries(typesObject)) {
+    types[name] = array(fieldsValue, `permitData.types.${name}`).map((fieldValue, index) => {
+      const field = object(fieldValue, `permitData.types.${name}[${index}]`);
+      exactKeys(field, ["name", "type"], `permitData.types.${name}[${index}]`);
+      return { name: string(field.name, "permit field name"), type: string(field.type, "permit field type") };
+    });
+  }
+  if (integer(domain.chainId, "permitData.domain.chainId") !== binding.chainId) throw new Error("Permit2 data has the wrong chain.");
+  if (!sameAddress(address(domain.verifyingContract, "permitData.domain.verifyingContract"), binding.permit2)) throw new Error("Permit2 data has the wrong verifying contract.");
+  const details = object(message.details, "permitData.message.details");
+  if (!sameAddress(address(details.token, "permitData.message.details.token"), binding.inputToken)) throw new Error("Permit2 data has the wrong input token.");
+  if (uint(details.amount, "permitData.message.details.amount", false) < binding.amountIn) throw new Error("Permit2 data authorizes too little input.");
+  if (!sameAddress(address(message.spender, "permitData.message.spender"), binding.universalRouter)) throw new Error("Permit2 data has the wrong spender.");
+  return { domain, types, primaryType: string(permit.primaryType, "permitData.primaryType"), message };
+}
+
+function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, expected?: DirectApiExecution): DirectApiExecution {
+  if (!context.permit2 || !context.universalRouter || !context.request.caller) throw new Error("Direct execution targets are not configured.");
+  const execution = object(value, "execution");
+  exactKeys(execution, [
+    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
+    "expiresAtMs", "quoteToken", "approval", "cancel", "permitData", "transaction",
+  ], "execution");
+  if (string(execution.kind, "execution.kind") !== "direct-api") throw new Error("Direct quote has the wrong execution kind.");
+  const plan: DirectApiExecution = {
+    kind: "direct-api",
+    chainId: integer(execution.chainId, "execution.chainId"),
+    caller: address(execution.caller, "execution.caller"),
+    inputToken: address(execution.inputToken, "execution.inputToken"),
+    outputToken: address(execution.outputToken, "execution.outputToken"),
+    universalRouter: address(execution.universalRouter, "execution.universalRouter"),
+    amountIn: uint(execution.amountIn, "execution.amountIn", false),
+    minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
+    expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
+    quoteToken: string(execution.quoteToken, "execution.quoteToken"),
+  };
+  if (
+    plan.chainId !== context.chainId
+    || !sameAddress(plan.caller, context.request.caller)
+    || !sameAddress(plan.inputToken, context.request.input.address)
+    || !sameAddress(plan.outputToken, context.request.output.address)
+    || !sameAddress(plan.universalRouter, context.universalRouter)
+  ) throw new Error("Direct execution does not match the selected chain, caller, or pair.");
+  const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
+  if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Direct execution has the wrong exact input amount.");
+  if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Direct execution has an invalid expiry.");
+  if (execution.approval !== undefined) {
+    plan.approval = parseTransaction(execution.approval, "execution.approval", {
+      chainId: context.chainId,
+      caller: plan.caller,
+      target: plan.inputToken,
+      spender: context.permit2,
+      amount: plan.amountIn,
+    });
+  }
+  if (execution.cancel !== undefined) {
+    plan.cancel = parseTransaction(execution.cancel, "execution.cancel", {
+      chainId: context.chainId,
+      caller: plan.caller,
+      target: plan.inputToken,
+      spender: context.permit2,
+      amount: 0n,
+    });
+  }
+  if (execution.permitData !== undefined) {
+    plan.permitData = parsePermitData(execution.permitData, {
+      chainId: context.chainId,
+      permit2: context.permit2,
+      inputToken: plan.inputToken,
+      universalRouter: context.universalRouter,
+      amountIn: plan.amountIn,
+    });
+  }
+  if (execution.transaction !== undefined) {
+    plan.transaction = parseTransaction(execution.transaction, "execution.transaction", {
+      chainId: context.chainId,
+      caller: plan.caller,
+      target: context.universalRouter,
+    });
+  }
+  if (expected && (
+    plan.quoteToken !== expected.quoteToken
+    || plan.amountIn !== expected.amountIn
+    || plan.minAmountOut !== expected.minAmountOut
+    || plan.expiresAt !== expected.expiresAt
+  )) throw new Error("Final direct transaction does not match the authorized quote.");
+  return plan;
+}
+
+function parseLeg(value: unknown, index: number, adapter: Address): AdapterSwapLeg {
   const leg = object(value, `legs[${index}]`);
-  exactKeys(leg, ["amountIn", "minAmountOut", "path"], `legs[${index}]`);
+  exactKeys(leg, ["adapter", "tokenIn", "tokenOut", "amountIn", "minAmountOut", "data"], `legs[${index}]`);
+  const parsedAdapter = address(leg.adapter, `legs[${index}].adapter`);
+  if (!sameAddress(parsedAdapter, adapter)) throw new Error("Route uses an unknown adapter.");
+  const tokenIn = address(leg.tokenIn, `legs[${index}].tokenIn`);
+  const tokenOut = address(leg.tokenOut, `legs[${index}].tokenOut`);
   const amountIn = uint(leg.amountIn, `legs[${index}].amountIn`, false);
   const minAmountOut = uint(leg.minAmountOut, `legs[${index}].minAmountOut`, false);
-  const path = hex(leg.path, `legs[${index}].path`);
-  return { amountIn, minAmountOut, path, hops: parseV3Path(path) };
+  const data = hex(leg.data, `legs[${index}].data`);
+  const hops = parseV3Path(data);
+  if (!sameAddress(hops[0]!.tokenIn, tokenIn) || !sameAddress(hops.at(-1)!.tokenOut, tokenOut)) {
+    throw new Error("Adapter data endpoints do not match the leg.");
+  }
+  return { adapter: parsedAdapter, tokenIn, tokenOut, amountIn, minAmountOut, data, hops };
 }
-function parseLegs(value: unknown): readonly V3SwapLeg[] {
-  const legs = array(value, "legs");
-  if (legs.length > MAX_V3_LEGS) throw new Error("Route exceeds the V3 leg limit.");
-  return legs.map(parseLeg);
+
+function parseFunding(value: unknown): readonly { token: Address; amount: bigint }[] {
+  const seen = new Set<string>();
+  return array(value, "execution.funding").map((entryValue, index) => {
+    const entry = object(entryValue, `execution.funding[${index}]`);
+    exactKeys(entry, ["token", "amount"], `execution.funding[${index}]`);
+    const token = address(entry.token, `execution.funding[${index}].token`);
+    const amount = uint(entry.amount, `execution.funding[${index}].amount`, false);
+    if (seen.has(token.toLowerCase())) throw new Error("Basket funding contains a duplicate token.");
+    seen.add(token.toLowerCase());
+    return { token, amount };
+  });
 }
-function sameAddress(left: Address, right: Address): boolean { return left.toLowerCase() === right.toLowerCase(); }
-function assertForwardContinuity(legs: readonly V3SwapLeg[], input: Address): void {
-  const reachable = new Set([input.toLowerCase()]);
+
+function assertLegFunding(legs: readonly AdapterSwapLeg[], funding: readonly { token: Address; amount: bigint }[]): void {
+  const available = new Map(funding.map((entry) => [entry.token.toLowerCase(), entry.amount]));
   for (const leg of legs) {
-    const start = leg.hops[0]!.tokenIn;
-    const end = leg.hops.at(-1)!.tokenOut;
-    if (!reachable.has(start.toLowerCase())) throw new Error("Route leg is not funded by a previous route leg or the selected input.");
-    reachable.add(end.toLowerCase());
+    const inputKey = leg.tokenIn.toLowerCase();
+    const outputKey = leg.tokenOut.toLowerCase();
+    const current = available.get(inputKey) ?? 0n;
+    const spent = leg.amountIn === maxUint256 ? current : leg.amountIn;
+    if (spent === 0n || spent > current) throw new Error("Route leg overspends its connected transient balance.");
+    available.set(inputKey, current - spent);
+    available.set(outputKey, (available.get(outputKey) ?? 0n) + leg.minAmountOut);
   }
-}
-function assertDirectContinuity(legs: readonly V3SwapLeg[], input: Address, output: Address): void {
-  if (!legs.length) throw new Error("Direct liquidity requires at least one V3 leg.");
-  assertForwardContinuity(legs, input);
-  if (!sameAddress(legs.at(-1)!.hops.at(-1)!.tokenOut, output)) throw new Error("Direct route does not end in the selected output token.");
-  for (let index = 0; index < legs.length - 1; index += 1) {
-    const end = legs[index]!.hops.at(-1)!.tokenOut;
-    const laterConsumes = legs.slice(index + 1).some((leg) => sameAddress(leg.hops[0]!.tokenIn, end));
-    if (!sameAddress(end, output) && !laterConsumes) throw new Error("Direct route has a disconnected output leg.");
-  }
-}
-function assertRedeemContinuity(legs: readonly V3SwapLeg[], output: Address): void {
-  for (let index = 0; index < legs.length; index += 1) {
-    const end = legs[index]!.hops.at(-1)!.tokenOut;
-    const laterConsumes = legs.slice(index + 1).some((leg) => sameAddress(leg.hops[0]!.tokenIn, end));
-    if (!sameAddress(end, output) && !laterConsumes) throw new Error("Basket redemption has a route leg that cannot reach the selected output.");
-  }
-}
-function routeLabel(route: QuoteRoute): string { return route === "direct" ? "Direct liquidity" : "Basket settlement"; }
-
-function parseQuoteTiming(response: ObjectRecord, context: TypedQuoteParseContext): { queriedAt: number; expiresAt: number; deadline: bigint } {
-  const queriedAt = number(response.quotedAtMs, "quotedAtMs");
-  const expiresAt = number(response.expiresAtMs, "expiresAtMs");
-  const deadline = uint(response.deadline, "deadline", false);
-  const nowSeconds = Math.floor(context.now / 1_000);
-  if (queriedAt > context.now || context.now - queriedAt > QUOTE_MAX_AGE_MS) throw new Error("Quote is stale or timestamped in the future.");
-  if (expiresAt <= context.now || BigInt(Math.ceil(expiresAt / 1_000)) > deadline) throw new Error("Quote expiry is invalid.");
-  if (deadline <= BigInt(nowSeconds) || deadline > BigInt(nowSeconds + QUOTE_MAX_FUTURE_DEADLINE_SECONDS)) throw new Error("Quote deadline is expired or exceeds the allowed horizon.");
-  return { queriedAt, expiresAt, deadline };
 }
 
-function parseCommonQuote(response: ObjectRecord, context: TypedQuoteParseContext): {
-  id: string; queriedAt: number; expiresAt: number; deadline: bigint; outputAmount: string; expectedOutput: string; minimumReceived: string; expectedOutputRaw: bigint; minimumReceivedRaw: bigint; legs: readonly V3SwapLeg[];
-} {
-  if (number(response.chainId, "chainId") !== context.chainId || context.request.chainId !== context.chainId) throw new Error("Quote has the wrong chain.");
-  if (!sameAddress(address(response.router, "router"), context.entryRouter)) throw new Error("Quote has the wrong entry router.");
-  if (!context.request.caller || !sameAddress(address(response.caller, "caller"), context.request.caller)) throw new Error("Quote has the wrong caller.");
-  if (string(response.route, "route") !== context.route) throw new Error("Quote response route does not match the requested source.");
-  const inputAmountRaw = uint(response.inputAmountRaw, "inputAmountRaw", false);
+function parseBasketCall(
+  execution: ObjectRecord,
+  context: TypedQuoteParseContext,
+  adapter: Address,
+  deadline: bigint,
+): { call: TypedRouterCall; funding: readonly { token: Address; amount: bigint }[] } {
+  const method = string(execution.method, "execution.method");
+  const request = object(execution.request, "execution.request");
+  const legsValue = array(execution.legs, "execution.legs");
+  if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
+  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter));
+  const funding = parseFunding(execution.funding);
+  assertLegFunding(legs, funding);
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
-  if (requestedAmount === undefined || inputAmountRaw !== requestedAmount) throw new Error("Quote input does not match the selected amount.");
+  if (requestedAmount === undefined) throw new Error("Selected input amount is invalid.");
+
+  if (method === "mintFromToken") {
+    if (context.request.input.kind !== "erc20" || context.request.output.kind !== "otf") throw new Error("Mint method does not match the selected pair.");
+    exactKeys(request, ["inputToken", "vault", "amountIn", "minShares", "deadline"], "execution.request");
+    const value = {
+      inputToken: address(request.inputToken, "request.inputToken"),
+      vault: address(request.vault, "request.vault"),
+      amountIn: uint(request.amountIn, "request.amountIn", false),
+      minShares: uint(request.minShares, "request.minShares", false),
+      deadline: uint(request.deadline, "request.deadline", false),
+    };
+    if (!sameAddress(value.inputToken, context.request.input.address) || !sameAddress(value.vault, context.request.output.address) || value.amountIn !== requestedAmount || value.deadline !== deadline) throw new Error("Mint request does not match the selected quote.");
+    if (funding.length !== 1 || !sameAddress(funding[0]!.token, value.inputToken) || funding[0]!.amount !== value.amountIn) throw new Error("Mint funding does not match the exact input.");
+    return { call: { method, args: [value, legs] }, funding };
+  }
+  const minimums = array(execution.minBasketAmounts, "execution.minBasketAmounts").map((amount, index) => uint(amount, `minBasketAmounts[${index}]`));
+  if (method === "redeemToToken") {
+    if (context.request.input.kind !== "otf" || context.request.output.kind !== "erc20") throw new Error("Redeem method does not match the selected pair.");
+    exactKeys(request, ["vault", "outputToken", "shares", "minAmountOut", "deadline"], "execution.request");
+    const value = {
+      vault: address(request.vault, "request.vault"),
+      outputToken: address(request.outputToken, "request.outputToken"),
+      shares: uint(request.shares, "request.shares", false),
+      minAmountOut: uint(request.minAmountOut, "request.minAmountOut", false),
+      deadline: uint(request.deadline, "request.deadline", false),
+    };
+    if (!sameAddress(value.vault, context.request.input.address) || !sameAddress(value.outputToken, context.request.output.address) || value.shares !== requestedAmount || value.deadline !== deadline) throw new Error("Redeem request does not match the selected quote.");
+    return { call: { method, args: [value, minimums, legs] }, funding };
+  }
+  if (method === "swapBasketToBasket") {
+    if (context.request.input.kind !== "otf" || context.request.output.kind !== "otf") throw new Error("Basket swap method does not match the selected pair.");
+    exactKeys(request, ["sourceVault", "targetVault", "sharesIn", "minSharesOut", "deadline"], "execution.request");
+    const value = {
+      sourceVault: address(request.sourceVault, "request.sourceVault"),
+      targetVault: address(request.targetVault, "request.targetVault"),
+      sharesIn: uint(request.sharesIn, "request.sharesIn", false),
+      minSharesOut: uint(request.minSharesOut, "request.minSharesOut", false),
+      deadline: uint(request.deadline, "request.deadline", false),
+    };
+    if (!sameAddress(value.sourceVault, context.request.input.address) || !sameAddress(value.targetVault, context.request.output.address) || value.sharesIn !== requestedAmount || value.deadline !== deadline) throw new Error("Basket swap request does not match the selected quote.");
+    return { call: { method, args: [value, minimums, legs] }, funding };
+  }
+  throw new Error("Basket quote uses an unsupported entry-router method.");
+}
+
+function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, expiresAt: number): BasketRouterExecution {
+  if (!context.entryRouter || !context.adapter || !context.request.caller) throw new Error("Basket execution is not configured.");
+  const execution = object(value, "execution");
+  exactKeys(execution, [
+    "kind", "chainId", "caller", "router", "adapter", "approval", "funding",
+    "method", "request", "legs", "minBasketAmounts",
+  ], "execution");
+  if (string(execution.kind, "execution.kind") !== "basket-router") throw new Error("Basket quote has the wrong execution kind.");
+  const chainId = integer(execution.chainId, "execution.chainId");
+  const caller = address(execution.caller, "execution.caller");
+  const router = address(execution.router, "execution.router");
+  const adapter = address(execution.adapter, "execution.adapter");
+  if (chainId !== context.chainId || !sameAddress(caller, context.request.caller)) throw new Error("Basket execution has the wrong chain or caller.");
+  if (!sameAddress(router, context.entryRouter) || !sameAddress(adapter, context.adapter)) throw new Error("Basket execution has a deployment mismatch.");
+  const approvalValue = object(execution.approval, "execution.approval");
+  exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
+  const approval = {
+    token: address(approvalValue.token, "execution.approval.token"),
+    spender: address(approvalValue.spender, "execution.approval.spender"),
+    amount: uint(approvalValue.amount, "execution.approval.amount", false),
+  };
+  const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
+  if (!sameAddress(approval.token, context.request.input.address) || !sameAddress(approval.spender, router) || approval.amount !== requestedAmount) throw new Error("Basket approval does not match the exact input and entry router.");
+  const deadline = callDeadline(execution.request);
+  const nowSeconds = BigInt(Math.floor(context.now / 1_000));
+  if (
+    deadline <= nowSeconds
+    || deadline > nowSeconds + BigInt(QUOTE_MAX_FUTURE_DEADLINE_SECONDS)
+    || BigInt(Math.ceil(expiresAt / 1_000)) > deadline
+  ) throw new Error("Basket execution deadline is invalid.");
+  const { call, funding } = parseBasketCall(execution, context, adapter, deadline);
+  return { kind: "basket-router", chainId, caller, router, adapter, approval, funding, call };
+}
+
+function callDeadline(requestValue: unknown): bigint {
+  return uint(object(requestValue, "execution.request").deadline, "execution.request.deadline", false);
+}
+
+function parseRefunds(value: unknown): readonly ResidualRefund[] | undefined {
+  if (value === undefined) return undefined;
+  return array(value, "residualRefunds").map((refundValue, index) => {
+    const refund = object(refundValue, `residualRefunds[${index}]`);
+    exactKeys(refund, ["token", "amount", "displayAmount"], `residualRefunds[${index}]`);
+    return {
+      token: address(refund.token, `residualRefunds[${index}].token`),
+      amount: uint(refund.amount, `residualRefunds[${index}].amount`),
+      displayAmount: refund.displayAmount === undefined ? undefined : string(refund.displayAmount, `residualRefunds[${index}].displayAmount`),
+    };
+  });
+}
+
+export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParseContext): SwapQuote {
+  if (!assetHasExecutableMetadata(context.request.input) || !assetHasExecutableMetadata(context.request.output)) throw new Error("Quote assets require resolved metadata and OTF factory identity.");
+  const response = object(value, "quote response");
+  if (response.state === "unavailable") {
+    exactKeys(response, ["state", "route", "reason"], "quote response");
+    if (string(response.route, "route") !== context.route) throw new Error("Unavailable quote has the wrong route.");
+    return unavailableQuote(context.route, context.request, string(response.reason, "reason"));
+  }
+  exactKeys(response, [
+    "state", "id", "route", "chainId", "caller", "quotedAtMs", "expiresAtMs", "inputAmountRaw",
+    "outputAmount", "expectedOutput", "expectedOutputRaw", "minimumReceived", "minimumReceivedRaw",
+    "venueFeeBps", "priceImpactBps", "gasEstimate", "routeLabel", "hops", "residualRefunds", "execution",
+  ], "quote response");
+  if (string(response.state, "state") !== "available" || string(response.route, "route") !== context.route) throw new Error("Quote response has the wrong state or route.");
+  if (integer(response.chainId, "chainId") !== context.chainId || context.request.chainId !== context.chainId) throw new Error("Quote has the wrong chain.");
+  if (!context.request.caller || !sameAddress(address(response.caller, "caller"), context.request.caller)) throw new Error("Quote has the wrong caller.");
+  const queriedAt = integer(response.quotedAtMs, "quotedAtMs");
+  const expiresAt = integer(response.expiresAtMs, "expiresAtMs");
+  if (queriedAt > context.now || context.now - queriedAt > QUOTE_MAX_AGE_MS || expiresAt <= context.now || expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Quote is stale or has an invalid expiry.");
+  const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
+  if (requestedAmount === undefined || uint(response.inputAmountRaw, "inputAmountRaw", false) !== requestedAmount) throw new Error("Quote has the wrong exact input amount.");
   const outputAmount = string(response.outputAmount, "outputAmount");
   const expectedOutput = string(response.expectedOutput, "expectedOutput");
   const minimumReceived = string(response.minimumReceived, "minimumReceived");
   const expectedOutputRaw = uint(response.expectedOutputRaw, "expectedOutputRaw", false);
   const minimumReceivedRaw = uint(response.minimumReceivedRaw, "minimumReceivedRaw", false);
-  if (minimumReceivedRaw > expectedOutputRaw) throw new Error("Quote minimum received exceeds expected output.");
-  if (decimalAmount(outputAmount, context.request.output.decimals) !== expectedOutputRaw) throw new Error("Quote display output does not match its raw output.");
-  if (decimalAmount(expectedOutput, context.request.output.decimals) !== expectedOutputRaw) throw new Error("Quote expected output does not match its raw output.");
-  if (decimalAmount(minimumReceived, context.request.output.decimals) !== minimumReceivedRaw) throw new Error("Quote minimum received does not match its raw output.");
-  return { id: string(response.id, "id"), ...parseQuoteTiming(response, context), outputAmount, expectedOutput, minimumReceived, expectedOutputRaw, minimumReceivedRaw, legs: parseLegs(response.legs) };
-}
-function parseOptionalMetrics(response: ObjectRecord): Pick<SwapQuote, "venueFeeBps" | "priceImpactBps" | "gasEstimate"> {
-  const venueFeeBps = optionalNumber(response.venueFeeBps, "venueFeeBps");
-  const priceImpactBps = optionalNumber(response.priceImpactBps, "priceImpactBps");
+  if (minimumReceivedRaw > expectedOutputRaw) throw new Error("Quote minimum exceeds expected output.");
+  if (decimalAmount(outputAmount, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(expectedOutput, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(minimumReceived, context.request.output.decimals) !== minimumReceivedRaw) throw new Error("Quote display amounts do not match their integer amounts.");
+  const execution = context.route === "direct"
+    ? parseDirectExecution(response.execution, context)
+    : parseBasketExecution(response.execution, context, expiresAt);
+  if (execution.kind === "direct-api") {
+    if (execution.minAmountOut !== minimumReceivedRaw) throw new Error("Direct execution minimum does not match the quote.");
+  } else if (execution.call.method === "mintFromToken") {
+    if (execution.call.args[0].minShares !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
+  } else if (execution.call.method === "redeemToToken") {
+    if (execution.call.args[0].minAmountOut !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
+  } else {
+    if (execution.call.args[0].minSharesOut !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
+  }
+  const venueFeeBps = optionalInteger(response.venueFeeBps, "venueFeeBps");
+  const priceImpactBps = optionalInteger(response.priceImpactBps, "priceImpactBps");
   if (venueFeeBps !== undefined && (venueFeeBps < 0 || venueFeeBps > 10_000)) throw new Error("venueFeeBps is out of range.");
   if (priceImpactBps !== undefined && (priceImpactBps < 0 || priceImpactBps > 10_000)) throw new Error("priceImpactBps is out of range.");
-  return { venueFeeBps, priceImpactBps, gasEstimate: optionalString(response.gasEstimate, "gasEstimate") };
-}
-
-/**
- * Accepts a quote response only if it maps exactly to one generated OTFEntryExitRouter method.
- * The router still validates pools, route balances, callbacks, and all settlement atomically.
- */
-export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParseContext): SwapQuote {
-  rejectForbiddenFields(value);
-  if (!assetHasExecutableMetadata(context.request.input) || !assetHasExecutableMetadata(context.request.output)) {
-    throw new Error("Quote assets require resolved token decimals and OTF factory identity.");
-  }
-  const response = object(value, "quote response");
-  exactKeys(response, [
-    "id", "route", "chainId", "router", "caller", "quotedAtMs", "expiresAtMs", "deadline", "inputAmountRaw", "outputAmount", "expectedOutput", "minimumReceived", "expectedOutputRaw", "minimumReceivedRaw", "venueFeeBps", "priceImpactBps", "gasEstimate", "method", "request", "legs", "minBasketAmounts",
-  ], "quote response");
-  const common = parseCommonQuote(response, context);
-  if (!supportedSwapDirection(context.request.input, context.request.output)) throw new Error("OTF routing requires an OTF input or output.");
-  const method = string(response.method, "method");
-  const request = object(response.request, "request");
-  let execution: TypedRouterCall;
-  if (method === "swapDirect") {
-    if (response.minBasketAmounts !== undefined) throw new Error("Direct quote contains basket minimums.");
-    if (context.route !== "direct") throw new Error("Basket response cannot use the direct method.");
-    exactKeys(request, ["tokenIn", "tokenOut", "amountIn", "minAmountOut", "deadline"], "direct request");
-    const tokenIn = address(request.tokenIn, "direct request.tokenIn"); const tokenOut = address(request.tokenOut, "direct request.tokenOut"); const amountIn = uint(request.amountIn, "direct request.amountIn", false); const minAmountOut = uint(request.minAmountOut, "direct request.minAmountOut", false);
-    if (!sameAddress(tokenIn, context.request.input.address) || !sameAddress(tokenOut, context.request.output.address)) throw new Error("Direct request tokens do not match the selected pair.");
-    if (amountIn !== uint(response.inputAmountRaw, "inputAmountRaw", false) || minAmountOut !== common.minimumReceivedRaw || uint(request.deadline, "direct request.deadline", false) !== common.deadline) throw new Error("Direct request amounts or deadline do not match the quote.");
-    assertDirectContinuity(common.legs, tokenIn, tokenOut);
-    execution = { method, args: [{ tokenIn, tokenOut, amountIn, minAmountOut, deadline: common.deadline }, common.legs] };
-  } else if (method === "mintFromToken") {
-    if (response.minBasketAmounts !== undefined) throw new Error("Mint quote contains source-basket minimums.");
-    if (context.route !== "basket" || context.request.input.kind !== "erc20" || context.request.output.kind !== "otf") throw new Error("Mint route does not match the selected basket direction.");
-    exactKeys(request, ["inputToken", "vault", "amountIn", "minShares", "deadline"], "mint request");
-    const inputToken = address(request.inputToken, "mint request.inputToken"); const vault = address(request.vault, "mint request.vault"); const amountIn = uint(request.amountIn, "mint request.amountIn", false); const minShares = uint(request.minShares, "mint request.minShares", false);
-    if (!sameAddress(inputToken, context.request.input.address) || !sameAddress(vault, context.request.output.address)) throw new Error("Mint request tokens do not match the selected pair.");
-    if (amountIn !== uint(response.inputAmountRaw, "inputAmountRaw", false) || minShares !== common.minimumReceivedRaw || uint(request.deadline, "mint request.deadline", false) !== common.deadline) throw new Error("Mint request amounts or deadline do not match the quote.");
-    assertForwardContinuity(common.legs, inputToken);
-    execution = { method, args: [{ inputToken, vault, amountIn, minShares, deadline: common.deadline }, common.legs] };
-  } else if (method === "redeemToToken") {
-    if (context.route !== "basket" || context.request.input.kind !== "otf" || context.request.output.kind !== "erc20") throw new Error("Redeem route does not match the selected basket direction.");
-    exactKeys(request, ["vault", "outputToken", "shares", "minAmountOut", "deadline"], "redeem request");
-    const vault = address(request.vault, "redeem request.vault"); const outputToken = address(request.outputToken, "redeem request.outputToken"); const shares = uint(request.shares, "redeem request.shares", false); const minAmountOut = uint(request.minAmountOut, "redeem request.minAmountOut", false);
-    const minBasketAmounts = array(response.minBasketAmounts, "minBasketAmounts").map((amount, index) => uint(amount, `minBasketAmounts[${index}]`, true));
-    if (!sameAddress(vault, context.request.input.address) || !sameAddress(outputToken, context.request.output.address)) throw new Error("Redeem request tokens do not match the selected pair.");
-    if (shares !== uint(response.inputAmountRaw, "inputAmountRaw", false) || minAmountOut !== common.minimumReceivedRaw || uint(request.deadline, "redeem request.deadline", false) !== common.deadline) throw new Error("Redeem request amounts or deadline do not match the quote.");
-    assertRedeemContinuity(common.legs, outputToken);
-    execution = { method, args: [{ vault, outputToken, shares, minAmountOut, deadline: common.deadline }, minBasketAmounts, common.legs] };
-  } else if (method === "swapBasketToBasket") {
-    if (context.route !== "basket" || context.request.input.kind !== "otf" || context.request.output.kind !== "otf") throw new Error("Basket-to-basket route does not match the selected pair.");
-    exactKeys(request, ["sourceVault", "targetVault", "sharesIn", "minSharesOut", "deadline"], "basket swap request");
-    const sourceVault = address(request.sourceVault, "basket swap request.sourceVault"); const targetVault = address(request.targetVault, "basket swap request.targetVault"); const sharesIn = uint(request.sharesIn, "basket swap request.sharesIn", false); const minSharesOut = uint(request.minSharesOut, "basket swap request.minSharesOut", false);
-    const minSourceAmounts = array(response.minBasketAmounts, "minBasketAmounts").map((amount, index) => uint(amount, `minBasketAmounts[${index}]`, true));
-    if (!sameAddress(sourceVault, context.request.input.address) || !sameAddress(targetVault, context.request.output.address)) throw new Error("Basket swap request tokens do not match the selected pair.");
-    if (sharesIn !== uint(response.inputAmountRaw, "inputAmountRaw", false) || minSharesOut !== common.minimumReceivedRaw || uint(request.deadline, "basket swap request.deadline", false) !== common.deadline) throw new Error("Basket swap request amounts or deadline do not match the quote.");
-    execution = { method, args: [{ sourceVault, targetVault, sharesIn, minSharesOut, deadline: common.deadline }, minSourceAmounts, common.legs] };
-  } else {
-    throw new Error("Quote uses an unsupported entry-router method.");
-  }
+  const basketLegs = execution.kind === "basket-router"
+    ? execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2]
+    : [];
+  const hops = response.hops === undefined ? basketLegs.flatMap((leg) => leg.hops)
+    : array(response.hops, "hops").map((hopValue, index) => {
+      const hop = object(hopValue, `hops[${index}]`);
+      exactKeys(hop, ["venue", "tokenIn", "tokenOut", "feeTier"], `hops[${index}]`);
+      const venue = string(hop.venue, `hops[${index}].venue`);
+      if (venue !== "Uniswap V3" && venue !== "Uniswap V4") throw new Error("Quote uses an unsupported venue.");
+      return {
+        venue: venue as SwapRouteHop["venue"],
+        tokenIn: address(hop.tokenIn, `hops[${index}].tokenIn`),
+        tokenOut: address(hop.tokenOut, `hops[${index}].tokenOut`),
+        feeTier: optionalInteger(hop.feeTier, `hops[${index}].feeTier`),
+      };
+    });
   return {
-    id: common.id, route: context.route, state: "available", queriedAt: common.queriedAt, expiresAt: common.expiresAt, inputAmount: context.request.inputAmount, outputAmount: common.outputAmount, expectedOutput: common.expectedOutput, minimumReceived: common.minimumReceived, minimumReceivedRaw: common.minimumReceivedRaw, ...parseOptionalMetrics(response), routeLabel: routeLabel(context.route), hops: common.legs.flatMap((leg) => leg.hops), execution, router: context.entryRouter, caller: context.request.caller, chainId: context.chainId,
+    id: string(response.id, "id"),
+    route: context.route,
+    state: "available",
+    queriedAt,
+    expiresAt,
+    inputAmount: context.request.inputAmount,
+    outputAmount,
+    expectedOutput,
+    expectedOutputRaw,
+    minimumReceived,
+    minimumReceivedRaw,
+    venueFeeBps,
+    priceImpactBps,
+    gasEstimate: response.gasEstimate === undefined ? undefined : string(response.gasEstimate, "gasEstimate"),
+    routeLabel: string(response.routeLabel, "routeLabel"),
+    hops,
+    residualRefunds: parseRefunds(response.residualRefunds),
+    execution,
+    caller: context.request.caller,
+    chainId: context.chainId,
   };
 }
 
-export type SwapExecutionPlan = { chainId: number; router: Address; approval: { token: Address; spender: Address; amount: bigint }; call: TypedRouterCall };
-function executionInput(call: TypedRouterCall): { token: Address; amount: bigint } {
-  if (call.method === "swapDirect") return { token: call.args[0].tokenIn, amount: call.args[0].amountIn };
-  if (call.method === "mintFromToken") return { token: call.args[0].inputToken, amount: call.args[0].amountIn };
-  if (call.method === "redeemToToken") return { token: call.args[0].vault, amount: call.args[0].shares };
-  return { token: call.args[0].sourceVault, amount: call.args[0].sharesIn };
-}
-/** Derives both the exact approval target and entry-router call locally from the validated quote. */
 export function executionPlanForQuote(quote: SwapQuote | undefined, chainId: number, now: number): SwapExecutionPlan | undefined {
-  if (!quote || !quote.execution || !quote.router || quote.chainId !== chainId || !quoteIsFresh(quote, now)) return undefined;
-  const input = executionInput(quote.execution);
-  if (input.amount === 0n || input.amount === maxUint256) return undefined;
-  return { chainId, router: quote.router, approval: { token: input.token, spender: quote.router, amount: input.amount }, call: quote.execution };
+  if (!quote?.execution || quote.chainId !== chainId || !quoteIsFresh(quote, now)) return undefined;
+  if (quote.execution.chainId !== chainId) return undefined;
+  const amountIn = quote.execution.kind === "direct-api" ? quote.execution.amountIn : quote.execution.approval.amount;
+  if (amountIn === 0n || amountIn === maxUint256) return undefined;
+  return quote.execution;
 }
 
-function routerLeg(leg: V3SwapLeg): { amountIn: bigint; minAmountOut: bigint; path: Hex } {
-  return { amountIn: leg.amountIn, minAmountOut: leg.minAmountOut, path: leg.path };
+function routerLeg(leg: AdapterSwapLeg) {
+  return {
+    adapter: leg.adapter,
+    tokenIn: leg.tokenIn,
+    tokenOut: leg.tokenOut,
+    amountIn: leg.amountIn,
+    minAmountOut: leg.minAmountOut,
+    data: leg.data,
+  };
 }
 
-/** Removes client-only inspection metadata before ABI encoding a locally validated call. */
 export function routerArgsForExecution(call: TypedRouterCall): readonly unknown[] {
-  if (call.method === "swapDirect") return [call.args[0], call.args[1].map(routerLeg)];
   if (call.method === "mintFromToken") return [call.args[0], call.args[1].map(routerLeg)];
-  if (call.method === "redeemToToken") return [call.args[0], call.args[1], call.args[2].map(routerLeg)];
   return [call.args[0], call.args[1], call.args[2].map(routerLeg)];
+}
+
+function directExecutionBody(plan: DirectApiExecution, signature?: Hex): ObjectRecord {
+  return {
+    action: "finalize-direct",
+    signature,
+    plan: {
+      kind: plan.kind,
+      chainId: plan.chainId,
+      caller: plan.caller,
+      inputToken: plan.inputToken,
+      outputToken: plan.outputToken,
+      universalRouter: plan.universalRouter,
+      amountIn: plan.amountIn.toString(),
+      minAmountOut: plan.minAmountOut.toString(),
+      expiresAtMs: plan.expiresAt,
+      quoteToken: plan.quoteToken,
+    },
+  };
+}
+
+export type TypedQuoteServiceConfig = {
+  endpoint: string;
+  chainId: number;
+  entryRouter?: Address;
+  adapter?: Address;
+  permit2?: Address;
+  universalRouter?: Address;
+  now?: () => number;
+};
+
+export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteService {
+  const now = config.now ?? Date.now;
+  const context = (route: QuoteRoute, request: SwapQuoteRequest): TypedQuoteParseContext => ({
+    route,
+    request,
+    entryRouter: config.entryRouter,
+    adapter: config.adapter,
+    permit2: config.permit2,
+    universalRouter: config.universalRouter,
+    chainId: config.chainId,
+    now: now(),
+  });
+  const requestQuote = async (route: QuoteRoute, request: SwapQuoteRequest): Promise<SwapQuote> => {
+    if (!request.caller) return unavailableQuote(route, request, "Connect the wallet that will submit this route before requesting it.");
+    const inputAmountRaw = decimalAmount(request.inputAmount, request.input.decimals);
+    if (!inputAmountRaw) return unavailableQuote(route, request, "Enter a valid exact input amount.");
+    const response = await fetch(config.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "quote",
+        route,
+        chainId: request.chainId,
+        caller: request.caller,
+        input: { address: request.input.address, decimals: request.input.decimals, kind: request.input.kind, isFactoryVault: request.input.isFactoryVault === true },
+        output: { address: request.output.address, decimals: request.output.decimals, kind: request.output.kind, isFactoryVault: request.output.isFactoryVault === true },
+        inputAmountRaw: inputAmountRaw.toString(),
+        slippageBps: request.slippageBps,
+        requestedAtMs: request.requestedAt,
+      }),
+    });
+    const payload: unknown = await response.json();
+    if (!response.ok && object(payload, "quote response").state !== "unavailable") throw new Error(`Quote endpoint returned ${response.status}.`);
+    return parseTypedQuoteResponse(payload, context(route, request));
+  };
+  const finalizeDirect = async (plan: DirectApiExecution, signature?: Hex): Promise<DirectApiExecution> => {
+    const request: SwapQuoteRequest = {
+      chainId: plan.chainId,
+      caller: plan.caller,
+      input: { address: plan.inputToken, symbol: "", name: "", kind: "erc20", decimals: 0, metadataResolved: true },
+      output: { address: plan.outputToken, symbol: "", name: "", kind: "erc20", decimals: 0, metadataResolved: true },
+      inputAmount: plan.amountIn.toString(),
+      slippageBps: 0,
+      requestedAt: now(),
+    };
+    const response = await fetch(config.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(directExecutionBody(plan, signature)),
+    });
+    if (!response.ok) throw new Error("Uniswap could not produce the final transaction.");
+    const payload = object(await response.json(), "finalize response");
+    exactKeys(payload, ["execution"], "finalize response");
+    const execution = parseDirectExecution(payload.execution, context("direct", request), plan);
+    if (!execution.transaction) throw new Error("Final direct execution is missing its transaction.");
+    return execution;
+  };
+  return {
+    quoteDirect: (request) => requestQuote("direct", request),
+    quoteBasket: (request) => requestQuote("basket", request),
+    finalizeDirect,
+  };
 }
 
 export type LiquidityVenue = { name: "Uniswap" | "Synthra"; href: string; prefilled: boolean };
@@ -629,9 +969,13 @@ const LIQUIDITY_NETWORKS: Record<number, LiquidityNetworkConfig> = {
     tickSpacing: robinhoodMainnetLiquidity.tickSpacing,
     isDynamic: robinhoodMainnetLiquidity.isDynamic,
   },
-  // Synthra publishes no documented OTF/USDG pair-prefill URL format, so use its official app base only.
-  46630: { venue: "synthra", officialBaseUrl: robinhoodTestnetLiquidity.venue === "Synthra" ? robinhoodTestnetLiquidity.baseUrl ?? "" : "", usdgAddress: robinhoodTestnetAddresses.usdg },
+  46630: {
+    venue: "synthra",
+    officialBaseUrl: robinhoodTestnetLiquidity.venue === "Synthra" ? robinhoodTestnetLiquidity.baseUrl ?? "" : "",
+    usdgAddress: robinhoodTestnetAddresses.usdg,
+  },
 };
+
 export function liquidityVenueFor(chainId: number | undefined, otf: SwapAsset | undefined, usdg: SwapAsset | undefined): LiquidityVenue | undefined {
   if (!chainId || !otf || !usdg || otf.kind !== "otf" || !otf.isFactoryVault || usdg.kind !== "erc20" || usdg.symbol.toUpperCase() !== "USDG" || !validSwapPair(otf, usdg)) return undefined;
   const config = LIQUIDITY_NETWORKS[chainId];
@@ -647,9 +991,27 @@ export function liquidityVenueFor(chainId: number | undefined, otf: SwapAsset | 
   });
   return { name: "Uniswap", href: `${config.officialBaseUrl}?${params.toString()}`, prefilled: true };
 }
-export function liquidityActionLabel(otfSymbol: string): string { return `Add liquidity to ${otfSymbol}/USDG`; }
+
+export function liquidityActionLabel(otfSymbol: string): string {
+  return `Add liquidity to ${otfSymbol}/USDG`;
+}
 
 export function quoteServiceForChain(chainId: number): SwapQuoteService {
-  if (chainId !== 46630) return unavailableQuoteService;
-  return typedQuoteService({ chainId, entryRouter: robinhoodTestnetAddresses.entryRouter, endpoint: robinhoodTestnetQuote.endpoint });
+  if (chainId === 4663) {
+    return typedQuoteService({
+      endpoint: "/api/swap-quotes",
+      chainId,
+      permit2: robinhoodMainnetUniswap.permit2,
+      universalRouter: robinhoodMainnetUniswap.universalRouter,
+    });
+  }
+  if (chainId === 46630) {
+    return typedQuoteService({
+      endpoint: "/api/swap-quotes",
+      chainId,
+      entryRouter: robinhoodTestnetAddresses.entryRouter,
+      adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
+    });
+  }
+  return unavailableQuoteService;
 }

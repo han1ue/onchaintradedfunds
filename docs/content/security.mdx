@@ -96,12 +96,22 @@ Protocol shares are held by `FeeCollector`, whose treasury is the only claimant.
 Treasury acceptance uses the same reentrancy guard as claims, preventing a token callback from
 changing the live treasury while `TokenClaimed` is being reconciled with the actual receiver.
 
-### Router, pools, and external liquidity
+### Router, adapters, pools, and external liquidity
 
-`OTFEntryExitRouter` authenticates typed Uniswap V3 paths against one immutable factory/router
-pair. It bounds route shape, checks deadlines and minimums, verifies exact observed deltas, clears
-temporary approvals, restricts recipients and refunds to the sender, blocks reentrancy, and rolls
-back atomically. Neither contract nor app promises global quote optimality.
+`OTFEntryExitRouter` is venue-agnostic. Its owner is the adapter manager and can approve or
+immediately revoke adapters that are contracts and report this router as their immutable
+`entryExitRouter`. The manager and every approved adapter are explicit trust boundaries. Before
+moving user funds, the router validates every leg's approval and binding. It then restricts each
+leg to transient balance above a pre-call baseline, verifies exact router input/output deltas,
+checks the adapter's reported output, refunds every harmless surplus to the caller, blocks
+reentrancy, and rolls back atomically.
+
+`UniswapV3Adapter` is the only current implementation. Its data is exclusively a packed V3 path
+of at most three hops. It authenticates each pool against an immutable V3 factory, fixes the
+SwapRouter02 recipient to the entry router, approves exactly one leg input and clears that
+approval, verifies exact consumption and output, and never sweeps pre-existing donations. The
+router exposes no direct pool swap; ordinary secondary-market swaps use the server-side Uniswap
+Trading API.
 
 The configured venue must implement SwapRouter02's four-field `exactInput` ABI and share the
 expected V3 pool bytecode family. Production needs funded direct-buy, direct-sell, and multihop fork
@@ -119,6 +129,8 @@ choice to skip and forfeit it in order to recover healthy assets.
 - New production deployments, governance/key management, monitoring, and incident procedures are
   unresolved.
 - Production quote services, mainnet OTF addresses, and funded venue fork evidence are unresolved.
+- The adapter-manager key, approved-adapter monitoring, and independent review of the new generic
+  adapter boundary are unresolved production requirements.
 - Malicious, rebasing, fee-on-transfer, and mutable tokens remain unsupported.
 - No share is promised to track a dollar, percentage target, or current index.
 - `launch/` is a separate prelaunch competition and is outside this threat model.

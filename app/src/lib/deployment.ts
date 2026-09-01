@@ -33,8 +33,8 @@ const testnetContracts = record(testnet.contracts) as Record<string, ContractDep
 const testnetExternalContracts = record(testnet.externalContracts);
 const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
-const testnetQuote = record(testnet.quoteService);
-const testnetCompatible = testnet.architecture === "immutable-bootstrap-basket";
+const testnetRouting = record(testnet.routing);
+const testnetCompatible = testnet.architecture === "generic-trade-adapter-v1";
 
 function deployedTestnetContract(name: string): Address | undefined {
   return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;
@@ -46,6 +46,7 @@ export const robinhoodTestnetAddresses = Object.freeze({
   vaultImplementation: deployedTestnetContract("vaultImplementation"),
   factory: deployedTestnetContract("factory"),
   entryRouter: deployedTestnetContract("entryRouter"),
+  uniswapV3Adapter: deployedTestnetContract("uniswapV3Adapter"),
   usdg: address(testnetExternalContracts.usdg),
   weth: address(testnetExternalContracts.weth),
 });
@@ -53,14 +54,6 @@ export const robinhoodTestnetAddresses = Object.freeze({
 export const robinhoodTestnetLiquidity = Object.freeze({
   venue: testnetLiquidity.venue === "Synthra" ? "Synthra" : undefined,
   baseUrl: httpsUrl(testnetLiquidity.baseUrl),
-});
-
-/**
- * The API is optional deployment configuration. Its response is still parsed
- * into typed OTFEntryExitRouter arguments before it can enable a transaction.
- */
-export const robinhoodTestnetQuote = Object.freeze({
-  endpoint: httpsUrl(testnetQuote.endpoint),
 });
 
 export const robinhoodTestnetCreation = Object.freeze({
@@ -76,17 +69,23 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     && robinhoodTestnetAddresses.entryRouter
     && robinhoodTestnetAddresses.feeCollector
     && robinhoodTestnetAddresses.otfToken
-    && robinhoodTestnetQuote.endpoint,
+    && robinhoodTestnetAddresses.uniswapV3Adapter
+    && Array.isArray(testnetRouting.approvedAdapters)
+    && testnetRouting.approvedAdapters.some((candidate) => (
+      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapV3Adapter?.toLowerCase()
+    )),
   );
 
 const mainnet = record(mainnetDeployment);
 const mainnetCompatible = Number(mainnet.chainId) === 4663 && mainnet.network === "robinhood-mainnet";
 const mainnetExternalContracts = mainnetCompatible ? record(mainnet.externalContracts) : {};
 const mainnetLiquidity = mainnetCompatible ? record(mainnet.externalLiquidity) : {};
+const mainnetTradingApi = mainnetCompatible ? record(mainnet.uniswapTradingApi) : {};
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({
   usdg: address(mainnetExternalContracts.usdg),
+  weth: address(mainnetExternalContracts.weth),
 });
 
 export const robinhoodMainnetLiquidity = Object.freeze({
@@ -98,4 +97,11 @@ export const robinhoodMainnetLiquidity = Object.freeze({
   feeAmount: safePositiveInteger(mainnetLiquidity.feeAmount),
   tickSpacing: safePositiveInteger(mainnetLiquidity.tickSpacing),
   isDynamic: typeof mainnetLiquidity.isDynamic === "boolean" ? mainnetLiquidity.isDynamic : undefined,
+});
+
+/** Supported targets for server-issued Uniswap Trading API execution plans. */
+export const robinhoodMainnetUniswap = Object.freeze({
+  permit2: address(mainnetTradingApi.permit2),
+  universalRouter: address(mainnetTradingApi.universalRouter),
+  universalRouterVersion: mainnetTradingApi.universalRouterVersion === "2.1.1" ? "2.1.1" : undefined,
 });

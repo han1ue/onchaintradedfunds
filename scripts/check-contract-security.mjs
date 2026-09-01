@@ -7,9 +7,9 @@ const root = resolve(import.meta.dirname, "..");
 const contracts = join(root, "contracts");
 const runtimeLimit = 24_576;
 const initcodeLimit = 49_152;
-const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "FeeCollector", "OTFToken"];
-const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry/i;
-const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|adapter|allowlist|pool.?registry)\b/i;
+const production = ["ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "FeeCollector", "OTFToken"];
+const forbiddenArtifactName = /oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry/i;
+const forbiddenAbiWords = /\b(?:oracle|nav|pricing|rebalance|strategy|proposal|challenge|pool.?registry)\b/i;
 const removedCreationAbiWords = /\b(?:formation|snapshot|signature|price|market.?cap|weight|expiry|nonce|predict)\b/i;
 
 function assert(condition, message) {
@@ -116,7 +116,8 @@ const expectedConstructors = {
   FeeCollector: ["initialTreasury"],
   OTFToken: ["initialHolder"],
   OTFFactory: ["vaultImplementation_", "feeCollector_", "protocolFeeShareBps_"],
-  OTFEntryExitRouter: ["factory_", "uniswapV3Factory_", "uniswapV3Router_"],
+  OTFEntryExitRouter: ["factory_", "initialAdapterManager"],
+  UniswapV3Adapter: ["entryExitRouter_", "uniswapV3Factory_", "uniswapV3Router_"],
 };
 for (const [name, expected] of Object.entries(expectedConstructors)) {
   const actual = constructor(compiled[name]);
@@ -152,8 +153,17 @@ assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,add
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
-assert(JSON.stringify(routerMutating) === JSON.stringify(["mintFromToken", "redeemToToken", "swapBasketToBasket", "swapDirect"].sort()), "router exposes an untyped mutating entrypoint");
-for (const name of ["swapDirect", "mintFromToken", "redeemToToken", "swapBasketToBasket", "factory", "uniswapV3Factory", "uniswapV3Router"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
+assert(JSON.stringify(routerMutating) === JSON.stringify(["acceptOwnership", "mintFromToken", "redeemToToken", "renounceOwnership", "setAdapterApproved", "swapBasketToBasket", "transferOwnership"].sort()), "router exposes an unexpected mutating entrypoint");
+for (const name of ["mintFromToken", "redeemToToken", "swapBasketToBasket", "factory", "isAdapterApproved", "setAdapterApproved", "owner", "pendingOwner"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
+assert(!functionNames(compiled.OTFEntryExitRouter).has("swapDirect"), "router retains swapDirect");
+const mintFromToken = routerFunctions.find((item) => item.name === "mintFromToken");
+const swapLeg = mintFromToken.inputs[1];
+assert(swapLeg.type === "tuple[]", "router legs are not a generic tuple array");
+assert(swapLeg.components.map((input) => `${input.name}:${input.type}`).join("|") === "adapter:address|tokenIn:address|tokenOut:address|amountIn:uint256|minAmountOut:uint256|data:bytes", "router SwapLeg is not the bounded adapter interface");
+
+const adapterNames = functionNames(compiled.UniswapV3Adapter);
+for (const name of ["entryExitRouter", "uniswapV3Factory", "uniswapV3Router", "executeSwap", "MAX_HOPS"]) assert(adapterNames.has(name), `UniswapV3Adapter surface ${name} is absent`);
+assert(functions(compiled.UniswapV3Adapter).filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).join(",") === "executeSwap", "UniswapV3Adapter exposes an unexpected mutating entrypoint");
 
 const sourceConstants = readFileSync(join(contracts, "src", "libraries", "ProtocolConstants.sol"), "utf8");
 assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants), "maximum creator fee is not 1000 bps");
@@ -162,6 +172,10 @@ assert(/MAX_FUND_THESIS_BYTES\s*=\s*2_048/u.test(sourceConstants), "maximum fund
 assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and shutdown threshold is not 0.01 OTF");
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
+const adapterSource = readFileSync(join(contracts, "src", "UniswapV3Adapter.sol"), "utf8");
+assert(!/delegatecall/u.test(routerSource + adapterSource), "router or adapter contains delegatecall execution");
+assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource), "router or adapter exposes an arbitrary target");
+assert(/recipient:\s*entryExitRouter/u.test(adapterSource), "V3 adapter recipient is not fixed to the entry router");
 
 const tokenNames = functionNames(compiled.OTFToken);
 assert(tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "fixed OTF supply surface is incomplete");
@@ -171,5 +185,7 @@ assert(compiled.OTFToken.abi.filter((item) => item.type === "constructor")[0].in
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
 assert(!forbiddenAbiWords.test(deploySource), "deployment script contains a removed oracle/strategy surface");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
+assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
+assert(/functionName:\s*"setAdapterApproved"/u.test(deploySource), "deployment does not approve the V3 adapter");
 assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");
 console.log(`Security checks passed for ${production.join(", ")}.`);
