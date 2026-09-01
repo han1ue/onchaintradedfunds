@@ -1,5 +1,10 @@
 import mainnetDeployment from "../config/robinhood-mainnet.json";
 import testnetDeployment from "../config/robinhood-testnet.json";
+import {
+  productionAssetsForChain,
+  testnetAssetById,
+  testnetVenue,
+} from "./asset-catalog";
 import { getAddress, isAddress, type Address } from "viem";
 
 type ContractDeployment = { address?: unknown };
@@ -47,13 +52,20 @@ export const robinhoodTestnetAddresses = Object.freeze({
   factory: deployedTestnetContract("factory"),
   entryRouter: deployedTestnetContract("entryRouter"),
   uniswapV3Adapter: deployedTestnetContract("uniswapV3Adapter"),
-  usdg: address(testnetExternalContracts.usdg),
-  weth: address(testnetExternalContracts.weth),
+  usdg: testnetAssetById("usdg")?.address,
+  weth: testnetAssetById("weth")?.address,
 });
 
 export const robinhoodTestnetLiquidity = Object.freeze({
-  venue: testnetLiquidity.venue === "Synthra" ? "Synthra" : undefined,
-  baseUrl: httpsUrl(testnetLiquidity.baseUrl),
+  venue: testnetLiquidity.venue === "Synthra" && testnetVenue.id === "synthra-v3" ? "Synthra" : undefined,
+  baseUrl: httpsUrl(testnetLiquidity.baseUrl) === testnetVenue.baseUrl ? testnetVenue.baseUrl : undefined,
+});
+
+export const robinhoodTestnetV3 = Object.freeze({
+  factory: testnetVenue.factory,
+  swapRouter02: testnetVenue.swapRouter02,
+  quoter: testnetVenue.quoter,
+  positionManager: testnetVenue.positionManager,
 });
 
 export const robinhoodTestnetCreation = Object.freeze({
@@ -70,6 +82,8 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     && robinhoodTestnetAddresses.feeCollector
     && robinhoodTestnetAddresses.otfToken
     && robinhoodTestnetAddresses.uniswapV3Adapter
+    && address(testnetExternalContracts.uniswapV3Factory)?.toLowerCase() === testnetVenue.factory.toLowerCase()
+    && address(testnetExternalContracts.uniswapV3SwapRouter02)?.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
     && Array.isArray(testnetRouting.approvedAdapters)
     && testnetRouting.approvedAdapters.some((candidate) => (
       address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapV3Adapter?.toLowerCase()
@@ -78,14 +92,14 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
 
 const mainnet = record(mainnetDeployment);
 const mainnetCompatible = Number(mainnet.chainId) === 4663 && mainnet.network === "robinhood-mainnet";
-const mainnetExternalContracts = mainnetCompatible ? record(mainnet.externalContracts) : {};
 const mainnetLiquidity = mainnetCompatible ? record(mainnet.externalLiquidity) : {};
 const mainnetTradingApi = mainnetCompatible ? record(mainnet.uniswapTradingApi) : {};
+const mainnetAssets = mainnetCompatible ? productionAssetsForChain(4663) : [];
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({
-  usdg: address(mainnetExternalContracts.usdg),
-  weth: address(mainnetExternalContracts.weth),
+  usdg: mainnetAssets.find((asset) => asset.id === "usdg")?.address,
+  weth: mainnetAssets.find((asset) => asset.id === "weth")?.address,
 });
 
 export const robinhoodMainnetLiquidity = Object.freeze({

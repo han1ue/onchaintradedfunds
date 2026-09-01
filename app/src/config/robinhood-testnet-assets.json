@@ -1,0 +1,115 @@
+{
+  "chainId": 46630,
+  "venue": {
+    "id": "synthra-v3",
+    "name": "Synthra V3",
+    "baseUrl": "https://app.synthra.org/",
+    "factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
+    "swapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
+    "quoter": "0x231606c321A99DE81e28fE48B07a93F1ba49e713",
+    "positionManager": "0x54A0EF7da351cb8fD1998E7945cc51E5825fB233"
+  },
+  "quoteAssets": [
+    {
+      "id": "usdg",
+      "symbol": "USDG",
+      "name": "USDG",
+      "address": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "decimals": 6,
+      "primary": true
+    },
+    {
+      "id": "weth",
+      "symbol": "WETH",
+      "name": "Wrapped Ether",
+      "address": "0x33e4191705c386532ba27cBF171Db86919200B94",
+      "decimals": 18,
+      "primary": false
+    }
+  ],
+  "fundAssets": [
+    {
+      "id": "tsla",
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "address": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+      "decimals": 18
+    },
+    {
+      "id": "amzn",
+      "symbol": "AMZN",
+      "name": "Amazon",
+      "address": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+      "decimals": 18
+    },
+    {
+      "id": "pltr",
+      "symbol": "PLTR",
+      "name": "Palantir Technologies",
+      "address": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+      "decimals": 18
+    },
+    {
+      "id": "nflx",
+      "symbol": "NFLX",
+      "name": "Netflix",
+      "address": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+      "decimals": 18
+    },
+    {
+      "id": "amd",
+      "symbol": "AMD",
+      "name": "Advanced Micro Devices",
+      "address": "0x71178BAc73cBeb415514eB542a8995b82669778d",
+      "decimals": 18
+    }
+  ],
+  "pools": [
+    {
+      "id": "weth-usdg",
+      "assetA": "weth",
+      "assetB": "usdg",
+      "address": "0xFF8789F34290f889fE0A201f2c90f5894DD6503d",
+      "fee": 100
+    },
+    {
+      "id": "tsla-usdg",
+      "assetA": "tsla",
+      "assetB": "usdg",
+      "address": "0x33130082660AD87a99Ad6120269F91329C82f7c2",
+      "fee": 3000
+    },
+    {
+      "id": "amzn-usdg",
+      "assetA": "amzn",
+      "assetB": "usdg",
+      "address": "0x6C0a5Ef3C4e0D29a56D3AB463f9c28F18482c047",
+      "fee": 3000
+    },
+    {
+      "id": "pltr-usdg",
+      "assetA": "pltr",
+      "assetB": "usdg",
+      "address": "0x5c82380e87dB94f55dda0B1443EB046437158969",
+      "fee": 3000
+    },
+    {
+      "id": "nflx-usdg",
+      "assetA": "nflx",
+      "assetB": "usdg",
+      "address": "0x81EDa513eb0f5FdAf3903220432ebDb0a5FC6B02",
+      "fee": 3000
+    },
+    {
+      "id": "amd-usdg",
+      "assetA": "amd",
+      "assetB": "usdg",
+      "address": "0xe3abEa804606228C89CC3196ECD2fedf27d2A586",
+      "fee": 3000
+    }
+  ],
+  "otfPoolDiscovery": {
+    "quoteAsset": "usdg",
+    "fee": 500
+  }
+}

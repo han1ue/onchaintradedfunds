@@ -14,6 +14,7 @@ import {
   robinhoodTestnetAddresses,
   robinhoodTestnetLiquidity,
 } from "./deployment";
+import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
 
 export type SwapAssetKind = "erc20" | "otf";
 
@@ -33,7 +34,7 @@ export type QuoteRoute = "direct" | "basket";
 export type QuoteState = "available" | "unavailable" | "loading" | "stale" | "failed";
 
 export type SwapRouteHop = {
-  venue: "Uniswap V3" | "Uniswap V4";
+  venue: "Uniswap V3" | "Uniswap V4" | "Synthra V3";
   tokenIn: Address;
   tokenOut: Address;
   feeTier?: number;
@@ -109,6 +110,21 @@ export type DirectApiExecution = {
   transaction?: PlannedTransaction;
 };
 
+export type DirectV3Execution = {
+  kind: "direct-v3";
+  chainId: number;
+  caller: Address;
+  inputToken: Address;
+  outputToken: Address;
+  swapRouter02: Address;
+  amountIn: bigint;
+  minAmountOut: bigint;
+  expiresAt: number;
+  approval: { token: Address; spender: Address; amount: bigint };
+  path: Hex;
+  transaction: PlannedTransaction;
+};
+
 export type BasketRouterExecution = {
   kind: "basket-router";
   chainId: number;
@@ -120,7 +136,7 @@ export type BasketRouterExecution = {
   call: TypedRouterCall;
 };
 
-export type SwapExecutionPlan = DirectApiExecution | BasketRouterExecution;
+export type SwapExecutionPlan = DirectApiExecution | DirectV3Execution | BasketRouterExecution;
 
 export type ResidualRefund = {
   token: Address;
@@ -194,6 +210,23 @@ export const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
+const SYNTHRA_SWAP_ROUTER_ABI = [{
+  type: "function",
+  name: "exactInput",
+  stateMutability: "payable",
+  inputs: [{
+    type: "tuple",
+    name: "params",
+    components: [
+      { type: "bytes", name: "path" },
+      { type: "address", name: "recipient" },
+      { type: "uint256", name: "amountIn" },
+      { type: "uint256", name: "amountOutMinimum" },
+    ],
+  }],
+  outputs: [{ type: "uint256", name: "amountOut" }],
+}] as const;
+
 export function executionStages(input: {
   walletConnected: boolean;
   networkSupported: boolean;
@@ -233,10 +266,16 @@ export function swapDirectionLabel(input: SwapAsset, output: SwapAsset): string 
   return "ERC-20 → ERC-20";
 }
 
-export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset): boolean {
-  void input;
-  void output;
-  return true;
+export function swapIncludesOtf(
+  input?: Pick<SwapAsset, "kind">,
+  output?: Pick<SwapAsset, "kind">,
+): boolean {
+  return input?.kind === "otf" || output?.kind === "otf";
+}
+
+export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset, chainId?: number): boolean {
+  if (!input || !output || !swapIncludesOtf(input, output)) return false;
+  return chainId === 46630 ? testnetSwapPairAllowed(input, output) : true;
 }
 
 export function pastedAsset(value: string): SwapAsset | undefined {
@@ -294,13 +333,8 @@ export async function requestConcurrentQuotes(service: SwapQuoteService, request
       ? [unavailableQuote("direct", request, reason)]
       : [unavailableQuote("direct", request, reason), unavailableQuote("basket", request, reason)];
   }
-  const directOnly = classifySwapDirection(request.input, request.output) === "erc20-to-erc20";
-  if (directOnly) {
-    try {
-      return [await service.quoteDirect(request)];
-    } catch {
-      return [failedQuote("direct", request, "The direct-pool quote request failed.")];
-    }
+  if (!swapIncludesOtf(request.input, request.output)) {
+    return [unavailableQuote("direct", request, "Choose an OTF share on either side of the swap.")];
   }
   const [direct, basket] = await Promise.allSettled([service.quoteDirect(request), service.quoteBasket(request)]);
   return [
@@ -393,6 +427,7 @@ type TypedQuoteParseContext = {
   adapter?: Address;
   permit2?: Address;
   universalRouter?: Address;
+  swapRouter02?: Address;
   chainId: number;
   now: number;
 };
@@ -443,7 +478,7 @@ function sameAddress(left: Address, right: Address): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-export function parseV3Path(path: Hex): readonly SwapRouteHop[] {
+export function parseV3Path(path: Hex, venue: SwapRouteHop["venue"] = "Uniswap V3"): readonly SwapRouteHop[] {
   const bytes = path.slice(2);
   const byteLength = bytes.length / 2;
   if (byteLength < 43 || (byteLength - 20) % 23 !== 0) throw new Error("V3 path has an invalid packed length.");
@@ -460,7 +495,7 @@ export function parseV3Path(path: Hex): readonly SwapRouteHop[] {
     const tokenOut = getAddress(`0x${bytes.slice(offset, offset + 40)}`);
     offset += 40;
     if (feeTier === 0 || sameAddress(tokenIn, tokenOut) || tokenOut === zeroAddress) throw new Error("V3 path has an invalid hop.");
-    hops.push({ venue: "Uniswap V3", tokenIn, tokenOut, feeTier });
+    hops.push({ venue, tokenIn, tokenOut, feeTier });
     tokenIn = tokenOut;
   }
   return hops;
@@ -594,7 +629,70 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   return plan;
 }
 
-function parseLeg(value: unknown, index: number, adapter: Address): AdapterSwapLeg {
+function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext): DirectV3Execution {
+  if (!context.swapRouter02 || !context.request.caller) throw new Error("Synthra direct execution is not configured.");
+  const execution = object(value, "execution");
+  exactKeys(execution, [
+    "kind", "chainId", "caller", "inputToken", "outputToken", "swapRouter02", "amountIn", "minAmountOut",
+    "expiresAtMs", "approval", "path", "transaction",
+  ], "execution");
+  if (string(execution.kind, "execution.kind") !== "direct-v3") throw new Error("Synthra quote has the wrong execution kind.");
+  const plan = {
+    kind: "direct-v3" as const,
+    chainId: integer(execution.chainId, "execution.chainId"),
+    caller: address(execution.caller, "execution.caller"),
+    inputToken: address(execution.inputToken, "execution.inputToken"),
+    outputToken: address(execution.outputToken, "execution.outputToken"),
+    swapRouter02: address(execution.swapRouter02, "execution.swapRouter02"),
+    amountIn: uint(execution.amountIn, "execution.amountIn", false),
+    minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
+    expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
+    path: hex(execution.path, "execution.path"),
+  };
+  if (
+    plan.chainId !== context.chainId
+    || !sameAddress(plan.caller, context.request.caller)
+    || !sameAddress(plan.inputToken, context.request.input.address)
+    || !sameAddress(plan.outputToken, context.request.output.address)
+    || !sameAddress(plan.swapRouter02, context.swapRouter02)
+  ) throw new Error("Synthra execution does not match the selected chain, caller, pair, or router.");
+  const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
+  if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Synthra execution has the wrong exact input amount.");
+  if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Synthra execution has an invalid expiry.");
+  const hops = parseV3Path(plan.path, "Synthra V3");
+  if (!sameAddress(hops[0]!.tokenIn, plan.inputToken) || !sameAddress(hops.at(-1)!.tokenOut, plan.outputToken)) throw new Error("Synthra path endpoints do not match the selected pair.");
+
+  const approvalValue = object(execution.approval, "execution.approval");
+  exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
+  const approval = {
+    token: address(approvalValue.token, "execution.approval.token"),
+    spender: address(approvalValue.spender, "execution.approval.spender"),
+    amount: uint(approvalValue.amount, "execution.approval.amount", false),
+  };
+  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, plan.swapRouter02) || approval.amount !== plan.amountIn) throw new Error("Synthra approval does not match the exact route input.");
+  const transaction = parseTransaction(execution.transaction, "execution.transaction", {
+    chainId: context.chainId,
+    caller: plan.caller,
+    target: plan.swapRouter02,
+  });
+  let decoded: ReturnType<typeof decodeFunctionData<typeof SYNTHRA_SWAP_ROUTER_ABI>>;
+  try {
+    decoded = decodeFunctionData({ abi: SYNTHRA_SWAP_ROUTER_ABI, data: transaction.data });
+  } catch {
+    throw new Error("Synthra transaction is not an exact-input swap.");
+  }
+  if (decoded.functionName !== "exactInput") throw new Error("Synthra transaction is not an exact-input swap.");
+  const [params] = decoded.args;
+  if (
+    params.path.toLowerCase() !== plan.path.toLowerCase()
+    || !sameAddress(getAddress(params.recipient), plan.caller)
+    || params.amountIn !== plan.amountIn
+    || params.amountOutMinimum !== plan.minAmountOut
+  ) throw new Error("Synthra calldata does not match the quoted path, recipient, or amounts.");
+  return { ...plan, approval, transaction };
+}
+
+function parseLeg(value: unknown, index: number, adapter: Address, venue: SwapRouteHop["venue"]): AdapterSwapLeg {
   const leg = object(value, `legs[${index}]`);
   exactKeys(leg, ["adapter", "tokenIn", "tokenOut", "amountIn", "minAmountOut", "data"], `legs[${index}]`);
   const parsedAdapter = address(leg.adapter, `legs[${index}].adapter`);
@@ -604,7 +702,7 @@ function parseLeg(value: unknown, index: number, adapter: Address): AdapterSwapL
   const amountIn = uint(leg.amountIn, `legs[${index}].amountIn`, false);
   const minAmountOut = uint(leg.minAmountOut, `legs[${index}].minAmountOut`, false);
   const data = hex(leg.data, `legs[${index}].data`);
-  const hops = parseV3Path(data);
+  const hops = parseV3Path(data, venue);
   if (!sameAddress(hops[0]!.tokenIn, tokenIn) || !sameAddress(hops.at(-1)!.tokenOut, tokenOut)) {
     throw new Error("Adapter data endpoints do not match the leg.");
   }
@@ -647,7 +745,8 @@ function parseBasketCall(
   const request = object(execution.request, "execution.request");
   const legsValue = array(execution.legs, "execution.legs");
   if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
-  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter));
+  const venue: SwapRouteHop["venue"] = context.chainId === 46630 ? "Synthra V3" : "Uniswap V3";
+  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, venue));
   const funding = parseFunding(execution.funding);
   assertLegFunding(legs, funding);
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -776,10 +875,13 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
   const minimumReceivedRaw = uint(response.minimumReceivedRaw, "minimumReceivedRaw", false);
   if (minimumReceivedRaw > expectedOutputRaw) throw new Error("Quote minimum exceeds expected output.");
   if (decimalAmount(outputAmount, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(expectedOutput, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(minimumReceived, context.request.output.decimals) !== minimumReceivedRaw) throw new Error("Quote display amounts do not match their integer amounts.");
+  const executionValue = object(response.execution, "execution");
   const execution = context.route === "direct"
-    ? parseDirectExecution(response.execution, context)
+    ? executionValue.kind === "direct-v3"
+      ? parseDirectV3Execution(response.execution, context)
+      : parseDirectExecution(response.execution, context)
     : parseBasketExecution(response.execution, context, expiresAt);
-  if (execution.kind === "direct-api") {
+  if (execution.kind === "direct-api" || execution.kind === "direct-v3") {
     if (execution.minAmountOut !== minimumReceivedRaw) throw new Error("Direct execution minimum does not match the quote.");
   } else if (execution.call.method === "mintFromToken") {
     if (execution.call.args[0].minShares !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
@@ -800,7 +902,7 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
       const hop = object(hopValue, `hops[${index}]`);
       exactKeys(hop, ["venue", "tokenIn", "tokenOut", "feeTier"], `hops[${index}]`);
       const venue = string(hop.venue, `hops[${index}].venue`);
-      if (venue !== "Uniswap V3" && venue !== "Uniswap V4") throw new Error("Quote uses an unsupported venue.");
+      if (venue !== "Uniswap V3" && venue !== "Uniswap V4" && venue !== "Synthra V3") throw new Error("Quote uses an unsupported venue.");
       return {
         venue: venue as SwapRouteHop["venue"],
         tokenIn: address(hop.tokenIn, `hops[${index}].tokenIn`),
@@ -835,7 +937,7 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
 export function executionPlanForQuote(quote: SwapQuote | undefined, chainId: number, now: number): SwapExecutionPlan | undefined {
   if (!quote?.execution || quote.chainId !== chainId || !quoteIsFresh(quote, now)) return undefined;
   if (quote.execution.chainId !== chainId) return undefined;
-  const amountIn = quote.execution.kind === "direct-api" ? quote.execution.amountIn : quote.execution.approval.amount;
+  const amountIn = quote.execution.kind === "basket-router" ? quote.execution.approval.amount : quote.execution.amountIn;
   if (amountIn === 0n || amountIn === maxUint256) return undefined;
   return quote.execution;
 }
@@ -882,6 +984,7 @@ export type TypedQuoteServiceConfig = {
   adapter?: Address;
   permit2?: Address;
   universalRouter?: Address;
+  swapRouter02?: Address;
   now?: () => number;
 };
 
@@ -894,6 +997,7 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     adapter: config.adapter,
     permit2: config.permit2,
     universalRouter: config.universalRouter,
+    swapRouter02: config.swapRouter02,
     chainId: config.chainId,
     now: now(),
   });
@@ -1011,6 +1115,7 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       chainId,
       entryRouter: robinhoodTestnetAddresses.entryRouter,
       adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
+      swapRouter02: testnetVenue.swapRouter02,
     });
   }
   return unavailableQuoteService;

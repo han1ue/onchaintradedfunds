@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
 import { robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
 import { ERC20_APPROVE_ABI } from "./swap-model";
+import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-synthra-api";
 
 const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const QUOTE_LIFETIME_MS = 20_000;
@@ -14,6 +15,7 @@ export type SwapQuoteApiDependencies = {
   apiKey?: string;
   now?: () => number;
   providerRequest?: ProviderRequest;
+  testnetClient?: TestnetRoutingClient;
 };
 
 type ValidatedAsset = {
@@ -434,8 +436,14 @@ export async function handleSwapQuoteRequest(value: unknown, dependencies: SwapQ
       return await finalizeDirect(body, { apiKey, now, providerRequest });
     }
     const request = validateQuoteRequest(body, now());
+    if (request.input.kind !== "otf" && request.output.kind !== "otf") {
+      return unavailable(request.route, "Choose an OTF share on either side of the swap.");
+    }
+    if (request.chainId === 46630) {
+      return quoteTestnetSwap(request, { now, client: dependencies.testnetClient });
+    }
     if (request.route === "basket") {
-      if (!robinhoodTestnetDeploymentReady || request.chainId !== 46630 || !robinhoodTestnetAddresses.entryRouter || !robinhoodTestnetAddresses.uniswapV3Adapter) {
+      if (!robinhoodTestnetDeploymentReady || !robinhoodTestnetAddresses.entryRouter || !robinhoodTestnetAddresses.uniswapV3Adapter) {
         return unavailable("basket", "Basket writes require a fresh generic router and approved Uniswap V3 adapter deployment.");
       }
       return unavailable("basket", "The basket route planner is not configured.");

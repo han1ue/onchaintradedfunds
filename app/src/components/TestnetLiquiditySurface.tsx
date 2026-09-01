@@ -31,19 +31,25 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import liquidityConfig from "@/config/legacy-liquidity-testnet.json";
+import {
+  otfPoolDiscovery,
+  testnetAssetById,
+  testnetPools,
+  testnetVenue,
+} from "@/lib/asset-catalog";
 import { robinhoodChainTestnet } from "@/lib/chains";
 
 const MIN_TICK = -887272;
 const MAX_TICK = 887272;
 
-const factory = getAddress(liquidityConfig.factory);
-const positionManager = getAddress(liquidityConfig.positionManager);
-const usdg = getAddress(liquidityConfig.usdg);
-const markets = liquidityConfig.testMarkets.map((market) => ({
-  ...market,
-  token: getAddress(market.token),
-}));
+const factory = testnetVenue.factory;
+const positionManager = testnetVenue.positionManager;
+const usdg = testnetAssetById("usdg")!.address;
+const markets = testnetPools.flatMap((pool) => {
+  if (pool.assetA.id === "usdg") return [{ symbol: pool.assetB.symbol, token: pool.assetB.address, fee: pool.fee }];
+  if (pool.assetB.id === "usdg") return [{ symbol: pool.assetA.symbol, token: pool.assetA.address, fee: pool.fee }];
+  return [];
+});
 
 const erc20Abi = [
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -200,7 +206,7 @@ export function TestnetLiquiditySurface() {
   const isOtfMarket = marketChoice === "otf";
   const validOtfAddress = isAddress(otfAddress) ? getAddress(otfAddress) : undefined;
   const assetAddress = isOtfMarket ? validOtfAddress : selectedMarket?.token;
-  const fee = isOtfMarket ? liquidityConfig.otfFee : selectedMarket?.fee;
+  const fee = isOtfMarket ? otfPoolDiscovery.fee : selectedMarket?.fee;
   const token0 = assetAddress ? (BigInt(assetAddress) < BigInt(usdg) ? assetAddress : usdg) : undefined;
   const token1 = assetAddress ? (token0 && isAddressEqual(token0, assetAddress) ? usdg : assetAddress) : undefined;
 
@@ -343,7 +349,7 @@ export function TestnetLiquiditySurface() {
             <div className="selectControl">
               <select value={marketChoice} onChange={(event) => setMarketChoice(event.target.value)} aria-label="Liquidity pool">
                 {markets.map((market) => <option key={market.token} value={market.token}>{market.symbol}/USDG · {(market.fee / 10_000).toFixed(2)}%</option>)}
-                <option value="otf">OTF/USDG · {(liquidityConfig.otfFee / 10_000).toFixed(2)}%</option>
+                <option value="otf">OTF/USDG · {(otfPoolDiscovery.fee / 10_000).toFixed(2)}%</option>
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </div>
@@ -352,7 +358,7 @@ export function TestnetLiquiditySurface() {
             <label className="liquidityField">
               <span>OTF address</span>
               <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" spellCheck={false} autoComplete="off" />
-              <small>The canonical OTF/USDG pool is resolved directly from the legacy testnet factory.</small>
+              <small>The OTF/USDG pool is resolved directly from the configured Synthra V3 factory.</small>
             </label>
           ) : null}
           <div className="liquidityPoolRecord">

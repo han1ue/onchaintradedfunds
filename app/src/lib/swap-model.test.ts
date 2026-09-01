@@ -198,22 +198,24 @@ describe("swap state model", () => {
     expect(pastedAsset("not-an-address")).toBeUndefined();
   });
 
-  it("models all four swap directions, including ERC20 to ERC20", () => {
+  it("models all four directions but exposes only swaps containing an OTF", () => {
     expect(classifySwapDirection(USDG, FUND_A)).toBe("erc20-to-otf");
     expect(classifySwapDirection(FUND_A, USDG)).toBe("otf-to-erc20");
     expect(classifySwapDirection(FUND_A, FUND_B)).toBe("otf-to-otf");
     expect(classifySwapDirection(USDG, TOKEN)).toBe("erc20-to-erc20");
-    expect(supportedSwapDirection(USDG, TOKEN)).toBe(true);
+    expect(supportedSwapDirection(USDG, TOKEN)).toBe(false);
+    expect(supportedSwapDirection(USDG, FUND_A)).toBe(true);
     expect(swapDirectionLabel(USDG, TOKEN)).toBe("ERC-20 → ERC-20");
   });
 
-  it("requests only a direct quote for ERC20 to ERC20", async () => {
+  it("does not quote an ERC20-to-ERC20 pair", async () => {
     const direct = vi.fn(async () => quote("direct", 9n));
     const basket = vi.fn(async () => quote("basket", 10n));
     const results = await requestConcurrentQuotes(service(direct, basket), request(USDG, TOKEN, 4663));
-    expect(direct).toHaveBeenCalledOnce();
+    expect(direct).not.toHaveBeenCalled();
     expect(basket).not.toHaveBeenCalled();
     expect(results.map((result) => result.route)).toEqual(["direct"]);
+    expect(results[0]).toMatchObject({ state: "unavailable", reason: "Choose an OTF share on either side of the swap." });
   });
 
   it("requests direct and basket OTF routes concurrently and keeps an independent success", async () => {

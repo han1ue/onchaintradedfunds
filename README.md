@@ -7,6 +7,17 @@ This repository contains the Solidity protocol, the operating application, and a
 Basket settlement uses a generic, ordered `SwapLeg[]` boundary. The owner-managed
 `OTFEntryExitRouter` approves narrowly bound trade adapters; the first implementation is
 `UniswapV3Adapter`, whose data is only a validated packed V3 path. Ordinary pool swaps bypass the
-entry router and use the same-origin server integration with the Uniswap Trading API. The recorded
-Robinhood testnet deployment uses this architecture: the factory is bound to the generic router,
-and its router-bound `UniswapV3Adapter` is approved for basket settlement.
+entry router. Production quotes use the same-origin Uniswap Trading API integration; Robinhood
+testnet quotes use the configured Synthra V3 pools and Quoter. The recorded testnet deployment uses
+this architecture: the factory is bound to the generic router, and its router-bound
+`UniswapV3Adapter` is approved for basket settlement.
+
+The Swap product requires an OTF share on at least one side. It is not a general token-to-token
+exchange: mainnet OTF routes use the Uniswap Trading API, while testnet OTF routes use Synthra V3.
+
+`app/src/config/robinhood-testnet-assets.json` is the testnet routing catalog. It separates USDG and WETH
+quote assets from the five supported fund constituents and records their active Synthra pools. The
+constituent pools fund basket mint/burn routes and the testnet liquidity utility; they do not expose
+constituent-to-quote swaps in the user-facing Swap product.
+`app/src/config/assets.json` is a chain-indexed list of featured production assets for app discovery;
+it is not an onchain allowlist and does not limit the permissionless protocol.

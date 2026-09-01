@@ -172,14 +172,17 @@ router, clear approval, verify exact input consumption and reported/observed/min
 preserve pre-existing donations. Arbitrary targets, recipients, commands, and delegatecall are
 forbidden.
 
-The same-origin quote API MUST keep `UNISWAP_API_KEY` server-only. Direct swaps MUST use
+The same-origin quote API MUST keep `UNISWAP_API_KEY` server-only. Production direct swaps MUST use
 exact-input BEST_PRICE V3/V4 CLASSIC single-chain ERC-20 routes and validate supported Permit2,
-approval, sender, recipient, token, amount, deadline, value, and Universal Router targets. Basket
-responses MUST be exact typed requests with ordered legs using only the configured
-`UniswapV3Adapter`. ERC-20-to-ERC-20 MUST request only direct; OTF directions MUST request direct
-and basket candidates independently. Selection MUST use integer expected output and be described
-as the best queried route. Before submission, the app MUST `eth_call` and `estimateGas` the
-exact final sender, target, value, and calldata; basket return output and refunds MUST be decoded
+approval, sender, recipient, token, amount, deadline, value, and Universal Router targets. Testnet
+direct swaps MUST use only cataloged, factory-confirmed, liquid Synthra V3 pools; generated
+SwapRouter02 calldata MUST be bound to the requested caller, tokens, exact input, minimum output,
+and configured target. Basket responses MUST be exact typed requests with ordered legs using only
+the configured `UniswapV3Adapter`. The user-facing Swap API MUST reject a pair unless at least one
+side is a factory OTF. OTF directions MUST request direct and basket candidates independently.
+Selection MUST use integer expected output and
+be described as the best queried route. Before submission, the app MUST `eth_call` and `estimateGas`
+the exact final sender, target, value, and calldata; basket return output and refunds MUST be decoded
 and surfaced.
 
 ## 8. Application and liquidity disclosures
@@ -187,7 +190,13 @@ and surfaced.
 The app MUST distinguish asset-source metadata from onchain inputs and show unavailable deployment,
 quote, approval, simulation, submission, success, and failure states truthfully. Pool creation and
 LP management belong to the external venue. The internal `/liquidity` route MAY remain enabled only
-as a visibly testnet-only utility for explicitly configured legacy pools.
+as a visibly testnet-only utility for explicitly configured Synthra V3 pools.
+
+The testnet catalog MUST separate quote assets from fund constituents. The user-facing app and quote
+server MUST allow OTFs only against quote assets or another OTF. Constituent-to-quote paths MAY be
+used only as internal basket-settlement legs and by the explicit testnet liquidity utility; creation
+MUST remain limited to configured fund constituents. The production asset catalog is chain-indexed
+discovery metadata only and MUST NOT be treated as an onchain authorization boundary.
 
 When the output OTF has zero supply, the Swap screen MUST reject a quote unless its guaranteed
 minimum output is at least `1e16` share units (`0.01` OTF). It MUST inspect the guaranteed minimum,

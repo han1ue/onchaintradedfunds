@@ -39,12 +39,12 @@ import { useAccount, useBalance, useChainId, useDisconnect, usePublicClient, use
 import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
-  robinhoodMainnetAddresses,
   robinhoodMainnetUniswap,
   robinhoodTestnetAddresses,
   robinhoodTestnetCreationReady,
   robinhoodTestnetDeploymentReady,
 } from "@/lib/deployment";
+import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -59,6 +59,7 @@ import {
   quoteServiceForChain,
   requestConcurrentQuotes,
   routerArgsForExecution,
+  swapIncludesOtf,
   supportedSwapDirection,
   unavailableQuote,
   validSwapPair,
@@ -107,36 +108,20 @@ const EMPTY_OTF: SwapAsset = {
 };
 
 function configuredAssetsFor(chainId: number): SwapAsset[] {
-  const addresses = chainId === robinhoodChainTestnet.id
-    ? robinhoodTestnetAddresses
+  const assets = chainId === robinhoodChainTestnet.id
+    ? testnetAssets
     : chainId === robinhoodChain.id
-      ? robinhoodMainnetAddresses
-      : undefined;
-  if (!addresses) return [];
-  const assets: SwapAsset[] = [];
-  if (addresses.usdg) {
-    assets.push({
-      address: addresses.usdg,
-      symbol: "USDG",
-      name: "USDG",
-      kind: "erc20",
-      decimals: chainId === robinhoodChain.id ? 6 : 18,
-      metadataResolved: true,
-      verified: true,
-    });
-  }
-  if (addresses.weth) {
-    assets.push({
-      address: addresses.weth,
-      symbol: "WETH",
-      name: "Wrapped Ether",
-      kind: "erc20",
-      decimals: 18,
-      metadataResolved: true,
-      verified: true,
-    });
-  }
-  return assets;
+      ? productionAssetsForChain(chainId)
+      : [];
+  return assets.map((asset) => ({
+    address: asset.address,
+    symbol: asset.symbol,
+    name: asset.name,
+    kind: "erc20",
+    decimals: asset.decimals,
+    metadataResolved: true,
+    verified: true,
+  }));
 }
 
 function configuredUsdgFor(chainId: number): SwapAsset | undefined {
@@ -361,7 +346,9 @@ function QuoteReview({
   const selectedValid = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   const executionTarget = activeQuote?.execution?.kind === "direct-api"
     ? activeQuote.execution.universalRouter
-    : activeQuote?.execution?.router;
+    : activeQuote?.execution?.kind === "direct-v3"
+      ? activeQuote.execution.swapRouter02
+      : activeQuote?.execution?.router;
   return (
     <details className="swapReview">
       <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : "No executable quote"}</small><ChevronDown size={15} /></summary>
@@ -458,7 +445,8 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const swapSettingsRef = useRef<HTMLDivElement>(null);
   const pairValid = validSwapPair(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
-  const directionSupported = supportedSwapDirection(input, output);
+  const hasOtfSide = swapIncludesOtf(input, output);
+  const directionSupported = supportedSwapDirection(input, output, chainId);
   const amountValid = isPositiveDecimalAmount(amount, input.decimals);
   const supportedNetwork = chainId === robinhoodChainTestnet.id || chainId === robinhoodChain.id;
   const usableQuote = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
@@ -466,8 +454,15 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
   const executionConfigured = executionPlan?.kind === "direct-api"
     ? chainId === robinhoodChain.id && robinhoodMainnetUniswap.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase()
-    : executionPlan?.kind === "basket-router" && robinhoodTestnetDeploymentReady;
+    : executionPlan?.kind === "direct-v3"
+      ? chainId === robinhoodChainTestnet.id && executionPlan.swapRouter02.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
+      : executionPlan?.kind === "basket-router" && robinhoodTestnetDeploymentReady;
   const quoteNetworkConfigured = chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
+  const routingLabel = chainId === robinhoodChain.id
+    ? "Mainnet · Uniswap API"
+    : chainId === robinhoodChainTestnet.id
+      ? "Testnet · Synthra V3"
+      : "Unsupported network";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
   const inputBalanceEnabled = Boolean(address && inputSelected && assetHasExecutableMetadata(input));
@@ -644,6 +639,32 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
         await publicClient.call({ account: address, to: target, data, value });
         const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
         preflight = `Exact direct-swap preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
+      } else if (executionPlan.kind === "direct-v3") {
+        if (executionPlan.swapRouter02.toLowerCase() !== testnetVenue.swapRouter02.toLowerCase()) throw new Error("The direct plan has an unsupported Synthra router target.");
+        const allowance = await publicClient.readContract({
+          address: executionPlan.approval.token,
+          abi: ERC20_APPROVE_ABI,
+          functionName: "allowance",
+          args: [address, executionPlan.approval.spender],
+        });
+        await ensureExactErc20Approval(allowance, executionPlan.approval.amount, async (approvalAmount) => {
+          const approvalHash = await walletClient.writeContract({
+            account: address,
+            address: executionPlan.approval.token,
+            abi: ERC20_APPROVE_ABI,
+            functionName: "approve",
+            args: [executionPlan.approval.spender, approvalAmount],
+          });
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+          if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Synthra approval reset reverted." : "The exact Synthra approval reverted.");
+        });
+        target = executionPlan.transaction.to;
+        data = executionPlan.transaction.data;
+        value = executionPlan.transaction.value;
+        setExecution("simulation");
+        await publicClient.call({ account: address, to: target, data, value });
+        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
+        preflight = `Exact Synthra V3 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
       } else {
         if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) throw new Error("The basket plan has an unsupported entry-router target.");
         const allowance = await publicClient.readContract({
@@ -709,7 +730,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
           : !pairExecutable
             ? "Resolve token metadata"
           : !directionSupported
-            ? "Unsupported direction"
+            ? hasOtfSide ? "Unsupported OTF pair" : "Select an OTF"
             : !quoteNetworkConfigured
               ? "Fresh deployment required"
           : !usableQuote
@@ -733,7 +754,11 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
             : !pairExecutable
               ? "Resolve token decimals and OTF factory identity to request a quote."
               : !directionSupported
-              ? "This swap direction is unsupported."
+                ? !hasOtfSide
+                  ? "Choose an OTF share on either side of the swap."
+                  : chainId === robinhoodChainTestnet.id
+                    ? "On testnet, OTFs can swap only against USDG, WETH, or another OTF."
+                    : "This OTF pair is unsupported."
                 : quotes.some((quote) => quote.state === "loading")
                   ? "Finding the best available queried route…"
                   : quotes.length && !usableQuote
@@ -763,7 +788,7 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
   const swapCard = (
         <section className="swapCard" aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
           <div className="swapCardHeader">
-            <strong>Swap</strong>
+            <div className="swapCardTitle"><strong>Swap</strong><span className="swapRoutingBadge">{routingLabel}</span></div>
             <div className="swapSettingsControl" ref={swapSettingsRef}>
               <button type="button" className={`swapIconButton ${swapSettingsOpen ? "active" : ""}`} title="Swap settings" aria-label="Open swap settings" aria-haspopup="dialog" aria-expanded={swapSettingsOpen} onClick={() => setSwapSettingsOpen((open) => !open)}><SlidersHorizontal size={16} /></button>
               {swapSettingsOpen ? (
@@ -792,7 +817,13 @@ function SwapSurface({ embeddedFund, embedded = false }: { embeddedFund?: SwapAs
         </section>
   );
   const pickerAsset = picker === "input" ? input : output;
-  const pickerDialog = picker && !(embeddedFund && sameAsset(pickerAsset, embeddedFund)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={picker === "input" ? output : input} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
+  const pickerCounterpart = picker === "input" ? output : input;
+  const pickerAllows = (candidate: SwapAsset) => supportedSwapDirection(
+    picker === "input" ? candidate : pickerCounterpart,
+    picker === "input" ? pickerCounterpart : candidate,
+    chainId,
+  );
+  const pickerDialog = picker && !(embeddedFund && sameAsset(pickerAsset, embeddedFund)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={pickerCounterpart} routeFund={routeFund} configuredAssets={configuredAssets.filter(pickerAllows)} otfAssets={otfAssets.filter(pickerAllows)} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
 
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 

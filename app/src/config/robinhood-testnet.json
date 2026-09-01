@@ -45,8 +45,6 @@
     }
   },
   "externalContracts": {
-    "usdg": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
-    "weth": "0x33e4191705c386532ba27cBF171Db86919200B94",
     "uniswapV3Factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
     "uniswapV3SwapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE"
   },

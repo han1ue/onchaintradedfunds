@@ -1,4 +1,4 @@
-import legacyLiquidity from "../config/legacy-liquidity-testnet.json";
+import { testnetFundAssets } from "./asset-catalog";
 import { robinhoodChainTestnet } from "./chains";
 import { creationAssetsFromApi, type CreationAssetData } from "./creation-model";
 
@@ -12,11 +12,11 @@ const assetNames: Record<string, string> = {
   TSLA: "Tesla",
 };
 
-export const testnetCreationAssetConfigs = legacyLiquidity.testMarkets.map((market) => ({
-  address: market.token,
-  symbol: market.symbol,
-  name: assetNames[market.symbol] ?? market.symbol,
-  decimals: 18,
+export const testnetCreationAssetConfigs = testnetFundAssets.map((asset) => ({
+  address: asset.address,
+  symbol: asset.symbol,
+  name: assetNames[asset.symbol] ?? asset.name,
+  decimals: asset.decimals,
 }));
 
 function record(value: unknown): Record<string, unknown> | undefined {

@@ -19,7 +19,7 @@ function request(overrides: Record<string, unknown> = {}) {
     chainId: 4663,
     caller: CALLER,
     input: { address: INPUT, decimals: 18, kind: "erc20", isFactoryVault: false },
-    output: { address: OUTPUT, decimals: 18, kind: "erc20", isFactoryVault: false },
+    output: { address: OUTPUT, decimals: 18, kind: "otf", isFactoryVault: true },
     inputAmountRaw: AMOUNT.toString(),
     slippageBps: 50,
     requestedAtMs: NOW - 1_000,
@@ -80,6 +80,15 @@ describe("same-origin Uniswap quote API", () => {
     expect((await handleSwapQuoteRequest(request(), { now: () => NOW })).body).toMatchObject({ state: "unavailable", route: "direct" });
     expect((await handleSwapQuoteRequest(request({ chainId: 46630 }), { apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable" });
     expect((await handleSwapQuoteRequest(request({ route: "basket", chainId: 46630 }), { apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable", route: "basket" });
+  });
+
+  it("does not contact Uniswap for token-to-token swaps", async () => {
+    const requestProvider = provider();
+    const result = await handleSwapQuoteRequest(request({
+      output: { address: OUTPUT, decimals: 18, kind: "erc20", isFactoryVault: false },
+    }), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    expect(result.body).toMatchObject({ state: "unavailable", reason: "Choose an OTF share on either side of the swap." });
+    expect(requestProvider).not.toHaveBeenCalled();
   });
 
   it("normalizes provider failures without exposing provider details", async () => {

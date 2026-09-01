@@ -129,19 +129,26 @@ most three hops, authenticates every pool against its immutable factory, fixes t
 recipient to the entry router, uses exact temporary approvals, and preserves pre-existing adapter
 donations. The entry router itself contains no V3 parsing and no direct pool-swap method.
 
-The application sends ordinary direct pool swaps through a same-origin server API backed only by
-the Uniswap Trading API. Direct plans are exact-input BEST_PRICE V3/V4 CLASSIC routes; basket plans
-are exact typed router requests and ordered adapter legs. The UI compares only returned candidates,
-selects the best queried route by integer output, and performs exact calldata `eth_call` plus
-`estimateGas` before submission.
+The application Swap product requires an OTF share on at least one side; it is not a general
+token-to-token exchange. Production uses the Uniswap Trading API for exact-input BEST_PRICE V3/V4
+CLASSIC OTF routes. Robinhood testnet uses the configured Synthra V3 factory, Quoter, SwapRouter02,
+and active pools. Basket plans are exact typed router requests and ordered adapter legs. The UI
+compares only returned candidates, selects the best queried route by integer output, and performs
+exact calldata `eth_call` plus `estimateGas` before submission.
 
 Before accepting a quote whose output OTF has zero supply, the Swap screen reads that supply and
 requires the quote's guaranteed minimum output—not merely its expected output—to be at least
 `0.01` OTF. There is no first-purchase maximum. Once supply is nonzero, the special quote minimum
 does not apply.
 
-Production liquidity is managed at the external venue. `/liquidity` remains a visibly testnet-only
-utility for explicitly configured legacy pools and is not a production deployment path.
+The testnet asset catalog distinguishes USDG and WETH quote assets from the five fund constituents.
+User swaps allow OTFs only against quote assets or other OTFs. Constituent-to-quote pools are used
+internally to settle basket mint/burn routes and by the testnet liquidity utility, not exposed as
+general Swap pairs; every configured pool is checked against the Synthra factory and live liquidity.
+The separate chain-indexed production catalog only pre-populates convenient assets; it does not gate
+the permissionless contracts. Production liquidity is managed at the external venue. `/liquidity`
+remains a visibly testnet-only utility for explicitly configured Synthra V3 pools and is not a
+production deployment path.
 
 ## Verification
 

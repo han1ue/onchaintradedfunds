@@ -571,7 +571,9 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   padding: 0 2px 8px 8px;
 }
 
-.swapCardHeader > strong { font-size: 15px; font-weight: 680; }
+.swapCardTitle { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.swapCardTitle > strong { font-size: 15px; font-weight: 680; }
+.swapRoutingBadge { overflow: hidden; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); padding: 3px 7px; font-size: 9px; font-weight: 600; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .swapSettingsControl { position: relative; }
 .swapSettingsControl .swapIconButton { width: 36px; height: 36px; border: 1px solid transparent; border-radius: 10px; }
 .swapSettingsControl .swapIconButton.active { border-color: rgb(var(--accent-rgb) / 38%); background: rgb(var(--accent-rgb) / 9%); color: var(--accent-text); }
