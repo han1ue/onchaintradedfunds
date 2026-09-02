@@ -146,6 +146,28 @@ for (const [name, expected] of Object.entries(expectedConstructors)) {
   assert(actual.inputs.every((input, index) => input.name === expected[index]), `${name} constructor fields changed`);
 }
 
+const teamVestingNames = functionNames(compiled.TeamMarketCapVesting);
+for (const name of ["beneficiary", "pendingBeneficiary", "initiateBeneficiaryTransfer", "cancelBeneficiaryTransfer", "acceptBeneficiaryTransfer", "claim"]) {
+  assert(teamVestingNames.has(name), `team vesting beneficiary-transfer surface ${name} is absent`);
+}
+const teamVestingMutating = functions(compiled.TeamMarketCapVesting)
+  .filter((item) => !["view", "pure"].includes(item.stateMutability))
+  .map((item) => item.name)
+  .sort();
+assert(JSON.stringify(teamVestingMutating) === JSON.stringify([
+  "acceptBeneficiaryTransfer", "cancelBeneficiaryTransfer", "checkpoint", "claim", "initiateBeneficiaryTransfer",
+].sort()), "team vesting exposes an unexpected mutating entrypoint");
+const teamVestingEvents = new Set(
+  compiled.TeamMarketCapVesting.abi.filter((item) => item.type === "event").map((item) => item.name),
+);
+for (const name of ["BeneficiaryTransferInitiated", "BeneficiaryTransferCancelled", "BeneficiaryTransferAccepted"]) {
+  assert(teamVestingEvents.has(name), `team vesting event ${name} is absent`);
+}
+const teamVestingSource = readFileSync(join(contracts, "src", "TeamMarketCapVesting.sol"), "utf8");
+assert(/address public beneficiary;/u.test(teamVestingSource), "team beneficiary is not mutable storage");
+assert(/address public pendingBeneficiary;/u.test(teamVestingSource), "pending team beneficiary storage is absent");
+assert(!/immutable\s+beneficiary/u.test(teamVestingSource), "team beneficiary remains immutable");
+
 const factoryNames = functionNames(compiled.OTFFactory);
 for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "createVault", "buybackCollector", "otfToken", "otfTokenURI", "isVault"]) {
   assert(factoryNames.has(name), `factory function ${name} is absent`);
@@ -255,6 +277,9 @@ assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 2, "deplo
 for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle"]) {
   assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
 }
+assert(/functionName:\s*"beneficiary"/u.test(deploySource) && /functionName:\s*"pendingBeneficiary"/u.test(deploySource), "deployment does not verify initial team beneficiary state");
+const testnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"));
+assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
 assert(/requiredLaunchHookFlags\s*=\s*0x2040n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2040");
 assert(/BigInt\(predicted\)\s*&\s*allHookFlags\)\s*===\s*requiredLaunchHookFlags/u.test(deploySource), "deployment does not enforce the launch hook mask during CREATE2 mining");

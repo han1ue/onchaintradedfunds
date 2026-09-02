@@ -34,7 +34,10 @@ Live FDV MUST use canonical V4 spot state, the configured ETH/USD answer, and th
 `totalSupply()`. Both currency orderings MUST produce the same economic price. The oracle answer MUST
 be positive, no older than `maxOracleAge`, and not from the future. Checkpoints MUST round down to a
 completed $1 million milestone, unlock 10 million OTF per milestone through $10 million, and never
-decrease. Claims MUST go only to the fixed beneficiary and MUST NOT exceed unlocked less claimed.
+decrease. Claims MUST go only to the current beneficiary and MUST NOT exceed unlocked less claimed.
+Only the current beneficiary MAY nominate, replace, or cancel a pending successor. A nonzero nominee
+MUST explicitly accept before receiving claim authority; until then, only the current beneficiary MAY
+claim. Acceptance MUST clear the pending nomination without changing unlocked or claimed accounting.
 
 ## Fund fees and accounted OTF
 

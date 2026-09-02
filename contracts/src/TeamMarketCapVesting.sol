@@ -31,10 +31,21 @@ contract TeamMarketCapVesting {
     error StaleOracle(uint256 updatedAt, uint256 maximumAge);
     error InvalidOracleDecimals(uint8 decimals);
     error NotBeneficiary(address caller);
+    error NotPendingBeneficiary(address caller);
+    error NoPendingBeneficiary();
     error NothingToClaim();
 
     event VestingCheckpointed(uint256 liveFdvUsdWad, uint256 cumulativeUnlocked);
     event Claimed(address indexed beneficiary, uint256 amount, uint256 cumulativeClaimed);
+    event BeneficiaryTransferInitiated(
+        address indexed beneficiary, address indexed pendingBeneficiary
+    );
+    event BeneficiaryTransferCancelled(
+        address indexed beneficiary, address indexed cancelledBeneficiary
+    );
+    event BeneficiaryTransferAccepted(
+        address indexed previousBeneficiary, address indexed newBeneficiary
+    );
 
     address public immutable otf;
     address public immutable stateView;
@@ -42,7 +53,8 @@ contract TeamMarketCapVesting {
     bool public immutable otfIsCurrency0;
     AggregatorV3Interface public immutable ethUsdOracle;
     uint256 public immutable maxOracleAge;
-    address public immutable beneficiary;
+    address public beneficiary;
+    address public pendingBeneficiary;
 
     uint256 public unlockedAmount;
     uint256 public claimedAmount;
@@ -73,6 +85,29 @@ contract TeamMarketCapVesting {
         ethUsdOracle = AggregatorV3Interface(ethUsdOracle_);
         maxOracleAge = maxOracleAge_;
         beneficiary = beneficiary_;
+    }
+
+    function initiateBeneficiaryTransfer(address newBeneficiary) external {
+        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
+        if (newBeneficiary == address(0)) revert ZeroAddress();
+        pendingBeneficiary = newBeneficiary;
+        emit BeneficiaryTransferInitiated(msg.sender, newBeneficiary);
+    }
+
+    function cancelBeneficiaryTransfer() external {
+        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
+        address cancelledBeneficiary = pendingBeneficiary;
+        if (cancelledBeneficiary == address(0)) revert NoPendingBeneficiary();
+        pendingBeneficiary = address(0);
+        emit BeneficiaryTransferCancelled(msg.sender, cancelledBeneficiary);
+    }
+
+    function acceptBeneficiaryTransfer() external {
+        if (msg.sender != pendingBeneficiary) revert NotPendingBeneficiary(msg.sender);
+        address previousBeneficiary = beneficiary;
+        beneficiary = msg.sender;
+        pendingBeneficiary = address(0);
+        emit BeneficiaryTransferAccepted(previousBeneficiary, msg.sender);
     }
 
     function currentOtfPriceWethWad() public view returns (uint256) {

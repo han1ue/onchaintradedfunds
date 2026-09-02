@@ -21,3 +21,7 @@ The collector review scope includes factory-only vault registration, accrual-tim
 accounting, beneficiary-selected share-sale or basket-redemption settlement, exact WETH payment,
 canonical-pool buyback, and burn. The entry router's collector-only fee-share sale must consume the
 exact registered-vault share input and leave only canonical WETH output.
+
+The team-vesting review scope includes current-beneficiary-only successor nomination, replacement,
+and cancellation; nominee-only acceptance; uninterrupted current-beneficiary claim authority before
+acceptance; and unchanged vesting accounting across beneficiary transfers.

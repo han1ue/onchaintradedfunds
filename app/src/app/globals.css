@@ -1168,7 +1168,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 :root[data-theme="light"] .headerWalletButton,
 :root[data-theme="light"] .iconOnly { background: rgb(248 250 251 / 92%); }
 
-.dashboardMain { width: min(1360px, 100%); margin: 0 auto; padding: 52px 24px 32px; }
+.dashboardMain { display: flex; width: min(1360px, 100%); flex: 1; flex-direction: column; gap: 20px; margin: 0 auto; padding: 52px 24px 0; }
 .dashboardMain.createPage,
 .dashboardMain.fundsPage { padding-top: 48px; }
 .dashboardMain h1,
@@ -1444,12 +1444,12 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .emptyDirectory strong { color: var(--text-soft); font-size: 0.78rem; }
 .emptyDirectory span { max-width: 68ch; font-size: 0.68rem; }
 
-.directoryPanelHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.directoryPanelHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--card-raised) 56%, var(--card)); padding: 12px 14px; }
 .directoryPanelHeading h2 { margin: 0; font-size: 0.79rem; font-weight: 600; }
 .directoryPanelHeading p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.65rem; }
 .managedVaultsPanel,
 .depositPositions { overflow: hidden; }
-.managedVaultsHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.managedVaultsHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--card-raised) 56%, var(--card)); padding: 12px 14px; }
 .managedVaultsHeading > div { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .managedVaultsHeading .appPageIcon { width: 32px; height: 32px; }
 .managedVaultsHeading h2 { margin: 0; font-size: 0.79rem; font-weight: 600; }
@@ -2360,8 +2360,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   justify-content: center;
 }
 
-.swapFooterFrame { width: min(1360px, 100%); margin: 0 auto; padding: 0 24px; }
+.swapFooterFrame { width: min(1360px, 100%); margin: auto auto 0; padding: 0 24px; }
 .dashboardFooter { width: 100%; margin: 20px auto 0; border-top: 1px solid var(--border); padding: 16px 0 28px; color: var(--text-muted); font-size: 0.64rem; }
+.dashboardMain > .dashboardFooter { margin-top: auto; }
 .footerLinks,
 .footerLinks a { display: flex; align-items: center; gap: 12px; }
 .footerLinks a { gap: 5px; color: var(--text-soft); text-decoration: none; }

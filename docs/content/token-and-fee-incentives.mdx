@@ -74,8 +74,11 @@ fixed `$2,000` fake oracle; production requires an explicitly configured oracle 
 
 Each completed $1 million milestone permanently unlocks another 10 million OTF, through $10 million
 and the complete allocation. Values between milestones round down. A later FDV decline cannot
-relock tokens. The beneficiary can claim only cumulative unlocked OTF less prior claims. Claims are
-transfers and do not change total supply; burns elsewhere can lower future live FDV.
+relock tokens. The current beneficiary can claim only cumulative unlocked OTF less prior claims.
+They can nominate, replace, or cancel a successor, but claim authority changes only after the
+nonzero nominee explicitly accepts. A pending nominee cannot claim. Beneficiary transfers do not
+change unlocked or claimed accounting. Claims are transfers and do not change total supply; burns
+elsewhere can lower future live FDV.
 
 ## Immutable fund fees and OTF utility
 

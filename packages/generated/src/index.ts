@@ -6827,6 +6827,13 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
+    "name": "acceptBeneficiaryTransfer",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "beneficiary",
     "inputs": [],
     "outputs": [
@@ -6837,6 +6844,13 @@ export const teamMarketCapVestingAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cancelBeneficiaryTransfer",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -6915,6 +6929,19 @@ export const teamMarketCapVestingAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initiateBeneficiaryTransfer",
+    "inputs": [
+      {
+        "name": "newBeneficiary",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -7016,6 +7043,19 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
+    "name": "pendingBeneficiary",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "poolId",
     "inputs": [],
     "outputs": [
@@ -7052,6 +7092,63 @@ export const teamMarketCapVestingAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "BeneficiaryTransferAccepted",
+    "inputs": [
+      {
+        "name": "previousBeneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newBeneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BeneficiaryTransferCancelled",
+    "inputs": [
+      {
+        "name": "beneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "cancelledBeneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BeneficiaryTransferInitiated",
+    "inputs": [
+      {
+        "name": "beneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "pendingBeneficiary",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -7143,7 +7240,23 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "error",
+    "name": "NoPendingBeneficiary",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotBeneficiary",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotPendingBeneficiary",
     "inputs": [
       {
         "name": "caller",

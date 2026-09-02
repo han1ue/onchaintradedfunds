@@ -18,7 +18,8 @@ from the active application configuration.
 Production deployment requires explicit WETH, Uniswap V3 factory and SwapRouter02, official Uniswap
 V4 PoolManager, StateView, PositionManager, Universal Router, and Permit2 addresses. Operators must
 also choose the protocol multisig, team beneficiary, and maximum accepted oracle age. There is no
-route-executor role.
+route-executor role. The configured team beneficiary is the initial vesting beneficiary; later
+changes require nomination by the current beneficiary and explicit acceptance by its nominee.
 
 The configured Robinhood mainnet ETH/USD AggregatorV3-compatible proxy is
 [`0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`](https://robinhoodchain.blockscout.com/address/0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9).
@@ -29,7 +30,21 @@ Production deployment must repeat its identity and freshness checks and configur
 
 **Chain ID:** `46630` <br />
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
-**Status:** Redeployment required
+**Status:** Deployed on September 2, 2026
+
+| Contract | Address |
+| --- | --- |
+| OTF Token | [`0xeC494B54b2b5Ad2572645cf6afD15747ef5AE080`](https://explorer.testnet.chain.robinhood.com/address/0xeC494B54b2b5Ad2572645cf6afD15747ef5AE080) |
+| Launch Manager | [`0xC206F75Ef1E9aa11B00b1F4D21da0c41CB812040`](https://explorer.testnet.chain.robinhood.com/address/0xC206F75Ef1E9aa11B00b1F4D21da0c41CB812040) |
+| Team Vesting | [`0x4Ce6BEC594bd936CA1C340C2b0014c9Ef732AD11`](https://explorer.testnet.chain.robinhood.com/address/0x4Ce6BEC594bd936CA1C340C2b0014c9Ef732AD11) |
+| Buyback Collector | [`0xe8B3CcD9De13E7Dfa7ad5C3b306b2163Dac58c36`](https://explorer.testnet.chain.robinhood.com/address/0xe8B3CcD9De13E7Dfa7ad5C3b306b2163Dac58c36) |
+| Merkle Rewards Distributor | [`0xEFAF711F10248F602d88B5a81b306f88De06C1f0`](https://explorer.testnet.chain.robinhood.com/address/0xEFAF711F10248F602d88B5a81b306f88De06C1f0) |
+| Testnet ETH/USD Oracle | [`0xaAe0311A5580A537c8084Ba7D1470A4b5b2aB89d`](https://explorer.testnet.chain.robinhood.com/address/0xaAe0311A5580A537c8084Ba7D1470A4b5b2aB89d) |
+| Vault Implementation | [`0x4a5175C89963177fc700f990b799badaf9EeaD7a`](https://explorer.testnet.chain.robinhood.com/address/0x4a5175C89963177fc700f990b799badaf9EeaD7a) |
+| Factory | [`0xD154F6E25749584d83fEe3694A896E3f10a291cc`](https://explorer.testnet.chain.robinhood.com/address/0xD154F6E25749584d83fEe3694A896E3f10a291cc) |
+| Entry/Exit Router | [`0x865f8c0d6814c51A2F707Cb98dafb1136FA41C31`](https://explorer.testnet.chain.robinhood.com/address/0x865f8c0d6814c51A2F707Cb98dafb1136FA41C31) |
+| Uniswap V3 Adapter | [`0xE30e5aa6F8703936f93Df1a74B80B40fB8DA6aF6`](https://explorer.testnet.chain.robinhood.com/address/0xE30e5aa6F8703936f93Df1a74B80B40fB8DA6aF6) |
+| Uniswap V4 Adapter | [`0xCeaf68918578272357Af449E7dB1E3B9520325E5`](https://explorer.testnet.chain.robinhood.com/address/0xCeaf68918578272357Af449E7dB1E3B9520325E5) |
 
 The deployment script creates the collector before the factory, then performs one-time factory and
 entry-router configuration. Vault creation registers each vault and its immutable expense
@@ -38,7 +53,6 @@ collector; ordinary users retain the existing swap surfaces. The script records 
 checks, adapter approval, launch initialization, and allocation reconciliation succeed.
 
 The application configuration retains the reviewed testnet periphery addresses and pinned runtime
-hashes for PoolManager, StateView, PositionManager, Universal Router, and Permit2. Those dependencies
-are inputs to the next deployment; they are not evidence that v3 protocol contracts are live. Until
-new addresses are recorded, protocol reads and writes remain disabled rather than falling back to
-the incompatible deployment.
+hashes for PoolManager, StateView, PositionManager, Universal Router, and Permit2. The deployment is
+recorded in `app/src/config/robinhood-testnet.json`; earlier incompatible protocol addresses remain
+unsupported.

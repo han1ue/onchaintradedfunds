@@ -3,16 +3,18 @@ import {
   robinhoodMainnetAddresses,
   robinhoodTestnetAddresses,
   robinhoodTestnetDeploymentReady,
+  robinhoodTestnetNativeEntryReady,
   robinhoodTestnetV4,
   robinhoodTestnetV4AdapterReady,
 } from "./deployment";
 
 describe("Robinhood Testnet V4 deployment", () => {
-  it("fails closed until the breaking v3 contracts are deployed while retaining verified external dependencies", () => {
-    expect(robinhoodTestnetDeploymentReady).toBe(false);
-    expect(robinhoodTestnetV4AdapterReady).toBe(false);
-    expect(robinhoodTestnetAddresses.otfToken).toBeUndefined();
-    expect(robinhoodTestnetAddresses.buybackCollector).toBeUndefined();
+  it("loads the deployed fee-settlement v3 contracts and verified external dependencies", () => {
+    expect(robinhoodTestnetDeploymentReady).toBe(true);
+    expect(robinhoodTestnetV4AdapterReady).toBe(true);
+    expect(robinhoodTestnetNativeEntryReady).toBe(true);
+    expect(robinhoodTestnetAddresses.otfToken).toBe("0xeC494B54b2b5Ad2572645cf6afD15747ef5AE080");
+    expect(robinhoodTestnetAddresses.buybackCollector).toBe("0xe8B3CcD9De13E7Dfa7ad5C3b306b2163Dac58c36");
     expect(robinhoodTestnetV4).toEqual({
       poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
       stateView: "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",

@@ -89,6 +89,13 @@ const json = (value) => JSON.stringify(
 const privateKey = env("DEPLOYER_PRIVATE_KEY");
 const protocolMultisig = address("PROTOCOL_MULTISIG", env("PROTOCOL_MULTISIG"));
 const teamBeneficiary = address("TEAM_BENEFICIARY", env("TEAM_BENEFICIARY"));
+const configuredTeamBeneficiary = address(
+  "trustedRoles.teamBeneficiary",
+  previous.trustedRoles?.teamBeneficiary,
+);
+if (teamBeneficiary !== configuredTeamBeneficiary) {
+  throw new Error("TEAM_BENEFICIARY does not match the repository-configured initial beneficiary");
+}
 const weth = address("WETH", env("WETH"));
 const oracleMaxAge = positiveInteger("ORACLE_MAX_AGE_SECONDS", env("ORACLE_MAX_AGE_SECONDS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
@@ -318,8 +325,15 @@ const tokenBalance = (holder) => publicClient.readContract({
   functionName: "balanceOf",
   args: [holder],
 });
-const [deployerOtfBalance, teamOtfBalance, launchReserveBalance, rewardsOtfBalance, totalSupply] =
-  await Promise.all([
+const [
+  deployerOtfBalance,
+  teamOtfBalance,
+  launchReserveBalance,
+  rewardsOtfBalance,
+  totalSupply,
+  deployedTeamBeneficiary,
+  pendingTeamBeneficiary,
+] = await Promise.all([
     tokenBalance(account.address),
     tokenBalance(teamVesting.address),
     tokenBalance(launchManager.address),
@@ -328,6 +342,16 @@ const [deployerOtfBalance, teamOtfBalance, launchReserveBalance, rewardsOtfBalan
       address: otfToken.address,
       abi: artifact("OTFToken").abi,
       functionName: "totalSupply",
+    }),
+    publicClient.readContract({
+      address: teamVesting.address,
+      abi: artifact("TeamMarketCapVesting").abi,
+      functionName: "beneficiary",
+    }),
+    publicClient.readContract({
+      address: teamVesting.address,
+      abi: artifact("TeamMarketCapVesting").abi,
+      functionName: "pendingBeneficiary",
     }),
   ]);
 if (deployerOtfBalance !== 0n) throw new Error("Unrestricted deployer retained OTF");
@@ -340,6 +364,10 @@ if (
 ) throw new Error("Launch reserve or bootstrap dust mismatch");
 if (rewardsOtfBalance !== 700_000_000n * 10n ** 18n) throw new Error("Rewards allocation mismatch");
 if (totalSupply !== 1_000_000_000n * 10n ** 18n) throw new Error("Original OTF issuance mismatch");
+if (deployedTeamBeneficiary !== teamBeneficiary) throw new Error("Initial team beneficiary mismatch");
+if (pendingTeamBeneficiary !== "0x0000000000000000000000000000000000000000") {
+  throw new Error("Unexpected pending team beneficiary");
+}
 
 const deployment = {
   architecture: "otf-fee-settlement-v3",
@@ -391,6 +419,7 @@ const deployment = {
     approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
     uniswapV3Adapter: uniswapV3Adapter.address,
     uniswapV4Adapter: uniswapV4Adapter.address,
+    nativeEntryExitEnabled: true,
     v4RouteData: "abi.encode((address,uint24,int24,address,bytes)[])",
     maxV4HopsPerLeg: 3,
     maxLegs: 40,
