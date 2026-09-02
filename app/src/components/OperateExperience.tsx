@@ -352,7 +352,7 @@ function OperateFooter() {
   );
 }
 
-function AppPageHeader({ title, description, icon, titleActions, actions }: { title: string; description: React.ReactNode; icon: React.ReactNode; titleActions?: React.ReactNode; actions?: React.ReactNode }) {
+function AppPageHeader({ title, description, icon, titleActions, actions }: { title: React.ReactNode; description: React.ReactNode; icon: React.ReactNode; titleActions?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <header className="appPageHeader">
       <div><span className="appPageIcon">{icon}</span><div><div className="appPageTitleLine"><h1>{title}</h1>{titleActions ? <div className="appPageTitleActions">{titleActions}</div> : null}</div><p>{description}</p></div></div>
@@ -1381,12 +1381,13 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
   return (
     <section className="sectionCard valuationPanel">
       <div className="valuationHeader">
+        <h2>{mode === "share" ? "NAV/share" : "NAV"}</h2>
         <div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div>
       </div>
       {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
         <>
           <div className="valuationSummary">
-            <div><span>{mode === "share" ? "NAV/share" : "NAV"}</span><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong></div>
+            <div><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong></div>
             <div className="valuationRangeToggle" role="group" aria-label="Chart time range">{VALUATION_RANGES.map((option) => <button className={range === option.value ? "active" : ""} key={option.value} type="button" aria-pressed={range === option.value} onClick={() => setRange(option.value)}>{option.label}</button>)}</div>
           </div>
           <p className="valuationContext">{valuation.usesBootstrapNav && mode === "share" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"} in this range.`}</p>
@@ -1503,14 +1504,14 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <div className="fundDetailMetrics" aria-label="Fund metrics">
               <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
               <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-              <div><span>Creator</span><strong>{vaultDetails ? <a className="fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
+              <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
             </div>
           </section>
           <div className="fundDetailPrimaryGrid">
             <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} creationMetadata={creationMetadata} />
             <div className="fundTradeColumn">
+              <section className="fundThesis" aria-labelledby="fund-thesis-title"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2 id="fund-thesis-title">Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></section>
               <section className="fundTradePanel" aria-labelledby="fund-trade-title">
-                <div className="fundThesis"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2>Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></div>
                 <div className="fundTradeBody">
                   <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Buy or sell shares in the fund</p></div></div></div>
                   {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><ActivitySpinner size={17} /></div>}
@@ -1617,10 +1618,9 @@ function WalletSurface() {
     <DashboardPage>
       <div className="appView">
         <AppPageHeader
-          title={address ? shortAddress(address) : "Wallet"}
+          title={address ? <a className="metricExternalLink walletAddressLink" href={`${explorerUrl}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label={`Open wallet ${address} in block explorer in a new tab`}>{shortAddress(address)}<ExternalLink size={12} /></a> : "Wallet"}
           description="Your OTF share positions and managed funds."
           icon={<Wallet size={18} />}
-          titleActions={address ? <a className="iconOnly compact walletExplorerLink" href={`${explorerUrl}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={11} /></a> : undefined}
         />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
           <>

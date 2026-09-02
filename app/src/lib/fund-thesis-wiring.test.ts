@@ -31,5 +31,7 @@ describe("onchain fund thesis wiring", () => {
     const source = readFileSync(new URL("../components/OperateExperience.tsx", import.meta.url), "utf8");
     expect(source).toContain("<p>{vaultDetails.fundThesis}</p>");
     expect(source).not.toContain("creationMetadata.thesis");
+    expect(source).toContain('<section className="fundThesis" aria-labelledby="fund-thesis-title">');
+    expect(source.indexOf('className="fundThesis"')).toBeLessThan(source.indexOf('className="fundTradePanel"'));
   });
 });

@@ -461,7 +461,7 @@ a { color: inherit; }
   inset: var(--testnet-banner-height) 0 0;
   overflow: hidden;
   color: rgb(var(--accent-rgb));
-  opacity: 0.16;
+  opacity: 0.32;
   pointer-events: none;
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 12%, black 82%, transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0%, black 12%, black 82%, transparent 100%);
@@ -496,7 +496,7 @@ a { color: inherit; }
 }
 
 :root[data-theme="light"] .operateAmbientField,
-:root[data-palette="robinhood"] .operateAmbientField { opacity: 0.08; }
+:root[data-palette="robinhood"] .operateAmbientField { opacity: 0.18; }
 
 .topNav {
   position: sticky;
@@ -1181,7 +1181,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageTitleActions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
 .appPageTitleActions .iconOnly { color: var(--text-muted); }
 .appPageTitleActions .walletAddressCopyButton.copied { color: var(--green); }
-.appPageTitleActions .walletExplorerLink { width: 24px; height: 24px; align-self: flex-start; margin-top: -1px; }
 .appPageHeader h1 { margin: 0; font-size: 1.28rem; font-weight: 600; letter-spacing: 0; line-height: 1.15; }
 .appPageHeader p { margin: 5px 0 0; color: var(--text-muted); font-size: 0.75rem; }
 .appPageHeader p a { color: var(--text-soft); text-decoration-color: rgb(var(--accent-rgb) / 48%); text-underline-offset: 2px; }
@@ -1257,8 +1256,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .tokenSupplyLedger span { color: var(--text-muted); font-size: 0.59rem; font-weight: 650; letter-spacing: 0.055em; text-transform: uppercase; }
 .tokenSupplyLedger strong { margin-top: 9px; overflow-wrap: anywhere; color: var(--text); font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.28; }
 .tokenSupplyLedger small { margin-top: 5px; color: var(--text-muted); font-size: 0.61rem; line-height: 1.35; }
-.tokenMetricLink { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); text-decoration: none; }
-.tokenMetricLink:hover { color: var(--utility-action-hover); }
+.metricExternalLink { display: inline-flex; align-items: center; gap: 5px; color: var(--text); text-decoration: none; }
+.metricExternalLink:hover { color: var(--accent-text); }
+.metricExternalLink:focus-visible { border-radius: 3px; outline: 2px solid var(--focus); outline-offset: 3px; }
+.walletAddressLink { max-width: 100%; font: inherit; }
 .tokenMarketGrid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr); align-items: start; gap: 14px; }
 .tokenLaunchPanel,
 .tokenDetailSection { border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
@@ -1349,15 +1350,12 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .feeUtilityTableWrap th { background: var(--background); color: var(--text-muted); font-size: 0.59rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
 .feeUtilityTableWrap td { color: var(--text-soft); font-variant-numeric: tabular-nums; }
 .feeUtilityTableWrap tbody tr:last-child td { border-bottom: 0; }
-.tokenClaimPanel { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-content: center; align-items: end; gap: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; }
-.tokenClaimSummary h2,
-.tokenClaimSummary span,
-.tokenClaimSummary strong { display: block; min-width: 0; }
-.tokenClaimSummary h2 { margin: 0; color: var(--text); font-size: 0.78rem; font-weight: 650; }
-.tokenClaimSummary span { margin-top: 8px; color: var(--text-muted); font-size: 0.59rem; font-weight: 650; letter-spacing: 0.055em; text-transform: uppercase; }
-.tokenClaimSummary strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--text); font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.28; }
-.tokenClaimPanel > .primaryAction { width: auto; min-height: 40px; padding-inline: 13px; }
-.tokenClaimLive { display: flex; min-height: 0.9rem; grid-column: 1 / -1; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: 0.61rem; }
+.tokenClaimPanel { display: grid; min-width: 0; align-content: center; gap: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; }
+.tokenClaimPanel > h2 { margin: 0; color: var(--text); font-size: 0.78rem; font-weight: 650; }
+.tokenClaimAmountRow { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.tokenClaimAmountRow > strong { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.28; }
+.tokenClaimAmountRow > .primaryAction { width: auto; min-height: 40px; flex: 0 0 auto; padding-inline: 13px; }
+.tokenClaimLive { display: flex; min-height: 0.9rem; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: 0.61rem; }
 .tokenClaimLive:empty { display: none; }
 .tokenClaimLive a,
 .launchFinalize a { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); text-decoration: none; }
@@ -1414,9 +1412,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .selectControl select { font-size: 16px; }
   .tokenSectionHeading { align-items: flex-start; flex-direction: column; }
   .tokenSectionMetric { text-align: left; }
-  .tokenClaimPanel { grid-template-columns: 1fr; }
-  .tokenClaimPanel > .primaryAction { width: 100%; }
-  .tokenClaimLive { grid-column: 1; }
   .tokenSharedSwap { border-radius: 12px; }
 }
 .validationSummary,
@@ -1546,7 +1541,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMeta > a { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); font-size: 0.66rem; text-decoration: none; }
 .fundDetailMeta > a:hover { color: var(--utility-action-hover); }
 .fundDetailMeta code { font: inherit; }
-.fundThesis { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 12px; border-bottom: 1px solid var(--border); background: var(--surface); padding: 16px 20px 18px; }
+.fundThesis { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--card); padding: 16px 20px 18px; }
 .fundThesisMark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); color: var(--text-soft); }
 .fundThesis h2 { margin: 1px 0 0; font-size: 0.72rem; font-weight: 650; }
 .fundThesis p { max-width: 74ch; margin: 6px 0 0; color: var(--text-soft); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; text-wrap: pretty; }
@@ -1557,13 +1552,13 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMetrics strong { display: block; }
 .fundDetailMetrics span { color: var(--text-muted); font-size: 0.58rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
 .fundDetailMetrics strong { overflow: hidden; margin-top: 5px; color: var(--text); font-size: 0.75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.fundMetricAddressLink { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; color: var(--utility-action); text-decoration: none; }
-.fundMetricAddressLink:hover { color: var(--utility-action-hover); }
+.fundMetricAddressLink { max-width: 100%; }
 .fundMetricAddressLink code { overflow: hidden; font: inherit; text-overflow: ellipsis; }
 .fundDetailPrimaryGrid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.72fr); align-items: start; gap: 14px; }
 .fundTradeColumn { display: grid; min-width: 0; gap: 10px; }
 .valuationPanel { min-width: 0; overflow: hidden; }
-.valuationHeader { display: flex; align-items: center; justify-content: flex-end; gap: 16px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.valuationHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.valuationHeader h2 { margin: 0; color: var(--text); font-size: 0.79rem; font-weight: 650; }
 .valuationHeader p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.62rem; line-height: 1.45; }
 .valuationMetricControl { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
 .valuationMetricControl > span { color: var(--text-muted); font-size: 0.6rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -1574,10 +1569,8 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationModeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .valuationState { display: flex; min-height: 268px; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); padding: 24px; font-size: 0.68rem; text-align: center; }
 .valuationSummary { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 16px 0; }
-.valuationSummary > div:first-child span,
 .valuationSummary > div:first-child strong { display: block; }
-.valuationSummary > div:first-child span { color: var(--text-muted); font-size: 0.61rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
-.valuationSummary > div:first-child strong { margin-top: 4px; color: var(--text); font-size: 1.35rem; font-variant-numeric: tabular-nums; font-weight: 650; }
+.valuationSummary > div:first-child strong { color: var(--text); font-size: 1.35rem; font-variant-numeric: tabular-nums; font-weight: 650; }
 .valuationRangeToggle { display: inline-flex; flex: 0 0 auto; gap: 2px; }
 .valuationRangeToggle button { min-width: 38px; height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 0 7px; font-size: 0.6rem; font-weight: 700; }
 .valuationRangeToggle button:hover { background: var(--background); color: var(--text); }
@@ -2365,7 +2358,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .fundDetailPrimaryGrid { grid-template-columns: 1fr; }
   .fundTradeColumn,
   .fundTradePanel { display: contents; }
-  .fundThesis { grid-row: 1; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 16px; }
+  .fundThesis { grid-row: 1; }
   .valuationPanel { grid-row: 2; }
   .fundTradeBody { grid-row: 3; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
   .fundFeesPanel { grid-row: 4; }
@@ -2512,8 +2505,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .fundDetailMetrics { grid-template-columns: 1fr; }
   .fundDetailMetrics > div { border-top: 1px solid var(--border); border-left: 0; }
   .fundDetailMetrics > div:first-child { border-top: 0; }
-  .valuationHeader { align-items: stretch; flex-direction: column; }
-  .valuationModeToggle { align-self: flex-end; }
   .valuationMetricControl { justify-content: space-between; }
   .valuationSummary { align-items: flex-start; flex-direction: column; }
   .valuationRangeToggle { width: 100%; justify-content: space-between; }

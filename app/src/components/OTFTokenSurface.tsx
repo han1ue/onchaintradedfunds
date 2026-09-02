@@ -93,11 +93,11 @@ function ClaimPanel({ distributor, explorer }: { distributor?: Address; explorer
   }
 
   const status = claimState === "wallet" ? "Confirm the claim in your wallet." : claimState === "pending" ? "Claim submitted. Waiting for confirmation." : claimState === "success" ? "Rewards claimed successfully." : claimState === "rejected" ? "The wallet request was rejected. Nothing was submitted." : claimState === "reverted" ? "The claim reverted. Refresh and try again." : undefined;
-  const available = !address ? "—" : artifactState === "loading" ? "Loading…" : artifactState === "ready" ? `${tokenNumber(claimable, 4)} OTF` : "Unavailable";
+  const available = !address ? "— $OTF" : artifactState === "loading" ? "Loading…" : artifactState === "ready" ? `${tokenNumber(claimable, 4)} $OTF` : "Unavailable";
 
   return <section className="tokenClaimPanel" aria-labelledby="claim-title">
-    <div className="tokenClaimSummary"><h2 id="claim-title">Claim rewards</h2><span>Available to claim</span><strong>{available}</strong></div>
-    <button className="primaryAction" type="button" disabled={artifactState !== "ready" || claimable === 0n || busy} onClick={() => void claimRewards()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim</button>
+    <h2 id="claim-title">Available to claim</h2>
+    <div className="tokenClaimAmountRow"><strong>{available}</strong><button className="primaryAction" type="button" disabled={artifactState !== "ready" || claimable === 0n || busy} onClick={() => void claimRewards()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim</button></div>
     <div className="tokenClaimLive" aria-live="polite">{status}{claimHash ? <a href={`${explorer}/tx/${claimHash}`} target="_blank" rel="noreferrer">View transaction <ExternalLink size={11} /></a> : null}</div>
   </section>;
 }
@@ -135,7 +135,7 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const tokenStats = <section className="tokenSupplyLedger" aria-label="OTF token statistics">
     <div><span>Price</span><strong>{!configured ? "Unavailable" : priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(priceUsd, 8)}</strong><small>{!configured ? "WETH price unavailable" : priceRead.isPending ? "WETH price loading…" : `${tokenNumber(priceRead.data, 10)} WETH`}</small></div>
     <div><span>Market cap</span><strong>{!configured ? "Unavailable" : totalSupplyRead.isPending || priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(marketCap, 0)}</strong><small>{!configured ? "WETH market cap unavailable" : totalSupplyRead.isPending || priceRead.isPending ? "WETH market cap loading…" : `${tokenNumber(marketCapWeth)} WETH`}</small></div>
-    <div><span>Pool</span><strong>{poolHref ? <a className="tokenMetricLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{testnet ? "OTF / USDG" : mainnet ? "Open on Uniswap" : "No supported venue"}</small></div>
+    <div><span>Pool</span><strong>{poolHref ? <a className="metricExternalLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{testnet ? "OTF / USDG" : mainnet ? "Open on Uniswap" : "No supported venue"}</small></div>
   </section>;
 
   async function finalizeGraduation() {

@@ -30,11 +30,15 @@ describe("$OTF page wiring", () => {
     for (const removed of [">Supply<", "Original supply", "Total burned", "Wallet balance", "FDV"]) expect(ledger).not.toContain(removed);
     expect(component).toContain('testnet ? "/liquidity"');
     expect(component).toContain("robinhoodMainnetLiquidity.baseUrl");
+    expect(component).toContain('className="metricExternalLink"');
+    expect(css).toContain('.metricExternalLink { display: inline-flex; align-items: center; gap: 5px; color: var(--text);');
   });
 
   it("keeps the compact claim beside the top metrics and off the global Swap route", () => {
-    expect(component).toContain("Claim rewards");
     expect(component).toContain("Available to claim");
+    expect(component).not.toContain("Claim rewards");
+    expect(component).toContain('className="tokenClaimAmountRow"');
+    expect(component).toContain("$OTF");
     expect(component).toContain('className="tokenTopRow"');
     expect(component.indexOf("<ClaimPanel")).toBeLessThan(component.indexOf("tokenSwapLifecycleGrid"));
     expect(component).not.toContain("Merkle rewards");
@@ -68,6 +72,12 @@ describe("$OTF page wiring", () => {
     expect(operate).toContain("Your OTF shares will appear here after a purchase or deposit.");
     expect(css).toContain(".inlineEmptyState > div > span { color: var(--text-muted); font-weight: 400; opacity: 1; }");
     expect(css).not.toMatch(/\.walletPositionEmpty\s+span\s*\{/u);
+  });
+
+  it("uses the shared external-link treatment for the wallet address", () => {
+    expect(operate).toContain('className="metricExternalLink walletAddressLink"');
+    expect(operate).toContain('className="metricExternalLink fundMetricAddressLink"');
+    expect(operate).not.toContain('className="iconOnly compact walletExplorerLink"');
   });
 
   it("keeps focus, narrow-layout, and reduced-motion affordances", () => {
