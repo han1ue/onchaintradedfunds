@@ -10,6 +10,7 @@ function isAppRoute(pathname: string): boolean {
     pathname.startsWith("/funds") ||
     pathname === "/create" ||
     pathname === "/liquidity" ||
+    pathname === "/token" ||
     pathname === "/verified" ||
     pathname === "/wallet"
   );

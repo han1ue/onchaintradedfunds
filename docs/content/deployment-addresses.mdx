@@ -5,8 +5,8 @@ description: OTF v2 deployment status and required external configuration.
 
 # Deployment addresses
 
-The OTF token-economics v2 architecture requires a fresh deployment. No production or replacement
-testnet protocol address is recorded until that deployment is performed and verified.
+The OTF token-economics v2 architecture is deployed on Robinhood Chain Testnet. Robinhood Chain
+Mainnet remains undeployed.
 
 ## Robinhood Chain Mainnet
 
@@ -33,11 +33,21 @@ Run `pnpm oracle:verify:robinhood-mainnet` with `ORACLE_MAX_AGE_SECONDS` and, op
 
 **Chain ID:** `46630` <br />
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
-**Status:** Redeployment required
+**Status:** Deployed 1 September 2026
 
-The old generic-adapter deployment and its fee collector are intentionally unsupported. The
-application therefore disables protocol reads and transactions instead of falling back to stale
-addresses.
+| Contract | Address |
+| --- | --- |
+| OTF token | [`0x5BcBc620a29bf41736ED76A441f04c253177273e`](https://explorer.testnet.chain.robinhood.com/address/0x5BcBc620a29bf41736ED76A441f04c253177273e) |
+| Launch manager | [`0x79b0B988f627130c445C73656F2c2df932df8040`](https://explorer.testnet.chain.robinhood.com/address/0x79b0B988f627130c445C73656F2c2df932df8040) |
+| Team vesting | [`0x50b53603faAdd4BcF4a522eA524B9202B68B53fb`](https://explorer.testnet.chain.robinhood.com/address/0x50b53603faAdd4BcF4a522eA524B9202B68B53fb) |
+| Buyback collector | [`0xFEf16D56c5bCEc5cc639bf320b72A8cE1De02b75`](https://explorer.testnet.chain.robinhood.com/address/0xFEf16D56c5bCEc5cc639bf320b72A8cE1De02b75) |
+| Merkle rewards distributor | [`0x4b0D29fbFe368a3999C1Ce364422a65E7e596Edb`](https://explorer.testnet.chain.robinhood.com/address/0x4b0D29fbFe368a3999C1Ce364422a65E7e596Edb) |
+| Testnet ETH/USD oracle | [`0x475763a2e9122695726BC05a6328482BaeA52be9`](https://explorer.testnet.chain.robinhood.com/address/0x475763a2e9122695726BC05a6328482BaeA52be9) |
+| Vault implementation | [`0xA7A5C46f73b6F7B6eEA04dCC6b5014CC16562A8F`](https://explorer.testnet.chain.robinhood.com/address/0xA7A5C46f73b6F7B6eEA04dCC6b5014CC16562A8F) |
+| Factory | [`0xb14dFfFDe1a11f3ca368AF69Cb7E3c185fFaF798`](https://explorer.testnet.chain.robinhood.com/address/0xb14dFfFDe1a11f3ca368AF69Cb7E3c185fFaF798) |
+| Entry/exit router | [`0x0A284218f3ff9920f976EEf8e4Bfa4aD5c1a95fF`](https://explorer.testnet.chain.robinhood.com/address/0x0A284218f3ff9920f976EEf8e4Bfa4aD5c1a95fF) |
+| Uniswap V3 adapter | [`0xEFA9A99960b88b93Ed3aB46Ed1976A6b0b574d99`](https://explorer.testnet.chain.robinhood.com/address/0xEFA9A99960b88b93Ed3aB46Ed1976A6b0b574d99) |
+| Uniswap V4 adapter | [`0xf405a882D300B13c2F6eE7590c34FC5677da2807`](https://explorer.testnet.chain.robinhood.com/address/0xf405a882D300B13c2F6eE7590c34FC5677da2807) |
 
 The deployment script uses the repository's documented Robinhood Testnet V4 mirror addresses for
 PoolManager, StateView, Universal Router, and Permit2. PositionManager is an explicit operator input.
@@ -51,14 +61,12 @@ the application configuration:
 | --- | --- | --- |
 | PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` | `0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626` |
 | StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` | `0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6` |
+| PositionManager | `0x58daec3116aae6D93017bAAea7749052E8a04fA7` | `0xf3a0edb689229fa4bf135a728f2ec2eb4a2fbee2e41e3e74ffadb7b4c56e8a6d` |
 | Universal Router | `0x8876789976dEcBfCbBbe364623C63652db8C0904` | `0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f` |
 | Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | `0x0117e0ed818bc3f2a8729ffc336c837e63e965f04b473047b39b35ad86aac259` |
 
-These observations verify identity against the pinned bytes at deployment time; they do not make
-the unofficial mirror an official Uniswap deployment. The operator must separately provide and pin
-the chosen testnet PositionManager address and hash.
-
-After a successful deployment, `app/src/config/robinhood-testnet.json` records:
+These observations verify dependency identity against the pinned runtime bytes. The complete
+deployment record in `app/src/config/robinhood-testnet.json` includes:
 
 - OTF token, launch manager, team vesting, buyback collector, Merkle distributor;
 - vault implementation, factory, entry/exit router, and V3/V4 adapters;

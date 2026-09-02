@@ -27,6 +27,7 @@ export type SwapAsset = {
   metadataResolved?: boolean;
   verified?: boolean;
   isFactoryVault?: boolean;
+  isProtocolToken?: boolean;
 };
 
 export type SwapDirection = "erc20-to-otf" | "otf-to-erc20" | "otf-to-otf" | "erc20-to-erc20";
@@ -267,10 +268,13 @@ export function swapDirectionLabel(input: SwapAsset, output: SwapAsset): string 
 }
 
 export function swapIncludesOtf(
-  input?: Pick<SwapAsset, "kind">,
-  output?: Pick<SwapAsset, "kind">,
+  input?: Pick<SwapAsset, "kind" | "isProtocolToken">,
+  output?: Pick<SwapAsset, "kind" | "isProtocolToken">,
 ): boolean {
-  return input?.kind === "otf" || output?.kind === "otf";
+  return input?.kind === "otf"
+    || output?.kind === "otf"
+    || input?.isProtocolToken === true
+    || output?.isProtocolToken === true;
 }
 
 export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset, chainId?: number): boolean {
@@ -334,7 +338,14 @@ export async function requestConcurrentQuotes(service: SwapQuoteService, request
       : [unavailableQuote("direct", request, reason), unavailableQuote("basket", request, reason)];
   }
   if (!swapIncludesOtf(request.input, request.output)) {
-    return [unavailableQuote("direct", request, "Choose an OTF share on either side of the swap.")];
+    return [unavailableQuote("direct", request, "Swap is only available for OTF assets.")];
+  }
+  if (classifySwapDirection(request.input, request.output) === "erc20-to-erc20") {
+    try {
+      return [await service.quoteDirect(request)];
+    } catch {
+      return [failedQuote("direct", request, "The direct-pool quote request failed.")];
+    }
   }
   const [direct, basket] = await Promise.allSettled([service.quoteDirect(request), service.quoteBasket(request)]);
   return [
@@ -1013,8 +1024,8 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
         route,
         chainId: request.chainId,
         caller: request.caller,
-        input: { address: request.input.address, decimals: request.input.decimals, kind: request.input.kind, isFactoryVault: request.input.isFactoryVault === true },
-        output: { address: request.output.address, decimals: request.output.decimals, kind: request.output.kind, isFactoryVault: request.output.isFactoryVault === true },
+        input: { address: request.input.address, decimals: request.input.decimals, kind: request.input.kind, isFactoryVault: request.input.isFactoryVault === true, isProtocolToken: request.input.isProtocolToken === true },
+        output: { address: request.output.address, decimals: request.output.decimals, kind: request.output.kind, isFactoryVault: request.output.isFactoryVault === true, isProtocolToken: request.output.isProtocolToken === true },
         inputAmountRaw: inputAmountRaw.toString(),
         slippageBps: request.slippageBps,
         requestedAtMs: request.requestedAt,

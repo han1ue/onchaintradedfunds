@@ -41,6 +41,13 @@ const TOKEN: SwapAsset = {
   decimals: 18,
   metadataResolved: true,
 };
+const PROTOCOL_OTF: SwapAsset = {
+  ...TOKEN,
+  address: "0x0000000000000000000000000000000000000006",
+  symbol: "OTF",
+  name: "OTF Protocol Token",
+  isProtocolToken: true,
+};
 const FUND_A: SwapAsset = {
   address: "0x0000000000000000000000000000000000000002",
   symbol: "FUND",
@@ -198,12 +205,13 @@ describe("swap state model", () => {
     expect(pastedAsset("not-an-address")).toBeUndefined();
   });
 
-  it("models all four directions but exposes only swaps containing an OTF", () => {
+  it("models all four directions but exposes only swaps containing an OTF asset", () => {
     expect(classifySwapDirection(USDG, FUND_A)).toBe("erc20-to-otf");
     expect(classifySwapDirection(FUND_A, USDG)).toBe("otf-to-erc20");
     expect(classifySwapDirection(FUND_A, FUND_B)).toBe("otf-to-otf");
     expect(classifySwapDirection(USDG, TOKEN)).toBe("erc20-to-erc20");
     expect(supportedSwapDirection(USDG, TOKEN)).toBe(false);
+    expect(supportedSwapDirection(USDG, PROTOCOL_OTF)).toBe(true);
     expect(supportedSwapDirection(USDG, FUND_A)).toBe(true);
     expect(swapDirectionLabel(USDG, TOKEN)).toBe("ERC-20 → ERC-20");
   });
@@ -215,7 +223,16 @@ describe("swap state model", () => {
     expect(direct).not.toHaveBeenCalled();
     expect(basket).not.toHaveBeenCalled();
     expect(results.map((result) => result.route)).toEqual(["direct"]);
-    expect(results[0]).toMatchObject({ state: "unavailable", reason: "Choose an OTF share on either side of the swap." });
+    expect(results[0]).toMatchObject({ state: "unavailable", reason: "Swap is only available for OTF assets." });
+  });
+
+  it("requests only a direct route when the protocol OTF token qualifies the pair", async () => {
+    const direct = vi.fn(async () => quote("direct", 9n));
+    const basket = vi.fn(async () => quote("basket", 10n));
+    const results = await requestConcurrentQuotes(service(direct, basket), request(USDG, PROTOCOL_OTF, 4663));
+    expect(direct).toHaveBeenCalledOnce();
+    expect(basket).not.toHaveBeenCalled();
+    expect(results).toHaveLength(1);
   });
 
   it("requests direct and basket OTF routes concurrently and keeps an independent success", async () => {

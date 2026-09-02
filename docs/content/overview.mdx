@@ -136,10 +136,11 @@ stream, and clears both ERC-20 and Permit2 allowances. The entry router itself c
 venue-specific parsing and no direct pool-swap method. Current testnet basket quotes still use only
 the cataloged liquid Synthra V3 pools; V4 routing stays dormant until V4 pool keys are configured.
 
-The application Swap product requires an OTF share on at least one side; it is not a general
-token-to-token exchange. Production uses the Uniswap Trading API for exact-input BEST_PRICE V3/V4
-CLASSIC OTF routes. Robinhood testnet uses the configured Synthra V3 factory, Quoter, SwapRouter02,
-and active pools. Basket plans are exact typed router requests and ordered adapter legs. The UI
+The application Swap product requires a fund share or the protocol OTF token on at least one side;
+it is not a general token-to-token exchange. Production uses the Uniswap Trading API for exact-input
+BEST_PRICE V3/V4 CLASSIC OTF routes. Robinhood testnet fund routes use the configured Synthra V3
+factory, Quoter, SwapRouter02, and active pools; WETH/OTF uses the canonical launch V4 pool. Basket
+plans are exact typed router requests and ordered adapter legs. The UI
 compares only returned candidates, selects the best queried route by integer output, and performs
 exact calldata `eth_call` plus `estimateGas` before submission.
 

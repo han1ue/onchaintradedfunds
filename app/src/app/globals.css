@@ -1157,15 +1157,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .primaryAction:disabled,
 .secondaryAction:disabled { cursor: not-allowed; opacity: 0.48; }
 
-.sectionCard,
-.metricCard { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-.directoryMetrics,
-.walletMetrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sectionCard { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.directoryMetrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .directoryMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
-.walletMetrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.metricCard { position: relative; min-width: 0; padding: 12px 14px; }
-.metricLabel { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 7px; color: var(--text-muted); font-size: 0.66rem; font-weight: 600; line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase; }
-.metricCard strong { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.25; }
 .tokenView { width: min(900px, 100%); margin: 0 auto; }
 .tokenView .appPageIcon > svg { width: 20px; height: 20px; }
 .tokenStatusNotice { align-items: center; }
@@ -1350,9 +1344,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .tokenSectionHeading { align-items: flex-start; flex-direction: column; }
   .tokenSectionMetric { text-align: left; }
 }
-.walletMetrics .metricCard { position: relative; }
-.walletMetrics .hasMetricAction .metricLabel { padding-right: 56px; }
-
 .validationSummary,
 .inlineEmptyState { display: flex; align-items: flex-start; gap: 9px; border: 1px solid rgb(241 185 61 / 28%); border-radius: 6px; background: rgb(241 185 61 / 6%); color: var(--gold); padding: 10px 11px; }
 .validationSummary.success { border-color: rgb(46 208 154 / 30%); background: rgb(46 208 154 / 6%); color: var(--green); }
@@ -1450,18 +1441,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .depositsEmpty button { margin-top: 4px; }
 .depositsEmpty > .secondaryAction { margin-top: 4px; }
 
-.walletAddressMetric .metricLabel { padding-right: 112px; }
-.walletAddressValue { display: flex; min-width: 0; align-items: center; gap: 8px; margin-top: 10px; }
-.walletAddressValue strong { min-width: 0; flex: 1 1 auto; margin-top: 0; }
-.walletAddressActions { position: absolute; top: 11px; right: 12px; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
-.walletAddressActions .iconOnly { color: var(--text-muted); }
-.walletAddressCopyFeedback { color: var(--green); font-size: 0.67rem; font-weight: 650; white-space: nowrap; }
-.metricCardFaucetAction { position: absolute; top: 9px; right: 12px; display: inline-flex; height: 22px; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 5px; background: var(--card-raised); color: var(--text-muted); padding: 0 4px; font-size: 0.58rem; font-weight: 600; line-height: 1; text-decoration: none; text-transform: none; white-space: nowrap; }
-.metricCardFaucetAction:hover { border-color: var(--border-strong); background: var(--surface); color: var(--text); }
-.metricCardFaucetAction .metricCardFaucetIcon { order: 0; }
-.metricCardFaucetAction > span { order: 1; }
-.metricCardFaucetAction .metricCardFaucetExternalIcon { order: 2; }
-.walletDisconnectAction { color: var(--danger); }
 .walletVaultRows { display: grid; }
 .walletVaultRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, auto) minmax(120px, auto) auto; align-items: center; gap: 16px; min-height: 62px; border-top: 1px solid var(--border); color: var(--text); padding: 10px 14px; text-decoration: none; transition: background 150ms ease; }
 .walletVaultRow:first-child { border-top: 0; }
@@ -2281,8 +2260,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .footerLinks a:hover { color: var(--accent-text); }
 
 @media (max-width: 1120px) {
-  .directoryMetrics,
-  .walletMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .directoryMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .createLayout { grid-template-columns: 190px minmax(0, 1fr); }
 }
 
@@ -2421,8 +2399,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .topNavInner { grid-template-columns: minmax(0, 1fr) auto; }
   .headerWalletButton { max-width: 104px; padding-inline: 8px; }
   .headerWalletButton svg { display: none; }
-  .directoryMetrics,
-  .walletMetrics { grid-template-columns: 1fr; }
+  .directoryMetrics { grid-template-columns: 1fr; }
   .directoryFundCard dl { grid-template-columns: 1fr; }
   .directoryPanelHeading { align-items: flex-start; flex-direction: column; }
   .fundDetailHeader { padding: 15px; }

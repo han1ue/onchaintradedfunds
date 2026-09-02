@@ -322,7 +322,12 @@ const [deployerOtfBalance, teamOtfBalance, launchReserveBalance, rewardsOtfBalan
   ]);
 if (deployerOtfBalance !== 0n) throw new Error("Unrestricted deployer retained OTF");
 if (teamOtfBalance !== 100_000_000n * 10n ** 18n) throw new Error("Team allocation mismatch");
-if (launchReserveBalance !== 50_000_000n * 10n ** 18n) throw new Error("Launch reserve mismatch");
+const permanentLaunchReserve = 50_000_000n * 10n ** 18n;
+const maximumBootstrapDust = 1_000n * 10n ** 18n;
+if (
+  launchReserveBalance < permanentLaunchReserve
+  || launchReserveBalance > permanentLaunchReserve + maximumBootstrapDust
+) throw new Error("Launch reserve or bootstrap dust mismatch");
 if (rewardsOtfBalance !== 700_000_000n * 10n ** 18n) throw new Error("Rewards allocation mismatch");
 if (totalSupply !== 1_000_000_000n * 10n ** 18n) throw new Error("Original OTF issuance mismatch");
 

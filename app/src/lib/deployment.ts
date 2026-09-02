@@ -123,6 +123,7 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
 
 const mainnet = record(mainnetDeployment);
 const mainnetCompatible = Number(mainnet.chainId) === 4663 && mainnet.network === "robinhood-mainnet";
+const mainnetProtocolContracts = mainnetCompatible ? record(mainnet.protocolContracts) : {};
 const mainnetExternalContracts = mainnetCompatible ? record(mainnet.externalContracts) : {};
 const mainnetLiquidity = mainnetCompatible ? record(mainnet.externalLiquidity) : {};
 const mainnetTradingApi = mainnetCompatible ? record(mainnet.uniswapTradingApi) : {};
@@ -130,6 +131,7 @@ const mainnetAssets = mainnetCompatible ? productionAssetsForChain(4663) : [];
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({
+  otfToken: address(record(mainnetProtocolContracts.otfToken).address),
   usdg: mainnetAssets.find((asset) => asset.id === "usdg")?.address,
   weth: mainnetAssets.find((asset) => asset.id === "weth")?.address,
   ethUsdOracle: address(mainnetExternalContracts.ethUsdOracle),

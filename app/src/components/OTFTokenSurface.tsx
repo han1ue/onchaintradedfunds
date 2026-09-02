@@ -381,7 +381,7 @@ export function OTFTokenSurface() {
     return (
       <div className="appView tokenView tokenMarketView">
         <header className="tokenMarketHeader"><div className="tokenMarketIdentity"><span className="appPageIcon"><OtfBrandMark /></span><div><h1>$OTF</h1><p>The OTF market, live token supply, launch status, vesting, burns, and rewards.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Specification<ExternalLink size={12} /></a></header>
-        <section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "Fresh testnet deployment required" : "No mainnet deployment configured"}</h2><p>The breaking token-economics v2 contracts have not been configured on this network. Trading remains disabled and no stale testnet address is shown.</p></div></section>
+        <section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "OTF market unavailable" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The configured testnet contracts could not be loaded." : "$OTF trading and launch data are available on Robinhood Testnet."}</p></div></section>
       </div>
     );
   }

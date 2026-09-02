@@ -18,8 +18,8 @@ function request(overrides: Record<string, unknown> = {}) {
     route: "direct",
     chainId: 4663,
     caller: CALLER,
-    input: { address: INPUT, decimals: 18, kind: "erc20", isFactoryVault: false },
-    output: { address: OUTPUT, decimals: 18, kind: "otf", isFactoryVault: true },
+    input: { address: INPUT, decimals: 18, kind: "erc20", isFactoryVault: false, isProtocolToken: false },
+    output: { address: OUTPUT, decimals: 18, kind: "otf", isFactoryVault: true, isProtocolToken: false },
     inputAmountRaw: AMOUNT.toString(),
     slippageBps: 50,
     requestedAtMs: NOW - 1_000,
@@ -85,9 +85,9 @@ describe("same-origin Uniswap quote API", () => {
   it("does not contact Uniswap for token-to-token swaps", async () => {
     const requestProvider = provider();
     const result = await handleSwapQuoteRequest(request({
-      output: { address: OUTPUT, decimals: 18, kind: "erc20", isFactoryVault: false },
+      output: { address: OUTPUT, decimals: 18, kind: "erc20", isFactoryVault: false, isProtocolToken: false },
     }), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
-    expect(result.body).toMatchObject({ state: "unavailable", reason: "Choose an OTF share on either side of the swap." });
+    expect(result.body).toMatchObject({ state: "unavailable", reason: "Swap is only available for OTF assets." });
     expect(requestProvider).not.toHaveBeenCalled();
   });
 

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
-import { robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
-import { ERC20_APPROVE_ABI } from "./swap-model";
+import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
+import { ERC20_APPROVE_ABI, swapIncludesOtf } from "./swap-model";
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-synthra-api";
 
 const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
@@ -23,6 +23,7 @@ type ValidatedAsset = {
   decimals: number;
   kind: "erc20" | "otf";
   isFactoryVault: boolean;
+  isProtocolToken: boolean;
 };
 
 type ValidatedQuoteRequest = {
@@ -107,14 +108,27 @@ function valueAt(value: unknown, paths: readonly string[]): unknown {
 
 function validateAsset(value: unknown, label: string): ValidatedAsset {
   const asset = record(value, label);
-  exactKeys(asset, ["address", "decimals", "kind", "isFactoryVault"], label);
+  exactKeys(asset, ["address", "decimals", "kind", "isFactoryVault", "isProtocolToken"], label);
   const kind = string(asset.kind, `${label}.kind`);
   if (kind !== "erc20" && kind !== "otf") throw new Error(`${label}.kind is unsupported.`);
   const decimals = integer(asset.decimals, `${label}.decimals`);
   if (decimals < 0 || decimals > 36) throw new Error(`${label}.decimals is out of range.`);
   const isFactoryVault = asset.isFactoryVault === true;
+  const isProtocolToken = asset.isProtocolToken === true;
   if (kind === "otf" && !isFactoryVault) throw new Error(`${label} is not a factory-confirmed OTF.`);
-  return { address: address(asset.address, `${label}.address`), decimals, kind, isFactoryVault };
+  if (kind === "otf" && isProtocolToken) throw new Error(`${label} cannot be both an OTF share and the protocol token.`);
+  return { address: address(asset.address, `${label}.address`), decimals, kind, isFactoryVault, isProtocolToken };
+}
+
+function validateProtocolToken(asset: ValidatedAsset, chainId: number, label: string): ValidatedAsset {
+  if (!asset.isProtocolToken) return asset;
+  const configured = chainId === 46630
+    ? robinhoodTestnetAddresses.otfToken
+    : chainId === 4663
+      ? robinhoodMainnetAddresses.otfToken
+      : undefined;
+  if (!configured || !sameAddress(asset.address, configured)) throw new Error(`${label} is not the configured OTF token.`);
+  return asset;
 }
 
 function validateQuoteRequest(value: unknown, now: number): ValidatedQuoteRequest {
@@ -124,8 +138,8 @@ function validateQuoteRequest(value: unknown, now: number): ValidatedQuoteReques
   const route = string(body.route, "route");
   if (route !== "direct" && route !== "basket") throw new Error("Quote route is unsupported.");
   const chainId = integer(body.chainId, "chainId");
-  const input = validateAsset(body.input, "input");
-  const output = validateAsset(body.output, "output");
+  const input = validateProtocolToken(validateAsset(body.input, "input"), chainId, "input");
+  const output = validateProtocolToken(validateAsset(body.output, "output"), chainId, "output");
   if (sameAddress(input.address, output.address)) throw new Error("Input and output tokens must differ.");
   const requestedAtMs = integer(body.requestedAtMs, "requestedAtMs");
   if (requestedAtMs > now + 1_000 || now - requestedAtMs > MAX_QUOTE_LIFETIME_MS) throw new Error("Quote request timestamp is invalid.");
@@ -436,8 +450,8 @@ export async function handleSwapQuoteRequest(value: unknown, dependencies: SwapQ
       return await finalizeDirect(body, { apiKey, now, providerRequest });
     }
     const request = validateQuoteRequest(body, now());
-    if (request.input.kind !== "otf" && request.output.kind !== "otf") {
-      return unavailable(request.route, "Choose an OTF share on either side of the swap.");
+    if (!swapIncludesOtf(request.input, request.output)) {
+      return unavailable(request.route, "Swap is only available for OTF assets.");
     }
     if (request.chainId === 46630) {
       return quoteTestnetSwap(request, { now, client: dependencies.testnetClient });

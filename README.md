@@ -24,8 +24,9 @@ changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 mill
 buyback collector redeems fee shares through typed adapter routes, converts proceeds to WETH, buys
 only through the canonical pool, and burns the purchased OTF.
 
-The Swap product requires an OTF share on at least one side. It is not a general token-to-token
-exchange. The dedicated `$OTF` page trades WETH/OTF directly through the canonical V4 pool.
+The Swap product requires a fund share or the protocol OTF token on at least one side. It is not a
+general token-to-token exchange. WETH/OTF trades directly through the canonical V4 pool from both
+Swap and the dedicated `$OTF` page.
 
 `app/src/config/robinhood-testnet-assets.json` is the testnet routing catalog. It separates USDG and WETH
 quote assets from the five supported fund constituents and records their active Synthra pools. The
@@ -34,5 +35,5 @@ constituent-to-quote swaps in the user-facing Swap product.
 `app/src/config/assets.json` is a chain-indexed list of featured production assets for app discovery;
 it is not an onchain allowlist and does not limit the permissionless protocol.
 
-The v2 contracts require a fresh testnet deployment. The earlier recorded addresses are deliberately
-disabled; no compatibility or migration layer is provided.
+The active Robinhood testnet v2 addresses, dependency hashes, setup transactions, and allocations
+are recorded in `app/src/config/robinhood-testnet.json`.
