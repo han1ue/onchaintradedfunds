@@ -1,5 +1,5 @@
 {
-  "architecture": "otf-token-economics-v2",
+  "architecture": "otf-fee-settlement-v3",
   "network": "robinhood-mainnet",
   "chainId": 4663,
   "protocolStatus": "configuration-required",
@@ -24,7 +24,6 @@
     "PERMIT2",
     "ORACLE_MAX_AGE_SECONDS",
     "PROTOCOL_MULTISIG",
-    "ROUTE_EXECUTOR",
     "TEAM_BENEFICIARY"
   ],
   "externalLiquidity": {

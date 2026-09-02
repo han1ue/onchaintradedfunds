@@ -37,7 +37,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useBalance, useChainId, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
-import { managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
+import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
@@ -75,6 +75,7 @@ import {
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { quoteCanonicalOtfSwap } from "@/lib/otf-market";
 import { canonicalV4Execution } from "@/lib/canonical-v4-execution";
+import { feeSettlementArgs, feeSettlementRouteFromQuote, pendingFeeShares, proportionalWethSplit, type FeeSettlementRoute } from "@/lib/fee-settlement";
 import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
@@ -1197,8 +1198,244 @@ function FundRouteSurface() {
   return pathname.endsWith("/created") ? <CreatedFundSurface /> : <FundsSurface detail />;
 }
 
+type FeeClaimTransactionState = "idle" | "wallet" | "pending" | "success" | "rejected" | "failure";
+
+function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; beneficiary: Address; explorer: string }) {
+  const chainId = useChainId();
+  const { address } = useAccount();
+  const publicClient = usePublicClient({ chainId });
+  const { data: walletClient } = useWalletClient({ chainId });
+  const collector = robinhoodTestnetAddresses.buybackCollector;
+  const canonicalWeth = robinhoodTestnetAddresses.weth;
+  const launchManager = robinhoodTestnetAddresses.launchManager;
+  const configured = chainId === robinhoodChainTestnet.id
+    && Boolean(collector && canonicalWeth && launchManager && robinhoodTestnetDeploymentReady);
+  const [slippageBps, setSlippageBps] = useState(50);
+  const [quoteState, setQuoteState] = useState<"idle" | "loading" | "ready" | "missing">("idle");
+  const [settlementRoute, setSettlementRoute] = useState<FeeSettlementRoute>();
+  const [quoteRequest, setQuoteRequest] = useState(0);
+  const [claimState, setClaimState] = useState<FeeClaimTransactionState>("idle");
+  const [claimHash, setClaimHash] = useState<Hex>();
+  const collectorAddress = collector ?? zeroAddress;
+  const feeReads = useReadContracts({
+    contracts: [
+      { address: collectorAddress, abi: buybackCollectorAbi, functionName: "feeAccounts", args: [vault] },
+      { address: vault, abi: managedOtfVaultAbi, functionName: "previewExpenseFees" },
+    ],
+    query: { enabled: configured, refetchInterval: 12_000 },
+  });
+  const recorded = feeReads.data?.[0]?.result;
+  const annual = feeReads.data?.[1]?.result;
+  const accountMatches = Boolean(
+    recorded
+    && recorded[2].toLowerCase() === beneficiary.toLowerCase()
+    && address?.toLowerCase() === beneficiary.toLowerCase(),
+  );
+  const pending = useMemo(() => recorded && annual
+    ? pendingFeeShares(recorded[0], recorded[1], annual[1], annual[2])
+    : undefined, [annual, recorded]);
+  const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
+
+  useEffect(() => {
+    setClaimState("idle");
+    setClaimHash(undefined);
+  }, [pending?.total, slippageBps]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+    if (!configured || !accountMatches || !address || !canonicalWeth || !pending) {
+      setQuoteState(configured ? "idle" : "missing");
+      setSettlementRoute(undefined);
+      return;
+    }
+    if (pending.total === 0n) {
+      setQuoteState("idle");
+      setSettlementRoute(undefined);
+      return;
+    }
+    setQuoteState("loading");
+    setSettlementRoute(undefined);
+    const requestedAt = Date.now();
+    const input: SwapAsset = {
+      address: vault,
+      symbol: "OTF",
+      name: "Pending fund fee shares",
+      kind: "otf",
+      decimals: 18,
+      metadataResolved: true,
+      isFactoryVault: true,
+    };
+    const output: SwapAsset = {
+      address: canonicalWeth,
+      symbol: "WETH",
+      name: "Wrapped Ether",
+      kind: "erc20",
+      decimals: 18,
+      metadataResolved: true,
+      verified: true,
+    };
+    void quoteService.quoteBasket({
+      chainId,
+      input,
+      output,
+      inputAmount: formatUnits(pending.total, 18),
+      slippageBps,
+      requestedAt,
+      caller: address,
+    }).then((quote) => {
+      if (cancelled) return;
+      const route = feeSettlementRouteFromQuote(quote, vault, canonicalWeth);
+      if (!route || route.shares !== pending.total || !quoteIsFresh(quote, Date.now())) {
+        setQuoteState("missing");
+        return;
+      }
+      setSettlementRoute(route);
+      setQuoteState("ready");
+      const refreshAfter = Math.max(1_000, (quote.expiresAt ?? Date.now() + 15_000) - Date.now() + 25);
+      refreshTimer = window.setTimeout(() => setQuoteRequest((current) => current + 1), refreshAfter);
+    }).catch(() => {
+      if (!cancelled) setQuoteState("missing");
+    });
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [accountMatches, address, canonicalWeth, chainId, configured, pending, quoteRequest, quoteService, slippageBps, vault]);
+
+  const launchAddress = launchManager ?? zeroAddress;
+  const canonicalReads = useReadContracts({
+    contracts: [
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "phase" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "currentPoolState" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "currentOtfPriceWethWad" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "initialSqrtPriceX96" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "finalSqrtPriceX96" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "otfIsCurrency0" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapLiquidity" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
+    ],
+    query: { enabled: configured && Boolean(settlementRoute), refetchInterval: 12_000 },
+  });
+  const minimumBuybackWeth = settlementRoute && pending
+    ? proportionalWethSplit(settlementRoute.minWethOut, pending.creator, pending.buyback).buybackWeth
+    : 0n;
+  const minOtfOut = useMemo(() => {
+    const phase = Number(canonicalReads.data?.[0]?.result ?? 0);
+    const poolState = canonicalReads.data?.[1]?.result;
+    const otfPriceWethWad = canonicalReads.data?.[2]?.result;
+    const initialSqrtPriceX96 = canonicalReads.data?.[3]?.result;
+    const finalSqrtPriceX96 = canonicalReads.data?.[4]?.result;
+    const otfIsCurrency0 = canonicalReads.data?.[5]?.result;
+    const bootstrapLiquidity = canonicalReads.data?.[6]?.result;
+    const permanentLiquidity = canonicalReads.data?.[7]?.result;
+    const liquidity = phase === 3 ? permanentLiquidity : bootstrapLiquidity;
+    if (
+      minimumBuybackWeth === 0n || !poolState || otfPriceWethWad === undefined
+      || initialSqrtPriceX96 === undefined || finalSqrtPriceX96 === undefined
+      || otfIsCurrency0 === undefined || !liquidity || (phase !== 1 && phase !== 3)
+    ) return undefined;
+    const lower = initialSqrtPriceX96 < finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
+    const upper = initialSqrtPriceX96 > finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
+    try {
+      const quote = quoteCanonicalOtfSwap({
+        side: "buy",
+        amountIn: minimumBuybackWeth,
+        slippageBps,
+        sqrtPriceX96: poolState[0],
+        liquidity,
+        lowerSqrtPriceX96: phase === 3 ? FULL_RANGE_LOWER_SQRT : lower,
+        upperSqrtPriceX96: phase === 3 ? FULL_RANGE_UPPER_SQRT : upper,
+        otfIsCurrency0,
+        otfPriceWethWad,
+      });
+      return quote.fullyFilled && quote.minimumReceived > 0n ? quote.minimumReceived : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [canonicalReads.data, minimumBuybackWeth, slippageBps]);
+  const expectedCreatorWeth = settlementRoute && pending
+    ? proportionalWethSplit(settlementRoute.expectedWethOut, pending.creator, pending.buyback).creatorWeth
+    : undefined;
+  const busy = claimState === "wallet" || claimState === "pending";
+  const claimReady = configured && quoteState === "ready" && Boolean(settlementRoute && minOtfOut);
+
+  async function claimFees() {
+    if (!claimReady || !address || !collector || !settlementRoute || !minOtfOut || !publicClient || !walletClient) return;
+    try {
+      setClaimState("wallet");
+      setClaimHash(undefined);
+      const deadline = BigInt(Math.floor(Date.now() / 1_000) + 5 * 60);
+      const args = feeSettlementArgs(settlementRoute, minOtfOut, deadline);
+      const simulation = await publicClient.simulateContract({
+        account: address,
+        address: collector,
+        abi: buybackCollectorAbi,
+        functionName: "settleFees",
+        args,
+      });
+      const hash = await walletClient.writeContract(simulation.request);
+      setClaimHash(hash);
+      setClaimState("pending");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("Fee settlement reverted.");
+      setClaimState("success");
+      await feeReads.refetch();
+      setQuoteRequest((current) => current + 1);
+    } catch (error) {
+      const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+      setClaimState(/rejected|denied|cancelled/iu.test(message) ? "rejected" : "failure");
+    }
+  }
+
+  const amount = expectedCreatorWeth !== undefined
+    ? formatClaimWeth(expectedCreatorWeth)
+    : quoteState === "loading" || (pending && pending.total > 0n && canonicalReads.isPending)
+      ? "Quoting…"
+      : pending?.total === 0n
+        ? "No fees to claim"
+        : "Route unavailable";
+  const status = claimState === "wallet"
+    ? "Confirm the atomic fee settlement in your wallet."
+    : claimState === "pending"
+      ? "Claim submitted. Waiting for confirmation."
+      : claimState === "success"
+        ? "Creator fees paid in WETH and the buyback completed."
+        : claimState === "rejected"
+          ? "The wallet request was rejected. Nothing was submitted."
+          : claimState === "failure"
+            ? "Settlement failed. Refresh the quote and try again."
+            : !configured
+              ? "Fee settlement is unavailable until the current contracts are deployed."
+              : feeReads.isError || !accountMatches
+                ? "The vault fee account could not be verified."
+                : pending?.total === 0n
+                  ? "Annual fees are checkpointed automatically when a claim is submitted."
+                  : quoteState === "missing" || (quoteState === "ready" && !minOtfOut && !canonicalReads.isPending)
+                    ? "No complete basket-to-WETH and WETH-to-OTF route is currently available."
+                    : claimReady
+                      ? "Quoted from the full pending fund-share balance."
+                      : "Loading pending fees and routes…";
+
+  return (
+    <section className="fundFeeClaim" aria-labelledby={`fee-claim-${vault}`}>
+      <div className="fundFeeClaimHeader">
+        <h2 id={`fee-claim-${vault}`}>Available to claim</h2>
+        <label><span>Slippage</span><span className="selectControl fundFeeSlippage"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} disabled={busy} aria-label="Fee settlement slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
+      </div>
+      <div className="fundFeeClaimAmount"><strong>{amount}</strong><button className="primaryAction" type="button" disabled={!claimReady || busy || pending?.total === 0n} onClick={() => void claimFees()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim</button></div>
+      <div className={`fundFeeClaimStatus ${claimState === "failure" ? "failure" : claimState === "success" ? "success" : ""}`} aria-live="polite"><span>{status}</span>{claimHash ? <a href={`${explorer}/tx/${claimHash}`} target="_blank" rel="noreferrer">View transaction <ExternalLink size={11} /></a> : null}</div>
+    </section>
+  );
+}
+
 function formatShareSupply(value: bigint): string {
   return Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function formatClaimWeth(value: bigint): string {
+  if (value > 0n && value < 1_000_000_000_000n) return "<0.000001 WETH";
+  return `${Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} WETH`;
 }
 
 type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
@@ -1439,6 +1676,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const router = useRouter();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
+  const { address } = useAccount();
   const testnet = chainId === robinhoodChainTestnet.id;
   const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
@@ -1536,6 +1774,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   <div><dt>Mint</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.mintFeeBps) : "—"}</dd></div>
                   <div><dt>Redeem</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.redeemFeeBps) : "—"}</dd></div>
                 </dl>
+                {vaultDetails && address?.toLowerCase() === vaultDetails.expenseBeneficiary.toLowerCase()
+                  ? <FeeClaimPanel vault={vaultDetails.address} beneficiary={vaultDetails.expenseBeneficiary} explorer={explorerUrl} />
+                  : null}
               </section>
             </div>
           </div>

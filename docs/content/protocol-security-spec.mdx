@@ -5,7 +5,7 @@ description: Normative invariants for OTF token economics, fund fees, launch, bu
 
 # Protocol security specification
 
-The keywords MUST, MUST NOT, and SHOULD describe required v2 behavior.
+The keywords MUST, MUST NOT, and SHOULD describe required v3 behavior.
 
 ## OTF supply
 
@@ -52,8 +52,10 @@ donations MUST NOT change accounted balance or fee benefit. The creator share MU
 
 The creator share MUST remain between 5,000 and 9,000 bps. Mint and redeem creator fee shares MUST
 round down; annual expense splitting MUST carry its fractional remainder across checkpoints. All
-remaining collected fee shares MUST go to the buyback collector. No fund-owned constituent OTF may
-be transferred to the collector merely because it is OTF.
+creator and buyback fee shares MUST be minted to the collector. The vault MUST record both portions
+with the collector when each fee is charged, and settlement MUST NOT recalculate a split from later
+accounted OTF. No fund-owned constituent OTF may be transferred to the collector merely because it
+is OTF.
 
 ## Native entry and exit
 
@@ -72,10 +74,18 @@ MUST NOT reach a vault, `SwapLeg`, or adapter.
 
 ## Buyback collector
 
-Only the configured route executor MAY submit buyback routes. Every leg MUST name exact input and
-output tokens, an adapter currently approved by the entry/exit router, positive minimum output, and
-typed adapter data. The operation MUST enforce a deadline, minimum aggregate WETH, observed WETH
-delta, minimum final OTF, and observed OTF delta.
+The factory MUST register every vault and its immutable expense beneficiary with the collector.
+Unregistered or fake vaults MUST be rejected. Only that beneficiary MAY settle its vault. Settlement
+MUST checkpoint annual fees, consume the complete recorded creator and buyback share balances,
+redeem their combined shares, and use caller-supplied typed `SwapLeg[]` paths through adapters
+currently approved by the entry/exit router. Every leg MUST name exact input and output tokens and a
+positive minimum output.
+
+The operation MUST enforce the caller's deadline, minimum aggregate WETH, observed WETH delta,
+minimum final OTF, and observed OTF delta. Actual WETH MUST be split proportionally using the stored
+fee-share counts. The creator portion MUST be transferred exactly to the beneficiary; only the
+buyback portion MAY be spent for OTF. The protocol MUST NOT add an oracle, TWAP, route discovery,
+protocol fair-value floor, or hardcoded slippage.
 
 The WETH-to-OTF swap MUST use only the immutable canonical V4 pool key. All OTF acquired by that
 execution MUST be burned before success. The collector MUST NOT expose arbitrary calls, token
@@ -93,5 +103,5 @@ cumulative values MUST revert. The publisher MUST have no rewards-principal with
 
 All production dependencies MUST be explicit. Production MUST use official Uniswap V4 deployments.
 Testnet mirror dependencies MUST match operator-supplied expected bytecode hashes before deployment.
-Generated ABIs, frontend configuration, tests, and documentation MUST describe only v2. Earlier
+Generated ABIs, frontend configuration, tests, and documentation MUST describe only v3. Earlier
 testnet contracts MUST NOT be treated as compatible.

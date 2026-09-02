@@ -103,8 +103,8 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
     }
 
     function invariantAllShareSupplyIsAccountedFor() public view {
-        uint256 balances = vault.balanceOf(address(handler)) + vault.balanceOf(BENEFICIARY)
-            + vault.balanceOf(collector) + vault.balanceOf(address(0xB0B));
+        uint256 balances = vault.balanceOf(address(handler)) + vault.balanceOf(collector)
+            + vault.balanceOf(address(0xB0B));
         assertEq(vault.totalSupply(), balances);
     }
 

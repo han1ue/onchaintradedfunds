@@ -117,9 +117,9 @@ permissionless in-kind emergency redemption distributes at most `min(actual, acc
 Each vault has immutable annual creator-expense, mint, and redeem rates capped at 1,000, 200, and
 100 bps, plus a fixed beneficiary. Expenses are paid through lazy, cadence-independent share
 inflation. Mint and normal redeem fees are also issued as fee shares; shutdown redemptions are free.
-The creator receives 50% to 90% of each fee according to the vault's accounted OTF constituent
-balance. The remainder goes only to `BuybackCollector`. Direct token donations do not affect that
-balance or the split.
+The creator allocation is 50% to 90% of each fee according to the vault's accounted OTF constituent
+balance. All creator and buyback shares go to `BuybackCollector`, where their exact accrual-time split
+is stored separately for each vault. Direct token donations do not affect that balance or the split.
 
 The permissionless entry/exit router supports ordered generic basket `SwapLeg[]` routes. Legs can
 split one token across adapters, accumulate into one output, or spend an earlier leg's output. Each
@@ -166,8 +166,10 @@ The separate chain-indexed production catalog only pre-populates convenient asse
 the permissionless contracts. Production liquidity is managed at the external venue. `/liquidity`
 remains a visibly testnet-only utility for explicitly configured Synthra V3 pools and is not a
 production deployment path. OTF itself is immediately usable as a normal constituent through the
-canonical 0%-fee V4 pool. Buyback routes redeem fee shares, convert basket assets to WETH through
-these typed adapters, buy OTF only from that canonical pool, and burn the purchased OTF.
+canonical 0%-fee V4 pool. Only the immutable expense beneficiary may submit its vault's complete
+fee settlement. The route redeems all pending shares, converts the basket to WETH through these typed
+adapters, pays the stored creator portion in WETH, buys OTF with only the buyback portion through the
+canonical pool, and burns the purchased OTF atomically.
 
 ## Verification
 

@@ -88,7 +88,6 @@ const json = (value) => JSON.stringify(
 
 const privateKey = env("DEPLOYER_PRIVATE_KEY");
 const protocolMultisig = address("PROTOCOL_MULTISIG", env("PROTOCOL_MULTISIG"));
-const routeExecutor = address("ROUTE_EXECUTOR", env("ROUTE_EXECUTOR"));
 const teamBeneficiary = address("TEAM_BENEFICIARY", env("TEAM_BENEFICIARY"));
 const weth = address("WETH", env("WETH"));
 const oracleMaxAge = positiveInteger("ORACLE_MAX_AGE_SECONDS", env("ORACLE_MAX_AGE_SECONDS"));
@@ -236,7 +235,6 @@ const launchDeploymentTx = await transact(
 const launchManager = { address: launchAddress, ...launchDeploymentTx, salt: launchSalt };
 
 const buybackCollector = await deploy("BuybackCollector", [
-  routeExecutor,
   launchManager.address,
   uniswapUniversalRouter,
   permit2,
@@ -272,6 +270,11 @@ const merkleRewardsDistributor = await deploy("MerkleRewardsDistributor", [
 ]);
 
 const setupTransactions = {};
+setupTransactions.collectorFactory = await transact(
+  { ...buybackCollector, name: "BuybackCollector" },
+  "configureFactory",
+  [factory.address],
+);
 setupTransactions.factoryRouter = await transact(
   { ...factory, name: "OTFFactory" },
   "configureEntryExitRouter",
@@ -339,14 +342,14 @@ if (rewardsOtfBalance !== 700_000_000n * 10n ** 18n) throw new Error("Rewards al
 if (totalSupply !== 1_000_000_000n * 10n ** 18n) throw new Error("Original OTF issuance mismatch");
 
 const deployment = {
-  architecture: "otf-token-economics-v2",
+  architecture: "otf-fee-settlement-v3",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
   status: "deployed",
   deployedAt: new Date().toISOString(),
   deployer: account.address,
-  trustedRoles: { protocolMultisig, routeExecutor, teamBeneficiary },
+  trustedRoles: { protocolMultisig, teamBeneficiary },
   contracts: {
     otfToken,
     launchManager,
@@ -394,7 +397,7 @@ const deployment = {
   },
   setupTransactions,
   ...appOwnedIntegrations,
-  note: "Breaking v2 testnet deployment; earlier protocol contracts are unsupported.",
+  note: "Breaking fee-settlement v3 deployment; earlier protocol contracts are unsupported.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });
 writeFileSync(deploymentPath, `${json(deployment)}\n`);

@@ -1,0 +1,37 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const component = readFileSync(new URL("../components/OperateExperience.tsx", import.meta.url), "utf8");
+const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+describe("fund fee claim wiring", () => {
+  it("shows the claim only to the connected immutable expense beneficiary inside Fund fees", () => {
+    expect(component).toContain("address?.toLowerCase() === vaultDetails.expenseBeneficiary.toLowerCase()");
+    expect(component).toContain("<FeeClaimPanel vault={vaultDetails.address} beneficiary={vaultDetails.expenseBeneficiary}");
+    expect(component.indexOf("<FeeClaimPanel")).toBeGreaterThan(component.indexOf('className="fundFeesPanel"'));
+  });
+
+  it("matches the compact claim layout and never labels an unquoted value as WETH", () => {
+    expect(component).toContain(">Available to claim<");
+    expect(component).toContain('className="fundFeeClaimAmount"');
+    expect(component).toContain('expectedCreatorWeth !== undefined\n    ? formatClaimWeth(expectedCreatorWeth)');
+    expect(component).toContain('pending?.total === 0n\n        ? "No fees to claim"\n        : "Route unavailable"');
+    expect(css).toContain(".fundFeeClaimAmount { display: flex;");
+  });
+
+  it("quotes the complete pending share balance and constructs both slippage minimums plus a deadline", () => {
+    expect(component).toContain("inputAmount: formatUnits(pending.total, 18)");
+    expect(component).toContain("quoteService.quoteBasket");
+    expect(component).toContain("route.shares !== pending.total");
+    expect(component).toContain("proportionalWethSplit(settlementRoute.minWethOut, pending.creator, pending.buyback).buybackWeth");
+    expect(component).toContain("feeSettlementArgs(settlementRoute, minOtfOut, deadline)");
+    expect(component).toContain('functionName: "settleFees"');
+  });
+
+  it("wires loading, empty, missing-route, rejected, pending, success, and failure states", () => {
+    for (const state of ["Quoting…", "No fees to claim", "Route unavailable", "rejected", "pending", "success", "failure"]) {
+      expect(component).toContain(state);
+    }
+    expect(component).toContain('aria-live="polite"');
+  });
+});

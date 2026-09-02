@@ -22,9 +22,11 @@ The launch manager also reserves 50 million OTF, team spot-FDV vesting holds 100
 cumulative Merkle distributor holds 700 million.
 
 Each fund has immutable annual, mint, and redeem rates. Accounted OTF held as a real constituent
-changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 million OTF. The
-buyback collector redeems fee shares through typed adapter routes, converts proceeds to WETH, buys
-only through the canonical pool, and burns the purchased OTF.
+changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 million OTF. Every fee
+share is minted to `BuybackCollector`, which records the creator and buyback portions for each vault
+when the fee is charged. Only that vault's immutable expense beneficiary may settle the account.
+Settlement redeems all pending shares through typed adapter routes, pays the creator portion in
+WETH, spends only the remaining WETH through the canonical OTF pool, and burns every purchased OTF.
 
 The shared Swap product requires a fund share or the protocol OTF token on at least one side. It is
 not a general token-to-token exchange. ETH and WETH are distinct selectable boundary assets; ETH is
@@ -39,5 +41,6 @@ constituent-to-quote swaps in the user-facing Swap product.
 `app/src/config/assets.json` is a chain-indexed list of featured production assets for app discovery;
 it is not an onchain allowlist and does not limit the permissionless protocol.
 
-The active Robinhood testnet v2 addresses, dependency hashes, setup transactions, and allocations
-are recorded in `app/src/config/robinhood-testnet.json`.
+The breaking fee-settlement v3 contracts require a fresh Robinhood testnet deployment. Verified
+external dependency addresses and hashes are retained in `app/src/config/robinhood-testnet.json`;
+obsolete protocol addresses are intentionally not treated as compatible.

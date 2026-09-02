@@ -39,7 +39,7 @@ const testnetExternalContracts = record(testnet.externalContracts);
 const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
 const testnetRouting = record(testnet.routing);
-const testnetCompatible = testnet.architecture === "otf-token-economics-v2";
+const testnetCompatible = testnet.architecture === "otf-fee-settlement-v3";
 
 function deployedTestnetContract(name: string): Address | undefined {
   return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;

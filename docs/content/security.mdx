@@ -5,15 +5,16 @@ description: Trust boundaries, known assumptions, and production blockers for th
 
 # Security
 
-The protocol is pre-mainnet and unaudited. The token-economics v2 contracts require a fresh review,
+The protocol is pre-mainnet and unaudited. The fee-settlement v3 contracts require a fresh review,
 deployment rehearsal, and independent production configuration review before they hold value.
 
 ## Contract-enforced boundaries
 
 - OTF is issued once at one billion tokens. No post-construction mint, tax, blacklist, seizure, or
   upgrade path exists. Holder burns reduce live supply.
-- Fund fee rates and beneficiaries are immutable. All settlement paths checkpoint annual fees and
-  apply the appropriate mint or redeem fee. Shutdown exits are fee-free.
+- Fund fee rates and beneficiaries are immutable. All fee shares are held by the collector with
+  separate per-vault creator and buyback accounting fixed when each fee is charged. Settlement
+  checkpoints annual fees; shutdown exits remain fee-free.
 - Raw constituent donations are excluded from fund accounting and the OTF fee-benefit calculation.
 - The buyback collector can use only the protocol router's typed routes and approved adapters. Its
   final pool key is the immutable canonical OTF/WETH V4 pool. It has no asset withdrawal or arbitrary
@@ -31,11 +32,18 @@ The multisig is fully trusted to choose cumulative reward allocations. A valid r
 entire remaining rewards balance. The contract prevents proof forgery and double claims, not unfair
 allocations or a compromised publisher.
 
-### Route executor
+### Expense beneficiaries and settlement routes
 
-The route executor chooses when buybacks occur and which approved typed routes convert fee-share
-baskets to WETH. Deadlines, exact token identities, adapter approval, minimum output, and observed
-balance-delta checks limit mistakes and compromise. They do not guarantee optimal execution.
+Only a vault's immutable expense beneficiary can settle that vault. The beneficiary chooses when to
+claim and supplies the approved typed basket-to-WETH route, minimum WETH, minimum OTF, and deadline.
+Exact token identities, adapter approval, minimum output, and observed balance-delta checks limit
+mistakes and compromise; they do not guarantee optimal execution. The protocol deliberately has no
+oracle, TWAP, route discovery, fair-value floor, or hardcoded slippage for this operation.
+
+The collector clears both pending share counters before external execution, redeems them together,
+pays the creator share of actual WETH to the beneficiary, spends only the remaining buyback WETH in
+the immutable canonical V4 pool, and burns all purchased OTF. Any failed step reverts the complete
+transaction. Factory registration prevents fake vaults from creating or settling fee accounts.
 
 ### Adapter manager and external venues
 
@@ -95,9 +103,9 @@ claim path exists.
 
 ## Production blockers
 
-- independent audit of all v2 contracts and economic arithmetic;
+- independent audit of all v3 contracts and economic arithmetic;
 - fork/integration tests against the exact official production V4 deployments;
-- verified production multisig, beneficiary, route-executor, WETH, and oracle selections;
+- verified production multisig, beneficiary, WETH, and oracle selections;
 - deployment and verification of the canonical-WETH native entry/exit router plus receiver and
   callback-reentrancy integration tests;
 - deployed-code verification and complete one-billion-token allocation reconciliation;

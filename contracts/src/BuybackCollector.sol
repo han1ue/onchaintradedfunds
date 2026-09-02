@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
@@ -12,6 +11,7 @@ import {
     UniswapV4PathKey
 } from "./interfaces/IUniswapV4.sol";
 import { BasketRedeemRequest, OTFEntryExitRouter, SwapLeg } from "./OTFEntryExitRouter.sol";
+import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IOTFBurnable is IERC20 {
     function burn(uint256 amount) external;
@@ -23,8 +23,26 @@ interface IBuybackLaunchManager {
     function poolManager() external view returns (address);
 }
 
-/// @notice Redeems protocol-owned fund fee shares, routes proceeds to WETH, buys OTF, and burns it.
-contract BuybackCollector is Ownable2Step {
+interface IBuybackFactory {
+    function buybackCollector() external view returns (address);
+    function isVault(address vault) external view returns (bool);
+}
+
+interface IBuybackVault is IERC20 {
+    function buybackCollector() external view returns (address);
+    function checkpointFees() external returns (uint256 totalFeeShares);
+    function expenseBeneficiary() external view returns (address);
+    function factory() external view returns (address);
+}
+
+interface IBuybackEntryExitRouter {
+    function factory() external view returns (address);
+}
+
+/// @notice Settles fund fees into creator WETH plus an atomic OTF buyback and burn.
+contract BuybackCollector {
+    using SafeTransferLib for address;
+
     bytes1 private constant V4_SWAP_COMMAND = 0x10;
     bytes1 private constant SWAP_EXACT_IN_ACTION = 0x07;
     bytes1 private constant SETTLE_ALL_ACTION = 0x0c;
@@ -32,8 +50,12 @@ contract BuybackCollector is Ownable2Step {
 
     error ZeroAddress();
     error InvalidDependency(address dependency);
+    error InvalidVault(address vault);
     error InvalidAmount();
+    error NothingToSettle(address vault);
     error DeadlineExpired(uint256 deadline);
+    error UnauthorizedBeneficiary(address caller, address beneficiary);
+    error UnauthorizedVault(address caller);
     error UnapprovedAdapter(address adapter);
     error InvalidRouteToken(uint256 leg, address tokenIn, address tokenOut);
     error ApprovalFailed(address token, address spender, uint256 amount);
@@ -41,11 +63,35 @@ contract BuybackCollector is Ownable2Step {
     error MinimumOutputNotMet(address token, uint256 minimum, uint256 actual);
     error Reentrancy();
     error RouterAlreadyConfigured();
+    error FactoryAlreadyConfigured();
+    error FactoryNotConfigured();
     error UnauthorizedRouterConfigurator(address caller);
+    error RouterFactoryMismatch(address expected, address actual);
 
-    event BuybackExecuted(
-        address indexed vault, uint256 feeSharesRedeemed, uint256 wethSpent, uint256 otfBurned
+    struct VaultFeeAccount {
+        uint256 creatorFeeShares;
+        uint256 buybackFeeShares;
+        address expenseBeneficiary;
+    }
+
+    event VaultRegistered(address indexed vault, address indexed expenseBeneficiary);
+    event FeeSharesRecorded(
+        address indexed vault,
+        uint256 creatorFeeShares,
+        uint256 buybackFeeShares,
+        uint256 pendingCreatorFeeShares,
+        uint256 pendingBuybackFeeShares
     );
+    event FeesSettled(
+        address indexed vault,
+        address indexed expenseBeneficiary,
+        uint256 creatorFeeShares,
+        uint256 buybackFeeShares,
+        uint256 creatorWeth,
+        uint256 buybackWeth,
+        uint256 otfBurned
+    );
+    event FactoryConfigured(address indexed factory);
     event EntryExitRouterConfigured(address indexed router);
 
     address public immutable routerConfigurator;
@@ -55,16 +101,12 @@ contract BuybackCollector is Ownable2Step {
     address public immutable universalRouter;
     address public immutable permit2;
     address public immutable poolManager;
+    address public factory;
     address public entryExitRouter;
+    mapping(address => VaultFeeAccount) public feeAccounts;
     bool private _entered;
 
-    constructor(
-        address routeExecutor,
-        address launchManager_,
-        address universalRouter_,
-        address permit2_
-    ) Ownable(routeExecutor) {
-        if (routeExecutor == address(0)) revert ZeroAddress();
+    constructor(address launchManager_, address universalRouter_, address permit2_) {
         _requireContract(launchManager_);
         _requireContract(universalRouter_);
         _requireContract(permit2_);
@@ -99,28 +141,94 @@ contract BuybackCollector is Ownable2Step {
             revert UnauthorizedRouterConfigurator(msg.sender);
         }
         if (entryExitRouter != address(0)) revert RouterAlreadyConfigured();
+        address factory_ = factory;
+        if (factory_ == address(0)) revert FactoryNotConfigured();
         _requireContract(router);
+        address observedFactory;
+        try IBuybackEntryExitRouter(router).factory() returns (address value) {
+            observedFactory = value;
+        } catch {
+            revert InvalidDependency(router);
+        }
+        if (observedFactory != factory_) revert RouterFactoryMismatch(factory_, observedFactory);
         entryExitRouter = router;
         emit EntryExitRouterConfigured(router);
     }
 
-    function executeBuyback(
+    function configureFactory(address factory_) external {
+        if (msg.sender != routerConfigurator) {
+            revert UnauthorizedRouterConfigurator(msg.sender);
+        }
+        if (factory != address(0)) revert FactoryAlreadyConfigured();
+        _requireContract(factory_);
+        address observedCollector;
+        try IBuybackFactory(factory_).buybackCollector() returns (address value) {
+            observedCollector = value;
+        } catch {
+            revert InvalidDependency(factory_);
+        }
+        if (observedCollector != address(this)) revert InvalidDependency(factory_);
+        factory = factory_;
+        emit FactoryConfigured(factory_);
+    }
+
+    function registerVault(address vault, address expenseBeneficiary) external {
+        address factory_ = factory;
+        if (msg.sender != factory_) revert InvalidVault(vault);
+        if (
+            expenseBeneficiary == address(0) || vault.code.length == 0
+                || !IBuybackFactory(factory_).isVault(vault)
+        ) revert InvalidVault(vault);
+        VaultFeeAccount storage account = feeAccounts[vault];
+        if (account.expenseBeneficiary != address(0)) revert InvalidVault(vault);
+        if (
+            IBuybackVault(vault).factory() != factory_
+                || IBuybackVault(vault).buybackCollector() != address(this)
+                || IBuybackVault(vault).expenseBeneficiary() != expenseBeneficiary
+        ) revert InvalidVault(vault);
+        account.expenseBeneficiary = expenseBeneficiary;
+        emit VaultRegistered(vault, expenseBeneficiary);
+    }
+
+    function recordFeeShares(uint256 creatorFeeShares, uint256 buybackFeeShares) external {
+        address vault = msg.sender;
+        VaultFeeAccount storage account = feeAccounts[vault];
+        if (!_isRegisteredVault(vault, account.expenseBeneficiary)) {
+            revert UnauthorizedVault(vault);
+        }
+        if (creatorFeeShares + buybackFeeShares == 0) revert InvalidAmount();
+        account.creatorFeeShares += creatorFeeShares;
+        account.buybackFeeShares += buybackFeeShares;
+        emit FeeSharesRecorded(
+            vault,
+            creatorFeeShares,
+            buybackFeeShares,
+            account.creatorFeeShares,
+            account.buybackFeeShares
+        );
+    }
+
+    function settleFees(
         address vault,
-        uint256 feeShares,
         uint256[] calldata minBasketAmounts,
         SwapLeg[] calldata legs,
         uint256 minWethOut,
         uint256 minOtfOut,
         uint256 deadline
-    ) external onlyOwner nonReentrant returns (uint256 wethSpent, uint256 otfBurned) {
+    ) external nonReentrant returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
         // Deadlines are intentionally enforced against the current transaction timestamp.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlineExpired(deadline);
         if (
-            feeShares == 0 || minWethOut == 0 || minOtfOut == 0 || minWethOut > type(uint128).max
+            minWethOut == 0 || minOtfOut == 0 || minWethOut > type(uint128).max
                 || minOtfOut > type(uint128).max
         ) revert InvalidAmount();
-        _requireContract(vault);
+        VaultFeeAccount storage account = feeAccounts[vault];
+        address beneficiary = account.expenseBeneficiary;
+        if (!_isRegisteredVault(vault, beneficiary)) revert InvalidVault(vault);
+        if (msg.sender != beneficiary) {
+            revert UnauthorizedBeneficiary(msg.sender, beneficiary);
+        }
         address router = entryExitRouter;
         _requireContract(router);
         for (uint256 i = 0; i < legs.length; i++) {
@@ -135,6 +243,14 @@ contract BuybackCollector is Ownable2Step {
                 revert InvalidRouteToken(i, leg.tokenIn, leg.tokenOut);
             }
         }
+
+        IBuybackVault(vault).checkpointFees();
+        uint256 creatorFeeShares = account.creatorFeeShares;
+        uint256 buybackFeeShares = account.buybackFeeShares;
+        uint256 feeShares = creatorFeeShares + buybackFeeShares;
+        if (feeShares == 0) revert NothingToSettle(vault);
+        account.creatorFeeShares = 0;
+        account.buybackFeeShares = 0;
 
         uint256 wethBefore = IERC20(weth).balanceOf(address(this));
         _approveExact(vault, router, feeShares);
@@ -152,15 +268,32 @@ contract BuybackCollector is Ownable2Step {
             );
         _approveExact(vault, router, 0);
         uint256 wethAfter = IERC20(weth).balanceOf(address(this));
-        wethSpent = wethAfter >= wethBefore ? wethAfter - wethBefore : 0;
-        if (wethSpent != reportedWeth) {
-            revert BalanceDeltaMismatch(weth, reportedWeth, wethSpent);
+        uint256 wethOut = wethAfter >= wethBefore ? wethAfter - wethBefore : 0;
+        if (wethOut != reportedWeth) {
+            revert BalanceDeltaMismatch(weth, reportedWeth, wethOut);
         }
-        if (wethSpent < minWethOut) revert MinimumOutputNotMet(weth, minWethOut, wethSpent);
+        if (wethOut < minWethOut) revert MinimumOutputNotMet(weth, minWethOut, wethOut);
 
-        otfBurned = _buyOtf(wethSpent, minOtfOut, deadline);
+        creatorWeth = creatorFeeShares == 0 ? 0 : Math.mulDiv(wethOut, creatorFeeShares, feeShares);
+        buybackWeth = wethOut - creatorWeth;
+        if (creatorWeth != 0) _pushExact(weth, beneficiary, creatorWeth);
+        otfBurned = _buyOtf(buybackWeth, minOtfOut, deadline);
+        uint256 otfBeforeBurn = IERC20(otf).balanceOf(address(this));
         IOTFBurnable(otf).burn(otfBurned);
-        emit BuybackExecuted(vault, feeShares, wethSpent, otfBurned);
+        uint256 otfAfterBurn = IERC20(otf).balanceOf(address(this));
+        uint256 observedBurn = otfBeforeBurn >= otfAfterBurn ? otfBeforeBurn - otfAfterBurn : 0;
+        if (observedBurn != otfBurned) {
+            revert BalanceDeltaMismatch(otf, otfBurned, observedBurn);
+        }
+        emit FeesSettled(
+            vault,
+            beneficiary,
+            creatorFeeShares,
+            buybackFeeShares,
+            creatorWeth,
+            buybackWeth,
+            otfBurned
+        );
     }
 
     function _buyOtf(uint256 amountIn, uint256 minAmountOut, uint256 deadline)
@@ -224,6 +357,25 @@ contract BuybackCollector is Ownable2Step {
         }
         uint256 observed = IERC20(token).allowance(address(this), spender);
         if (observed != amount) revert ApprovalFailed(token, spender, amount);
+    }
+
+    function _pushExact(address token, address receiver, uint256 amount) private {
+        uint256 senderBefore = IERC20(token).balanceOf(address(this));
+        uint256 receiverBefore = IERC20(token).balanceOf(receiver);
+        token.safeTransfer(receiver, amount);
+        uint256 senderAfter = IERC20(token).balanceOf(address(this));
+        uint256 receiverAfter = IERC20(token).balanceOf(receiver);
+        uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
+        uint256 receiverDelta = receiverAfter >= receiverBefore ? receiverAfter - receiverBefore : 0;
+        if (senderDelta != amount || receiverDelta != amount) {
+            revert BalanceDeltaMismatch(token, amount, receiverDelta);
+        }
+    }
+
+    function _isRegisteredVault(address vault, address beneficiary) private view returns (bool) {
+        address factory_ = factory;
+        return factory_ != address(0) && beneficiary != address(0) && vault.code.length != 0
+            && IBuybackFactory(factory_).isVault(vault);
     }
 
     function _requireContract(address dependency) private view {

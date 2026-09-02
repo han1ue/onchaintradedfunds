@@ -10,6 +10,10 @@ interface ICanonicalEntryExitRouter {
     function factory() external view returns (address);
 }
 
+interface IFeeCollectorRegistry {
+    function registerVault(address vault, address expenseBeneficiary) external;
+}
+
 /// @notice Permissionless OTF creation from creator-supplied immutable bootstrap basket units.
 contract OTFFactory {
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
@@ -143,6 +147,7 @@ contract OTFFactory {
 
         isVault[vault] = true;
         _vaults.push(vault);
+        IFeeCollectorRegistry(buybackCollector).registerVault(vault, params.expenseBeneficiary);
         emit VaultCreated(msg.sender, vault, params.name, params.symbol);
     }
 

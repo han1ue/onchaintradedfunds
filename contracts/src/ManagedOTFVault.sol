@@ -9,6 +9,10 @@ import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { VaultInitParams } from "./VaultTypes.sol";
 
+interface IFeeShareCollector {
+    function recordFeeShares(uint256 creatorFeeShares, uint256 buybackFeeShares) external;
+}
+
 /// @notice Oracleless fixed-basket OTF share token.
 /// @dev Bootstrap basket units and the expense policy are immutable after clone initialization.
 contract ManagedOTFVault is ManagedOTFVaultStorage {
@@ -675,8 +679,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         returns (uint256 creatorShares, uint256 buybackShares)
     {
         (creatorShares, buybackShares) = _splitFeeShares(feeShares, creatorShareBps);
-        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
-        if (buybackShares != 0) _mint(_buybackCollector, buybackShares);
+        _collectFeeShares(feeShares, creatorShares, buybackShares);
     }
 
     /// @dev Carries only the annual-expense split remainder so checkpoint cadence cannot change it.
@@ -701,8 +704,15 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         (creatorShares, buybackShares, nextRemainderBps) =
             _splitExpenseFeeShares(feeShares, creatorShareBps);
         _expenseCreatorSplitRemainderBps = nextRemainderBps;
-        if (creatorShares != 0) _mint(_expenseBeneficiary, creatorShares);
-        if (buybackShares != 0) _mint(_buybackCollector, buybackShares);
+        _collectFeeShares(feeShares, creatorShares, buybackShares);
+    }
+
+    function _collectFeeShares(uint256 totalFeeShares, uint256 creatorShares, uint256 buybackShares)
+        private
+    {
+        if (totalFeeShares == 0) return;
+        _mint(_buybackCollector, totalFeeShares);
+        IFeeShareCollector(_buybackCollector).recordFeeShares(creatorShares, buybackShares);
     }
 
     function _grossMintShares(uint256 investorShares) internal view returns (uint256) {

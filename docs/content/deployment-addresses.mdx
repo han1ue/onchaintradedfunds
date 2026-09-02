@@ -1,12 +1,13 @@
 ---
 title: Deployment addresses
-description: OTF v2 deployment status and required external configuration.
+description: Fee-settlement v3 deployment status and required external configuration.
 ---
 
 # Deployment addresses
 
-The OTF token-economics v2 architecture is deployed on Robinhood Chain Testnet. Robinhood Chain
-Mainnet remains undeployed.
+The breaking fee-settlement v3 architecture is not deployed on Robinhood Chain Testnet or Mainnet.
+Earlier protocol addresses implement an incompatible fee interface and are intentionally absent
+from the active application configuration.
 
 ## Robinhood Chain Mainnet
 
@@ -14,63 +15,29 @@ Mainnet remains undeployed.
 **Explorer:** [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com/) <br />
 **Status:** Not deployed
 
-Before a production deployment, operators must supply explicit addresses for WETH, the existing
-Uniswap V3 factory and SwapRouter02, the official Uniswap V4 PoolManager, StateView,
-PositionManager, Universal Router, and Permit2. The protocol multisig, team beneficiary, authorized
-route executor, and maximum accepted oracle age must also be chosen. The repository does not invent
-or default these values.
+Production deployment requires explicit WETH, Uniswap V3 factory and SwapRouter02, official Uniswap
+V4 PoolManager, StateView, PositionManager, Universal Router, and Permit2 addresses. Operators must
+also choose the protocol multisig, team beneficiary, and maximum accepted oracle age. There is no
+route-executor role.
 
 The configured Robinhood mainnet ETH/USD AggregatorV3-compatible proxy is
 [`0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`](https://robinhoodchain.blockscout.com/address/0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9).
-On 2 September 2026, direct reads on chain ID 4663 confirmed deployed code, an `ETH / USD`
-description, 8 decimals, a positive current answer, and a populated update timestamp. Production
-deployment must repeat those identity and freshness checks and configure `ORACLE_MAX_AGE_SECONDS`;
-the address is the feed proxy and must not be replaced with its current underlying aggregator.
-Run `pnpm oracle:verify:robinhood-mainnet` with `ORACLE_MAX_AGE_SECONDS` and, optionally,
-`RH_MAINNET_RPC_URL` set immediately before deploying.
+Production deployment must repeat its identity and freshness checks and configure
+`ORACLE_MAX_AGE_SECONDS`. Run `pnpm oracle:verify:robinhood-mainnet` immediately before deploying.
 
 ## Robinhood Chain Testnet
 
 **Chain ID:** `46630` <br />
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
-**Status:** Deployed 1 September 2026
+**Status:** Redeployment required
 
-| Contract | Address |
-| --- | --- |
-| OTF token | [`0x5BcBc620a29bf41736ED76A441f04c253177273e`](https://explorer.testnet.chain.robinhood.com/address/0x5BcBc620a29bf41736ED76A441f04c253177273e) |
-| Launch manager | [`0x79b0B988f627130c445C73656F2c2df932df8040`](https://explorer.testnet.chain.robinhood.com/address/0x79b0B988f627130c445C73656F2c2df932df8040) |
-| Team vesting | [`0x50b53603faAdd4BcF4a522eA524B9202B68B53fb`](https://explorer.testnet.chain.robinhood.com/address/0x50b53603faAdd4BcF4a522eA524B9202B68B53fb) |
-| Buyback collector | [`0xFEf16D56c5bCEc5cc639bf320b72A8cE1De02b75`](https://explorer.testnet.chain.robinhood.com/address/0xFEf16D56c5bCEc5cc639bf320b72A8cE1De02b75) |
-| Merkle rewards distributor | [`0x4b0D29fbFe368a3999C1Ce364422a65E7e596Edb`](https://explorer.testnet.chain.robinhood.com/address/0x4b0D29fbFe368a3999C1Ce364422a65E7e596Edb) |
-| Testnet ETH/USD oracle | [`0x475763a2e9122695726BC05a6328482BaeA52be9`](https://explorer.testnet.chain.robinhood.com/address/0x475763a2e9122695726BC05a6328482BaeA52be9) |
-| Vault implementation | [`0xA7A5C46f73b6F7B6eEA04dCC6b5014CC16562A8F`](https://explorer.testnet.chain.robinhood.com/address/0xA7A5C46f73b6F7B6eEA04dCC6b5014CC16562A8F) |
-| Factory | [`0xb14dFfFDe1a11f3ca368AF69Cb7E3c185fFaF798`](https://explorer.testnet.chain.robinhood.com/address/0xb14dFfFDe1a11f3ca368AF69Cb7E3c185fFaF798) |
-| Entry/exit router | [`0x0A284218f3ff9920f976EEf8e4Bfa4aD5c1a95fF`](https://explorer.testnet.chain.robinhood.com/address/0x0A284218f3ff9920f976EEf8e4Bfa4aD5c1a95fF) |
-| Uniswap V3 adapter | [`0xEFA9A99960b88b93Ed3aB46Ed1976A6b0b574d99`](https://explorer.testnet.chain.robinhood.com/address/0xEFA9A99960b88b93Ed3aB46Ed1976A6b0b574d99) |
-| Uniswap V4 adapter | [`0xf405a882D300B13c2F6eE7590c34FC5677da2807`](https://explorer.testnet.chain.robinhood.com/address/0xf405a882D300B13c2F6eE7590c34FC5677da2807) |
+The deployment script creates the collector before the factory, then performs one-time factory and
+entry-router configuration. Vault creation registers each vault and its immutable expense
+beneficiary with the collector. The script records new protocol addresses only after dependency
+checks, adapter approval, launch initialization, and allocation reconciliation succeed.
 
-The deployment script uses the repository's documented Robinhood Testnet V4 mirror addresses for
-PoolManager, StateView, Universal Router, and Permit2. PositionManager is an explicit operator input.
-Expected bytecode hashes for all five dependencies are mandatory and checked before any protocol
-contract is deployed. Testnet ETH/USD uses `FakeETHUSDOracle`, fixed at exactly `$2,000`.
-
-The following runtime hashes were read from Robinhood Testnet on 1 September 2026 and are pinned in
-the application configuration:
-
-| Dependency | Address | Runtime bytecode hash |
-| --- | --- | --- |
-| PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` | `0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626` |
-| StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` | `0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6` |
-| PositionManager | `0x58daec3116aae6D93017bAAea7749052E8a04fA7` | `0xf3a0edb689229fa4bf135a728f2ec2eb4a2fbee2e41e3e74ffadb7b4c56e8a6d` |
-| Universal Router | `0x8876789976dEcBfCbBbe364623C63652db8C0904` | `0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f` |
-| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | `0x0117e0ed818bc3f2a8729ffc336c837e63e965f04b473047b39b35ad86aac259` |
-
-These observations verify dependency identity against the pinned runtime bytes. The complete
-deployment record in `app/src/config/robinhood-testnet.json` includes:
-
-- OTF token, launch manager, team vesting, buyback collector, Merkle distributor;
-- vault implementation, factory, entry/exit router, and V3/V4 adapters;
-- verified periphery dependencies and code hashes;
-- adapter approvals, initialization transactions, and exact initial allocations.
-
-Factory-created fund vault addresses remain dynamic and are discovered onchain.
+The application configuration retains the reviewed testnet periphery addresses and pinned runtime
+hashes for PoolManager, StateView, PositionManager, Universal Router, and Permit2. Those dependencies
+are inputs to the next deployment; they are not evidence that v3 protocol contracts are live. Until
+new addresses are recorded, protocol reads and writes remain disabled rather than falling back to
+the incompatible deployment.

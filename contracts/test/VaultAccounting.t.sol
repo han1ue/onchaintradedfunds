@@ -11,6 +11,7 @@ import { MockStockToken } from "./mocks/MockStockToken.sol";
 import {
     BootstrapTestBase,
     CrossMutatingToken,
+    MockBuybackReceiver,
     MockCoreRouter,
     SlashableToken
 } from "./BootstrapTestBase.sol";
@@ -40,8 +41,15 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         assertApproxEqAbs(minted, expectedFeeShares, 1);
         assertEq(vault.balanceOf(ALICE) * 10_000 / vault.totalSupply(), 9_000);
-        assertEq(vault.balanceOf(BENEFICIARY) + vault.balanceOf(collector), minted);
-        assertEq(vault.balanceOf(collector), minted - (minted * 5_000 / 10_000));
+        assertEq(vault.balanceOf(BENEFICIARY), 0);
+        assertEq(vault.balanceOf(collector), minted);
+        assertEq(
+            MockBuybackReceiver(collector).creatorFeeShares(address(vault)), minted * 5_000 / 10_000
+        );
+        assertEq(
+            MockBuybackReceiver(collector).buybackFeeShares(address(vault)),
+            minted - (minted * 5_000 / 10_000)
+        );
     }
 
     function testManualCheckpointCadenceIsIndependentAndCarriesSplitRemainders() public {
@@ -59,8 +67,16 @@ contract VaultAccountingTest is BootstrapTestBase {
         once.checkpointFees();
 
         assertEq(monthly.totalSupply(), once.totalSupply());
-        assertEq(monthly.balanceOf(BENEFICIARY), once.balanceOf(BENEFICIARY));
-        assertApproxEqAbs(monthly.balanceOf(collector), once.balanceOf(collector), 12);
+        assertEq(monthly.balanceOf(BENEFICIARY), 0);
+        assertEq(monthly.balanceOf(collector), once.balanceOf(collector));
+        assertEq(
+            MockBuybackReceiver(collector).creatorFeeShares(address(monthly)),
+            MockBuybackReceiver(collector).creatorFeeShares(address(once))
+        );
+        assertEq(
+            MockBuybackReceiver(collector).buybackFeeShares(address(monthly)),
+            MockBuybackReceiver(collector).buybackFeeShares(address(once))
+        );
     }
 
     function testOneYearBoundaryIsMonotonic() public {
@@ -109,8 +125,16 @@ contract VaultAccountingTest is BootstrapTestBase {
         once.checkpointFees();
 
         assertEq(stepped.totalSupply(), once.totalSupply());
-        assertEq(stepped.balanceOf(BENEFICIARY), once.balanceOf(BENEFICIARY));
-        assertApproxEqAbs(stepped.balanceOf(collector), once.balanceOf(collector), 24);
+        assertEq(stepped.balanceOf(BENEFICIARY), 0);
+        assertEq(stepped.balanceOf(collector), once.balanceOf(collector));
+        assertEq(
+            MockBuybackReceiver(collector).creatorFeeShares(address(stepped)),
+            MockBuybackReceiver(collector).creatorFeeShares(address(once))
+        );
+        assertEq(
+            MockBuybackReceiver(collector).buybackFeeShares(address(stepped)),
+            MockBuybackReceiver(collector).buybackFeeShares(address(once))
+        );
     }
 
     function testLongDormancyAndFeeCheckpointBeforeSupplyMath() public {
@@ -245,7 +269,8 @@ contract VaultAccountingTest is BootstrapTestBase {
         vault.activateEmergencyShutdown();
         uint256 stoppedSupply = vault.totalSupply();
         assertEq(stoppedSupply, WAD + pendingAtShutdown);
-        assertEq(vault.balanceOf(BENEFICIARY) + vault.balanceOf(collector), pendingAtShutdown);
+        assertEq(vault.balanceOf(BENEFICIARY), 0);
+        assertEq(vault.balanceOf(collector), pendingAtShutdown);
         assertTrue(vault.shutdown());
         assertEq(vault.shutdownAt(), block.timestamp);
 

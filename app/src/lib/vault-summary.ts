@@ -13,10 +13,11 @@ export type FactoryVaultSummary = {
   mintFeeBps: number;
   redeemFeeBps: number;
   creator: Address;
+  expenseBeneficiary: Address;
 };
 
 export async function readVaultSummary(publicClient: PublicClient, address: Address): Promise<FactoryVaultSummary> {
-  const [name, symbol, fundThesis, assets, totalSupply, annualCreatorExpenseRatioBps, mintFeeBps, redeemFeeBps, creator] = await Promise.all([
+  const [name, symbol, fundThesis, assets, totalSupply, annualCreatorExpenseRatioBps, mintFeeBps, redeemFeeBps, creator, expenseBeneficiary] = await Promise.all([
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "name" }),
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "symbol" }),
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "fundThesis" }),
@@ -26,6 +27,7 @@ export async function readVaultSummary(publicClient: PublicClient, address: Addr
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "mintFeeBps" }),
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "redeemFeeBps" }),
     publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "creator" }),
+    publicClient.readContract({ address, abi: managedOtfVaultAbi, functionName: "expenseBeneficiary" }),
   ]);
   return {
     address,
@@ -39,5 +41,6 @@ export async function readVaultSummary(publicClient: PublicClient, address: Addr
     mintFeeBps,
     redeemFeeBps,
     creator,
+    expenseBeneficiary,
   };
 }

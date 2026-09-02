@@ -135,7 +135,7 @@ const expectedConstructors = {
   OTFLaunchManager: ["otf_", "weth_", "poolManager_", "stateView_", "positionManager_", "permit2_"],
   OTFLaunchManagerDeployer: [],
   TeamMarketCapVesting: ["launchManager", "ethUsdOracle_", "maxOracleAge_", "beneficiary_"],
-  BuybackCollector: ["routeExecutor", "launchManager_", "universalRouter_", "permit2_"],
+  BuybackCollector: ["launchManager_", "universalRouter_", "permit2_"],
   MerkleRewardsDistributor: ["otf_", "rootPublisher"],
   FakeETHUSDOracle: [],
 };
@@ -222,6 +222,17 @@ const buybackSource = readFileSync(join(contracts, "src", "BuybackCollector.sol"
 assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(buybackSource), "buyback collector exposes an asset withdrawal path");
 assert(!/delegatecall|\.call\s*\{/u.test(buybackSource), "buyback collector exposes arbitrary execution");
 assert(/IOTFBurnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
+const buybackNames = functionNames(compiled.BuybackCollector);
+for (const name of ["configureFactory", "configureEntryExitRouter", "registerVault", "recordFeeShares", "settleFees", "feeAccounts"]) {
+  assert(buybackNames.has(name), `buyback collector function ${name} is absent`);
+}
+for (const removed of ["executeBuyback", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {
+  assert(!buybackNames.has(removed), `buyback collector retains legacy route-executor surface ${removed}`);
+}
+assert(/IOTFSettlementVault\(request\.vault\)\.checkpointFees\(\)/u.test(routerSource), "router does not checkpoint annual fees before settlement");
+assert(/IBuybackVault\(vault\)\.checkpointFees\(\)/u.test(buybackSource), "fee settlement does not checkpoint annual fees");
+assert(/account\.creatorFeeShares\s*=\s*0/u.test(buybackSource) && /account\.buybackFeeShares\s*=\s*0/u.test(buybackSource), "fee settlement does not atomically consume both pending share accounts");
+assert(/Math\.mulDiv\(wethOut, creatorFeeShares, feeShares\)/u.test(buybackSource), "settlement does not split actual WETH by recorded fee shares");
 const distributorSource = readFileSync(join(contracts, "src", "MerkleRewardsDistributor.sol"), "utf8");
 assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(distributorSource), "rewards distributor exposes a principal withdrawal path");
 assert(/block\.chainid,\s*address\(this\),\s*account,\s*cumulativeEntitlement/u.test(distributorSource), "Merkle leaf does not bind chain, distributor, account, and cumulative entitlement");

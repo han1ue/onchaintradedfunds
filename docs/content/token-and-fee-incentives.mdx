@@ -116,13 +116,26 @@ The vault checkpoints accrued annual fees before any operation changes its accou
 Raw OTF donated to a vault is not accounted and provides no benefit. OTF is a normal constituent:
 there is no staking, escrow, or cooldown, and fund-owned OTF is never burned by the protocol.
 
+Both portions are minted as fund shares to `BuybackCollector`, never to the expense beneficiary.
+The vault records the exact creator and buyback share counts with the collector in the same
+transaction that charges the fee. Later changes to accounted OTF cannot rewrite that stored split.
+Each factory-registered vault has an isolated collector account containing its two pending share
+balances and immutable expense beneficiary.
+
 ## Buyback and burn
 
-`BuybackCollector` receives the non-creator fee shares. The authorized route executor supplies
-bounded typed `SwapLeg[]` routes through the existing entry/exit router and its approved adapters.
-The collector does not discover routes onchain and cannot make arbitrary calls. It validates the
-fee-share vault, route deadline, exact input/output tokens, approved adapters, minimum WETH output,
-and observed balance deltas.
+Only a vault's immutable expense beneficiary may settle its fee account. Settlement first
+checkpoints annual fees, clears both pending share counters, redeems their combined fund shares, and
+uses beneficiary-supplied bounded `SwapLeg[]` paths through the existing entry/exit router and its
+approved adapters to produce canonical WETH. The caller supplies the minimum aggregate WETH output,
+minimum OTF output, and deadline. The collector does not discover routes, calculate fair value, use
+an oracle or TWAP, or impose a protocol slippage setting.
+
+Actual WETH output is divided in proportion to the creator and buyback share counts preserved at
+fee-accrual time. Creator WETH rounds down and is transferred exactly to the expense beneficiary;
+the residual buyback WETH is the only amount approved and spent by the final swap. Registration,
+share redemption, routing, both minimums, beneficiary payment, buyback, and burn are one atomic
+transaction. Any failure restores the pending accounting and all balances.
 
 The final WETH-to-OTF route is immutable: it uses only the canonical OTF/WETH V4 pool key. Its own
 minimum OTF output and deadline are enforced. Every OTF token purchased in that execution is burned,
@@ -148,8 +161,8 @@ amount syntax, signs, and duplicate users; it does not calculate economic reward
 
 - The protocol multisig chooses cumulative reward allocations and can allocate the entire remaining
   distributor balance in one valid root.
-- The route executor chooses offchain conversion routes, bounded by approved adapters and minimum
-  outputs.
+- Each expense beneficiary chooses the approved conversion route, minimums, and deadline only for
+  its own vault's complete pending fee account.
 - The production ETH/USD oracle is trusted for vesting and must be configured explicitly.
 - V4 PoolManager, StateView, PositionManager, Universal Router, Permit2, WETH, and oracle addresses
   must be explicit. Production must use official Uniswap V4 deployments. The unofficial testnet V4
