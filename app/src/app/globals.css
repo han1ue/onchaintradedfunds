@@ -1129,6 +1129,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageHeader { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 18px; }
 .appPageHeader > div:first-child { display: flex; min-width: 0; align-items: center; gap: 11px; }
 .appPageIcon { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 28%); border-radius: 6px; background: rgb(var(--accent-rgb) / 9%); color: var(--accent-text); }
+.appPageTitleLine { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.appPageTitleActions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.appPageTitleActions .iconOnly { color: var(--text-muted); }
+.appPageTitleActions .walletAddressCopyButton.copied { color: var(--green); }
 .appPageHeader h1 { margin: 0; font-size: 1.28rem; font-weight: 600; letter-spacing: 0; line-height: 1.15; }
 .appPageHeader p { margin: 5px 0 0; color: var(--text-muted); font-size: 0.75rem; }
 .appPageHeader p a { color: var(--text-soft); text-decoration-color: rgb(var(--accent-rgb) / 48%); text-underline-offset: 2px; }

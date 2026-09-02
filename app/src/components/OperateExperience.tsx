@@ -356,10 +356,10 @@ function OperateFooter() {
   );
 }
 
-function AppPageHeader({ title, description, icon, actions }: { title: string; description: React.ReactNode; icon: React.ReactNode; actions?: React.ReactNode }) {
+function AppPageHeader({ title, description, icon, titleActions, actions }: { title: string; description: React.ReactNode; icon: React.ReactNode; titleActions?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <header className="appPageHeader">
-      <div><span className="appPageIcon">{icon}</span><div><h1>{title}</h1><p>{description}</p></div></div>
+      <div><span className="appPageIcon">{icon}</span><div><div className="appPageTitleLine"><h1>{title}</h1>{titleActions ? <div className="appPageTitleActions">{titleActions}</div> : null}</div><p>{description}</p></div></div>
       {actions ? <div className="appPageActions">{actions}</div> : null}
     </header>
   );
@@ -1550,6 +1550,7 @@ function WalletSurface() {
   const chainId = useChainId();
   const testnet = chainId === robinhoodChainTestnet.id;
   const { address } = useAccount();
+  const [addressCopied, setAddressCopied] = useState(false);
   const { state: vaultDirectoryState, vaults } = useFactoryVaults({ enabled: testnet && Boolean(address) });
   const balanceContracts = useMemo(() => address ? vaults.map((vault) => ({
     address: vault.address,
@@ -1567,11 +1568,24 @@ function WalletSurface() {
   });
   const managedVaults = address ? vaults.filter((vault) => vault.creator.toLowerCase() === address.toLowerCase()) : [];
   const vaultDataLoading = vaultDirectoryState === "loading" || (vaultDirectoryState === "ready" && vaultBalancesLoading);
+  const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
+
+  async function copyWalletAddress() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address);
+    setAddressCopied(true);
+    window.setTimeout(() => setAddressCopied(false), 1800);
+  }
 
   return (
     <DashboardPage>
       <div className="appView">
-        <AppPageHeader title={address ? shortAddress(address) : "Wallet"} description="Your OTF share positions and managed funds." icon={<Wallet size={18} />} />
+        <AppPageHeader
+          title={address ? shortAddress(address) : "Wallet"}
+          description="Your OTF share positions and managed funds."
+          icon={<Wallet size={18} />}
+          titleActions={address ? <><button className={`iconOnly compact walletAddressCopyButton${addressCopied ? " copied" : ""}`} type="button" title={addressCopied ? "Wallet address copied" : "Copy wallet address"} onClick={copyWalletAddress} aria-label={addressCopied ? "Wallet address copied" : "Copy wallet address"}>{addressCopied ? <Check size={13} /> : <Copy size={13} />}</button><a className="iconOnly compact" href={`${explorerUrl}/address/${address}`} target="_blank" rel="noreferrer" title="Open wallet in block explorer" aria-label="Open wallet in block explorer in a new tab"><ExternalLink size={13} /></a></> : undefined}
+        />
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
           <>
             <section className="sectionCard depositPositions">
