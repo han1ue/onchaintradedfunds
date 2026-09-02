@@ -452,7 +452,7 @@ a { color: inherit; }
   display: flex;
   min-height: calc(100vh - var(--testnet-banner-height));
   flex-direction: column;
-  background: radial-gradient(circle at 68% 34%, rgb(var(--accent-rgb) / 5%), transparent 38%);
+  background: radial-gradient(circle at 68% 34%, rgb(var(--accent-rgb) / 7%), transparent 40%);
 }
 
 .operateAmbientField {
@@ -461,7 +461,7 @@ a { color: inherit; }
   inset: var(--testnet-banner-height) 0 0;
   overflow: hidden;
   color: rgb(var(--accent-rgb));
-  opacity: 0.32;
+  opacity: 0.4;
   pointer-events: none;
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 12%, black 82%, transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0%, black 12%, black 82%, transparent 100%);
@@ -496,7 +496,7 @@ a { color: inherit; }
 }
 
 :root[data-theme="light"] .operateAmbientField,
-:root[data-palette="robinhood"] .operateAmbientField { opacity: 0.18; }
+:root[data-palette="robinhood"] .operateAmbientField { opacity: 0.23; }
 
 .topNav {
   position: sticky;
@@ -1541,7 +1541,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMeta > a { display: inline-flex; align-items: center; gap: 5px; color: var(--utility-action); font-size: 0.66rem; text-decoration: none; }
 .fundDetailMeta > a:hover { color: var(--utility-action-hover); }
 .fundDetailMeta code { font: inherit; }
-.fundThesis { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--card); padding: 16px 20px 18px; }
+.fundThesis { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); padding: 16px 20px 18px; }
 .fundThesisMark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); color: var(--text-soft); }
 .fundThesis h2 { margin: 1px 0 0; font-size: 0.72rem; font-weight: 650; }
 .fundThesis p { max-width: 74ch; margin: 6px 0 0; color: var(--text-soft); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; text-wrap: pretty; }
@@ -1555,6 +1555,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundMetricAddressLink { max-width: 100%; }
 .fundMetricAddressLink code { overflow: hidden; font: inherit; text-overflow: ellipsis; }
 .fundDetailPrimaryGrid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.72fr); align-items: start; gap: 14px; }
+.fundValuationColumn,
 .fundTradeColumn { display: grid; min-width: 0; gap: 10px; }
 .valuationPanel { min-width: 0; overflow: hidden; }
 .valuationHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
@@ -1569,14 +1570,18 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationModeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .valuationState { display: flex; min-height: 268px; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); padding: 24px; font-size: 0.68rem; text-align: center; }
 .valuationSummary { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 16px 0; }
-.valuationSummary > div:first-child strong { display: block; }
-.valuationSummary > div:first-child strong { color: var(--text); font-size: 1.35rem; font-variant-numeric: tabular-nums; font-weight: 650; }
+.valuationPerformance strong,
+.valuationPerformance small { display: block; font-variant-numeric: tabular-nums; }
+.valuationPerformance strong { font-size: 1.35rem; font-weight: 650; }
+.valuationPerformance strong.positive { color: var(--green); }
+.valuationPerformance strong.negative { color: var(--danger); }
+.valuationPerformance strong.neutral { color: var(--text-muted); }
+.valuationPerformance small { margin-top: 4px; color: var(--text-muted); font-size: 0.65rem; font-weight: 600; }
 .valuationRangeToggle { display: inline-flex; flex: 0 0 auto; gap: 2px; }
 .valuationRangeToggle button { min-width: 38px; height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 0 7px; font-size: 0.6rem; font-weight: 700; }
 .valuationRangeToggle button:hover { background: var(--background); color: var(--text); }
 .valuationRangeToggle button.active { background: rgb(var(--accent-rgb) / 12%); color: var(--accent-text); }
 .valuationRangeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.valuationContext { margin: 9px 16px 0; color: var(--text-muted); font-size: 0.61rem; line-height: 1.45; }
 .valuationChartWrap { min-height: 218px; padding: 6px 12px 10px; }
 .valuationChart { display: block; width: 100%; height: 218px; overflow: visible; }
 .valuationChartGrid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -1585,7 +1590,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationChartLine { fill: none; stroke: var(--teal); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .valuationChartPoint { fill: var(--card); stroke: var(--teal); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .valuationDates { display: flex; justify-content: space-between; color: var(--text-muted); margin: -8px 2px 0 43px; font-size: 0.57rem; }
-.valuationAllocation { border-top: 1px solid var(--border); }
+.valuationAllocation { min-width: 0; overflow: hidden; }
 .allocationPanelHeading { padding-top: 13px; padding-bottom: 13px; }
 .allocationHeadingMeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
 .fundTradePanel { min-width: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
@@ -2356,12 +2361,14 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .logoGroup { display: none; }
   .navTabs { justify-self: start; }
   .fundDetailPrimaryGrid { grid-template-columns: 1fr; }
+  .fundValuationColumn,
   .fundTradeColumn,
   .fundTradePanel { display: contents; }
   .fundThesis { grid-row: 1; }
   .valuationPanel { grid-row: 2; }
-  .fundTradeBody { grid-row: 3; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
-  .fundFeesPanel { grid-row: 4; }
+  .valuationAllocation { grid-row: 3; }
+  .fundTradeBody { grid-row: 4; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
+  .fundFeesPanel { grid-row: 5; }
   .allocationComposer { grid-template-columns: 1fr; }
   .allocationChartPanel { position: static; }
 }

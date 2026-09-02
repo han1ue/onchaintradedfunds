@@ -34,4 +34,13 @@ describe("onchain fund thesis wiring", () => {
     expect(source).toContain('<section className="fundThesis" aria-labelledby="fund-thesis-title">');
     expect(source.indexOf('className="fundThesis"')).toBeLessThan(source.indexOf('className="fundTradePanel"'));
   });
+
+  it("keeps allocation separate and leads the valuation summary with range performance", () => {
+    const source = readFileSync(new URL("../components/OperateExperience.tsx", import.meta.url), "utf8");
+    expect(source).toContain('className="fundValuationColumn"');
+    expect(source).toContain('className="sectionCard valuationAllocation"');
+    expect(source).toContain('className="valuationPerformance"');
+    expect(source).toContain("changePercent.toFixed(2)");
+    expect(source).not.toContain("browser-observed valuation snapshot");
+  });
 });

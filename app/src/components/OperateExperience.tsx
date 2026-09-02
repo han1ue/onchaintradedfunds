@@ -1344,6 +1344,17 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
     ? allPoints.filter((point) => point.at >= latestTimestamp - rangeDuration)
     : allPoints;
   const values = points.map((point) => mode === "share" ? point.navUsd : point.aumUsd);
+  const firstValue = values.at(0);
+  const lastValue = values.at(-1);
+  const changePercent = firstValue !== undefined && lastValue !== undefined && firstValue > 0
+    ? ((lastValue - firstValue) / firstValue) * 100
+    : undefined;
+  const changeTone = changePercent === undefined || changePercent === 0
+    ? "neutral"
+    : changePercent > 0 ? "positive" : "negative";
+  const changeLabel = changePercent === undefined
+    ? "—"
+    : `${changePercent > 0 ? "+" : ""}${changePercent.toFixed(2)}%`;
 
   const width = 720;
   const height = 190;
@@ -1379,32 +1390,33 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
     : "Weighting method unavailable";
 
   return (
-    <section className="sectionCard valuationPanel">
-      <div className="valuationHeader">
-        <h2>{mode === "share" ? "NAV/share" : "NAV"}</h2>
-        <div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div>
-      </div>
-      {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
-        <>
-          <div className="valuationSummary">
-            <div><strong>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</strong></div>
-            <div className="valuationRangeToggle" role="group" aria-label="Chart time range">{VALUATION_RANGES.map((option) => <button className={range === option.value ? "active" : ""} key={option.value} type="button" aria-pressed={range === option.value} onClick={() => setRange(option.value)}>{option.label}</button>)}</div>
-          </div>
-          <p className="valuationContext">{valuation.usesBootstrapNav && mode === "share" ? `Bootstrap basket value for one ${symbol}; the fund has no issued shares yet.` : `${points.length} browser-observed valuation snapshot${points.length === 1 ? "" : "s"} in this range.`}</p>
-          <div className="valuationChartWrap">
-            <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "share" ? "NAV per share" : "total NAV"} chart ending at ${formatUsd(selectedValue)}`}>
-              {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
-              <path className="valuationChartArea" d={areaPath} />
-              <path className="valuationChartLine" d={linePath} />
-              {chartPoints.map((point, index) => <circle className="valuationChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === chartPoints.length - 1 ? "4" : "3"} />)}
-            </svg>
-            {points.length ? <div className="valuationDates"><span>{firstDate}</span><span>{lastDate}</span></div> : null}
-          </div>
-        </>
-      )}
-      <div className="valuationAllocation">
+    <div className="fundValuationColumn">
+      <section className="sectionCard valuationPanel">
+        <div className="valuationHeader">
+          <h2>{mode === "share" ? "NAV/share" : "NAV"}</h2>
+          <div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div>
+        </div>
+        {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
+          <>
+            <div className="valuationSummary">
+              <div className="valuationPerformance"><strong className={changeTone}>{changeLabel}</strong><small>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</small></div>
+              <div className="valuationRangeToggle" role="group" aria-label="Chart time range">{VALUATION_RANGES.map((option) => <button className={range === option.value ? "active" : ""} key={option.value} type="button" aria-pressed={range === option.value} onClick={() => setRange(option.value)}>{option.label}</button>)}</div>
+            </div>
+            <div className="valuationChartWrap">
+              <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "share" ? "NAV per share" : "total NAV"} chart ending at ${formatUsd(selectedValue)}`}>
+                {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
+                <path className="valuationChartArea" d={areaPath} />
+                <path className="valuationChartLine" d={linePath} />
+                {chartPoints.map((point, index) => <circle className="valuationChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === chartPoints.length - 1 ? "4" : "3"} />)}
+              </svg>
+              {points.length ? <div className="valuationDates"><span>{firstDate}</span><span>{lastDate}</span></div> : null}
+            </div>
+          </>
+        )}
+      </section>
+      <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
         <div className="directoryPanelHeading allocationPanelHeading">
-          <div><h2>Allocation</h2></div>
+          <div><h2 id="allocation-title">Allocation</h2></div>
           <div className="allocationHeadingMeta"><span className="stateBadge muted methodologyBadge">{methodologyLabel}</span></div>
         </div>
         {creationMetadata ? (
@@ -1417,8 +1429,8 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
         ) : (
           <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
         )}
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
