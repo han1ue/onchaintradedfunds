@@ -126,180 +126,75 @@ components:
     height: "102px"
 ---
 
-# Design System: OTF Launch Competition
+# Launch application design system
 
-## Overview
+## Design principles
 
-**Creative North Star: "The Ranked Allocation Desk"**
+Launch is a compact comparison and verification interface. Ranked proposals, vote state, and portfolio allocation take precedence over promotional content. The default theme is dark, with a light theme that preserves the same hierarchy and semantic colors.
 
-OTF Launch is an operational comparison surface, not a promotional campaign. It feels like a compact market desk: proposals are ordered, theses are clipped for scanning, portfolio shape is visible before detail, and verified actions sit close to the evidence they affect. The system is dark-first, precise, and restrained enough for finance-oriented and crypto-native users to read the same interface without translation.
+Teal marks actions, active navigation, selection, focus, and verified interaction. Green, gold, blue, and red appear only for their literal status meanings. Portfolio colors belong to allocation data and must not replace action or status colors.
 
-Visual identity comes from disciplined density rather than ornament. Teal signals action, active navigation, and trusted interaction; bordered near-black surfaces organize the workload; tabular numerals keep rankings, votes, and weights aligned. Light theme support remaps the same semantic roles while preserving hierarchy and contrast.
-
-**Key Characteristics:**
-
-- Dark-first operational canvas with a semantic light-theme counterpart.
-- Dominant ranked data, compact thesis excerpts, and allocation-first comparison.
-- Thin bordered surfaces, tight radii, sparse state color, and virtually no resting shadow.
-- One system type stack with tabular numerals and a compressed label scale.
-- Exact percentages are revealed where decisions need detail, while lists preserve scan speed.
-
-## Colors
-
-The palette is a cool near-black neutral ladder with a single teal interaction voice, a small set of semantic status hues, and a dedicated categorical data palette.
-
-### Primary
-
-- **Verification Teal:** The interactive and active-state color for primary actions, links, current navigation, focus, icons, and the core allocation accent.
-- **Teal Hover:** A slightly brighter response reserved for interactive hover state.
-- **Deep Teal Ink:** The high-contrast foreground placed on teal-filled controls.
-
-### Secondary
-
-- **Signal Green:** Positive, valid, or live state only.
-- **Evidence Blue:** Informational callouts and one allocation-series color.
-
-### Tertiary
-
-- **Review Gold:** Warning, timing, and first-rank emphasis.
-- **Portfolio Rose:** Allocation-series differentiation; danger uses its separate semantic token.
-- **Portfolio Violet:** Allocation-series differentiation only.
-
-### Data visualization
-
-- **Categorical series:** Teal, coral, blue, gold, violet, and magenta are ordered to maximize adjacent hue separation in allocation bars. These tokens remain independent of action and status colors, including in branded themes.
-- **Segment boundaries:** Stacked bars retain a one-pixel dark separator, and labels or aligned legends remain visible so color is never the only cue.
-
-### Neutral
-
-- **Night Canvas:** The application background and field well.
-- **Navigation Ink:** Sticky navigation material.
-- **Desk Surface:** Default cards and controls.
-- **Raised Desk Surface:** Hovered controls, step icons, and subtle nested separation.
-- **Inset Surface:** Secondary tonal layer for compact internal regions.
-- **Muted Track:** Allocation-strip track and low-emphasis fills.
-- **Hairline Border:** Default panel and divider stroke.
-- **Strong Border:** Controls, active structure, and higher-emphasis boundaries.
-- **Primary Text:** Headings, totals, and decisive labels.
-- **Soft Text:** Body copy and secondary values.
-- **Muted Text:** Metadata, helper copy, and column labels.
-- **Danger Red:** Errors, destructive hover state, and invalid totals.
-
-### Named Rules
-
-**The One Teal Voice Rule.** Teal marks interaction, selection, verification, or portfolio identity; it does not become general decoration.
-
-**The Semantic Rarity Rule.** Green, gold, blue, and danger red appear only when the content carries that state. Sparse status color makes each occurrence meaningful.
-
-**The Role-Preserving Theme Rule.** Light theme may remap values, but it must not change which semantic role owns action, text, surface, border, or status.
+Surfaces use close neutral steps, thin borders, and small radii. The design avoids resting card shadows, glossy material, broad glow, and decorative raster images.
 
 ## Typography
 
-**Display Font:** Inter with Segoe UI and system sans-serif fallbacks
-**Body Font:** Inter with Segoe UI and system sans-serif fallbacks
-**Label/Mono Font:** The same system stack; numeric content uses tabular figures rather than a separate mono face
+Inter and system sans-serif fallbacks serve all text. Page identity may use the display scale; cards, controls, and table labels remain compact. Votes, ranks, percentages, dates, and metrics use tabular figures.
 
-**Character:** A single incumbent product stack keeps the interface practical and consistent. Hierarchy comes from scale, weight, spacing, and compressed tracking instead of display-font contrast.
-
-### Hierarchy
-
-- **Display:** Reserved for the competition or proposal identity at the top of a primary screen; tightly tracked and nearly solid in line-height.
-- **Headline:** Used for compact page titles and content-page headings.
-- **Title:** Used for card headings and strong component labels.
-- **Body:** Used for explanatory and legal content; long-form thesis copy loosens to a taller line-height and slightly larger size.
-- **Label:** Used for table headers, metrics, state, helper copy, and dense navigation. Uppercase is limited to true labels and status metadata.
-
-### Named Rules
-
-**The Tabular Evidence Rule.** Votes, ranks, percentages, dates, and metrics use tabular numerals so comparison never shifts horizontally.
-
-**The Restrained Hierarchy Rule.** Only page identity earns large type. Operational cards and controls remain compact so data, not headings, dominates the viewport.
+Uppercase is limited to short labels and status metadata. Long theses and legal copy use a larger body size and line height than dense operational rows.
 
 ## Layout
 
-The desktop shell is centered at a maximum width of 1360px. Navigation is a sticky 56px band; page content uses 24px horizontal gutters and a 12px recurring grid gap. The primary desktop composition places a full-width phase timeline above a flexible leaderboard and 300px action rail, while proposal detail uses a flexible content column beside a 310px voting rail. The earned-vote ledger uses a flexible proposal list beside a sticky 320px unlock and activation rail. Content pages narrow to 1000px, and forms may use a 1160px working width with a 270px guidance rail.
+The desktop shell has a maximum width of 1360 px, 24 px side gutters, a 56 px sticky navigation bar, and a recurring 12 px gap. The primary board places the phase timeline above the leaderboard and a 300 px action rail. Proposal detail uses a flexible content column with a 310 px voting rail. The ballot uses a flexible proposal list and a sticky 320 px vote-schedule rail.
 
-At 1120px, the primary board collapses to one column and the leaderboard removes its portfolio column before creator identity. At 760px, gutters contract to 14px, main split layouts become single columns, the leaderboard turns from a header-led table into self-contained rows, creator metadata then recedes, and supporting metric detail is reduced. At 440px, navigation and row density tighten again while preserving rank, OTF identity, and vote total. The minimum supported canvas is 320px.
+At 1120 px, split boards become one column and the leaderboard drops portfolio comparison before creator identity. At 760 px, side gutters shrink to 14 px, tables become labelled rows, and secondary metrics recede. At 440 px, navigation and row spacing tighten. Rank, OTF identity, and vote total remain visible down to the 320 px minimum canvas.
 
-**The Twelve-Pixel Grid Rule.** Sibling cards and primary panel divisions use the recurring 12px gap unless a component's internal rhythm requires a tighter control-scale gap.
+Responsive layouts must retain evidence and state, even when they remove comparative detail.
 
-**The Evidence-Preserving Collapse Rule.** Responsive layouts remove portfolio comparison before creator metadata, then retain OTF identity, rank, and vote total through every narrower collapse.
+## Color and depth
 
-## Elevation & Depth
+`background` and `nav` form the canvas. `card`, `card-raised`, `surface`, and `muted` provide ordered surface levels. `border` separates ordinary regions; `border-strong` marks controls and active structure.
 
-The system is flat by default. One-pixel borders, close neutral steps, and an extremely faint teal radial wash create separation; section cards do not cast resting shadows. The sticky navigation adds restrained translucency and blur so content can pass behind it without becoming visually noisy. Shadow-like effects are state-specific: form focus uses a tight teal halo, and the positive badge dot uses a small semantic halo.
+Primary text is used for headings and totals, soft text for body copy, and muted text for metadata. Teal never becomes ambient decoration. Semantic colors remain sparse so a warning or failure cannot be mistaken for ordinary ornament.
 
-### Named Rules
+One-pixel borders carry most depth. The navigation may use restrained translucency and blur. A low-opacity focus halo and a small live-status halo are the only glow treatments.
 
-**The Border Carries Depth Rule.** Prefer border and tonal contrast for hierarchy. Do not add card shadows to create depth the neutral ladder already provides.
+## Shapes and controls
 
-**The State-Only Halo Rule.** Glow is permitted only for focus visibility or a small live-status indicator, never as ambient decoration.
+Panels use 8 px radii, controls use 6 px, allocation tracks use 4 px, and status badges use full pills. Circular geometry is limited to progress markers, status dots, and allocation keys.
 
-## Shapes
+Buttons have a 36 px minimum height and 14 px horizontal padding. Primary buttons use teal with dark text. Secondary buttons use the card surface and strong border. Ghost buttons use teal text on a transparent background. Disabled controls use reduced opacity, no lift, and a not-allowed cursor.
 
-The form language is precise and slightly softened: primary surfaces use an 8px radius, controls use 6px, compact allocation tracks use 4px, and status badges use a full pill. Most boundaries are a single pixel. Circles are reserved for progress steps, status dots, and tiny allocation markers rather than general container styling.
+Fields use the page background, strong border, 6 px radius, 38 px minimum height, and 8 by 11 px padding. Focus changes the border to teal and adds a tight low-opacity halo. Invalid totals use danger red; valid totals use green.
 
-**The Tight Corner Rule.** Operational surfaces stay within the 4px-to-8px radius family; pill geometry belongs to compact state badges only.
+Status badges are 22 px pills with a border, compact label, and leading dot. Their color must match the represented state.
 
-## Components
+## Navigation
 
-### Buttons
+The sticky navigation uses a translucent dark surface, bottom border, and the 1360 px inner shell. Links start muted, become primary text on hover, and show a 2 px teal underline when active.
 
-- **Shape:** Compact rectangular controls with gently curved 6px corners and a 36px minimum height; the navigation action may contract to 34px.
-- **Primary:** Verification teal fill with deep teal ink, strong label weight, and 14px horizontal padding.
-- **Hover / Focus:** Hover brightens teal and lifts by 1px over 150ms; focus uses the global 2px teal outline with 3px offset; active may return the control to its resting plane.
-- **Secondary / Ghost:** Secondary controls use a strong border on the desk surface and lift onto the raised surface on hover. Ghost controls carry teal text on transparent material.
-- **Disabled:** Reduce opacity to 48%, remove the lift, and use a not-allowed cursor.
+`Submit OTF` is contextual. It appears in leaderboard headings and on the profile page, not in primary navigation. Lower-priority labels and links disappear before core actions on small screens.
 
-### Chips
+## Leaderboard and allocation
 
-- **Style:** Status badges are 22px pills with a 1px border, compact uppercase label treatment, and a 6px leading dot.
-- **State:** Neutral badges use muted text and border. Positive, warning, and danger variants borrow semantic color only; positive state may add a faint tinted fill and dot halo.
+Desktop rows align rank, OTF identity, thesis excerpt, portfolio shape, creator, and allocated vote total. Each row is at least 102 px high and uses border separation with a faint teal hover wash. The shared `OtfTokenIcon` identifies proposals.
 
-### Cards / Containers
+Allocation strips use the six categorical colors with a one-pixel separator. Labels or an adjacent legend must remain available so color is never the only cue. Proposal detail increases the strip height and includes a complete allocation table.
 
-- **Corner Style:** Tight 8px corners.
-- **Background:** Default desk surface, with subtle transparency only where the page wash should show through.
-- **Shadow Strategy:** None at rest; see the border-led elevation rules.
-- **Border:** A 1px neutral hairline separates cards, table rows, headers, and footers.
-- **Internal Padding:** 18px is the panel baseline; dense rows and utility callouts use 12px-to-14px.
+Row entry may rise 5 px over 320 ms with staggered delays. Reduced-motion preferences remove this animation.
 
-### Inputs / Fields
+## Ballot and progress
 
-- **Style:** Night-canvas well, strong 1px border, 6px radius, 38px minimum height, and 8px by 11px internal padding.
-- **Focus:** Teal border plus a tight 2px halo at low opacity. The global focus-visible outline remains the fallback for keyboard focus.
-- **Error / Disabled:** Invalid totals use danger red; valid totals use signal green. Disabled action controls follow the button disabled rule.
+The ballot is one competition-wide vote ledger. Voting opens after seven submission-only days and lasts 30 days while submissions remain open. Three votes become available at opening, followed by one every three voting days up to 12.
 
-### Navigation
+Plus and minus controls change only the current draft. Cast votes form a permanent floor for each proposal and cannot move. One X post may commit several newly available votes. Proposal choices remain hidden in the post unless the voter explicitly reveals them.
 
-The 56px sticky navigation uses a translucent navigation-ink material, a bottom hairline, and a 1360px inner shell. The square OTF mark is stroked in teal. Links are compact and muted by default, become primary text on hover, and use a 2px teal underline for the active route. Submission is contextual rather than global: “Submit OTF” appears as a secondary action in leaderboard headings and as the primary profile action, never in the navigation. On small screens, the launch label and lower-priority links progressively disappear before core actions do.
+The sticky rail shows remaining votes and the next scheduled vote. The submission wizard uses four equal steps in a 70 px band with 24 px circular markers and a hairline connector. Mobile may hide step labels but retains ordered markers.
 
-### Ranked Leaderboard
+## Implementation constraints
 
-The signature comparison component aligns rank, OTF identity and thesis, portfolio shape, creator, and allocated vote total in a single desktop row. Each row is at least 102px high, divided by hairlines, and gains only a faint teal wash on hover. OTF identity uses the shared ticker-aware `OtfTokenIcon`. Allocation is encoded by a 6px segmented strip with clipped symbol and percentage labels; proposal detail grows the strip to 9px and follows it with a full allocation table. Entry animation is a restrained 5px rise over 320ms with staggered delays, and it is removed for reduced-motion preference.
-
-### Earned-Vote Ledger
-
-The ballot is a single competition-wide ledger, not a set of independent proposal actions. Voting follows a 7-day submission-only phase and lasts 30 days; submissions remain open throughout. Three votes unlock when voting opens, followed by one every three voting days up to 12. Each proposal receives compact plus/minus controls, including the voter’s own proposal. Minus can only remove an uncast draft choice: cast votes are permanent and form the floor for every proposal. The sticky rail shows remaining votes and next-unlock state. Every voting action requires a fresh public X post, while one action may batch several unlocked votes. Each post hides its batch’s OTF picks by default; a labelled disclosure control must be enabled to name tickers and vote counts.
-
-### Wizard Progress
-
-Four equal steps sit in a 70px band above the form. A 24px circular marker and a single hairline connector indicate sequence; active steps use a restrained teal tint rather than a filled progress rail. On mobile, text labels may disappear while ordered markers remain.
-
-## Do's and Don'ts
-
-### Do:
-
-- **Do** use bordered tonal layers and the recurring 12px grid to organize dense operational content.
-- **Do** keep action, verification, and focus in teal while reserving status hues for their literal semantic state.
-- **Do** preserve tabular numerals, right-aligned totals, and explicit percentage detail where comparison requires precision.
-- **Do** remove portfolio comparison before creator metadata, then retain rank, OTF identity, and vote total through every narrower collapse.
-- **Do** honor reduced-motion preference by removing nonessential animation and transition.
-
-### Don't:
-
-- **Don't** add ambient card shadows, glossy materials, or broad neon glow.
-- **Don't** use green, gold, blue, rose, violet, or danger red as general decoration.
-- **Don't** enlarge card headings or labels until they compete with the ranked data.
-- **Don't** replace the segmented allocation strip with a decorative chart that slows row scanning.
-- **Don't** introduce decorative raster imagery into the operational shell.
+- Organize dense content with bordered tonal layers and the 12 px grid.
+- Keep action and focus teal. Reserve semantic colors for actual states and portfolio colors for allocation data.
+- Preserve tabular numerals, aligned totals, and exact percentages where users compare proposals.
+- Remove portfolio detail before creator identity at narrow widths, while retaining rank, OTF identity, and vote total.
+- Disable nonessential animation when reduced motion is requested.
+- Do not add ambient shadows, glossy surfaces, broad neon glow, decorative charts, or generated raster imagery.

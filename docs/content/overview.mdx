@@ -1,179 +1,124 @@
 ---
 title: Protocol overview
-description: Architecture, creation, bootstrap accounting, routing, and application disclosures.
+description: Vault creation, accounting, fees, routing, and application behavior.
 ---
 
 # Protocol overview
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. The current pre-mainnet
-architecture is oracleless: a creator commits an ordered constituent list and immutable raw-token
-bootstrap units for one OTF. The app's fixed `$1` initial basket target, prices, market caps, and
-percentage weights stay offchain. The contracts do not calculate NAV, refresh market data, or
-rebalance, and the `$1` target is not a peg.
+An Onchain Traded Fund is an ERC-20 share token backed by an ordered basket of ERC-20 constituents. The creator fixes the basket, bootstrap units, fee rates, expense beneficiary, and fund thesis at creation. The vault then accounts for deposits and redemptions without an onchain price oracle.
 
-The contracts are unaudited and are not production-ready. `launch/` is a separate prelaunch
-competition and is not fund governance.
+The contracts do not calculate NAV, fetch market data, or rebalance. Prices and weighting labels shown by the application are informational. The protocol is unaudited and not ready for production use.
 
 ## Architecture
 
 ```text
-offchain asset data + creator target/percentages
+offchain prices and creator percentages
                   |
+                  | ordered constituents + raw bootstrap units
                   v
-       fixed-point bootstrap calculation
-                  |
-                  | constituents + raw units only
-                  v
-             OTFFactory ---- Clones.clone ----> ManagedOTFVault
-                  |                                  |
-                  |                                  +-- immutable bootstrap basket
-                  |                                  +-- accounted-balance settlement
-                  |                                  +-- creator expense shares
+             OTFFactory ---- clone ----> ManagedOTFVault
+                  |                           |
+                  |                           +-- accounted constituent balances
+                  |                           +-- immutable fee configuration
+                  |                           +-- permanent fund thesis
                   v
          OTFEntryExitRouter ---- approved ITradeAdapter
                                       |
                                       +---- UniswapV3Adapter ---- SwapRouter02
-                                      +---- UniswapV4Adapter ---- UniversalRouter ---- PoolManager
+                                      +---- UniswapV4Adapter ---- Universal Router
 ```
 
-## Creation application
+`OTFFactory` creates minimal-proxy vaults and records their addresses. `ManagedOTFVault` owns the basket and issues shares. `OTFEntryExitRouter` can convert a single input or basket output through approved adapters, but users can always mint with constituents or redeem in kind without it.
 
-The connected wallet is the creator. It selects assets while the app uses a fixed `$1` target
-initial basket value based on current offchain prices. This calculation target is not a peg or a
-guaranteed market price. The app loads current prices, market caps, and token decimals from its
-existing offchain asset source. Defaults are market-cap weights normalized deterministically at
-18-decimal percentage precision to exactly 100%. Every percentage remains editable, must be
-positive, and must produce an exact internal 100% total. Adding or removing an asset preserves all
-existing percentages; only the explicit reset action renormalizes the selection.
+Protocol-token launch, vesting, rewards, and fee buybacks are separate contracts described in [OTF token economics](/token-and-fee-incentives).
 
-If every final percentage unit equals that precise default, the creation methodology is
-`Market-cap weighted`; any exact-unit difference is `Modified market-cap weighted`. Neutral
-fixed-point multipliers compare each final percentage with its market-cap default. These labels
-describe initialization only and do not create an ongoing onchain rebalance.
+## Creating a vault
 
-The app uses integer fixed-point arithmetic. With percentage units totaling `T`, fixed target
-`V = 1e18` USD WAD, price `P_i` in USD WAD, and token decimals `d_i`:
+The connected wallet becomes the vault creator. `OTFFactory.createVault` accepts:
+
+- name, symbol, and a non-empty fund thesis of at most 2,048 UTF-8 bytes;
+- one to 20 ordered constituents and the raw units required for `1e18` shares;
+- an expense beneficiary;
+- annual expense, mint, and redeem rates capped at 1,000, 200, and 100 basis points.
+
+The factory deploys an empty clone. Creation transfers no constituent tokens and promises no deterministic vault address.
+
+### Application calculation
+
+The application uses current offchain prices, market caps, and token decimals to construct the initial basket. It starts in market-cap-weighted mode. Adding, replacing, or removing a constituent in that mode recalculates all percentages from current market caps. Editing a percentage switches to manual mode; new manual constituents start at 0%, and removing one does not change the remaining manual percentages. Selecting `Market-cap weighted` restores automatic normalization.
+
+Percentages use 18-decimal fixed-point units and must be positive with an exact total of 100%. For target value `V = 1e18` USD WAD, percentage units `w_i`, total units `T`, USD price `P_i`, and token decimals `d_i`, the application calculates:
 
 ```text
-allocationUsdWad_i = floor(V * percentageUnits_i / T)
+allocationUsdWad_i = floor(V * w_i / T)
 bootstrapUnits_i   = floor(allocationUsdWad_i * 10**d_i / P_i)
 ```
 
-Every raw `bootstrapUnits_i` must be nonzero. The app shows the minimum percentage needed to
-produce one raw unit and explains when token precision makes inclusion in a `$1` OTF impossible.
-The review step shows the raw quantity, formatted token quantity, and realized percentage after
-integer rounding. Prices, market caps, the fixed target, percentages, and weighting methodology
-remain application metadata. The trimmed fund thesis, ordered constituents, and calculated
-`bootstrapBasketUnitsPerOTF` are included in the onchain creation payload.
+Every result must contain at least one raw token unit. The application shows the minimum viable percentage and the realized allocation after integer rounding.
 
-After confirmation, the app can associate informational creation metadata with the
-vault in the creator browser. If that record is unavailable on a fund detail route, the app shows
-`Weighting method unavailable` and does not infer methodology from current balances.
+The `$1` value is a calculation target for the initial basket. It is not a peg or a guaranteed market price. Prices, market caps, percentages, target value, and weighting method remain offchain. The vault stores only the final raw units and other creation parameters.
 
-The factory requires a non-empty fund thesis of at most 2,048 UTF-8 bytes. The vault stores it once
-during initialization, exposes it through `fundThesis()`, and provides no mutation path. Fund detail
-therefore reads the thesis from the vault rather than browser metadata.
+The label `Market-cap weighted` applies only when every final percentage unit equals the calculated default. Any difference produces `Modified market-cap weighted`. The creator's browser may retain this metadata after confirmation. If it is unavailable, the fund page reports `Weighting method unavailable` instead of inferring a method from current balances.
 
-`OTFFactory.createVault` uses `Clones.clone`, sets `msg.sender` as creator, and initializes an empty
-vault. Creation requires no constituent transfer and has no deterministic address promise.
+## Minting, redemption, and accounting
 
-## Bootstrap and ongoing accounting
-
-Vault shares use 18 decimals. When total supply is zero, the first mint must request at least
-`1e16` shares (`0.01` OTF). This minimum is not the calculation denominator. Each required
-constituent amount is always:
+Vault shares have 18 decimals. The first mint must request at least `1e16` shares, or `0.01` OTF. Required input for constituent `i` is proportional to the fixed bootstrap basket:
 
 ```text
-amountIn_i = ceil(bootstrapBasketUnitsPerOTF_i * requestedShares / 1e18)
+amountIn_i = ceil(bootstrapUnits_i * requestedShares / 1e18)
 ```
 
-The first depositor can therefore mint one or multiple OTF units with a proportionally scaled
-basket. Once supply is nonzero, later mints use current accounted balances:
+After supply becomes nonzero, each mint uses the current accounted balance:
 
 ```text
 amountIn_i = ceil(accountedBalance_i * requestedShares / totalSupply)
 ```
 
-Normal redemption returns each holder's floored pro-rata accounted balance. A full redemption
-returns every accounted balance exactly. A redemption that leaves supply below `1e16`, including
-zero, completes and then permanently shuts down the vault. A remaining supply exactly equal to
-`1e16` stays live. Shutdown can never be cleared, so a vault that reaches zero through redemption
-cannot bootstrap again; minting and fee accrual remain disabled while holder exits stay available.
+A normal redemption pays the floored pro-rata accounted balance of each constituent. Redeeming the full supply returns every accounted balance exactly.
 
-Holders may call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly in both live and
-shutdown states, without the router or swap liquidity. For each non-skipped asset, payout is pro
-rata from `min(actual, accounted)` while the ledger reduction remains the holder's normal pro-rata
-accounted entitlement. Each set bit permanently forfeits that constituent: the vault makes no
-external call to the skipped token, reduces its accounted balance by that normal entitlement, and
-leaves the physical tokens as permanently unaccounted excess. The skipped minimum must be zero.
-This recovery control is intentionally not exposed in the normal application UI.
+`accountedBalance` is the vault ledger, not the token contract's raw balance and not a valuation. Direct token donations remain unaccounted. Normal mint and redemption fail when actual backing falls below the ledger.
 
-`accountedBalance` is the vault ledger, not a live valuation. Tracked-token donations do not enter
-the ledger. Normal settlement fails closed on a backing deficit. After irreversible shutdown,
-permissionless in-kind emergency redemption distributes at most `min(actual, accounted)`.
+If a redemption leaves total supply below `0.01` OTF, the vault completes that redemption and enters permanent shutdown. A balance of exactly `0.01` remains live. Shutdown disables minting and fee accrual but keeps holder exits available; a vault that reaches zero cannot bootstrap again.
 
-## Fees, routing, and liquidity
+Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly. In shutdown, payouts are limited to `min(actual, accounted)`. A set bit in `skipMask` forfeits that constituent entitlement permanently: the vault reduces its ledger without calling the token and leaves the physical balance as unaccounted excess. The normal application does not expose this recovery control.
 
-Each vault has immutable annual creator-expense, mint, and redeem rates capped at 1,000, 200, and
-100 bps, plus a fixed beneficiary. Expenses are paid through lazy, cadence-independent share
-inflation. Mint and normal redeem fees are also issued as fee shares; shutdown redemptions are free.
-The creator allocation is 50% to 90% of each fee according to the vault's accounted OTF constituent
-balance. All creator and buyback shares go to `BuybackCollector`, where their exact accrual-time split
-is stored separately for each vault. Direct token donations do not affect that balance or the split.
+## Fees
 
-The permissionless entry/exit router supports ordered generic basket `SwapLeg[]` routes. Legs can
-split one token across adapters, accumulate into one output, or spend an earlier leg's output. Each
-leg can spend only transient balance above the router's pre-call baseline, so existing dust cannot
-fund or be refunded by a route. The router owner is the adapter manager; approval requires a
-contract immutably bound back to that router and revocation takes effect immediately.
+All three fee rates and the beneficiary are immutable. Annual expense accrues through lazy share inflation. Mint and normal redemption fees also issue shares; shutdown exits are free of redemption fees. Preview and execution functions use the same integer arithmetic.
 
-Native ETH exists only at this router boundary. `mintFromNative` requires an exact nonzero
-`msg.value`, wraps exactly that amount into the immutable canonical WETH, and unwraps any transient
-WETH refund. `redeemToNative` routes the basket to WETH, enforces the minimum, unwraps only the
-operation's output, and sends it atomically to the caller. Pre-existing ETH and WETH are never swept;
-only configured WETH may send callback ETH. Native identities and sentinels never enter a vault,
-`SwapLeg`, adapter, pool, or buyback.
+Fee shares go to `BuybackCollector`. The vault calculates the creator-versus-buyback split from its accounted OTF constituent balance and records both portions when it charges the fee. Later balance changes cannot alter that split, and direct OTF donations provide no benefit.
 
-The approved implementations are `UniswapV3Adapter` and `UniswapV4Adapter`. The V3 adapter accepts only packed V3 paths of at
-most three hops, authenticates every pool against its immutable factory, fixes the SwapRouter02
-recipient to the entry router, uses exact temporary approvals, and preserves pre-existing adapter
-donations. The V4 adapter accepts only typed pool-key paths of at most three hops, authenticates
-initialized pools through its immutable StateView, constructs a fixed swap/settle/take action
-stream, and clears both ERC-20 and Permit2 allowances. The entry router itself contains no
-venue-specific parsing and no direct pool-swap method. Current testnet basket quotes still use only
-the cataloged liquid Synthra V3 pools; V4 routing stays dormant until V4 pool keys are configured.
+Only the immutable beneficiary can settle a vault's pending fee account. The beneficiary chooses either a sale of the exact pending vault shares to WETH or an in-kind redemption followed by constituent sales to WETH. The collector pays the creator portion in WETH, routes the remaining WETH through the canonical OTF pool, and burns every OTF purchased. See [OTF token economics](/token-and-fee-incentives#immutable-fund-fees) for the split formula.
 
-The application Swap product requires a fund share or the protocol OTF token on at least one side;
-it is not a general token-to-token exchange. Production uses the Uniswap Trading API for exact-input
-BEST_PRICE V3/V4 CLASSIC OTF routes. Robinhood testnet fund routes use the configured Synthra V3
-factory, Quoter, SwapRouter02, and active pools; WETH/OTF uses the canonical launch V4 pool. Basket
-plans are exact typed router requests and ordered adapter legs. The UI
-compares only returned candidates, selects the best queried route by integer output, and performs
-exact calldata `eth_call` plus `estimateGas` before submission. ETH and WETH remain distinct in the
-selector and balance model. ETH is normalized to WETH only in the sealed route, is never approved,
-and is wrapped or unwrapped atomically without presenting a separate wrap action.
+## Routed entry and exit
 
-Before accepting a quote whose output OTF has zero supply, the Swap screen reads that supply and
-requires the quote's guaranteed minimum output—not merely its expected output—to be at least
-`0.01` OTF. There is no first-purchase maximum. Once supply is nonzero, the special quote minimum
-does not apply.
+The permissionless entry router accepts ordered `SwapLeg[]` routes. Legs can split an input across adapters, combine outputs, or spend output produced by an earlier leg. A leg can use only balance created during the current call, so pre-existing router dust cannot fund a route or become a refund.
 
-The testnet asset catalog distinguishes USDG and WETH quote assets from the five fund constituents.
-User swaps allow OTFs only against quote assets or other OTFs. Constituent-to-quote pools are used
-internally to settle basket mint/burn routes and by the testnet liquidity utility, not exposed as
-general Swap pairs; every configured pool is checked against the Synthra factory and live liquidity.
-The separate chain-indexed production catalog only pre-populates convenient assets; it does not gate
-the permissionless contracts. Production liquidity is managed at the external venue. `/liquidity`
-remains a visibly testnet-only utility for explicitly configured Synthra V3 pools and is not a
-production deployment path. OTF itself is immediately usable as a normal constituent through the
-canonical 0%-fee V4 pool. Only the immutable expense beneficiary may submit its vault's complete
-fee settlement. The beneficiary may sell the exact pending fund shares through approved pools ending
-in WETH or redeem them and convert every basket constituent to WETH. The collector pays the stored
-creator portion in WETH, buys OTF with only the buyback portion through the canonical pool, and burns
-the purchased OTF atomically.
+The router owner manages the adapter allowlist. Approval requires adapter code that is immutably bound to that router; revocation takes effect immediately. This owner and every approved adapter are trust boundaries.
+
+The current adapters support Uniswap V3 and V4:
+
+- `UniswapV3Adapter` accepts packed paths of at most three hops and authenticates each pool against its immutable factory.
+- `UniswapV4Adapter` accepts typed pool-key paths of at most three hops and checks initialized pools through its immutable StateView.
+
+Both adapters constrain the recipient, use temporary allowances, and preserve balances that existed before execution. The entry router contains no venue-specific path parser and no direct pool-swap method.
+
+### Native ETH boundary
+
+Native ETH is handled only by `mintFromNative` and `redeemToNative`. A native mint requires exact, nonzero `msg.value`, wraps it to the router's immutable canonical WETH, and returns transient WETH change as ETH. Native redemption routes constituents to WETH, enforces the aggregate minimum, unwraps the operation's output, and sends it atomically to the caller.
+
+Vaults, adapter legs, pools, and buybacks never receive native ETH or a native-token sentinel. The router preserves pre-existing ETH and WETH and accepts callback ETH only from canonical WETH.
+
+## Application execution
+
+The Swap application requires a vault share or protocol OTF on at least one side. It is not a general token exchange. Fund pairs may request direct-pool, basket mint, basket burn, or burn-and-mint quotes. The application selects the fresh candidate with the highest integer expected output among the routes it queried and allows manual override.
+
+Production direct quotes use the same-origin Uniswap Trading API integration. Robinhood testnet fund routes use configured Synthra V3 pools, while WETH/OTF uses the canonical V4 pool. The testnet constituent pools support basket settlement and the separate liquidity utility; the Swap interface does not expose them as general constituent pairs.
+
+ETH and WETH remain separate selector assets. The execution plan converts native ETH only at the router boundary, never requests token approval for ETH, and reserves gas when applying Max to a native balance.
+
+Before submitting a selected plan, the application validates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`. For an output vault with zero supply, the guaranteed minimum output must be at least `0.01` OTF. This special minimum no longer applies after the first mint.
 
 ## Verification
 
-The repository runs Solidity formatting, compilation, security gates, unit/fuzz/invariant tests,
-coverage reporting, application tests, typechecking, and builds. Passing local or CI checks is not
-an audit or deployment approval.
+Repository checks cover Solidity compilation and tests, security gates, application tests, type checking, and builds. Passing them does not constitute an audit or approve a deployment.

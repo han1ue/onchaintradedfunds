@@ -1,103 +1,75 @@
 ---
 title: OTF token economics
-description: Live supply, V4 launch, immutable fund fees, buyback and burn, vesting, and cumulative rewards.
+description: OTF supply, canonical V4 launch, fund fees, buybacks, vesting, and cumulative rewards.
 ---
 
 # OTF token economics
 
-Status: implemented for a fresh pre-mainnet deployment. The contracts are unaudited and earlier
-testnet deployments are intentionally incompatible.
+The contracts implement the economics described here, but the current architecture is unaudited and has not been deployed. Earlier testnet contracts are incompatible.
 
-## Supply and launch allocation
+## Supply and allocation
 
-`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Construction
-mints exactly `MAX_SUPPLY = 1,000,000,000 ether` once. There is no mint function, transfer tax,
-blacklist, upgrade hook, or privileged seizure. A holder can burn its own tokens; `burnFrom`
-requires the holder's allowance. Burns reduce `totalSupply()` but never change `MAX_SUPPLY`.
+`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Its constructor mints `MAX_SUPPLY = 1,000,000,000 ether` once. No later mint, tax, blacklist, seizure, or upgrade path exists. Holders can burn their own OTF, and `burnFrom` requires allowance.
 
-The deployment script moves the complete original supply out of the deployer:
+`MAX_SUPPLY` records the original issuance. `totalSupply()` records live supply after burns. The deployment script allocates every token and leaves the deployer with none:
 
-| Destination | OTF | Purpose |
+| Destination | OTF | Use |
 | --- | ---: | --- |
-| Team market-cap vesting | 100,000,000 | Ten permanent live-FDV milestones |
-| V4 launch manager | 150,000,000 | One-sided bootstrap liquidity |
-| V4 launch manager reserve | 50,000,000 | Permanent post-graduation liquidity |
-| Cumulative Merkle distributor | 700,000,000 | Operator-published rewards |
+| Team market-cap vesting | 100,000,000 | Ten live-FDV milestones |
+| V4 launch manager | 150,000,000 | One-sided bootstrap position |
+| V4 launch manager reserve | 50,000,000 | Post-graduation permanent liquidity |
+| Cumulative rewards distributor | 700,000,000 | Multisig-published rewards |
 
-“Original supply” means `MAX_SUPPLY`. “Current supply” means the live `totalSupply()` after burns.
-“Total burned” is their difference.
+## Canonical V4 launch
 
-## Canonical Uniswap V4 launch
+The launch manager creates one OTF/WETH Uniswap V4 pool with a static 0% LP fee and tick spacing 1. It initializes at exactly `0.00000002 WETH` per OTF, which is a 20 ETH reference FDV against the original one-billion-token supply.
 
-The launch manager creates one OTF/WETH V4 pool with static 0% LP fee and tick spacing 1. It
-initializes at exactly `0.00000001 WETH` per OTF: a 10 ETH **launch reference FDV** calculated
-against the original one-billion-token supply. The one-sided position begins at the nearest usable
-spacing-1 boundary, while its final price is necessarily a discrete tick:
+The pool price is exact at initialization, but the liquidity boundaries must lie on ticks:
 
-| OTF/WETH ordering | Start tick | Final tick |
-| --- | ---: | ---: |
-| OTF is currency0 | -184216 | -162243 |
-| OTF is currency1 | 184216 | 162243 |
+| OTF/WETH ordering | Start tick | Start `sqrtPriceX96` | Final tick | Final `sqrtPriceX96` |
+| --- | ---: | ---: | ---: | ---: |
+| OTF is currency0 | -177284 | 11204554194957227983746388 | -155311 | 33613418706697289737079801 |
+| OTF is currency1 | 177284 | 560227709747861399187319382274581 | 155311 | 186743924804530596371038112052313 |
 
-The start position boundary corresponds to approximately `10.0000176255 ETH` reference FDV; the
-pool crosses that negligible empty interval before consuming liquidity. The final tick corresponds
-to approximately `89.9970595267 ETH` reference FDV and `0.0000000899970595267 WETH` per OTF.
+The initial boundary represents `20.000398490 ETH` reference FDV. The pool crosses the small empty interval between the exact initial price and that boundary before it reaches liquidity. The final tick represents `0.000000179997388091 WETH` per OTF, or `179.997388091 ETH` reference FDV. This is the nearest valid tick to the 180 ETH target while preserving the 21,973-tick range.
 
-The bootstrap is one continuous, one-sided position containing 150 million OTF and no WETH. The
-selected range raises approximately `4.499930453 WETH` if sold through its final tick. Buy and sell
-swaps work during bootstrap, including swaps submitted for a fund constituent or a protocol buyback.
+The bootstrap position contains 150 million OTF and no WETH. Selling through the final tick produces `8.999934702040754827 WETH` under the launch manager's integer liquidity math. At the final price, the 50 million OTF reserve is worth `8.99986940455 WETH`.
 
-The final tick is the only graduation trigger. The hook marks `GraduationReady` in the swap that
-reaches it. Because the V4 pool is still locked inside that callback, anyone can immediately call
-`finalizeGraduation`: the completed bootstrap position is settled, all WETH proceeds and up to the
-reserved 50 million OTF are added as effectively full-range liquidity, and the resulting position
-remains owned by the launch manager. The manager exposes no withdrawal, repricing, rebalancing,
-migration, or replacement path. Unused deterministic token dust remains locked there. The pool fee
-stays 0%.
+The pool supports buys and sells during bootstrap. The swap that reaches or crosses the final tick changes the phase from `BootstrapActive` to `GraduationReady`. V4 remains locked during the hook callback, so a separate permissionless call to `finalizeGraduation` must complete the transition.
 
-The onchain phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and `Graduated`.
-They are price-driven and have no schedule or countdown.
+Finalization settles the bootstrap position and supplies the full 50 million OTF reserve with approximately equal-value WETH as effectively full-range liquidity. The new position remains owned by the launch manager. No function can withdraw, reprice, rebalance, migrate, or replace it. Any deterministic OTF or WETH dust also remains locked. The pool fee stays at 0%.
+
+The four phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and `Graduated`. Price movement controls the transition; there is no launch schedule or countdown.
 
 ## Team market-cap vesting
 
-The vesting contract holds the full 100 million OTF team allocation. Anyone can checkpoint it.
-It calculates **live USD FDV** as:
+`TeamMarketCapVesting` holds 100 million OTF. Anyone can checkpoint it. The contract calculates live USD FDV from:
 
 ```text
-current OTF/WETH V4 spot price × current ETH/USD oracle price × OTF.totalSupply()
+canonical OTF/WETH V4 spot price
+× current ETH/USD oracle price
+× OTF.totalSupply()
 ```
 
-The calculation reads canonical V4 pool state directly, handles either currency ordering, and uses
-full-precision integer arithmetic. It deliberately uses spot price, not TWAP. The ETH/USD answer
-must be positive, not from the future, and no older than the configured maximum age. Testnet uses a
-fixed `$2,000` fake oracle; production requires an explicitly configured oracle address.
+The calculation handles either pool currency order and uses full-precision integer arithmetic. It uses current spot price rather than a TWAP. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet deployment tooling uses a fixed `$2,000` fake oracle; production requires an explicit oracle address.
 
-Each completed $1 million milestone permanently unlocks another 10 million OTF, through $10 million
-and the complete allocation. Values between milestones round down. A later FDV decline cannot
-relock tokens. The current beneficiary can claim only cumulative unlocked OTF less prior claims.
-They can nominate, replace, or cancel a successor, but claim authority changes only after the
-nonzero nominee explicitly accepts. A pending nominee cannot claim. Beneficiary transfers do not
-change unlocked or claimed accounting. Claims are transfers and do not change total supply; burns
-elsewhere can lower future live FDV.
+Each completed $1 million milestone unlocks 10 million OTF, up to $10 million and the full allocation. Values between milestones round down. Once unlocked, a tranche cannot relock after a price or supply decline.
 
-## Immutable fund fees and OTF utility
+The current beneficiary can claim the cumulative unlocked amount minus prior claims. The beneficiary may nominate, replace, or cancel a successor. The nominee receives claim authority only after accepting; a pending nomination does not interrupt the current beneficiary's authority. A transfer changes neither unlocked nor claimed accounting.
 
-Each fund creator permanently selects three rates at creation:
+## Immutable fund fees
 
-| Fee | Default | Maximum |
+Each vault creator selects three rates at creation:
+
+| Fee | Default in the application | Contract maximum |
 | --- | ---: | ---: |
-| Annual creator expense | Creator-selected | 10% / 1,000 bps |
-| Mint fee | 0% | 2% / 200 bps |
-| Redeem fee | 0% | 1% / 100 bps |
+| Annual creator expense | 0% | 10% / 1,000 bps |
+| Mint | 0% | 2% / 200 bps |
+| Redeem | 0% | 1% / 100 bps |
 
-There are no fee setters. Direct, routed, and in-kind settlement use the same vault fee math.
-Shutdown and final emergency redemptions are redeem-fee free. Minting rounds required gross shares
-up so the investor's requested net shares remain fully backed; redemption fee shares round up so
-the fee is never undercharged. Preview functions use the same arithmetic as execution.
+The rates and expense beneficiary cannot change. Annual expense accrues through lazy share inflation. Mint and normal redemption fees are also issued as vault shares. Shutdown and final emergency redemptions have no redeem fee. Preview and execution functions share the same arithmetic.
 
-OTF changes only how collected fee shares are divided. It does not reduce the immutable fee paid by
-the investor. The fund's accounted OTF constituent balance is capped at the fixed 10 million OTF
-threshold:
+Holding OTF as an accounted vault constituent changes the division of fee shares, not the fee charged to the investor:
 
 ```text
 creator share = 50% + 40% × sqrt(min(accounted OTF, 10m OTF) / 10m OTF)
@@ -112,68 +84,50 @@ buyback share = 100% - creator share
 | 5 million | 78.28% | 21.72% |
 | 10 million or more | 90% | 10% |
 
-The square-root result is floored to an integer basis-point creator share. Mint and redeem creator
-fee shares round down and the remainder goes to buyback and burn. Annual expense checkpoints carry
-their sub-share split remainder so checkpoint frequency cannot change the cumulative allocation.
-The vault checkpoints accrued annual fees before any operation changes its accounted OTF balance.
-Raw OTF donated to a vault is not accounted and provides no benefit. OTF is a normal constituent:
-there is no staking, escrow, or cooldown, and fund-owned OTF is never burned by the protocol.
+The contract floors the square-root result to an integer basis-point creator share. Mint and redeem creator portions round down, leaving the remainder for buyback. Annual expense accounting carries its fractional split remainder between checkpoints so checkpoint frequency does not alter cumulative allocation.
 
-Both portions are minted as fund shares to `BuybackCollector`, never to the expense beneficiary.
-The vault records the exact creator and buyback share counts with the collector in the same
-transaction that charges the fee. Later changes to accounted OTF cannot rewrite that stored split.
-Each factory-registered vault has an isolated collector account containing its two pending share
-balances and immutable expense beneficiary.
+The vault checkpoints accrued expense before an operation changes accounted OTF. Direct OTF donations are not accounted and do not affect the split. Fund-owned OTF remains an ordinary constituent and is never burned merely because the vault holds it.
 
-## Buyback and burn
+Both portions are minted to `BuybackCollector`. The vault records the exact creator and buyback share counts during the fee transaction. Each registered vault has a separate collector account tied to its immutable beneficiary.
 
-Only a vault's immutable expense beneficiary may settle its fee account. Settlement first
-checkpoints annual fees and clears both pending share counters. The beneficiary then chooses between
-selling the exact combined fund shares through approved pools ending in canonical WETH, including
-multi-hop paths such as `fund share -> USDG -> WETH`, or redeeming the shares and liquidating every
-basket constituent to WETH. Only the collector can invoke the entry router's narrow fee-share sale.
-The caller supplies the minimum aggregate WETH output, minimum OTF output, and deadline. The
-collector does not discover routes, calculate fair value, use an oracle or TWAP, or impose a protocol
-slippage setting.
+## Fee settlement and burn
 
-Actual WETH output is divided in proportion to the creator and buyback share counts preserved at
-fee-accrual time. Creator WETH rounds down and is transferred exactly to the expense beneficiary;
-the residual buyback WETH is the only amount approved and spent by the final swap. Registration,
-selected share sale or redemption, routing, both minimums, beneficiary payment, buyback, and burn
-are one atomic transaction. Any failure restores the pending accounting and all balances. A market
-sale transfers the fund shares to pool counterparties and leaves them outstanding; redemption burns
-the fund shares and removes their proportional basket assets.
+Only a vault's expense beneficiary can settle its fee account. Settlement checkpoints annual fees, consumes the complete pending creator and buyback share balances, and uses one of two routes:
 
-The final WETH-to-OTF route is immutable: it uses only the canonical OTF/WETH V4 pool key. Its own
-minimum OTF output and deadline are enforced. Every OTF token purchased in that execution is burned,
-reducing `totalSupply()`. Neither the operator nor another admin has a withdrawal or rescue path for
-fee assets, WETH, or OTF. Buybacks can execute in the bootstrap or graduated phase.
+1. Sell the combined vault shares through approved adapters to canonical WETH.
+2. Redeem the shares and sell every constituent to canonical WETH.
 
-## Cumulative Merkle rewards
+The first route may use intermediate tokens, but it must consume the exact pending share balance and leave only WETH as transient output. The caller supplies minimum aggregate WETH, minimum OTF, and a deadline. The collector does not discover routes, calculate fair value, consult an oracle or TWAP, or impose its own slippage value.
 
-`MerkleRewardsDistributor` starts with exactly 700 million OTF. The configured protocol multisig
-publishes an immediately active cumulative root, normally from a weekly offchain allocation run.
-There is no contract-side rewards formula, schedule, delay, period cap, or withdrawal path.
+Actual WETH is split in proportion to the creator and buyback share counts recorded at accrual. The creator payment rounds down and goes to the beneficiary. Only the remaining WETH may be spent on OTF.
 
-Each standard-tree leaf binds `chainId`, distributor address, user address, and cumulative OTF
-entitlement. Anyone can submit the proof, but payment always goes to the committed user. The
-contract stores prior claims and transfers only `cumulative entitlement - previously claimed`.
-Invalid proofs, double claims, and entitlements below prior claims revert.
+The complete operation is atomic. Registration, share sale or redemption, constituent conversion, beneficiary payment, OTF purchase, and burn either all succeed or all revert. A share sale leaves those vault shares outstanding with market counterparties; redemption burns the shares and removes their proportional backing.
 
-Run `pnpm rewards:tree -- --input <allocations.json|csv> --output <artifact.json> --chain-id <id>
---distributor <address>` to create a deterministic frontend artifact. The script validates addresses,
-amount syntax, signs, and duplicate users; it does not calculate economic rewards.
+The final swap can use only the canonical OTF/WETH V4 pool key. It enforces its own deadline and minimum output, then burns every OTF purchased. The collector has no arbitrary-call, withdrawal, or rescue function. Buybacks may execute during bootstrap or after graduation.
 
-## Trusted roles and production inputs
+## Cumulative rewards
 
-- The protocol multisig chooses cumulative reward allocations and can allocate the entire remaining
-  distributor balance in one valid root.
-- Each expense beneficiary chooses the approved conversion route, minimums, and deadline only for
-  its own vault's complete pending fee account.
-- The production ETH/USD oracle is trusted for vesting and must be configured explicitly.
-- V4 PoolManager, StateView, PositionManager, Universal Router, Permit2, WETH, and oracle addresses
-  must be explicit. Production must use official Uniswap V4 deployments. The unofficial testnet V4
-  mirror is accepted only after its configured bytecode hashes match.
+`MerkleRewardsDistributor` receives 700 million OTF. Its owner publishes an immediately active cumulative Merkle root. The contract defines no reward formula, schedule, delay, or period cap, and the owner cannot withdraw reward principal.
 
-No production addresses are assumed by this repository, and the earlier testnet contracts are not
-supported by this breaking architecture.
+Each standard-tree leaf commits to chain ID, distributor address, user address, and cumulative entitlement. Anyone may submit a proof, but payment always goes to the committed user. The distributor records prior claims and transfers only the difference between the proven cumulative amount and the amount already claimed. Invalid proofs, duplicate claims, and decreasing entitlements revert.
+
+Generate an allocation artifact with:
+
+```bash
+corepack pnpm rewards:tree -- \
+  --input <allocations.json|csv> \
+  --output <artifact.json> \
+  --chain-id <id> \
+  --distributor <address>
+```
+
+The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate rewards.
+
+## Trusted inputs
+
+- The reward-root publisher can allocate the distributor's entire remaining balance through a valid root.
+- Each expense beneficiary chooses routes, minimums, and deadlines for its own vault's complete pending fee account.
+- The ETH/USD oracle determines one input to live-FDV vesting.
+- PoolManager, StateView, PositionManager, Universal Router, Permit2, WETH, adapters, and trading venues execute or report external state used by the protocol.
+
+Production addresses must be supplied explicitly and use official Uniswap V4 deployments. The testnet mirror is accepted only when its runtime code matches the configured hashes.

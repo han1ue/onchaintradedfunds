@@ -30,8 +30,8 @@ contract OTFLaunchManager {
     uint256 public constant BOOTSTRAP_ALLOCATION = 150_000_000 ether;
     uint256 public constant PERMANENT_LIQUIDITY_RESERVE = 50_000_000 ether;
     uint256 public constant REQUIRED_OTF_BALANCE = 200_000_000 ether;
-    uint256 public constant LAUNCH_REFERENCE_FDV_WEI = 10 ether;
-    uint256 public constant TARGET_REFERENCE_FDV_WEI = 90 ether;
+    uint256 public constant LAUNCH_REFERENCE_FDV_WEI = 20 ether;
+    uint256 public constant TARGET_REFERENCE_FDV_WEI = 180 ether;
     uint24 public constant LP_FEE = 0;
     int24 public constant TICK_SPACING = 1;
     uint256 private constant BOOTSTRAP_TICK_DISTANCE = 21_973;
@@ -41,18 +41,18 @@ contract OTFLaunchManager {
     uint160 public constant FULL_RANGE_UPPER_SQRT_PRICE_X96 =
         1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;
 
-    // The pool initializes at the exact 10 ETH reference-FDV price. Its one-sided position begins at
-    // the nearest spacing-1 boundary and raises 4.499930453 ETH before rounding at the final tick.
-    int24 private constant DIRECT_INITIAL_TICK = -184_216;
-    int24 private constant DIRECT_FINAL_TICK = -162_243;
-    uint160 private constant DIRECT_INITIAL_SQRT_PRICE_X96 = 7_922_816_251_426_433_759_354_396;
-    uint160 private constant DIRECT_FINAL_SQRT_PRICE_X96 = 23_768_060_470_595_777_136_441_283;
-    int24 private constant INVERSE_INITIAL_TICK = 184_216;
-    int24 private constant INVERSE_FINAL_TICK = 162_243;
+    // The pool initializes at the exact 20 ETH reference-FDV price. Its one-sided position begins at
+    // the nearest spacing-1 boundary and raises 8.999934702040754827 WETH at the final tick.
+    int24 private constant DIRECT_INITIAL_TICK = -177_284;
+    int24 private constant DIRECT_FINAL_TICK = -155_311;
+    uint160 private constant DIRECT_INITIAL_SQRT_PRICE_X96 = 11_204_554_194_957_227_983_746_388;
+    uint160 private constant DIRECT_FINAL_SQRT_PRICE_X96 = 33_613_418_706_697_289_737_079_801;
+    int24 private constant INVERSE_INITIAL_TICK = 177_284;
+    int24 private constant INVERSE_FINAL_TICK = 155_311;
     uint160 private constant INVERSE_INITIAL_SQRT_PRICE_X96 =
-        792_281_625_142_643_375_935_439_503_360_000;
+        560_227_709_747_861_399_187_319_382_274_581;
     uint160 private constant INVERSE_FINAL_SQRT_PRICE_X96 =
-        264_098_189_381_177_432_725_832_505_983_777;
+        186_743_924_804_530_596_371_038_112_052_313;
 
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
     uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;

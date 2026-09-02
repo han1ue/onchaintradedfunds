@@ -1703,7 +1703,7 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
     <div className="fundValuationColumn">
       <section className="sectionCard valuationPanel">
         <div className="valuationHeader">
-          <h2>{mode === "share" ? "NAV/share" : "NAV"}</h2>
+          <h2>{mode === "share" ? "NAV/Share" : "NAV"}</h2>
           <div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div>
         </div>
         {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
@@ -1824,7 +1824,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                 </div>
               </div>
               <div className="fundDetailMetrics" aria-label="Fund metrics">
-                <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
+                <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
                 <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>

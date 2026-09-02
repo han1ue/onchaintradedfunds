@@ -39,10 +39,13 @@ const testnetExternalContracts = record(testnet.externalContracts);
 const testnetCreation = record(testnet.creation);
 const testnetLiquidity = record(testnet.externalLiquidity);
 const testnetRouting = record(testnet.routing);
-const testnetCompatible = testnet.architecture === "otf-fee-settlement-v3";
+const testnetConfigValid = Number(testnet.chainId) === 46630
+  && testnet.network === "robinhood-testnet";
 
 function deployedTestnetContract(name: string): Address | undefined {
-  return testnetCompatible ? address(testnetContracts[name]?.address) : undefined;
+  return testnetConfigValid && testnet.status === "deployed"
+    ? address(testnetContracts[name]?.address)
+    : undefined;
 }
 
 export const robinhoodTestnetAddresses = Object.freeze({
@@ -126,12 +129,13 @@ export const robinhoodTestnetNativeEntryReady = robinhoodTestnetDeploymentReady
   && testnetRouting.nativeEntryExitEnabled === true;
 
 const mainnet = record(mainnetDeployment);
-const mainnetCompatible = Number(mainnet.chainId) === 4663 && mainnet.network === "robinhood-mainnet";
-const mainnetProtocolContracts = mainnetCompatible ? record(mainnet.protocolContracts) : {};
-const mainnetExternalContracts = mainnetCompatible ? record(mainnet.externalContracts) : {};
-const mainnetLiquidity = mainnetCompatible ? record(mainnet.externalLiquidity) : {};
-const mainnetTradingApi = mainnetCompatible ? record(mainnet.uniswapTradingApi) : {};
-const mainnetAssets = mainnetCompatible ? productionAssetsForChain(4663) : [];
+const mainnetConfigValid = Number(mainnet.chainId) === 4663
+  && mainnet.network === "robinhood-mainnet";
+const mainnetProtocolContracts = mainnetConfigValid ? record(mainnet.protocolContracts) : {};
+const mainnetExternalContracts = mainnetConfigValid ? record(mainnet.externalContracts) : {};
+const mainnetLiquidity = mainnetConfigValid ? record(mainnet.externalLiquidity) : {};
+const mainnetTradingApi = mainnetConfigValid ? record(mainnet.uniswapTradingApi) : {};
+const mainnetAssets = mainnetConfigValid ? productionAssetsForChain(4663) : [];
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({

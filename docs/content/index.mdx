@@ -1,27 +1,30 @@
 ---
 title: Documentation
-description: Protocol, security, and incentive documentation for Onchain Traded Funds.
+description: Protocol mechanics, security boundaries, deployment status, and incentives for Onchain Traded Funds.
 ---
 
 import { Callout, Cards } from 'nextra/components'
 
-# Onchain Traded Funds documentation
+# Onchain Traded Funds
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator commits an ordered constituent list and immutable raw-token bootstrap units for one OTF. The app derives those units from a fixed `$1` target initial basket value based on current offchain prices—not a peg—while prices, market caps, the target, and percentage weights remain offchain metadata.
+Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator fixes the constituent order, raw bootstrap units, fee rates, expense beneficiary, and fund thesis when the vault is created. The contracts do not use prices, calculate NAV, or rebalance.
+
+The application uses a `$1` target and offchain market data to prepare the initial basket. Those inputs are creation metadata, not an onchain price or peg.
 
 <Callout type="warning" emoji="">
-  The contracts are unaudited and are not production-ready. Do not deploy them to mainnet.
+  The contracts are unaudited, undeployed on mainnet, and not ready to hold value.
 </Callout>
 
-## Start here
+## Read the protocol documentation
 
 <Cards num={2}>
   <Cards.Card title="Protocol overview" href="/overview" arrow />
   <Cards.Card title="Protocol security specification" href="/protocol-security-spec" arrow />
   <Cards.Card title="Security and risk" href="/security" arrow />
-  <Cards.Card title="Token and fee incentives" href="/token-and-fee-incentives" arrow />
+  <Cards.Card title="Token economics and fees" href="/token-and-fee-incentives" arrow />
+  <Cards.Card title="Deployment addresses" href="/deployment-addresses" arrow />
 </Cards>
 
 ## Scope
 
-The active protocol is separate from `launch/`, which is a prelaunch competition and is not fund governance. These documents describe the current pre-mainnet architecture and do not certify the implementation or any deployment.
+These pages describe the current pre-mainnet implementation. They do not certify the contracts or any deployment. The application under `launch/` is a separate prelaunch competition and has no protocol-governance authority.

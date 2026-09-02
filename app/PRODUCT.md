@@ -1,31 +1,76 @@
 # Onchain Traded Funds application
 
-The application is an operating surface for creating, trading, and inspecting oracleless basket OTFs.
+The main application creates, trades, and inspects oracleless basket OTFs. It is an operating interface for the protocol, not an independent source of protocol state.
 
-## Product truth
+## Routes
 
-- The shared Swap route is `/`; `/token` embeds that same Swap surface with the configured protocol OTF pinned through reversal; Funds is `/funds`; fund detail remains address-routed under `/funds/<address>`; and `/liquidity` is the active testnet-only Synthra V3 LP utility.
-- Creation uses the connected wallet as creator and deploys an empty clone. The creator supplies an immutable fund thesis, an ordered list of at most 20 constituents, immutable raw-token bootstrap units for exactly `1e18` shares, a fixed beneficiary, and an immutable annual creator expense ratio from 0 to 1000 bps.
-- The Create route loads current prices, market caps, and token decimals from the existing application asset source. It defaults percentages to market-cap weights normalized deterministically at 18-decimal precision to exactly 100%, permits every positive percentage to be edited with the same precision, and requires the final internal total to equal exactly 100%.
-- Every OTF uses a fixed `$1.00` target initial basket value based on current offchain prices. This is an initial calculation target, not a peg or guaranteed market price.
-- The app calculates bootstrap units with bigint fixed-point arithmetic from the fixed `1e18` USD-WAD target, current price, token decimals, and final precise percentages. It rounds raw units down, rejects zero raw quantities, shows the minimum viable percentage for each asset, and displays token quantities, raw quantities, and realized percentages after rounding.
-- Creation starts in market-cap-weighted mode. While that mode is selected, adding, replacing, or removing a constituent automatically renormalizes the full selection to current market caps. Editing any weight switches to manual mode; manual additions start at 0%, removals simply delete the removed weight, and existing manual weights are otherwise preserved. Selecting “Market-cap weighted” restores and maintains automatic normalization.
-- The weighting method is `Market-cap weighted` only when every final percentage unit exactly equals its precise market-cap default; any exact-unit difference is `Modified market-cap weighted`. Per-asset market-cap multipliers compare final and default percentages with bigint fixed-point arithmetic and never use raw-token rounding or current balances.
-- The factory requires a non-empty fund thesis of at most 2,048 UTF-8 bytes. The vault stores it permanently during initialization, and fund detail reads it directly onchain. After a confirmed creation event, the app separately stores informational methodology metadata in the creator browser, keyed by chain and vault: weighting method, precise market-cap defaults, final percentages, implied multipliers, and the market-cap snapshot timestamp. It opens a transaction-verified confirmation route with the new OTF address and transaction, then remains there until the user explicitly opens the fund page. Fund detail shows the stored methodology when available and otherwise says `Weighting method unavailable` without inferring from current balances.
-- The Funds directory reads the configured factory's canonical vault list and each vault's identity, creator, constituent count, and creator fee directly onchain. A confirmed factory creation must therefore appear without relying on preview data or a separate directory service.
-- Once creation submission begins, the confirmation renders from the captured submitted payload. Navigation, editing, and resubmission stay locked through confirmation, success, and an indeterminate receipt lookup; only a pre-broadcast failure or explicit onchain revert unlocks retry.
-- The fund thesis, constituents, and calculated bootstrap units are committed onchain at creation. Prices, market caps, the fixed `$1` target, editable percentages, and weighting methodology remain application metadata.
-- When an OTF has zero supply, the first depositor must mint at least `0.01` OTF and provides the proportionally scaled bootstrap basket using `1e18` shares as the fixed denominator. The Swap screen accepts an empty-OTF quote only when its guaranteed minimum output is at least `0.01` OTF; it imposes no maximum purchase size, and the special minimum disappears once supply is nonzero.
-- Holders can redeem the basket directly in kind without swap liquidity. The optional constituent skip mask is an advanced direct-contract recovery control and is intentionally absent from the normal application because each skipped entitlement is permanently forfeited.
-- The protocol fee share is fixed by the factory. A 10% creator expense ratio can materially dilute holders and is not recommended.
-- Annual, mint, and redeem fees originate as fund shares. All fee shares go to the collector, which preserves per-vault creator and buyback portions at charge time. Only the immutable expense beneficiary sees the Fund fees claim area, receives a quoted creator portion in WETH, and may submit the atomic settlement. The claim compares selling the exact fund shares through approved pools with redeeming them and liquidating the basket, defaults to the higher quoted WETH output, and allows manual route override; only the buyback WETH is spent for OTF and burned.
-- There is no ongoing onchain price oracle, rebalance, strategy, proposal, challenge, target-weight system, or active pool-approval process. The entry router owner is the adapter manager and can approve or immediately revoke router-bound trade adapters; this role and every approved adapter are explicit trust boundaries. Fund detail may calculate informational NAV-per-share and AUM snapshots from current offchain constituent prices and onchain accounted balances. Snapshot history is browser-local and never affects settlement or guarantees an execution price.
-- Verification concerns identity and ordinary metadata only; it never gates routing and never establishes route, liquidity, price, economic safety, audit status, or investment outcome.
-- Swap requires a fund share or the protocol OTF token on at least one side and is not a general ERC-20 exchange. Protocol-token pairs request only a direct route; fund-share pairs concurrently request Direct pool and Mint basket, Burn basket, or Burn + mint candidates. It automatically selects the fresh candidate with the highest integer expected output, keeps manual override, and says best queried route rather than globally best.
-- ETH and WETH are distinct selectable Swap assets. Native identity is explicit rather than an empty selection; balances use the native RPC balance separately from WETH, ETH Max reserves estimated gas, and native input never requests ERC-20 or Permit2 approval. Planning normalizes ETH to canonical WETH only inside execution. Vault constituents, adapter legs, pools, and buybacks remain WETH/ERC-20-only, and ETH↔WETH is not exposed as a general pair.
-- Direct pool execution uses the same-origin server API. Production uses Uniswap Trading API exact-input BEST_PRICE V3/V4 CLASSIC routing and keeps `UNISWAP_API_KEY` server-only; native tokens use the provider representation only at that boundary. Testnet fund routes use the configured Synthra V3 Quoter, factory-verified pools, and SwapRouter02, while canonical ETH/WETH-to-OTF routes use one Universal Router transaction with atomic wrap or unwrap. Unsafe unverified testnet direct-native candidates are omitted. Basket execution uses exact typed `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` requests with ordered generic adapter legs. The selected plan's exact sender, target, calldata, value, and route are simulated with `eth_call` and `estimateGas` before submission.
-- `robinhood-testnet-assets.json` separates USDG and WETH quote assets from the five fund constituents and records the active Synthra pools. Testnet user swaps permit OTFs only against USDG, ETH, WETH, or another OTF. Fund-asset pools are internal settlement routes for basket mint/burn and remain available in the testnet liquidity utility; they are not general Swap pairs. `assets.json` is chain-indexed production discovery metadata, not a protocol allowlist. Production liquidity remains external through Uniswap.
+- `/` contains the shared Swap interface.
+- `/token` embeds the same Swap implementation with protocol OTF selected by default.
+- `/funds` lists vaults from the configured factory.
+- `/funds/<address>` reads a vault by address.
+- `/launch` creates a vault. This route is unrelated to the separate competition under `launch/`.
+- `/liquidity` is a testnet-only Synthra V3 liquidity utility.
+
+## Vault creation
+
+The connected wallet becomes the creator. The form collects a name, symbol, fund thesis, one to 20 ordered constituents, three fee rates, and a fixed expense beneficiary. The factory stores the creator, thesis, constituent order, raw bootstrap units, rates, and beneficiary in a new empty vault clone.
+
+The fund thesis must contain no more than 2,048 UTF-8 bytes. Annual expense, mint, and redeem rates are limited to 10%, 2%, and 1%. All three rates and the beneficiary are permanent.
+
+### Basket calculation
+
+The form obtains current USD prices, market caps, and token decimals from the application asset source. It uses a fixed `$1` target initial basket value. That target is neither a peg nor a promised market price.
+
+Market-cap weighting is an explicit mode. While selected, any constituent addition, replacement, or removal recalculates the complete percentage set from current market caps. Editing a percentage switches to manual mode. A new manual constituent begins at 0%, and removing one leaves the remaining manual values unchanged. The creator can restore market-cap mode explicitly.
+
+Percentages use 18-decimal fixed-point units. Each percentage must be positive and the internal sum must equal exactly 100%. The application computes raw bootstrap units with bigint arithmetic, rounds them down, and rejects any allocation that produces zero raw units. It shows the current price, market cap, minimum viable percentage, raw quantity, formatted token quantity, and realized percentage after rounding.
+
+The label `Market-cap weighted` requires every final percentage unit to match its calculated default. Any difference produces `Modified market-cap weighted`. Per-asset multipliers compare the final and default percentage units; token rounding and current vault balances do not affect the label.
+
+The transaction contains the thesis, constituents, and raw units. Prices, market caps, percentages, target value, and weighting method remain offchain metadata. After a confirmed `VaultCreated` event, the browser stores the weighting snapshot by chain and vault. If that record is missing or invalid, the fund page displays `Weighting method unavailable`.
+
+### Submission state
+
+The confirmation view uses the payload captured before submission. Editing, navigation, and resubmission remain locked after broadcast while the transaction is pending, confirmed, or has an indeterminate receipt. A pre-broadcast failure or explicit onchain revert unlocks retry.
+
+After verifying the factory event, the application opens a dedicated confirmation route with the transaction and new vault address. It does not redirect to the fund page until the user chooses to continue.
+
+## Fund data
+
+The Funds directory reads `vaultCount`, each vault address, identity, creator, constituent count, supply, and fee data from the configured factory and vault contracts. A confirmed factory creation therefore appears without a separate indexing service.
+
+The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices.
+
+For an empty vault, the first mint must produce at least `0.01` shares. The application accepts a quote only when its guaranteed minimum output meets that threshold. There is no first-mint maximum, and the extra check disappears after supply becomes nonzero.
+
+Holders can redeem constituents directly through the contract without swap liquidity. The advanced skip mask is intentionally absent from the interface because selecting a bit permanently forfeits that constituent entitlement.
+
+## Swap
+
+At least one side of a Swap pair must be a vault share or protocol OTF. The application does not expose arbitrary ERC-20 pairs.
+
+Protocol-token pairs request a direct route. Fund-share pairs may request direct pool, basket mint, basket burn, or burn-and-mint candidates. The interface selects the fresh candidate with the highest integer expected output among those queried and retains manual override. It describes this as the best queried route, not the best possible market route.
+
+ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval. Max native input reserves estimated gas. The final execution plan converts ETH to canonical WETH only inside the router call and unwraps WETH only for native output; ETH/WETH is not offered as a standalone pair.
+
+### Quote sources and execution
+
+Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Synthra V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF routes use the launch V4 pool.
+
+Testnet basket execution sends typed `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` requests with ordered adapter legs. Before wallet submission, the application simulates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`.
+
+`robinhood-testnet-assets.json` distinguishes USDG and WETH quote assets from the five supported constituents and records active Synthra pools. Those constituent pools support basket settlement and the testnet liquidity utility; they are not general Swap pairs. `assets.json` provides production discovery defaults and is not an onchain allowlist.
+
+Verification labels cover identity and ordinary metadata only. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
+
+## Fee settlement
+
+Annual expense, mint, and redeem fees accrue as vault shares held by `BuybackCollector`. The collector retains the creator and buyback portions recorded when each fee was charged.
+
+Only the immutable beneficiary sees the fee-claim interface. It compares a sale of the exact pending vault shares with a redemption and sale of every constituent, defaults to the higher quoted WETH amount, and permits manual override. The selected atomic settlement pays the recorded creator portion in WETH, spends the buyback portion on OTF, and burns the OTF received.
 
 ## Current limits
 
-The breaking fee-settlement v3 contracts are not yet deployed on Robinhood testnet, so protocol reads and writes fail closed. The deployment script configures the collector's factory and router once, then records new addresses and adapter approvals. Native basket execution remains feature-gated until a compatible router is deployed and recorded; no address is inferred or fabricated. Robinhood mainnet direct-pool quotes remain unavailable when the server API key is absent.
+The current 20-to-180 ETH launch architecture is not deployed on Robinhood Chain Testnet. Protocol reads and writes therefore fail closed. The deployment script must record fresh contract addresses, launch constants, and adapter approvals before the application enables them.
+
+Native basket execution remains disabled until the configuration identifies a compatible entry router. Robinhood Mainnet direct quotes remain unavailable without the server API key. The application does not infer or fabricate missing addresses.

@@ -262,6 +262,20 @@ assert(/block\.chainid,\s*address\(this\),\s*account,\s*cumulativeEntitlement/u.
 const launchSource = readFileSync(join(contracts, "src", "OTFLaunchManager.sol"), "utf8");
 assert(!/function\s+(?:withdraw|removeLiquidity|reprice|rebalance|migrate)/iu.test(launchSource), "launch manager exposes permanent-liquidity control");
 assert(/LP_FEE\s*=\s*0/u.test(launchSource), "OTF V4 pool fee is not statically zero");
+assert(/TICK_SPACING\s*=\s*1/u.test(launchSource), "OTF V4 pool tick spacing is not statically one");
+assert(/MAX_SUPPLY\s*=\s*1_000_000_000 ether/u.test(launchSource), "launch reference supply changed");
+assert(/BOOTSTRAP_ALLOCATION\s*=\s*150_000_000 ether/u.test(launchSource), "bootstrap allocation changed");
+assert(/PERMANENT_LIQUIDITY_RESERVE\s*=\s*50_000_000 ether/u.test(launchSource), "permanent-liquidity reserve changed");
+assert(/LAUNCH_REFERENCE_FDV_WEI\s*=\s*20 ether/u.test(launchSource), "launch reference FDV is not 20 ETH");
+assert(/TARGET_REFERENCE_FDV_WEI\s*=\s*180 ether/u.test(launchSource), "target reference FDV is not 180 ETH");
+for (const constant of [
+  "-177_284", "-155_311", "11_204_554_194_957_227_983_746_388",
+  "33_613_418_706_697_289_737_079_801", "177_284", "155_311",
+  "560_227_709_747_861_399_187_319_382_274_581",
+  "186_743_924_804_530_596_371_038_112_052_313",
+]) {
+  assert(launchSource.includes(constant), `launch manager is missing derived curve constant ${constant}`);
+}
 assert(/BEFORE_INITIALIZE_FLAG\s*=\s*1\s*<<\s*13/u.test(launchSource), "launch manager is missing the beforeInitialize hook flag");
 assert(/REQUIRED_HOOK_FLAGS\s*=\s*BEFORE_INITIALIZE_FLAG\s*\|\s*AFTER_SWAP_FLAG/u.test(launchSource), "launch manager hook permissions are not exactly beforeInitialize + afterSwap");
 assert(/&\s*ALL_HOOK_MASK\s*==\s*REQUIRED_HOOK_FLAGS/u.test(launchSource), "launch manager does not enforce the exact required hook flags");
@@ -280,9 +294,25 @@ for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "Mer
 assert(/functionName:\s*"beneficiary"/u.test(deploySource) && /functionName:\s*"pendingBeneficiary"/u.test(deploySource), "deployment does not verify initial team beneficiary state");
 const testnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"));
 assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
+assert(!("architecture" in testnetConfig), "testnet configuration must not use an architecture version gate");
+assert(testnetConfig.status === "not-deployed" || testnetConfig.status === "deployed", "testnet configuration has an invalid deployment status");
+if (testnetConfig.status === "not-deployed") {
+  assert(Object.keys(testnetConfig.contracts).length === 0, "undeployed testnet configuration contains protocol addresses");
+} else {
+  assert(testnetConfig.launch.launchReferenceFdvWei === "20000000000000000000", "deployed testnet launch reference FDV mismatch");
+  assert(testnetConfig.launch.targetReferenceFdvWei === "180000000000000000000", "deployed testnet target reference FDV mismatch");
+}
+const mainnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-mainnet.json"), "utf8"));
+assert(!("architecture" in mainnetConfig), "mainnet configuration must not use an architecture version gate");
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
 assert(/requiredLaunchHookFlags\s*=\s*0x2040n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2040");
 assert(/BigInt\(predicted\)\s*&\s*allHookFlags\)\s*===\s*requiredLaunchHookFlags/u.test(deploySource), "deployment does not enforce the launch hook mask during CREATE2 mining");
+for (const validation of [
+  "LAUNCH_REFERENCE_FDV_WEI", "TARGET_REFERENCE_FDV_WEI", "initialSqrtPriceX96",
+  "finalSqrtPriceX96", "bootstrap WETH proceeds", "actualFinalReferenceFdvWei",
+]) {
+  assert(deploySource.includes(validation), `deployment does not validate ${validation}`);
+}
 for (const setting of ["UNISWAP_V4_POOL_MANAGER_CODEHASH", "UNISWAP_V4_STATE_VIEW_CODEHASH", "UNISWAP_V4_POSITION_MANAGER_CODEHASH", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH", "PERMIT2_CODEHASH"]) {
   assert(deploySource.includes(setting), `deployment does not require ${setting}`);
 }

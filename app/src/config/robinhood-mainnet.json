@@ -1,5 +1,4 @@
 {
-  "architecture": "otf-fee-settlement-v3",
   "network": "robinhood-mainnet",
   "chainId": 4663,
   "protocolStatus": "configuration-required",

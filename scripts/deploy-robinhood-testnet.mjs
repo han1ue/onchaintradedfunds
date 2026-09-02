@@ -240,6 +240,93 @@ const launchDeploymentTx = await transact(
   [launchSalt, ...launchConstructorArgs],
 );
 const launchManager = { address: launchAddress, ...launchDeploymentTx, salt: launchSalt };
+const readLaunch = (functionName) => publicClient.readContract({
+  address: launchManager.address,
+  abi: artifact("OTFLaunchManager").abi,
+  functionName,
+});
+const [
+  launchMaxSupply,
+  bootstrapAllocation,
+  permanentLiquidityReserve,
+  requiredLaunchBalance,
+  launchReferenceFdvWei,
+  targetReferenceFdvWei,
+  poolFee,
+  tickSpacing,
+  otfIsCurrency0,
+  initialTick,
+  finalTick,
+  initialSqrtPriceX96,
+  finalSqrtPriceX96,
+  initialOtfPriceWethWad,
+  finalOtfPriceWethWad,
+] = await Promise.all([
+  readLaunch("MAX_SUPPLY"),
+  readLaunch("BOOTSTRAP_ALLOCATION"),
+  readLaunch("PERMANENT_LIQUIDITY_RESERVE"),
+  readLaunch("REQUIRED_OTF_BALANCE"),
+  readLaunch("LAUNCH_REFERENCE_FDV_WEI"),
+  readLaunch("TARGET_REFERENCE_FDV_WEI"),
+  readLaunch("LP_FEE"),
+  readLaunch("TICK_SPACING"),
+  readLaunch("otfIsCurrency0"),
+  readLaunch("initialTick"),
+  readLaunch("finalTick"),
+  readLaunch("initialSqrtPriceX96"),
+  readLaunch("finalSqrtPriceX96"),
+  readLaunch("initialOtfPriceWethWad"),
+  readLaunch("finalOtfPriceWethWad"),
+]);
+const expectedOtfIsCurrency0 = BigInt(otfToken.address) < BigInt(weth);
+const expectedInitialTick = expectedOtfIsCurrency0 ? -177_284 : 177_284;
+const expectedFinalTick = expectedOtfIsCurrency0 ? -155_311 : 155_311;
+const expectedInitialSqrtPriceX96 = expectedOtfIsCurrency0
+  ? 11_204_554_194_957_227_983_746_388n
+  : 560_227_709_747_861_399_187_319_382_274_581n;
+const expectedFinalSqrtPriceX96 = expectedOtfIsCurrency0
+  ? 33_613_418_706_697_289_737_079_801n
+  : 186_743_924_804_530_596_371_038_112_052_313n;
+const requireLaunchValue = (name, actual, expected) => {
+  if (actual !== expected) {
+    throw new Error(`Launch ${name} mismatch: expected ${expected}, received ${actual}`);
+  }
+};
+requireLaunchValue("MAX_SUPPLY", launchMaxSupply, 1_000_000_000n * 10n ** 18n);
+requireLaunchValue("BOOTSTRAP_ALLOCATION", bootstrapAllocation, 150_000_000n * 10n ** 18n);
+requireLaunchValue("PERMANENT_LIQUIDITY_RESERVE", permanentLiquidityReserve, 50_000_000n * 10n ** 18n);
+requireLaunchValue("REQUIRED_OTF_BALANCE", requiredLaunchBalance, 200_000_000n * 10n ** 18n);
+requireLaunchValue("LAUNCH_REFERENCE_FDV_WEI", launchReferenceFdvWei, 20n * 10n ** 18n);
+requireLaunchValue("TARGET_REFERENCE_FDV_WEI", targetReferenceFdvWei, 180n * 10n ** 18n);
+requireLaunchValue("LP_FEE", poolFee, 0);
+requireLaunchValue("TICK_SPACING", tickSpacing, 1);
+requireLaunchValue("otfIsCurrency0", otfIsCurrency0, expectedOtfIsCurrency0);
+requireLaunchValue("initialTick", initialTick, expectedInitialTick);
+requireLaunchValue("finalTick", finalTick, expectedFinalTick);
+requireLaunchValue("initialSqrtPriceX96", initialSqrtPriceX96, expectedInitialSqrtPriceX96);
+requireLaunchValue("finalSqrtPriceX96", finalSqrtPriceX96, expectedFinalSqrtPriceX96);
+requireLaunchValue("initialOtfPriceWethWad", initialOtfPriceWethWad, 20_000_000_000n);
+requireLaunchValue("finalOtfPriceWethWad", finalOtfPriceWethWad, 179_997_388_091n);
+requireLaunchValue(
+  "tick distance",
+  initialTick > finalTick ? initialTick - finalTick : finalTick - initialTick,
+  21_973,
+);
+
+const q96 = 1n << 96n;
+const bootstrapWethProceeds = otfIsCurrency0
+  ? (bootstrapAllocation * (initialSqrtPriceX96 * finalSqrtPriceX96 / q96)
+      / (finalSqrtPriceX96 - initialSqrtPriceX96))
+      * (finalSqrtPriceX96 - initialSqrtPriceX96) / q96
+  : ((((bootstrapAllocation * q96 / (initialSqrtPriceX96 - finalSqrtPriceX96)) << 96n)
+      * (initialSqrtPriceX96 - finalSqrtPriceX96) / initialSqrtPriceX96)
+      / finalSqrtPriceX96);
+requireLaunchValue(
+  "bootstrap WETH proceeds",
+  bootstrapWethProceeds,
+  8_999_934_702_040_754_827n,
+);
+const actualFinalReferenceFdvWei = finalOtfPriceWethWad * 1_000_000_000n;
 
 const buybackCollector = await deploy("BuybackCollector", [
   launchManager.address,
@@ -370,7 +457,6 @@ if (pendingTeamBeneficiary !== "0x0000000000000000000000000000000000000000") {
 }
 
 const deployment = {
-  architecture: "otf-fee-settlement-v3",
   network: "robinhood-testnet",
   chainId,
   rpcUrl,
@@ -403,10 +489,21 @@ const deployment = {
   },
   expectedCodehashes,
   launch: {
-    poolFee: 0,
-    tickSpacing: 1,
-    bootstrapOtf: "150000000000000000000000000",
-    permanentLiquidityReserveOtf: "50000000000000000000000000",
+    poolFee,
+    tickSpacing,
+    bootstrapOtf: bootstrapAllocation,
+    permanentLiquidityReserveOtf: permanentLiquidityReserve,
+    launchReferenceFdvWei,
+    targetReferenceFdvWei,
+    actualFinalReferenceFdvWei,
+    initialOtfPriceWethWad,
+    finalOtfPriceWethWad,
+    otfIsCurrency0,
+    initialTick,
+    finalTick,
+    initialSqrtPriceX96,
+    finalSqrtPriceX96,
+    expectedBootstrapWethProceedsWei: bootstrapWethProceeds,
   },
   allocations: {
     teamVestingOtf: "100000000000000000000000000",
@@ -426,7 +523,7 @@ const deployment = {
   },
   setupTransactions,
   ...appOwnedIntegrations,
-  note: "Breaking fee-settlement v3 deployment; earlier protocol contracts are unsupported.",
+  note: "Protocol contracts are deployed.",
 };
 mkdirSync(dirname(deploymentPath), { recursive: true });
 writeFileSync(deploymentPath, `${json(deployment)}\n`);

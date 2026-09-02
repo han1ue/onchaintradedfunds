@@ -1,10 +1,9 @@
 # Security
 
-The project security policy, threat model, trust assumptions, and production blockers are maintained in the [documentation site](https://docs.onchaintradedfunds.com/security) and its [source document](docs/content/security.mdx).
+The protocol is pre-mainnet and unaudited. Do not deploy it to mainnet or use it with assets of value.
 
-The root-publishing multisig, adapter manager, production ETH/USD oracle, approved adapters, and
-configured Uniswap deployments are explicit trust boundaries. Each immutable expense beneficiary
-chooses a complete fund-share sale or basket-redemption route, minimums, and deadline; there is no trusted buyback route
-executor. The current v3 scope is unaudited and requires a fresh testnet deployment and independent
-review before use. Native ETH is accepted only by explicit entry/exit endpoints, normalized to the
-router's immutable canonical WETH, and never passed to a vault or adapter leg.
+The current threat model, trust assumptions, and production blockers are maintained in the [security documentation](https://docs.onchaintradedfunds.com/security) and its [source file](docs/content/security.mdx). The normative contract invariants are in the [protocol security specification](docs/content/protocol-security-spec.mdx).
+
+Important trust boundaries include the reward-root publisher, each vault's immutable expense beneficiary, the entry-router adapter manager, approved adapters and trading venues, and the production ETH/USD oracle used for team vesting. Native ETH is accepted only by explicit entry and exit functions and is converted to canonical WETH before it reaches vault or adapter logic.
+
+Report vulnerabilities privately to the maintainers. Do not test against public deployments with real user funds.

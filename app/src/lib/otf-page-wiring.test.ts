@@ -48,6 +48,11 @@ describe("$OTF page wiring", () => {
 
   it("renders four semantic launch phases with a textual current step and no countdown", () => {
     for (const text of ["Not initialized", "Bootstrap active", "Graduation ready", "Graduated"]) expect(component).toContain(text);
+    expect(component).toContain("20 ETH launch reference valuation.");
+    expect(component).toContain("20 ETH → approximately 180 ETH reference valuation.");
+    expect(component).toContain("The 20→180 ETH launch contracts have not been deployed on Robinhood Testnet.");
+    expect(component).toContain("one-sided 150 million OTF bootstrap position");
+    expect(component).toContain("complete 50 million OTF reserve");
     expect(component).toContain('<ol className="launchLifecycle"');
     expect(component).toContain('aria-current={phase === index ? "step" : undefined}');
     expect(component).toContain("Current phase");

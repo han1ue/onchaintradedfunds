@@ -1,47 +1,68 @@
 # Onchain Traded Funds
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator commits an ordered constituent list and immutable raw-token bootstrap units for one OTF. The application derives those units from a fixed `$1` target initial basket value based on current offchain prices—not a peg—and labels exact market-cap defaults or creator-modified tilts as informational creation methodology. Contracts never receive prices, market caps, the target, percentage weights, multipliers, or methodology and do not calculate runtime NAV or rebalance.
+Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults on Robinhood Chain. Each vault has an ordered constituent list, fixed bootstrap units, immutable fee rates, and an immutable expense beneficiary. The contracts do not use prices, calculate net asset value, or rebalance.
 
-This repository contains the Solidity protocol, the operating application, and a separate prelaunch competition. The protocol is pre-mainnet, unaudited, and not production-ready.
+The protocol is pre-mainnet, unaudited, and not ready to hold value. Its contracts have not been deployed on Robinhood Chain Testnet or Mainnet.
 
-Basket settlement uses a generic, ordered `SwapLeg[]` boundary. The owner-managed
-`OTFEntryExitRouter` approves narrowly bound trade adapters and exposes explicit native-ETH mint and
-redeem endpoints. Native ETH is wrapped to its immutable canonical WETH at the user boundary; every
-vault, adapter leg, pool, buyback, and accounting path remains ERC-20/WETH-only. `UniswapV3Adapter` accepts only a
-validated packed V3 path. `UniswapV4Adapter` accepts only bounded typed V4 pool keys, authenticates
-them through StateView, and constructs its fixed Universal Router actions internally. Ordinary pool
-swaps bypass the entry router. Production quotes use the same-origin Uniswap Trading API integration;
-Robinhood testnet quotes currently use the configured Synthra V3 pools and Quoter. The recorded
-testnet deployment binds both adapters to the generic router; V4 basket routing remains dormant
-until supported V4 pool keys and liquidity are added to the route catalog.
+## How an OTF works
 
-The protocol token is issued once at one billion OTF. Its live supply falls when holders or the
-buyback collector burn tokens. A canonical 0%-fee OTF/WETH V4 pool launches with 150 million OTF
-one-sided liquidity and graduates at its final tick into permanently locked full-range liquidity.
-The launch manager also reserves 50 million OTF, team spot-FDV vesting holds 100 million, and the
-cumulative Merkle distributor holds 700 million.
+The creation application starts with a `$1` target basket value and current offchain asset data. It converts the creator's final percentages into raw token units for `1e18` vault shares. The target and weighting method describe initialization only; they are neither an onchain price nor a peg. The contract receives the ordered constituents, raw units, fund thesis, beneficiary, and fee rates.
 
-Each fund has immutable annual, mint, and redeem rates. Accounted OTF held as a real constituent
-changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 million OTF. Every fee
-share is minted to `BuybackCollector`, which records the creator and buyback portions for each vault
-when the fee is charged. Only that vault's immutable expense beneficiary may settle the account.
-Settlement either sells all pending fund shares through an approved path ending in WETH or redeems
-them and routes every constituent to WETH. It pays the creator portion in WETH, spends only the
-remaining WETH through the canonical OTF pool, and burns every purchased OTF.
+The first depositor supplies the bootstrap basket in proportion to the shares requested. Later deposits and redemptions use the vault's accounted constituent balances. Donations do not enter that ledger. A redemption that leaves fewer than `0.01` shares permanently shuts down the vault, although remaining holders can still exit in kind.
 
-The shared Swap product requires a fund share or the protocol OTF token on at least one side. It is
-not a general token-to-token exchange. ETH and WETH are distinct selectable boundary assets; ETH is
-wrapped or unwrapped atomically without a separate user action. The `/token` page embeds this same
-Swap implementation and defaults to the configured protocol OTF token rather than maintaining a
-second execution flow.
+Annual expense, mint, and redeem fees accrue as vault shares. `BuybackCollector` records the creator and buyback portions when a fee is charged. The beneficiary can settle the complete pending account through an approved route to WETH. The collector pays the creator portion in WETH, buys OTF with the rest through the canonical pool, and burns the purchased OTF.
 
-`app/src/config/robinhood-testnet-assets.json` is the testnet routing catalog. It separates USDG and WETH
-quote assets from the five supported fund constituents and records their active Synthra pools. The
-constituent pools fund basket mint/burn routes and the testnet liquidity utility; they do not expose
-constituent-to-quote swaps in the user-facing Swap product.
-`app/src/config/assets.json` is a chain-indexed list of featured production assets for app discovery;
-it is not an onchain allowlist and does not limit the permissionless protocol.
+`OTFEntryExitRouter` handles routed basket entry and exit through approved, router-bound trade adapters. Native ETH exists only at this boundary: the router wraps it to canonical WETH before basket execution and unwraps transient WETH output on native redemption. Vaults, adapters, pools, and buybacks use ERC-20 tokens only.
 
-The breaking fee-settlement v3 contracts require a fresh Robinhood testnet deployment. Verified
-external dependency addresses and hashes are retained in `app/src/config/robinhood-testnet.json`;
-obsolete protocol addresses are intentionally not treated as compatible.
+## Protocol token
+
+`OTFToken` issues one billion OTF once. The deployment allocation is:
+
+| Destination | OTF |
+| --- | ---: |
+| Team market-cap vesting | 100,000,000 |
+| V4 launch manager | 200,000,000 |
+| Cumulative rewards distributor | 700,000,000 |
+
+The launch manager uses 150 million OTF for one-sided bootstrap liquidity and reserves 50 million OTF for permanent post-graduation liquidity. The canonical OTF/WETH V4 pool starts at a 20 ETH reference FDV and targets 180 ETH using fixed Uniswap ticks. See [OTF token economics](docs/content/token-and-fee-incentives.mdx) for the exact ticks, prices, and graduation mechanics.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `contracts/` | Solidity protocol, tests, and security gates |
+| `app/` | Main creation, trading, and fund-inspection application |
+| `docs/` | Nextra protocol documentation |
+| `launch/` | Separate prelaunch competition application |
+| `packages/brand/` | Shared product marks and favicon assets |
+| `scripts/` | Compilation, deployment, verification, and rewards tooling |
+
+The launch competition does not govern the protocol or its vaults.
+
+## Development
+
+Install the workspace dependencies:
+
+```bash
+corepack pnpm install
+```
+
+Common checks:
+
+```bash
+corepack pnpm contracts:solc
+corepack pnpm contracts:security
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm build
+```
+
+Run the main application or documentation site with `corepack pnpm --filter @onchaintradedfunds/app dev` and `corepack pnpm docs:dev`. The launch application has separate setup instructions in [`launch/README.md`](launch/README.md).
+
+## Further reading
+
+- [Protocol overview](docs/content/overview.mdx)
+- [Protocol security specification](docs/content/protocol-security-spec.mdx)
+- [Security and trust assumptions](docs/content/security.mdx)
+- [Deployment status](docs/content/deployment-addresses.mdx)
+- [Contract review status](contracts/AUDIT.md)

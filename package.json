@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@openzeppelin/merkle-tree": "1.0.8",
+    "slopless": "^0.2.36",
     "solc": "0.8.36",
     "solhint": "6.2.4"
   },

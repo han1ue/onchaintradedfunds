@@ -76,10 +76,21 @@ contract MockLaunchPoolManager {
     function reachGraduation(OTFLaunchManager launch) external {
         int24 tick = launch.finalTick();
         stateView.setPoolState(poolId, launch.finalSqrtPriceX96(), tick);
+        _recordSwap(launch);
+    }
+
+    function moveBootstrap(OTFLaunchManager launch, uint160 sqrtPriceX96, int24 tick) external {
+        stateView.setPoolState(poolId, sqrtPriceX96, tick);
+        _recordSwap(launch);
+    }
+
+    function _recordSwap(OTFLaunchManager launch) private {
         launch.afterSwap(
             address(this),
             key,
-            UniswapV4SwapParams({ zeroForOne: false, amountSpecified: 1, sqrtPriceLimitX96: 0 }),
+            UniswapV4SwapParams({
+                zeroForOne: !launch.otfIsCurrency0(), amountSpecified: 1, sqrtPriceLimitX96: 0
+            }),
             0,
             ""
         );
@@ -121,7 +132,7 @@ contract MockLaunchPositionManager is IUniswapV4PositionManager {
     IPermit2AllowanceTransfer public immutable permit2;
     uint256 public nextTokenId = 1;
     address public weth;
-    uint256 public bootstrapPayout = 4.5 ether;
+    uint256 public bootstrapPayout = 8_999_934_702_040_754_827;
 
     constructor(address poolManager_, address permit2_) {
         poolManager = poolManager_;
@@ -174,6 +185,7 @@ contract OTFLaunchManagerTest is TestBase {
     uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;
     uint160 private constant AFTER_SWAP_FLAG = 1 << 6;
     uint160 private constant REQUIRED_HOOK_FLAGS = BEFORE_INITIALIZE_FLAG | AFTER_SWAP_FLAG;
+    uint256 private constant EXPECTED_BOOTSTRAP_WETH_PROCEEDS = 8_999_934_702_040_754_827;
 
     OTFToken private token;
     MockStockToken private weth;
@@ -192,7 +204,7 @@ contract OTFLaunchManagerTest is TestBase {
         poolManager.setStateView(stateView);
         positionManager = new MockLaunchPositionManager(address(poolManager), address(permit2));
         positionManager.setWeth(address(weth));
-        weth.mint(address(positionManager), 4.5 ether);
+        weth.mint(address(positionManager), EXPECTED_BOOTSTRAP_WETH_PROCEEDS);
 
         OTFLaunchManagerDeployer deployer = new OTFLaunchManagerDeployer();
         launch = _deployLaunch(deployer);
@@ -201,21 +213,18 @@ contract OTFLaunchManagerTest is TestBase {
         token.transfer(address(launch), 200_000_000 ether);
     }
 
-    function _mineLaunchAddress(OTFLaunchManagerDeployer deployer)
-        private
-        view
-        returns (bytes32 salt, address predicted)
-    {
+    function _mineLaunchAddress(
+        OTFLaunchManagerDeployer deployer,
+        address otf_,
+        address weth_,
+        address poolManager_,
+        address stateView_,
+        address positionManager_,
+        address permit2_
+    ) private pure returns (bytes32 salt, address predicted) {
         bytes memory initCode = abi.encodePacked(
             type(OTFLaunchManager).creationCode,
-            abi.encode(
-                address(token),
-                address(weth),
-                address(poolManager),
-                address(stateView),
-                address(positionManager),
-                address(permit2)
-            )
+            abi.encode(otf_, weth_, poolManager_, stateView_, positionManager_, permit2_)
         );
         bytes32 initCodeHash = keccak256(initCode);
         for (uint256 i = 0; i < 100_000; i++) {
@@ -233,15 +242,31 @@ contract OTFLaunchManagerTest is TestBase {
         private
         returns (OTFLaunchManager deployed)
     {
-        (bytes32 salt, address predicted) = _mineLaunchAddress(deployer);
-        deployed = deployer.deploy(
-            salt,
+        return _deployLaunchFor(
+            deployer,
             address(token),
             address(weth),
             address(poolManager),
             address(stateView),
             address(positionManager),
             address(permit2)
+        );
+    }
+
+    function _deployLaunchFor(
+        OTFLaunchManagerDeployer deployer,
+        address otf_,
+        address weth_,
+        address poolManager_,
+        address stateView_,
+        address positionManager_,
+        address permit2_
+    ) private returns (OTFLaunchManager deployed) {
+        (bytes32 salt, address predicted) = _mineLaunchAddress(
+            deployer, otf_, weth_, poolManager_, stateView_, positionManager_, permit2_
+        );
+        deployed = deployer.deploy(
+            salt, otf_, weth_, poolManager_, stateView_, positionManager_, permit2_
         );
         assertEq(address(deployed), predicted);
     }
@@ -263,6 +288,44 @@ contract OTFLaunchManagerTest is TestBase {
         (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) =
             manager.poolKey();
         key = UniswapV4PoolKey(currency0, currency1, fee, tickSpacing, hooks);
+    }
+
+    function _deployOrderedLaunch(bool otfIsCurrency0_)
+        private
+        returns (
+            OTFLaunchManager orderedLaunch,
+            MockStockToken orderedOtf,
+            MockLaunchPoolManager orderedPoolManager
+        )
+    {
+        MockStockToken first = new MockStockToken("First", "FIRST", 18);
+        MockStockToken second = new MockStockToken("Second", "SECOND", 18);
+        MockStockToken lower = address(first) < address(second) ? first : second;
+        MockStockToken higher = address(first) < address(second) ? second : first;
+        orderedOtf = otfIsCurrency0_ ? lower : higher;
+        MockStockToken orderedWeth = otfIsCurrency0_ ? higher : lower;
+
+        MockPermit2 orderedPermit2 = new MockPermit2();
+        orderedPoolManager = new MockLaunchPoolManager();
+        MockUniswapV4StateView orderedStateView =
+            new MockUniswapV4StateView(address(orderedPoolManager));
+        orderedPoolManager.setStateView(orderedStateView);
+        MockLaunchPositionManager orderedPositionManager =
+            new MockLaunchPositionManager(address(orderedPoolManager), address(orderedPermit2));
+        orderedPositionManager.setWeth(address(orderedWeth));
+        orderedWeth.mint(address(orderedPositionManager), EXPECTED_BOOTSTRAP_WETH_PROCEEDS);
+
+        orderedLaunch = _deployLaunchFor(
+            new OTFLaunchManagerDeployer(),
+            address(orderedOtf),
+            address(orderedWeth),
+            address(orderedPoolManager),
+            address(orderedStateView),
+            address(orderedPositionManager),
+            address(orderedPermit2)
+        );
+        orderedOtf.mint(address(orderedLaunch), 200_000_000 ether);
+        orderedLaunch.initializeLaunch();
     }
 
     function testExpectedHookMaskIsExactlyBeforeInitializeAndAfterSwap() public {
@@ -312,7 +375,15 @@ contract OTFLaunchManagerTest is TestBase {
 
     function testAttackerCannotInitializePredictedPoolBeforeManagerDeployment() public {
         OTFLaunchManagerDeployer deployer = new OTFLaunchManagerDeployer();
-        (bytes32 salt, address predicted) = _mineLaunchAddress(deployer);
+        (bytes32 salt, address predicted) = _mineLaunchAddress(
+            deployer,
+            address(token),
+            address(weth),
+            address(poolManager),
+            address(stateView),
+            address(positionManager),
+            address(permit2)
+        );
         UniswapV4PoolKey memory key = _poolKey(predicted);
         uint160 sqrtPriceX96 = launch.initialSqrtPriceX96();
 
@@ -336,7 +407,9 @@ contract OTFLaunchManagerTest is TestBase {
         assertEq(uint256(predictedLaunch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
     }
 
-    function testOneSidedBootstrapAndPermissionlessGraduationLockPermanentLiquidity() public {
+    function testOneSidedBootstrapAndPermissionlessDustSafeGraduationLockPermanentLiquidity()
+        public
+    {
         launch.initializeLaunch();
         assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
         assertEq(launch.LP_FEE(), 0);
@@ -344,22 +417,29 @@ contract OTFLaunchManagerTest is TestBase {
         assertEq(token.balanceOf(address(launch)), 50_000_000 ether);
         assertEq(weth.balanceOf(address(launch)), 0);
         assertEq(token.balanceOf(address(positionManager)), 150_000_000 ether);
+        vm.prank(HOLDER);
+        assertTrue(token.transfer(address(launch), 123));
+        weth.mint(address(launch), 1);
 
         poolManager.reachGraduation(launch);
         assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
         (uint256 progressBps,, uint256 remaining, uint256 raised) = launch.bootstrapProgress();
         assertEq(progressBps, 10_000);
         assertEq(remaining, 0);
-        assertApproxEqAbs(raised, 4.5 ether, 1e15);
+        assertEq(raised, EXPECTED_BOOTSTRAP_WETH_PROCEEDS);
 
         vm.prank(address(0xF1A1));
         launch.finalizeGraduation();
         assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.Graduated));
+        assertEq(launch.bootstrapWethProceeds(), EXPECTED_BOOTSTRAP_WETH_PROCEEDS);
         assertEq(launch.permanentOtfLiquidity(), 50_000_000 ether);
-        assertEq(launch.permanentWethLiquidity(), 4.5 ether);
-        assertEq(token.balanceOf(address(launch)), 0);
+        assertApproxEqAbs(launch.permanentWethLiquidity(), 9 ether, 1e15);
+        assertEq(token.balanceOf(address(launch)), 123);
         assertEq(weth.balanceOf(address(launch)), 0);
         assertGt(launch.graduationBlock(), 0);
+        (uint256 otfDust, uint256 wethDust) = launch.lockedDustBalances();
+        assertEq(otfDust, 123);
+        assertEq(wethDust, 0);
 
         (bool success,) =
             address(launch).call(abi.encodeWithSignature("removePermanentLiquidity()"));
@@ -368,14 +448,80 @@ contract OTFLaunchManagerTest is TestBase {
         launch.finalizeGraduation();
     }
 
-    function testLaunchReferenceConstantsAndSelectedTickPricesAreDeterministic() public view {
+    function testLaunchReferenceConstantsAllocationsAndSelectedTickPriceAreDeterministic()
+        public
+        view
+    {
         assertEq(launch.MAX_SUPPLY(), 1_000_000_000 ether);
-        assertEq(launch.LAUNCH_REFERENCE_FDV_WEI(), 10 ether);
-        assertEq(launch.TARGET_REFERENCE_FDV_WEI(), 90 ether);
+        assertEq(token.MAX_SUPPLY(), 1_000_000_000 ether);
+        assertEq(token.totalSupply(), 1_000_000_000 ether);
+        assertEq(launch.BOOTSTRAP_ALLOCATION(), 150_000_000 ether);
+        assertEq(launch.PERMANENT_LIQUIDITY_RESERVE(), 50_000_000 ether);
+        assertEq(launch.REQUIRED_OTF_BALANCE(), 200_000_000 ether);
+        assertEq(
+            150_000_000 ether + 50_000_000 ether + 100_000_000 ether + 700_000_000 ether,
+            launch.MAX_SUPPLY()
+        );
+        assertEq(launch.LAUNCH_REFERENCE_FDV_WEI(), 20 ether);
+        assertEq(launch.TARGET_REFERENCE_FDV_WEI(), 180 ether);
         uint256 selectedInitialFdv = launch.initialOtfPriceWethWad() * launch.MAX_SUPPLY() / 1e18;
         uint256 selectedFinalFdv = launch.finalOtfPriceWethWad() * launch.MAX_SUPPLY() / 1e18;
-        assertEq(selectedInitialFdv, 10 ether);
-        assertApproxEqAbs(selectedFinalFdv, 90 ether, 4e15);
+        assertEq(selectedInitialFdv, 20 ether);
+        assertEq(selectedFinalFdv, 179_997_388_091_000_000_000);
+        assertApproxEqAbs(selectedFinalFdv, 180 ether, 3e15);
+    }
+
+    function testBootstrapProgressAndBuybacksWorkInBothCurrencyOrderings() public {
+        _assertBootstrapProgressAndBuyback(true);
+        _assertBootstrapProgressAndBuyback(false);
+    }
+
+    function _assertBootstrapProgressAndBuyback(bool otfIsCurrency0_) private {
+        (OTFLaunchManager orderedLaunch,, MockLaunchPoolManager orderedPoolManager) =
+            _deployOrderedLaunch(otfIsCurrency0_);
+        assertEq(orderedLaunch.otfIsCurrency0(), otfIsCurrency0_);
+        assertEq(orderedLaunch.initialOtfPriceWethWad(), 20_000_000_000);
+        assertEq(orderedLaunch.finalOtfPriceWethWad(), 179_997_388_091);
+        if (otfIsCurrency0_) {
+            assertTrue(orderedLaunch.initialTick() == -177_284);
+            assertTrue(orderedLaunch.finalTick() == -155_311);
+            assertEq(orderedLaunch.initialSqrtPriceX96(), 11_204_554_194_957_227_983_746_388);
+            assertEq(orderedLaunch.finalSqrtPriceX96(), 33_613_418_706_697_289_737_079_801);
+        } else {
+            assertTrue(orderedLaunch.initialTick() == 177_284);
+            assertTrue(orderedLaunch.finalTick() == 155_311);
+            assertEq(
+                orderedLaunch.initialSqrtPriceX96(), 560_227_709_747_861_399_187_319_382_274_581
+            );
+            assertEq(orderedLaunch.finalSqrtPriceX96(), 186_743_924_804_530_596_371_038_112_052_313);
+        }
+
+        (uint256 progressBps,, uint256 remaining, uint256 raised) =
+            orderedLaunch.bootstrapProgress();
+        assertEq(progressBps, 0);
+        assertLe(150_000_000 ether - remaining, 100_000);
+        assertEq(raised, 0);
+
+        int24 midpointTick = otfIsCurrency0_
+            ? orderedLaunch.initialTick() + 10_986
+            : orderedLaunch.initialTick() - 10_986;
+        uint160 midpointSqrtPriceX96 = uint160(
+            (uint256(orderedLaunch.initialSqrtPriceX96())
+                    + uint256(orderedLaunch.finalSqrtPriceX96())) / 2
+        );
+        orderedPoolManager.moveBootstrap(orderedLaunch, midpointSqrtPriceX96, midpointTick);
+        (progressBps,,, raised) = orderedLaunch.bootstrapProgress();
+        assertGt(progressBps, 0);
+        assertLt(progressBps, 10_000);
+        assertGt(raised, 0);
+        assertEq(uint256(orderedLaunch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+
+        orderedPoolManager.reachGraduation(orderedLaunch);
+        (progressBps,, remaining, raised) = orderedLaunch.bootstrapProgress();
+        assertEq(progressBps, 10_000);
+        assertEq(remaining, 0);
+        assertEq(raised, EXPECTED_BOOTSTRAP_WETH_PROCEEDS);
+        assertEq(uint256(orderedLaunch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
     }
 
     function testDonatedWethDustCannotBlockInitialization() public {

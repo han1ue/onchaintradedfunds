@@ -152,13 +152,13 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
     } catch (error) { setFinalizeState(transactionError(error).state); }
   }
 
-  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><Image className="tokenMarketTokenIcon" src={circularOtfIcon} alt="" width={44} height={44} priority /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "OTF market unavailable" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The configured market contracts could not be loaded." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
+  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><Image className="tokenMarketTokenIcon" src={circularOtfIcon} alt="" width={44} height={44} priority /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "$OTF launch not deployed" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The 20→180 ETH launch contracts have not been deployed on Robinhood Testnet." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
 
   const phases = [
-    { title: "Not initialized", copy: ["10 ETH launch reference valuation.", "Pool inactive; initialization creates the one-sided 150m OTF bootstrap position."] },
-    { title: "Bootstrap active", copy: ["10 ETH → approximately 90 ETH reference valuation.", "OTF is sold from the one-sided range, WETH accumulates, and trading is active."] },
-    { title: "Graduation ready", copy: ["Final tick reached at approximately 90 ETH reference valuation.", "Anyone may finalize; the completed bootstrap position is settled."] },
-    { title: "Graduated", copy: ["Bootstrap WETH proceeds and up to 50m reserved OTF become effectively full-range liquidity.", "Principal remains permanently locked and the LP fee remains 0%."] },
+    { title: "Not initialized", copy: ["20 ETH launch reference valuation.", "Pool inactive; initialization creates the one-sided 150 million OTF bootstrap position."] },
+    { title: "Bootstrap active", copy: ["20 ETH → approximately 180 ETH reference valuation.", "OTF is sold from the one-sided range, WETH accumulates, and trading is active."] },
+    { title: "Graduation ready", copy: ["Final tick reached at approximately 180 ETH reference valuation.", "Anyone may finalize; the completed bootstrap position is settled."] },
+    { title: "Graduated", copy: ["Bootstrap WETH proceeds and the complete 50 million OTF reserve become effectively full-range liquidity.", "Principal remains permanently locked and the LP fee remains 0%."] },
   ] as const;
 
   return <div className="appView tokenView tokenMarketView">

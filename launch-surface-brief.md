@@ -1,7 +1,36 @@
 # Launch competition surface brief
 
-- **Mode and job:** Operate. Visitors compare proposed OTFs, inspect their thesis and portfolio shape, submit or vote, then audit Live or Final XP in a ledger that stays separate from launch rank.
-- **Approved composition:** `.impeccable/mocks/launch-board-a.png`. The first viewport is a dominant ranked leaderboard with concise thesis excerpts and compact allocation strips. A competition timeline sits above it and explains the submission-only phase, voting month, and final review. The ballot workspace extends that desk with one row per proposal and a focused unlock summary rail.
-- **Identity:** Extend the incumbent OTF application shell: dark teal default, compact system typography, flat bordered cards, restrained state color, and tabular data. Keep the XP ledger dense on desktop as a six-column table; below 760px, remove the header and turn each participant into a self-contained two-column labelled row that preserves every XP category, supporter count, total, and pending or verification state.
-- **Content rules:** “Submit OTF” is removed from primary navigation. It appears as a secondary button in the top-right of non-empty leaderboard table headings and as a primary button on the profile page. Empty OTF leaderboards use only the centered empty-state submission action. The competition begins with 7 submission-only days followed by 30 voting days; submissions remain open during voting. Each eligible account unlocks 3 votes when voting opens, then 1 more every 3 voting days up to 12. The final unlock is voting day 27 and day 30 grants no vote. Every voting transaction requires a fresh public X post, but several unlocked votes may be batched in one transaction and post. Cast votes cannot be moved or removed. Votes cast for a deleted OTF remain spent and auditable but are excluded from launch ranking and every XP allocation. Every voting post hides that batch’s OTF picks by default and names them only after an explicit reveal choice. Creators may vote for their own proposal. Votes are never called XP and XP never changes launch order. XP is calculated and published only after the final audit; no provisional XP balance or ranking is shown. The leaderboard defaults to the OTF launch-ranking view and offers a separate “Voters & XP” view, where voter rank is determined only by latest canonical total XP. Voters appear under a stable deterministic generated alias by default; showing the real X username requires an explicit, reversible profile opt-in. The final ledger shows calculation and price-checkpoint timestamps; Performance, Participation, and Creator category breakdowns; unique supporter count; and the Awaiting price checkpoint state. Verified OTFs compete for a performance XP pool that is 100% larger—3.5M versus 1.75M—and individual awards depend on relative score. Do not show individual launch dates. Desktop leaderboard allocations pair the segmented portfolio shape with exact percentages; full allocation detail remains on proposal pages.
-- **Implementation inventory:** Sticky navigation, competition status and metrics, phase timeline, leaderboard, allocation strip, earned-vote ledger workspace, proposal details, submission wizard, account activity, rules/legal/admin surfaces use semantic HTML/CSS and Lucide icons. OTF and asset marks use existing SVG assets or CSS geometry; no generated raster ships in the product.
+## Purpose
+
+The launch application lets visitors compare proposed OTFs, inspect their theses and allocations, submit proposals, cast votes, and audit final XP. Launch rank and XP are separate systems: votes determine launch order, while XP is calculated only after the final audit and never changes that order.
+
+The approved composition is `.impeccable/mocks/launch-board-a.png`. The first viewport centers the ranked leaderboard. Each row shows a concise thesis excerpt and compact allocation strip. A timeline above the board explains the submission-only period, voting period, and final review. The ballot adds one row per proposal and a focused vote-availability summary.
+
+## Competition rules shown in the interface
+
+- The competition starts with seven submission-only days followed by 30 voting days. Submissions remain open during voting.
+- Each eligible account receives three votes when voting opens, then one more every three voting days up to 12. The last additional vote becomes available on voting day 27; day 30 adds none.
+- Every voting action requires a fresh public X post. One action may batch several available votes.
+- Vote posts hide proposal choices by default. Users may explicitly reveal the selected tickers and counts.
+- Cast votes cannot move or be removed. Creators may vote for their own proposals.
+- Votes for a deleted proposal remain spent and auditable but do not count toward launch rank or any XP category.
+- XP appears only after the final audit. The interface must not show a provisional XP balance or rank.
+- Verified OTFs compete for a 3.5 million performance XP pool; other OTFs compete for 1.75 million. Individual awards depend on relative score.
+
+The default leaderboard shows OTF launch rank. A separate `Voters & XP` view ranks voters by their latest canonical total XP. Voters use deterministic generated aliases unless they opt in to showing their X username; the setting is reversible.
+
+The final XP ledger shows calculation and checkpoint times, Performance, Participation, and Creator categories, unique supporter count, total XP, and any `Awaiting price checkpoint` state.
+
+## Layout and content
+
+The visual language extends the main application: dark teal by default, compact system typography, flat bordered surfaces, restrained status colors, and tabular numbers.
+
+Desktop uses a six-column XP table. Below 760 px, each participant becomes a labelled two-column row that retains every XP category, supporter count, total, and pending or verification state.
+
+`Submit OTF` does not appear in primary navigation. Non-empty leaderboard headings place it as a secondary action at the top right, while the profile page uses it as a primary action. An empty leaderboard shows one centered submission action.
+
+Leaderboard rows pair the allocation strip with exact percentages. Proposal pages contain the complete allocation. Do not show individual launch dates.
+
+## Implementation inventory
+
+The application includes sticky navigation, competition metrics, phase timeline, leaderboard, allocation strip, ballot, vote ledger, proposal details, submission wizard, account activity, rules, legal pages, and administrator tools. Components use semantic HTML and CSS with Lucide icons. OTF and asset marks use existing SVG assets or CSS geometry; the product ships no generated raster artwork.

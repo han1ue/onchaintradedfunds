@@ -1,120 +1,92 @@
 ---
 title: Security
-description: Trust boundaries, known assumptions, and production blockers for the OTF protocol.
+description: Contract boundaries, trusted roles, external assumptions, and production blockers.
 ---
 
 # Security
 
-The protocol is pre-mainnet and unaudited. The fee-settlement v3 contracts require a fresh review,
-deployment rehearsal, and independent production configuration review before they hold value.
+The current protocol is pre-mainnet and unaudited. It requires an independent contract review, deployment rehearsal, and review of every production dependency before it can hold value.
 
-## Contract-enforced boundaries
+## Enforced by the contracts
 
-- OTF is issued once at one billion tokens. No post-construction mint, tax, blacklist, seizure, or
-  upgrade path exists. Holder burns reduce live supply.
-- Fund fee rates and beneficiaries are immutable. All fee shares are held by the collector with
-  separate per-vault creator and buyback accounting fixed when each fee is charged. Settlement
-  checkpoints annual fees; shutdown exits remain fee-free.
-- Raw constituent donations are excluded from fund accounting and the OTF fee-benefit calculation.
-- The buyback collector can use only the protocol router's typed routes and approved adapters. Its
-  final pool key is the immutable canonical OTF/WETH V4 pool. It has no asset withdrawal or arbitrary
-  call path.
-- The rewards distributor has no principal withdrawal or time gate. A valid proof can pay only its
-  committed user and only the unclaimed cumulative amount.
-- Team vesting beneficiary changes use current-beneficiary nomination and nominee acceptance. A
-  pending nominee has no claim authority, and no owner or protocol administrator can change it.
-- Permanent V4 liquidity remains owned by the launch manager, which exposes no removal, repricing,
-  migration, or replacement function.
+- `OTFToken` mints one billion tokens in its constructor and has no later mint, tax, blacklist, seizure, or upgrade path. Burns reduce live supply.
+- Vault fee rates and beneficiaries are immutable. Fee shares use per-vault creator and buyback accounting recorded when each fee is charged.
+- Vault accounting excludes token donations. A donation cannot improve backing in the ledger or change the OTF fee split.
+- The collector can settle only factory-registered vaults through the configured entry router and approved adapters. Its final purchase uses the immutable canonical OTF/WETH V4 pool.
+- Reward claims require a valid cumulative proof and always pay the user committed in the leaf. The root publisher cannot withdraw reward principal.
+- Team-vesting beneficiary changes require nomination by the current beneficiary and acceptance by the nominee.
+- The launch manager owns the permanent V4 position and exposes no liquidity removal, repricing, migration, or replacement function.
+
+These controls constrain contract calls. They do not make external assets, venues, administrators, or price inputs safe.
 
 ## Trusted roles
 
-### Root-publishing multisig
+### Reward-root publisher
 
-The multisig is fully trusted to choose cumulative reward allocations. A valid root can allocate the
-entire remaining rewards balance. The contract prevents proof forgery and double claims, not unfair
-allocations or a compromised publisher.
+The publisher chooses cumulative reward entitlements. A valid root can allocate the distributor's full remaining balance. The contract prevents forged proofs and duplicate claims, but it cannot detect an unfair allocation or a compromised publisher.
 
-### Expense beneficiaries and settlement routes
+### Expense beneficiary
 
-Only a vault's immutable expense beneficiary can settle that vault. The beneficiary chooses when to
-claim and supplies either an approved fund-share sale ending in WETH or a typed basket-redemption
-route to WETH, plus minimum WETH, minimum OTF, and deadline.
-Exact token identities, adapter approval, minimum output, and observed balance-delta checks limit
-mistakes and compromise; they do not guarantee optimal execution. The protocol deliberately has no
-oracle, TWAP, route discovery, fair-value floor, or hardcoded slippage for this operation.
+Each vault has one immutable expense beneficiary. Only that address can settle the vault's pending fee account. The beneficiary selects either a vault-share sale to WETH or a basket redemption followed by constituent sales, together with minimum WETH, minimum OTF, and a deadline.
 
-The collector clears both pending share counters before external execution, consumes their exact
-combined share balance through the selected route, pays the creator share of actual WETH to the beneficiary, spends only the remaining buyback WETH in
-the immutable canonical V4 pool, and burns all purchased OTF. Any failed step reverts the complete
-transaction. Factory registration prevents fake vaults from creating or settling fee accounts.
+Settlement uses exact token identities, approved adapters, minimum outputs, and observed balance changes. These checks limit malformed routes; they do not guarantee best execution. The protocol has no route discovery, oracle, TWAP, fair-value floor, or fixed slippage policy for fee settlement.
 
-### Adapter manager and external venues
+The collector clears the pending counters before external execution. It then consumes the exact pending share balance, pays the creator portion of actual WETH, spends only the buyback portion through the canonical OTF pool, and burns the OTF received. Any failure reverts the transaction and restores the pending state.
 
-The entry/exit router owner can approve or revoke adapters. Approved adapter code, V3/V4 venue code,
-constituent tokens, WETH, Permit2, and Universal Router are external trust boundaries. Routes are not
-discovered onchain.
+### Adapter manager and trading venues
 
-The entry/exit router accepts native ETH only through its explicit guarded endpoints and only accepts
-callback ETH from its immutable canonical WETH. Native mint requires exact value; native redemption
-unwraps and sends only the transient WETH output. Checked sends revert atomically when a receiver
-rejects ETH. Pre-existing or forcibly sent ETH/WETH must remain untouched, and no native marker may
-reach an adapter leg. Native basket execution remains disabled in the application until a compatible
-router is deployed and configured.
+The entry-router owner can approve or revoke adapters. An approved adapter must be immutably bound to the router, but its code and every external venue it calls remain trusted execution dependencies. Constituents, WETH, Permit2, Universal Router, and the selected V3 or V4 pools also lie outside the protocol's control.
+
+Routes are supplied offchain. The contracts validate their shape and observed transfers but do not decide whether a route is economically favorable.
 
 ### ETH/USD oracle
 
-The production oracle is trusted for team vesting. The contract rejects nonpositive, future, or
-stale answers, but a fresh incorrect answer can unlock a milestone. The V4 price is intentionally the
-current spot price in a potentially thin pool; no TWAP, liquidity threshold, delay, or manipulation
-protection is provided.
+Team vesting trusts the configured ETH/USD oracle. The vesting contract rejects nonpositive, future, or stale answers. A fresh but incorrect answer can still satisfy a vesting milestone.
 
-## Market and launch assumptions
+The other input to vesting is the current canonical V4 spot price. The contract uses no TWAP, liquidity threshold, observation delay, or manipulation guard.
 
-The pool initializes at exactly 10 ETH launch reference FDV; its one-sided position boundary and
-approximately 90 ETH final price use deterministic discrete ticks. The final tick marks graduation
-in its swap callback; a separate permissionless
-transaction finalizes positions because V4 remains locked during the callback. Transaction ordering,
-slippage, and pool price impact remain market risks even though the LP fee is 0%.
+## Native ETH boundary
 
-The launch manager locks principal by omitting every administrative liquidity-control path. That
-also means no recovery exists for permanent liquidity or deterministic residual dust.
+The entry router accepts native ETH only through `mintFromNative` and accepts callback ETH only from its immutable canonical WETH contract. Native mint requires exact value. Native redemption unwraps only WETH produced by the current operation and sends that amount atomically to the caller.
 
-## Fund accounting assumptions
+The router's reentrancy guard covers wrapping, unwrapping, refunds, and native sends. Rejected sends revert. Pre-existing or forcibly sent ETH and WETH remain untouched. Native identifiers never enter a vault, adapter leg, pool, or buyback route.
 
-Vaults use accounted balances rather than raw balances. They assume constituent token transfers and
-approved adapters behave according to observed balance deltas. Deflationary, rebasing, callback, or
-administratively mutable assets may create deficit or liveness risks. Users must evaluate every
-constituent and venue independently.
+Application support for native basket execution remains disabled until a compatible router deployment is recorded.
 
-Mint fees calculate the gross backing required for the requested net investor shares and round up.
-Redeem fees round up and redeem the remaining net shares. Creator split basis points and
-mint/redeem creator fee shares round down; the residual goes to buyback. Annual expense splitting
-carries a fractional remainder across checkpoints so cadence does not change cumulative allocation.
-These directions avoid unbacked shares and fee undercharging but can make small operations pay one
-raw unit more.
+## Launch and market assumptions
+
+The canonical pool initializes at exactly 20 ETH reference FDV. Its fixed final tick represents `179.997388091 ETH`, the closest selected spacing-1 value to the 180 ETH target. Selling the full bootstrap range produces `8.999934702040754827 WETH` under the launch manager's integer math. At the final price, the 50 million OTF reserve has approximately the same WETH value.
+
+The swap that reaches the final tick records `GraduationReady`. Anyone must then call `finalizeGraduation` in a separate transaction because V4 remains locked during the swap callback.
+
+Zero LP fees do not remove transaction-ordering, slippage, liquidity, or price-impact risk. The launch manager's lack of administrative liquidity controls also means no recovery exists for the permanent position or residual dust.
+
+## Vault accounting assumptions
+
+Vaults track accounted balances rather than raw token balances. They assume each constituent and adapter behaves according to observed balance changes. Deflationary, rebasing, callback-enabled, or administratively mutable tokens may create backing deficits or block operations. Users must assess each constituent and venue.
+
+Mint fees increase the gross backing required for a requested net share amount and round up. Redeem fees also round up. Creator portions of mint and redeem fees round down, while the remainder goes to buyback. Annual expense accounting carries a fractional split remainder across checkpoints so checkpoint timing does not change the cumulative allocation.
+
+These rounding choices prevent unbacked shares and fee undercharging. A small operation may therefore require one additional raw unit.
 
 ## Deployment controls
 
-Production WETH, PoolManager, StateView, PositionManager, Universal Router, Permit2, and ETH/USD
-oracle addresses are mandatory inputs. No production address is embedded as a fallback. Testnet uses
-an unofficial V4 mirror only after configured runtime bytecode hashes match. A hash match verifies
-the reviewed bytes at that address; it is not an endorsement of the mirror or its operational
-security.
+Production deployment requires explicit WETH, PoolManager, StateView, PositionManager, Universal Router, Permit2, and ETH/USD oracle addresses. The repository provides no fallback production addresses.
 
-The old testnet deployment is incompatible and disabled in the application. No migration or legacy
-claim path exists.
+The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
+
+The current architecture is not deployed. Earlier Robinhood testnet protocol addresses are incompatible and disabled in the application; there is no migration or legacy claim path.
 
 ## Production blockers
 
-- independent audit of all v3 contracts and economic arithmetic;
-- fork/integration tests against the exact official production V4 deployments;
-- verified production multisig, beneficiary, WETH, and oracle selections;
-- deployment and verification of the canonical-WETH native entry/exit router plus receiver and
-  callback-reentrancy integration tests;
-- deployed-code verification and complete one-billion-token allocation reconciliation;
-- operational procedures for route generation, minimum outputs, root publication, and artifact
-  availability;
-- frontend browser and wallet testing against the final deployed addresses.
+Before mainnet use, the project needs:
 
-Report vulnerabilities privately to the maintainers. Do not test against public deployments with
-real user funds.
+- an independent audit of the current contracts and economic arithmetic;
+- fork and integration tests against the selected official production deployments;
+- reviewed multisig, beneficiary, WETH, oracle, and adapter configuration;
+- deployment and verification of the canonical-WETH entry router, including receiver and callback-reentrancy tests;
+- deployed-bytecode checks and reconciliation of the complete one-billion-OTF allocation;
+- operational procedures for route generation, minimum outputs, root publication, and artifact retention;
+- browser and wallet tests against the final addresses.
+
+Report vulnerabilities privately to the maintainers. Do not test public deployments with real user funds.
