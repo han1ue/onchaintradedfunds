@@ -224,7 +224,7 @@ contract OTFEntryExitRouter is Ownable2Step {
         _wrapExact(request.amountIn);
         shares = _processMint(context, request, legs);
         (refundTokens, refundAmounts, nativeRefunded) =
-            _refundAndCloseNativeMint(context.sheet, msg.sender, nativeBaseline);
+            _refundAndCloseNativeMint(context.sheet, nativeBaseline);
 
         emit NativeBasketMinted(msg.sender, request.vault, request.amountIn, shares, nativeRefunded);
     }
@@ -695,11 +695,7 @@ contract OTFEntryExitRouter is Ownable2Step {
         }
     }
 
-    function _refundAndCloseNativeMint(
-        BalanceSheet memory sheet,
-        address refundRecipient,
-        uint256 nativeBaseline
-    )
+    function _refundAndCloseNativeMint(BalanceSheet memory sheet, uint256 nativeBaseline)
         private
         returns (
             address[] memory refundTokens,
@@ -720,13 +716,13 @@ contract OTFEntryExitRouter is Ownable2Step {
                 if (token == weth) {
                     nativeRefunded = refund;
                     IWETH(weth).withdraw(refund);
-                    _sendNative(refundRecipient, refund);
+                    _sendNative(msg.sender, refund);
                 } else {
                     refundTokens[refundCount] = token;
                     refundAmounts[refundCount] = refund;
                     refundCount++;
                     _recordCredit(sheet, token, refund);
-                    _pushExact(token, refundRecipient, refund);
+                    _pushExact(token, msg.sender, refund);
                 }
             }
             uint256 closed = IERC20(token).balanceOf(address(this));
@@ -739,7 +735,7 @@ contract OTFEntryExitRouter is Ownable2Step {
             if (closed != baseline) revert ResidualBalance(token, baseline, closed);
         }
         _assertNativeBaseline(nativeBaseline);
-        _assertCallerDeltas(sheet, refundRecipient);
+        _assertCallerDeltas(sheet, msg.sender);
         assembly ("memory-safe") {
             mstore(refundTokens, refundCount)
             mstore(refundAmounts, refundCount)
