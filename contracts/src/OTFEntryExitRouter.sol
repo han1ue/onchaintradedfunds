@@ -136,6 +136,11 @@ contract OTFEntryExitRouter is Ownable2Step {
         uint256 count;
     }
 
+    struct RouteContext {
+        BalanceSheet sheet;
+        address[] assets;
+    }
+
     address public immutable factory;
     address public immutable weth;
     mapping(address => bool) public isAdapterApproved;
@@ -182,22 +187,11 @@ contract OTFEntryExitRouter is Ownable2Step {
         nonReentrant
         returns (uint256 shares, address[] memory refundTokens, uint256[] memory refundAmounts)
     {
-        _validateMintRequest(request);
-        address[] memory assets = _validatedAssets(request.vault);
-
-        BalanceSheet memory sheet = _newBalanceSheet();
-        _addToken(sheet, request.inputToken);
-        _addToken(sheet, request.vault);
-        _addAssets(sheet, assets);
-        _prepareLegs(sheet, legs, request.vault, address(0));
-        IOTFSettlementVault(request.vault).checkpointFees();
-        _snapshot(sheet);
-
-        _recordDebit(sheet, request.inputToken, request.amountIn);
+        RouteContext memory context = _prepareMint(request, legs);
+        _recordDebit(context.sheet, request.inputToken, request.amountIn);
         _pullExact(request.inputToken, msg.sender, request.amountIn);
-        _executeLegs(sheet, legs);
-        shares = _mintMaximum(request.vault, assets, request.minShares, sheet);
-        (refundTokens, refundAmounts) = _refundAndClose(sheet, msg.sender);
+        shares = _processMint(context, request, legs);
+        (refundTokens, refundAmounts) = _refundAndClose(context.sheet, msg.sender);
 
         emit BasketMinted(
             msg.sender,
@@ -225,28 +219,12 @@ contract OTFEntryExitRouter is Ownable2Step {
             revert InvalidNativeValue(request.amountIn, msg.value);
         }
         if (request.inputToken != weth) revert InvalidNativeEndpoint(request.inputToken);
-        _validateMintRequest(request);
-        address[] memory assets = _validatedAssets(request.vault);
-
-        BalanceSheet memory sheet = _newBalanceSheet();
-        _addToken(sheet, weth);
-        _addToken(sheet, request.vault);
-        _addAssets(sheet, assets);
-        _prepareLegs(sheet, legs, request.vault, address(0));
-        IOTFSettlementVault(request.vault).checkpointFees();
-        _snapshot(sheet);
+        RouteContext memory context = _prepareMint(request, legs);
         uint256 nativeBaseline = address(this).balance - msg.value;
-
-        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
-        IWETH(weth).deposit{ value: request.amountIn }();
-        uint256 wethAfter = IERC20(weth).balanceOf(address(this));
-        if (wethAfter != wethBefore + request.amountIn) {
-            revert TokenTransferMismatch(weth, request.amountIn, 0, wethAfter - wethBefore);
-        }
-        _executeLegs(sheet, legs);
-        shares = _mintMaximum(request.vault, assets, request.minShares, sheet);
+        _wrapExact(request.amountIn);
+        shares = _processMint(context, request, legs);
         (refundTokens, refundAmounts, nativeRefunded) =
-            _refundAndCloseNativeMint(sheet, msg.sender, nativeBaseline);
+            _refundAndCloseNativeMint(context.sheet, msg.sender, nativeBaseline);
 
         emit NativeBasketMinted(msg.sender, request.vault, request.amountIn, shares, nativeRefunded);
     }
@@ -261,31 +239,13 @@ contract OTFEntryExitRouter is Ownable2Step {
         nonReentrant
         returns (uint256 amountOut, address[] memory refundTokens, uint256[] memory refundAmounts)
     {
-        _validateRedeemRequest(request);
-        address[] memory assets = _validatedAssets(request.vault);
-        if (minBasketAmounts.length != assets.length) revert InvalidArrayLength();
-
-        BalanceSheet memory sheet = _newBalanceSheet();
-        _addToken(sheet, request.vault);
-        _addToken(sheet, request.outputToken);
-        _addAssets(sheet, assets);
-        _prepareLegs(sheet, legs, request.vault, address(0));
-        IOTFSettlementVault(request.vault).checkpointFees();
-        _snapshot(sheet);
-
-        _recordDebit(sheet, request.vault, request.shares);
-        _redeemBasket(request.vault, assets, request.shares, msg.sender, minBasketAmounts);
-        _executeLegs(sheet, legs);
-        _requireOnlyOutput(sheet, request.outputToken);
-        amountOut = _transientBalance(sheet, request.outputToken);
-        if (amountOut < request.minAmountOut) {
-            revert MinimumOutputNotMet(request.minAmountOut, amountOut);
-        }
-        _recordCredit(sheet, request.outputToken, amountOut);
+        RouteContext memory context = _prepareRedeem(request, minBasketAmounts, legs);
+        amountOut = _processRedeem(context, request, minBasketAmounts, legs);
+        _recordCredit(context.sheet, request.outputToken, amountOut);
         _pushExact(request.outputToken, msg.sender, amountOut);
         // Output-token callbacks must not reintroduce a constituent after liquidation.
-        _requireOnlyOutput(sheet, request.outputToken);
-        (refundTokens, refundAmounts) = _refundAndClose(sheet, msg.sender);
+        _requireOnlyOutput(context.sheet, request.outputToken);
+        (refundTokens, refundAmounts) = _refundAndClose(context.sheet, msg.sender);
 
         emit BasketRedeemed(
             msg.sender, request.vault, request.outputToken, request.shares, amountOut
@@ -305,40 +265,79 @@ contract OTFEntryExitRouter is Ownable2Step {
         if (request.outputToken != weth) {
             revert InvalidNativeEndpoint(request.outputToken);
         }
-        _validateRedeemRequest(request);
-        address[] memory assets = _validatedAssets(request.vault);
-        if (minBasketAmounts.length != assets.length) revert InvalidArrayLength();
-
-        BalanceSheet memory sheet = _newBalanceSheet();
-        _addToken(sheet, request.vault);
-        _addToken(sheet, weth);
-        _addAssets(sheet, assets);
-        _prepareLegs(sheet, legs, request.vault, address(0));
-        IOTFSettlementVault(request.vault).checkpointFees();
-        _snapshot(sheet);
+        RouteContext memory context = _prepareRedeem(request, minBasketAmounts, legs);
         uint256 nativeBaseline = address(this).balance;
-
-        _recordDebit(sheet, request.vault, request.shares);
-        _redeemBasket(request.vault, assets, request.shares, msg.sender, minBasketAmounts);
-        _executeLegs(sheet, legs);
-        _requireOnlyOutput(sheet, weth);
-        amountOut = _transientBalance(sheet, weth);
-        if (amountOut < request.minAmountOut) {
-            revert MinimumOutputNotMet(request.minAmountOut, amountOut);
-        }
+        amountOut = _processRedeem(context, request, minBasketAmounts, legs);
         IWETH(weth).withdraw(amountOut);
-        if (_transientBalance(sheet, weth) != 0) {
+        if (_transientBalance(context.sheet, weth) != 0) {
             revert ResidualBalance(
                 weth,
-                sheet.baselines[_tokenIndex(sheet, weth)],
+                context.sheet.baselines[_tokenIndex(context.sheet, weth)],
                 IERC20(weth).balanceOf(address(this))
             );
         }
         _sendNative(msg.sender, amountOut);
         _assertNativeBaseline(nativeBaseline);
-        (refundTokens, refundAmounts) = _refundAndClose(sheet, msg.sender);
+        (refundTokens, refundAmounts) = _refundAndClose(context.sheet, msg.sender);
 
         emit NativeBasketRedeemed(msg.sender, request.vault, request.shares, amountOut);
+    }
+
+    function _prepareMint(BasketMintRequest calldata request, SwapLeg[] calldata legs)
+        private
+        returns (RouteContext memory context)
+    {
+        _validateMintRequest(request);
+        context.assets = _validatedAssets(request.vault);
+        context.sheet = _newBalanceSheet();
+        _addToken(context.sheet, request.inputToken);
+        _addToken(context.sheet, request.vault);
+        _addAssets(context.sheet, context.assets);
+        _prepareLegs(context.sheet, legs, request.vault, address(0));
+        IOTFSettlementVault(request.vault).checkpointFees();
+        _snapshot(context.sheet);
+    }
+
+    function _processMint(
+        RouteContext memory context,
+        BasketMintRequest calldata request,
+        SwapLeg[] calldata legs
+    ) private returns (uint256 shares) {
+        _executeLegs(context.sheet, legs);
+        shares = _mintMaximum(request.vault, context.assets, request.minShares, context.sheet);
+    }
+
+    function _prepareRedeem(
+        BasketRedeemRequest calldata request,
+        uint256[] calldata minBasketAmounts,
+        SwapLeg[] calldata legs
+    ) private returns (RouteContext memory context) {
+        _validateRedeemRequest(request);
+        context.assets = _validatedAssets(request.vault);
+        if (minBasketAmounts.length != context.assets.length) revert InvalidArrayLength();
+        context.sheet = _newBalanceSheet();
+        _addToken(context.sheet, request.vault);
+        _addToken(context.sheet, request.outputToken);
+        _addAssets(context.sheet, context.assets);
+        _prepareLegs(context.sheet, legs, request.vault, address(0));
+        IOTFSettlementVault(request.vault).checkpointFees();
+        _snapshot(context.sheet);
+    }
+
+    function _processRedeem(
+        RouteContext memory context,
+        BasketRedeemRequest calldata request,
+        uint256[] calldata minBasketAmounts,
+        SwapLeg[] calldata legs
+    ) private returns (uint256 amountOut) {
+        _recordDebit(context.sheet, request.vault, request.shares);
+        _redeemBasket(request.vault, context.assets, request.shares, msg.sender, minBasketAmounts);
+        _executeLegs(context.sheet, legs);
+        _requireOnlyOutput(context.sheet, request.outputToken);
+        amountOut = _transientBalance(context.sheet, request.outputToken);
+        if (amountOut < request.minAmountOut) {
+            revert MinimumOutputNotMet(request.minAmountOut, amountOut);
+        }
     }
 
     /// @notice Redeems one OTF, routes its constituents, and mints another OTF atomically.
@@ -744,6 +743,15 @@ contract OTFEntryExitRouter is Ownable2Step {
         assembly ("memory-safe") {
             mstore(refundTokens, refundCount)
             mstore(refundAmounts, refundCount)
+        }
+    }
+
+    function _wrapExact(uint256 amount) private {
+        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
+        IWETH(weth).deposit{ value: amount }();
+        uint256 wethAfter = IERC20(weth).balanceOf(address(this));
+        if (wethAfter != wethBefore + amount) {
+            revert TokenTransferMismatch(weth, amount, 0, wethAfter - wethBefore);
         }
     }
 

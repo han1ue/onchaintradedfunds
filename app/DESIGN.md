@@ -190,7 +190,7 @@ The navigation surface floats away from the viewport edges with rounded ends, a 
 - **Do** label fund-page NAV-per-share and AUM as informational offchain valuation snapshots derived from current prices and onchain accounted balances; browser-local history never becomes a protocol oracle.
 - **Do** distinguish the permanent onchain fund thesis from offchain prices, market caps, percentages, methodology, and the fixed `$1` target.
 - **Do** render creation confirmation from the captured submitted payload, keeping navigation and resubmission locked while pending, successful, or receipt status is unknown; only a pre-broadcast failure or explicit onchain revert unlocks retry.
-- **Do** open a dedicated confirmation route only after verifying the successful factory event, show the transaction and new OTF address, and redirect to the live fund page after five seconds.
+- **Do** open a dedicated confirmation route only after verifying the successful factory event, show the transaction and new OTF address, and keep the user there until they explicitly open the live fund page.
 - **Do** keep route, fee, gas, and price-impact information separate.
 - **Do** leave production liquidity in its official venue with a leaving-app disclosure; keep the internal liquidity utility visibly testnet-only and USDG-only.
 - **Do** keep the splash to the product name, the fixed tagline, and one entry action within the first viewport below the warning.

@@ -19,7 +19,9 @@ to the launch manager, and 700 million to rewards, leaving the deployer with zer
 The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST use
 `MAX_SUPPLY`, not live supply, to construct deterministic start and final ticks. Bootstrap MUST hold
 150 million one-sided OTF and no supplied WETH. The reserved 50 million OTF MUST be used only for
-post-graduation permanent liquidity.
+post-graduation permanent liquidity. Its hook address MUST encode exactly `beforeInitialize` and
+`afterSwap`; every third-party attempt to initialize the canonical pool MUST revert, including while
+the predicted CREATE2 launch-manager address has no deployed code.
 
 Only reaching or crossing the final bootstrap tick MAY mark graduation ready. Finalization MUST be
 permissionless, settle the completed bootstrap position, combine its WETH proceeds with up to the

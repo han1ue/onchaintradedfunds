@@ -66,4 +66,13 @@ describe("$OTF page wiring", () => {
     expect(css).toContain("@media (max-width: 620px)");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
+
+  it("keeps the creation confirmation user-controlled and balances its details", () => {
+    const confirmation = operate.slice(operate.indexOf("function CreatedFundSurface"), operate.indexOf("function FundRouteSurface"));
+    expect(confirmation).not.toContain("window.location.replace");
+    expect(confirmation).not.toContain("redirectSeconds");
+    expect(confirmation).toContain("Open its fund page whenever you are ready.");
+    expect(confirmation).toContain(">View OTF<");
+    expect(confirmation.match(/className="createdDetailGroup"/gu)).toHaveLength(2);
+  });
 });

@@ -23,6 +23,9 @@ contract MockOTFSettlementVault is ERC20 {
     address public router;
     bool public failMint;
     bool public failRedeem;
+    uint256 public checkpointCalls;
+    uint256 public routerMintCalls;
+    uint256 public routerRedeemCalls;
 
     constructor(string memory name_, string memory symbol_, address[] memory assets_)
         ERC20(name_, symbol_)
@@ -53,7 +56,8 @@ contract MockOTFSettlementVault is ERC20 {
         return _assets;
     }
 
-    function checkpointFees() external pure returns (uint256 totalFeeShares) {
+    function checkpointFees() external returns (uint256 totalFeeShares) {
+        checkpointCalls++;
         return 0;
     }
 
@@ -78,6 +82,7 @@ contract MockOTFSettlementVault is ERC20 {
         onlyRouter
         returns (uint256[] memory amountsIn)
     {
+        routerMintCalls++;
         require(!failMint, "MINT_FAILED");
         if (maxAmountsIn.length != _assets.length) revert InvalidArrayLength();
         amountsIn = new uint256[](_assets.length);
@@ -97,6 +102,7 @@ contract MockOTFSettlementVault is ERC20 {
         address receiver,
         uint256[] calldata minAmountsOut
     ) external onlyRouter returns (uint256[] memory amountsOut) {
+        routerRedeemCalls++;
         require(!failRedeem, "REDEEM_FAILED");
         if (minAmountsOut.length != _assets.length) revert InvalidArrayLength();
         _spendAllowance(owner, msg.sender, shares);

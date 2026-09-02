@@ -104,6 +104,62 @@ contract OTFEntryExitRouterNativeTest is AtomicRouterTestBase {
         assertEq(address(router).balance, 0);
     }
 
+    function testTokenAndNativeMintsShareBasketProcessingWithDistinctFunding() public {
+        SwapLeg[] memory tokenLegs = new SwapLeg[](2);
+        tokenLegs[0] = _leg(adapterA, address(input), address(assetC), ONE, ONE);
+        tokenLegs[1] = _leg(adapterB, address(input), address(assetD), ONE, ONE);
+        SwapLeg[] memory nativeLegs = new SwapLeg[](2);
+        nativeLegs[0] = _leg(adapterA, address(weth), address(assetC), ONE, ONE);
+        nativeLegs[1] = _leg(adapterB, address(weth), address(assetD), ONE, ONE);
+        uint256 inputBefore = input.balanceOf(ALICE);
+        uint256 nativeBefore = ALICE.balance;
+
+        vm.prank(ALICE);
+        router.mintFromToken(_mintRequest(2 * ONE, ONE), tokenLegs);
+
+        assertEq(targetVault.checkpointCalls(), 1);
+        assertEq(targetVault.routerMintCalls(), 1);
+        assertEq(input.balanceOf(ALICE), inputBefore - 2 * ONE);
+        assertEq(ALICE.balance, nativeBefore);
+
+        vm.prank(ALICE);
+        router.mintFromNative{ value: 2 * ONE }(_nativeMintRequest(2 * ONE, ONE), nativeLegs);
+
+        assertEq(targetVault.checkpointCalls(), 2);
+        assertEq(targetVault.routerMintCalls(), 2);
+        assertEq(targetVault.balanceOf(ALICE), 2 * ONE);
+        assertEq(input.balanceOf(ALICE), inputBefore - 2 * ONE);
+        assertEq(ALICE.balance, nativeBefore - 2 * ONE);
+        _assertRouterClean();
+    }
+
+    function testTokenAndNativeRedeemsShareBasketProcessingWithDistinctPayouts() public {
+        SwapLeg[] memory tokenLegs = new SwapLeg[](2);
+        tokenLegs[0] = _leg(adapterA, address(assetA), address(input), ONE, ONE);
+        tokenLegs[1] = _leg(adapterB, address(assetB), address(input), ONE, ONE);
+        uint256 inputBefore = input.balanceOf(ALICE);
+        uint256 nativeBefore = ALICE.balance;
+
+        vm.prank(ALICE);
+        router.redeemToToken(_redeemRequest(ONE, 2 * ONE), _zeroMinimums(), tokenLegs);
+
+        assertEq(sourceVault.checkpointCalls(), 1);
+        assertEq(sourceVault.routerRedeemCalls(), 1);
+        assertEq(input.balanceOf(ALICE), inputBefore + 2 * ONE);
+        assertEq(ALICE.balance, nativeBefore);
+
+        vm.prank(ALICE);
+        router.redeemToNative(
+            _nativeRedeemRequest(ALICE, ONE, 2 * ONE), _zeroMinimums(), _nativeRedemptionLegs()
+        );
+
+        assertEq(sourceVault.checkpointCalls(), 2);
+        assertEq(sourceVault.routerRedeemCalls(), 2);
+        assertEq(input.balanceOf(ALICE), inputBefore + 2 * ONE);
+        assertEq(ALICE.balance, nativeBefore + 2 * ONE);
+        _assertRouterClean();
+    }
+
     function testNativeMintEnforcesExactNonzeroValueAndCanonicalWeth() public {
         BasketMintRequest memory request = _nativeMintRequest(2 * ONE, ONE);
         SwapLeg[] memory legs = new SwapLeg[](0);

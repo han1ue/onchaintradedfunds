@@ -82,6 +82,16 @@ function shortAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+function trimTrailingDecimalZeros(value: string): string {
+  return value.includes(".") ? value.replace(/0+$/u, "").replace(/\.$/u, "") : value;
+}
+
+function formatCompactUsd(value: string): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return value;
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(amount);
+}
+
 function fixedInput(value: string, decimals: number): string | undefined {
   const normalized = value.replace(/,/gu, "");
   if (!new RegExp(`^\\d*(?:\\.\\d{0,${decimals}})?$`, "u").test(normalized)) return undefined;
@@ -114,7 +124,7 @@ function applyMarketCapDefaults(assets: readonly CreationAssetData[]): SelectedA
   const percentages = resetToMarketCapPercentageUnits(assets.map((asset) => asset.marketCapUsd));
   return assets.map((asset, index) => ({
     ...asset,
-    percentageInput: formatPercentageExact(percentages[index]),
+    percentageInput: formatPercentageInput(percentages[index]),
     percentageUnits: percentages[index],
   }));
 }
@@ -133,7 +143,7 @@ function selectionForWeightMode(
     const existing = current.find((candidate) => candidate.address === asset.address);
     return existing && !marketCapWeighted ? existing : {
       ...asset,
-      percentageInput: formatPercentageExact(percentages[index]),
+      percentageInput: formatPercentageInput(percentages[index]),
       percentageUnits: percentages[index],
     };
   });
@@ -515,10 +525,10 @@ export function CreateOTFForm() {
                   <span>{marketCapWeighted ? "Weights automatically follow current market caps." : "Manual weights stay unchanged when assets are added or removed."}</span>
                 </div>
                 <div className="constituentsActions">
-                  <span id="basket-percentage-total" className={`stateBadge ${percentagesValid ? "success" : "danger"}`} role="status" aria-live="polite">{percentagesValid ? "100%" : `${formatPercentageDisplay(totalPercentage)} total`}</span>
                   <button className={`secondaryAction compactAction weightingModeButton${marketCapWeighted ? " selected" : ""}`} type="button" aria-pressed={marketCapWeighted} disabled={!selectedAssets.length} onClick={resetMarketCapWeights}>{marketCapWeighted ? <Check size={13} /> : <RotateCcw size={13} />}Market-cap weighted</button>
                 </div>
               </div>
+              <span id="basket-percentage-total" className="visuallyHidden" role="status" aria-live="polite">Allocation total: {formatPercentageDisplay(totalPercentage)}</span>
 
               <div className="allocationComposer">
                 <div className="allocationChartPanel combinedAllocationOverview">
@@ -528,6 +538,7 @@ export function CreateOTFForm() {
                   <div className="allocationLegend">
                     {selectedAssets.map((asset, index) => <div key={asset.address}><span style={{ background: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }} /><strong>{asset.symbol}</strong><small>{formatPercentageDisplay(asset.percentageUnits)}</small></div>)}
                   </div>
+                  <button type="button" className="secondaryAction addCreateAsset" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onClick={() => remainingAssets[0] && addAsset(remainingAssets[0].address)}><Plus size={14} />Add constituent</button>
                 </div>
 
                 <div className="createAssetList combinedConstituentList">
@@ -550,12 +561,12 @@ export function CreateOTFForm() {
                       </label>
                       <label className="constituentWeightField">
                         <span>Weight</span>
-                        <div className="inputWithSuffix"><input inputMode="decimal" value={focusedPercentage === asset.address ? asset.percentageInput : formatPercentageInput(asset.percentageUnits)} onFocus={(event) => { flushSync(() => setFocusedPercentage(asset.address)); event.currentTarget.select(); }} onBlur={() => setFocusedPercentage(undefined)} onChange={(event) => editPercentage(asset.address, event.target.value)} aria-label={`${asset.symbol} percentage`} aria-invalid={!percentagesValid || Boolean(assetError)} aria-describedby={`basket-percentage-total ${percentageHelpId}`} title={`Exact internal weight: ${formatPercentageExact(asset.percentageUnits)}%`} /><span>%</span></div>
+                        <div className="inputWithSuffix"><input inputMode="decimal" value={focusedPercentage === asset.address ? asset.percentageInput : formatPercentageInput(asset.percentageUnits)} onFocus={(event) => { flushSync(() => setFocusedPercentage(asset.address)); event.currentTarget.select(); }} onBlur={() => { setFocusedPercentage(undefined); setSelectedAssets((current) => current.map((currentAsset) => currentAsset.address === asset.address ? { ...currentAsset, percentageInput: formatPercentageInput(currentAsset.percentageUnits) } : currentAsset)); }} onChange={(event) => editPercentage(asset.address, event.target.value)} aria-label={`${asset.symbol} percentage`} aria-invalid={!percentagesValid || Boolean(assetError)} aria-describedby={`basket-percentage-total ${percentageHelpId}`} title={`Exact internal weight: ${formatPercentageExact(asset.percentageUnits)}%`} /><span>%</span></div>
                         <small id={percentageHelpId}>{result ? `Minimum ${result.minimumPercentage}` : "Minimum unavailable"}</small>
                       </label>
                       <div className="constituentAssetFacts">
-                        <span>Current price <strong>${asset.priceUsd}</strong></span>
-                        <span>Market cap <strong>${asset.marketCapUsd}</strong></span>
+                        <span>Current price <strong>${trimTrailingDecimalZeros(asset.priceUsd)}</strong></span>
+                        <span>Market cap <strong>${formatCompactUsd(asset.marketCapUsd)}</strong></span>
                         <span>Quantity per OTF <strong>{result && result.rawQuantity > 0n ? `${result.tokenQuantity} ${asset.symbol}` : "—"}</strong></span>
                       </div>
                       <button className="removeCreateAsset" type="button" aria-label={`Remove ${asset.symbol}`} onClick={() => removeAsset(asset.address)}><Trash2 size={14} /></button>
@@ -565,7 +576,6 @@ export function CreateOTFForm() {
                   })}
                 </div>
               </div>
-              <button type="button" className="secondaryAction addCreateAsset" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onClick={() => remainingAssets[0] && addAsset(remainingAssets[0].address)}><Plus size={14} />Add constituent</button>
               {!selectedAssets.length ? <div className="inlineEmptyState">{assetLoadState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} aria-label="Please wait" /> : <Plus size={17} />}<div>{assetLoadState === "loading" ? null : <><strong>Select at least one priced asset</strong><span>The app needs current price, market cap and token decimals before it can calculate raw bootstrap units.</span></>}</div></div> : null}
               {basketGlobalError && selectedAssets.length ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Basket calculation needs attention</strong><span>{basketGlobalError}</span></div></div> : null}
               {marketCapSnapshotAt ? <small className="constituentsSnapshot">Prices and market caps: {formatMarketCapSnapshotTimestamp(marketCapSnapshotAt)}.</small> : null}
@@ -586,7 +596,7 @@ export function CreateOTFForm() {
 
           {step === 3 ? (
             <div className="formSection reviewSection">
-              <div className="reviewHero"><span className="vaultMonogram">NEW</span><div><h2>{reviewSnapshot.name || "Unnamed OTF"}</h2><span>{reviewSnapshot.symbol || "No ticker"} · created empty by {reviewSnapshot.creator ? shortAddress(reviewSnapshot.creator) : "the connected wallet"}</span></div></div>
+              <div className="reviewHero"><span className="vaultMonogram" title={reviewSnapshot.name || "Unnamed OTF"}>{reviewSnapshot.name || "OTF"}</span><div><h2>{reviewSnapshot.name || "Unnamed OTF"}</h2><span>{reviewSnapshot.symbol || "No ticker"} · created empty by {reviewSnapshot.creator ? shortAddress(reviewSnapshot.creator) : "the connected wallet"}</span></div></div>
               <div className="reviewGrid">
                 <div><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.annualExpenseRatioBps)}</strong></div>
                 <div><span>Mint fee</span><strong>{formatAnnualExpenseRatioPercentage(reviewSnapshot.mintFeeBps)}</strong></div>

@@ -228,6 +228,12 @@ assert(/block\.chainid,\s*address\(this\),\s*account,\s*cumulativeEntitlement/u.
 const launchSource = readFileSync(join(contracts, "src", "OTFLaunchManager.sol"), "utf8");
 assert(!/function\s+(?:withdraw|removeLiquidity|reprice|rebalance|migrate)/iu.test(launchSource), "launch manager exposes permanent-liquidity control");
 assert(/LP_FEE\s*=\s*0/u.test(launchSource), "OTF V4 pool fee is not statically zero");
+assert(/BEFORE_INITIALIZE_FLAG\s*=\s*1\s*<<\s*13/u.test(launchSource), "launch manager is missing the beforeInitialize hook flag");
+assert(/REQUIRED_HOOK_FLAGS\s*=\s*BEFORE_INITIALIZE_FLAG\s*\|\s*AFTER_SWAP_FLAG/u.test(launchSource), "launch manager hook permissions are not exactly beforeInitialize + afterSwap");
+assert(/&\s*ALL_HOOK_MASK\s*==\s*REQUIRED_HOOK_FLAGS/u.test(launchSource), "launch manager does not enforce the exact required hook flags");
+assert(/function\s+beforeInitialize\s*\(\s*address\s+initializer,\s*UniswapV4PoolKey\s+calldata,\s*uint160\s*\)/u.test(launchSource), "launch manager is missing the typed beforeInitialize callback");
+assert(/msg\.sender\s*!=\s*poolManager/u.test(launchSource), "launch callbacks do not authenticate the immutable PoolManager");
+assert(/initializer\s*!=\s*address\(this\)/u.test(launchSource), "launch manager does not reject non-self pool initializers");
 
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
@@ -238,6 +244,8 @@ for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "Mer
   assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
 }
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
+assert(/requiredLaunchHookFlags\s*=\s*0x2040n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2040");
+assert(/BigInt\(predicted\)\s*&\s*allHookFlags\)\s*===\s*requiredLaunchHookFlags/u.test(deploySource), "deployment does not enforce the launch hook mask during CREATE2 mining");
 for (const setting of ["UNISWAP_V4_POOL_MANAGER_CODEHASH", "UNISWAP_V4_STATE_VIEW_CODEHASH", "UNISWAP_V4_POSITION_MANAGER_CODEHASH", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH", "PERMIT2_CODEHASH"]) {
   assert(deploySource.includes(setting), `deployment does not require ${setting}`);
 }

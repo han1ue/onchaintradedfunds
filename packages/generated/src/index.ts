@@ -5626,6 +5626,62 @@ export const otfLaunchManagerAbi = [
   },
   {
     "type": "function",
+    "name": "beforeInitialize",
+    "inputs": [
+      {
+        "name": "initializer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct UniswapV4PoolKey",
+        "components": [
+          {
+            "name": "currency0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "currency1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "tickSpacing",
+            "type": "int24",
+            "internalType": "int24"
+          },
+          {
+            "name": "hooks",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "",
+        "type": "uint160",
+        "internalType": "uint160"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "bootstrapLiquidity",
     "inputs": [],
     "outputs": [
@@ -6314,6 +6370,17 @@ export const otfLaunchManagerAbi = [
     "type": "error",
     "name": "Reentrancy",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnauthorizedInitializer",
+    "inputs": [
+      {
+        "name": "initializer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

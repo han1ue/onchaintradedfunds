@@ -55,7 +55,9 @@ contract OTFLaunchManager {
         264_098_189_381_177_432_725_832_505_983_777;
 
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
+    uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;
     uint160 private constant AFTER_SWAP_FLAG = 1 << 6;
+    uint160 private constant REQUIRED_HOOK_FLAGS = BEFORE_INITIALIZE_FLAG | AFTER_SWAP_FLAG;
     bytes1 private constant MINT_POSITION_ACTION = 0x02;
     bytes1 private constant BURN_POSITION_ACTION = 0x03;
     bytes1 private constant SETTLE_PAIR_ACTION = 0x0d;
@@ -68,6 +70,7 @@ contract OTFLaunchManager {
     error InvalidPhase(Phase expected, Phase actual);
     error InsufficientLaunchTokens(uint256 required, uint256 actual);
     error UnauthorizedPoolManager(address caller);
+    error UnauthorizedInitializer(address initializer);
     error InvalidPool();
     error GraduationTickNotReached(int24 currentTick, int24 finalTick);
     error ZeroLiquidity();
@@ -177,7 +180,18 @@ contract OTFLaunchManager {
     }
 
     function hookPermissionsValid() public view returns (bool) {
-        return uint160(address(this)) & ALL_HOOK_MASK == AFTER_SWAP_FLAG;
+        return uint160(address(this)) & ALL_HOOK_MASK == REQUIRED_HOOK_FLAGS;
+    }
+
+    /// @notice Uniswap V4 beforeInitialize hook. PoolManager skips this callback for hook self-calls.
+    function beforeInitialize(address initializer, UniswapV4PoolKey calldata, uint160)
+        external
+        view
+        returns (bytes4)
+    {
+        if (msg.sender != poolManager) revert UnauthorizedPoolManager(msg.sender);
+        if (initializer != address(this)) revert UnauthorizedInitializer(initializer);
+        return this.beforeInitialize.selector;
     }
 
     function initializeLaunch() external nonReentrant {

@@ -205,6 +205,8 @@ const encodedConstructorArgs = encodeAbiParameters(
   launchConstructorArgs,
 );
 const launchInitCodeHash = keccak256(concatHex([bytecode("OTFLaunchManager"), encodedConstructorArgs]));
+const allHookFlags = 0x3fffn;
+const requiredLaunchHookFlags = 0x2040n;
 let launchSalt;
 let launchAddress;
 for (let candidate = 0n; candidate < 1_000_000n; candidate++) {
@@ -214,13 +216,18 @@ for (let candidate = 0n; candidate < 1_000_000n; candidate++) {
     salt,
     bytecodeHash: launchInitCodeHash,
   });
-  if ((BigInt(predicted) & 0x3fffn) === 0x40n) {
+  if ((BigInt(predicted) & allHookFlags) === requiredLaunchHookFlags) {
     launchSalt = salt;
     launchAddress = getAddress(predicted);
     break;
   }
 }
-if (!launchSalt || !launchAddress) throw new Error("Could not mine afterSwap hook address");
+if (!launchSalt || !launchAddress) {
+  throw new Error("Could not mine beforeInitialize + afterSwap hook address with mask 0x2040");
+}
+if ((BigInt(launchAddress) & allHookFlags) !== requiredLaunchHookFlags) {
+  throw new Error("Mined launch-manager hook address does not have the exact 0x2040 mask");
+}
 const launchDeploymentTx = await transact(
   { ...launchManagerDeployer, name: "OTFLaunchManagerDeployer" },
   "deploy",
