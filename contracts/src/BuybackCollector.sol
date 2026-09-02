@@ -125,7 +125,7 @@ contract BuybackCollector is Ownable2Step {
         _requireContract(router);
         for (uint256 i = 0; i < legs.length; i++) {
             SwapLeg calldata leg = legs[i];
-            if (!OTFEntryExitRouter(router).isAdapterApproved(leg.adapter)) {
+            if (!OTFEntryExitRouter(payable(router)).isAdapterApproved(leg.adapter)) {
                 revert UnapprovedAdapter(leg.adapter);
             }
             if (
@@ -138,7 +138,7 @@ contract BuybackCollector is Ownable2Step {
 
         uint256 wethBefore = IERC20(weth).balanceOf(address(this));
         _approveExact(vault, router, feeShares);
-        (uint256 reportedWeth,,) = OTFEntryExitRouter(router)
+        (uint256 reportedWeth,,) = OTFEntryExitRouter(payable(router))
             .redeemToToken(
                 BasketRedeemRequest({
                 vault: vault,

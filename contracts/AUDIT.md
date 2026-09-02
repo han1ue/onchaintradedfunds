@@ -13,3 +13,7 @@ This scope has not received an independent audit. Compiler, lint, unit, integrat
 deployment-rehearsal, bytecode-binding, and frontend checks in this repository are engineering gates,
 not substitutes for an audit. See `docs/content/security.mdx` and
 `docs/content/protocol-security-spec.mdx` for the current trust model and normative invariants.
+
+The entry/exit-router review scope includes its immutable canonical-WETH boundary, exact-value
+native minting, atomic WETH redemption and payout, donation preservation, callback/reentrancy rules,
+checked native sends, and the invariant that native markers never enter `SwapLeg[]` adapter routes.

@@ -5,4 +5,5 @@ The project security policy, threat model, trust assumptions, and production blo
 The root-publishing multisig, buyback route executor, adapter manager, production ETH/USD oracle,
 approved adapters, and configured Uniswap deployments are explicit trust boundaries. The current v2
 scope is unaudited and deployed only on testnet. Fresh independent review is required before any
-production use.
+production use. Native ETH is accepted only by explicit entry/exit endpoints, normalized to the
+router's immutable canonical WETH, and never passed to a vault or adapter leg.

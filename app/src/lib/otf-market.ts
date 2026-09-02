@@ -84,9 +84,9 @@ export function burnedSupply(maxSupply: bigint, totalSupply: bigint) {
 export function feeBenefitRows() {
   return [
     { otf: "0", creator: "50%", buyback: "50%" },
-    { otf: "1m", creator: "≈62.6%", buyback: "≈37.4%" },
+    { otf: "1m", creator: "62.64%", buyback: "37.36%" },
     { otf: "2.5m", creator: "70%", buyback: "30%" },
-    { otf: "5m", creator: "≈78.3%", buyback: "≈21.7%" },
+    { otf: "5m", creator: "78.28%", buyback: "21.72%" },
     { otf: "10m+", creator: "90%", buyback: "10%" },
   ] as const;
 }

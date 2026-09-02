@@ -5,7 +5,9 @@ Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator com
 This repository contains the Solidity protocol, the operating application, and a separate prelaunch competition. The protocol is pre-mainnet, unaudited, and not production-ready.
 
 Basket settlement uses a generic, ordered `SwapLeg[]` boundary. The owner-managed
-`OTFEntryExitRouter` approves narrowly bound trade adapters. `UniswapV3Adapter` accepts only a
+`OTFEntryExitRouter` approves narrowly bound trade adapters and exposes explicit native-ETH mint and
+redeem endpoints. Native ETH is wrapped to its immutable canonical WETH at the user boundary; every
+vault, adapter leg, pool, buyback, and accounting path remains ERC-20/WETH-only. `UniswapV3Adapter` accepts only a
 validated packed V3 path. `UniswapV4Adapter` accepts only bounded typed V4 pool keys, authenticates
 them through StateView, and constructs its fixed Universal Router actions internally. Ordinary pool
 swaps bypass the entry router. Production quotes use the same-origin Uniswap Trading API integration;
@@ -24,9 +26,11 @@ changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 mill
 buyback collector redeems fee shares through typed adapter routes, converts proceeds to WETH, buys
 only through the canonical pool, and burns the purchased OTF.
 
-The Swap product requires a fund share or the protocol OTF token on at least one side. It is not a
-general token-to-token exchange. WETH/OTF trades directly through the canonical V4 pool from both
-Swap and the dedicated `$OTF` page.
+The shared Swap product requires a fund share or the protocol OTF token on at least one side. It is
+not a general token-to-token exchange. ETH and WETH are distinct selectable boundary assets; ETH is
+wrapped or unwrapped atomically without a separate user action. The `/token` page embeds this same
+Swap implementation and defaults to the configured protocol OTF token rather than maintaining a
+second execution flow.
 
 `app/src/config/robinhood-testnet-assets.json` is the testnet routing catalog. It separates USDG and WETH
 quote assets from the five supported fund constituents and records their active Synthra pools. The

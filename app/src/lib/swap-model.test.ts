@@ -13,6 +13,7 @@ import {
   isPositiveDecimalAmount,
   liquidityActionLabel,
   pastedAsset,
+  nativeMaxAmount,
   parseTypedQuoteResponse,
   quoteNeedsRefresh,
   requestConcurrentQuotes,
@@ -59,6 +60,8 @@ const FUND_A: SwapAsset = {
 };
 const FUND_B: SwapAsset = { ...FUND_A, address: "0x0000000000000000000000000000000000000003", symbol: "NEXT" };
 const BACKING = "0x0000000000000000000000000000000000000005" as const;
+const ETH: SwapAsset = { ...USDG, address: BACKING, symbol: "ETH", name: "Ether", kind: "native" };
+const WETH: SwapAsset = { ...USDG, address: BACKING, symbol: "WETH", name: "Wrapped Ether", kind: "erc20" };
 const CALLER = "0x00000000000000000000000000000000000000c0" as const;
 const ROUTER = "0x00000000000000000000000000000000000000e1" as const;
 const ADAPTER = "0x00000000000000000000000000000000000000a1" as const;
@@ -126,6 +129,9 @@ function directResponse(overrides: Record<string, unknown> = {}) {
       minAmountOut: minimum.toString(),
       expiresAtMs: NOW + 10_000,
       quoteToken: "sealed",
+      nativeInput: false,
+      nativeOutput: false,
+      nativeValue: "0",
       approval: {
         chainId: 4663,
         from: CALLER,
@@ -175,6 +181,7 @@ function basketResponse(overrides: Record<string, unknown> = {}) {
       router: ROUTER,
       adapter: ADAPTER,
       approval: { token: USDG.address, spender: ROUTER, amount: amount.toString() },
+      nativeValue: "0",
       funding: [{ token: USDG.address, amount: amount.toString() }],
       method: "mintFromToken",
       request: {
@@ -214,6 +221,15 @@ describe("swap state model", () => {
     expect(supportedSwapDirection(USDG, PROTOCOL_OTF)).toBe(true);
     expect(supportedSwapDirection(USDG, FUND_A)).toBe(true);
     expect(swapDirectionLabel(USDG, TOKEN)).toBe("ERC-20 → ERC-20");
+  });
+
+  it("keeps native ETH distinct from WETH and reserves gas for Max", () => {
+    expect(ETH.kind).toBe("native");
+    expect(WETH.kind).toBe("erc20");
+    expect(assetHasExecutableMetadata(ETH)).toBe(true);
+    expect(supportedSwapDirection(ETH, PROTOCOL_OTF)).toBe(true);
+    expect(nativeMaxAmount(10n, 2n, 3n)).toBe(4n);
+    expect(nativeMaxAmount(5n, 2n, 3n)).toBe(0n);
   });
 
   it("does not quote an ERC20-to-ERC20 pair", async () => {
@@ -274,6 +290,25 @@ describe("swap state model", () => {
     const parsed = parseTypedQuoteResponse(directResponse(), directContext());
     expect(parsed.execution).toMatchObject({ kind: "direct-api", universalRouter: UNIVERSAL_ROUTER, amountIn: 10n * 10n ** 18n });
     expect(parsed.expectedOutputRaw).toBe(9_500_000_000_000_000_000n);
+  });
+
+  it("accepts native direct input only with an exact value and no approval or permit", () => {
+    const amount = 10n * 10n ** 18n;
+    const response = directResponse();
+    const execution = {
+      ...(response.execution as Record<string, unknown>),
+      inputToken: BACKING,
+      outputToken: PROTOCOL_OTF.address,
+      nativeInput: true,
+      nativeValue: amount.toString(),
+      approval: undefined,
+    };
+    const context = { ...directContext(), request: request(ETH, PROTOCOL_OTF, 4663) };
+    const parsed = parseTypedQuoteResponse({ ...response, execution }, context);
+    expect(parsed.execution).toMatchObject({ nativeInput: true, nativeValue: amount });
+    expect(parsed.execution?.kind === "direct-api" ? parsed.execution.approval : undefined).toBeUndefined();
+    expect(() => parseTypedQuoteResponse({ ...response, execution: { ...execution, nativeValue: "0" } }, context)).toThrow(/native transaction value/);
+    expect(() => parseTypedQuoteResponse({ ...response, execution: { ...execution, approval: (response.execution as Record<string, unknown>).approval } }, context)).toThrow(/Native input/);
   });
 
   it.each([

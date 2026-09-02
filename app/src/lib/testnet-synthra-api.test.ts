@@ -23,6 +23,7 @@ const TEST_DEPLOYMENT = {
   factory: "0x00000000000000000000000000000000000000d1",
   entryRouter: "0x00000000000000000000000000000000000000d2",
   uniswapV3Adapter: "0x00000000000000000000000000000000000000d3",
+  nativeBasketReady: true,
 } as const;
 
 const usdg = testnetAssetById("usdg")!;
@@ -148,6 +149,29 @@ describe("Synthra testnet quote planner", () => {
     expect(result.status).toBe(200);
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
     expect(execution.path).toBe(encodeV3Path([weth.address, usdg.address, OTF_A], [100, 500]));
+  });
+
+  it("keeps unsafe native direct routes unavailable and uses explicit native basket calls", async () => {
+    const eth = { ...asset(weth), kind: "native" as const };
+    const direct = await quoteTestnetSwap(plannerRequest(eth, otf(OTF_A)), dependencies());
+    expect(direct.body).toMatchObject({ state: "unavailable", route: "direct" });
+
+    const mint = plannerRequest(eth, otf(OTF_A), "basket");
+    const mintResult = await quoteTestnetSwap(mint, dependencies());
+    expect(parseResponse(mintResult.body, mint).execution).toMatchObject({
+      kind: "basket-router",
+      approval: undefined,
+      nativeValue: 10n ** 18n,
+      call: { method: "mintFromNative" },
+    });
+
+    const redeem = plannerRequest(otf(OTF_A), eth, "basket");
+    const redeemResult = await quoteTestnetSwap(redeem, dependencies());
+    expect(parseResponse(redeemResult.body, redeem).execution).toMatchObject({
+      kind: "basket-router",
+      nativeValue: 0n,
+      call: { method: "redeemToNative" },
+    });
   });
 
   it("rejects disallowed pairs without touching the routing client", async () => {

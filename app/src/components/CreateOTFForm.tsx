@@ -10,6 +10,7 @@ import {
   CircleAlert,
   FilePlus2,
   LoaderCircle,
+  LockKeyhole,
   Plus,
   RotateCcw,
   Trash2,
@@ -579,7 +580,7 @@ export function CreateOTFForm() {
                 <label><span>Redeem fee</span><div className="inputWithSuffix"><input inputMode="decimal" value={redeemFee} onChange={(event) => { const next = fixedInput(event.target.value, 2); if (next !== undefined) { setRedeemFee(next); resetSubmission(); } }} aria-invalid={!Number.isInteger(redeemFeeBps) || redeemFeeBps < 0 || redeemFeeBps > 100} aria-describedby="create-redeem-fee-help" /><span>%</span></div><small id="create-redeem-fee-help">Immutable; defaults to 0%, maximum 1%. Shutdown exits are free.</small></label>
                 <label><span>Fixed beneficiary</span><input value={beneficiary} onChange={(event) => { setBeneficiary(event.target.value.trim()); resetSubmission(); }} placeholder="0x…" aria-invalid={!isAddress(beneficiary) || beneficiary.toLowerCase() === zeroAddress} aria-describedby="create-beneficiary-help" /><small id="create-beneficiary-help">Receives the creator share of accrued fee shares.</small></label>
               </div>
-              <aside className="riskCallout warning"><CircleAlert size={15} /><div><strong>All three fee rates are permanent.</strong><span>Accounted OTF changes only the creator versus buyback-and-burn split; it never changes the investor&apos;s configured fee rate.</span></div></aside>
+              <aside className="feePermanenceNote"><LockKeyhole size={15} /><div><strong>All three fee rates are permanent.</strong><span>Accounted OTF changes only the creator versus buyback-and-burn split; it never changes the investor&apos;s configured fee rate.</span></div></aside>
             </div>
           ) : null}
 

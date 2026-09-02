@@ -16,7 +16,7 @@ import {
 } from "./deployment";
 import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
 
-export type SwapAssetKind = "erc20" | "otf";
+export type SwapAssetKind = "native" | "erc20" | "otf";
 
 export type SwapAsset = {
   address: Address;
@@ -59,6 +59,8 @@ export type MintRouterCall = {
   ];
 };
 
+export type NativeMintRouterCall = Omit<MintRouterCall, "method"> & { method: "mintFromNative" };
+
 export type RedeemRouterCall = {
   method: "redeemToToken";
   args: readonly [
@@ -67,6 +69,8 @@ export type RedeemRouterCall = {
     readonly AdapterSwapLeg[],
   ];
 };
+
+export type NativeRedeemRouterCall = Omit<RedeemRouterCall, "method"> & { method: "redeemToNative" };
 
 export type BasketToBasketRouterCall = {
   method: "swapBasketToBasket";
@@ -77,7 +81,7 @@ export type BasketToBasketRouterCall = {
   ];
 };
 
-export type TypedRouterCall = MintRouterCall | RedeemRouterCall | BasketToBasketRouterCall;
+export type TypedRouterCall = MintRouterCall | NativeMintRouterCall | RedeemRouterCall | NativeRedeemRouterCall | BasketToBasketRouterCall;
 
 export type PlannedTransaction = {
   chainId: number;
@@ -105,6 +109,9 @@ export type DirectApiExecution = {
   minAmountOut: bigint;
   expiresAt: number;
   quoteToken: string;
+  nativeInput: boolean;
+  nativeOutput: boolean;
+  nativeValue: bigint;
   approval?: PlannedTransaction;
   cancel?: PlannedTransaction;
   permitData?: PermitData;
@@ -132,7 +139,8 @@ export type BasketRouterExecution = {
   caller: Address;
   router: Address;
   adapter: Address;
-  approval: { token: Address; spender: Address; amount: bigint };
+  approval?: { token: Address; spender: Address; amount: bigint };
+  nativeValue: bigint;
   funding: readonly { token: Address; amount: bigint }[];
   call: TypedRouterCall;
 };
@@ -303,13 +311,18 @@ export function assetHasExecutableMetadata(asset: SwapAsset): boolean {
     && Number.isInteger(asset.decimals)
     && asset.decimals >= 0
     && asset.decimals <= 36
-    && (asset.kind === "erc20" || asset.isFactoryVault === true);
+    && (asset.kind === "native" || asset.kind === "erc20" || asset.isFactoryVault === true);
 }
 
 export function validSwapPair(input: SwapAsset, output: SwapAsset): boolean {
   return input.address !== zeroAddress
     && output.address !== zeroAddress
-    && input.address.toLowerCase() !== output.address.toLowerCase();
+    && (input.kind !== output.kind || input.address.toLowerCase() !== output.address.toLowerCase());
+}
+
+export function nativeMaxAmount(balance: bigint, estimatedGas: bigint, maxFeePerGas: bigint): bigint {
+  const reserve = estimatedGas * maxFeePerGas;
+  return balance > reserve ? balance - reserve : 0n;
 }
 
 export function decimalAmount(value: string, decimals = 18): bigint | undefined {
@@ -515,7 +528,7 @@ export function parseV3Path(path: Hex, venue: SwapRouteHop["venue"] = "Uniswap V
 function parseTransaction(
   value: unknown,
   label: string,
-  binding: { chainId: number; caller: Address; target: Address; spender?: Address; amount?: bigint },
+  binding: { chainId: number; caller: Address; target: Address; value?: bigint; spender?: Address; amount?: bigint },
 ): PlannedTransaction {
   const transaction = object(value, label);
   exactKeys(transaction, ["chainId", "from", "to", "data", "value"], label);
@@ -527,7 +540,7 @@ function parseTransaction(
     value: uint(transaction.value, `${label}.value`),
   };
   if (parsed.chainId !== binding.chainId || !sameAddress(parsed.from, binding.caller)) throw new Error(`${label} has the wrong chain or sender.`);
-  if (!sameAddress(parsed.to, binding.target) || parsed.value !== 0n) throw new Error(`${label} has an unsupported target or native value.`);
+  if (!sameAddress(parsed.to, binding.target) || parsed.value !== (binding.value ?? 0n)) throw new Error(`${label} has an unsupported target or native value.`);
   if (binding.spender) {
     let decoded: ReturnType<typeof decodeFunctionData<typeof ERC20_APPROVE_ABI>>;
     try {
@@ -572,7 +585,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   const execution = object(value, "execution");
   exactKeys(execution, [
     "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
-    "expiresAtMs", "quoteToken", "approval", "cancel", "permitData", "transaction",
+    "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "approval", "cancel", "permitData", "transaction",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "direct-api") throw new Error("Direct quote has the wrong execution kind.");
   const plan: DirectApiExecution = {
@@ -586,6 +599,9 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
     expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
     quoteToken: string(execution.quoteToken, "execution.quoteToken"),
+    nativeInput: execution.nativeInput === true,
+    nativeOutput: execution.nativeOutput === true,
+    nativeValue: uint(execution.nativeValue, "execution.nativeValue"),
   };
   if (
     plan.chainId !== context.chainId
@@ -594,10 +610,14 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     || !sameAddress(plan.outputToken, context.request.output.address)
     || !sameAddress(plan.universalRouter, context.universalRouter)
   ) throw new Error("Direct execution does not match the selected chain, caller, or pair.");
+  if (plan.nativeInput !== (context.request.input.kind === "native") || plan.nativeOutput !== (context.request.output.kind === "native")) throw new Error("Direct execution has forged native asset flags.");
+  if (plan.nativeInput && plan.nativeOutput) throw new Error("Direct execution cannot use native ETH on both sides.");
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
   if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Direct execution has the wrong exact input amount.");
+  if (plan.nativeValue !== (plan.nativeInput ? plan.amountIn : 0n)) throw new Error("Direct execution has the wrong native transaction value.");
   if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Direct execution has an invalid expiry.");
   if (execution.approval !== undefined) {
+    if (plan.nativeInput) throw new Error("Native input cannot contain an ERC-20 approval.");
     plan.approval = parseTransaction(execution.approval, "execution.approval", {
       chainId: context.chainId,
       caller: plan.caller,
@@ -607,6 +627,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     });
   }
   if (execution.cancel !== undefined) {
+    if (plan.nativeInput) throw new Error("Native input cannot contain an ERC-20 approval reset.");
     plan.cancel = parseTransaction(execution.cancel, "execution.cancel", {
       chainId: context.chainId,
       caller: plan.caller,
@@ -616,6 +637,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     });
   }
   if (execution.permitData !== undefined) {
+    if (plan.nativeInput) throw new Error("Native input cannot contain Permit2 data.");
     plan.permitData = parsePermitData(execution.permitData, {
       chainId: context.chainId,
       permit2: context.permit2,
@@ -629,6 +651,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
       chainId: context.chainId,
       caller: plan.caller,
       target: context.universalRouter,
+      value: plan.nativeValue,
     });
   }
   if (expected && (
@@ -636,12 +659,16 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     || plan.amountIn !== expected.amountIn
     || plan.minAmountOut !== expected.minAmountOut
     || plan.expiresAt !== expected.expiresAt
+    || plan.nativeInput !== expected.nativeInput
+    || plan.nativeOutput !== expected.nativeOutput
+    || plan.nativeValue !== expected.nativeValue
   )) throw new Error("Final direct transaction does not match the authorized quote.");
   return plan;
 }
 
 function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext): DirectV3Execution {
   if (!context.swapRouter02 || !context.request.caller) throw new Error("Synthra direct execution is not configured.");
+  if (context.request.input.kind === "native" || context.request.output.kind === "native") throw new Error("An atomic native Synthra route has not been verified.");
   const execution = object(value, "execution");
   exactKeys(execution, [
     "kind", "chainId", "caller", "inputToken", "outputToken", "swapRouter02", "amountIn", "minAmountOut",
@@ -763,8 +790,9 @@ function parseBasketCall(
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
   if (requestedAmount === undefined) throw new Error("Selected input amount is invalid.");
 
-  if (method === "mintFromToken") {
-    if (context.request.input.kind !== "erc20" || context.request.output.kind !== "otf") throw new Error("Mint method does not match the selected pair.");
+  if (method === "mintFromToken" || method === "mintFromNative") {
+    const native = method === "mintFromNative";
+    if ((native ? context.request.input.kind !== "native" : context.request.input.kind !== "erc20") || context.request.output.kind !== "otf") throw new Error("Mint method does not match the selected pair.");
     exactKeys(request, ["inputToken", "vault", "amountIn", "minShares", "deadline"], "execution.request");
     const value = {
       inputToken: address(request.inputToken, "request.inputToken"),
@@ -778,8 +806,9 @@ function parseBasketCall(
     return { call: { method, args: [value, legs] }, funding };
   }
   const minimums = array(execution.minBasketAmounts, "execution.minBasketAmounts").map((amount, index) => uint(amount, `minBasketAmounts[${index}]`));
-  if (method === "redeemToToken") {
-    if (context.request.input.kind !== "otf" || context.request.output.kind !== "erc20") throw new Error("Redeem method does not match the selected pair.");
+  if (method === "redeemToToken" || method === "redeemToNative") {
+    const native = method === "redeemToNative";
+    if (context.request.input.kind !== "otf" || (native ? context.request.output.kind !== "native" : context.request.output.kind !== "erc20")) throw new Error("Redeem method does not match the selected pair.");
     exactKeys(request, ["vault", "outputToken", "shares", "minAmountOut", "deadline"], "execution.request");
     const value = {
       vault: address(request.vault, "request.vault"),
@@ -811,7 +840,7 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   if (!context.entryRouter || !context.adapter || !context.request.caller) throw new Error("Basket execution is not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "router", "adapter", "approval", "funding",
+    "kind", "chainId", "caller", "router", "adapter", "approval", "nativeValue", "funding",
     "method", "request", "legs", "minBasketAmounts",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "basket-router") throw new Error("Basket quote has the wrong execution kind.");
@@ -821,15 +850,24 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   const adapter = address(execution.adapter, "execution.adapter");
   if (chainId !== context.chainId || !sameAddress(caller, context.request.caller)) throw new Error("Basket execution has the wrong chain or caller.");
   if (!sameAddress(router, context.entryRouter) || !sameAddress(adapter, context.adapter)) throw new Error("Basket execution has a deployment mismatch.");
-  const approvalValue = object(execution.approval, "execution.approval");
-  exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
-  const approval = {
-    token: address(approvalValue.token, "execution.approval.token"),
-    spender: address(approvalValue.spender, "execution.approval.spender"),
-    amount: uint(approvalValue.amount, "execution.approval.amount", false),
-  };
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
-  if (!sameAddress(approval.token, context.request.input.address) || !sameAddress(approval.spender, router) || approval.amount !== requestedAmount) throw new Error("Basket approval does not match the exact input and entry router.");
+  if (requestedAmount === undefined) throw new Error("Basket execution has an invalid input amount.");
+  const nativeValue = uint(execution.nativeValue, "execution.nativeValue");
+  let approval: BasketRouterExecution["approval"];
+  if (execution.approval !== undefined) {
+    const approvalValue = object(execution.approval, "execution.approval");
+    exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
+    approval = {
+      token: address(approvalValue.token, "execution.approval.token"),
+      spender: address(approvalValue.spender, "execution.approval.spender"),
+      amount: uint(approvalValue.amount, "execution.approval.amount", false),
+    };
+  }
+  if (context.request.input.kind === "native") {
+    if (approval || nativeValue !== requestedAmount) throw new Error("Native basket input has an approval or the wrong transaction value.");
+  } else {
+    if (!approval || !sameAddress(approval.token, context.request.input.address) || !sameAddress(approval.spender, router) || approval.amount !== requestedAmount || nativeValue !== 0n) throw new Error("Basket approval does not match the exact input and entry router.");
+  }
   const deadline = callDeadline(execution.request);
   const nowSeconds = BigInt(Math.floor(context.now / 1_000));
   if (
@@ -838,7 +876,7 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
     || BigInt(Math.ceil(expiresAt / 1_000)) > deadline
   ) throw new Error("Basket execution deadline is invalid.");
   const { call, funding } = parseBasketCall(execution, context, adapter, deadline);
-  return { kind: "basket-router", chainId, caller, router, adapter, approval, funding, call };
+  return { kind: "basket-router", chainId, caller, router, adapter, approval, nativeValue, funding, call };
 }
 
 function callDeadline(requestValue: unknown): bigint {
@@ -894,9 +932,9 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
     : parseBasketExecution(response.execution, context, expiresAt);
   if (execution.kind === "direct-api" || execution.kind === "direct-v3") {
     if (execution.minAmountOut !== minimumReceivedRaw) throw new Error("Direct execution minimum does not match the quote.");
-  } else if (execution.call.method === "mintFromToken") {
+  } else if (execution.call.method === "mintFromToken" || execution.call.method === "mintFromNative") {
     if (execution.call.args[0].minShares !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
-  } else if (execution.call.method === "redeemToToken") {
+  } else if (execution.call.method === "redeemToToken" || execution.call.method === "redeemToNative") {
     if (execution.call.args[0].minAmountOut !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
   } else {
     if (execution.call.args[0].minSharesOut !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");
@@ -906,7 +944,7 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
   if (venueFeeBps !== undefined && (venueFeeBps < 0 || venueFeeBps > 10_000)) throw new Error("venueFeeBps is out of range.");
   if (priceImpactBps !== undefined && (priceImpactBps < 0 || priceImpactBps > 10_000)) throw new Error("priceImpactBps is out of range.");
   const basketLegs = execution.kind === "basket-router"
-    ? execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2]
+    ? execution.call.method === "mintFromToken" || execution.call.method === "mintFromNative" ? execution.call.args[1] : execution.call.args[2]
     : [];
   const hops = response.hops === undefined ? basketLegs.flatMap((leg) => leg.hops)
     : array(response.hops, "hops").map((hopValue, index) => {
@@ -948,7 +986,9 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
 export function executionPlanForQuote(quote: SwapQuote | undefined, chainId: number, now: number): SwapExecutionPlan | undefined {
   if (!quote?.execution || quote.chainId !== chainId || !quoteIsFresh(quote, now)) return undefined;
   if (quote.execution.chainId !== chainId) return undefined;
-  const amountIn = quote.execution.kind === "basket-router" ? quote.execution.approval.amount : quote.execution.amountIn;
+  const amountIn = quote.execution.kind === "basket-router"
+    ? quote.execution.approval?.amount ?? quote.execution.nativeValue
+    : quote.execution.amountIn;
   if (amountIn === 0n || amountIn === maxUint256) return undefined;
   return quote.execution;
 }
@@ -965,7 +1005,7 @@ function routerLeg(leg: AdapterSwapLeg) {
 }
 
 export function routerArgsForExecution(call: TypedRouterCall): readonly unknown[] {
-  if (call.method === "mintFromToken") return [call.args[0], call.args[1].map(routerLeg)];
+  if (call.method === "mintFromToken" || call.method === "mintFromNative") return [call.args[0], call.args[1].map(routerLeg)];
   return [call.args[0], call.args[1], call.args[2].map(routerLeg)];
 }
 
@@ -984,6 +1024,9 @@ function directExecutionBody(plan: DirectApiExecution, signature?: Hex): ObjectR
       minAmountOut: plan.minAmountOut.toString(),
       expiresAtMs: plan.expiresAt,
       quoteToken: plan.quoteToken,
+      nativeInput: plan.nativeInput,
+      nativeOutput: plan.nativeOutput,
+      nativeValue: plan.nativeValue.toString(),
     },
   };
 }
@@ -1039,8 +1082,8 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     const request: SwapQuoteRequest = {
       chainId: plan.chainId,
       caller: plan.caller,
-      input: { address: plan.inputToken, symbol: "", name: "", kind: "erc20", decimals: 0, metadataResolved: true },
-      output: { address: plan.outputToken, symbol: "", name: "", kind: "erc20", decimals: 0, metadataResolved: true },
+      input: { address: plan.inputToken, symbol: "", name: "", kind: plan.nativeInput ? "native" : "erc20", decimals: 0, metadataResolved: true },
+      output: { address: plan.outputToken, symbol: "", name: "", kind: plan.nativeOutput ? "native" : "erc20", decimals: 0, metadataResolved: true },
       inputAmount: plan.amountIn.toString(),
       slippageBps: 0,
       requestedAt: now(),

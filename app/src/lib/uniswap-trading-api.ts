@@ -21,7 +21,7 @@ export type SwapQuoteApiDependencies = {
 type ValidatedAsset = {
   address: Address;
   decimals: number;
-  kind: "erc20" | "otf";
+  kind: "native" | "erc20" | "otf";
   isFactoryVault: boolean;
   isProtocolToken: boolean;
 };
@@ -49,7 +49,12 @@ type DirectQuotePayload = {
   providerQuote: unknown;
   permitData?: unknown;
   approvalRequired: boolean;
+  nativeInput: boolean;
+  nativeOutput: boolean;
+  nativeValue: string;
 };
+
+const UNISWAP_NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 function record(value: unknown, label: string): ObjectRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
@@ -110,17 +115,22 @@ function validateAsset(value: unknown, label: string): ValidatedAsset {
   const asset = record(value, label);
   exactKeys(asset, ["address", "decimals", "kind", "isFactoryVault", "isProtocolToken"], label);
   const kind = string(asset.kind, `${label}.kind`);
-  if (kind !== "erc20" && kind !== "otf") throw new Error(`${label}.kind is unsupported.`);
+  if (kind !== "native" && kind !== "erc20" && kind !== "otf") throw new Error(`${label}.kind is unsupported.`);
   const decimals = integer(asset.decimals, `${label}.decimals`);
   if (decimals < 0 || decimals > 36) throw new Error(`${label}.decimals is out of range.`);
   const isFactoryVault = asset.isFactoryVault === true;
   const isProtocolToken = asset.isProtocolToken === true;
   if (kind === "otf" && !isFactoryVault) throw new Error(`${label} is not a factory-confirmed OTF.`);
   if (kind === "otf" && isProtocolToken) throw new Error(`${label} cannot be both an OTF share and the protocol token.`);
+  if (kind === "native" && (isFactoryVault || isProtocolToken)) throw new Error(`${label} has forged native metadata.`);
   return { address: address(asset.address, `${label}.address`), decimals, kind, isFactoryVault, isProtocolToken };
 }
 
 function validateProtocolToken(asset: ValidatedAsset, chainId: number, label: string): ValidatedAsset {
+  if (asset.kind === "native") {
+    const weth = chainId === 46630 ? robinhoodTestnetAddresses.weth : chainId === 4663 ? robinhoodMainnetAddresses.weth : undefined;
+    if (!weth || !sameAddress(asset.address, weth)) throw new Error(`${label} is not canonical native ETH.`);
+  }
   if (!asset.isProtocolToken) return asset;
   const configured = chainId === 46630
     ? robinhoodTestnetAddresses.otfToken
@@ -140,7 +150,7 @@ function validateQuoteRequest(value: unknown, now: number): ValidatedQuoteReques
   const chainId = integer(body.chainId, "chainId");
   const input = validateProtocolToken(validateAsset(body.input, "input"), chainId, "input");
   const output = validateProtocolToken(validateAsset(body.output, "output"), chainId, "output");
-  if (sameAddress(input.address, output.address)) throw new Error("Input and output tokens must differ.");
+  if (input.kind === output.kind && sameAddress(input.address, output.address)) throw new Error("Input and output tokens must differ.");
   const requestedAtMs = integer(body.requestedAtMs, "requestedAtMs");
   if (requestedAtMs > now + 1_000 || now - requestedAtMs > MAX_QUOTE_LIFETIME_MS) throw new Error("Quote request timestamp is invalid.");
   const slippageBps = integer(body.slippageBps, "slippageBps");
@@ -219,6 +229,10 @@ function assertOptionalInteger(value: unknown, expected: number, label: string):
   if (!Number.isSafeInteger(parsed) || parsed !== expected) throw new Error(`Uniswap quote has the wrong ${label}.`);
 }
 
+function providerToken(asset: ValidatedAsset): Address {
+  return asset.kind === "native" ? UNISWAP_NATIVE_ADDRESS : asset.address;
+}
+
 function quoteSemantics(response: unknown, request: ValidatedQuoteRequest, now: number): {
   providerQuote: unknown;
   expectedAmountOut: bigint;
@@ -230,8 +244,8 @@ function quoteSemantics(response: unknown, request: ValidatedQuoteRequest, now: 
   const providerQuote = root.quote ?? root;
   const routing = valueAt(root, ["routing", "quote.routing"]);
   if (routing !== "CLASSIC") throw new Error("Uniswap quote is not a CLASSIC route.");
-  assertOptionalAddress(valueAt(providerQuote, ["input.token", "inputToken", "tokenIn"]), request.input.address, "input token");
-  assertOptionalAddress(valueAt(providerQuote, ["output.token", "outputToken", "tokenOut"]), request.output.address, "output token");
+  assertOptionalAddress(valueAt(providerQuote, ["input.token", "inputToken", "tokenIn"]), providerToken(request.input), "input token");
+  assertOptionalAddress(valueAt(providerQuote, ["output.token", "outputToken", "tokenOut"]), providerToken(request.output), "output token");
   assertOptionalAddress(valueAt(providerQuote, ["swapper"]), request.caller, "swapper");
   assertOptionalAddress(valueAt(providerQuote, ["recipient"]), request.caller, "recipient");
   assertOptionalAddress(valueAt(providerQuote, ["quoteRecipient"]), request.caller, "quote recipient");
@@ -250,11 +264,12 @@ function quoteSemantics(response: unknown, request: ValidatedQuoteRequest, now: 
   const deadlineValue = valueAt(providerQuote, ["deadline", "expiresAt"]);
   const expiresAtMs = deadlineValue === undefined ? now + QUOTE_LIFETIME_MS : Number(deadlineValue) * 1_000;
   if (!Number.isSafeInteger(expiresAtMs) || expiresAtMs <= now || expiresAtMs > now + MAX_QUOTE_LIFETIME_MS) throw new Error("Uniswap quote expiry is invalid.");
-  return { providerQuote, expectedAmountOut, minAmountOut, expiresAtMs, permitData: root.permitData };
+  return { providerQuote, expectedAmountOut, minAmountOut, expiresAtMs, permitData: root.permitData ?? undefined };
 }
 
 function validatePermitData(value: unknown, request: ValidatedQuoteRequest, permit2: Address, universalRouter: Address): void {
-  if (value === undefined) return;
+  if (request.input.kind === "native" && value !== undefined && value !== null) throw new Error("Native input returned unexpected Permit2 data.");
+  if (value === undefined || value === null) return;
   const permit = record(value, "Uniswap Permit2 data");
   const domain = record(permit.domain, "Uniswap Permit2 domain");
   const message = record(permit.message, "Uniswap Permit2 message");
@@ -293,6 +308,9 @@ function executionJson(payload: DirectQuotePayload, quoteToken: string, permit2:
     minAmountOut: payload.minAmountOut,
     expiresAtMs: payload.expiresAtMs,
     quoteToken,
+    nativeInput: payload.nativeInput,
+    nativeOutput: payload.nativeOutput,
+    nativeValue: payload.nativeValue,
     approval: payload.approvalRequired
       ? canonicalApproval(payload.caller, payload.inputToken, permit2, BigInt(payload.amountIn), payload.chainId)
       : undefined,
@@ -315,19 +333,21 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
   const permit2 = robinhoodMainnetUniswap.permit2;
   const universalRouter = robinhoodMainnetUniswap.universalRouter;
   try {
-    const approvalResponse = record(await dependencies.providerRequest("check_approval", {
-      amount: request.inputAmountRaw.toString(),
-      chainId: request.chainId,
-      token: request.input.address,
-      walletAddress: request.caller,
-    }, dependencies.apiKey), "Uniswap approval response");
+    const approvalResponse = request.input.kind === "native"
+      ? undefined
+      : record(await dependencies.providerRequest("check_approval", {
+          amount: request.inputAmountRaw.toString(),
+          chainId: request.chainId,
+          token: request.input.address,
+          walletAddress: request.caller,
+        }, dependencies.apiKey), "Uniswap approval response");
     const quoteResponse = await dependencies.providerRequest("quote", {
       type: "EXACT_INPUT",
       amount: request.inputAmountRaw.toString(),
       tokenInChainId: request.chainId,
       tokenOutChainId: request.chainId,
-      tokenIn: request.input.address,
-      tokenOut: request.output.address,
+      tokenIn: providerToken(request.input),
+      tokenOut: providerToken(request.output),
       swapper: request.caller,
       slippageTolerance: request.slippageBps / 100,
       routingPreference: "BEST_PRICE",
@@ -335,7 +355,9 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
     }, dependencies.apiKey);
     const semantics = quoteSemantics(quoteResponse, request, dependencies.now());
     validatePermitData(semantics.permitData, request, permit2, universalRouter);
-    const approvalRequired = validateProviderApproval(approvalResponse.approval, request.input.address, permit2, request.inputAmountRaw);
+    const approvalRequired = request.input.kind === "native"
+      ? false
+      : validateProviderApproval(approvalResponse?.approval, request.input.address, permit2, request.inputAmountRaw);
     const payload: DirectQuotePayload = {
       chainId: request.chainId,
       caller: request.caller,
@@ -348,6 +370,9 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
       providerQuote: semantics.providerQuote,
       permitData: semantics.permitData,
       approvalRequired,
+      nativeInput: request.input.kind === "native",
+      nativeOutput: request.output.kind === "native",
+      nativeValue: request.input.kind === "native" ? request.inputAmountRaw.toString() : "0",
     };
     const quoteToken = sealQuote(payload, dependencies.apiKey);
     return {
@@ -386,7 +411,7 @@ function formatRaw(value: bigint, decimals: number): string {
 
 function validateFinalPlan(value: unknown, payload: DirectQuotePayload, now: number): void {
   const plan = record(value, "plan");
-  exactKeys(plan, ["kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "expiresAtMs", "quoteToken"], "plan");
+  exactKeys(plan, ["kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue"], "plan");
   if (
     plan.kind !== "direct-api"
     || integer(plan.chainId, "plan.chainId") !== payload.chainId
@@ -397,6 +422,9 @@ function validateFinalPlan(value: unknown, payload: DirectQuotePayload, now: num
     || string(plan.amountIn, "plan.amountIn") !== payload.amountIn
     || string(plan.minAmountOut, "plan.minAmountOut") !== payload.minAmountOut
     || integer(plan.expiresAtMs, "plan.expiresAtMs") !== payload.expiresAtMs
+    || plan.nativeInput !== payload.nativeInput
+    || plan.nativeOutput !== payload.nativeOutput
+    || string(plan.nativeValue, "plan.nativeValue") !== payload.nativeValue
   ) throw new Error("Finalization plan does not match its sealed quote.");
   if (payload.expiresAtMs <= now) throw new Error("Finalization quote has expired.");
 }
@@ -409,9 +437,10 @@ function validateSwapTransaction(value: unknown, payload: DirectQuotePayload, un
   const data = string(transaction.data, "Uniswap swap transaction.data");
   if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(data)) throw new Error("Uniswap swap transaction calldata is invalid.");
   const valueAmount = transaction.value === undefined ? 0n : uint(String(transaction.value), "Uniswap swap transaction.value");
-  if (valueAmount !== 0n) throw new Error("ERC-20 swap transaction requests native value.");
+  const expectedValue = payload.nativeInput ? BigInt(payload.amountIn) : 0n;
+  if (valueAmount !== expectedValue || payload.nativeOutput && valueAmount !== 0n) throw new Error("Swap transaction has the wrong native value.");
   if (transaction.chainId !== undefined && Number(transaction.chainId) !== payload.chainId) throw new Error("Uniswap swap transaction has the wrong chain.");
-  return { chainId: payload.chainId, from: payload.caller, to, data, value: "0" };
+  return { chainId: payload.chainId, from: payload.caller, to, data, value: expectedValue.toString() };
 }
 
 async function finalizeDirect(value: unknown, dependencies: Required<Pick<SwapQuoteApiDependencies, "apiKey" | "now" | "providerRequest">>) {

@@ -127,6 +127,13 @@ leg can spend only transient balance above the router's pre-call baseline, so ex
 fund or be refunded by a route. The router owner is the adapter manager; approval requires a
 contract immutably bound back to that router and revocation takes effect immediately.
 
+Native ETH exists only at this router boundary. `mintFromNative` requires an exact nonzero
+`msg.value`, wraps exactly that amount into the immutable canonical WETH, and unwraps any transient
+WETH refund. `redeemToNative` routes the basket to WETH, enforces the minimum, unwraps only the
+operation's output, and sends it atomically to the caller. Pre-existing ETH and WETH are never swept;
+only configured WETH may send callback ETH. Native identities and sentinels never enter a vault,
+`SwapLeg`, adapter, pool, or buyback.
+
 The approved implementations are `UniswapV3Adapter` and `UniswapV4Adapter`. The V3 adapter accepts only packed V3 paths of at
 most three hops, authenticates every pool against its immutable factory, fixes the SwapRouter02
 recipient to the entry router, uses exact temporary approvals, and preserves pre-existing adapter
@@ -142,7 +149,9 @@ BEST_PRICE V3/V4 CLASSIC OTF routes. Robinhood testnet fund routes use the confi
 factory, Quoter, SwapRouter02, and active pools; WETH/OTF uses the canonical launch V4 pool. Basket
 plans are exact typed router requests and ordered adapter legs. The UI
 compares only returned candidates, selects the best queried route by integer output, and performs
-exact calldata `eth_call` plus `estimateGas` before submission.
+exact calldata `eth_call` plus `estimateGas` before submission. ETH and WETH remain distinct in the
+selector and balance model. ETH is normalized to WETH only in the sealed route, is never approved,
+and is wrapped or unwrapped atomically without presenting a separate wrap action.
 
 Before accepting a quote whose output OTF has zero supply, the Swap screen reads that supply and
 requires the quote's guaranteed minimum output—not merely its expected output—to be at least

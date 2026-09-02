@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC20 } from "./interfaces/IERC20.sol";
+import { IWETH } from "./interfaces/IWETH.sol";
 import { IOTFSettlementFactory, IOTFSettlementVault } from "./interfaces/IOTFSettlement.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
@@ -85,6 +86,11 @@ contract OTFEntryExitRouter is Ownable2Step {
         address token, uint256 expected, uint256 senderDelta, uint256 receiverDelta
     );
     error ResidualBalance(address token, uint256 baseline, uint256 current);
+    error InvalidNativeValue(uint256 expected, uint256 received);
+    error InvalidNativeEndpoint(address token);
+    error UnexpectedNativeSender(address sender);
+    error NativeTransferFailed(address recipient, uint256 amount);
+    error NativeBalanceMismatch(uint256 expected, uint256 observed);
     error Reentrancy();
 
     event AdapterApprovalChanged(address indexed adapter, bool approved);
@@ -110,6 +116,16 @@ contract OTFEntryExitRouter is Ownable2Step {
         uint256 sharesIn,
         uint256 sharesOut
     );
+    event NativeBasketMinted(
+        address indexed caller,
+        address indexed vault,
+        uint256 amountIn,
+        uint256 shares,
+        uint256 nativeRefunded
+    );
+    event NativeBasketRedeemed(
+        address indexed caller, address indexed vault, uint256 shares, uint256 amountOut
+    );
 
     struct BalanceSheet {
         address[] tokens;
@@ -121,12 +137,21 @@ contract OTFEntryExitRouter is Ownable2Step {
     }
 
     address public immutable factory;
+    address public immutable weth;
     mapping(address => bool) public isAdapterApproved;
     bool private _entered;
 
-    constructor(address factory_, address initialAdapterManager) Ownable(initialAdapterManager) {
+    constructor(address factory_, address initialAdapterManager, address weth_)
+        Ownable(initialAdapterManager)
+    {
         _requireContract(factory_);
+        _requireContract(weth_);
         factory = factory_;
+        weth = weth_;
+    }
+
+    receive() external payable {
+        if (msg.sender != weth) revert UnexpectedNativeSender(msg.sender);
     }
 
     modifier nonReentrant() {
@@ -184,6 +209,48 @@ contract OTFEntryExitRouter is Ownable2Step {
         );
     }
 
+    /// @notice Wraps exact native input, acquires constituents, and refunds residual WETH as ETH.
+    function mintFromNative(BasketMintRequest calldata request, SwapLeg[] calldata legs)
+        external
+        payable
+        nonReentrant
+        returns (
+            uint256 shares,
+            address[] memory refundTokens,
+            uint256[] memory refundAmounts,
+            uint256 nativeRefunded
+        )
+    {
+        if (msg.value != request.amountIn) {
+            revert InvalidNativeValue(request.amountIn, msg.value);
+        }
+        if (request.inputToken != weth) revert InvalidNativeEndpoint(request.inputToken);
+        _validateMintRequest(request);
+        address[] memory assets = _validatedAssets(request.vault);
+
+        BalanceSheet memory sheet = _newBalanceSheet();
+        _addToken(sheet, weth);
+        _addToken(sheet, request.vault);
+        _addAssets(sheet, assets);
+        _prepareLegs(sheet, legs, request.vault, address(0));
+        IOTFSettlementVault(request.vault).checkpointFees();
+        _snapshot(sheet);
+        uint256 nativeBaseline = address(this).balance - msg.value;
+
+        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
+        IWETH(weth).deposit{ value: request.amountIn }();
+        uint256 wethAfter = IERC20(weth).balanceOf(address(this));
+        if (wethAfter != wethBefore + request.amountIn) {
+            revert TokenTransferMismatch(weth, request.amountIn, 0, wethAfter - wethBefore);
+        }
+        _executeLegs(sheet, legs);
+        shares = _mintMaximum(request.vault, assets, request.minShares, sheet);
+        (refundTokens, refundAmounts, nativeRefunded) =
+            _refundAndCloseNativeMint(sheet, msg.sender, nativeBaseline);
+
+        emit NativeBasketMinted(msg.sender, request.vault, request.amountIn, shares, nativeRefunded);
+    }
+
     /// @notice Redeems an OTF, liquidates every constituent, and pays one output token.
     function redeemToToken(
         BasketRedeemRequest calldata request,
@@ -223,6 +290,55 @@ contract OTFEntryExitRouter is Ownable2Step {
         emit BasketRedeemed(
             msg.sender, request.vault, request.outputToken, request.shares, amountOut
         );
+    }
+
+    /// @notice Redeems an OTF through WETH settlement and pays exact transient output as ETH.
+    function redeemToNative(
+        BasketRedeemRequest calldata request,
+        uint256[] calldata minBasketAmounts,
+        SwapLeg[] calldata legs
+    )
+        external
+        nonReentrant
+        returns (uint256 amountOut, address[] memory refundTokens, uint256[] memory refundAmounts)
+    {
+        if (request.outputToken != weth) {
+            revert InvalidNativeEndpoint(request.outputToken);
+        }
+        _validateRedeemRequest(request);
+        address[] memory assets = _validatedAssets(request.vault);
+        if (minBasketAmounts.length != assets.length) revert InvalidArrayLength();
+
+        BalanceSheet memory sheet = _newBalanceSheet();
+        _addToken(sheet, request.vault);
+        _addToken(sheet, weth);
+        _addAssets(sheet, assets);
+        _prepareLegs(sheet, legs, request.vault, address(0));
+        IOTFSettlementVault(request.vault).checkpointFees();
+        _snapshot(sheet);
+        uint256 nativeBaseline = address(this).balance;
+
+        _recordDebit(sheet, request.vault, request.shares);
+        _redeemBasket(request.vault, assets, request.shares, msg.sender, minBasketAmounts);
+        _executeLegs(sheet, legs);
+        _requireOnlyOutput(sheet, weth);
+        amountOut = _transientBalance(sheet, weth);
+        if (amountOut < request.minAmountOut) {
+            revert MinimumOutputNotMet(request.minAmountOut, amountOut);
+        }
+        IWETH(weth).withdraw(amountOut);
+        if (_transientBalance(sheet, weth) != 0) {
+            revert ResidualBalance(
+                weth,
+                sheet.baselines[_tokenIndex(sheet, weth)],
+                IERC20(weth).balanceOf(address(this))
+            );
+        }
+        _sendNative(msg.sender, amountOut);
+        _assertNativeBaseline(nativeBaseline);
+        (refundTokens, refundAmounts) = _refundAndClose(sheet, msg.sender);
+
+        emit NativeBasketRedeemed(msg.sender, request.vault, request.shares, amountOut);
     }
 
     /// @notice Redeems one OTF, routes its constituents, and mints another OTF atomically.
@@ -578,6 +694,67 @@ contract OTFEntryExitRouter is Ownable2Step {
             mstore(refundTokens, refundCount)
             mstore(refundAmounts, refundCount)
         }
+    }
+
+    function _refundAndCloseNativeMint(
+        BalanceSheet memory sheet,
+        address refundRecipient,
+        uint256 nativeBaseline
+    )
+        private
+        returns (
+            address[] memory refundTokens,
+            uint256[] memory refundAmounts,
+            uint256 nativeRefunded
+        )
+    {
+        refundTokens = new address[](sheet.count);
+        refundAmounts = new uint256[](sheet.count);
+        uint256 refundCount;
+        for (uint256 i = 0; i < sheet.count; i++) {
+            address token = sheet.tokens[i];
+            uint256 current = IERC20(token).balanceOf(address(this));
+            uint256 baseline = sheet.baselines[i];
+            if (current < baseline) revert UnexpectedBalanceDecrease(token, baseline, current);
+            uint256 refund = current - baseline;
+            if (refund != 0) {
+                if (token == weth) {
+                    nativeRefunded = refund;
+                    IWETH(weth).withdraw(refund);
+                    _sendNative(refundRecipient, refund);
+                } else {
+                    refundTokens[refundCount] = token;
+                    refundAmounts[refundCount] = refund;
+                    refundCount++;
+                    _recordCredit(sheet, token, refund);
+                    _pushExact(token, refundRecipient, refund);
+                }
+            }
+            uint256 closed = IERC20(token).balanceOf(address(this));
+            if (closed != baseline) revert ResidualBalance(token, baseline, closed);
+        }
+        for (uint256 i = 0; i < sheet.count; i++) {
+            address token = sheet.tokens[i];
+            uint256 closed = IERC20(token).balanceOf(address(this));
+            uint256 baseline = sheet.baselines[i];
+            if (closed != baseline) revert ResidualBalance(token, baseline, closed);
+        }
+        _assertNativeBaseline(nativeBaseline);
+        _assertCallerDeltas(sheet, refundRecipient);
+        assembly ("memory-safe") {
+            mstore(refundTokens, refundCount)
+            mstore(refundAmounts, refundCount)
+        }
+    }
+
+    function _sendNative(address recipient, uint256 amount) private {
+        (bool success,) = payable(recipient).call{ value: amount }("");
+        if (!success) revert NativeTransferFailed(recipient, amount);
+    }
+
+    function _assertNativeBaseline(uint256 baseline) private view {
+        uint256 observed = address(this).balance;
+        if (observed != baseline) revert NativeBalanceMismatch(baseline, observed);
     }
 
     function _refundAmount(

@@ -121,6 +121,10 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     )),
   );
 
+/** Native basket calls stay disabled until the deployed entry router includes canonical WETH endpoints. */
+export const robinhoodTestnetNativeEntryReady = robinhoodTestnetDeploymentReady
+  && testnetRouting.nativeEntryExitEnabled === true;
+
 const mainnet = record(mainnetDeployment);
 const mainnetCompatible = Number(mainnet.chainId) === 4663 && mainnet.network === "robinhood-mainnet";
 const mainnetProtocolContracts = mainnetCompatible ? record(mainnet.protocolContracts) : {};

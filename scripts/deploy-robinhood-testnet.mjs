@@ -240,7 +240,7 @@ const factory = await deploy("OTFFactory", [
   buybackCollector.address,
   otfToken.address,
 ]);
-const entryRouter = await deploy("OTFEntryExitRouter", [factory.address, protocolMultisig]);
+const entryRouter = await deploy("OTFEntryExitRouter", [factory.address, protocolMultisig, weth]);
 const uniswapV3Adapter = await deploy("UniswapV3Adapter", [
   entryRouter.address,
   uniswapV3Factory,

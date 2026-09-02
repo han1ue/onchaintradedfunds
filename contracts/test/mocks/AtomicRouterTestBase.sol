@@ -12,6 +12,7 @@ import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
 import { MockStockToken } from "./MockStockToken.sol";
 import { MockOTFSettlementFactory, MockOTFSettlementVault } from "./MockOTFSettlement.sol";
 import { MockTradeAdapter } from "./MockTradeAdapter.sol";
+import { MockWETH } from "./MockWETH.sol";
 import { MockUniswapV3Factory } from "./MockUniswapV3Factory.sol";
 import { MockUniswapV3Router } from "./MockUniswapV3Router.sol";
 import { TestBase } from "../TestBase.sol";
@@ -23,6 +24,7 @@ abstract contract AtomicRouterTestBase is TestBase {
     address internal constant BOB = address(0xB0B);
 
     MockStockToken internal input;
+    MockWETH internal weth;
     MockStockToken internal assetA;
     MockStockToken internal assetB;
     MockStockToken internal assetC;
@@ -40,6 +42,7 @@ abstract contract AtomicRouterTestBase is TestBase {
     function _setUpAtomicRouter() internal {
         vm.warp(1_000_000);
         input = new MockStockToken("Input", "IN", 18);
+        weth = new MockWETH();
         assetA = new MockStockToken("Asset A", "A", 18);
         assetB = new MockStockToken("Asset B", "B", 18);
         assetC = new MockStockToken("Asset C", "C", 18);
@@ -57,7 +60,7 @@ abstract contract AtomicRouterTestBase is TestBase {
         protocolFactory.setVault(address(sourceVault), true);
         protocolFactory.setVault(address(targetVault), true);
 
-        router = new OTFEntryExitRouter(address(protocolFactory), address(this));
+        router = new OTFEntryExitRouter(address(protocolFactory), address(this), address(weth));
         sourceVault.setRouter(address(router));
         targetVault.setRouter(address(router));
 
@@ -84,6 +87,8 @@ abstract contract AtomicRouterTestBase is TestBase {
         assetB.mint(address(venue), 1_000_000 * ONE);
         assetC.mint(address(venue), 1_000_000 * ONE);
         assetD.mint(address(venue), 1_000_000 * ONE);
+        weth.mint(address(venue), 1_000_000 * ONE);
+        vm.deal(address(weth), 10_000_000 * ONE);
 
         _setRates(adapterA);
         _setRates(adapterB);
@@ -106,6 +111,7 @@ abstract contract AtomicRouterTestBase is TestBase {
         assetB.mint(address(adapter), 1_000_000 * ONE);
         assetC.mint(address(adapter), 1_000_000 * ONE);
         assetD.mint(address(adapter), 1_000_000 * ONE);
+        weth.mint(address(adapter), 1_000_000 * ONE);
     }
 
     function _setRates(MockTradeAdapter adapter) private {
@@ -118,6 +124,12 @@ abstract contract AtomicRouterTestBase is TestBase {
         adapter.setRate(address(assetA), address(assetC), 1, 1);
         adapter.setRate(address(assetB), address(assetD), 1, 1);
         adapter.setRate(address(assetA), address(assetD), 1, 1);
+        adapter.setRate(address(weth), address(assetA), 1, 1);
+        adapter.setRate(address(weth), address(assetB), 1, 1);
+        adapter.setRate(address(weth), address(assetC), 1, 1);
+        adapter.setRate(address(weth), address(assetD), 1, 1);
+        adapter.setRate(address(assetA), address(weth), 1, 1);
+        adapter.setRate(address(assetB), address(weth), 1, 1);
     }
 
     function _createPool(address tokenA, address tokenB) internal returns (address) {
@@ -214,6 +226,7 @@ abstract contract AtomicRouterTestBase is TestBase {
         assertEq(assetD.balanceOf(address(router)), 0);
         assertEq(sourceVault.balanceOf(address(router)), 0);
         assertEq(targetVault.balanceOf(address(router)), 0);
+        assertEq(weth.balanceOf(address(router)), 0);
         assertEq(assetA.allowance(address(router), address(sourceVault)), 0);
         assertEq(assetB.allowance(address(router), address(sourceVault)), 0);
         assertEq(assetC.allowance(address(router), address(targetVault)), 0);

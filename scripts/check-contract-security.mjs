@@ -129,7 +129,7 @@ const expectedConstructors = {
   ManagedOTFVault: [],
   OTFToken: ["initialHolder"],
   OTFFactory: ["vaultImplementation_", "buybackCollector_", "otfToken_"],
-  OTFEntryExitRouter: ["factory_", "initialAdapterManager"],
+  OTFEntryExitRouter: ["factory_", "initialAdapterManager", "weth_"],
   UniswapV3Adapter: ["entryExitRouter_", "uniswapV3Factory_", "uniswapV3Router_"],
   UniswapV4Adapter: ["entryExitRouter_", "uniswapV4PoolManager_", "uniswapV4StateView_", "uniswapUniversalRouter_", "permit2_"],
   OTFLaunchManager: ["otf_", "weth_", "poolManager_", "stateView_", "positionManager_", "permit2_"],
@@ -174,8 +174,8 @@ assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,add
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
-assert(JSON.stringify(routerMutating) === JSON.stringify(["acceptOwnership", "mintFromToken", "redeemToToken", "renounceOwnership", "setAdapterApproved", "swapBasketToBasket", "transferOwnership"].sort()), "router exposes an unexpected mutating entrypoint");
-for (const name of ["mintFromToken", "redeemToToken", "swapBasketToBasket", "factory", "isAdapterApproved", "setAdapterApproved", "owner", "pendingOwner"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
+assert(JSON.stringify(routerMutating) === JSON.stringify(["acceptOwnership", "mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "renounceOwnership", "setAdapterApproved", "swapBasketToBasket", "transferOwnership"].sort()), "router exposes an unexpected mutating entrypoint");
+for (const name of ["mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "swapBasketToBasket", "factory", "weth", "isAdapterApproved", "setAdapterApproved", "owner", "pendingOwner"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
 assert(!functionNames(compiled.OTFEntryExitRouter).has("swapDirect"), "router retains swapDirect");
 const mintFromToken = routerFunctions.find((item) => item.name === "mintFromToken");
 const swapLeg = mintFromToken.inputs[1];

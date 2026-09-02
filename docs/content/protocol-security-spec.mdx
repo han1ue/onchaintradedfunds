@@ -53,6 +53,21 @@ round down; annual expense splitting MUST carry its fractional remainder across 
 remaining collected fee shares MUST go to the buyback collector. No fund-owned constituent OTF may
 be transferred to the collector merely because it is OTF.
 
+## Native entry and exit
+
+`OTFEntryExitRouter` MUST store a nonzero immutable canonical WETH. Native mint MUST require nonzero
+`amountIn` and exact `msg.value == amountIn`; every ERC-20 endpoint MUST reject native value. It MUST
+wrap exactly the accepted ETH and use only WETH in basket planning, vault calls, and adapter legs.
+Transient WETH refunds MUST be unwrapped and returned as ETH while other constituent refunds remain
+ERC-20 transfers.
+
+Native redemption MUST route to canonical WETH, enforce the aggregate WETH minimum, unwrap exactly
+the transient output, and send exactly that ETH to the caller. Native sends MUST be checked and revert
+atomically on rejection. The router MUST accept callback ETH only from canonical WETH, keep every
+wrap, unwrap, send, and refund inside the reentrancy guard, clear temporary approvals, and preserve
+all pre-existing or forcibly sent ETH and WETH. Native sentinels, the zero address, and native ETH
+MUST NOT reach a vault, `SwapLeg`, or adapter.
+
 ## Buyback collector
 
 Only the configured route executor MAY submit buyback routes. Every leg MUST name exact input and

@@ -25,7 +25,7 @@ import {
   type CatalogAsset,
   type TestnetPool,
 } from "./asset-catalog";
-import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetNativeEntryReady } from "./deployment";
 
 const QUOTE_LIFETIME_MS = 20_000;
 const ROUTER_DEADLINE_SECONDS = 120;
@@ -95,8 +95,8 @@ export type TestnetPlannerRequest = {
   route: "direct" | "basket";
   chainId: number;
   caller: Address;
-  input: { address: Address; decimals: number; kind: "erc20" | "otf"; isFactoryVault: boolean };
-  output: { address: Address; decimals: number; kind: "erc20" | "otf"; isFactoryVault: boolean };
+  input: { address: Address; decimals: number; kind: "native" | "erc20" | "otf"; isFactoryVault: boolean };
+  output: { address: Address; decimals: number; kind: "native" | "erc20" | "otf"; isFactoryVault: boolean };
   inputAmountRaw: bigint;
   slippageBps: number;
   requestedAtMs: number;
@@ -232,7 +232,7 @@ async function assertVaults(request: TestnetPlannerRequest, client: TestnetRouti
 }
 
 async function validatedConnection(
-  asset: { address: Address; kind: "erc20" | "otf" },
+  asset: { address: Address; kind: "native" | "erc20" | "otf" },
   client: TestnetRoutingClient,
 ): Promise<{ asset: Address; pool: Address; fee: number }> {
   const usdg = testnetAssetById("usdg")!;
@@ -252,8 +252,8 @@ async function validatedConnection(
 }
 
 async function routeFor(
-  input: { address: Address; kind: "erc20" | "otf" },
-  output: { address: Address; kind: "erc20" | "otf" },
+  input: { address: Address; kind: "native" | "erc20" | "otf" },
+  output: { address: Address; kind: "native" | "erc20" | "otf" },
   client: TestnetRoutingClient,
 ): Promise<Route> {
   if (!testnetPoolRouteAllowed(input, output)) throw new Error("This pair is outside the configured testnet asset policy.");
@@ -408,6 +408,7 @@ function availableResponse(
 }
 
 async function directQuote(request: TestnetPlannerRequest, client: TestnetRoutingClient, now: number) {
+  if (request.input.kind === "native" || request.output.kind === "native") throw new Error("The deployed Synthra router has no verified atomic native path.");
   const route = await routeFor(request.input, request.output, client);
   const expectedOutput = await client.quoteExactInput(route.path, request.inputAmountRaw);
   const minimumOutput = applySlippageDown(expectedOutput, request.slippageBps);
@@ -447,7 +448,8 @@ async function basketQuote(
 ) {
   const deadline = BigInt(Math.floor(now / 1_000) + ROUTER_DEADLINE_SECONDS);
   const approval = { token: request.input.address, spender: router, amount: request.inputAmountRaw.toString() };
-  if (request.input.kind === "erc20" && request.output.kind === "otf") {
+  if ((request.input.kind === "erc20" || request.input.kind === "native") && request.output.kind === "otf") {
+    const nativeInput = request.input.kind === "native";
     const input = testnetQuoteAssets.find((asset) => sameAddress(asset.address, request.input.address));
     if (!input) throw new Error("Basket mint input must be a configured quote asset.");
     const plan = await planMint(request.output.address, input, request.inputAmountRaw, request.slippageBps, adapter, client);
@@ -458,14 +460,16 @@ async function basketQuote(
       caller: request.caller,
       router,
       adapter,
-      approval,
+      approval: nativeInput ? undefined : approval,
+      nativeValue: nativeInput ? request.inputAmountRaw.toString() : "0",
       funding: serializedFunding([{ token: input.address, amount: request.inputAmountRaw }]),
-      method: "mintFromToken",
+      method: nativeInput ? "mintFromNative" : "mintFromToken",
       request: { inputToken: input.address, vault: request.output.address, amountIn: request.inputAmountRaw.toString(), minShares: plan.shares.toString(), deadline: deadline.toString() },
       legs: plan.legs.map(serializedLeg),
     }, plan.legs.flatMap((leg) => leg.hops), residuals);
   }
-  if (request.input.kind === "otf" && request.output.kind === "erc20") {
+  if (request.input.kind === "otf" && (request.output.kind === "erc20" || request.output.kind === "native")) {
+    const nativeOutput = request.output.kind === "native";
     const output = testnetQuoteAssets.find((asset) => sameAddress(asset.address, request.output.address));
     if (!output) throw new Error("Basket redemption output must be a configured quote asset.");
     const plan = await liquidationPlan(request.input.address, request.inputAmountRaw, output, request.slippageBps, adapter, client);
@@ -476,8 +480,9 @@ async function basketQuote(
       router,
       adapter,
       approval,
+      nativeValue: "0",
       funding: serializedFunding(plan.assets.map((token, index) => ({ token, amount: plan.amounts[index]! }))),
-      method: "redeemToToken",
+      method: nativeOutput ? "redeemToNative" : "redeemToToken",
       request: { vault: request.input.address, outputToken: output.address, shares: request.inputAmountRaw.toString(), minAmountOut: plan.minimumOutput.toString(), deadline: deadline.toString() },
       minBasketAmounts: plan.sourceMinimums.map((amount) => amount.toString()),
       legs: plan.legs.map(serializedLeg),
@@ -496,6 +501,7 @@ async function basketQuote(
       router,
       adapter,
       approval,
+      nativeValue: "0",
       funding: serializedFunding(liquidation.assets.map((token, index) => ({ token, amount: liquidation.amounts[index]! }))),
       method: "swapBasketToBasket",
       request: { sourceVault: request.input.address, targetVault: request.output.address, sharesIn: request.inputAmountRaw.toString(), minSharesOut: mint.shares.toString(), deadline: deadline.toString() },
@@ -511,7 +517,7 @@ export async function quoteTestnetSwap(
   dependencies: {
     now?: () => number;
     client?: TestnetRoutingClient;
-    deployment?: { factory: Address; entryRouter: Address; uniswapV3Adapter: Address };
+    deployment?: { factory: Address; entryRouter: Address; uniswapV3Adapter: Address; nativeBasketReady?: boolean };
   } = {},
 ) {
   const deployment = dependencies.deployment ?? (robinhoodTestnetDeploymentReady
@@ -522,6 +528,7 @@ export async function quoteTestnetSwap(
         factory: robinhoodTestnetAddresses.factory,
         entryRouter: robinhoodTestnetAddresses.entryRouter,
         uniswapV3Adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
+        nativeBasketReady: robinhoodTestnetNativeEntryReady,
       }
     : undefined);
   if (!deployment) {
@@ -529,6 +536,10 @@ export async function quoteTestnetSwap(
   }
   if (request.chainId !== 46630 || !testnetSwapPairAllowed(request.input, request.output)) {
     return { status: 503, body: { state: "unavailable", route: request.route, reason: "This pair is outside the configured testnet asset policy." } };
+  }
+  const includesNative = request.input.kind === "native" || request.output.kind === "native";
+  if (includesNative && request.route === "basket" && deployment.nativeBasketReady !== true) {
+    return { status: 503, body: { state: "unavailable", route: request.route, reason: "Native basket execution awaits a compatible entry-router deployment." } };
   }
   const metadataMatches = [request.input, request.output].every((asset) => (
     asset.kind === "otf"

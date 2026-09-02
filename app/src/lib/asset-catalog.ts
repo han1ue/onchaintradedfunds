@@ -145,13 +145,13 @@ export function testnetPoolForPair(left: Address, right: Address): TestnetPool |
 }
 
 export function testnetPoolRouteAllowed(
-  input: { address: Address; kind: "erc20" | "otf" },
-  output: { address: Address; kind: "erc20" | "otf" },
+  input: { address: Address; kind: "native" | "erc20" | "otf" },
+  output: { address: Address; kind: "native" | "erc20" | "otf" },
 ): boolean {
   if (input.address.toLowerCase() === output.address.toLowerCase()) return false;
   if (input.kind === "otf" && output.kind === "otf") return true;
   if (input.kind === "otf" || output.kind === "otf") {
-    const token = input.kind === "erc20" ? input : output;
+    const token = input.kind !== "otf" ? input : output;
     return testnetAssetRole(token.address) === "quote";
   }
   const inputRole = testnetAssetRole(input.address);
@@ -160,8 +160,8 @@ export function testnetPoolRouteAllowed(
 }
 
 export function testnetSwapPairAllowed(
-  input: { address: Address; kind: "erc20" | "otf" },
-  output: { address: Address; kind: "erc20" | "otf" },
+  input: { address: Address; kind: "native" | "erc20" | "otf" },
+  output: { address: Address; kind: "native" | "erc20" | "otf" },
 ): boolean {
   return (input.kind === "otf" || output.kind === "otf")
     && testnetPoolRouteAllowed(input, output);

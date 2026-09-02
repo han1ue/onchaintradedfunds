@@ -9,6 +9,7 @@ interface Vm {
     }
 
     function warp(uint256 newTimestamp) external;
+    function deal(address account, uint256 newBalance) external;
     function prank(address sender) external;
     function startPrank(address sender) external;
     function stopPrank() external;

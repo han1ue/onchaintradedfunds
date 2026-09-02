@@ -43,6 +43,13 @@ The entry/exit router owner can approve or revoke adapters. Approved adapter cod
 constituent tokens, WETH, Permit2, and Universal Router are external trust boundaries. Routes are not
 discovered onchain.
 
+The entry/exit router accepts native ETH only through its explicit guarded endpoints and only accepts
+callback ETH from its immutable canonical WETH. Native mint requires exact value; native redemption
+unwraps and sends only the transient WETH output. Checked sends revert atomically when a receiver
+rejects ETH. Pre-existing or forcibly sent ETH/WETH must remain untouched, and no native marker may
+reach an adapter leg. Native basket execution remains disabled in the application until a compatible
+router is deployed and configured.
+
 ### ETH/USD oracle
 
 The production oracle is trusted for team vesting. The contract rejects nonpositive, future, or
@@ -91,6 +98,8 @@ claim path exists.
 - independent audit of all v2 contracts and economic arithmetic;
 - fork/integration tests against the exact official production V4 deployments;
 - verified production multisig, beneficiary, route-executor, WETH, and oracle selections;
+- deployment and verification of the canonical-WETH native entry/exit router plus receiver and
+  callback-reentrancy integration tests;
 - deployed-code verification and complete one-billion-token allocation reconciliation;
 - operational procedures for route generation, minimum outputs, root publication, and artifact
   availability;
