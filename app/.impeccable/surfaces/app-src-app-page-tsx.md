@@ -1,8 +1,8 @@
 ---
 version: 1
 slug: "app-src-app-page-tsx"
-primary_target: "app/src/app/page.tsx"
-related_targets: ["app/src/components/OperateExperience.tsx", "app/src/app/globals.css"]
+primary_target: "src/app/page.tsx"
+related_targets: ["src/components/OperateExperience.tsx", "src/app/globals.css"]
 ---
 
 # Swap operate surface
