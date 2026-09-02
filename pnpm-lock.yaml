@@ -22,8 +22,8 @@ importers:
         specifier: 0.8.36
         version: 0.8.36(debug@4.4.3(supports-color@7.2.0))
       solhint:
-        specifier: 6.2.3
-        version: 6.2.3(typescript@5.9.3)
+        specifier: 6.2.4
+        version: 6.2.4(typescript@5.9.3)
 
   app:
     dependencies:
@@ -5530,8 +5530,8 @@ packages:
     engines: {node: '>=12.0.0'}
     hasBin: true
 
-  solhint@6.2.3:
-    resolution: {integrity: sha512-w8prJP3kaf3G9hkmH5RmkCanvTULHWpdn+t4MieMEMZDhC2gFoUbRjS0TmslgxzGIItoOtP/J5PvU0FrvC08wA==}
+  solhint@6.2.4:
+    resolution: {integrity: sha512-2hCfsDGcCit/4Ue0Bf3HxalxEaHM/rfoSf3rMVAQQ5NWWcVPS0F+RSqQzMEPc8Ta7r5L3DeaKyzmbjD5B2fUdg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -13090,7 +13090,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  solhint@6.2.3(typescript@5.9.3):
+  solhint@6.2.4(typescript@5.9.3):
     dependencies:
       '@solidity-parser/parser': 0.20.2
       ajv: 8.20.0
