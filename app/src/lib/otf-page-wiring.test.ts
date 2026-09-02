@@ -16,20 +16,26 @@ describe("$OTF page wiring", () => {
     expect(operate).toContain('kind: "native"');
     expect(operate).toContain('symbol: "ETH"');
     expect(operate).toContain('asset.symbol.toUpperCase() === "WETH"');
+    expect(operate).toContain('? "/assets/tokens/eth.png"');
   });
 
   it("has a simple header and exactly three top metrics", () => {
     expect(component).toContain(">Docs<");
     expect(component).not.toContain("Specification");
     expect(component).not.toContain("ConnectWalletAction");
-    const ledger = component.slice(component.indexOf('className="tokenSupplyLedger"'), component.indexOf("<ClaimPanel"));
-    for (const label of [">Supply<", ">Price<", ">Market cap<"]) expect(ledger).toContain(label);
+    const ledgerStart = component.indexOf('className="tokenSupplyLedger"');
+    const ledger = component.slice(ledgerStart, component.indexOf("</section>;", ledgerStart));
+    for (const label of [">Price<", ">Market cap<", ">Pool<"]) expect(ledger).toContain(label);
     expect(ledger.match(/<div>/g)).toHaveLength(3);
-    for (const removed of ["Original supply", "Total burned", "Pool liquidity", "Wallet balance", "FDV"]) expect(ledger).not.toContain(removed);
+    for (const removed of [">Supply<", "Original supply", "Total burned", "Wallet balance", "FDV"]) expect(ledger).not.toContain(removed);
+    expect(component).toContain('testnet ? "/liquidity"');
+    expect(component).toContain("robinhoodMainnetLiquidity.baseUrl");
   });
 
-  it("keeps the compact claim directly above the token swap and off the global Swap route", () => {
-    expect(component).toContain("Claim OTF rewards");
+  it("keeps the compact claim beside the top metrics and off the global Swap route", () => {
+    expect(component).toContain("Claim rewards");
+    expect(component).toContain("Available to claim");
+    expect(component).toContain('className="tokenTopRow"');
     expect(component.indexOf("<ClaimPanel")).toBeLessThan(component.indexOf("tokenSwapLifecycleGrid"));
     expect(component).not.toContain("Merkle rewards");
     expect(operate.indexOf("<ClaimPanel")).toBe(-1);
@@ -42,12 +48,15 @@ describe("$OTF page wiring", () => {
     expect(component).toContain('aria-current={phase === index ? "step" : undefined}');
     expect(component).toContain("Current phase");
     expect(component).toContain("Finalize graduation");
+    expect(component).not.toContain("launchLifecycleArrow");
     expect(component).not.toMatch(/estimated graduation|days remaining/iu);
   });
 
   it("removes vesting and presents the exact fee split without approximation marks", () => {
     expect(component).not.toMatch(/vesting|Merkle rewards/iu);
     expect(component).toContain("$OTF fee split");
+    expect(component).not.toContain("10m accounted-OTF cap");
+    expect(component).not.toContain("Raw OTF donated to a vault does not count toward the split.");
     expect(component).not.toContain("rebate");
     expect(market).toContain('creator: "62.64%", buyback: "37.36%"');
     expect(market).toContain('creator: "78.28%", buyback: "21.72%"');

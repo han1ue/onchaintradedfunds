@@ -13,6 +13,41 @@ import { navigationItemForPath } from "@/lib/operate-navigation";
 
 type AppearancePreference = "default" | "light" | "dark";
 
+const OPERATE_FLOW_LINES = Array.from({ length: 12 }, (_, index) => {
+  const startY = 38 + index * 78;
+  const pinchY = 440 + (index - 5.5) * 8;
+  const endY = 76 + ((index * 137) % 760);
+  return {
+    d: `M -120 ${startY} C 260 ${startY - 54} 540 ${pinchY - 126} 850 ${pinchY} C 1080 ${pinchY + 92} 1260 ${endY - 48} 1560 ${endY}`,
+    opacity: 0.32 + (index % 4) * 0.1,
+  };
+});
+
+function OperateAmbientField() {
+  return (
+    <div className="operateAmbientField" aria-hidden="true">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" focusable="false">
+        <defs>
+          <linearGradient id="operate-ambient-flow" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="currentColor" stopOpacity="0.06" />
+            <stop offset="0.38" stopColor="currentColor" stopOpacity="0.72" />
+            <stop offset="0.62" stopColor="currentColor" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <g className="operateAmbientCurrent" stroke="url(#operate-ambient-flow)" strokeWidth="0.9" vectorEffect="non-scaling-stroke">
+          {OPERATE_FLOW_LINES.map((line) => <path key={line.d} d={line.d} opacity={line.opacity} pathLength="1" />)}
+        </g>
+        <g className="operateAmbientOrbits" stroke="currentColor" strokeWidth="0.75" vectorEffect="non-scaling-stroke">
+          <ellipse cx="850" cy="440" rx="164" ry="54" transform="rotate(-20 850 440)" />
+          <ellipse cx="850" cy="440" rx="224" ry="78" transform="rotate(-14 850 440)" />
+          <ellipse cx="850" cy="440" rx="292" ry="108" transform="rotate(-8 850 440)" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 function HeaderWalletControl({ active }: { active: boolean }) {
   return (
     <ConnectButton.Custom>
@@ -232,6 +267,7 @@ export function PersistentAppShell({ children, showOnRoot }: { children: ReactNo
   return (
     <Providers>
       <div className={showHeader ? "operateShell" : undefined}>
+        {showHeader ? <OperateAmbientField /> : null}
         {showHeader ? <OperateNav /> : null}
         {children}
       </div>

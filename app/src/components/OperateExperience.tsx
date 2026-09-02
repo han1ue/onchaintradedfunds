@@ -79,7 +79,6 @@ import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
   formatMarketCapMultiplier,
-  formatMarketCapSnapshotTimestamp,
   formatStoredPercentage,
   formatStoredPercentageExact,
   loadCreationMetadata,
@@ -217,9 +216,9 @@ function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
   if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={isUnselectedOtf(asset) ? "OTF" : asset.symbol} />;
   if (asset.isProtocolToken) mark = <Image className="swapAssetImage" src={circularOtfIcon} alt="" width={30} height={30} />;
-  const tokenIcon = asset.symbol.toUpperCase() === "WETH"
-    ? "/assets/tokens/weth.png"
-    : asset.kind === "native"
+  const tokenIcon = asset.kind === "native"
+    ? "/assets/tokens/eth.png"
+    : asset.symbol.toUpperCase() === "WETH"
       ? "/assets/tokens/weth.png"
     : asset.symbol.toUpperCase() === "USDG"
       ? "/assets/tokens/usdg.png"
@@ -1055,7 +1054,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
           {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
           {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
-          {input.kind === "native" || output.kind === "native" ? <p className="swapRouteDisclosure">ETH is wrapped to WETH inside this transaction and unwrapped before payout. No manual wrapping is required.</p> : null}
           {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
         </section>
   );
@@ -1383,7 +1381,6 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
   return (
     <section className="sectionCard valuationPanel">
       <div className="valuationHeader">
-        <h2>{mode === "share" ? "NAV/share" : "NAV"}</h2>
         <div className="valuationModeToggle" role="group" aria-label="Chart metric"><button className={mode === "share" ? "active" : ""} type="button" aria-pressed={mode === "share"} onClick={() => setMode("share")}>SHARE</button><button className={mode === "nav" ? "active" : ""} type="button" aria-pressed={mode === "nav"} onClick={() => setMode("nav")}>NAV</button></div>
       </div>
       {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
@@ -1407,7 +1404,7 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
       <div className="valuationAllocation">
         <div className="directoryPanelHeading allocationPanelHeading">
           <div><h2>Allocation</h2></div>
-          <div className="allocationHeadingMeta"><span className="stateBadge muted methodologyBadge">{methodologyLabel}</span>{creationMetadata ? <span className="stateBadge muted">{formatMarketCapSnapshotTimestamp(creationMetadata.marketCapSnapshotAt)}</span> : null}</div>
+          <div className="allocationHeadingMeta"><span className="stateBadge muted methodologyBadge">{methodologyLabel}</span></div>
         </div>
         {creationMetadata ? (
           <div className="creationAllocationTableWrap">
@@ -1430,6 +1427,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
   const testnet = chainId === robinhoodChainTestnet.id;
+  const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
   const { state: factoryDirectoryState, vaults } = useFactoryVaults({ enabled: !detail });
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
@@ -1497,7 +1495,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                 <div>
                   <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1></div>
                   <div className="fundDetailMeta">
-                    {routeAddress ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
+                    {routeAddress ? <a href={`${explorerUrl}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
                   </div>
                 </div>
               </div>
@@ -1505,7 +1503,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <div className="fundDetailMetrics" aria-label="Fund metrics">
               <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
               <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-              <div><span>Creator</span><strong>{vaultDetails ? shortAddress(vaultDetails.creator) : "—"}</strong></div>
+              <div><span>Creator</span><strong>{vaultDetails ? <a className="fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
             </div>
           </section>
           <div className="fundDetailPrimaryGrid">
@@ -1518,7 +1516,14 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   {embeddedFund ? <SwapSurface key={embeddedFund.address} embedded embeddedFund={embeddedFund} /> : <div className="valuationState"><ActivitySpinner size={17} /></div>}
                 </div>
               </section>
-              <section className="fundFeesPanel" aria-label="Fund fees"><div><span>Fees</span><strong>{vaultDetails ? `${formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps)} / ${formatAnnualExpenseRatioPercentage(vaultDetails.mintFeeBps)} / ${formatAnnualExpenseRatioPercentage(vaultDetails.redeemFeeBps)}` : "—"}</strong><small>Annual / mint / redeem</small></div></section>
+              <section className="fundFeesPanel" aria-label="Fund fees">
+                <div className="fundFeesHeading"><span>Fund fees</span><small>Permanent rates</small></div>
+                <dl className="fundFeeGrid">
+                  <div><dt>Annual</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.annualCreatorExpenseRatioBps) : "—"}</dd></div>
+                  <div><dt>Mint</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.mintFeeBps) : "—"}</dd></div>
+                  <div><dt>Redeem</dt><dd>{vaultDetails ? formatAnnualExpenseRatioPercentage(vaultDetails.redeemFeeBps) : "—"}</dd></div>
+                </dl>
+              </section>
             </div>
           </div>
         </div>
