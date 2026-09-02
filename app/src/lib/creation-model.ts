@@ -90,6 +90,22 @@ export type CreationSubmissionOutcome =
   | { status: "failure"; phase: "receipt"; hash: Hex }
   | { status: "unknown"; hash: Hex };
 
+export type CreationSubmissionState = "idle" | "submitting" | "success" | "failure" | "unknown";
+
+export function creationSubmissionLocked(state: CreationSubmissionState): boolean {
+  return state === "submitting" || state === "success" || state === "unknown";
+}
+
+export function creationWriteFailureMessage(error: unknown): string {
+  const details = record(error);
+  const shortMessage = typeof details?.shortMessage === "string" ? details.shortMessage : undefined;
+  const message = shortMessage ?? (error instanceof Error ? error.message : undefined);
+  if (message && /rejected|denied|cancelled|canceled/iu.test(message)) {
+    return "The wallet request was cancelled. Nothing was submitted. You can try again.";
+  }
+  return message?.split("\n", 1)[0]?.trim() || "The OTF launch was not submitted. You can try again.";
+}
+
 export async function submitAndConfirmCreation(input: {
   write: () => Promise<Hex>;
   waitForReceipt: (hash: Hex) => Promise<"success" | "reverted">;
@@ -102,7 +118,7 @@ export async function submitAndConfirmCreation(input: {
     return {
       status: "failure",
       phase: "write",
-      message: error instanceof Error ? error.message : "OTF launch was not submitted.",
+      message: creationWriteFailureMessage(error),
     };
   }
   input.onBroadcast?.(hash);

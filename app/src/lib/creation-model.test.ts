@@ -4,6 +4,8 @@ import {
   annualExpenseRatioBpsFromPercentage,
   calculateBootstrapBasketUnits,
   creationAssetsFromApi,
+  creationSubmissionLocked,
+  creationWriteFailureMessage,
   formatAnnualExpenseRatioPercentage,
   formatPercentageDisplay,
   minimumPercentageUnitsForOneRaw,
@@ -199,8 +201,29 @@ describe("creation submission settlement", () => {
     await expect(submitAndConfirmCreation({
       write: async () => { throw new Error("User rejected"); },
       waitForReceipt: async () => { receiptCalled = true; return "success"; },
-    })).resolves.toEqual({ status: "failure", phase: "write", message: "User rejected" });
+    })).resolves.toEqual({
+      status: "failure",
+      phase: "write",
+      message: "The wallet request was cancelled. Nothing was submitted. You can try again.",
+    });
     expect(receiptCalled).toBe(false);
+    expect(creationSubmissionLocked("failure")).toBe(false);
+  });
+
+  it("locks only active or irreversible submission states", () => {
+    expect(creationSubmissionLocked("idle")).toBe(false);
+    expect(creationSubmissionLocked("failure")).toBe(false);
+    expect(creationSubmissionLocked("submitting")).toBe(true);
+    expect(creationSubmissionLocked("success")).toBe(true);
+    expect(creationSubmissionLocked("unknown")).toBe(true);
+  });
+
+  it("uses concise wallet errors instead of verbose provider details", () => {
+    expect(creationWriteFailureMessage({
+      shortMessage: "User rejected the request.",
+      message: "User rejected the request.\n\nRequest Arguments:\n  from: 0x1234",
+    })).toBe("The wallet request was cancelled. Nothing was submitted. You can try again.");
+    expect(creationWriteFailureMessage(new Error("Simulation failed\nLong provider diagnostics"))).toBe("Simulation failed");
   });
 
   it("distinguishes an explicit onchain revert", async () => {

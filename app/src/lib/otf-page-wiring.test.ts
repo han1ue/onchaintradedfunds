@@ -80,6 +80,15 @@ describe("$OTF page wiring", () => {
     expect(operate).not.toContain('className="iconOnly compact walletExplorerLink"');
   });
 
+  it("uses the fund header space for metrics and gives the thesis the full hero width", () => {
+    const detail = operate.slice(operate.indexOf('className="fundDetailHero"'), operate.indexOf('className="fundDetailPrimaryGrid"'));
+    const header = detail.slice(detail.indexOf('className="fundDetailHeader"'));
+    expect(header).toContain('className="fundDetailMetrics"');
+    expect(detail).toContain('className="fundThesis"');
+    expect(css).toContain(".fundDetailHeader { display: grid;");
+    expect(css).toContain(".valuationPerformance small { margin-top: 1px;");
+  });
+
   it("keeps focus, narrow-layout, and reduced-motion affordances", () => {
     expect(css).toContain(":focus-visible");
     expect(css).toContain("@media (max-width: 620px)");
@@ -90,7 +99,8 @@ describe("$OTF page wiring", () => {
     const confirmation = operate.slice(operate.indexOf("function CreatedFundSurface"), operate.indexOf("function FundRouteSurface"));
     expect(confirmation).not.toContain("window.location.replace");
     expect(confirmation).not.toContain("redirectSeconds");
-    expect(confirmation).toContain("Open its fund page whenever you are ready.");
+    expect(confirmation).not.toContain("The launch transaction is confirmed on Robinhood Testnet.");
+    expect(confirmation).toContain("Deposits are opening and fees will start accruing to the selected address.");
     expect(confirmation).toContain(">View OTF<");
     expect(confirmation.match(/className="createdDetailGroup"/gu)).toHaveLength(2);
   });

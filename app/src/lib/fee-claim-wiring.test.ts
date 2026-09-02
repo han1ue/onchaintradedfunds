@@ -12,11 +12,13 @@ describe("fund fee claim wiring", () => {
   });
 
   it("matches the compact claim layout and never labels an unquoted value as WETH", () => {
-    expect(component).toContain(">Available to claim<");
+    expect(component).not.toContain(">Available to claim<");
+    expect(component).not.toContain("Annual fees are checkpointed automatically when a claim is submitted.");
     expect(component).toContain('className="fundFeeClaimAmount"');
     expect(component).toContain('expectedCreatorWeth !== undefined\n    ? formatClaimWeth(expectedCreatorWeth)');
     expect(component).toContain('pending?.total === 0n\n        ? "No fees to claim"\n        : "Route unavailable"');
     expect(css).toContain(".fundFeeClaimAmount { display: flex;");
+    expect(css).toContain("grid-template-columns: minmax(0, 1.45fr) minmax(104px, 0.55fr)");
   });
 
   it("quotes both complete-balance routes and lets the beneficiary choose best, sale, or redemption", () => {
@@ -24,7 +26,7 @@ describe("fund fee claim wiring", () => {
     expect(component).toContain("quoteService.quoteBasket");
     expect(component).toContain("quoteService.quoteDirect");
     expect(component).toContain('caller: collector');
-    expect(component).toContain('value="best">Best output');
+    expect(component).toContain('value="best">Best available');
     expect(component).toContain('value="share-sale"');
     expect(component).toContain('value="redemption"');
     expect(component).toContain("redemption?.shares === pending.total");

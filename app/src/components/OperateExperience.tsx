@@ -32,7 +32,6 @@ import {
   UserCog,
   Wallet,
   X,
-  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
@@ -501,6 +500,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   }, [embedded, otfAssets, output, protocolTokenMode]);
 
   const pairValid = validSwapPair(input, output);
+  const sameAssetSelected = sameAsset(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
   const hasOtfSide = swapIncludesOtf(input, output);
   const missingOtfAsset = pairValid && !hasOtfSide;
@@ -969,7 +969,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         : !amountValid
           ? "Enter a valid amount"
           : !pairValid
-            ? "Choose different tokens"
+            ? sameAssetSelected ? "Choose different tokens" : "Select assets"
             : !pairExecutable
               ? "Resolve token metadata"
               : !directionSupported
@@ -997,7 +997,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           : amount && !amountValid
             ? "Enter a positive amount within the selected token's decimal precision."
             : !pairValid
-              ? "Choose two different assets."
+              ? sameAssetSelected ? "Choose two different assets." : undefined
               : !pairExecutable
                 ? "Resolve token decimals and OTF factory identity to request a quote."
                 : !directionSupported
@@ -1154,17 +1154,12 @@ function CreatedFundSurface() {
   return (
     <DashboardPage className="fundsPage">
       <div className="appView">
-        <AppPageHeader
-          title={confirmation === "confirmed" ? "OTF launched" : confirmation === "failure" ? "Confirmation unavailable" : "Confirming OTF launch"}
-          description={confirmation === "confirmed" ? "The launch transaction is confirmed on Robinhood Testnet." : confirmation === "failure" ? "The transaction and launched address could not be verified from this URL." : "Checking the launch transaction and deployed OTF address."}
-          icon={confirmation === "confirmed" ? <CheckCircle size={18} /> : confirmation === "failure" ? <XCircle size={18} /> : <LoaderCircle className="createAssetSpinner" size={18} />}
-        />
         <section className="createdConfirmation" aria-labelledby="created-otf-title">
           <div className="createdStatus">
             <span className={`createdStatusIcon ${confirmation === "failure" ? "failure" : ""}`}>{confirmation === "confirmed" ? <Check size={24} /> : confirmation === "failure" ? <X size={22} /> : <LoaderCircle className="createAssetSpinner" size={22} />}</span>
             <div>
               <h2 id="created-otf-title">{confirmation === "confirmed" ? details?.name ?? "Deployment confirmed" : confirmation === "failure" ? "Unable to verify launch" : "Verifying onchain confirmation"}</h2>
-              <p>{confirmation === "confirmed" ? `${details?.symbol ?? "The new OTF"} is live. Open its fund page whenever you are ready.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "The fund-page link will appear after the factory launch event is verified."}</p>
+              <p>{confirmation === "confirmed" ? `${details?.symbol ? `$${details.symbol}` : "The new OTF"} is live. Deposits are opening and fees will start accruing to the selected address.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "The fund-page link will appear after the factory launch event is verified."}</p>
             </div>
           </div>
           {address ? (
@@ -1480,7 +1475,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
               : feeReads.isError || !accountMatches
                 ? "The vault fee account could not be verified."
                 : pending?.total === 0n
-                  ? "Annual fees are checkpointed automatically when a claim is submitted."
+                  ? ""
                   : quoteState === "missing"
                     ? "No complete share-sale or basket-redemption route to WETH is currently available."
                     : quoteState === "ready" && !settlementRoute
@@ -1492,16 +1487,13 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
                       : "Loading pending fees and routes…";
 
   return (
-    <section className="fundFeeClaim" aria-labelledby={`fee-claim-${vault}`}>
-      <div className="fundFeeClaimHeader">
-        <h2 id={`fee-claim-${vault}`}>Available to claim</h2>
-        <div className="fundFeeClaimControls">
-          <label><span>Route</span><span className="selectControl fundFeeRoute"><select value={routePreference} onChange={(event) => setRoutePreference(event.target.value as FeeSettlementRoutePreference)} disabled={busy} aria-label="Fee settlement route"><option value="best">Best output</option><option value="share-sale" disabled={quoteState === "ready" && !settlementRoutes.shareSale}>Sell shares</option><option value="redemption" disabled={quoteState === "ready" && !settlementRoutes.redemption}>Redeem basket</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
-          <label><span>Slippage</span><span className="selectControl fundFeeSlippage"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} disabled={busy} aria-label="Fee settlement slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
-        </div>
+    <section className="fundFeeClaim" aria-label="Claim creator fees">
+      <div className="fundFeeClaimControls" role="group" aria-label="Fee claim settings">
+        <label><span>Settlement route</span><span className="selectControl fundFeeRoute"><select value={routePreference} onChange={(event) => setRoutePreference(event.target.value as FeeSettlementRoutePreference)} disabled={busy} aria-label="Fee settlement route"><option value="best">Best available</option><option value="share-sale" disabled={quoteState === "ready" && !settlementRoutes.shareSale}>Sell shares</option><option value="redemption" disabled={quoteState === "ready" && !settlementRoutes.redemption}>Redeem basket</option></select><ChevronDown size={14} aria-hidden="true" /></span></label>
+        <label><span>Max slippage</span><span className="selectControl fundFeeSlippage"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} disabled={busy} aria-label="Fee settlement slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={14} aria-hidden="true" /></span></label>
       </div>
-      <div className="fundFeeClaimAmount"><strong>{amount}</strong><button className="primaryAction" type="button" disabled={!claimReady || busy || pending?.total === 0n} onClick={() => void claimFees()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim</button></div>
-      <div className={`fundFeeClaimStatus ${claimState === "failure" ? "failure" : claimState === "success" ? "success" : ""}`} aria-live="polite"><span>{status}</span>{claimHash ? <a href={`${explorer}/tx/${claimHash}`} target="_blank" rel="noreferrer">View transaction <ExternalLink size={11} /></a> : null}</div>
+      <div className="fundFeeClaimAmount"><strong>{amount}</strong><button className="primaryAction" type="button" disabled={!claimReady || busy || pending?.total === 0n} onClick={() => void claimFees()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim fees</button></div>
+      {status ? <div className={`fundFeeClaimStatus ${claimState === "failure" ? "failure" : claimState === "success" ? "success" : ""}`} aria-live="polite"><span>{status}</span>{claimHash ? <a href={`${explorer}/tx/${claimHash}`} target="_blank" rel="noreferrer">View transaction <ExternalLink size={11} /></a> : null}</div> : null}
     </section>
   );
 }
@@ -1831,17 +1823,17 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   </div>
                 </div>
               </div>
+              <div className="fundDetailMetrics" aria-label="Fund metrics">
+                <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
+                <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
+                <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
+              </div>
             </div>
-            <div className="fundDetailMetrics" aria-label="Fund metrics">
-              <div><span>NAV/share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
-              <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-              <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
-            </div>
+            <section className="fundThesis" aria-labelledby="fund-thesis-title"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2 id="fund-thesis-title">Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></section>
           </section>
           <div className="fundDetailPrimaryGrid">
             <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} creationMetadata={creationMetadata} />
             <div className="fundTradeColumn">
-              <section className="fundThesis" aria-labelledby="fund-thesis-title"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2 id="fund-thesis-title">Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></section>
               <section className="fundTradePanel" aria-labelledby="fund-trade-title">
                 <div className="fundTradeBody">
                   <div className="fundTradeHeading"><div><span className="appPageIcon"><TrendingUp size={16} /></span><div><h2 id="fund-trade-title">Trade {vaultDetails?.symbol ?? "this OTF"}</h2><p>Buy or sell shares in the fund</p></div></div></div>
