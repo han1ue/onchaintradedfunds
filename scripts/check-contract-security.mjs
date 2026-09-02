@@ -174,8 +174,8 @@ assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,add
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
-assert(JSON.stringify(routerMutating) === JSON.stringify(["acceptOwnership", "mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "renounceOwnership", "setAdapterApproved", "swapBasketToBasket", "transferOwnership"].sort()), "router exposes an unexpected mutating entrypoint");
-for (const name of ["mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "swapBasketToBasket", "factory", "weth", "isAdapterApproved", "setAdapterApproved", "owner", "pendingOwner"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
+assert(JSON.stringify(routerMutating) === JSON.stringify(["acceptOwnership", "mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "renounceOwnership", "setAdapterApproved", "swapBasketToBasket", "swapFeeSharesToWeth", "transferOwnership"].sort()), "router exposes an unexpected mutating entrypoint");
+for (const name of ["mintFromNative", "mintFromToken", "redeemToNative", "redeemToToken", "swapBasketToBasket", "swapFeeSharesToWeth", "factory", "weth", "isAdapterApproved", "setAdapterApproved", "owner", "pendingOwner"]) assert(functionNames(compiled.OTFEntryExitRouter).has(name), `router surface ${name} is absent`);
 assert(!functionNames(compiled.OTFEntryExitRouter).has("swapDirect"), "router retains swapDirect");
 const mintFromToken = routerFunctions.find((item) => item.name === "mintFromToken");
 const swapLeg = mintFromToken.inputs[1];
@@ -198,6 +198,7 @@ assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents
 assert(/MAX_FUND_THESIS_BYTES\s*=\s*2_048/u.test(sourceConstants), "maximum fund thesis is not 2048 bytes");
 assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and shutdown threshold is not 0.01 OTF");
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
+assert(/msg\.sender\s*!=\s*IOTFSettlementFactory\(factory\)\.buybackCollector\(\)/u.test(routerSource), "fee-share sale is not restricted to the factory collector");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
 const adapterSource = readFileSync(join(contracts, "src", "UniswapV3Adapter.sol"), "utf8");
 const v4AdapterSource = readFileSync(join(contracts, "src", "UniswapV4Adapter.sol"), "utf8");
@@ -223,16 +224,16 @@ assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(buybackSource), "buyback c
 assert(!/delegatecall|\.call\s*\{/u.test(buybackSource), "buyback collector exposes arbitrary execution");
 assert(/IOTFBurnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
 const buybackNames = functionNames(compiled.BuybackCollector);
-for (const name of ["configureFactory", "configureEntryExitRouter", "registerVault", "recordFeeShares", "settleFees", "feeAccounts"]) {
+for (const name of ["configureFactory", "configureEntryExitRouter", "registerVault", "recordFeeShares", "settleFeesViaRedemption", "settleFeesViaShareSale", "feeAccounts"]) {
   assert(buybackNames.has(name), `buyback collector function ${name} is absent`);
 }
-for (const removed of ["executeBuyback", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {
+for (const removed of ["executeBuyback", "settleFees", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {
   assert(!buybackNames.has(removed), `buyback collector retains legacy route-executor surface ${removed}`);
 }
 assert(/IOTFSettlementVault\(request\.vault\)\.checkpointFees\(\)/u.test(routerSource), "router does not checkpoint annual fees before settlement");
 assert(/IBuybackVault\(vault\)\.checkpointFees\(\)/u.test(buybackSource), "fee settlement does not checkpoint annual fees");
 assert(/account\.creatorFeeShares\s*=\s*0/u.test(buybackSource) && /account\.buybackFeeShares\s*=\s*0/u.test(buybackSource), "fee settlement does not atomically consume both pending share accounts");
-assert(/Math\.mulDiv\(wethOut, creatorFeeShares, feeShares\)/u.test(buybackSource), "settlement does not split actual WETH by recorded fee shares");
+assert(/Math\.mulDiv\(wethOut, pending\.creatorFeeShares, pending\.totalFeeShares\)/u.test(buybackSource), "settlement does not split actual WETH by recorded fee shares");
 const distributorSource = readFileSync(join(contracts, "src", "MerkleRewardsDistributor.sol"), "utf8");
 assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(distributorSource), "rewards distributor exposes a principal withdrawal path");
 assert(/block\.chainid,\s*address\(this\),\s*account,\s*cumulativeEntitlement/u.test(distributorSource), "Merkle leaf does not bind chain, distributor, account, and cumulative entitlement");

@@ -19,13 +19,19 @@ describe("fund fee claim wiring", () => {
     expect(css).toContain(".fundFeeClaimAmount { display: flex;");
   });
 
-  it("quotes the complete pending share balance and constructs both slippage minimums plus a deadline", () => {
+  it("quotes both complete-balance routes and lets the beneficiary choose best, sale, or redemption", () => {
     expect(component).toContain("inputAmount: formatUnits(pending.total, 18)");
     expect(component).toContain("quoteService.quoteBasket");
-    expect(component).toContain("route.shares !== pending.total");
+    expect(component).toContain("quoteService.quoteDirect");
+    expect(component).toContain('caller: collector');
+    expect(component).toContain('value="best">Best output');
+    expect(component).toContain('value="share-sale"');
+    expect(component).toContain('value="redemption"');
+    expect(component).toContain("redemption?.shares === pending.total");
+    expect(component).toContain("shareSale?.shares === pending.total");
     expect(component).toContain("proportionalWethSplit(settlementRoute.minWethOut, pending.creator, pending.buyback).buybackWeth");
-    expect(component).toContain("feeSettlementArgs(settlementRoute, minOtfOut, deadline)");
-    expect(component).toContain('functionName: "settleFees"');
+    expect(component).toContain("feeSettlementCall(settlementRoute, minOtfOut, deadline)");
+    expect(component).toContain("functionName: call.functionName");
   });
 
   it("wires loading, empty, missing-route, rejected, pending, success, and failure states", () => {
@@ -33,5 +39,6 @@ describe("fund fee claim wiring", () => {
       expect(component).toContain(state);
     }
     expect(component).toContain('aria-live="polite"');
+    expect(component).toContain("The selected settlement route is unavailable. Choose another route.");
   });
 });

@@ -43,6 +43,13 @@ struct BasketSwapRequest {
     uint256 deadline;
 }
 
+struct FeeShareSwapRequest {
+    address vault;
+    uint256 shares;
+    uint256 minAmountOut;
+    uint256 deadline;
+}
+
 /// @notice Atomic OTF basket settlement through explicitly approved trade adapters.
 /// @dev Route discovery and comparison are offchain. The adapter manager is trusted only to
 ///      authorize adapters; adapters are trusted execution boundaries whose balance deltas are
@@ -91,6 +98,7 @@ contract OTFEntryExitRouter is Ownable2Step {
     error UnexpectedNativeSender(address sender);
     error NativeTransferFailed(address recipient, uint256 amount);
     error NativeBalanceMismatch(uint256 expected, uint256 observed);
+    error UnauthorizedFeeCollector(address caller);
     error Reentrancy();
 
     event AdapterApprovalChanged(address indexed adapter, bool approved);
@@ -126,6 +134,7 @@ contract OTFEntryExitRouter is Ownable2Step {
     event NativeBasketRedeemed(
         address indexed caller, address indexed vault, uint256 shares, uint256 amountOut
     );
+    event FeeSharesSwapped(address indexed vault, uint256 shares, uint256 amountOut);
 
     struct BalanceSheet {
         address[] tokens;
@@ -281,6 +290,43 @@ contract OTFEntryExitRouter is Ownable2Step {
         (refundTokens, refundAmounts) = _refundAndClose(context.sheet, msg.sender);
 
         emit NativeBasketRedeemed(msg.sender, request.vault, request.shares, amountOut);
+    }
+
+    /// @notice Sells registered fund fee shares through approved adapters into canonical WETH.
+    /// @dev This narrow route is callable only by the factory's fee collector.
+    function swapFeeSharesToWeth(FeeShareSwapRequest calldata request, SwapLeg[] calldata legs)
+        external
+        nonReentrant
+        returns (uint256 amountOut)
+    {
+        if (msg.sender != IOTFSettlementFactory(factory).buybackCollector()) {
+            revert UnauthorizedFeeCollector(msg.sender);
+        }
+        _validateDeadline(request.deadline);
+        _requireVault(request.vault);
+        if (request.shares == 0) revert InvalidAmount();
+        if (request.minAmountOut == 0) revert ZeroMinimumOutput();
+
+        BalanceSheet memory sheet = _newBalanceSheet();
+        _addToken(sheet, request.vault);
+        _addToken(sheet, weth);
+        _prepareLegs(sheet, legs, address(0), address(0));
+        _snapshot(sheet);
+
+        _recordDebit(sheet, request.vault, request.shares);
+        _pullExact(request.vault, msg.sender, request.shares);
+        _executeLegs(sheet, legs);
+        _requireOnlyOutput(sheet, weth);
+        amountOut = _transientBalance(sheet, weth);
+        if (amountOut < request.minAmountOut) {
+            revert MinimumOutputNotMet(request.minAmountOut, amountOut);
+        }
+        _recordCredit(sheet, weth, amountOut);
+        _pushExact(weth, msg.sender, amountOut);
+        (address[] memory refundTokens,) = _refundAndClose(sheet, msg.sender);
+        if (refundTokens.length != 0) revert InvalidRouteKind();
+
+        emit FeeSharesSwapped(request.vault, request.shares, amountOut);
     }
 
     function _prepareMint(BasketMintRequest calldata request, SwapLeg[] calldata legs)

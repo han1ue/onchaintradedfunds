@@ -68,7 +68,7 @@ describe("$OTF page wiring", () => {
   });
 
   it("gives both wallet empty-state descriptions one shared muted style", () => {
-    expect(operate).toContain("OTFs will appear here after this wallet creates them through the factory.");
+    expect(operate).toContain("OTFs will appear here after this wallet launches them through the factory.");
     expect(operate).toContain("Your OTF shares will appear here after a purchase or deposit.");
     expect(css).toContain(".inlineEmptyState > div > span { color: var(--text-muted); font-weight: 400; opacity: 1; }");
     expect(css).not.toMatch(/\.walletPositionEmpty\s+span\s*\{/u);

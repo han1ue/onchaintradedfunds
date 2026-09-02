@@ -10,7 +10,12 @@ import {
     UniswapV4ExactInputParams,
     UniswapV4PathKey
 } from "./interfaces/IUniswapV4.sol";
-import { BasketRedeemRequest, OTFEntryExitRouter, SwapLeg } from "./OTFEntryExitRouter.sol";
+import {
+    BasketRedeemRequest,
+    FeeShareSwapRequest,
+    OTFEntryExitRouter,
+    SwapLeg
+} from "./OTFEntryExitRouter.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IOTFBurnable is IERC20 {
@@ -74,6 +79,13 @@ contract BuybackCollector {
         address expenseBeneficiary;
     }
 
+    struct PendingSettlement {
+        uint256 creatorFeeShares;
+        uint256 buybackFeeShares;
+        uint256 totalFeeShares;
+        address beneficiary;
+    }
+
     event VaultRegistered(address indexed vault, address indexed expenseBeneficiary);
     event FeeSharesRecorded(
         address indexed vault,
@@ -85,6 +97,7 @@ contract BuybackCollector {
     event FeesSettled(
         address indexed vault,
         address indexed expenseBeneficiary,
+        bool sharesRedeemed,
         uint256 creatorFeeShares,
         uint256 buybackFeeShares,
         uint256 creatorWeth,
@@ -208,7 +221,7 @@ contract BuybackCollector {
         );
     }
 
-    function settleFees(
+    function settleFeesViaRedemption(
         address vault,
         uint256[] calldata minBasketAmounts,
         SwapLeg[] calldata legs,
@@ -216,6 +229,63 @@ contract BuybackCollector {
         uint256 minOtfOut,
         uint256 deadline
     ) external nonReentrant returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
+        address router = entryExitRouter;
+        _requireContract(router);
+        _validateLegs(router, legs, vault);
+        PendingSettlement memory pending = _consumePending(vault, minWethOut, minOtfOut, deadline);
+
+        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
+        _approveExact(vault, router, pending.totalFeeShares);
+        (uint256 reportedWeth,,) = OTFEntryExitRouter(payable(router))
+            .redeemToToken(
+                BasketRedeemRequest({
+                vault: vault,
+                outputToken: weth,
+                shares: pending.totalFeeShares,
+                minAmountOut: minWethOut,
+                deadline: deadline
+            }),
+                minBasketAmounts,
+                legs
+            );
+        _approveExact(vault, router, 0);
+        uint256 wethOut = _checkWethOutput(wethBefore, reportedWeth, minWethOut);
+        return _finishSettlement(vault, pending, wethOut, minOtfOut, deadline, true);
+    }
+
+    function settleFeesViaShareSale(
+        address vault,
+        SwapLeg[] calldata legs,
+        uint256 minWethOut,
+        uint256 minOtfOut,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
+        address router = entryExitRouter;
+        _requireContract(router);
+        _validateLegs(router, legs, address(0));
+        PendingSettlement memory pending = _consumePending(vault, minWethOut, minOtfOut, deadline);
+
+        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
+        _approveExact(vault, router, pending.totalFeeShares);
+        uint256 reportedWeth = OTFEntryExitRouter(payable(router))
+            .swapFeeSharesToWeth(
+                FeeShareSwapRequest({
+                vault: vault,
+                shares: pending.totalFeeShares,
+                minAmountOut: minWethOut,
+                deadline: deadline
+            }),
+                legs
+            );
+        _approveExact(vault, router, 0);
+        uint256 wethOut = _checkWethOutput(wethBefore, reportedWeth, minWethOut);
+        return _finishSettlement(vault, pending, wethOut, minOtfOut, deadline, false);
+    }
+
+    function _consumePending(address vault, uint256 minWethOut, uint256 minOtfOut, uint256 deadline)
+        private
+        returns (PendingSettlement memory pending)
+    {
         // Deadlines are intentionally enforced against the current transaction timestamp.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlineExpired(deadline);
@@ -224,13 +294,25 @@ contract BuybackCollector {
                 || minOtfOut > type(uint128).max
         ) revert InvalidAmount();
         VaultFeeAccount storage account = feeAccounts[vault];
-        address beneficiary = account.expenseBeneficiary;
-        if (!_isRegisteredVault(vault, beneficiary)) revert InvalidVault(vault);
-        if (msg.sender != beneficiary) {
-            revert UnauthorizedBeneficiary(msg.sender, beneficiary);
+        pending.beneficiary = account.expenseBeneficiary;
+        if (!_isRegisteredVault(vault, pending.beneficiary)) revert InvalidVault(vault);
+        if (msg.sender != pending.beneficiary) {
+            revert UnauthorizedBeneficiary(msg.sender, pending.beneficiary);
         }
-        address router = entryExitRouter;
-        _requireContract(router);
+
+        IBuybackVault(vault).checkpointFees();
+        pending.creatorFeeShares = account.creatorFeeShares;
+        pending.buybackFeeShares = account.buybackFeeShares;
+        pending.totalFeeShares = pending.creatorFeeShares + pending.buybackFeeShares;
+        if (pending.totalFeeShares == 0) revert NothingToSettle(vault);
+        account.creatorFeeShares = 0;
+        account.buybackFeeShares = 0;
+    }
+
+    function _validateLegs(address router, SwapLeg[] calldata legs, address forbiddenVault)
+        private
+        view
+    {
         for (uint256 i = 0; i < legs.length; i++) {
             SwapLeg calldata leg = legs[i];
             if (!OTFEntryExitRouter(payable(router)).isAdapterApproved(leg.adapter)) {
@@ -238,45 +320,40 @@ contract BuybackCollector {
             }
             if (
                 leg.tokenIn == address(0) || leg.tokenOut == address(0)
-                    || leg.tokenIn == leg.tokenOut || leg.tokenIn == vault || leg.tokenOut == vault
+                    || leg.tokenIn == leg.tokenOut || leg.tokenIn == forbiddenVault
+                    || leg.tokenOut == forbiddenVault
             ) {
                 revert InvalidRouteToken(i, leg.tokenIn, leg.tokenOut);
             }
         }
+    }
 
-        IBuybackVault(vault).checkpointFees();
-        uint256 creatorFeeShares = account.creatorFeeShares;
-        uint256 buybackFeeShares = account.buybackFeeShares;
-        uint256 feeShares = creatorFeeShares + buybackFeeShares;
-        if (feeShares == 0) revert NothingToSettle(vault);
-        account.creatorFeeShares = 0;
-        account.buybackFeeShares = 0;
-
-        uint256 wethBefore = IERC20(weth).balanceOf(address(this));
-        _approveExact(vault, router, feeShares);
-        (uint256 reportedWeth,,) = OTFEntryExitRouter(payable(router))
-            .redeemToToken(
-                BasketRedeemRequest({
-                vault: vault,
-                outputToken: weth,
-                shares: feeShares,
-                minAmountOut: minWethOut,
-                deadline: deadline
-            }),
-                minBasketAmounts,
-                legs
-            );
-        _approveExact(vault, router, 0);
+    function _checkWethOutput(uint256 wethBefore, uint256 reportedWeth, uint256 minWethOut)
+        private
+        view
+        returns (uint256 wethOut)
+    {
         uint256 wethAfter = IERC20(weth).balanceOf(address(this));
-        uint256 wethOut = wethAfter >= wethBefore ? wethAfter - wethBefore : 0;
+        wethOut = wethAfter >= wethBefore ? wethAfter - wethBefore : 0;
         if (wethOut != reportedWeth) {
             revert BalanceDeltaMismatch(weth, reportedWeth, wethOut);
         }
         if (wethOut < minWethOut) revert MinimumOutputNotMet(weth, minWethOut, wethOut);
+    }
 
-        creatorWeth = creatorFeeShares == 0 ? 0 : Math.mulDiv(wethOut, creatorFeeShares, feeShares);
+    function _finishSettlement(
+        address vault,
+        PendingSettlement memory pending,
+        uint256 wethOut,
+        uint256 minOtfOut,
+        uint256 deadline,
+        bool sharesRedeemed
+    ) private returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
+        creatorWeth = pending.creatorFeeShares == 0
+            ? 0
+            : Math.mulDiv(wethOut, pending.creatorFeeShares, pending.totalFeeShares);
         buybackWeth = wethOut - creatorWeth;
-        if (creatorWeth != 0) _pushExact(weth, beneficiary, creatorWeth);
+        if (creatorWeth != 0) _pushExact(weth, pending.beneficiary, creatorWeth);
         otfBurned = _buyOtf(buybackWeth, minOtfOut, deadline);
         uint256 otfBeforeBurn = IERC20(otf).balanceOf(address(this));
         IOTFBurnable(otf).burn(otfBurned);
@@ -287,9 +364,10 @@ contract BuybackCollector {
         }
         emit FeesSettled(
             vault,
-            beneficiary,
-            creatorFeeShares,
-            buybackFeeShares,
+            pending.beneficiary,
+            sharesRedeemed,
+            pending.creatorFeeShares,
+            pending.buybackFeeShares,
             creatorWeth,
             buybackWeth,
             otfBurned

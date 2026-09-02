@@ -167,9 +167,10 @@ the permissionless contracts. Production liquidity is managed at the external ve
 remains a visibly testnet-only utility for explicitly configured Synthra V3 pools and is not a
 production deployment path. OTF itself is immediately usable as a normal constituent through the
 canonical 0%-fee V4 pool. Only the immutable expense beneficiary may submit its vault's complete
-fee settlement. The route redeems all pending shares, converts the basket to WETH through these typed
-adapters, pays the stored creator portion in WETH, buys OTF with only the buyback portion through the
-canonical pool, and burns the purchased OTF atomically.
+fee settlement. The beneficiary may sell the exact pending fund shares through approved pools ending
+in WETH or redeem them and convert every basket constituent to WETH. The collector pays the stored
+creator portion in WETH, buys OTF with only the buyback portion through the canonical pool, and burns
+the purchased OTF atomically.
 
 ## Verification
 

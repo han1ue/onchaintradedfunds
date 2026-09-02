@@ -102,7 +102,7 @@ export async function submitAndConfirmCreation(input: {
     return {
       status: "failure",
       phase: "write",
-      message: error instanceof Error ? error.message : "OTF creation was not submitted.",
+      message: error instanceof Error ? error.message : "OTF launch was not submitted.",
     };
   }
   input.onBroadcast?.(hash);

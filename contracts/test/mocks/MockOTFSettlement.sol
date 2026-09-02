@@ -5,7 +5,12 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
 contract MockOTFSettlementFactory {
+    address public buybackCollector;
     mapping(address => bool) public isVault;
+
+    function setBuybackCollector(address collector) external {
+        buybackCollector = collector;
+    }
 
     function setVault(address vault, bool registered) external {
         isVault[vault] = registered;

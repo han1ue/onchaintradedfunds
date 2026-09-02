@@ -8,7 +8,7 @@ function isAppRoute(pathname: string): boolean {
   if (pathname === "/") return true;
   return (
     pathname.startsWith("/funds") ||
-    pathname === "/create" ||
+    pathname === "/launch" ||
     pathname === "/liquidity" ||
     pathname === "/token" ||
     pathname === "/verified" ||

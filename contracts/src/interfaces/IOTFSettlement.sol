@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 interface IOTFSettlementFactory {
+    function buybackCollector() external view returns (address);
+
     function isVault(address vault) external view returns (bool);
 }
 

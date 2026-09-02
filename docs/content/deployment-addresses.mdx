@@ -33,7 +33,8 @@ Production deployment must repeat its identity and freshness checks and configur
 
 The deployment script creates the collector before the factory, then performs one-time factory and
 entry-router configuration. Vault creation registers each vault and its immutable expense
-beneficiary with the collector. The script records new protocol addresses only after dependency
+beneficiary with the collector. The router exposes the fund-share sale path only to that configured
+collector; ordinary users retain the existing swap surfaces. The script records new protocol addresses only after dependency
 checks, adapter approval, launch initialization, and allocation reconciliation succeed.
 
 The application configuration retains the reviewed testnet periphery addresses and pinned runtime

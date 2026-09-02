@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ManagedOTFVault} from "../src/ManagedOTFVault.sol";
-import {OTFFactory} from "../src/OTFFactory.sol";
-import {VaultCreationParams} from "../src/VaultTypes.sol";
-import {MockStockToken} from "./mocks/MockStockToken.sol";
-import {BootstrapTestBase, MockBuybackReceiver, MockCoreRouter} from "./BootstrapTestBase.sol";
+import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { OTFFactory } from "../src/OTFFactory.sol";
+import { VaultCreationParams } from "../src/VaultTypes.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { BootstrapTestBase, MockBuybackReceiver, MockCoreRouter } from "./BootstrapTestBase.sol";
 
 contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testFeeBenefitCurveReferenceValuesAndDonationDoesNotCount() public {
@@ -18,11 +18,28 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         protocolOtf.mint(address(zero), 10_000_000 ether);
         assertEq(zero.feeCreatorShareBps(), 5_000);
 
-        assertEq(_newOtfVault(factory, protocolOtf, asset, 1_000_000 ether, router).feeCreatorShareBps(), 6_264);
-        assertEq(_newOtfVault(factory, protocolOtf, asset, 2_500_000 ether, router).feeCreatorShareBps(), 7_000);
-        assertEq(_newOtfVault(factory, protocolOtf, asset, 5_000_000 ether, router).feeCreatorShareBps(), 7_828);
-        assertEq(_newOtfVault(factory, protocolOtf, asset, 10_000_000 ether, router).feeCreatorShareBps(), 9_000);
-        assertEq(_newOtfVault(factory, protocolOtf, asset, 11_000_000 ether, router).feeCreatorShareBps(), 9_000);
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 1_000_000 ether, router).feeCreatorShareBps(),
+            6_264
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 2_500_000 ether, router).feeCreatorShareBps(),
+            7_000
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 5_000_000 ether, router).feeCreatorShareBps(),
+            7_828
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 10_000_000 ether, router)
+                .feeCreatorShareBps(),
+            9_000
+        );
+        assertEq(
+            _newOtfVault(factory, protocolOtf, asset, 11_000_000 ether, router)
+                .feeCreatorShareBps(),
+            9_000
+        );
     }
 
     function testImmutableMintAndRedeemFeesMatchPreviewsAndExecution() public {
@@ -59,7 +76,9 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         assertEq(vault.mintFeeBps(), 200);
         assertEq(vault.redeemFeeBps(), 100);
 
-        _assertRedeemFeeCollection(vault, router, asset, collector, grossShares, creatorMint, buybackMint);
+        _assertRedeemFeeCollection(
+            vault, router, asset, collector, grossShares, creatorMint, buybackMint
+        );
     }
 
     function testFeeSplitIsRecordedWhenChargedAndNotRecomputedAfterOtfBalanceChanges() public {
@@ -94,8 +113,14 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
 
         assertEq(firstCreator + firstBuyback, firstFee);
         assertEq(secondCreator + secondBuyback, secondFee);
-        assertEq(MockBuybackReceiver(collector).creatorFeeShares(address(vault)), firstCreator + secondCreator);
-        assertEq(MockBuybackReceiver(collector).buybackFeeShares(address(vault)), firstBuyback + secondBuyback);
+        assertEq(
+            MockBuybackReceiver(collector).creatorFeeShares(address(vault)),
+            firstCreator + secondCreator
+        );
+        assertEq(
+            MockBuybackReceiver(collector).buybackFeeShares(address(vault)),
+            firstBuyback + secondBuyback
+        );
         assertEq(vault.balanceOf(collector), firstFee + secondFee);
         assertEq(vault.balanceOf(BENEFICIARY), 0);
     }
@@ -135,8 +160,10 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         ManagedOTFVault implementation = new ManagedOTFVault();
         MockBuybackReceiver collector = new MockBuybackReceiver();
         MockStockToken protocolOtf = new MockStockToken("OTF", "OTF", 18);
-        OTFFactory unconfigured = new OTFFactory(address(implementation), address(collector), address(protocolOtf));
-        OTFFactory otherFactory = new OTFFactory(address(implementation), address(collector), address(protocolOtf));
+        OTFFactory unconfigured =
+            new OTFFactory(address(implementation), address(collector), address(protocolOtf));
+        OTFFactory otherFactory =
+            new OTFFactory(address(implementation), address(collector), address(protocolOtf));
         MockCoreRouter wrongRouter = new MockCoreRouter(address(otherFactory));
         vm.expectPartialRevert(OTFFactory.RouterFactoryMismatch.selector);
         unconfigured.configureEntryExitRouter(address(wrongRouter));
@@ -203,9 +230,17 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         assertEq(asset.balanceOf(ALICE), preview[0]);
         assertEq(vault.balanceOf(ALICE), 50 ether);
         assertEq(vault.balanceOf(BENEFICIARY), 0);
-        assertEq(vault.balanceOf(collector), creatorMint + buybackMint + creatorRedeem + buybackRedeem);
-        assertEq(MockBuybackReceiver(collector).creatorFeeShares(address(vault)), creatorMint + creatorRedeem);
-        assertEq(MockBuybackReceiver(collector).buybackFeeShares(address(vault)), buybackMint + buybackRedeem);
+        assertEq(
+            vault.balanceOf(collector), creatorMint + buybackMint + creatorRedeem + buybackRedeem
+        );
+        assertEq(
+            MockBuybackReceiver(collector).creatorFeeShares(address(vault)),
+            creatorMint + creatorRedeem
+        );
+        assertEq(
+            MockBuybackReceiver(collector).buybackFeeShares(address(vault)),
+            buybackMint + buybackRedeem
+        );
         assertEq(creatorRedeem + buybackRedeem, redeemFee);
         assertEq(vault.totalSupply(), grossShares - redeemedShares);
     }

@@ -4,7 +4,7 @@ The project security policy, threat model, trust assumptions, and production blo
 
 The root-publishing multisig, adapter manager, production ETH/USD oracle, approved adapters, and
 configured Uniswap deployments are explicit trust boundaries. Each immutable expense beneficiary
-chooses its own settlement routes, minimums, and deadline; there is no trusted buyback route
+chooses a complete fund-share sale or basket-redemption route, minimums, and deadline; there is no trusted buyback route
 executor. The current v3 scope is unaudited and requires a fresh testnet deployment and independent
 review before use. Native ETH is accepted only by explicit entry/exit endpoints, normalized to the
 router's immutable canonical WETH, and never passed to a vault or adapter leg.

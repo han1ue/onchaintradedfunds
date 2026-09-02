@@ -25,8 +25,9 @@ Each fund has immutable annual, mint, and redeem rates. Accounted OTF held as a 
 changes only the creator-versus-buyback split, from 50/50 up to 90/10 at 10 million OTF. Every fee
 share is minted to `BuybackCollector`, which records the creator and buyback portions for each vault
 when the fee is charged. Only that vault's immutable expense beneficiary may settle the account.
-Settlement redeems all pending shares through typed adapter routes, pays the creator portion in
-WETH, spends only the remaining WETH through the canonical OTF pool, and burns every purchased OTF.
+Settlement either sells all pending fund shares through an approved path ending in WETH or redeems
+them and routes every constituent to WETH. It pays the creator portion in WETH, spends only the
+remaining WETH through the canonical OTF pool, and burns every purchased OTF.
 
 The shared Swap product requires a fund share or the protocol OTF token on at least one side. It is
 not a general token-to-token exchange. ETH and WETH are distinct selectable boundary assets; ETH is

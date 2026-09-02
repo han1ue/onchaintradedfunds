@@ -18,4 +18,6 @@ The entry/exit-router review scope includes its immutable canonical-WETH boundar
 native minting, atomic WETH redemption and payout, donation preservation, callback/reentrancy rules,
 checked native sends, and the invariant that native markers never enter `SwapLeg[]` adapter routes.
 The collector review scope includes factory-only vault registration, accrual-time creator/buyback
-accounting, beneficiary-only atomic settlement, exact WETH payment, canonical-pool buyback, and burn.
+accounting, beneficiary-selected share-sale or basket-redemption settlement, exact WETH payment,
+canonical-pool buyback, and burn. The entry router's collector-only fee-share sale must consume the
+exact registered-vault share input and leave only canonical WETH output.

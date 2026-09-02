@@ -75,7 +75,16 @@ import {
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { quoteCanonicalOtfSwap } from "@/lib/otf-market";
 import { canonicalV4Execution } from "@/lib/canonical-v4-execution";
-import { feeSettlementArgs, feeSettlementRouteFromQuote, pendingFeeShares, proportionalWethSplit, type FeeSettlementRoute } from "@/lib/fee-settlement";
+import {
+  feeSettlementCall,
+  pendingFeeShares,
+  proportionalWethSplit,
+  redemptionFeeSettlementRouteFromQuote,
+  selectFeeSettlementRoute,
+  shareSaleFeeSettlementRouteFromQuote,
+  type FeeSettlementRoutePreference,
+  type FeeSettlementRoutes,
+} from "@/lib/fee-settlement";
 import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
@@ -92,7 +101,7 @@ import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
 import { OTFTokenSurface } from "./OTFTokenSurface";
 
-export type OperateView = "landing" | "swap" | "detail" | "vaults" | "create" | "verified" | "wallet" | "liquidity" | "token";
+export type OperateView = "landing" | "swap" | "detail" | "vaults" | "launch" | "verified" | "wallet" | "liquidity" | "token";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const X_URL = "https://x.com/OTFProtocol";
@@ -1085,11 +1094,11 @@ function LiquiditySurface() {
   );
 }
 
-function CreateSurface() {
+function LaunchSurface() {
   return (
     <DashboardPage className="createPage">
       <div className="appView">
-        <AppPageHeader title="Create OTF" description="Choose the identity, thesis, assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
+        <AppPageHeader title="Launch OTF" description="Choose the identity, thesis, assets, weights, and creator fee for your new onchain fund." icon={<FilePlus2 size={18} />} />
         <CreateOTFForm />
       </div>
     </DashboardPage>
@@ -1146,16 +1155,16 @@ function CreatedFundSurface() {
     <DashboardPage className="fundsPage">
       <div className="appView">
         <AppPageHeader
-          title={confirmation === "confirmed" ? "OTF created" : confirmation === "failure" ? "Confirmation unavailable" : "Confirming OTF creation"}
-          description={confirmation === "confirmed" ? "The creation transaction is confirmed on Robinhood Testnet." : confirmation === "failure" ? "The transaction and created address could not be verified from this URL." : "Checking the creation transaction and deployed OTF address."}
+          title={confirmation === "confirmed" ? "OTF launched" : confirmation === "failure" ? "Confirmation unavailable" : "Confirming OTF launch"}
+          description={confirmation === "confirmed" ? "The launch transaction is confirmed on Robinhood Testnet." : confirmation === "failure" ? "The transaction and launched address could not be verified from this URL." : "Checking the launch transaction and deployed OTF address."}
           icon={confirmation === "confirmed" ? <CheckCircle size={18} /> : confirmation === "failure" ? <XCircle size={18} /> : <LoaderCircle className="createAssetSpinner" size={18} />}
         />
         <section className="createdConfirmation" aria-labelledby="created-otf-title">
           <div className="createdStatus">
             <span className={`createdStatusIcon ${confirmation === "failure" ? "failure" : ""}`}>{confirmation === "confirmed" ? <Check size={24} /> : confirmation === "failure" ? <X size={22} /> : <LoaderCircle className="createAssetSpinner" size={22} />}</span>
             <div>
-              <h2 id="created-otf-title">{confirmation === "confirmed" ? details?.name ?? "Deployment confirmed" : confirmation === "failure" ? "Unable to verify creation" : "Verifying onchain confirmation"}</h2>
-              <p>{confirmation === "confirmed" ? `${details?.symbol ?? "The new OTF"} is live. Open its fund page whenever you are ready.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "The fund-page link will appear after the factory creation event is verified."}</p>
+              <h2 id="created-otf-title">{confirmation === "confirmed" ? details?.name ?? "Deployment confirmed" : confirmation === "failure" ? "Unable to verify launch" : "Verifying onchain confirmation"}</h2>
+              <p>{confirmation === "confirmed" ? `${details?.symbol ?? "The new OTF"} is live. Open its fund page whenever you are ready.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "The fund-page link will appear after the factory launch event is verified."}</p>
             </div>
           </div>
           {address ? (
@@ -1182,9 +1191,9 @@ function CreatedFundSurface() {
               <div><span>Redeem</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.redeemFeeBps) : "—"}</strong></div>
             </section>
           </div>
-          {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View creation transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
+          {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
-            <Link className="secondaryAction" href="/create"><FilePlus2 size={14} />Create another</Link>
+            <Link className="secondaryAction" href="/launch"><FilePlus2 size={14} />Launch another</Link>
             {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF</Link> : null}
           </div>
         </section>
@@ -1208,11 +1217,13 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   const collector = robinhoodTestnetAddresses.buybackCollector;
   const canonicalWeth = robinhoodTestnetAddresses.weth;
   const launchManager = robinhoodTestnetAddresses.launchManager;
+  const settlementAdapter = robinhoodTestnetAddresses.uniswapV3Adapter;
   const configured = chainId === robinhoodChainTestnet.id
-    && Boolean(collector && canonicalWeth && launchManager && robinhoodTestnetDeploymentReady);
+    && Boolean(collector && canonicalWeth && launchManager && settlementAdapter && robinhoodTestnetDeploymentReady);
   const [slippageBps, setSlippageBps] = useState(50);
+  const [routePreference, setRoutePreference] = useState<FeeSettlementRoutePreference>("best");
   const [quoteState, setQuoteState] = useState<"idle" | "loading" | "ready" | "missing">("idle");
-  const [settlementRoute, setSettlementRoute] = useState<FeeSettlementRoute>();
+  const [settlementRoutes, setSettlementRoutes] = useState<FeeSettlementRoutes>({});
   const [quoteRequest, setQuoteRequest] = useState(0);
   const [claimState, setClaimState] = useState<FeeClaimTransactionState>("idle");
   const [claimHash, setClaimHash] = useState<Hex>();
@@ -1239,23 +1250,26 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   useEffect(() => {
     setClaimState("idle");
     setClaimHash(undefined);
-  }, [pending?.total, slippageBps]);
+  }, [pending?.total, routePreference, slippageBps]);
 
   useEffect(() => {
     let cancelled = false;
     let refreshTimer: number | undefined;
-    if (!configured || !accountMatches || !address || !canonicalWeth || !pending) {
+    if (
+      !configured || !accountMatches || !collector || !canonicalWeth || !settlementAdapter
+      || !pending
+    ) {
       setQuoteState(configured ? "idle" : "missing");
-      setSettlementRoute(undefined);
+      setSettlementRoutes({});
       return;
     }
     if (pending.total === 0n) {
       setQuoteState("idle");
-      setSettlementRoute(undefined);
+      setSettlementRoutes({});
       return;
     }
     setQuoteState("loading");
-    setSettlementRoute(undefined);
+    setSettlementRoutes({});
     const requestedAt = Date.now();
     const input: SwapAsset = {
       address: vault,
@@ -1275,33 +1289,66 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       metadataResolved: true,
       verified: true,
     };
-    void quoteService.quoteBasket({
+    const request = {
       chainId,
       input,
       output,
       inputAmount: formatUnits(pending.total, 18),
       slippageBps,
       requestedAt,
-      caller: address,
-    }).then((quote) => {
+      caller: collector,
+    } as const;
+    void Promise.allSettled([
+      quoteService.quoteBasket(request),
+      quoteService.quoteDirect(request),
+    ]).then(([redemptionResult, shareSaleResult]) => {
       if (cancelled) return;
-      const route = feeSettlementRouteFromQuote(quote, vault, canonicalWeth);
-      if (!route || route.shares !== pending.total || !quoteIsFresh(quote, Date.now())) {
-        setQuoteState("missing");
-        return;
+      const now = Date.now();
+      const redemptionQuote = redemptionResult.status === "fulfilled" ? redemptionResult.value : undefined;
+      const shareSaleQuote = shareSaleResult.status === "fulfilled" ? shareSaleResult.value : undefined;
+      const redemption = redemptionQuote && quoteIsFresh(redemptionQuote, now)
+        ? redemptionFeeSettlementRouteFromQuote(redemptionQuote, vault, canonicalWeth, collector)
+        : undefined;
+      const shareSale = shareSaleQuote && quoteIsFresh(shareSaleQuote, now)
+        ? shareSaleFeeSettlementRouteFromQuote(
+            shareSaleQuote,
+            vault,
+            canonicalWeth,
+            collector,
+            settlementAdapter,
+            testnetVenue.swapRouter02,
+          )
+        : undefined;
+      const routes: FeeSettlementRoutes = {
+        redemption: redemption?.shares === pending.total ? redemption : undefined,
+        shareSale: shareSale?.shares === pending.total ? shareSale : undefined,
+      };
+      setSettlementRoutes(routes);
+      setQuoteState(routes.redemption || routes.shareSale ? "ready" : "missing");
+      const expiries = [
+        routes.redemption ? redemptionQuote?.expiresAt : undefined,
+        routes.shareSale ? shareSaleQuote?.expiresAt : undefined,
+      ].filter((value): value is number => value !== undefined);
+      if (expiries.length !== 0) {
+        const refreshAfter = Math.max(1_000, Math.min(...expiries) - now + 25);
+        refreshTimer = window.setTimeout(() => setQuoteRequest((current) => current + 1), refreshAfter);
       }
-      setSettlementRoute(route);
-      setQuoteState("ready");
-      const refreshAfter = Math.max(1_000, (quote.expiresAt ?? Date.now() + 15_000) - Date.now() + 25);
-      refreshTimer = window.setTimeout(() => setQuoteRequest((current) => current + 1), refreshAfter);
     }).catch(() => {
-      if (!cancelled) setQuoteState("missing");
+      if (!cancelled) {
+        setSettlementRoutes({});
+        setQuoteState("missing");
+      }
     });
     return () => {
       cancelled = true;
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
     };
-  }, [accountMatches, address, canonicalWeth, chainId, configured, pending, quoteRequest, quoteService, slippageBps, vault]);
+  }, [accountMatches, canonicalWeth, chainId, collector, configured, pending, quoteRequest, quoteService, settlementAdapter, slippageBps, vault]);
+
+  const settlementRoute = useMemo(
+    () => selectFeeSettlementRoute(settlementRoutes, routePreference),
+    [routePreference, settlementRoutes],
+  );
 
   const launchAddress = launchManager ?? zeroAddress;
   const canonicalReads = useReadContracts({
@@ -1366,15 +1413,27 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       setClaimState("wallet");
       setClaimHash(undefined);
       const deadline = BigInt(Math.floor(Date.now() / 1_000) + 5 * 60);
-      const args = feeSettlementArgs(settlementRoute, minOtfOut, deadline);
-      const simulation = await publicClient.simulateContract({
-        account: address,
-        address: collector,
-        abi: buybackCollectorAbi,
-        functionName: "settleFees",
-        args,
-      });
-      const hash = await walletClient.writeContract(simulation.request);
+      const call = feeSettlementCall(settlementRoute, minOtfOut, deadline);
+      let hash: Hex;
+      if (call.functionName === "settleFeesViaRedemption") {
+        const simulation = await publicClient.simulateContract({
+          account: address,
+          address: collector,
+          abi: buybackCollectorAbi,
+          functionName: call.functionName,
+          args: call.args,
+        });
+        hash = await walletClient.writeContract(simulation.request);
+      } else {
+        const simulation = await publicClient.simulateContract({
+          account: address,
+          address: collector,
+          abi: buybackCollectorAbi,
+          functionName: call.functionName,
+          args: call.args,
+        });
+        hash = await walletClient.writeContract(simulation.request);
+      }
       setClaimHash(hash);
       setClaimState("pending");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -1388,6 +1447,17 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
     }
   }
 
+  const routeQuoteSummary = [
+    settlementRoutes.redemption
+      ? `Redeem ${formatWethAmount(settlementRoutes.redemption.expectedWethOut)}`
+      : undefined,
+    settlementRoutes.shareSale
+      ? `Sell ${formatWethAmount(settlementRoutes.shareSale.expectedWethOut)}`
+      : undefined,
+  ].filter((value): value is string => Boolean(value)).join(" · ");
+  const selectedRouteLabel = settlementRoute?.mode === "share-sale"
+    ? "Selling shares through approved pools"
+    : "Redeeming shares into the basket";
   const amount = expectedCreatorWeth !== undefined
     ? formatClaimWeth(expectedCreatorWeth)
     : quoteState === "loading" || (pending && pending.total > 0n && canonicalReads.isPending)
@@ -1411,17 +1481,24 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
                 ? "The vault fee account could not be verified."
                 : pending?.total === 0n
                   ? "Annual fees are checkpointed automatically when a claim is submitted."
-                  : quoteState === "missing" || (quoteState === "ready" && !minOtfOut && !canonicalReads.isPending)
-                    ? "No complete basket-to-WETH and WETH-to-OTF route is currently available."
+                  : quoteState === "missing"
+                    ? "No complete share-sale or basket-redemption route to WETH is currently available."
+                    : quoteState === "ready" && !settlementRoute
+                      ? "The selected settlement route is unavailable. Choose another route."
+                      : quoteState === "ready" && !minOtfOut && !canonicalReads.isPending
+                        ? "The WETH-to-OTF buyback route cannot satisfy the selected minimum."
                     : claimReady
-                      ? "Quoted from the full pending fund-share balance."
+                      ? `${selectedRouteLabel}. ${routeQuoteSummary}`
                       : "Loading pending fees and routes…";
 
   return (
     <section className="fundFeeClaim" aria-labelledby={`fee-claim-${vault}`}>
       <div className="fundFeeClaimHeader">
         <h2 id={`fee-claim-${vault}`}>Available to claim</h2>
-        <label><span>Slippage</span><span className="selectControl fundFeeSlippage"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} disabled={busy} aria-label="Fee settlement slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
+        <div className="fundFeeClaimControls">
+          <label><span>Route</span><span className="selectControl fundFeeRoute"><select value={routePreference} onChange={(event) => setRoutePreference(event.target.value as FeeSettlementRoutePreference)} disabled={busy} aria-label="Fee settlement route"><option value="best">Best output</option><option value="share-sale" disabled={quoteState === "ready" && !settlementRoutes.shareSale}>Sell shares</option><option value="redemption" disabled={quoteState === "ready" && !settlementRoutes.redemption}>Redeem basket</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
+          <label><span>Slippage</span><span className="selectControl fundFeeSlippage"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} disabled={busy} aria-label="Fee settlement slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={12} aria-hidden="true" /></span></label>
+        </div>
       </div>
       <div className="fundFeeClaimAmount"><strong>{amount}</strong><button className="primaryAction" type="button" disabled={!claimReady || busy || pending?.total === 0n} onClick={() => void claimFees()}>{busy ? <LoaderCircle className="spin" size={14} /> : <CheckCircle size={14} />}Claim</button></div>
       <div className={`fundFeeClaimStatus ${claimState === "failure" ? "failure" : claimState === "success" ? "success" : ""}`} aria-live="polite"><span>{status}</span>{claimHash ? <a href={`${explorer}/tx/${claimHash}`} target="_blank" rel="noreferrer">View transaction <ExternalLink size={11} /></a> : null}</div>
@@ -1436,6 +1513,10 @@ function formatShareSupply(value: bigint): string {
 function formatClaimWeth(value: bigint): string {
   if (value > 0n && value < 1_000_000_000_000n) return "<0.000001 WETH";
   return `${Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} WETH`;
+}
+
+function formatWethAmount(value: bigint): string {
+  return `${Number(formatUnits(value, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })} WETH`;
 }
 
 type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
@@ -1789,7 +1870,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
           <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span></div>
-          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/create?from=funds">Create an OTF<ArrowUpRight size={14} /></Link></div>
+          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Canonical USDG is configured, but no OTF deployments or typed execution service are available on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
@@ -1811,7 +1892,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               ) : (
                 <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
               ) : (
-                <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their creation transaction is confirmed."}</span></>}</div>
+                <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}
             </section>
           </>
@@ -1882,8 +1963,8 @@ function WalletSurface() {
               {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow walletPositionRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
             </section>
             <section className="sectionCard managedVaultsPanel">
-              <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds created by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/create?from=wallet">Create OTF</Link></div></div>
-              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs created by this wallet" : vaultDirectoryState === "failure" ? "Could not load created OTFs" : "No created OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet creates them through the factory."}</span></div></div>}
+              <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds launched by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/launch?from=wallet">Launch OTF</Link></div></div>
+              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs launched by this wallet" : vaultDirectoryState === "failure" ? "Could not load launched OTFs" : "No launched OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet launches them through the factory."}</span></div></div>}
             </section>
           </>
         ) : (
@@ -1910,7 +1991,7 @@ function OperateRouter({ initialView }: { initialView: OperateView }) {
   if (initialView === "landing") return <SplashPage />;
 
   if (initialView === "liquidity") return <LiquiditySurface />;
-  if (initialView === "create") return <CreateSurface />;
+  if (initialView === "launch") return <LaunchSurface />;
   if (initialView === "vaults") return <FundsSurface detail={false} />;
   if (initialView === "detail") return <FundRouteSurface />;
   if (initialView === "verified") return <VerifiedSurface />;

@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { BasketMintRequest, OTFEntryExitRouter, SwapLeg } from "../src/OTFEntryExitRouter.sol";
+import {
+    BasketMintRequest,
+    FeeShareSwapRequest,
+    OTFEntryExitRouter,
+    SwapLeg
+} from "../src/OTFEntryExitRouter.sol";
 import { MockTradeAdapter } from "./mocks/MockTradeAdapter.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
@@ -211,6 +216,58 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
                 )
             );
         assertFalse(success);
+    }
+
+    function testOnlyCollectorCanSellExactRegisteredFeeSharesThroughApprovedPath() public {
+        sourceVault.seedShares(address(this), ONE);
+        sourceVault.approve(address(router), ONE);
+        adapterA.setRate(address(sourceVault), address(input), 1, 1);
+        adapterB.setRate(address(input), address(weth), 2, 1);
+
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = _leg(adapterA, address(sourceVault), address(input), ONE, ONE);
+        legs[1] = _leg(adapterB, address(input), address(weth), type(uint256).max, 2 * ONE);
+        FeeShareSwapRequest memory request = FeeShareSwapRequest({
+            vault: address(sourceVault),
+            shares: ONE,
+            minAmountOut: 2 * ONE,
+            deadline: block.timestamp + 1
+        });
+
+        uint256 supplyBefore = sourceVault.totalSupply();
+        uint256 wethBefore = weth.balanceOf(address(this));
+        uint256 amountOut = router.swapFeeSharesToWeth(request, legs);
+
+        assertEq(amountOut, 2 * ONE);
+        assertEq(weth.balanceOf(address(this)), wethBefore + 2 * ONE);
+        assertEq(sourceVault.balanceOf(address(this)), 0);
+        assertEq(sourceVault.totalSupply(), supplyBefore);
+        assertEq(sourceVault.balanceOf(address(0xdead)), ONE);
+        _assertRouterClean();
+
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryExitRouter.UnauthorizedFeeCollector.selector, ALICE)
+        );
+        router.swapFeeSharesToWeth(request, legs);
+    }
+
+    function testFeeShareSaleRequiresCompleteLiquidationAndRollsBack() public {
+        sourceVault.seedShares(address(this), ONE);
+        sourceVault.approve(address(router), ONE);
+        adapterA.setRate(address(sourceVault), address(input), 1, 1);
+
+        SwapLeg[] memory legs = new SwapLeg[](1);
+        legs[0] = _leg(adapterA, address(sourceVault), address(input), ONE / 2, ONE / 2);
+        FeeShareSwapRequest memory request = FeeShareSwapRequest({
+            vault: address(sourceVault), shares: ONE, minAmountOut: 1, deadline: block.timestamp + 1
+        });
+
+        vm.expectPartialRevert(OTFEntryExitRouter.IncompleteLiquidation.selector);
+        router.swapFeeSharesToWeth(request, legs);
+        assertEq(sourceVault.balanceOf(address(this)), ONE);
+        assertEq(input.balanceOf(address(this)), 0);
+        _assertRouterClean();
     }
 
     function testFortyOneLegsAreRejectedBeforeFundsMove() public {

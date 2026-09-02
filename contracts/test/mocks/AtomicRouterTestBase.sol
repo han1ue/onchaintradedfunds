@@ -48,6 +48,7 @@ abstract contract AtomicRouterTestBase is TestBase {
         assetC = new MockStockToken("Asset C", "C", 18);
         assetD = new MockStockToken("Asset D", "D", 18);
         protocolFactory = new MockOTFSettlementFactory();
+        protocolFactory.setBuybackCollector(address(this));
 
         address[] memory sourceAssets = new address[](2);
         sourceAssets[0] = address(assetA);

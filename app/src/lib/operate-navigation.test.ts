@@ -6,7 +6,8 @@ describe("operate navigation", () => {
     expect(navigationItemForPath("/")).toBe("swap");
     expect(navigationItemForPath("/funds")).toBe("funds");
     expect(navigationItemForPath("/funds/0x0000000000000000000000000000000000000001")).toBe("funds");
-    expect(navigationItemForPath("/create")).toBe("funds");
+    expect(navigationItemForPath("/launch")).toBe("funds");
+    expect(navigationItemForPath("/create")).toBeUndefined();
     expect(navigationItemForPath("/verified")).toBe("funds");
     expect(navigationItemForPath("/token")).toBe("token");
     expect(navigationItemForPath("/wallet")).toBeUndefined();

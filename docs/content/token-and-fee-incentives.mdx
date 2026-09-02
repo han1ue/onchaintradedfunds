@@ -125,17 +125,21 @@ balances and immutable expense beneficiary.
 ## Buyback and burn
 
 Only a vault's immutable expense beneficiary may settle its fee account. Settlement first
-checkpoints annual fees, clears both pending share counters, redeems their combined fund shares, and
-uses beneficiary-supplied bounded `SwapLeg[]` paths through the existing entry/exit router and its
-approved adapters to produce canonical WETH. The caller supplies the minimum aggregate WETH output,
-minimum OTF output, and deadline. The collector does not discover routes, calculate fair value, use
-an oracle or TWAP, or impose a protocol slippage setting.
+checkpoints annual fees and clears both pending share counters. The beneficiary then chooses between
+selling the exact combined fund shares through approved pools ending in canonical WETH, including
+multi-hop paths such as `fund share -> USDG -> WETH`, or redeeming the shares and liquidating every
+basket constituent to WETH. Only the collector can invoke the entry router's narrow fee-share sale.
+The caller supplies the minimum aggregate WETH output, minimum OTF output, and deadline. The
+collector does not discover routes, calculate fair value, use an oracle or TWAP, or impose a protocol
+slippage setting.
 
 Actual WETH output is divided in proportion to the creator and buyback share counts preserved at
 fee-accrual time. Creator WETH rounds down and is transferred exactly to the expense beneficiary;
 the residual buyback WETH is the only amount approved and spent by the final swap. Registration,
-share redemption, routing, both minimums, beneficiary payment, buyback, and burn are one atomic
-transaction. Any failure restores the pending accounting and all balances.
+selected share sale or redemption, routing, both minimums, beneficiary payment, buyback, and burn
+are one atomic transaction. Any failure restores the pending accounting and all balances. A market
+sale transfers the fund shares to pool counterparties and leaves them outstanding; redemption burns
+the fund shares and removes their proportional basket assets.
 
 The final WETH-to-OTF route is immutable: it uses only the canonical OTF/WETH V4 pool key. Its own
 minimum OTF output and deadline are enforced. Every OTF token purchased in that execution is burned,

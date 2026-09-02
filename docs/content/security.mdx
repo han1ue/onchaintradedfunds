@@ -35,13 +35,14 @@ allocations or a compromised publisher.
 ### Expense beneficiaries and settlement routes
 
 Only a vault's immutable expense beneficiary can settle that vault. The beneficiary chooses when to
-claim and supplies the approved typed basket-to-WETH route, minimum WETH, minimum OTF, and deadline.
+claim and supplies either an approved fund-share sale ending in WETH or a typed basket-redemption
+route to WETH, plus minimum WETH, minimum OTF, and deadline.
 Exact token identities, adapter approval, minimum output, and observed balance-delta checks limit
 mistakes and compromise; they do not guarantee optimal execution. The protocol deliberately has no
 oracle, TWAP, route discovery, fair-value floor, or hardcoded slippage for this operation.
 
-The collector clears both pending share counters before external execution, redeems them together,
-pays the creator share of actual WETH to the beneficiary, spends only the remaining buyback WETH in
+The collector clears both pending share counters before external execution, consumes their exact
+combined share balance through the selected route, pays the creator share of actual WETH to the beneficiary, spends only the remaining buyback WETH in
 the immutable canonical V4 pool, and burns all purchased OTF. Any failed step reverts the complete
 transaction. Factory registration prevents fake vaults from creating or settling fee accounts.
 

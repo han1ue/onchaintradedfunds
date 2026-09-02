@@ -77,9 +77,12 @@ MUST NOT reach a vault, `SwapLeg`, or adapter.
 The factory MUST register every vault and its immutable expense beneficiary with the collector.
 Unregistered or fake vaults MUST be rejected. Only that beneficiary MAY settle its vault. Settlement
 MUST checkpoint annual fees, consume the complete recorded creator and buyback share balances,
-redeem their combined shares, and use caller-supplied typed `SwapLeg[]` paths through adapters
-currently approved by the entry/exit router. Every leg MUST name exact input and output tokens and a
-positive minimum output.
+and use exactly one beneficiary-selected route: sell the combined registered-vault shares through
+approved adapters to canonical WETH, or redeem the combined shares and liquidate every basket
+constituent to canonical WETH. A share-sale route MUST consume the exact pending share balance, MAY
+use approved intermediate tokens, and MUST leave only WETH as transient output. Only the configured
+collector MAY call the entry router's fee-share sale function. Every leg MUST name exact input and
+output tokens and a positive minimum output.
 
 The operation MUST enforce the caller's deadline, minimum aggregate WETH, observed WETH delta,
 minimum final OTF, and observed OTF delta. Actual WETH MUST be split proportionally using the stored

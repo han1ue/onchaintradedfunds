@@ -7,14 +7,29 @@ export type PendingFeeShares = {
   total: bigint;
 };
 
-export type FeeSettlementRoute = {
+type FeeSettlementRouteBase = {
   vault: Address;
   weth: Address;
   shares: bigint;
   expectedWethOut: bigint;
   minWethOut: bigint;
-  minBasketAmounts: readonly bigint[];
   legs: readonly AdapterSwapLeg[];
+};
+
+export type RedemptionFeeSettlementRoute = FeeSettlementRouteBase & {
+  mode: "redemption";
+  minBasketAmounts: readonly bigint[];
+};
+
+export type ShareSaleFeeSettlementRoute = FeeSettlementRouteBase & {
+  mode: "share-sale";
+};
+
+export type FeeSettlementRoute = RedemptionFeeSettlementRoute | ShareSaleFeeSettlementRoute;
+export type FeeSettlementRoutePreference = "best" | FeeSettlementRoute["mode"];
+export type FeeSettlementRoutes = {
+  redemption?: RedemptionFeeSettlementRoute;
+  shareSale?: ShareSaleFeeSettlementRoute;
 };
 
 export function pendingFeeShares(
@@ -41,11 +56,12 @@ export function proportionalWethSplit(
   return { creatorWeth, buybackWeth: wethOut - creatorWeth };
 }
 
-export function feeSettlementRouteFromQuote(
+export function redemptionFeeSettlementRouteFromQuote(
   quote: SwapQuote,
   vault: Address,
   weth: Address,
-): FeeSettlementRoute | undefined {
+  collector: Address,
+): RedemptionFeeSettlementRoute | undefined {
   if (
     quote.state !== "available"
     || !quote.expectedOutputRaw
@@ -53,6 +69,7 @@ export function feeSettlementRouteFromQuote(
     || quote.expectedOutputRaw < quote.minimumReceivedRaw
     || quote.execution?.kind !== "basket-router"
     || quote.execution.call.method !== "redeemToToken"
+    || quote.execution.caller.toLowerCase() !== collector.toLowerCase()
   ) return undefined;
   const [request, minBasketAmounts, legs] = quote.execution.call.args;
   if (
@@ -62,6 +79,7 @@ export function feeSettlementRouteFromQuote(
     || request.minAmountOut !== quote.minimumReceivedRaw
   ) return undefined;
   return {
+    mode: "redemption",
     vault,
     weth,
     shares: request.shares,
@@ -72,7 +90,60 @@ export function feeSettlementRouteFromQuote(
   };
 }
 
-export function feeSettlementArgs(
+export function shareSaleFeeSettlementRouteFromQuote(
+  quote: SwapQuote,
+  vault: Address,
+  weth: Address,
+  collector: Address,
+  adapter: Address,
+  swapRouter: Address,
+): ShareSaleFeeSettlementRoute | undefined {
+  if (
+    quote.state !== "available"
+    || !quote.expectedOutputRaw
+    || !quote.minimumReceivedRaw
+    || quote.expectedOutputRaw < quote.minimumReceivedRaw
+    || quote.execution?.kind !== "direct-v3"
+    || quote.execution.caller.toLowerCase() !== collector.toLowerCase()
+    || quote.execution.inputToken.toLowerCase() !== vault.toLowerCase()
+    || quote.execution.outputToken.toLowerCase() !== weth.toLowerCase()
+    || quote.execution.swapRouter02.toLowerCase() !== swapRouter.toLowerCase()
+    || quote.execution.amountIn === 0n
+    || quote.execution.minAmountOut !== quote.minimumReceivedRaw
+  ) return undefined;
+  return {
+    mode: "share-sale",
+    vault,
+    weth,
+    shares: quote.execution.amountIn,
+    expectedWethOut: quote.expectedOutputRaw,
+    minWethOut: quote.minimumReceivedRaw,
+    legs: [{
+      adapter,
+      tokenIn: vault,
+      tokenOut: weth,
+      amountIn: quote.execution.amountIn,
+      minAmountOut: quote.minimumReceivedRaw,
+      data: quote.execution.path,
+      hops: quote.hops ?? [],
+    }],
+  };
+}
+
+export function selectFeeSettlementRoute(
+  routes: FeeSettlementRoutes,
+  preference: FeeSettlementRoutePreference,
+): FeeSettlementRoute | undefined {
+  if (preference === "redemption") return routes.redemption;
+  if (preference === "share-sale") return routes.shareSale;
+  if (!routes.redemption) return routes.shareSale;
+  if (!routes.shareSale) return routes.redemption;
+  return routes.shareSale.expectedWethOut > routes.redemption.expectedWethOut
+    ? routes.shareSale
+    : routes.redemption;
+}
+
+export function feeSettlementCall(
   route: FeeSettlementRoute,
   minOtfOut: bigint,
   deadline: bigint,
@@ -80,12 +151,20 @@ export function feeSettlementArgs(
   if (route.minWethOut === 0n || minOtfOut === 0n || deadline === 0n) {
     throw new Error("Settlement minimums and deadline must be positive.");
   }
-  return [
-    route.vault,
-    route.minBasketAmounts,
-    route.legs,
-    route.minWethOut,
-    minOtfOut,
-    deadline,
-  ] as const;
+  return route.mode === "redemption"
+    ? {
+        functionName: "settleFeesViaRedemption" as const,
+        args: [
+          route.vault,
+          route.minBasketAmounts,
+          route.legs,
+          route.minWethOut,
+          minOtfOut,
+          deadline,
+        ] as const,
+      }
+    : {
+        functionName: "settleFeesViaShareSale" as const,
+        args: [route.vault, route.legs, route.minWethOut, minOtfOut, deadline] as const,
+      };
 }

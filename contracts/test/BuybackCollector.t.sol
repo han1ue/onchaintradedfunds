@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { BuybackCollector } from "../src/BuybackCollector.sol";
 import { OTFToken } from "../src/OTFToken.sol";
-import { BasketRedeemRequest, SwapLeg } from "../src/OTFEntryExitRouter.sol";
+import { BasketRedeemRequest, FeeShareSwapRequest, SwapLeg } from "../src/OTFEntryExitRouter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import {
     MockPermit2,
@@ -81,6 +81,7 @@ contract MockBuybackEntryRouter {
     address public immutable weth;
     mapping(address => bool) public isAdapterApproved;
     bool public misreportOutput;
+    bool public usedShareSale;
     uint256 public outputMultiplier = 1;
 
     constructor(address factory_, address weth_) {
@@ -116,6 +117,24 @@ contract MockBuybackEntryRouter {
         weth.safeTransfer(msg.sender, amountOut);
         if (misreportOutput) amountOut++;
         return (amountOut, new address[](0), new uint256[](0));
+    }
+
+    function swapFeeSharesToWeth(FeeShareSwapRequest calldata request, SwapLeg[] calldata legs)
+        external
+        returns (uint256 amountOut)
+    {
+        require(legs.length != 0, "LEGS");
+        require(legs[0].tokenIn == request.vault, "INPUT");
+        require(legs[legs.length - 1].tokenOut == weth, "OUTPUT");
+        for (uint256 i = 0; i < legs.length; i++) {
+            require(isAdapterApproved[legs[i].adapter], "ADAPTER");
+        }
+        request.vault.safeTransferFrom(msg.sender, address(this), request.shares);
+        amountOut = request.shares * outputMultiplier;
+        require(amountOut >= request.minAmountOut, "MINIMUM");
+        weth.safeTransfer(msg.sender, amountOut);
+        usedShareSale = true;
+        if (misreportOutput) amountOut++;
     }
 }
 
@@ -166,7 +185,7 @@ contract BuybackCollectorTest is TestBase {
         uint256 supplyBefore = token.totalSupply();
 
         vm.prank(BENEFICIARY);
-        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFees(
+        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -195,7 +214,7 @@ contract BuybackCollectorTest is TestBase {
 
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
         );
     }
@@ -204,7 +223,7 @@ contract BuybackCollectorTest is TestBase {
         feeVault.queueFeeShares(1 ether, 1 ether);
         vm.prank(OTHER_BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.UnauthorizedBeneficiary.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -216,11 +235,60 @@ contract BuybackCollectorTest is TestBase {
         assertEq(feeVault.queuedBuybackShares(), 1 ether);
     }
 
+    function testBeneficiaryCanSellFeeSharesThroughMultiHopPath() public {
+        feeVault.queueFeeShares(60 ether, 40 ether);
+        entryRouter.setOutputMultiplier(2);
+        uint256 supplyBefore = feeVault.totalSupply();
+        uint256 otfSupplyBefore = token.totalSupply();
+
+        vm.prank(BENEFICIARY);
+        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaShareSale(
+            address(feeVault),
+            _shareSaleRoute(address(adapter)),
+            200 ether,
+            79 ether,
+            block.timestamp + 1
+        );
+
+        assertTrue(entryRouter.usedShareSale());
+        assertEq(creatorWeth, 120 ether);
+        assertEq(buybackWeth, 80 ether);
+        assertEq(burned, 80 ether);
+        assertEq(weth.balanceOf(BENEFICIARY), 120 ether);
+        assertEq(feeVault.totalSupply(), supplyBefore + 100 ether);
+        assertEq(feeVault.balanceOf(address(entryRouter)), 100 ether);
+        assertEq(token.totalSupply(), otfSupplyBefore - 80 ether);
+        (uint256 creatorPending, uint256 buybackPending,) = collector.feeAccounts(address(feeVault));
+        assertEq(creatorPending, 0);
+        assertEq(buybackPending, 0);
+
+        vm.prank(BENEFICIARY);
+        vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
+        collector.settleFeesViaRedemption(
+            address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
+        );
+    }
+
+    function testShareSaleOutputMismatchRollsBackAtomically() public {
+        feeVault.queueFeeShares(60 ether, 40 ether);
+        entryRouter.setMisreportOutput(true);
+
+        vm.prank(BENEFICIARY);
+        vm.expectPartialRevert(BuybackCollector.BalanceDeltaMismatch.selector);
+        collector.settleFeesViaShareSale(
+            address(feeVault), _shareSaleRoute(address(adapter)), 100 ether, 1, block.timestamp + 1
+        );
+
+        _assertQueuedFeesUntouched();
+        assertEq(weth.balanceOf(BENEFICIARY), 0);
+        assertFalse(entryRouter.usedShareSale());
+    }
+
     function testUnapprovedBadPathsFakeVaultAndDeadlineAreRejected() public {
         MockApprovedAdapter unapproved = new MockApprovedAdapter();
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.UnapprovedAdapter.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(unapproved)),
@@ -233,20 +301,20 @@ contract BuybackCollectorTest is TestBase {
         badRoute[0].tokenIn = address(feeVault);
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.InvalidRouteToken.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault), new uint256[](0), badRoute, 1, 1, block.timestamp + 1
         );
 
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.DeadlineExpired.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp - 1
         );
 
         MockFeeVault fake = new MockFeeVault(address(factory), address(collector), BENEFICIARY);
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.InvalidVault.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(fake), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
         );
     }
@@ -255,7 +323,7 @@ contract BuybackCollectorTest is TestBase {
         feeVault.queueFeeShares(60 ether, 40 ether);
         vm.prank(BENEFICIARY);
         vm.expectRevert();
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -267,7 +335,7 @@ contract BuybackCollectorTest is TestBase {
 
         vm.prank(BENEFICIARY);
         vm.expectRevert();
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -281,7 +349,7 @@ contract BuybackCollectorTest is TestBase {
         entryRouter.setMisreportOutput(true);
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.BalanceDeltaMismatch.selector);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -303,7 +371,7 @@ contract BuybackCollectorTest is TestBase {
         other.checkpointFees();
 
         vm.prank(BENEFICIARY);
-        collector.settleFees(
+        collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
             _route(address(adapter)),
@@ -324,7 +392,7 @@ contract BuybackCollectorTest is TestBase {
     function testOneShareRoundingLeavesResidualForBuyback() public {
         feeVault.queueFeeShares(0, 1);
         vm.prank(BENEFICIARY);
-        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFees(
+        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaRedemption(
             address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
         );
         assertEq(creatorWeth, 0);
@@ -338,6 +406,13 @@ contract BuybackCollectorTest is TestBase {
         assertFalse(withdrawSuccess);
         (bool legacySuccess,) = address(collector).call(abi.encodeWithSignature("executeBuyback()"));
         assertFalse(legacySuccess);
+        (bool settlementSuccess,) = address(collector)
+            .call(
+                abi.encodeWithSignature(
+                    "settleFees(address,uint256[],(address,address,address,uint256,uint256,bytes)[],uint256,uint256,uint256)"
+                )
+            );
+        assertFalse(settlementSuccess);
     }
 
     function _assertQueuedFeesUntouched() private view {
@@ -356,6 +431,26 @@ contract BuybackCollectorTest is TestBase {
             tokenIn: address(basketAsset),
             tokenOut: address(weth),
             amountIn: 1,
+            minAmountOut: 1,
+            data: ""
+        });
+    }
+
+    function _shareSaleRoute(address adapter_) private view returns (SwapLeg[] memory legs) {
+        legs = new SwapLeg[](2);
+        legs[0] = SwapLeg({
+            adapter: adapter_,
+            tokenIn: address(feeVault),
+            tokenOut: address(basketAsset),
+            amountIn: type(uint256).max,
+            minAmountOut: 1,
+            data: ""
+        });
+        legs[1] = SwapLeg({
+            adapter: adapter_,
+            tokenIn: address(basketAsset),
+            tokenOut: address(weth),
+            amountIn: type(uint256).max,
             minAmountOut: 1,
             data: ""
         });
