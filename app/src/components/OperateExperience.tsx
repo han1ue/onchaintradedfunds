@@ -497,7 +497,7 @@ function SwapConfetti({ active }: { active: boolean }) {
   );
 }
 
-export function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: () => void }) {
+function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: () => void }) {
   const [refundsExpanded, setRefundsExpanded] = useState(false);
   const refundDisclosure = receiptRefundDisclosure(receipt.refunds, refundsExpanded);
   return (
@@ -568,10 +568,17 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const swapStageRef = useRef<HTMLDivElement>(null);
   const celebratedSwapsRef = useRef(new Set<string>());
   const confettiTimerRef = useRef<number | undefined>(undefined);
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
     if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (swapReceipt) return;
+    const frame = window.requestAnimationFrame(() => amountInputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [swapReceipt]);
 
   useEffect(() => {
     if (embedded || protocolTokenMode || !isUnselectedOtf(output) || !otfAssets.length) return;
@@ -1218,7 +1225,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
               <div className="swapPair">
                 <div className="swapAmountBox">
                   <div className="swapAmountTop"><span>You pay</span></div>
-                  <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted)} /></span></div></div>
+                  <div className="swapAmountEntry"><input ref={amountInputRef} inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted)} /></span></div></div>
                 </div>
                 <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
                 <div className="swapAmountBox receive">

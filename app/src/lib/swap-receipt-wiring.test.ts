@@ -12,6 +12,11 @@ describe("swap receipt wiring", () => {
     expect(reset).not.toContain("setOutput(");
   });
 
+  it("focuses the You pay amount field on entry and after leaving a receipt", () => {
+    expect(component).toContain("amountInputRef.current?.focus()");
+    expect(component).toContain('<input ref={amountInputRef} inputMode="decimal"');
+  });
+
   it("transitions within the card and supplies a reduced-motion path", () => {
     expect(component).toContain("swapCardPane swapFormPane");
     expect(component).toContain("swapCardPane swapReceiptPane");

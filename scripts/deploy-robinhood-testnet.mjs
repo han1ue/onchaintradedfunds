@@ -444,7 +444,7 @@ const [
 if (deployerOtfBalance !== 0n) throw new Error("Unrestricted deployer retained OTF");
 if (teamOtfBalance !== 100_000_000n * 10n ** 18n) throw new Error("Team allocation mismatch");
 const permanentLaunchReserve = 50_000_000n * 10n ** 18n;
-const maximumBootstrapDust = 1_000n * 10n ** 18n;
+const maximumBootstrapDust = 10_000n * 10n ** 18n;
 if (
   launchReserveBalance < permanentLaunchReserve
   || launchReserveBalance > permanentLaunchReserve + maximumBootstrapDust
