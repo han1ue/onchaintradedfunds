@@ -288,6 +288,7 @@ contract OTFEntryExitRouterNativeTest is AtomicRouterTestBase {
             outputToken: address(weth),
             shares: shares,
             minAmountOut: minAmountOut,
+            skipMask: 0,
             deadline: block.timestamp + 1
         });
     }

@@ -176,26 +176,26 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         vm.prank(BOB);
         vault.approve(address(router), WAD);
-        uint256[] memory expected = vault.previewRedeem(WAD);
+        uint256[] memory expected = vault.previewRedeem(WAD, 0);
         router.redeem(vault, WAD, BOB, BOB, _zeroes(2));
         assertEq(vault.accountedBalance(address(tokenA)), accountedA - expected[0]);
         assertEq(vault.accountedBalance(address(tokenB)), accountedB - expected[1]);
     }
 
-    function testDonationsNeverChangeNormalOrEmergencyEntitlement() public {
+    function testDonationsNeverChangeActiveOrShutdownEntitlement() public {
         ManagedOTFVault vault = _newVault(6, 0);
         address[] memory assets = _assets(address(tokenA), address(tokenB));
         _bootstrap(vault, router, assets, WAD);
-        uint256[] memory entitlement = vault.previewRedeem(WAD);
+        uint256[] memory entitlement = vault.previewRedeem(WAD, 0);
         tokenA.mint(address(vault), 7 * WAD);
-        uint256[] memory afterDonation = vault.previewRedeem(WAD);
+        uint256[] memory afterDonation = vault.previewRedeem(WAD, 0);
         assertEq(afterDonation[0], entitlement[0]);
         assertEq(afterDonation[1], entitlement[1]);
 
         vm.prank(CREATOR);
         vault.activateEmergencyShutdown();
         vm.prank(ALICE);
-        vault.emergencyRedeem(WAD, ALICE, _zeroes(2));
+        vault.redeemInKind(WAD, ALICE, _zeroes(2), 0);
 
         assertEq(tokenA.balanceOf(ALICE), entitlement[0]);
         assertEq(tokenA.balanceOf(address(vault)), 7 * WAD);
@@ -218,7 +218,7 @@ contract VaultAccountingTest is BootstrapTestBase {
         assertFalse(vault.shutdown());
     }
 
-    function testEmergencyRedeemHandlesDeficitButNormalRedeemFailsClosed() public {
+    function testShutdownRedeemHandlesDeficitButActiveRedeemFailsClosed() public {
         SlashableToken lossToken = new SlashableToken("Lossy", "LOSS", 18);
         SlashableToken soundToken = new SlashableToken("Sound", "SOUND", 18);
         ManagedOTFVault vault =
@@ -235,19 +235,23 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         vm.prank(ALICE);
         vault.approve(address(router), WAD / 2);
+        vm.prank(ALICE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.BackingDeficient.selector);
+        vault.redeemInKind(WAD / 2, ALICE, _zeroes(2), 0);
         vm.expectPartialRevert(ManagedOTFVaultStorage.BackingDeficient.selector);
         router.redeem(vault, WAD / 2, ALICE, ALICE, _zeroes(2));
 
         vm.prank(address(0xD1E7));
         vault.activateEmergencyShutdown();
         vm.prank(ALICE);
-        vault.emergencyRedeem(WAD / 2, ALICE, _zeroes(2));
+        vault.redeemInKind(WAD / 2, ALICE, _zeroes(2), 0);
         assertEq(lossToken.balanceOf(ALICE), amounts[0] / 4);
         assertEq(soundToken.balanceOf(ALICE), amounts[1] / 2);
         assertEq(vault.accountedBalance(address(lossToken)), amounts[0] / 2);
 
         vm.prank(BOB);
-        vault.emergencyRedeem(WAD / 2, BOB, _zeroes(2));
+        vault.approve(address(router), WAD / 2);
+        router.redeem(vault, WAD / 2, BOB, BOB, _zeroes(2));
         assertEq(lossToken.balanceOf(BOB), amounts[0] / 4);
         assertEq(soundToken.balanceOf(BOB), amounts[1] / 2);
         assertEq(vault.accountedBalance(address(lossToken)), 0);
@@ -328,8 +332,8 @@ contract VaultAccountingTest is BootstrapTestBase {
         vm.prank(CREATOR);
         vault.activateEmergencyShutdown();
         vm.prank(ALICE);
-        vm.expectRevert(SlashableToken.BalanceReadsDisabled.selector);
-        vault.emergencyRedeem(WAD, ALICE, _zeroes(2));
+        vault.redeemInKind(WAD, ALICE, _zeroes(2), 1);
+        assertEq(tokenB.balanceOf(ALICE), WAD);
     }
 
     function testFeeOnTransferAndRebasingConstituentsRevertByExactDeltas() public {
@@ -397,7 +401,7 @@ contract VaultAccountingTest is BootstrapTestBase {
         assertEq(vault.totalSupply(), 0);
     }
 
-    function testEmergencyFinalBasketCheckRejectsLastTokenMutatingEarlierToken() public {
+    function testShutdownFinalBasketCheckRejectsLastTokenMutatingEarlierToken() public {
         SlashableToken first = new SlashableToken("First", "FIRST", 18);
         CrossMutatingToken last = new CrossMutatingToken("Last", "LAST", 18);
         ManagedOTFVault vault =
@@ -416,7 +420,7 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         vm.prank(ALICE);
         vm.expectPartialRevert(ManagedOTFVaultStorage.BasketBalanceChanged.selector);
-        vault.emergencyRedeem(WAD / 2, ALICE, _zeroes(2));
+        vault.redeemInKind(WAD / 2, ALICE, _zeroes(2), 0);
         assertEq(first.balanceOf(address(vault)), amounts[0]);
         assertEq(last.balanceOf(address(vault)), amounts[1]);
         assertEq(vault.balanceOf(ALICE), WAD);
@@ -451,7 +455,7 @@ contract VaultAccountingTest is BootstrapTestBase {
         _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
         vm.warp(block.timestamp + 1 days);
 
-        uint256[] memory expected = vault.previewRedeem(WAD);
+        uint256[] memory expected = vault.previewRedeem(WAD, 0);
         assertGt(expected[0], 0);
 
         vm.prank(ALICE);

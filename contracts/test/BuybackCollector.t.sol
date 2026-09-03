@@ -82,6 +82,7 @@ contract MockBuybackEntryRouter {
     mapping(address => bool) public isAdapterApproved;
     bool public misreportOutput;
     bool public usedShareSale;
+    uint256 public lastSkipMask;
     uint256 public outputMultiplier = 1;
 
     constructor(address factory_, address weth_) {
@@ -108,6 +109,7 @@ contract MockBuybackEntryRouter {
         SwapLeg[] calldata legs
     ) external returns (uint256 amountOut, address[] memory, uint256[] memory) {
         require(request.outputToken == weth, "OUTPUT");
+        lastSkipMask = request.skipMask;
         for (uint256 i = 0; i < legs.length; i++) {
             require(isAdapterApproved[legs[i].adapter], "ADAPTER");
         }
@@ -188,6 +190,7 @@ contract BuybackCollectorTest is TestBase {
         (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             200 ether,
             79 ether,
@@ -215,8 +218,25 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
         );
+    }
+
+    function testRedemptionSettlementPropagatesSkipMask() public {
+        feeVault.queueFeeShares(1 ether, 1 ether);
+
+        vm.prank(BENEFICIARY);
+        collector.settleFeesViaRedemption(
+            address(feeVault),
+            new uint256[](0),
+            3,
+            _route(address(adapter)),
+            2 ether,
+            1 ether,
+            block.timestamp + 1
+        );
+
+        assertEq(entryRouter.lastSkipMask(), 3);
     }
 
     function testOnlyImmutableBeneficiaryCanSettle() public {
@@ -226,6 +246,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             2 ether,
             1 ether,
@@ -265,7 +286,7 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
         );
     }
 
@@ -291,6 +312,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(unapproved)),
             1,
             1,
@@ -302,20 +324,20 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.InvalidRouteToken.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), badRoute, 1, 1, block.timestamp + 1
+            address(feeVault), new uint256[](0), 0, badRoute, 1, 1, block.timestamp + 1
         );
 
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.DeadlineExpired.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp - 1
+            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp - 1
         );
 
         MockFeeVault fake = new MockFeeVault(address(factory), address(collector), BENEFICIARY);
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.InvalidVault.selector);
         collector.settleFeesViaRedemption(
-            address(fake), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(fake), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
         );
     }
 
@@ -326,6 +348,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             101 ether,
             1,
@@ -338,6 +361,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             100 ether,
             41 ether,
@@ -352,6 +376,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             100 ether,
             1,
@@ -374,6 +399,7 @@ contract BuybackCollectorTest is TestBase {
         collector.settleFeesViaRedemption(
             address(feeVault),
             new uint256[](0),
+            0,
             _route(address(adapter)),
             5 ether,
             1 ether,
@@ -393,7 +419,7 @@ contract BuybackCollectorTest is TestBase {
         feeVault.queueFeeShares(0, 1);
         vm.prank(BENEFICIARY);
         (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
         );
         assertEq(creatorWeth, 0);
         assertEq(buybackWeth, 1);

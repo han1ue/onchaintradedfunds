@@ -110,7 +110,7 @@ export type TestnetRoutingClient = {
   quoteExactOutput(path: Hex, amountOut: bigint): Promise<bigint>;
   vaultAssets(vault: Address): Promise<readonly Address[]>;
   previewMint(vault: Address, shares: bigint): Promise<readonly bigint[]>;
-  previewRedeem(vault: Address, shares: bigint): Promise<readonly bigint[]>;
+  previewRedeem(vault: Address, shares: bigint, skipMask: bigint): Promise<readonly bigint[]>;
 };
 
 type Route = {
@@ -221,7 +221,7 @@ function defaultRoutingClient(): TestnetRoutingClient {
     quoteExactOutput: (path, amountOut) => quote("quoteExactOutput", path, amountOut),
     vaultAssets: (vault) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "assets" }),
     previewMint: (vault, shares) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewMint", args: [shares] }),
-    previewRedeem: (vault, shares) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewRedeem", args: [shares] }),
+    previewRedeem: (vault, shares, skipMask) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewRedeem", args: [shares, skipMask] }),
   };
 }
 
@@ -350,7 +350,7 @@ async function liquidationPlan(
 ) {
   const assets = await client.vaultAssets(vault);
   if (assets.length === 0 || assets.length > 20 || assets.some((asset) => testnetAssetRole(asset) !== "fund")) throw new Error("The OTF contains an unsupported testnet constituent.");
-  const amounts = await client.previewRedeem(vault, shares);
+  const amounts = await client.previewRedeem(vault, shares, 0n);
   if (amounts.length !== assets.length) throw new Error("The OTF redemption preview is malformed.");
   const routes = await Promise.all(assets.map((asset) => routeFor({ address: asset, kind: "erc20" }, { address: output.address, kind: "erc20" }, client)));
   const expected = await Promise.all(amounts.map((amount, index) => client.quoteExactInput(routes[index]!.path, amount)));
@@ -483,7 +483,7 @@ async function basketQuote(
       nativeValue: "0",
       funding: serializedFunding(plan.assets.map((token, index) => ({ token, amount: plan.amounts[index]! }))),
       method: nativeOutput ? "redeemToNative" : "redeemToToken",
-      request: { vault: request.input.address, outputToken: output.address, shares: request.inputAmountRaw.toString(), minAmountOut: plan.minimumOutput.toString(), deadline: deadline.toString() },
+      request: { vault: request.input.address, outputToken: output.address, shares: request.inputAmountRaw.toString(), minAmountOut: plan.minimumOutput.toString(), skipMask: "0", deadline: deadline.toString() },
       minBasketAmounts: plan.sourceMinimums.map((amount) => amount.toString()),
       legs: plan.legs.map(serializedLeg),
     }, plan.legs.flatMap((leg) => leg.hops));
@@ -504,7 +504,7 @@ async function basketQuote(
       nativeValue: "0",
       funding: serializedFunding(liquidation.assets.map((token, index) => ({ token, amount: liquidation.amounts[index]! }))),
       method: "swapBasketToBasket",
-      request: { sourceVault: request.input.address, targetVault: request.output.address, sharesIn: request.inputAmountRaw.toString(), minSharesOut: mint.shares.toString(), deadline: deadline.toString() },
+      request: { sourceVault: request.input.address, targetVault: request.output.address, sharesIn: request.inputAmountRaw.toString(), minSharesOut: mint.shares.toString(), sourceSkipMask: "0", deadline: deadline.toString() },
       minBasketAmounts: liquidation.sourceMinimums.map((amount) => amount.toString()),
       legs: legs.map(serializedLeg),
     }, legs.flatMap((leg) => leg.hops), residuals);

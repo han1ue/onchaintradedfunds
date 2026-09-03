@@ -27,6 +27,7 @@ interface IOTFSettlementVault {
         uint256 shares,
         address owner,
         address receiver,
-        uint256[] calldata minAmountsOut
+        uint256[] calldata minAmountsOut,
+        uint256 skipMask
     ) external returns (uint256[] memory amountsOut);
 }

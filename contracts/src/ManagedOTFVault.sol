@@ -301,12 +301,18 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         amountsIn = _previewMintWithSupply(_grossMintShares(shares), effectiveSupply);
     }
 
-    function previewRedeem(uint256 shares) public view returns (uint256[] memory amountsOut) {
+    function previewRedeem(uint256 shares, uint256 skipMask)
+        public
+        view
+        returns (uint256[] memory amountsOut)
+    {
         if (shares == 0) revert ZeroShares();
+        uint256 length = _assets.length;
+        if (skipMask >> length != 0) revert InvalidSkipMask(skipMask, length);
         uint256 effectiveSupply =
             _shutdown ? totalSupply() : totalSupply() + pendingExpenseFeeShares();
         amountsOut = _previewRedeemWithSupply(
-            _shutdown ? shares : _netRedeemShares(shares), effectiveSupply
+            _shutdown ? shares : _netRedeemShares(shares), effectiveSupply, skipMask, _shutdown
         );
     }
 
@@ -375,45 +381,11 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 shares,
         address owner,
         address receiver,
-        uint256[] calldata minAmountsOut
+        uint256[] calldata minAmountsOut,
+        uint256 skipMask
     ) external onlyInitialized onlyRouter nonReentrant returns (uint256[] memory amountsOut) {
-        if (_shutdown) revert VaultShutdown();
-        if (owner == address(0) || receiver == address(0)) revert ZeroAddress();
-        if (receiver == address(this)) revert InvalidReceiver(receiver);
-        if (shares == 0) revert ZeroShares();
-        uint256 length = _assets.length;
-        if (minAmountsOut.length != length) {
-            revert InvalidArrayLength(length, minAmountsOut.length);
-        }
-
-        _accrueFees();
-        uint16 creatorShareBps = feeCreatorShareBps();
-        _requireBackingSound();
-        uint256[] memory balancesBefore = _actualBalances();
-        uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
-        uint256 redeemedShares = _netRedeemShares(shares);
-        amountsOut = _previewRedeemWithSupply(redeemedShares, totalSupply());
-        for (uint256 i = 0; i < length; i++) {
-            if (amountsOut[i] < minAmountsOut[i]) {
-                revert AmountTooLow(_assets[i], amountsOut[i], minAmountsOut[i]);
-            }
-        }
-        if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
-        _burn(owner, shares);
-        (uint256 creatorShares, uint256 buybackShares) =
-            _mintFeeShares(shares - redeemedShares, creatorShareBps);
-        for (uint256 i = 0; i < length; i++) {
-            address asset = _assets[i];
-            uint256 amount = amountsOut[i];
-            _accountedBalance[asset] -= amount;
-            _pushExact(asset, receiver, amount);
-        }
-        _requireExpectedBalances(balancesBefore, amountsOut, false);
-        _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
+        (amountsOut,) = _redeem(shares, owner, receiver, minAmountsOut, skipMask);
         emit BasketRedeemed(msg.sender, owner, receiver, shares, amountsOut);
-        emit RedeemFeeCharged(shares, redeemedShares, creatorShares, buybackShares, creatorShareBps);
-        _shutdownIfSupplyTooLow();
-        if (!_shutdown) _resetFeeEpoch();
     }
 
     /// @notice Burns the caller's shares for basket assets without using swap liquidity.
@@ -424,7 +396,20 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256[] calldata minAmountsOut,
         uint256 skipMask
     ) external onlyInitialized nonReentrant returns (uint256[] memory amountsOut) {
-        if (receiver == address(0)) revert ZeroAddress();
+        uint256[] memory forfeitedAmounts;
+        (amountsOut, forfeitedAmounts) =
+            _redeem(shares, msg.sender, receiver, minAmountsOut, skipMask);
+        emit InKindRedeemed(msg.sender, receiver, shares, amountsOut, forfeitedAmounts, skipMask);
+    }
+
+    function _redeem(
+        uint256 shares,
+        address owner,
+        address receiver,
+        uint256[] calldata minAmountsOut,
+        uint256 skipMask
+    ) internal returns (uint256[] memory amountsOut, uint256[] memory forfeitedAmounts) {
+        if (owner == address(0) || receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidReceiver(receiver);
         if (shares == 0) revert ZeroShares();
         uint256 length = _assets.length;
@@ -438,17 +423,18 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
         }
 
+        bool shutdown_ = _shutdown;
         uint16 creatorShareBps;
-        if (!_shutdown) {
+        if (!shutdown_) {
             _accrueFees();
             creatorShareBps = feeCreatorShareBps();
         }
         uint256 supply = totalSupply();
         if (shares > supply) revert SharesExceedSupply(shares, supply);
-        uint256 redeemedShares = _shutdown ? shares : _netRedeemShares(shares);
+        uint256 redeemedShares = shutdown_ ? shares : _netRedeemShares(shares);
 
         amountsOut = new uint256[](length);
-        uint256[] memory forfeitedAmounts = new uint256[](length);
+        forfeitedAmounts = new uint256[](length);
         uint256[] memory accountedReductions = new uint256[](length);
         uint256[] memory vaultBalancesBefore = new uint256[](length);
         uint256[] memory receiverBalancesBefore = new uint256[](length);
@@ -465,9 +451,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
 
             uint256 actual = IERC20(asset).balanceOf(address(this));
+            if (!shutdown_ && actual < accounted) {
+                revert BackingDeficient(asset, accounted, actual);
+            }
             vaultBalancesBefore[i] = actual;
             receiverBalancesBefore[i] = IERC20(asset).balanceOf(receiver);
-            uint256 distributable = actual < accounted ? actual : accounted;
+            uint256 distributable = shutdown_ && actual < accounted ? actual : accounted;
             uint256 amount = redeemedShares == supply
                 ? distributable
                 : Math.mulDiv(distributable, redeemedShares, supply);
@@ -477,15 +466,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             }
         }
 
-        _burn(msg.sender, shares);
-        (uint256 creatorShares, uint256 buybackShares) = _shutdown
+        if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
+        _burn(owner, shares);
+        (uint256 creatorShares, uint256 buybackShares) = shutdown_
             ? (uint256(0), uint256(0))
             : _mintFeeShares(shares - redeemedShares, creatorShareBps);
         for (uint256 i = 0; i < length; i++) {
             _accountedBalance[_assets[i]] -= accountedReductions[i];
         }
-        _shutdownIfSupplyTooLow();
-
         for (uint256 i = 0; i < length; i++) {
             if (_isSkipped(skipMask, i)) continue;
             address asset = _assets[i];
@@ -506,8 +494,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _requireExpectedUnskippedBalances(
             receiver, vaultBalancesBefore, receiverBalancesBefore, amountsOut, skipMask
         );
+        _shutdownIfSupplyTooLow();
         if (!_shutdown) _resetFeeEpoch();
-        emit InKindRedeemed(msg.sender, receiver, shares, amountsOut, forfeitedAmounts, skipMask);
         if (shares != redeemedShares) {
             emit RedeemFeeCharged(
                 shares, redeemedShares, creatorShares, buybackShares, creatorShareBps
@@ -526,60 +514,6 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _shutdown = true;
         _shutdownAt = uint64(block.timestamp);
         emit EmergencyShutdown(msg.sender, _shutdownAt);
-    }
-
-    /// @notice Permissionless holder exit using actual balances, safe even after a backing deficit.
-    function emergencyRedeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut)
-        external
-        onlyInitialized
-        nonReentrant
-        returns (uint256[] memory amountsOut)
-    {
-        if (!_shutdown) revert VaultNotShutdown();
-        if (receiver == address(0)) revert ZeroAddress();
-        if (receiver == address(this)) revert InvalidReceiver(receiver);
-        if (shares == 0) revert ZeroShares();
-        uint256 length = _assets.length;
-        if (minAmountsOut.length != length) {
-            revert InvalidArrayLength(length, minAmountsOut.length);
-        }
-        uint256 supply = totalSupply();
-        if (shares > supply) revert SharesExceedSupply(shares, supply);
-
-        amountsOut = new uint256[](length);
-        uint256[] memory balancesBefore = new uint256[](length);
-        uint256[] memory receiverBalancesBefore = _basketBalances(receiver);
-        uint256[] memory accountedReductions = new uint256[](length);
-        for (uint256 i = 0; i < length; i++) {
-            address asset = _assets[i];
-            uint256 actual = IERC20(asset).balanceOf(address(this));
-            balancesBefore[i] = actual;
-            uint256 accounted = _accountedBalance[asset];
-            uint256 distributable = actual < accounted ? actual : accounted;
-            amountsOut[i] =
-                shares == supply ? distributable : Math.mulDiv(distributable, shares, supply);
-            accountedReductions[i] =
-                shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
-            if (amountsOut[i] < minAmountsOut[i]) {
-                revert AmountTooLow(asset, amountsOut[i], minAmountsOut[i]);
-            }
-        }
-
-        _burn(msg.sender, shares);
-        for (uint256 i = 0; i < length; i++) {
-            address asset = _assets[i];
-            uint256 currentActual = IERC20(asset).balanceOf(address(this));
-            if (currentActual != balancesBefore[i]) {
-                revert AssetTransferMismatch(
-                    asset, balancesBefore[i], balancesBefore[i], currentActual
-                );
-            }
-            _accountedBalance[asset] -= accountedReductions[i];
-            _pushExact(asset, receiver, amountsOut[i]);
-        }
-        _requireExpectedBalances(balancesBefore, amountsOut, false);
-        _requireExpectedAccountBalances(receiver, receiverBalancesBefore, amountsOut, true);
-        emit EmergencyRedeemed(msg.sender, receiver, shares, amountsOut);
     }
 
     // Internal accounting
@@ -603,7 +537,12 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
     }
 
-    function _previewRedeemWithSupply(uint256 shares, uint256 supply)
+    function _previewRedeemWithSupply(
+        uint256 shares,
+        uint256 supply,
+        uint256 skipMask,
+        bool shutdown_
+    )
         internal
         view
         returns (uint256[] memory amountsOut)
@@ -612,8 +551,16 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 length = _assets.length;
         amountsOut = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
-            uint256 accounted = _accountedBalance[_assets[i]];
-            amountsOut[i] = shares == supply ? accounted : Math.mulDiv(accounted, shares, supply);
+            if (_isSkipped(skipMask, i)) continue;
+            address asset = _assets[i];
+            uint256 accounted = _accountedBalance[asset];
+            uint256 actual = IERC20(asset).balanceOf(address(this));
+            if (!shutdown_ && actual < accounted) {
+                revert BackingDeficient(asset, accounted, actual);
+            }
+            uint256 distributable = shutdown_ && actual < accounted ? actual : accounted;
+            amountsOut[i] =
+                shares == supply ? distributable : Math.mulDiv(distributable, shares, supply);
         }
     }
 
@@ -652,8 +599,9 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     function _accrueFees() internal returns (uint256 totalFeeShares) {
+        if (_shutdown) return 0;
         _lastFeeCheckpointTimestamp = uint64(block.timestamp);
-        if (_shutdown || _annualCreatorExpenseRatioBps == 0 || _feeEpochSupply == 0) return 0;
+        if (_annualCreatorExpenseRatioBps == 0 || _feeEpochSupply == 0) return 0;
         (uint256 targetShares,) = _feeTargetAt(uint64(block.timestamp));
         if (targetShares <= _feeEpochAccruedShares) return 0;
         totalFeeShares = targetShares - _feeEpochAccruedShares;

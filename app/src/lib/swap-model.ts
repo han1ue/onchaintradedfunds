@@ -64,7 +64,7 @@ export type NativeMintRouterCall = Omit<MintRouterCall, "method"> & { method: "m
 export type RedeemRouterCall = {
   method: "redeemToToken";
   args: readonly [
-    { vault: Address; outputToken: Address; shares: bigint; minAmountOut: bigint; deadline: bigint },
+    { vault: Address; outputToken: Address; shares: bigint; minAmountOut: bigint; skipMask: bigint; deadline: bigint },
     readonly bigint[],
     readonly AdapterSwapLeg[],
   ];
@@ -75,7 +75,7 @@ export type NativeRedeemRouterCall = Omit<RedeemRouterCall, "method"> & { method
 export type BasketToBasketRouterCall = {
   method: "swapBasketToBasket";
   args: readonly [
-    { sourceVault: Address; targetVault: Address; sharesIn: bigint; minSharesOut: bigint; deadline: bigint },
+    { sourceVault: Address; targetVault: Address; sharesIn: bigint; minSharesOut: bigint; sourceSkipMask: bigint; deadline: bigint },
     readonly bigint[],
     readonly AdapterSwapLeg[],
   ];
@@ -825,12 +825,13 @@ function parseBasketCall(
   if (method === "redeemToToken" || method === "redeemToNative") {
     const native = method === "redeemToNative";
     if (context.request.input.kind !== "otf" || (native ? context.request.output.kind !== "native" : context.request.output.kind !== "erc20")) throw new Error("Redeem method does not match the selected pair.");
-    exactKeys(request, ["vault", "outputToken", "shares", "minAmountOut", "deadline"], "execution.request");
+    exactKeys(request, ["vault", "outputToken", "shares", "minAmountOut", "skipMask", "deadline"], "execution.request");
     const value = {
       vault: address(request.vault, "request.vault"),
       outputToken: address(request.outputToken, "request.outputToken"),
       shares: uint(request.shares, "request.shares", false),
       minAmountOut: uint(request.minAmountOut, "request.minAmountOut", false),
+      skipMask: uint(request.skipMask, "request.skipMask"),
       deadline: uint(request.deadline, "request.deadline", false),
     };
     if (!sameAddress(value.vault, context.request.input.address) || !sameAddress(value.outputToken, context.request.output.address) || value.shares !== requestedAmount || value.deadline !== deadline) throw new Error("Redeem request does not match the selected quote.");
@@ -838,12 +839,13 @@ function parseBasketCall(
   }
   if (method === "swapBasketToBasket") {
     if (context.request.input.kind !== "otf" || context.request.output.kind !== "otf") throw new Error("Basket swap method does not match the selected pair.");
-    exactKeys(request, ["sourceVault", "targetVault", "sharesIn", "minSharesOut", "deadline"], "execution.request");
+    exactKeys(request, ["sourceVault", "targetVault", "sharesIn", "minSharesOut", "sourceSkipMask", "deadline"], "execution.request");
     const value = {
       sourceVault: address(request.sourceVault, "request.sourceVault"),
       targetVault: address(request.targetVault, "request.targetVault"),
       sharesIn: uint(request.sharesIn, "request.sharesIn", false),
       minSharesOut: uint(request.minSharesOut, "request.minSharesOut", false),
+      sourceSkipMask: uint(request.sourceSkipMask, "request.sourceSkipMask"),
       deadline: uint(request.deadline, "request.deadline", false),
     };
     if (!sameAddress(value.sourceVault, context.request.input.address) || !sameAddress(value.targetVault, context.request.output.address) || value.sharesIn !== requestedAmount || value.deadline !== deadline) throw new Error("Basket swap request does not match the selected quote.");

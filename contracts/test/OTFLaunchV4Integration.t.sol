@@ -13,6 +13,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -77,6 +78,11 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _assertInitializationVectors(_deploy(false), false);
     }
 
+    function testFundingBoundaryAndDerivedRequirementsForBothCurrencyOrderings() public {
+        _assertFundingBoundary(true);
+        _assertFundingBoundary(false);
+    }
+
     function testOversizedWethBuyPartiallyFillsAndFinalizesAtomically() public {
         Setup memory setup = _deploy(true);
         setup.weth.mint(BUYER, 20 ether);
@@ -85,12 +91,14 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
         vm.recordLogs();
         vm.prank(BUYER);
-        (uint256 amountIn, uint256 amountOut) = setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
+        (uint256 amountIn, uint256 amountOut) =
+            setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 burnEvents;
         bytes32 burnEventSignature = keccak256("RemainingOtfBurned(uint256)");
         for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter == address(setup.launch) && logs[i].topics[0] == burnEventSignature) {
+            if (logs[i].emitter == address(setup.launch) && logs[i].topics[0] == burnEventSignature)
+            {
                 burnEvents++;
             }
         }
@@ -107,7 +115,8 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         vm.deal(BUYER, 20 ether);
 
         vm.prank(BUYER);
-        (uint256 amountIn,) = setup.router.buyOtfWithEth{value: 20 ether}(1, BUYER, block.timestamp + 1);
+        (uint256 amountIn,) =
+            setup.router.buyOtfWithEth{value: 20 ether}(1, BUYER, block.timestamp + 1);
 
         assertEq(amountIn, INVERSE_BOUNDARY_WETH_INPUT);
         assertEq(BUYER.balance, 20 ether - INVERSE_BOUNDARY_WETH_INPUT);
@@ -162,42 +171,55 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _assertStandardOvershootsRevert(_deploy(false));
     }
 
-    function testStandaloneFinalizationBlocksInterveningSwapsAndHandlesInverseTick() public {
-        Setup memory setup = _deploy(false);
-        PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
-        PoolKey memory key = _key(setup);
-        setup.weth.mint(BUYER, 20 ether);
-        vm.startPrank(BUYER);
-        setup.weth.approve(address(swapper), 20 ether);
+    function testGraduationStateTransitionsEventsAndExactPrice() public {
+        Setup memory setup = _deploy(true);
 
-        swapper.swap(
-            key,
-            SwapParams({
-                zeroForOne: true,
-                amountSpecified: -int256(20 ether),
-                sqrtPriceLimitX96: setup.launch.finalSqrtPriceX96()
-            }),
-            PoolSwapTest.TestSettings(false, false),
-            bytes("")
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.InvalidPhase.selector,
+                OTFLaunchManager.Phase.GraduationReady,
+                OTFLaunchManager.Phase.BootstrapActive
+            )
         );
-        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
-        (, int24 storedTick,,) = setup.stateView.getSlot0(PoolId.wrap(setup.launch.poolId()));
-        assertTrue(storedTick == 155_310);
-
-        vm.expectRevert();
-        swapper.swap(
-            key,
-            SwapParams({
-                zeroForOne: false, amountSpecified: -int256(1), sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(155_312)
-            }),
-            PoolSwapTest.TestSettings(false, false),
-            bytes("")
-        );
-        vm.stopPrank();
-
-        vm.prank(address(0xF1A1));
         setup.launch.finalizeGraduation();
-        _assertGraduated(setup, INVERSE_FINAL_BURN);
+
+        vm.roll(101);
+        vm.warp(1_100_000);
+        vm.recordLogs();
+        _reachGraduationReady(setup);
+        (uint160 readyPrice, int24 readyTick) = setup.launch.currentPoolState();
+        assertEq(uint256(readyPrice), uint256(setup.launch.finalSqrtPriceX96()));
+        assertEq(setup.launch.graduationReadyBlock(), 101);
+
+        _expectGraduationPriceRecheck(setup, readyPrice - 1, readyTick);
+        _expectGraduationPriceRecheck(setup, readyPrice + 1, readyTick);
+
+        vm.roll(202);
+        vm.warp(1_200_000);
+        setup.launch.finalizeGraduation();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        (uint160 graduatedPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(graduatedPrice), uint256(setup.launch.finalSqrtPriceX96()));
+        assertEq(setup.launch.graduationReadyBlock(), 101);
+        assertEq(setup.launch.graduationBlock(), 202);
+        assertEq(setup.launch.graduationTimestamp(), 1_200_000);
+        _assertGraduationEvents(logs, setup, 101, readyTick, 202, 1_200_000, DIRECT_FINAL_BURN);
+        _assertGraduated(setup, DIRECT_FINAL_BURN);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.InvalidPhase.selector,
+                OTFLaunchManager.Phase.GraduationReady,
+                OTFLaunchManager.Phase.Graduated
+            )
+        );
+        setup.launch.finalizeGraduation();
+    }
+
+    function testBuysAndSellsRevertWhileGraduationReadyForBothCurrencyOrderings() public {
+        _assertReadySwapsRevert(_deploy(true));
+        _assertReadySwapsRevert(_deploy(false));
     }
 
     function testUnsolicitedTokensAndDonatedFeesDoNotResizePermanentPosition() public {
@@ -233,11 +255,16 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(wethDust, 1_776);
     }
 
-    function testExternalLiquidityDoesNotChangeManagerPrincipalSizing() public {
+    function testExternalLiquidityCanBeAddedAndRemovedWhileReadyWithoutChangingPriceOrSizing()
+        public
+    {
         Setup memory setup = _deploy(true);
-        PoolModifyLiquidityTest externalLp = new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
+        _reachGraduationReady(setup);
+        (uint160 readyPrice,) = setup.launch.currentPoolState();
+        PoolModifyLiquidityTest externalLp =
+            new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
         setup.otf.mint(BUYER, 10_000 ether);
-        setup.weth.mint(BUYER, 30 ether);
+        setup.weth.mint(BUYER, 10 ether);
         vm.startPrank(BUYER);
         setup.otf.approve(address(externalLp), type(uint256).max);
         setup.weth.approve(address(externalLp), type(uint256).max);
@@ -251,9 +278,25 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             }),
             bytes("")
         );
-        setup.weth.approve(address(setup.router), type(uint256).max);
-        setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
+        (uint160 priceAfterAdd,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfterAdd), uint256(readyPrice));
+        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), 1 ether);
+        externalLp.modifyLiquidity(
+            _key(setup),
+            ModifyLiquidityParams({
+                tickLower: -887_272,
+                tickUpper: 887_272,
+                liquidityDelta: -int256(uint256(1 ether)),
+                salt: bytes32("external")
+            }),
+            bytes("")
+        );
         vm.stopPrank();
+
+        (uint160 priceAfterRemove,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfterRemove), uint256(readyPrice));
+        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), 0);
+        setup.launch.finalizeGraduation();
 
         assertEq(setup.launch.bootstrapWethProceeds(), PERMANENT_WETH);
         assertEq(setup.launch.bootstrapWethPrincipal(), PERMANENT_WETH);
@@ -261,39 +304,388 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(setup.launch.permanentWethLiquidity(), PERMANENT_WETH);
     }
 
-    function testPostGraduationSwapsAndLockedPermanentNft() public {
-        Setup memory setup = _deploy(true);
-        setup.weth.mint(BUYER, 20 ether);
-        vm.startPrank(BUYER);
-        setup.weth.approve(address(setup.router), 20 ether);
-        setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
-        vm.stopPrank();
-        assertEq(setup.positionManager.ownerOf(setup.launch.permanentPositionTokenId()), address(setup.launch));
+    function testPostGraduationBuysAndSellsPreservePermanentPositionForBothCurrencyOrderings()
+        public
+    {
+        _assertPostGraduationTrading(_deploy(true));
+        _assertPostGraduationTrading(_deploy(false));
+    }
 
+    function testThinLiquidityBridgeCannotOvershootGraduationPriceForBothCurrencyOrderings()
+        public
+    {
+        _assertThinBridgeOvershootReverts(_deploy(true));
+        _assertThinBridgeOvershootReverts(_deploy(false));
+    }
+
+    function _assertFundingBoundary(bool direct) private {
+        Setup memory underfunded = _deployUninitialized(direct);
+        uint256 required = underfunded.launch.REQUIRED_OTF_BALANCE();
+        underfunded.otf.mint(address(underfunded.launch), required - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.InsufficientLaunchTokens.selector, required, required - 1
+            )
+        );
+        underfunded.launch.initializeLaunch();
+        assertEq(
+            uint256(underfunded.launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized)
+        );
+
+        Setup memory exact = _deployUninitialized(direct);
+        exact.otf.mint(address(exact.launch), required);
+        exact.launch.initializeLaunch();
+        (uint256 bootstrapOtf,, uint256 permanentOtf,) = exact.launch.derivedLaunchAmounts();
+        uint256 expectedBurn = direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN;
+        assertEq(uint256(exact.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+        assertEq(exact.launch.bootstrapOtfDeposited(), bootstrapOtf);
+        assertEq(exact.otf.balanceOf(address(exact.launch)), required - bootstrapOtf);
+        assertLe(bootstrapOtf, exact.launch.MAX_BOOTSTRAP_BUDGET());
+        assertLe(permanentOtf, exact.launch.PERMANENT_OTF_CAP());
+        assertEq(required - bootstrapOtf - permanentOtf, expectedBurn);
+    }
+
+    function _assertReadySwapsRevert(Setup memory setup) private {
+        PoolSwapTest swapper = _reachGraduationReady(setup);
+        PoolKey memory key = _key(setup);
+        bool direct = setup.launch.otfIsCurrency0();
+        uint160 finalPrice = setup.launch.finalSqrtPriceX96();
+        uint256 wethBefore = setup.weth.balanceOf(BUYER);
+        uint256 otfBefore = setup.otf.balanceOf(BUYER);
+
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(swapper), type(uint256).max);
+        try swapper.swap(
+            key,
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: -int256(0.01 ether),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    setup.launch.finalTick() + (direct ? int24(10) : -10)
+                )
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        ) returns (
+            BalanceDelta
+        ) {
+            revert("ready buy succeeded");
+        } catch {}
+        try swapper.swap(
+            key,
+            SwapParams({
+                zeroForOne: direct,
+                amountSpecified: -int256(1 ether),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    setup.launch.finalTick() + (direct ? -10 : int24(10))
+                )
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        ) returns (
+            BalanceDelta
+        ) {
+            revert("ready sell succeeded");
+        } catch {}
+        vm.stopPrank();
+
+        (uint160 priceAfter,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfter), uint256(finalPrice));
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+        assertEq(setup.weth.balanceOf(BUYER), wethBefore);
+        assertEq(setup.otf.balanceOf(BUYER), otfBefore);
+    }
+
+    function _assertPostGraduationTrading(Setup memory setup) private {
+        _reachGraduationReady(setup);
+        setup.launch.finalizeGraduation();
+        (uint160 graduatedPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(graduatedPrice), uint256(setup.launch.finalSqrtPriceX96()));
+
+        uint256 tokenId = setup.launch.permanentPositionTokenId();
+        uint256 principalOtf = setup.launch.permanentOtfLiquidity();
+        uint256 principalWeth = setup.launch.permanentWethLiquidity();
+        uint128 liquidity = setup.positionManager.getPositionLiquidity(tokenId);
+        assertEq(setup.positionManager.ownerOf(tokenId), address(setup.launch));
+
+        _executePostGraduationTrades(setup);
+
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.Graduated));
+        assertEq(setup.positionManager.ownerOf(tokenId), address(setup.launch));
+        assertEq(setup.positionManager.getPositionLiquidity(tokenId), liquidity);
+        assertEq(setup.launch.permanentOtfLiquidity(), principalOtf);
+        assertEq(setup.launch.permanentWethLiquidity(), principalWeth);
+    }
+
+    function _executePostGraduationTrades(Setup memory setup) private {
         PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
         PoolKey memory key = _key(setup);
+        bool direct = setup.launch.otfIsCurrency0();
         vm.mockCallRevert(
             address(setup.stateView),
             abi.encodeWithSelector(StateView.getSlot0.selector),
             bytes("graduated hook read pool state")
         );
         setup.weth.mint(BUYER, 1 ether);
+        uint256 wethBeforeBuy = setup.weth.balanceOf(BUYER);
+        uint256 otfBeforeBuy = setup.otf.balanceOf(BUYER);
         vm.startPrank(BUYER);
-        setup.weth.approve(address(swapper), 1 ether);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        setup.otf.approve(address(swapper), type(uint256).max);
         swapper.swap(
             key,
             SwapParams({
-                zeroForOne: false,
+                zeroForOne: !direct,
                 amountSpecified: -int256(0.01 ether),
-                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(-155_300)
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    setup.launch.finalTick() + (direct ? int24(20) : -20)
+                )
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        uint256 wethAfterBuy = setup.weth.balanceOf(BUYER);
+        uint256 otfAfterBuy = setup.otf.balanceOf(BUYER);
+        assertLt(wethAfterBuy, wethBeforeBuy);
+        assertGt(otfAfterBuy, otfBeforeBuy);
+
+        swapper.swap(
+            key,
+            SwapParams({
+                zeroForOne: direct,
+                amountSpecified: -int256(1 ether),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    setup.launch.finalTick() + (direct ? -20 : int24(20))
+                )
             }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
         );
         vm.stopPrank();
         vm.clearMockedCalls();
-        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.Graduated));
-        assertGt(setup.otf.balanceOf(BUYER), 0);
+
+        assertEq(setup.otf.balanceOf(BUYER), otfAfterBuy - 1 ether);
+        assertGt(setup.weth.balanceOf(BUYER), wethAfterBuy);
+    }
+
+    function _assertThinBridgeOvershootReverts(Setup memory setup) private {
+        bool direct = setup.launch.otfIsCurrency0();
+        setup.weth.mint(BUYER, 30 ether);
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(setup.router), type(uint256).max);
+        setup.router.buyOtfWithWeth(8.99 ether, 1, BUYER, block.timestamp + 1);
+        vm.stopPrank();
+
+        int24 bridgeLower = setup.launch.finalTick() - 32;
+        int24 bridgeUpper = setup.launch.finalTick() + 32;
+        (uint160 closePrice, int24 closeTick) = setup.launch.currentPoolState();
+        assertTrue(closeTick >= bridgeLower && closeTick < bridgeUpper);
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+
+        PoolModifyLiquidityTest thinLp = _addThinBridge(setup, bridgeLower, bridgeUpper);
+        assertEq(
+            setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())),
+            setup.launch.BOOTSTRAP_LIQUIDITY() + 1 ether
+        );
+
+        PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        _assertThinBridgeAttackReverts(setup, swapper, closePrice, direct);
+        vm.stopPrank();
+
+        _removeThinBridge(setup, thinLp, bridgeLower, bridgeUpper);
+        assertEq(
+            setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())),
+            setup.launch.BOOTSTRAP_LIQUIDITY()
+        );
+        _completeLegitimateGraduation(setup, swapper, direct);
+    }
+
+    function _addThinBridge(Setup memory setup, int24 tickLower, int24 tickUpper)
+        private
+        returns (PoolModifyLiquidityTest thinLp)
+    {
+        thinLp = new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
+        setup.otf.mint(BUYER, 1_000_000 ether);
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(thinLp), type(uint256).max);
+        setup.weth.approve(address(thinLp), type(uint256).max);
+        thinLp.modifyLiquidity(
+            _key(setup),
+            ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: int256(uint256(1 ether)),
+                salt: bytes32("thin bridge")
+            }),
+            bytes("")
+        );
+        vm.stopPrank();
+    }
+
+    function _removeThinBridge(
+        Setup memory setup,
+        PoolModifyLiquidityTest thinLp,
+        int24 tickLower,
+        int24 tickUpper
+    ) private {
+        vm.prank(BUYER);
+        thinLp.modifyLiquidity(
+            _key(setup),
+            ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: -int256(uint256(1 ether)),
+                salt: bytes32("thin bridge")
+            }),
+            bytes("")
+        );
+    }
+
+    function _completeLegitimateGraduation(Setup memory setup, PoolSwapTest swapper, bool direct)
+        private
+    {
+        setup.weth.mint(BUYER, 20 ether);
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: -int256(20 ether),
+                sqrtPriceLimitX96: setup.launch.finalSqrtPriceX96()
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        vm.stopPrank();
+        (uint160 boundaryPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(boundaryPrice), uint256(setup.launch.finalSqrtPriceX96()));
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+
+        setup.launch.finalizeGraduation();
+        _assertGraduated(setup, direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN);
+    }
+
+    function _assertThinBridgeAttackReverts(
+        Setup memory setup,
+        PoolSwapTest swapper,
+        uint160 closePrice,
+        bool direct
+    ) private {
+        uint256 wethBeforeAttack = setup.weth.balanceOf(BUYER);
+        uint256 otfBeforeAttack = setup.otf.balanceOf(BUYER);
+        try swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: -int256(1 ether),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    setup.launch.finalTick() + (direct ? int24(16) : -16)
+                )
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        ) returns (
+            BalanceDelta
+        ) {
+            revert("thin bridge overshoot succeeded");
+        } catch {}
+
+        (uint160 priceAfterAttack,) = setup.launch.currentPoolState();
+        (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();
+        assertEq(uint256(priceAfterAttack), uint256(closePrice));
+        assertTrue(priceAfterAttack >= lower && priceAfterAttack <= upper);
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+        assertEq(setup.weth.balanceOf(BUYER), wethBeforeAttack);
+        assertEq(setup.otf.balanceOf(BUYER), otfBeforeAttack);
+    }
+
+    function _reachGraduationReady(Setup memory setup) private returns (PoolSwapTest swapper) {
+        swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
+        setup.weth.mint(BUYER, 20 ether);
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !setup.launch.otfIsCurrency0(),
+                amountSpecified: -int256(20 ether),
+                sqrtPriceLimitX96: setup.launch.finalSqrtPriceX96()
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        vm.stopPrank();
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+    }
+
+    function _expectGraduationPriceRecheck(Setup memory setup, uint160 mockedPrice, int24 tick)
+        private
+    {
+        bytes memory callData =
+            abi.encodeWithSelector(StateView.getSlot0.selector, PoolId.wrap(setup.launch.poolId()));
+        vm.mockCall(
+            address(setup.stateView), callData, abi.encode(mockedPrice, tick, uint24(0), uint24(0))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.GraduationPriceNotReached.selector,
+                mockedPrice,
+                setup.launch.finalSqrtPriceX96()
+            )
+        );
+        setup.launch.finalizeGraduation();
+        vm.clearMockedCalls();
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+    }
+
+    function _assertGraduationEvents(
+        Vm.Log[] memory logs,
+        Setup memory setup,
+        uint256 readyBlock,
+        int24 readyTick,
+        uint256 graduatedBlock,
+        uint64 graduatedTimestamp,
+        uint256 burned
+    ) private view {
+        bytes32 readySignature = keccak256("GraduationReady(uint256,int24)");
+        bytes32 burnSignature = keccak256("RemainingOtfBurned(uint256)");
+        bytes32 graduatedSignature =
+            keccak256("Graduated(uint256,uint64,uint256,uint256,uint256,uint128)");
+        uint256 readyEvents;
+        uint256 burnEvents;
+        uint256 graduatedEvents;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(setup.launch) || logs[i].topics.length == 0) continue;
+            if (logs[i].topics[0] == readySignature) {
+                readyEvents++;
+                assertEq(logs[i].topics[1], bytes32(readyBlock));
+                assertTrue(abi.decode(logs[i].data, (int24)) == readyTick);
+            } else if (logs[i].topics[0] == burnSignature) {
+                burnEvents++;
+                assertEq(abi.decode(logs[i].data, (uint256)), burned);
+            } else if (logs[i].topics[0] == graduatedSignature) {
+                graduatedEvents++;
+                assertEq(logs[i].topics[1], bytes32(graduatedBlock));
+                (
+                    uint64 timestamp,
+                    uint256 tokenId,
+                    uint256 otfLocked,
+                    uint256 wethLocked,
+                    uint128 liquidity
+                ) = abi.decode(logs[i].data, (uint64, uint256, uint256, uint256, uint128));
+                assertEq(timestamp, graduatedTimestamp);
+                assertEq(tokenId, setup.launch.permanentPositionTokenId());
+                assertEq(otfLocked, PERMANENT_OTF);
+                assertEq(wethLocked, PERMANENT_WETH);
+                assertEq(liquidity, setup.launch.PERMANENT_LIQUIDITY());
+            }
+        }
+        assertEq(readyEvents, 1);
+        assertEq(burnEvents, 1);
+        assertEq(graduatedEvents, 1);
     }
 
     function _assertInitializationVectors(Setup memory setup, bool direct) private view {
@@ -302,7 +694,10 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(setup.launch.BOOTSTRAP_LIQUIDITY(), 31_819_848_221_821_239_732_818);
         assertEq(setup.launch.PERMANENT_LIQUIDITY(), 21_213_049_526_830_492_717_974);
         assertEq(setup.launch.bootstrapLiquidity(), setup.launch.BOOTSTRAP_LIQUIDITY());
-        assertEq(setup.launch.bootstrapOtfDeposited(), direct ? DIRECT_BOOTSTRAP_OTF : INVERSE_BOOTSTRAP_OTF);
+        assertEq(
+            setup.launch.bootstrapOtfDeposited(),
+            direct ? DIRECT_BOOTSTRAP_OTF : INVERSE_BOOTSTRAP_OTF
+        );
         assertEq(
             setup.launch.MAX_BOOTSTRAP_BUDGET() - setup.launch.bootstrapOtfDeposited(),
             direct ? 2_582_603_699_607_525_186_744 : 2_582_603_699_607_525_186_726
@@ -318,17 +713,24 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
         (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();
         assertEq(
-            uint256(lower), direct ? 11_204_665_816_975_040_385_623_596 : 186_743_924_804_530_596_371_038_112_052_313
+            uint256(lower),
+            direct
+                ? 11_204_665_816_975_040_385_623_596
+                : 186_743_924_804_530_596_371_038_112_052_313
         );
         assertEq(
-            uint256(upper), direct ? 33_613_418_706_697_289_737_079_801 : 560_222_128_702_570_272_483_239_940_334_470
+            uint256(upper),
+            direct
+                ? 33_613_418_706_697_289_737_079_801
+                : 560_222_128_702_570_272_483_239_940_334_470
         );
         assertEq(uint256(TickMath.getSqrtPriceAtTick(-887_272)), 4_295_128_739);
         assertEq(
             uint256(TickMath.getSqrtPriceAtTick(887_272)),
             1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342
         );
-        (uint160 sqrtPriceX96, int24 tick,,) = setup.stateView.getSlot0(PoolId.wrap(setup.launch.poolId()));
+        (uint160 sqrtPriceX96, int24 tick,,) =
+            setup.stateView.getSlot0(PoolId.wrap(setup.launch.poolId()));
         assertEq(uint256(sqrtPriceX96), uint256(setup.launch.initialSqrtPriceX96()));
         assertTrue(tick == (direct ? int24(-177_285) : int24(177_284)));
 
@@ -336,8 +738,12 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         uint160 fullUpper = TickMath.getSqrtPriceAtTick(887_272);
         uint128 plusOne = setup.launch.PERMANENT_LIQUIDITY() + 1;
         uint256 plusOneOtf = direct
-            ? SqrtPriceMath.getAmount0Delta(setup.launch.finalSqrtPriceX96(), fullUpper, plusOne, true)
-            : SqrtPriceMath.getAmount1Delta(fullLower, setup.launch.finalSqrtPriceX96(), plusOne, true);
+            ? SqrtPriceMath.getAmount0Delta(
+                setup.launch.finalSqrtPriceX96(), fullUpper, plusOne, true
+            )
+            : SqrtPriceMath.getAmount1Delta(
+                fullLower, setup.launch.finalSqrtPriceX96(), plusOne, true
+            );
         assertEq(plusOneOtf, 50_000_000_000_000_000_000_001_166);
         assertGt(plusOneOtf, setup.launch.PERMANENT_OTF_CAP());
         _assertAllowancesCleared(setup);
@@ -347,12 +753,14 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         setup.weth.mint(BUYER, 2 ether);
         vm.startPrank(BUYER);
         setup.weth.approve(address(setup.router), 2 ether);
-        (uint256 boughtIn, uint256 boughtOtf) = setup.router.buyOtfWithWeth(1 ether, 1, BUYER, block.timestamp + 1);
+        (uint256 boughtIn, uint256 boughtOtf) =
+            setup.router.buyOtfWithWeth(1 ether, 1, BUYER, block.timestamp + 1);
         assertEq(boughtIn, 1 ether);
         assertGt(boughtOtf, 0);
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
         setup.otf.approve(address(setup.router), boughtOtf);
-        (uint256 soldOtf, uint256 wethOut) = setup.router.sellOtfForWeth(boughtOtf, 1, BUYER, block.timestamp + 1);
+        (uint256 soldOtf, uint256 wethOut) =
+            setup.router.sellOtfForWeth(boughtOtf, 1, BUYER, block.timestamp + 1);
         vm.stopPrank();
         assertGt(soldOtf, 0);
         assertGt(wethOut, 0);
@@ -370,11 +778,14 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         setup.weth.approve(address(swapper), type(uint256).max);
         (uint160 initialPrice,) = setup.launch.currentPoolState();
         bool direct = setup.launch.otfIsCurrency0();
-        uint160 buyLimit = direct ? TickMath.getSqrtPriceAtTick(-155_310) : TickMath.getSqrtPriceAtTick(155_310);
+        uint160 buyLimit =
+            direct ? TickMath.getSqrtPriceAtTick(-155_310) : TickMath.getSqrtPriceAtTick(155_310);
         vm.expectRevert();
         swapper.swap(
             key,
-            SwapParams({zeroForOne: !direct, amountSpecified: -int256(20 ether), sqrtPriceLimitX96: buyLimit}),
+            SwapParams({
+                zeroForOne: !direct, amountSpecified: -int256(20 ether), sqrtPriceLimitX96: buyLimit
+            }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
         );
@@ -387,11 +798,16 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         uint256 otfBalance = setup.otf.balanceOf(BUYER);
         setup.otf.approve(address(swapper), otfBalance);
         (uint160 beforeSellPrice,) = setup.launch.currentPoolState();
-        uint160 sellLimit = direct ? TickMath.getSqrtPriceAtTick(-177_285) : TickMath.getSqrtPriceAtTick(177_285);
+        uint160 sellLimit =
+            direct ? TickMath.getSqrtPriceAtTick(-177_285) : TickMath.getSqrtPriceAtTick(177_285);
         vm.expectRevert();
         swapper.swap(
             key,
-            SwapParams({zeroForOne: direct, amountSpecified: -int256(otfBalance), sqrtPriceLimitX96: sellLimit}),
+            SwapParams({
+                zeroForOne: direct,
+                amountSpecified: -int256(otfBalance),
+                sqrtPriceLimitX96: sellLimit
+            }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
         );
@@ -415,15 +831,21 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     function _assertAllowancesCleared(Setup memory setup) private view {
         assertEq(setup.otf.allowance(address(setup.launch), address(setup.permit2)), 0);
         assertEq(setup.weth.allowance(address(setup.launch), address(setup.permit2)), 0);
-        (uint160 otfAmount,,) =
-            setup.permit2.allowance(address(setup.launch), address(setup.otf), address(setup.positionManager));
-        (uint160 wethAmount,,) =
-            setup.permit2.allowance(address(setup.launch), address(setup.weth), address(setup.positionManager));
+        (uint160 otfAmount,,) = setup.permit2
+            .allowance(address(setup.launch), address(setup.otf), address(setup.positionManager));
+        (uint160 wethAmount,,) = setup.permit2
+            .allowance(address(setup.launch), address(setup.weth), address(setup.positionManager));
         assertEq(uint256(otfAmount), 0);
         assertEq(uint256(wethAmount), 0);
     }
 
     function _deploy(bool direct) private returns (Setup memory setup) {
+        setup = _deployUninitialized(direct);
+        setup.otf.mint(address(setup.launch), 200_000_000 ether);
+        setup.launch.initializeLaunch();
+    }
+
+    function _deployUninitialized(bool direct) private returns (Setup memory setup) {
         setup.poolManager = new PoolManager(address(this));
         setup.stateView = new StateView(IPoolManager(address(setup.poolManager)));
         setup.permit2 = IAllowanceTransfer((new DeployPermit2()).deployPermit2());
@@ -465,8 +887,6 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         );
         assertEq(address(setup.launch), predicted);
         setup.router = new OTFLaunchRouter(address(setup.launch));
-        setup.otf.mint(address(setup.launch), 200_000_000 ether);
-        setup.launch.initializeLaunch();
     }
 
     function _mineLaunchAddress(
@@ -486,7 +906,8 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         );
         for (uint256 i = 0; i < 100_000; i++) {
             bytes32 candidate = bytes32(i);
-            address candidateAddress = vm.computeCreate2Address(candidate, initCodeHash, address(deployer));
+            address candidateAddress =
+                vm.computeCreate2Address(candidate, initCodeHash, address(deployer));
             if (uint160(candidateAddress) & ALL_HOOK_MASK == REQUIRED_HOOK_FLAGS) {
                 return (candidate, candidateAddress);
             }
@@ -495,7 +916,8 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     }
 
     function _key(Setup memory setup) private view returns (PoolKey memory key) {
-        (address currency0, address currency1, uint24 fee, int24 spacing, address hooks) = setup.launch.poolKey();
+        (address currency0, address currency1, uint24 fee, int24 spacing, address hooks) =
+            setup.launch.poolKey();
         key = PoolKey({
             currency0: Currency.wrap(currency0),
             currency1: Currency.wrap(currency1),

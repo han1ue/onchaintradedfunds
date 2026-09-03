@@ -40,7 +40,7 @@ function redemptionQuote(): SwapQuote {
       funding: [],
       call: {
         method: "redeemToToken",
-        args: [{ vault, outputToken: weth, shares: 100n, minAmountOut: 85n, deadline: 200n }, [1n], [leg]],
+        args: [{ vault, outputToken: weth, shares: 100n, minAmountOut: 85n, skipMask: 0n, deadline: 200n }, [1n], [leg]],
       },
     },
   };
@@ -109,7 +109,7 @@ describe("fee settlement model", () => {
     const shareSale = shareSaleFeeSettlementRouteFromQuote(shareSaleQuote(), vault, weth, collector, adapter, venue)!;
     expect(feeSettlementCall(redemption, 20n, 300n)).toEqual({
       functionName: "settleFeesViaRedemption",
-      args: [vault, [1n], [expect.objectContaining({ adapter })], 85n, 20n, 300n],
+      args: [vault, [1n], 0n, [expect.objectContaining({ adapter })], 85n, 20n, 300n],
     });
     expect(feeSettlementCall(shareSale, 20n, 300n)).toEqual({
       functionName: "settleFeesViaShareSale",

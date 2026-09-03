@@ -224,6 +224,7 @@ contract BuybackCollector {
     function settleFeesViaRedemption(
         address vault,
         uint256[] calldata minBasketAmounts,
+        uint256 skipMask,
         SwapLeg[] calldata legs,
         uint256 minWethOut,
         uint256 minOtfOut,
@@ -243,6 +244,7 @@ contract BuybackCollector {
                 outputToken: weth,
                 shares: pending.totalFeeShares,
                 minAmountOut: minWethOut,
+                skipMask: skipMask,
                 deadline: deadline
             }),
                 minBasketAmounts,

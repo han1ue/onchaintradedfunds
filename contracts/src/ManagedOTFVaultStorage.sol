@@ -50,7 +50,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
         address asset, address account, uint256 expected, uint256 actual
     );
     error VaultShutdown();
-    error VaultNotShutdown();
 
     event VaultInitialized(
         address indexed factory, address indexed creator, address indexed expenseBeneficiary
@@ -64,9 +63,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
         address indexed receiver,
         uint256 shares,
         uint256[] amountsOut
-    );
-    event EmergencyRedeemed(
-        address indexed owner, address indexed receiver, uint256 shares, uint256[] amountsOut
     );
     event InKindRedeemed(
         address indexed owner,

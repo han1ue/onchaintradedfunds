@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import {
     BasketMintRequest,
+    BasketRedeemRequest,
+    BasketSwapRequest,
     FeeShareSwapRequest,
     OTFEntryExitRouter,
     SwapLeg
@@ -99,6 +101,72 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
             router.swapBasketToBasket(_swapRequest(ONE, ONE), _zeroMinimums(), conversion);
         assertEq(sharesOut, ONE);
         assertEq(conversionRefunds.length, 0);
+        _assertRouterClean();
+    }
+
+    function testRedeemSkipsConstituentAndRejectsSkippedMinimumsAndLegs() public {
+        BasketRedeemRequest memory request = _redeemRequest(ONE, ONE);
+        request.skipMask = 1;
+        uint256[] memory minimums = _zeroMinimums();
+        minimums[1] = ONE;
+        SwapLeg[] memory legs = new SwapLeg[](1);
+        legs[0] = _leg(adapterA, address(assetB), address(input), ONE, ONE);
+
+        uint256 assetABefore = assetA.balanceOf(address(sourceVault));
+        vm.mockCallRevert(
+            address(assetA),
+            abi.encodeWithSignature("balanceOf(address)", address(router)),
+            bytes("SKIPPED_BALANCE_READ")
+        );
+        vm.prank(ALICE);
+        (uint256 amountOut,,) = router.redeemToToken(request, minimums, legs);
+        vm.clearMockedCalls();
+
+        assertEq(amountOut, ONE);
+        assertEq(sourceVault.lastSkipMask(), 1);
+        assertEq(assetA.balanceOf(address(sourceVault)), assetABefore);
+        assertEq(assetA.balanceOf(address(router)), 0);
+        _assertRouterClean();
+
+        request = _redeemRequest(ONE, ONE);
+        request.skipMask = 1;
+        minimums[0] = 1;
+        vm.prank(ALICE);
+        vm.expectPartialRevert(OTFEntryExitRouter.SkippedAssetMinimumNotZero.selector);
+        router.redeemToToken(request, minimums, legs);
+
+        minimums[0] = 0;
+        legs[0] = _leg(adapterA, address(assetA), address(input), ONE, ONE);
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryExitRouter.ForbiddenRouteToken.selector, address(assetA))
+        );
+        router.redeemToToken(request, minimums, legs);
+
+        request.skipMask = 4;
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFEntryExitRouter.InvalidSkipMask.selector, 4, 2)
+        );
+        router.redeemToToken(request, minimums, new SwapLeg[](0));
+    }
+
+    function testBasketConversionPropagatesSourceSkipMask() public {
+        BasketSwapRequest memory request = _swapRequest(ONE, ONE / 2);
+        request.sourceSkipMask = 1;
+        uint256[] memory minimums = _zeroMinimums();
+        minimums[1] = ONE;
+        adapterA.setRate(address(assetB), address(assetC), 1, 1);
+        adapterB.setRate(address(assetB), address(assetD), 1, 1);
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = _leg(adapterA, address(assetB), address(assetC), ONE / 2, ONE / 2);
+        legs[1] = _leg(adapterB, address(assetB), address(assetD), type(uint256).max, ONE / 2);
+
+        vm.prank(ALICE);
+        (uint256 sharesOut,,) = router.swapBasketToBasket(request, minimums, legs);
+
+        assertEq(sharesOut, ONE / 2);
+        assertEq(sourceVault.lastSkipMask(), 1);
         _assertRouterClean();
     }
 

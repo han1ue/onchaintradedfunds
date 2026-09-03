@@ -203,6 +203,41 @@ contract VaultInKindRedemptionTest is BootstrapTestBase {
         assertTrue(vault.shutdown());
     }
 
+    function testPreviewMatchesActiveDeficitShutdownAndSkipBehavior() public {
+        SlashableToken deficient = new SlashableToken("Deficient", "DEF", 18);
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(deficient), address(tokenB), WAD, WAD, 0);
+        _bootstrapMintable(vault, _twoAssets(address(deficient), address(tokenB)), 2 * WAD);
+        deficient.slash(address(vault), WAD);
+
+        vm.expectPartialRevert(ManagedOTFVaultStorage.BackingDeficient.selector);
+        vault.previewRedeem(WAD, 0);
+        uint256[] memory skipped = vault.previewRedeem(WAD, 1);
+        assertEq(skipped[0], 0);
+        assertEq(skipped[1], WAD);
+
+        vm.prank(BOB);
+        vault.activateEmergencyShutdown();
+        uint256[] memory shutdownAmounts = vault.previewRedeem(WAD, 0);
+        assertEq(shutdownAmounts[0], WAD / 2);
+        assertEq(shutdownAmounts[1], WAD);
+
+        deficient.setBalanceReadsDisabled(true);
+        skipped = vault.previewRedeem(WAD, 1);
+        assertEq(skipped[0], 0);
+        assertEq(skipped[1], WAD);
+    }
+
+    function testRouterRedeemRejectsNonRouterCaller() public {
+        ManagedOTFVault vault =
+            _createTwoAssetVault(factory, address(tokenA), address(tokenB), WAD, WAD, 0);
+        _bootstrap(vault, router, _twoAssets(address(tokenA), address(tokenB)), WAD);
+
+        vm.prank(ALICE);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.UnauthorizedRouter.selector);
+        vault.routerRedeem(WAD, ALICE, ALICE, _zeroes(2), 0);
+    }
+
     function testRedeemInKindFinalCheckRejectsCrossTokenMutation() public {
         SlashableToken first = new SlashableToken("First", "FIRST", 18);
         CrossMutatingToken last = new CrossMutatingToken("Last", "LAST", 18);

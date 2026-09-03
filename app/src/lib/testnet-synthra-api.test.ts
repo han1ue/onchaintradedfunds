@@ -74,7 +74,7 @@ function routingClient(overrides: Partial<TestnetRoutingClient> = {}): TestnetRo
     quoteExactOutput: vi.fn(async (_path, amountOut) => (amountOut + 999_999_999_999n) / 1_000_000_000_000n),
     vaultAssets: vi.fn(async (vault) => vaultAssets.get(vault.toLowerCase()) ?? []),
     previewMint: vi.fn(async (_vault, shares) => [shares / 2n, shares - shares / 2n]),
-    previewRedeem: vi.fn(async (_vault, shares) => [shares / 2n, shares - shares / 2n]),
+    previewRedeem: vi.fn(async (_vault, shares, _skipMask) => [shares / 2n, shares - shares / 2n]),
     ...overrides,
   };
 }

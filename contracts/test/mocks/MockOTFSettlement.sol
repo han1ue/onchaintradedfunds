@@ -31,6 +31,7 @@ contract MockOTFSettlementVault is ERC20 {
     uint256 public checkpointCalls;
     uint256 public routerMintCalls;
     uint256 public routerRedeemCalls;
+    uint256 public lastSkipMask;
 
     constructor(string memory name_, string memory symbol_, address[] memory assets_)
         ERC20(name_, symbol_)
@@ -105,15 +106,22 @@ contract MockOTFSettlementVault is ERC20 {
         uint256 shares,
         address owner,
         address receiver,
-        uint256[] calldata minAmountsOut
+        uint256[] calldata minAmountsOut,
+        uint256 skipMask
     ) external onlyRouter returns (uint256[] memory amountsOut) {
         routerRedeemCalls++;
+        lastSkipMask = skipMask;
         require(!failRedeem, "REDEEM_FAILED");
         if (minAmountsOut.length != _assets.length) revert InvalidArrayLength();
+        if (skipMask >> _assets.length != 0) revert InvalidArrayLength();
         _spendAllowance(owner, msg.sender, shares);
         _burn(owner, shares);
         amountsOut = new uint256[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
+            if (((skipMask >> i) & 1) != 0) {
+                if (minAmountsOut[i] != 0) revert MinimumNotMet(i, 0, minAmountsOut[i]);
+                continue;
+            }
             if (shares < minAmountsOut[i]) {
                 revert MinimumNotMet(i, minAmountsOut[i], shares);
             }

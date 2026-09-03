@@ -484,11 +484,6 @@ export const managedOtfVaultAbi = [
   },
   {
     "inputs": [],
-    "name": "VaultNotShutdown",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "VaultShutdown",
     "type": "error"
   },
@@ -598,37 +593,6 @@ export const managedOtfVaultAbi = [
       }
     ],
     "name": "BasketRedeemed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "owner",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "receiver",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "shares",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256[]",
-        "name": "amountsOut",
-        "type": "uint256[]"
-      }
-    ],
-    "name": "EmergencyRedeemed",
     "type": "event"
   },
   {
@@ -1116,35 +1080,6 @@ export const managedOtfVaultAbi = [
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "shares",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "receiver",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "minAmountsOut",
-        "type": "uint256[]"
-      }
-    ],
-    "name": "emergencyRedeem",
-    "outputs": [
-      {
-        "internalType": "uint256[]",
-        "name": "amountsOut",
-        "type": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "entryExitRouter",
     "outputs": [
@@ -1483,6 +1418,11 @@ export const managedOtfVaultAbi = [
         "internalType": "uint256",
         "name": "shares",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "skipMask",
+        "type": "uint256"
       }
     ],
     "name": "previewRedeem",
@@ -1632,6 +1572,11 @@ export const managedOtfVaultAbi = [
         "internalType": "uint256[]",
         "name": "minAmountsOut",
         "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "skipMask",
+        "type": "uint256"
       }
     ],
     "name": "routerRedeem",
@@ -2472,6 +2417,22 @@ export const otfEntryExitRouterAbi = [
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "skipMask",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "constituentCount",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvalidSkipMask",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "vault",
         "type": "address"
@@ -2647,6 +2608,22 @@ export const otfEntryExitRouterAbi = [
       }
     ],
     "name": "ShareBalanceMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "asset",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minimum",
+        "type": "uint256"
+      }
+    ],
+    "name": "SkippedAssetMinimumNotZero",
     "type": "error"
   },
   {
@@ -3396,6 +3373,11 @@ export const otfEntryExitRouterAbi = [
           },
           {
             "internalType": "uint256",
+            "name": "skipMask",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
             "name": "deadline",
             "type": "uint256"
           }
@@ -3490,6 +3472,11 @@ export const otfEntryExitRouterAbi = [
           {
             "internalType": "uint256",
             "name": "minAmountOut",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "skipMask",
             "type": "uint256"
           },
           {
@@ -3613,6 +3600,11 @@ export const otfEntryExitRouterAbi = [
           {
             "internalType": "uint256",
             "name": "minSharesOut",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "sourceSkipMask",
             "type": "uint256"
           },
           {
@@ -5116,6 +5108,11 @@ export const buybackCollectorAbi = [
         "internalType": "uint256[]",
         "name": "minBasketAmounts",
         "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "skipMask",
+        "type": "uint256"
       },
       {
         "components": [

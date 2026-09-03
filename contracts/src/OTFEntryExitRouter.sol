@@ -32,6 +32,7 @@ struct BasketRedeemRequest {
     address outputToken;
     uint256 shares;
     uint256 minAmountOut;
+    uint256 skipMask;
     uint256 deadline;
 }
 
@@ -40,6 +41,7 @@ struct BasketSwapRequest {
     address targetVault;
     uint256 sharesIn;
     uint256 minSharesOut;
+    uint256 sourceSkipMask;
     uint256 deadline;
 }
 
@@ -74,6 +76,8 @@ contract OTFEntryExitRouter is Ownable2Step {
     error TooManyRouteTokens(uint256 maximum);
     error ForbiddenRouteToken(address token);
     error DuplicateAsset(address asset);
+    error InvalidSkipMask(uint256 skipMask, uint256 constituentCount);
+    error SkippedAssetMinimumNotZero(address asset, uint256 minimum);
     error UnapprovedAdapter(address adapter);
     error InvalidAdapterRouter(address adapter, address expected, address observed);
     error InsufficientRouteBalance(address token, uint256 available, uint256 requested);
@@ -363,8 +367,13 @@ contract OTFEntryExitRouter is Ownable2Step {
         if (minBasketAmounts.length != context.assets.length) revert InvalidArrayLength();
         context.sheet = _newBalanceSheet();
         _addToken(context.sheet, request.vault);
+        if (_isSkippedAsset(request.outputToken, context.assets, request.skipMask)) {
+            revert ForbiddenRouteToken(request.outputToken);
+        }
         _addToken(context.sheet, request.outputToken);
-        _addAssets(context.sheet, context.assets);
+        _validateSkipMask(context.assets, minBasketAmounts, request.skipMask);
+        _addUnskippedAssets(context.sheet, context.assets, request.skipMask);
+        _rejectSkippedLegs(legs, context.assets, request.skipMask);
         _prepareLegs(context.sheet, legs, request.vault, address(0));
         IOTFSettlementVault(request.vault).checkpointFees();
         _snapshot(context.sheet);
@@ -377,7 +386,14 @@ contract OTFEntryExitRouter is Ownable2Step {
         SwapLeg[] calldata legs
     ) private returns (uint256 amountOut) {
         _recordDebit(context.sheet, request.vault, request.shares);
-        _redeemBasket(request.vault, context.assets, request.shares, msg.sender, minBasketAmounts);
+        _redeemBasket(
+            request.vault,
+            context.assets,
+            request.shares,
+            msg.sender,
+            minBasketAmounts,
+            request.skipMask
+        );
         _executeLegs(context.sheet, legs);
         _requireOnlyOutput(context.sheet, request.outputToken);
         amountOut = _transientBalance(context.sheet, request.outputToken);
@@ -400,12 +416,20 @@ contract OTFEntryExitRouter is Ownable2Step {
         address[] memory sourceAssets = _validatedAssets(request.sourceVault);
         address[] memory targetAssets = _validatedAssets(request.targetVault);
         if (minSourceAmounts.length != sourceAssets.length) revert InvalidArrayLength();
+        _validateSkipMask(sourceAssets, minSourceAmounts, request.sourceSkipMask);
+        for (uint256 i = 0; i < sourceAssets.length; i++) {
+            if (!_isSkipped(request.sourceSkipMask, i)) continue;
+            for (uint256 j = 0; j < targetAssets.length; j++) {
+                if (sourceAssets[i] == targetAssets[j]) revert ForbiddenRouteToken(sourceAssets[i]);
+            }
+        }
 
         BalanceSheet memory sheet = _newBalanceSheet();
         _addToken(sheet, request.sourceVault);
         _addToken(sheet, request.targetVault);
-        _addAssets(sheet, sourceAssets);
+        _addUnskippedAssets(sheet, sourceAssets, request.sourceSkipMask);
         _addAssets(sheet, targetAssets);
+        _rejectSkippedLegs(legs, sourceAssets, request.sourceSkipMask);
         _prepareLegs(sheet, legs, request.sourceVault, request.targetVault);
         IOTFSettlementVault(request.sourceVault).checkpointFees();
         IOTFSettlementVault(request.targetVault).checkpointFees();
@@ -413,7 +437,12 @@ contract OTFEntryExitRouter is Ownable2Step {
 
         _recordDebit(sheet, request.sourceVault, request.sharesIn);
         _redeemBasket(
-            request.sourceVault, sourceAssets, request.sharesIn, msg.sender, minSourceAmounts
+            request.sourceVault,
+            sourceAssets,
+            request.sharesIn,
+            msg.sender,
+            minSourceAmounts,
+            request.sourceSkipMask
         );
         _executeLegs(sheet, legs);
         sharesOut = _mintMaximum(request.targetVault, targetAssets, request.minSharesOut, sheet);
@@ -506,6 +535,59 @@ contract OTFEntryExitRouter is Ownable2Step {
         for (uint256 i = 0; i < assets.length; i++) {
             _addToken(sheet, assets[i]);
         }
+    }
+
+    function _addUnskippedAssets(
+        BalanceSheet memory sheet,
+        address[] memory assets,
+        uint256 skipMask
+    ) private view {
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (!_isSkipped(skipMask, i)) _addToken(sheet, assets[i]);
+        }
+    }
+
+    function _validateSkipMask(
+        address[] memory assets,
+        uint256[] calldata minimums,
+        uint256 skipMask
+    ) private pure {
+        if (skipMask >> assets.length != 0) revert InvalidSkipMask(skipMask, assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (_isSkipped(skipMask, i) && minimums[i] != 0) {
+                revert SkippedAssetMinimumNotZero(assets[i], minimums[i]);
+            }
+        }
+    }
+
+    function _rejectSkippedLegs(
+        SwapLeg[] calldata legs,
+        address[] memory assets,
+        uint256 skipMask
+    ) private pure {
+        for (uint256 i = 0; i < legs.length; i++) {
+            if (_isSkippedAsset(legs[i].tokenIn, assets, skipMask)) {
+                revert ForbiddenRouteToken(legs[i].tokenIn);
+            }
+            if (_isSkippedAsset(legs[i].tokenOut, assets, skipMask)) {
+                revert ForbiddenRouteToken(legs[i].tokenOut);
+            }
+        }
+    }
+
+    function _isSkippedAsset(address token, address[] memory assets, uint256 skipMask)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (_isSkipped(skipMask, i) && assets[i] == token) return true;
+        }
+        return false;
+    }
+
+    function _isSkipped(uint256 skipMask, uint256 index) private pure returns (bool) {
+        return ((skipMask >> index) & 1) != 0;
     }
 
     function _addToken(BalanceSheet memory sheet, address token) private view {
@@ -637,21 +719,29 @@ contract OTFEntryExitRouter is Ownable2Step {
         address[] memory assets,
         uint256 shares,
         address owner,
-        uint256[] calldata minimums
+        uint256[] calldata minimums,
+        uint256 skipMask
     ) private {
         uint256 ownerBefore = IOTFSettlementVault(vault).balanceOf(owner);
         uint256[] memory balancesBefore = new uint256[](assets.length);
         for (uint256 i = 0; i < assets.length; i++) {
+            if (_isSkipped(skipMask, i)) continue;
             balancesBefore[i] = IERC20(assets[i]).balanceOf(address(this));
         }
         uint256[] memory reported =
-            IOTFSettlementVault(vault).routerRedeem(shares, owner, address(this), minimums);
+            IOTFSettlementVault(vault).routerRedeem(
+                shares, owner, address(this), minimums, skipMask
+            );
         if (reported.length != assets.length) revert InvalidArrayLength();
 
         uint256 ownerAfter = IOTFSettlementVault(vault).balanceOf(owner);
         uint256 observedShares = ownerBefore >= ownerAfter ? ownerBefore - ownerAfter : 0;
         if (observedShares != shares) revert ShareBalanceMismatch(shares, observedShares);
         for (uint256 i = 0; i < assets.length; i++) {
+            if (_isSkipped(skipMask, i)) {
+                if (reported[i] != 0) revert SettlementOutputMismatch(i, reported[i], 0);
+                continue;
+            }
             uint256 balanceAfter = IERC20(assets[i]).balanceOf(address(this));
             uint256 observed =
                 balanceAfter >= balancesBefore[i] ? balanceAfter - balancesBefore[i] : 0;

@@ -150,9 +150,9 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         (uint256 shutdownRedeemed, uint256 shutdownFee,,,) = vault.previewRedeemFee(balance);
         assertEq(shutdownRedeemed, balance);
         assertEq(shutdownFee, 0);
-        assertEq(vault.previewRedeem(balance)[0], balance);
+        assertEq(vault.previewRedeem(balance, 0)[0], balance);
         vm.prank(ALICE);
-        vault.emergencyRedeem(balance, ALICE, new uint256[](1));
+        vault.redeemInKind(balance, ALICE, new uint256[](1), 0);
         assertEq(vault.totalSupply(), supplyBefore - balance);
     }
 
@@ -223,7 +223,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
     ) private {
         (uint256 redeemedShares, uint256 redeemFee, uint256 creatorRedeem, uint256 buybackRedeem,) =
             vault.previewRedeemFee(50 ether);
-        uint256[] memory preview = vault.previewRedeem(50 ether);
+        uint256[] memory preview = vault.previewRedeem(50 ether, 0);
         vm.prank(ALICE);
         vault.approve(address(router), 50 ether);
         router.redeem(vault, 50 ether, ALICE, ALICE, preview);

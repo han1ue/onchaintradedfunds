@@ -82,7 +82,7 @@ A normal redemption pays the floored pro-rata accounted balance of each constitu
 
 If a redemption leaves total supply below `0.01` OTF, the vault completes that redemption and enters permanent shutdown. A balance of exactly `0.01` remains live. Shutdown disables minting and fee accrual but keeps holder exits available; a vault that reaches zero cannot bootstrap again.
 
-Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly. In shutdown, payouts are limited to `min(actual, accounted)`. A set bit in `skipMask` forfeits that constituent entitlement permanently: the vault reduces its ledger without calling the token and leaves the physical balance as unaccounted excess. The normal application does not expose this recovery control.
+Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly, while the entry router uses the same vault redemption logic. Active redemptions accrue and charge the configured fees and require every unskipped asset to be fully backed. Shutdown redemptions accrue no new fees, charge no redemption fee, and limit payouts to `min(actual, accounted)`. A set bit in `skipMask` forfeits that constituent entitlement permanently: the vault reduces its ledger without calling the token and leaves the physical balance as unaccounted excess. The normal application does not expose this recovery control.
 
 ## Fees
 

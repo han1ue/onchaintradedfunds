@@ -37,7 +37,7 @@ contract MockCoreRouter {
         address receiver,
         uint256[] calldata minimums
     ) external returns (uint256[] memory) {
-        return vault.routerRedeem(shares, owner, receiver, minimums);
+        return vault.routerRedeem(shares, owner, receiver, minimums, 0);
     }
 }
 

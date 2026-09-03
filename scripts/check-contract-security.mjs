@@ -194,6 +194,12 @@ assert(fundThesis.stateMutability === "view" && fundThesis.inputs.length === 0 &
 assert((vaultSource.match(/_fundThesis\s*=/gu) ?? []).length === 1, "fund thesis must have exactly one initialization write");
 const redeemInKind = functions(compiled.ManagedOTFVault).find((item) => item.name === "redeemInKind");
 assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,address,uint256[],uint256", "redeemInKind signature changed");
+const routerRedeem = functions(compiled.ManagedOTFVault).find((item) => item.name === "routerRedeem");
+assert(routerRedeem.inputs.map((input) => input.type).join(",") === "uint256,address,address,uint256[],uint256", "routerRedeem is not skip-aware");
+const previewRedeem = functions(compiled.ManagedOTFVault).find((item) => item.name === "previewRedeem");
+assert(previewRedeem.inputs.map((input) => input.type).join(",") === "uint256,uint256", "previewRedeem is not skip-aware");
+assert(!functionNames(compiled.ManagedOTFVault).has("emergencyRedeem"), "vault retains emergencyRedeem");
+assert(!vaultErrorNames.has("VaultNotShutdown"), "vault retains the emergency-redemption-only error");
 
 const routerFunctions = functions(compiled.OTFEntryExitRouter);
 const routerMutating = routerFunctions.filter((item) => !["view", "pure"].includes(item.stateMutability)).map((item) => item.name).sort();
@@ -204,6 +210,10 @@ const mintFromToken = routerFunctions.find((item) => item.name === "mintFromToke
 const swapLeg = mintFromToken.inputs[1];
 assert(swapLeg.type === "tuple[]", "router legs are not a generic tuple array");
 assert(swapLeg.components.map((input) => `${input.name}:${input.type}`).join("|") === "adapter:address|tokenIn:address|tokenOut:address|amountIn:uint256|minAmountOut:uint256|data:bytes", "router SwapLeg is not the bounded adapter interface");
+const redeemToToken = routerFunctions.find((item) => item.name === "redeemToToken");
+assert(redeemToToken.inputs[0].components.map((input) => `${input.name}:${input.type}`).join("|") === "vault:address|outputToken:address|shares:uint256|minAmountOut:uint256|skipMask:uint256|deadline:uint256", "router redemption request is not skip-aware");
+const swapBasketToBasket = routerFunctions.find((item) => item.name === "swapBasketToBasket");
+assert(swapBasketToBasket.inputs[0].components.map((input) => `${input.name}:${input.type}`).join("|") === "sourceVault:address|targetVault:address|sharesIn:uint256|minSharesOut:uint256|sourceSkipMask:uint256|deadline:uint256", "basket conversion request is not source-skip-aware");
 
 const adapterNames = functionNames(compiled.UniswapV3Adapter);
 for (const name of ["entryExitRouter", "uniswapV3Factory", "uniswapV3Router", "executeSwap", "MAX_HOPS"]) assert(adapterNames.has(name), `UniswapV3Adapter surface ${name} is absent`);
@@ -250,6 +260,8 @@ const buybackNames = functionNames(compiled.BuybackCollector);
 for (const name of ["configureFactory", "configureEntryExitRouter", "registerVault", "recordFeeShares", "settleFeesViaRedemption", "settleFeesViaShareSale", "feeAccounts"]) {
   assert(buybackNames.has(name), `buyback collector function ${name} is absent`);
 }
+const settleFeesViaRedemption = functions(compiled.BuybackCollector).find((item) => item.name === "settleFeesViaRedemption");
+assert(settleFeesViaRedemption.inputs.map((input) => input.type).join(",") === "address,uint256[],uint256,tuple[],uint256,uint256,uint256", "collector redemption settlement is not skip-aware");
 for (const removed of ["executeBuyback", "settleFees", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {
   assert(!buybackNames.has(removed), `buyback collector retains legacy route-executor surface ${removed}`);
 }

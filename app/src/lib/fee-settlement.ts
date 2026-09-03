@@ -19,6 +19,7 @@ type FeeSettlementRouteBase = {
 export type RedemptionFeeSettlementRoute = FeeSettlementRouteBase & {
   mode: "redemption";
   minBasketAmounts: readonly bigint[];
+  skipMask: bigint;
 };
 
 export type ShareSaleFeeSettlementRoute = FeeSettlementRouteBase & {
@@ -86,6 +87,7 @@ export function redemptionFeeSettlementRouteFromQuote(
     expectedWethOut: quote.expectedOutputRaw,
     minWethOut: quote.minimumReceivedRaw,
     minBasketAmounts,
+    skipMask: request.skipMask,
     legs,
   };
 }
@@ -157,6 +159,7 @@ export function feeSettlementCall(
         args: [
           route.vault,
           route.minBasketAmounts,
+          route.skipMask,
           route.legs,
           route.minWethOut,
           minOtfOut,

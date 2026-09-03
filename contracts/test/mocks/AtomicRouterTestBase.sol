@@ -197,6 +197,7 @@ abstract contract AtomicRouterTestBase is TestBase {
             outputToken: address(input),
             shares: shares,
             minAmountOut: minAmountOut,
+            skipMask: 0,
             deadline: block.timestamp + 1
         });
     }
@@ -211,6 +212,7 @@ abstract contract AtomicRouterTestBase is TestBase {
             targetVault: address(targetVault),
             sharesIn: shares,
             minSharesOut: minSharesOut,
+            sourceSkipMask: 0,
             deadline: block.timestamp + 1
         });
     }
