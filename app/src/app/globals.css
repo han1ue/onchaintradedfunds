@@ -1714,6 +1714,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundSwapWidget .swapAmountBox { padding: 13px 12px; }
 .fundSwapWidget .swapAmountEntry input,
 .fundSwapWidget .swapAmountEntry output { font-size: clamp(22px, 3vw, 27px); }
+.fundSwapWidget .swapAmountEntry input:focus-visible { outline: 0; }
 .fundSwapWidget .swapAssetButton.locked { cursor: default; }
 .fundFeesPanel { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
 .fundFeesHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 12px; }
