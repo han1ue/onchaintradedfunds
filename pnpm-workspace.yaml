@@ -1,7 +1,6 @@
 packages:
   - app
   - docs
-  - launch
   - packages/*
 
 onlyBuiltDependencies:
