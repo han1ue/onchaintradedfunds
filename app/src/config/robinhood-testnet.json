@@ -20,7 +20,7 @@
   },
   "expectedCodehashes": {
     "uniswapV4PoolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
-    "uniswapV4StateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6d",
+    "uniswapV4StateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
     "uniswapV4PositionManager": "0xf3a0edb689229fa4bf135a728f2ec2eb4a2fbee2e41e3e74ffadb7b4c56e8a6d",
     "uniswapUniversalRouter": "0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f",
     "permit2": "0x0117e0ed818bc3f2a8729ffc336c837e63e965f04b473047b39b35ad86aac259"

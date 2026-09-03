@@ -610,6 +610,50 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   padding: 12px;
 }
 
+.swapCardStage { position: relative; display: grid; }
+.swapCardPane { min-width: 0; grid-area: 1 / 1; }
+.swapCard.showReceipt .swapCardStage { overflow: hidden; }
+.swapCard.showReceipt .swapFormPane { pointer-events: none; animation: swapFormExit 220ms cubic-bezier(.4, 0, 1, 1) both; }
+.swapReceiptPane { animation: swapReceiptEnter 310ms cubic-bezier(.16, 1, .3, 1) both; }
+
+@keyframes swapFormExit {
+  to { visibility: hidden; opacity: 0; transform: translateX(-22%); }
+}
+
+@keyframes swapReceiptEnter {
+  from { opacity: 0; clip-path: inset(0 0 0 10%); transform: translateX(24%); }
+}
+
+.swapConfetti {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.swapConfetti span {
+  position: absolute;
+  top: 108px;
+  left: 50%;
+  width: 6px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--confetti-color);
+  opacity: 0;
+  animation: swapConfettiBurst 760ms cubic-bezier(.18, .76, .36, 1) var(--confetti-delay) both;
+}
+
+.swapConfetti span:nth-child(3n) { width: 8px; height: 4px; }
+
+@keyframes swapConfettiBurst {
+  0% { opacity: 0; transform: translate(-50%, 0) rotate(0deg) scale(.8); }
+  10% { opacity: 1; }
+  34% { opacity: 1; transform: translate(calc(-50% + var(--confetti-x)), -58px) rotate(90deg); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--confetti-x)), var(--confetti-y)) rotate(var(--confetti-rotation)); }
+}
+
 .swapCardHeader {
   display: flex;
   min-height: 40px;
@@ -747,6 +791,72 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapPrimary:hover:not(:disabled) { background: var(--teal-hover); }
 .swapPrimary:active:not(:disabled) { transform: translateY(1px); }
 .swapPrimary:disabled { background: var(--muted); color: var(--text-muted); }
+
+.swapReceipt {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  padding: 2px;
+}
+
+.swapReceiptBack {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.swapReceiptBack:hover { background: var(--card-raised); color: var(--text); }
+.swapReceiptBack:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+.swapReceiptHeading { display: grid; justify-items: center; gap: 11px; padding: 12px 12px 18px; text-align: center; }
+.swapReceiptHeading h2 { margin: 0; font-size: 20px; font-weight: 680; letter-spacing: -.025em; }
+.swapReceiptConfirmedIcon { display: grid; width: 54px; height: 54px; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 34%); border-radius: 50%; background: rgb(var(--accent-rgb) / 11%); color: var(--accent-text); }
+
+.swapReceiptResult {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-raised);
+}
+
+.swapReceiptResult p { display: grid; gap: 4px; margin: 0; padding: 16px; }
+.swapReceiptResult p + p { border-top: 1px solid var(--border); }
+.swapReceiptResult span { color: var(--text-muted); font-size: 10px; font-weight: 620; }
+.swapReceiptResult strong { overflow-wrap: anywhere; color: var(--text); font-size: clamp(23px, 6vw, 29px); font-variant-numeric: tabular-nums; font-weight: 690; letter-spacing: -.035em; line-height: 1.12; }
+
+.swapReceiptRefunds { border-top: 1px solid var(--border); margin-top: 16px; padding: 14px 4px 0; }
+.swapReceiptRefunds h3 { margin: 0; color: var(--text); font-size: 12px; font-weight: 680; letter-spacing: 0; }
+.swapReceiptRefunds > div > p { margin: 3px 0 0; color: var(--text-muted); font-size: 10px; }
+.swapReceiptRefunds ul { display: grid; gap: 0; list-style: none; margin: 9px 0 0; padding: 0; }
+.swapReceiptRefunds ul.expanded { max-height: 154px; overflow-y: auto; scrollbar-color: rgb(var(--accent-rgb) / 46%) transparent; scrollbar-width: thin; }
+.swapReceiptRefunds li { display: flex; min-height: 30px; align-items: center; gap: 5px; border-top: 1px solid var(--border); color: var(--text-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
+.swapReceiptRefunds li span { color: var(--text); }
+.swapReceiptRefunds li strong { font-size: inherit; }
+.swapReceiptRefunds > button { min-height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-text); padding: 0; font-size: 10px; font-weight: 700; }
+.swapReceiptRefunds > button:hover { color: #9af0e8; }
+.swapReceiptRefunds > button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.swapReceiptPrimary { flex: 0 0 auto; margin-top: 18px; text-decoration: none; }
+
+@keyframes swapReceiptFade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swapCard.showReceipt .swapFormPane { display: none; animation: none; }
+  .swapReceiptPane { animation: swapReceiptFade 120ms ease-out both; }
+  .swapConfetti { display: none; }
+}
 
 .createBlocked { margin: 10px 2px 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 

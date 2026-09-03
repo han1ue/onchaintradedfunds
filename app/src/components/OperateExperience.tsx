@@ -8,6 +8,7 @@ import { OtfTokenIcon } from "@onchaintradedfunds/brand";
 import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.svg";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUpRight,
   ArrowRight,
   BookOpenText,
@@ -33,8 +34,8 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, useBalance, useChainId, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
@@ -74,6 +75,12 @@ import {
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { quoteCanonicalOtfSwap } from "@/lib/otf-market";
 import { canonicalV4Execution } from "@/lib/canonical-v4-execution";
+import {
+  claimSwapCelebration,
+  confirmedSwapReceipt,
+  receiptRefundDisclosure,
+  type SwapReceipt,
+} from "@/lib/swap-receipt";
 import {
   feeSettlementCall,
   pendingFeeShares,
@@ -117,6 +124,13 @@ const PERMIT2_APPROVE_ABI = [{
     { name: "expiration", type: "uint48" },
   ],
   outputs: [],
+}] as const;
+const ERC20_BALANCE_ABI = [{
+  type: "function",
+  name: "balanceOf",
+  stateMutability: "view",
+  inputs: [{ name: "account", type: "address" }],
+  outputs: [{ name: "", type: "uint256" }],
 }] as const;
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
@@ -455,6 +469,62 @@ function QuoteReview({
   );
 }
 
+const SWAP_CONFETTI_PIECES = Array.from({ length: 18 }, (_, index) => ({
+  x: (index % 6 - 2.5) * 44 + (index % 2 ? 12 : -8),
+  y: 92 + (index % 4) * 18,
+  rotation: (index % 2 ? 1 : -1) * (110 + index * 19),
+  delay: (index % 5) * 18,
+  color: index % 3 === 0 ? "var(--teal)" : index % 3 === 1 ? "var(--gold)" : "var(--text-muted)",
+}));
+
+function SwapConfetti({ active }: { active: boolean }) {
+  if (!active) return null;
+  return (
+    <div className="swapConfetti" aria-hidden="true">
+      {SWAP_CONFETTI_PIECES.map((piece, index) => (
+        <span
+          key={index}
+          style={{
+            "--confetti-x": `${piece.x}px`,
+            "--confetti-y": `${piece.y}px`,
+            "--confetti-rotation": `${piece.rotation}deg`,
+            "--confetti-delay": `${piece.delay}ms`,
+            "--confetti-color": piece.color,
+          } as CSSProperties}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: () => void }) {
+  const [refundsExpanded, setRefundsExpanded] = useState(false);
+  const refundDisclosure = receiptRefundDisclosure(receipt.refunds, refundsExpanded);
+  return (
+    <div className="swapReceipt" aria-labelledby="swap-receipt-title">
+      <button type="button" className="swapReceiptBack" onClick={onBack}><ArrowLeft size={14} />Back to swap</button>
+      <div className="swapReceiptHeading">
+        <span className="swapReceiptConfirmedIcon"><Check size={25} strokeWidth={2.2} /></span>
+        <h2 id="swap-receipt-title">Swap complete</h2>
+      </div>
+      <div className="swapReceiptResult" aria-live="polite">
+        {receipt.sold ? <p><span>You sold</span><strong>{receipt.sold.displayAmount} {receipt.sold.symbol}</strong></p> : null}
+        <p><span>You received</span><strong>{receipt.received.displayAmount} {receipt.received.symbol}</strong></p>
+      </div>
+      {receipt.refunds.length ? (
+        <section className="swapReceiptRefunds" aria-labelledby="swap-refunds-title">
+          <div><h3 id="swap-refunds-title">Also returned</h3><p>Surplus from basket execution</p></div>
+          <ul className={refundsExpanded ? "expanded" : undefined}>
+            {refundDisclosure.visible.map((refund) => <li key={refund.address}><span>{refund.displayAmount}</span><strong>{refund.symbol}</strong></li>)}
+          </ul>
+          {refundDisclosure.hiddenCount ? <button type="button" onClick={() => setRefundsExpanded(true)}>Show {refundDisclosure.hiddenCount} more</button> : refundsExpanded && receipt.refunds.length > 4 ? <button type="button" onClick={() => setRefundsExpanded(false)}>Show less</button> : null}
+        </section>
+      ) : null}
+      <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link>
+    </div>
+  );
+}
+
 export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode = false }: { embeddedFund?: SwapAsset; embedded?: boolean; protocolTokenMode?: boolean } = {}) {
   const chainId = useChainId();
   const { address } = useAccount();
@@ -491,7 +561,17 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const [execution, setExecution] = useState<"idle" | "approval" | "simulation" | "submission" | "success" | "failure">("idle");
   const [executionMessage, setExecutionMessage] = useState<string>();
   const [preflightMessage, setPreflightMessage] = useState<string>();
+  const [swapReceipt, setSwapReceipt] = useState<SwapReceipt>();
+  const [receiptStageHeight, setReceiptStageHeight] = useState<number>();
+  const [confettiActive, setConfettiActive] = useState(false);
   const swapSettingsRef = useRef<HTMLDivElement>(null);
+  const swapStageRef = useRef<HTMLDivElement>(null);
+  const celebratedSwapsRef = useRef(new Set<string>());
+  const confettiTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => {
+    if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (embedded || protocolTokenMode || !isUnselectedOtf(output) || !otfAssets.length) return;
@@ -751,6 +831,82 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     setPreflightMessage(undefined);
   }
 
+  async function readOutputBalance(blockNumber?: bigint): Promise<bigint | undefined> {
+    if (!address || !publicClient) return undefined;
+    try {
+      if (output.kind === "native") return await publicClient.getBalance({ address, blockNumber });
+      return await publicClient.readContract({
+        address: output.address,
+        abi: ERC20_BALANCE_ABI,
+        functionName: "balanceOf",
+        args: [address],
+        blockNumber,
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function finishConfirmedSwap(
+    hash: Hex,
+    transactionReceipt: TransactionReceipt,
+    outputBalanceBefore: bigint | undefined,
+    transactionValue: bigint,
+    refundSender?: Address,
+  ) {
+    const outputBalanceAfter = outputBalanceBefore === undefined
+      ? undefined
+      : await readOutputBalance(transactionReceipt.blockNumber);
+    const confirmedOutputAmount = outputBalanceBefore !== undefined && outputBalanceAfter !== undefined
+      ? output.kind === "native"
+        ? outputBalanceAfter + transactionReceipt.gasUsed * transactionReceipt.effectiveGasPrice + transactionValue > outputBalanceBefore
+          ? outputBalanceAfter + transactionReceipt.gasUsed * transactionReceipt.effectiveGasPrice + transactionValue - outputBalanceBefore
+          : undefined
+        : outputBalanceAfter > outputBalanceBefore
+          ? outputBalanceAfter - outputBalanceBefore
+          : undefined
+      : undefined;
+    const nextReceipt = confirmedSwapReceipt({
+      status: transactionReceipt.status,
+      hash,
+      owner: address!,
+      pair: { input, output },
+      logs: transactionReceipt.logs,
+      knownAssets: [...configuredAssets, ...otfAssets, input, output],
+      refundSender,
+      confirmedOutputAmount,
+    });
+
+    setExecution("success");
+    setExecutionMessage(`Swap submitted and confirmed: ${shortAddress(hash)}.`);
+    if (!nextReceipt) return;
+
+    setReceiptStageHeight(swapStageRef.current?.offsetHeight);
+    setSwapReceipt(nextReceipt);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (claimSwapCelebration(hash, reducedMotion, celebratedSwapsRef.current, window.sessionStorage)) {
+      setConfettiActive(true);
+      if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
+      confettiTimerRef.current = window.setTimeout(() => setConfettiActive(false), 850);
+    }
+  }
+
+  function backToSwap() {
+    if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
+    confettiTimerRef.current = undefined;
+    setConfettiActive(false);
+    setSwapReceipt(undefined);
+    setReceiptStageHeight(undefined);
+    setAmount("");
+    setQuotes([]);
+    setActiveQuote(undefined);
+    setExecution("idle");
+    setExecutionMessage(undefined);
+    setPreflightMessage(undefined);
+    setPicker(undefined);
+    setSwapSettingsOpen(false);
+  }
+
   async function executeSwap() {
     if (!address || !publicClient || !walletClient) return;
     if (canonicalOtfPair) {
@@ -810,11 +966,11 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         const gas = await publicClient.estimateGas({ account: address, to: universalRouter, data: canonicalExecution.data, value: canonicalExecution.value });
         setPreflightMessage(`Canonical V4 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${formatUnits(canonicalQuote.minimumReceived, output.decimals)} ${output.symbol}.`);
         setExecution("submission");
+        const outputBalanceBefore = await readOutputBalance();
         const hash = await walletClient.sendTransaction({ account: address, to: universalRouter, data: canonicalExecution.data, value: canonicalExecution.value });
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error("The canonical OTF swap reverted.");
-        setExecution("success");
-        setExecutionMessage(`Swap submitted and confirmed: ${shortAddress(hash)}.`);
+        await finishConfirmedSwap(hash, receipt, outputBalanceBefore, canonicalExecution.value);
         await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
       } catch (error) {
         setExecution("failure");
@@ -939,11 +1095,17 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       }
       setPreflightMessage(preflight);
       setExecution("submission");
+      const outputBalanceBefore = await readOutputBalance();
       const hash = await walletClient.sendTransaction({ account: address, to: target, data, value });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The swap transaction reverted.");
-      setExecution("success");
-      setExecutionMessage(`Swap submitted and confirmed: ${shortAddress(hash)}.`);
+      await finishConfirmedSwap(
+        hash,
+        receipt,
+        outputBalanceBefore,
+        value,
+        executionPlan.kind === "basket-router" ? executionPlan.router : undefined,
+      );
       await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
     } catch (error) {
       setExecution("failure");
@@ -1037,34 +1199,40 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   }
 
   const swapCard = (
-        <section className="swapCard" aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
-          <div className="swapCardHeader">
-            <div className="swapCardTitle"><strong>Swap</strong><span className="swapRoutingBadge">{routingLabel}</span></div>
-            <div className="swapSettingsControl" ref={swapSettingsRef}>
-              <button type="button" className={`swapIconButton ${swapSettingsOpen ? "active" : ""}`} title="Swap settings" aria-label="Open swap settings" aria-haspopup="dialog" aria-expanded={swapSettingsOpen} onClick={() => setSwapSettingsOpen((open) => !open)}><SlidersHorizontal size={16} /></button>
-              {swapSettingsOpen ? (
-                <div className="swapSettingsPopover" role="dialog" aria-label="Swap settings">
-                  <label><span>Maximum slippage</span><div className="selectControl swapSlippageSelect"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} aria-label="Maximum slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={14} aria-hidden="true" /></div></label>
-                  <small>The quote&apos;s minimum received amount reflects this tolerance.</small>
+        <section className={`swapCard${swapReceipt ? " showReceipt" : ""}`} aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
+          <SwapConfetti active={confettiActive} />
+          <div className="swapCardStage" ref={swapStageRef} style={receiptStageHeight ? { minHeight: receiptStageHeight } : undefined}>
+            <div className="swapCardPane swapFormPane" aria-hidden={swapReceipt ? true : undefined} inert={swapReceipt ? true : undefined}>
+              <div className="swapCardHeader">
+                <div className="swapCardTitle"><strong>Swap</strong><span className="swapRoutingBadge">{routingLabel}</span></div>
+                <div className="swapSettingsControl" ref={swapSettingsRef}>
+                  <button type="button" className={`swapIconButton ${swapSettingsOpen ? "active" : ""}`} title="Swap settings" aria-label="Open swap settings" aria-haspopup="dialog" aria-expanded={swapSettingsOpen} onClick={() => setSwapSettingsOpen((open) => !open)}><SlidersHorizontal size={16} /></button>
+                  {swapSettingsOpen ? (
+                    <div className="swapSettingsPopover" role="dialog" aria-label="Swap settings">
+                      <label><span>Maximum slippage</span><div className="selectControl swapSlippageSelect"><select value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} aria-label="Maximum slippage"><option value={50}>0.5%</option><option value={100}>1.0%</option><option value={300}>3.0%</option></select><ChevronDown size={14} aria-hidden="true" /></div></label>
+                      <small>The quote&apos;s minimum received amount reflects this tolerance.</small>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
+              <div className="swapPair">
+                <div className="swapAmountBox">
+                  <div className="swapAmountTop"><span>You pay</span></div>
+                  <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted)} /></span></div></div>
+                </div>
+                <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
+                <div className="swapAmountBox receive">
+                  <div className="swapAmountTop"><span>You receive</span></div>
+                  <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
+                </div>
+              </div>
+              <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
+              {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
+              {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
+              {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
             </div>
+            {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} /></div> : null}
           </div>
-          <div className="swapPair">
-            <div className="swapAmountBox">
-              <div className="swapAmountTop"><span>You pay</span></div>
-              <div className="swapAmountEntry"><input inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted)} /></span></div></div>
-            </div>
-            <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
-            <div className="swapAmountBox receive">
-              <div className="swapAmountTop"><span>You receive</span></div>
-              <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
-            </div>
-          </div>
-          <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
-          {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
-          {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
-          {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
         </section>
   );
   const pickerAsset = picker === "input" ? input : output;
