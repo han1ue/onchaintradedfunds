@@ -1,6 +1,6 @@
 "use client";
 
-import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.png";
+import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.svg";
 import { fakeEthUsdOracleAbi, merkleRewardsDistributorAbi, otfLaunchManagerAbi, otfTokenAbi } from "@onchaintradedfunds/generated";
 import { CheckCircle, CircleAlert, ExternalLink, Flame, LoaderCircle, LockKeyhole, ReceiptText } from "lucide-react";
 import Image from "next/image";

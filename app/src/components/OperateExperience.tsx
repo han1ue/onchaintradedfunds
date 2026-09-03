@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.png";
+import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.svg";
 import {
   ArrowDown,
   ArrowUpRight,
