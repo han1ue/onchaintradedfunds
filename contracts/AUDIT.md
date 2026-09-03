@@ -4,7 +4,7 @@ These contracts have not received an independent audit. A previous report covere
 
 The review scope includes:
 
-- `OTFToken`, `OTFLaunchManager`, and `OTFLaunchManagerDeployer`;
+- `OTFToken`, `OTFLaunchManager`, `OTFLaunchManagerDeployer`, and `OTFLaunchRouter`;
 - `TeamMarketCapVesting`, `BuybackCollector`, and `MerkleRewardsDistributor`;
 - `OTFFactory`, `ManagedOTFVault`, and `OTFEntryExitRouter`;
 - `UniswapV3Adapter` and `UniswapV4Adapter`.
@@ -16,7 +16,7 @@ Reviewers should pay particular attention to:
 - canonical-WETH handling, native refunds, checked ETH sends, and callback reentrancy in the entry router;
 - accounted-balance settlement, shutdown redemption, and fee-share rounding in vaults;
 - factory-only fee-account registration and beneficiary-controlled atomic settlement in the collector;
-- immutable pool configuration, graduation, and permanently locked liquidity in the launch manager;
+- bootstrap-corridor enforcement, partial-fill settlement and refunds, atomic graduation, and permanently locked liquidity;
 - spot-FDV vesting, oracle freshness, and beneficiary succession;
 - adapter path validation, transient-balance isolation, and allowance cleanup.
 

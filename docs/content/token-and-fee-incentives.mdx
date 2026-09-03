@@ -16,28 +16,35 @@ The contracts implement the economics described here, but the current architectu
 | Destination | OTF | Use |
 | --- | ---: | --- |
 | Team market-cap vesting | 100,000,000 | Ten live-FDV milestones |
-| V4 launch manager | 150,000,000 | One-sided bootstrap position |
-| V4 launch manager reserve | 50,000,000 | Post-graduation permanent liquidity |
+| V4 launch manager | 200,000,000 | Bootstrap and permanent liquidity |
 | Cumulative rewards distributor | 700,000,000 | Multisig-published rewards |
 
 ## Canonical V4 launch
 
 The launch manager creates one OTF/WETH Uniswap V4 pool with a static 0% LP fee and tick spacing 1. It initializes at exactly `0.00000002 WETH` per OTF, which is a 20 ETH reference FDV against the original one-billion-token supply.
 
-The pool price is exact at initialization, but the liquidity boundaries must lie on ticks:
+The pool price is exact at initialization, while each liquidity boundary comes from V4 `TickMath`:
 
-| OTF/WETH ordering | Start tick | Start `sqrtPriceX96` | Final tick | Final `sqrtPriceX96` |
-| --- | ---: | ---: | ---: | ---: |
-| OTF is currency0 | -177284 | 11204554194957227983746388 | -155311 | 33613418706697289737079801 |
-| OTF is currency1 | 177284 | 560227709747861399187319382274581 | 155311 | 186743924804530596371038112052313 |
+| OTF/WETH ordering | Exact initialization `sqrtPriceX96` | Bootstrap start tick and boundary | Final tick and boundary |
+| --- | ---: | ---: | ---: |
+| OTF is currency0 | 11204554194957227983746388 | -177284 / 11204665816975040385623596 | -155311 / 33613418706697289737079801 |
+| OTF is currency1 | 560227709747861399187319382274581 | 177284 / 560222128702570272483239940334470 | 155311 / 186743924804530596371038112052313 |
 
-The initial boundary represents `20.000398490 ETH` reference FDV. The pool crosses the small empty interval between the exact initial price and that boundary before it reaches liquidity. The final tick represents `0.000000179997388091 WETH` per OTF, or `179.997388091 ETH` reference FDV. This is the nearest valid tick to the 180 ETH target while preserving the 21,973-tick range.
+The exact initialization price sits just outside the starting position boundary. It produces Slot0 tick `-177285` when OTF is currency0 and `177284` when OTF is currency1. The final tick represents approximately `0.000000179997388091105356396 WETH` per OTF, or `179.997388091105356396 ETH` reference FDV. The next tick would exceed the nominal 180 ETH target.
 
-The bootstrap position contains 150 million OTF and no WETH. Selling through the final tick produces `8.999934702040754827 WETH` under the launch manager's integer liquidity math. At the final price, the 50 million OTF reserve is worth `8.99986940455 WETH`.
+Bootstrap liquidity is fixed at `31819848221821239732818`; it is not calculated from the 150 million OTF cap. V4 add-liquidity rounding consumes `149997417396300392474813256` raw OTF when OTF is currency0 and `149997417396300392474813274` when it is currency1. Removing that completed position returns a principal of `8999869404555266670` raw WETH in either ordering.
 
-The pool supports buys and sells during bootstrap. The swap that reaches or crosses the final tick changes the phase from `BootstrapActive` to `GraduationReady`. V4 remains locked during the hook callback, so a separate permissionless call to `finalizeGraduation` must complete the transition.
+Permanent liquidity is fixed at `21213049526830492717974`. At the final price, V4 round-up math requires `49999999999999999999998809` raw OTF and the same `8999869404555266670` raw WETH released as bootstrap principal. The position is 1,191 raw OTF units below the 50 million cap because liquidity is integer-valued. Increasing permanent liquidity by one would require `50000000000000000000001166` raw OTF, exceeding the cap by 1,166 units.
 
-Finalization settles the bootstrap position and supplies the full 50 million OTF reserve with approximately equal-value WETH as effectively full-range liquidity. The new position remains owned by the launch manager. No function can withdraw, reprice, rebalance, migrate, or replace it. Any deterministic OTF or WETH dust also remains locked. The pool fee stays at 0%.
+The `afterSwap` hook enforces the full bootstrap corridor using exact sqrt prices. It marks `GraduationReady` only when the pool lands exactly on the final boundary; the inverse ordering reports tick `155310` at the `TickMath(155311)` boundary, so tick equality is not a valid graduation test. Swaps attempted while ready revert.
+
+`OTFLaunchRouter` is the supported bootstrap route. It sets the appropriate boundary price, partially fills an oversized buy or sell, settles only consumed input, leaves unused WETH in the buyer's wallet, and refunds unused native ETH. After the PoolManager returns control, a boundary purchase calls permissionless finalization in the same outer transaction. Any finalization failure reverts the purchase as well.
+
+Ordinary Uniswap UI trades can succeed while they remain inside the corridor. A standard router order that would cross either boundary reverts in full because it cannot supply the required limit. Adding a `beforeSwap` hook would reduce some wasted gas but could not make that order partially fill, so the permanent hook path contains only `beforeInitialize` and `afterSwap`. After graduation, normal Uniswap trading resumes.
+
+Finalization removes the bootstrap position, measures both returned tokens, and supplies only the derived principal to the permanent full-range position. Donated or unsolicited WETH cannot enlarge it and remains visible as locked dust. Once the permanent mint succeeds, the manager burns its entire OTF balance in one call, including unsolicited OTF. The ordinary burn is `2582603699607525187935` raw OTF in the currency0 ordering and `2582603699607525187917` in the currency1 ordering. The permanent NFT remains owned by the manager, which has no withdrawal or replacement function.
+
+`MAX_SUPPLY` exists only in `OTFToken` and records the original issuance. Launch reference-FDV displays use that value rather than live supply, which falls as OTF is burned.
 
 The four phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and `Graduated`. Price movement controls the transition; there is no launch schedule or countdown.
 

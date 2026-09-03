@@ -57,17 +57,27 @@ describe("$OTF page wiring", () => {
 
   it("renders four semantic launch phases with a textual current step and no countdown", () => {
     for (const text of ["Not initialized", "Bootstrap active", "Graduation ready", "Graduated"]) expect(component).toContain(text);
-    expect(component).toContain("20 ETH launch reference valuation.");
-    expect(component).toContain("20 ETH → approximately 180 ETH reference valuation.");
-    expect(component).toContain("The 20→180 ETH launch contracts have not been deployed on Robinhood Testnet.");
-    expect(component).toContain("one-sided 150 million OTF bootstrap position");
-    expect(component).toContain("complete 50 million OTF reserve");
+    expect(component).toContain("Exact 20 ETH launch reference valuation.");
+    expect(component).toContain("20 ETH to approximately 179.997388091105356396 ETH reference valuation.");
+    expect(component).toContain("corrected boundary-aware launch contracts");
+    expect(component).toContain("approximately 149,997,417.3963 OTF");
+    expect(component).toContain("50 million OTF minus 1,191 raw units");
+    expect(component).toContain('functionName: "MAX_SUPPLY"');
+    expect(component).not.toContain("const MAX_SUPPLY =");
     expect(component).toContain('<ol className="launchLifecycle"');
     expect(component).toContain('aria-current={phase === index ? "step" : undefined}');
     expect(component).toContain("Current phase");
     expect(component).toContain("Finalize graduation");
     expect(component).not.toContain("launchLifecycleArrow");
     expect(component).not.toMatch(/estimated graduation|days remaining/iu);
+  });
+
+  it("routes bootstrap trades through the boundary router with partial-fill disclosure", () => {
+    expect(operate).toContain("robinhoodTestnetAddresses.launchRouter");
+    expect(operate).toContain('"buyOtfWithEth" | "buyOtfWithWeth" | "sellOtfForWeth"');
+    expect(operate).toContain("The launch router will consume only the required input");
+    expect(operate).toContain("remains in your wallet");
+    expect(operate).toContain("refunded");
   });
 
   it("removes vesting and presents the exact fee split without approximation marks", () => {

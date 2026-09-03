@@ -51,6 +51,7 @@ function deployedTestnetContract(name: string): Address | undefined {
 export const robinhoodTestnetAddresses = Object.freeze({
   otfToken: deployedTestnetContract("otfToken"),
   launchManager: deployedTestnetContract("launchManager"),
+  launchRouter: deployedTestnetContract("launchRouter"),
   teamVesting: deployedTestnetContract("teamVesting"),
   buybackCollector: deployedTestnetContract("buybackCollector"),
   merkleRewardsDistributor: deployedTestnetContract("merkleRewardsDistributor"),
@@ -113,6 +114,7 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     && robinhoodTestnetAddresses.buybackCollector
     && robinhoodTestnetAddresses.otfToken
     && robinhoodTestnetAddresses.launchManager
+    && robinhoodTestnetAddresses.launchRouter
     && robinhoodTestnetAddresses.teamVesting
     && robinhoodTestnetAddresses.merkleRewardsDistributor
     && robinhoodTestnetAddresses.ethUsdOracle

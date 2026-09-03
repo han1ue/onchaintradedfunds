@@ -12,7 +12,6 @@ import { robinhoodMainnetLiquidity, robinhoodTestnetAddresses } from "@/lib/depl
 import { burnedSupply, feeBenefitRows } from "@/lib/otf-market";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com/token-and-fee-incentives";
-const MAX_SUPPLY = 1_000_000_000n * 10n ** 18n;
 type TransactionState = "idle" | "wallet" | "pending" | "success" | "rejected" | "reverted";
 type RewardsArtifact = { root: Hex; distributor: string; entries: Array<{ address: string; cumulativeEntitlementRaw: string; proof: Hex[] }> };
 
@@ -116,12 +115,15 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const configured = testnet && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
   const query = { enabled: configured, refetchInterval: 12_000 } as const;
   const totalSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "totalSupply", query });
+  const maxSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "MAX_SUPPLY", query });
   const phaseRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "phase", query });
   const priceRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "currentOtfPriceWethWad", query });
   const progressRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "bootstrapProgress", query });
   const oracleRead = useReadContract({ address: oracle, abi: fakeEthUsdOracleAbi, functionName: "latestRoundData", query: { ...query, enabled: configured && oracle !== zeroAddress } });
   const totalSupply = totalSupplyRead.data;
-  const supply = totalSupply === undefined ? undefined : burnedSupply(MAX_SUPPLY, totalSupply);
+  const supply = totalSupply === undefined || maxSupplyRead.data === undefined
+    ? undefined
+    : burnedSupply(maxSupplyRead.data, totalSupply);
   const phase = phaseRead.data === undefined ? undefined : Math.min(3, Math.max(0, Number(phaseRead.data)));
   const ethUsd = oracleRead.data && oracleRead.data[1] > 0n ? BigInt(oracleRead.data[1]) * 10n ** 10n : undefined;
   const priceUsd = priceRead.data !== undefined && ethUsd !== undefined ? priceRead.data * ethUsd / 10n ** 18n : undefined;
@@ -135,7 +137,7 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const tokenStats = <section className="tokenSupplyLedger" aria-label="OTF token statistics">
     <div><span>Price</span><strong>{!configured ? "Unavailable" : priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(priceUsd, 8)}</strong><small>{!configured ? "WETH price unavailable" : priceRead.isPending ? "WETH price loading…" : `${tokenNumber(priceRead.data, 10)} WETH`}</small></div>
     <div><span>Market cap</span><strong>{!configured ? "Unavailable" : totalSupplyRead.isPending || priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(marketCap, 0)}</strong><small>{!configured ? "WETH market cap unavailable" : totalSupplyRead.isPending || priceRead.isPending ? "WETH market cap loading…" : `${tokenNumber(marketCapWeth)} WETH`}</small></div>
-    <div><span>Pool</span><strong>{poolHref ? <a className="metricExternalLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{testnet ? "OTF / USDG" : mainnet ? "Open on Uniswap" : "No supported venue"}</small></div>
+    <div><span>Pool</span><strong>{poolHref ? <a className="metricExternalLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{testnet ? "OTF / WETH" : mainnet ? "Open on Uniswap" : "No supported venue"}</small></div>
   </section>;
 
   async function finalizeGraduation() {
@@ -152,13 +154,13 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
     } catch (error) { setFinalizeState(transactionError(error).state); }
   }
 
-  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><Image className="tokenMarketTokenIcon" src={circularOtfIcon} alt="" width={44} height={44} priority /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "$OTF launch not deployed" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The 20→180 ETH launch contracts have not been deployed on Robinhood Testnet." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
+  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><Image className="tokenMarketTokenIcon" src={circularOtfIcon} alt="" width={44} height={44} priority /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "$OTF launch not deployed" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The corrected boundary-aware launch contracts have not been deployed on Robinhood Testnet." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
 
   const phases = [
-    { title: "Not initialized", copy: ["20 ETH launch reference valuation.", "Pool inactive; initialization creates the one-sided 150 million OTF bootstrap position."] },
-    { title: "Bootstrap active", copy: ["20 ETH → approximately 180 ETH reference valuation.", "OTF is sold from the one-sided range, WETH accumulates, and trading is active."] },
-    { title: "Graduation ready", copy: ["Final tick reached at approximately 180 ETH reference valuation.", "Anyone may finalize; the completed bootstrap position is settled."] },
-    { title: "Graduated", copy: ["Bootstrap WETH proceeds and the complete 50 million OTF reserve become effectively full-range liquidity.", "Principal remains permanently locked and the LP fee remains 0%."] },
+    { title: "Not initialized", copy: ["Exact 20 ETH launch reference valuation.", "Initialization deposits approximately 149,997,417.3963 OTF within the 150 million OTF safety cap."] },
+    { title: "Bootstrap active", copy: ["20 ETH to approximately 179.997388091105356396 ETH reference valuation.", "The launch router partially fills an order at either bootstrap boundary and leaves unused input with the buyer."] },
+    { title: "Graduation ready", copy: ["The pool landed on the exact graduation sqrt price.", "Swaps pause until anyone finalizes the completed bootstrap position."] },
+    { title: "Graduated", copy: ["Derived WETH and 50 million OTF minus 1,191 raw units are locked as full-range liquidity.", "The manager burns its remaining OTF once; unrelated WETH stays isolated."] },
   ] as const;
 
   return <div className="appView tokenView tokenMarketView">

@@ -37,7 +37,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, useBalance, useChainId, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
-import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
+import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi, otfLaunchRouterAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
@@ -617,6 +617,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const protocolToken = robinhoodTestnetAddresses.otfToken;
   const canonicalWeth = robinhoodTestnetAddresses.weth;
   const launchManager = robinhoodTestnetAddresses.launchManager;
+  const launchRouter = robinhoodTestnetAddresses.launchRouter;
   const canonicalOtfPair = Boolean(
     chainId === robinhoodChainTestnet.id
     && protocolToken
@@ -637,6 +638,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "otfIsCurrency0" },
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapLiquidity" },
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
+    { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapSqrtPriceBounds" },
   ] as const;
   const { data: canonicalPoolReads } = useReadContracts({
     contracts: canonicalReadContracts,
@@ -647,17 +649,16 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const canonicalQuote = useMemo(() => {
     const poolState = canonicalPoolReads?.[1]?.result;
     const otfPriceWethWad = canonicalPoolReads?.[2]?.result;
-    const initialSqrtPriceX96 = canonicalPoolReads?.[3]?.result;
     const finalSqrtPriceX96 = canonicalPoolReads?.[4]?.result;
     const otfIsCurrency0 = canonicalPoolReads?.[5]?.result;
     const bootstrapLiquidity = canonicalPoolReads?.[6]?.result;
     const permanentLiquidity = canonicalPoolReads?.[7]?.result;
+    const bootstrapBounds = canonicalPoolReads?.[8]?.result;
     if (!canonicalOtfPair || !canonicalAmountRaw || !poolState || otfPriceWethWad === undefined
-      || initialSqrtPriceX96 === undefined || finalSqrtPriceX96 === undefined || otfIsCurrency0 === undefined) return undefined;
+      || finalSqrtPriceX96 === undefined || otfIsCurrency0 === undefined) return undefined;
     const liquidity = canonicalPhase === 3 ? permanentLiquidity : bootstrapLiquidity;
     if (!liquidity) return undefined;
-    const bootstrapLower = initialSqrtPriceX96 < finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
-    const bootstrapUpper = initialSqrtPriceX96 > finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
+    if (canonicalPhase !== 3 && !bootstrapBounds) return undefined;
     try {
       return quoteCanonicalOtfSwap({
         side: input.isProtocolToken ? "sell" : "buy",
@@ -665,8 +666,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         slippageBps,
         sqrtPriceX96: poolState[0],
         liquidity,
-        lowerSqrtPriceX96: canonicalPhase === 3 ? FULL_RANGE_LOWER_SQRT : bootstrapLower,
-        upperSqrtPriceX96: canonicalPhase === 3 ? FULL_RANGE_UPPER_SQRT : bootstrapUpper,
+        lowerSqrtPriceX96: canonicalPhase === 3 ? FULL_RANGE_LOWER_SQRT : bootstrapBounds![0],
+        upperSqrtPriceX96: canonicalPhase === 3 ? FULL_RANGE_UPPER_SQRT : bootstrapBounds![1],
         otfIsCurrency0,
         otfPriceWethWad,
       });
@@ -674,7 +675,11 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       return undefined;
     }
   }, [canonicalAmountRaw, canonicalOtfPair, canonicalPhase, canonicalPoolReads, input.isProtocolToken, slippageBps]);
-  const canonicalQuoteUsable = Boolean(canonicalQuote?.fullyFilled && (canonicalPhase === 1 || canonicalPhase === 3));
+  const canonicalQuoteUsable = Boolean(
+    canonicalQuote
+      && canonicalQuote.amountOut > 0n
+      && (canonicalPhase === 1 ? output.kind !== "native" : canonicalPhase === 3 && canonicalQuote.fullyFilled),
+  );
   const usableQuote = nativeWrapPair ? amountValid : canonicalOtfPair ? canonicalQuoteUsable : Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
@@ -689,7 +694,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     : chainId === robinhoodChain.id
       ? "Mainnet · Uniswap API"
       : canonicalOtfPair
-        ? "Testnet · Canonical V4"
+        ? canonicalPhase === 1 ? "Testnet · Launch boundary router" : "Testnet · Canonical V4"
         : chainId === robinhoodChainTestnet.id
           ? "Testnet · Synthra V3"
           : "Unsupported network";
@@ -976,11 +981,13 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     }
     if (canonicalOtfPair) {
       if (!canonicalQuoteUsable || !canonicalQuote || !canonicalAmountRaw || !launchManager) return;
+      const bootstrap = canonicalPhase === 1;
       const universalRouter = robinhoodTestnetV4.universalRouter;
       const permit2 = robinhoodTestnetV4.permit2;
-      if (!universalRouter || (input.kind !== "native" && !permit2)) {
+      const target = bootstrap ? launchRouter : universalRouter;
+      if (!target || (!bootstrap && input.kind !== "native" && !permit2)) {
         setExecution("failure");
-        setExecutionMessage("The canonical V4 router or Permit2 address is not configured.");
+        setExecutionMessage(bootstrap ? "The launch boundary router is not configured." : "The canonical V4 router or Permit2 address is not configured.");
         return;
       }
       try {
@@ -989,11 +996,12 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         setExecution(input.kind === "native" ? "simulation" : "approval");
         const deadline = BigInt(Math.floor(Date.now() / 1_000) + 10 * 60);
         if (input.kind !== "native") {
+          const approvalSpender = bootstrap ? target : permit2!;
           const allowance = await publicClient.readContract({
             address: input.address,
             abi: ERC20_APPROVE_ABI,
             functionName: "allowance",
-            args: [address, permit2!],
+            args: [address, approvalSpender],
           });
           await ensureExactErc20Approval(allowance, canonicalAmountRaw, async (approvalAmount) => {
             const approvalHash = await walletClient.writeContract({
@@ -1001,41 +1009,68 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
               address: input.address,
               abi: ERC20_APPROVE_ABI,
               functionName: "approve",
-              args: [permit2!, approvalAmount],
+              args: [approvalSpender, approvalAmount],
             });
             const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-            if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Permit2 approval reset reverted." : "The exact Permit2 approval reverted.");
+            if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The swap approval reset reverted." : "The exact swap approval reverted.");
           });
-          const permitHash = await walletClient.writeContract({
-            account: address,
-            address: permit2!,
-            abi: PERMIT2_APPROVE_ABI,
-            functionName: "approve",
-            args: [input.address, universalRouter, canonicalAmountRaw, Number(deadline)],
-          });
-          const permitReceipt = await publicClient.waitForTransactionReceipt({ hash: permitHash });
-          if (permitReceipt.status !== "success") throw new Error("The Universal Router Permit2 approval reverted.");
+          if (!bootstrap) {
+            const permitHash = await walletClient.writeContract({
+              account: address,
+              address: permit2!,
+              abi: PERMIT2_APPROVE_ABI,
+              functionName: "approve",
+              args: [input.address, universalRouter!, canonicalAmountRaw, Number(deadline)],
+            });
+            const permitReceipt = await publicClient.waitForTransactionReceipt({ hash: permitHash });
+            if (permitReceipt.status !== "success") throw new Error("The Universal Router Permit2 approval reverted.");
+          }
         }
-        const canonicalExecution = canonicalV4Execution({
-          tokenIn: input.address,
-          tokenOut: output.address,
-          amountIn: canonicalAmountRaw,
-          amountOutMinimum: canonicalQuote.minimumReceived,
-          launchManager,
-          deadline,
-          nativeInput: input.kind === "native",
-          nativeOutput: output.kind === "native",
-        });
+        let data: Hex;
+        let value = 0n;
+        let launchFunction: "buyOtfWithEth" | "buyOtfWithWeth" | "sellOtfForWeth" | undefined;
+        if (bootstrap) {
+          launchFunction = input.isProtocolToken
+            ? "sellOtfForWeth"
+            : input.kind === "native" ? "buyOtfWithEth" : "buyOtfWithWeth";
+          const args = launchFunction === "buyOtfWithEth"
+            ? [canonicalQuote.minimumReceived, address, deadline]
+            : [canonicalAmountRaw, canonicalQuote.minimumReceived, address, deadline];
+          data = encodeFunctionData({ abi: otfLaunchRouterAbi, functionName: launchFunction, args } as never);
+          value = launchFunction === "buyOtfWithEth" ? canonicalAmountRaw : 0n;
+        } else {
+          const canonicalExecution = canonicalV4Execution({
+            tokenIn: input.address,
+            tokenOut: output.address,
+            amountIn: canonicalAmountRaw,
+            amountOutMinimum: canonicalQuote.minimumReceived,
+            launchManager,
+            deadline,
+            nativeInput: input.kind === "native",
+            nativeOutput: output.kind === "native",
+          });
+          data = canonicalExecution.data;
+          value = canonicalExecution.value;
+        }
         setExecution("simulation");
-        await publicClient.call({ account: address, to: universalRouter, data: canonicalExecution.data, value: canonicalExecution.value });
-        const gas = await publicClient.estimateGas({ account: address, to: universalRouter, data: canonicalExecution.data, value: canonicalExecution.value });
-        setPreflightMessage(`Canonical V4 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${formatUnits(canonicalQuote.minimumReceived, output.decimals)} ${output.symbol}.`);
+        const simulation = await publicClient.call({ account: address, to: target, data, value });
+        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
+        if (bootstrap && launchFunction && simulation.data) {
+          const [consumed] = decodeFunctionResult({ abi: otfLaunchRouterAbi, functionName: launchFunction, data: simulation.data } as never) as unknown as readonly [bigint, bigint];
+          const unused = canonicalAmountRaw - consumed;
+          const refund = unused === 0n ? "full maximum consumed" : input.kind === "native"
+            ? `${formatUnits(unused, input.decimals)} ${input.symbol} refunded`
+            : `${formatUnits(unused, input.decimals)} ${input.symbol} remains in your wallet`;
+          setPreflightMessage(`Launch boundary preflight passed · ${formatUnits(consumed, input.decimals)} ${input.symbol} consumed · ${refund} · gas estimate ${gas.toLocaleString()}.`);
+        } else {
+          setPreflightMessage(`Canonical V4 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${formatUnits(canonicalQuote.minimumReceived, output.decimals)} ${output.symbol}.`);
+        }
         setExecution("submission");
         const outputBalanceBefore = await readOutputBalance();
-        const hash = await walletClient.sendTransaction({ account: address, to: universalRouter, data: canonicalExecution.data, value: canonicalExecution.value });
+        const hash = await walletClient.sendTransaction({ account: address, to: target, data, value });
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error("The canonical OTF swap reverted.");
-        await finishConfirmedSwap(hash, receipt, outputBalanceBefore, canonicalExecution.value);
+        await finishConfirmedSwap(hash, receipt, outputBalanceBefore, value);
         await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
       } catch (error) {
         setExecution("failure");
@@ -1179,7 +1214,11 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   }
 
   const executionBusy = execution === "approval" || execution === "simulation" || execution === "submission";
-  const canonicalExecutionConfigured = Boolean(launchManager && robinhoodTestnetV4.universalRouter && (input.kind === "native" || robinhoodTestnetV4.permit2));
+  const canonicalExecutionConfigured = Boolean(
+    launchManager && (canonicalPhase === 1
+      ? launchRouter
+      : canonicalPhase === 3 && robinhoodTestnetV4.universalRouter && (input.kind === "native" || robinhoodTestnetV4.permit2)),
+  );
   const canExecute = Boolean(address && publicClient && walletClient && pairExecutable && !insufficientBalance && !executionBusy && (
     nativeWrapPair
       ? amountValid && configuredWeth
@@ -1300,6 +1339,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                 </div>
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
+              {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This maximum crosses the launch boundary. The launch router will consume only the required input; unused WETH stays in your wallet and unused ETH is refunded.</p> : null}
               {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
               {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
               {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
@@ -1597,6 +1637,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "otfIsCurrency0" },
       { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapLiquidity" },
       { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
+      { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapSqrtPriceBounds" },
     ],
     query: { enabled: configured && Boolean(settlementRoute), refetchInterval: 12_000 },
   });
@@ -1607,19 +1648,18 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
     const phase = Number(canonicalReads.data?.[0]?.result ?? 0);
     const poolState = canonicalReads.data?.[1]?.result;
     const otfPriceWethWad = canonicalReads.data?.[2]?.result;
-    const initialSqrtPriceX96 = canonicalReads.data?.[3]?.result;
     const finalSqrtPriceX96 = canonicalReads.data?.[4]?.result;
     const otfIsCurrency0 = canonicalReads.data?.[5]?.result;
     const bootstrapLiquidity = canonicalReads.data?.[6]?.result;
     const permanentLiquidity = canonicalReads.data?.[7]?.result;
+    const bootstrapBounds = canonicalReads.data?.[8]?.result;
     const liquidity = phase === 3 ? permanentLiquidity : bootstrapLiquidity;
     if (
       minimumBuybackWeth === 0n || !poolState || otfPriceWethWad === undefined
-      || initialSqrtPriceX96 === undefined || finalSqrtPriceX96 === undefined
+      || finalSqrtPriceX96 === undefined
       || otfIsCurrency0 === undefined || !liquidity || (phase !== 1 && phase !== 3)
     ) return undefined;
-    const lower = initialSqrtPriceX96 < finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
-    const upper = initialSqrtPriceX96 > finalSqrtPriceX96 ? initialSqrtPriceX96 : finalSqrtPriceX96;
+    if (phase !== 3 && !bootstrapBounds) return undefined;
     try {
       const quote = quoteCanonicalOtfSwap({
         side: "buy",
@@ -1627,8 +1667,8 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
         slippageBps,
         sqrtPriceX96: poolState[0],
         liquidity,
-        lowerSqrtPriceX96: phase === 3 ? FULL_RANGE_LOWER_SQRT : lower,
-        upperSqrtPriceX96: phase === 3 ? FULL_RANGE_UPPER_SQRT : upper,
+        lowerSqrtPriceX96: phase === 3 ? FULL_RANGE_LOWER_SQRT : bootstrapBounds![0],
+        upperSqrtPriceX96: phase === 3 ? FULL_RANGE_UPPER_SQRT : bootstrapBounds![1],
         otfIsCurrency0,
         otfPriceWethWad,
       });

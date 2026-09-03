@@ -24,7 +24,7 @@ Annual expense, mint, and redeem fees accrue as vault shares. `BuybackCollector`
 | V4 launch manager | 200,000,000 |
 | Cumulative rewards distributor | 700,000,000 |
 
-The launch manager uses 150 million OTF for one-sided bootstrap liquidity and reserves 50 million OTF for permanent post-graduation liquidity. The canonical OTF/WETH V4 pool starts at a 20 ETH reference FDV and targets 180 ETH using fixed Uniswap ticks. See [OTF token economics](docs/content/token-and-fee-incentives.mdx) for the exact ticks, prices, and graduation mechanics.
+The launch manager receives 200 million OTF. Its fixed one-sided position consumes approximately 149,997,417.3963 OTF under a 150 million cap. At the final tick, it replaces that position with full-range liquidity using `8.999869404555266670 WETH` and 50 million OTF minus 1,191 raw units, then burns all OTF left in the manager. The pool starts at an exact 20 ETH reference FDV and graduates at approximately 179.997388091105356396 ETH. See [OTF token economics](docs/content/token-and-fee-incentives.mdx) for the exact ticks, amounts, and boundary-router behavior.
 
 ## Repository layout
 

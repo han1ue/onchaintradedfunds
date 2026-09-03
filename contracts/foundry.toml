@@ -4,14 +4,22 @@ test = "test"
 out = "out"
 libs = ["lib"]
 allow_paths = ["../node_modules"]
-remappings = ["@openzeppelin/=../node_modules/@openzeppelin/"]
-solc_version = "0.8.36"
+remappings = [
+    "@openzeppelin/=../node_modules/@openzeppelin/",
+    "@uniswap/v4-core/=../node_modules/@uniswap/v4-core/",
+    "@uniswap/v4-periphery/=../node_modules/@uniswap/v4-periphery/",
+    "permit2/=../node_modules/@uniswap/v4-periphery/lib/permit2/",
+    "solmate/=../node_modules/@uniswap/v4-periphery/lib/permit2/lib/solmate/",
+    "forge-std/=../node_modules/@uniswap/v4-periphery/lib/v4-core/lib/forge-std/src/",
+]
+solc_version = "0.8.26"
 evm_version = "shanghai"
 optimizer = true
 optimizer_runs = 1
 via_ir = true
 bytecode_hash = "none"
 extra_output = ["storageLayout"]
+skip = ["test/OTFLaunchV4Integration.t.sol"]
 # OpenZeppelin 5.6.1 uses a local named `error`; solc 0.8.36 emits the upstream-only
 # future-keyword warning even when linting this repository's source directory.
 ignored_error_codes = [6335]
@@ -23,6 +31,11 @@ runs = 1_000
 runs = 128
 depth = 64
 fail_on_revert = false
+
+[profile.integration]
+evm_version = "cancun"
+out = "out/integration"
+skip = []
 
 [fmt]
 line_length = 100

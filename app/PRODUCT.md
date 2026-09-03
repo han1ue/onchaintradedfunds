@@ -51,11 +51,11 @@ At least one side of a Swap pair must be a vault share or protocol OTF. The appl
 
 Protocol-token pairs request a direct route. Fund-share pairs may request direct pool, basket mint, basket burn, or burn-and-mint candidates. The interface selects the fresh candidate with the highest integer expected output among those queried and retains manual override. It describes this as the best queried route, not the best possible market route.
 
-ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval, and Max native input reserves estimated gas. Testnet fund and protocol-token routes support native ETH through the configured Universal Router. The standalone ETH/WETH pair remains an explicit 1:1 exception that calls canonical WETH directly without a quote service or swap router.
+ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval, and Max native input reserves estimated gas. During protocol-token bootstrap, the dedicated launch router limits buys and sells to the active range boundary. It consumes only the required WETH, refunds unused ETH, and can finalize graduation after the PoolManager call returns. After graduation, protocol-token trades use the configured Universal Router. The standalone ETH/WETH pair remains an explicit 1:1 exception that calls canonical WETH directly without a quote service or swap router.
 
 ### Quote sources and execution
 
-Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Synthra V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF routes use the launch V4 pool.
+Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Synthra V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF bootstrap routes use the boundary-aware launch router; graduated routes use the ordinary V4 Universal Router.
 
 Testnet basket execution sends typed `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` requests with ordered adapter legs. Before wallet submission, the application simulates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`.
 
@@ -71,6 +71,6 @@ Only the immutable beneficiary sees the fee-claim interface. It compares a sale 
 
 ## Current limits
 
-The current 20-to-180 ETH launch architecture is not deployed on Robinhood Chain Testnet. Protocol reads and writes therefore fail closed. The deployment script must record fresh contract addresses, launch constants, and adapter approvals before the application enables them.
+The corrected 20-to-approximately-179.997388091105356396-ETH launch architecture is not deployed on Robinhood Chain Testnet. Protocol reads and writes therefore fail closed. The deployment script must record fresh manager and launch-router addresses, derived amounts, and adapter approvals before the application enables them.
 
 Native basket execution remains disabled until the configuration identifies a compatible entry router. Robinhood Mainnet direct quotes remain unavailable without the server API key. The application does not infer or fabricate missing addresses.

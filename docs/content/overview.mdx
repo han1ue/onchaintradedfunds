@@ -32,6 +32,8 @@ offchain prices and creator percentages
 
 Protocol-token launch, vesting, rewards, and fee buybacks are separate contracts described in [OTF token economics](/token-and-fee-incentives).
 
+During the protocol-token bootstrap, the application routes OTF/WETH buys and sells through `OTFLaunchRouter`. It can stop at either exact range boundary, settle only the consumed input, and refund unused native ETH. Once permanent liquidity exists, protocol-token trades return to the ordinary Uniswap route.
+
 ## Creating a vault
 
 The connected wallet becomes the vault creator. `OTFFactory.createVault` accepts:

@@ -9,7 +9,7 @@ const runtimeLimit = 24_576;
 const initcodeLimit = 49_152;
 const production = [
   "ManagedOTFVault", "OTFFactory", "OTFEntryExitRouter", "UniswapV3Adapter", "UniswapV4Adapter",
-  "OTFToken", "OTFLaunchManager", "OTFLaunchManagerDeployer", "TeamMarketCapVesting",
+  "OTFToken", "OTFLaunchManager", "OTFLaunchManagerDeployer", "OTFLaunchRouter", "TeamMarketCapVesting",
   "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle",
 ];
 const forbiddenArtifactName = /FeeCollector|treasury/i;
@@ -134,6 +134,7 @@ const expectedConstructors = {
   UniswapV4Adapter: ["entryExitRouter_", "uniswapV4PoolManager_", "uniswapV4StateView_", "uniswapUniversalRouter_", "permit2_"],
   OTFLaunchManager: ["otf_", "weth_", "poolManager_", "stateView_", "positionManager_", "permit2_"],
   OTFLaunchManagerDeployer: [],
+  OTFLaunchRouter: ["launchManager_"],
   TeamMarketCapVesting: ["launchManager", "ethUsdOracle_", "maxOracleAge_", "beneficiary_"],
   BuybackCollector: ["launchManager_", "universalRouter_", "permit2_"],
   MerkleRewardsDistributor: ["otf_", "rootPublisher"],
@@ -263,16 +264,17 @@ const launchSource = readFileSync(join(contracts, "src", "OTFLaunchManager.sol")
 assert(!/function\s+(?:withdraw|removeLiquidity|reprice|rebalance|migrate)/iu.test(launchSource), "launch manager exposes permanent-liquidity control");
 assert(/LP_FEE\s*=\s*0/u.test(launchSource), "OTF V4 pool fee is not statically zero");
 assert(/TICK_SPACING\s*=\s*1/u.test(launchSource), "OTF V4 pool tick spacing is not statically one");
-assert(/MAX_SUPPLY\s*=\s*1_000_000_000 ether/u.test(launchSource), "launch reference supply changed");
-assert(/BOOTSTRAP_ALLOCATION\s*=\s*150_000_000 ether/u.test(launchSource), "bootstrap allocation changed");
-assert(/PERMANENT_LIQUIDITY_RESERVE\s*=\s*50_000_000 ether/u.test(launchSource), "permanent-liquidity reserve changed");
-assert(/LAUNCH_REFERENCE_FDV_WEI\s*=\s*20 ether/u.test(launchSource), "launch reference FDV is not 20 ETH");
-assert(/TARGET_REFERENCE_FDV_WEI\s*=\s*180 ether/u.test(launchSource), "target reference FDV is not 180 ETH");
+assert(!/\bMAX_SUPPLY\s*=/u.test(launchSource), "launch manager duplicates the token's original supply");
+assert(!/LAUNCH_REFERENCE_FDV_WEI|TARGET_REFERENCE_FDV_WEI/u.test(launchSource), "launch manager retains display-only FDV constants");
+assert(/MAX_BOOTSTRAP_BUDGET\s*=\s*150_000_000 ether/u.test(launchSource), "bootstrap safety cap changed");
+assert(/PERMANENT_OTF_CAP\s*=\s*50_000_000 ether/u.test(launchSource), "permanent OTF cap changed");
+assert(/REQUIRED_OTF_BALANCE\s*=\s*200_000_000 ether/u.test(launchSource), "launch funding requirement changed");
+assert(/BOOTSTRAP_LIQUIDITY\s*=\s*31_819_848_221_821_239_732_818/u.test(launchSource), "bootstrap liquidity changed");
+assert(/PERMANENT_LIQUIDITY\s*=\s*21_213_049_526_830_492_717_974/u.test(launchSource), "permanent liquidity changed");
 for (const constant of [
   "-177_284", "-155_311", "11_204_554_194_957_227_983_746_388",
-  "33_613_418_706_697_289_737_079_801", "177_284", "155_311",
+  "177_284", "155_311",
   "560_227_709_747_861_399_187_319_382_274_581",
-  "186_743_924_804_530_596_371_038_112_052_313",
 ]) {
   assert(launchSource.includes(constant), `launch manager is missing derived curve constant ${constant}`);
 }
@@ -282,11 +284,26 @@ assert(/&\s*ALL_HOOK_MASK\s*==\s*REQUIRED_HOOK_FLAGS/u.test(launchSource), "laun
 assert(/function\s+beforeInitialize\s*\(\s*address\s+initializer,\s*UniswapV4PoolKey\s+calldata,\s*uint160\s*\)/u.test(launchSource), "launch manager is missing the typed beforeInitialize callback");
 assert(/msg\.sender\s*!=\s*poolManager/u.test(launchSource), "launch callbacks do not authenticate the immutable PoolManager");
 assert(/initializer\s*!=\s*address\(this\)/u.test(launchSource), "launch manager does not reject non-self pool initializers");
+assert(!/function\s+beforeSwap/u.test(launchSource), "launch manager adds a permanent beforeSwap callback");
+assert(/TickMath\.getSqrtPriceAtTick/u.test(launchSource), "launch execution does not derive tick boundaries with pinned TickMath");
+assert(/SqrtPriceMath\.getAmount[01]Delta/u.test(launchSource), "launch execution does not use pinned V4 amount-delta math");
+assert(/sqrtPriceX96\s*==\s*finalSqrtPriceX96/u.test(launchSource), "graduation is not keyed to exact sqrt price equality");
+
+const launchRouterSource = readFileSync(join(contracts, "src", "OTFLaunchRouter.sol"), "utf8");
+const launchRouterNames = functionNames(compiled.OTFLaunchRouter);
+for (const name of ["buyOtfWithWeth", "buyOtfWithEth", "sellOtfForWeth", "unlockCallback"]) {
+  assert(launchRouterNames.has(name), `launch router function ${name} is absent`);
+}
+assert(!/delegatecall/u.test(launchRouterSource), "launch router contains delegatecall execution");
+assert(/finalSqrtPriceX96\(\)/u.test(launchRouterSource), "launch router does not use the exact graduation boundary");
+assert(/bootstrapSqrtPriceBounds\(\)/u.test(launchRouterSource), "launch router does not use the initialization-side boundary");
+assert(/phase\(\)\s*==\s*GRADUATION_READY/u.test(launchRouterSource), "launch router does not finalize after unlock");
 
 const deploySource = readFileSync(join(root, "scripts", "deploy-robinhood-testnet.mjs"), "utf8");
 assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require an explicit SwapRouter02 address");
 assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
 assert(/deploy\("UniswapV4Adapter"/u.test(deploySource), "deployment does not deploy UniswapV4Adapter");
+assert(/deploy\("OTFLaunchRouter"/u.test(deploySource), "deployment does not deploy OTFLaunchRouter");
 assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 2, "deployment does not approve both adapters");
 for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle"]) {
   assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
@@ -299,17 +316,28 @@ assert(testnetConfig.status === "not-deployed" || testnetConfig.status === "depl
 if (testnetConfig.status === "not-deployed") {
   assert(Object.keys(testnetConfig.contracts).length === 0, "undeployed testnet configuration contains protocol addresses");
 } else {
-  assert(testnetConfig.launch.launchReferenceFdvWei === "20000000000000000000", "deployed testnet launch reference FDV mismatch");
-  assert(testnetConfig.launch.targetReferenceFdvWei === "180000000000000000000", "deployed testnet target reference FDV mismatch");
+  assert(testnetConfig.launch.exactInitializationReferenceFdvWei === "20000000000000000000", "deployed testnet launch reference FDV mismatch");
+  assert(testnetConfig.launch.nominalTargetReferenceFdvWei === "180000000000000000000", "deployed testnet target reference FDV mismatch");
 }
+if (testnetConfig.status === "not-deployed") {
+  assert(testnetConfig.launch.directDerivedBootstrapOtf === "149997417396300392474813256", "testnet direct bootstrap vector mismatch");
+  assert(testnetConfig.launch.inverseDerivedBootstrapOtf === "149997417396300392474813274", "testnet inverse bootstrap vector mismatch");
+} else {
+  const expectedBootstrapOtf = testnetConfig.launch.otfIsCurrency0
+    ? "149997417396300392474813256"
+    : "149997417396300392474813274";
+  assert(testnetConfig.launch.derivedBootstrapOtf === expectedBootstrapOtf, "deployed bootstrap vector mismatch");
+}
+assert(testnetConfig.launch.derivedBootstrapWethPrincipalWei === "8999869404555266670", "testnet bootstrap WETH principal mismatch");
+assert(testnetConfig.launch.derivedPermanentOtf === "49999999999999999999998809", "testnet permanent OTF amount mismatch");
 const mainnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-mainnet.json"), "utf8"));
 assert(!("architecture" in mainnetConfig), "mainnet configuration must not use an architecture version gate");
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
 assert(/requiredLaunchHookFlags\s*=\s*0x2040n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2040");
 assert(/BigInt\(predicted\)\s*&\s*allHookFlags\)\s*===\s*requiredLaunchHookFlags/u.test(deploySource), "deployment does not enforce the launch hook mask during CREATE2 mining");
 for (const validation of [
-  "LAUNCH_REFERENCE_FDV_WEI", "TARGET_REFERENCE_FDV_WEI", "initialSqrtPriceX96",
-  "finalSqrtPriceX96", "bootstrap WETH proceeds", "actualFinalReferenceFdvWei",
+  "MAX_BOOTSTRAP_BUDGET", "PERMANENT_OTF_CAP", "initialSqrtPriceX96",
+  "finalSqrtPriceX96", "derivedLaunchAmounts", "actualFinalReferenceFdvWei",
 ]) {
   assert(deploySource.includes(validation), `deployment does not validate ${validation}`);
 }

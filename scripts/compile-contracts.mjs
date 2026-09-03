@@ -16,7 +16,7 @@ function solidityFiles(dir) {
   });
 }
 
-const includeTests = process.env.SOLC_INCLUDE_TESTS !== "false";
+const includeTests = process.env.SOLC_INCLUDE_TESTS === "true";
 const sourceFiles = includeTests
   ? [...solidityFiles(contractsSrc), ...solidityFiles(contractsTest)]
   : solidityFiles(contractsSrc);
@@ -53,11 +53,13 @@ const input = {
 };
 
 function resolveImport(importPath) {
-  if (!importPath.startsWith("@openzeppelin/")) {
-    return { error: `Unsupported external Solidity import: ${importPath}` };
-  }
-
-  const dependencyPath = join(nodeModules, ...importPath.split("/"));
+  const dependencyPath = importPath.startsWith("permit2/")
+    ? join(nodeModules, "@uniswap", "v4-periphery", "lib", ...importPath.split("/"))
+    : importPath.startsWith("solmate/")
+      ? join(nodeModules, "@uniswap", "v4-periphery", "lib", ...importPath.split("/"))
+      : importPath.startsWith("forge-std/")
+        ? join(nodeModules, "@uniswap", "v4-periphery", "lib", "v4-core", "lib", "forge-std", "src", ...importPath.split("/").slice(1))
+      : join(nodeModules, ...importPath.split("/"));
   try {
     return { contents: readFileSync(dependencyPath, "utf8") };
   } catch {

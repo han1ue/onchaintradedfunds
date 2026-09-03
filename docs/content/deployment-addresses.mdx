@@ -25,6 +25,6 @@ A production deployment must provide WETH, Uniswap V3 Factory and SwapRouter02, 
 
 `app/src/config/robinhood-testnet.json` retains reviewed external addresses and expected runtime code hashes for the V4 PoolManager, StateView, PositionManager, Quoter, Universal Router, and Permit2. Its `contracts` object and approved-adapter list remain empty until deployment succeeds.
 
-The deployment script checks dependency identities and bytecode, deploys the protocol, configures the factory and entry router once, approves adapters, initializes the canonical launch, and reconciles allocations. It records protocol addresses only after every check completes.
+The deployment script checks dependency identities and bytecode, mines the exact `0x2040` hook address, deploys the launch manager and boundary router, verifies pinned-core derived amounts, configures the factory and entry router, approves adapters, initializes the canonical launch, checks cleared allowances, and reconciles the actual bootstrap debit against the one-billion-OTF allocation. It records protocol addresses only after every check completes.
 
 Testnet uses an unofficial V4 mirror. Matching the configured bytecode hashes confirms the reviewed runtime bytes at the selected addresses; it does not make that deployment official or remove its operational risk.

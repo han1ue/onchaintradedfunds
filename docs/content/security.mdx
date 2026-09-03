@@ -15,7 +15,7 @@ The current protocol is pre-mainnet and unaudited. It requires an independent co
 - The collector can settle only factory-registered vaults through the configured entry router and approved adapters. Its final purchase uses the immutable canonical OTF/WETH V4 pool.
 - Reward claims require a valid cumulative proof and always pay the user committed in the leaf. The root publisher cannot withdraw reward principal.
 - Team-vesting beneficiary changes require nomination by the current beneficiary and acceptance by the nominee.
-- The launch manager owns the permanent V4 position and exposes no liquidity removal, repricing, migration, or replacement function.
+- The launch manager enforces the bootstrap price corridor, burns its final OTF balance once, owns the permanent V4 position, and exposes no liquidity removal, repricing, migration, or replacement function.
 
 These controls constrain contract calls. They do not make external assets, venues, administrators, or price inputs safe.
 
@@ -55,11 +55,13 @@ Application support for native basket execution remains disabled until a compati
 
 ## Launch and market assumptions
 
-The canonical pool initializes at exactly 20 ETH reference FDV. Its fixed final tick represents `179.997388091 ETH`, the closest selected spacing-1 value to the 180 ETH target. Selling the full bootstrap range produces `8.999934702040754827 WETH` under the launch manager's integer math. At the final price, the 50 million OTF reserve has approximately the same WETH value.
+The canonical pool initializes at exactly 20 ETH reference FDV. Its fixed final tick represents approximately `179.997388091105356396 ETH`; the next tick would exceed the nominal 180 ETH target. Fixed bootstrap liquidity consumes approximately `149,997,417.3963 OTF` and returns exactly `8.999869404555266670 WETH` of principal at the final boundary. That principal funds the permanent position with 50 million OTF minus 1,191 raw units.
 
-The swap that reaches the final tick records `GraduationReady`. Anyone must then call `finalizeGraduation` in a separate transaction because V4 remains locked during the swap callback.
+The hook rejects a swap that finishes outside either bootstrap boundary. It records `GraduationReady` only at exact final `sqrtPriceX96` equality and blocks further swaps until finalization. The dedicated launch router supplies the boundary limit, partially fills oversized input, and normally finalizes after the PoolManager returns control in the same outer transaction. Anyone can also finalize separately after another router lands exactly on the boundary.
 
-Zero LP fees do not remove transaction-ordering, slippage, liquidity, or price-impact risk. The launch manager's lack of administrative liquidity controls also means no recovery exists for the permanent position or residual dust.
+Ordinary Uniswap UI swaps inside the corridor can succeed. An order that would cross a boundary reverts because the standard router does not expose the required price limit. The hook deliberately omits `beforeSwap`, avoiding a permanent callback after graduation; such a callback could make a failed overshoot cheaper but could not create a partial fill.
+
+Finalization sizes permanent liquidity from pinned V4 math, not the manager's live balances. Extra WETH remains isolated as locked dust. Extra OTF is included in the one final burn. A failure during bootstrap removal, permanent minting, allowance cleanup, or burning reverts the complete finalization and any boundary purchase that invoked it. Zero LP fees do not remove transaction-ordering, slippage, liquidity, or price-impact risk.
 
 ## Vault accounting assumptions
 

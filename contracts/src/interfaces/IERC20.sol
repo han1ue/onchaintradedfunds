@@ -18,3 +18,8 @@ interface IERC20Metadata is IERC20 {
     function symbol() external view returns (string memory);
     function decimals() external view returns (uint8);
 }
+
+interface IOTFToken is IERC20Metadata {
+    function MAX_SUPPLY() external view returns (uint256);
+    function burn(uint256 value) external;
+}

@@ -16,22 +16,45 @@ to the launch manager, and 700 million to rewards, leaving the deployer with zer
 
 ## Canonical launch
 
-The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST use
-`MAX_SUPPLY`, not live supply, to initialize at exactly 20 ETH reference FDV and construct
-deterministic start and final ticks. The selected final tick MUST represent the 180 ETH target as
-closely as spacing 1 permits while preserving the 21,973-tick range: `-155311` when OTF is currency0
-and `155311` when OTF is currency1, or `179.997388091 ETH` actual reference FDV in either ordering.
+The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST
+initialize at the fixed sqrt price representing exactly 20 ETH reference FDV against the original
+issuance.
 
-Bootstrap MUST hold 150 million one-sided OTF and no supplied WETH. The reserved 50 million OTF MUST
-be used only for post-graduation permanent liquidity. Its hook address MUST encode exactly
-`beforeInitialize` and `afterSwap`; every third-party attempt to initialize the canonical pool MUST
-revert, including while the predicted CREATE2 launch-manager address has no deployed code.
+`MAX_SUPPLY` MUST remain canonical in `OTFToken` and MUST NOT be duplicated in the launch
+manager. The final tick MUST be `-155311` when OTF is currency0 and `155311` when OTF is currency1,
+representing approximately `179.997388091105356396 ETH` reference FDV; the next tick MUST exceed 180 ETH.
 
-Only reaching or crossing the final bootstrap tick MAY mark graduation ready. Finalization MUST be
-permissionless, settle the completed bootstrap position, combine its WETH proceeds with up to the
-complete 50 million OTF reserve, and mint effectively full-range liquidity. No callable path may
-remove, reprice, rebalance, migrate, or replace that principal. Dust MUST remain locked and MUST NOT
-block graduation.
+The manager MUST receive at least 200 million OTF. Bootstrap and permanent liquidity MUST be the
+fixed values `31819848221821239732818` and `21213049526830492717974`.
+
+Tick boundaries and required
+token amounts MUST be derived with the pinned V4 `TickMath` and `SqrtPriceMath`, using round-up for
+mint requirements and round-down for bootstrap removal. Bootstrap OTF MUST remain at or below 150
+million, permanent OTF MUST remain at or below 50 million, and derived bootstrap WETH principal MUST
+equal derived permanent WETH.
+
+The hook address MUST encode exactly `beforeInitialize` and `afterSwap`. Every third-party pool
+initialization MUST revert, including while the predicted CREATE2 manager address has no code. The
+hook MUST NOT add `beforeSwap`.
+
+During bootstrap, `afterSwap` MUST reject final prices outside either
+tick-derived boundary. It MUST mark readiness only when current `sqrtPriceX96` exactly equals the
+final boundary. While ready, every swap MUST revert. The graduated path MUST return without a pool
+state read.
+
+The dedicated launch router MUST use the final boundary for buys and the initialization-side
+boundary for sells. It MUST settle only consumed input, preserve unused WETH, refund unused ETH,
+enforce minimum output and deadline, and call normal permissionless finalization only after the
+PoolManager returns control. A failure in finalization MUST revert the complete boundary purchase.
+
+Finalization MUST recompute derived amounts, remove the bootstrap position, and measure both returned
+tokens. It MUST provide only the derived WETH principal and no more than 50 million OTF to fixed
+full-range permanent liquidity. Additional WETH MUST remain locked and MUST NOT change sizing.
+
+After
+the permanent mint succeeds, the manager MUST burn its complete OTF balance once, including
+unsolicited OTF. The permanent NFT MUST remain owned by the manager, and no callable path may remove,
+reprice, rebalance, migrate, or replace its principal.
 
 ## Team vesting
 

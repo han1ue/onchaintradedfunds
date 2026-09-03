@@ -50,6 +50,20 @@ interface IUniswapV4PoolManager {
     function initialize(UniswapV4PoolKey calldata key, uint160 sqrtPriceX96)
         external
         returns (int24 tick);
+
+    function unlock(bytes calldata data) external returns (bytes memory result);
+
+    function swap(
+        UniswapV4PoolKey calldata key,
+        UniswapV4SwapParams calldata params,
+        bytes calldata hookData
+    ) external returns (int256 swapDelta);
+
+    function sync(address currency) external;
+
+    function settle() external payable returns (uint256 paid);
+
+    function take(address currency, address to, uint256 amount) external;
 }
 
 interface IUniswapV4PositionManager is IUniswapV4ImmutableState {

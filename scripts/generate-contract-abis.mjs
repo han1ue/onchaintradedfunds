@@ -12,6 +12,7 @@ const contracts = [
   ["BuybackCollector", "buybackCollectorAbi"],
   ["OTFToken", "otfTokenAbi"],
   ["OTFLaunchManager", "otfLaunchManagerAbi"],
+  ["OTFLaunchRouter", "otfLaunchRouterAbi"],
   ["TeamMarketCapVesting", "teamMarketCapVestingAbi"],
   ["MerkleRewardsDistributor", "merkleRewardsDistributorAbi"],
   ["FakeETHUSDOracle", "fakeEthUsdOracleAbi"],

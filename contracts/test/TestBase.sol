@@ -21,15 +21,11 @@ interface Vm {
     function getRecordedLogs() external returns (Log[] memory entries);
     function etch(address target, bytes calldata newRuntimeBytecode) external;
     function mockCall(address callee, bytes calldata data, bytes calldata returnData) external;
+    function mockCallRevert(address callee, bytes calldata data, bytes calldata revertData) external;
     function clearMockedCalls() external;
-    function computeCreate2Address(bytes32 salt, bytes32 initCodeHash, address deployer)
-        external
-        pure
-        returns (address);
+    function computeCreate2Address(bytes32 salt, bytes32 initCodeHash, address deployer) external pure returns (address);
     function addr(uint256 privateKey) external returns (address);
-    function sign(uint256 privateKey, bytes32 digest)
-        external
-        returns (uint8 v, bytes32 r, bytes32 s);
+    function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
 }
 
 abstract contract TestBase {
@@ -81,19 +77,12 @@ abstract contract TestBase {
         if (actual > ceiling) revert("assertLe(uint256) failed");
     }
 
-    function assertApproxEqAbs(uint256 actual, uint256 expected, uint256 maximumDelta)
-        internal
-        pure
-    {
+    function assertApproxEqAbs(uint256 actual, uint256 expected, uint256 maximumDelta) internal pure {
         uint256 delta = actual >= expected ? actual - expected : expected - actual;
         if (delta > maximumDelta) revert("assertApproxEqAbs failed");
     }
 
-    function bound(uint256 value, uint256 minimum, uint256 maximum)
-        internal
-        pure
-        returns (uint256)
-    {
+    function bound(uint256 value, uint256 minimum, uint256 maximum) internal pure returns (uint256) {
         if (minimum > maximum) revert("bound invalid range");
         uint256 size = maximum - minimum + 1;
         return minimum + (value % size);

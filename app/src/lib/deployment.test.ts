@@ -15,6 +15,7 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetNativeEntryReady).toBe(false);
     expect(robinhoodTestnetAddresses.otfToken).toBeUndefined();
     expect(robinhoodTestnetAddresses.launchManager).toBeUndefined();
+    expect(robinhoodTestnetAddresses.launchRouter).toBeUndefined();
     expect(robinhoodTestnetAddresses.buybackCollector).toBeUndefined();
     expect(robinhoodTestnetV4).toEqual({
       poolManager: "0x949257d5181128a7c793619b922e47B849cb81e6",

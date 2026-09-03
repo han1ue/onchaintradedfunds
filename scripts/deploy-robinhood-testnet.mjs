@@ -218,6 +218,20 @@ verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
 verifyEmbeddedAddress("Universal Router WETH", universalRouterCode, weth);
 verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
+if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
+  const deployerBalance = await publicClient.getBalance({ address: account.address });
+  const gasPrice = await publicClient.getGasPrice();
+  const deploymentGasBudget = 30_000_000n;
+  const minimumBalance = deploymentGasBudget * gasPrice;
+  if (deployerBalance < minimumBalance) {
+    throw new Error(`Deployer needs at least ${minimumBalance} wei at the current gas price`);
+  }
+  console.log(
+    `Deployment preflight passed for ${account.address} with ${deployerBalance} wei at ${gasPrice} wei/gas`,
+  );
+  process.exit(0);
+}
+
 async function deploy(name, args = []) {
   const compiled = artifact(name);
   const hash = await wallet.deployContract({ abi: compiled.abi, bytecode: bytecode(name), args, chain, account });
@@ -298,12 +312,11 @@ const readLaunch = (functionName) => publicClient.readContract({
   functionName,
 });
 const [
-  launchMaxSupply,
-  bootstrapAllocation,
-  permanentLiquidityReserve,
+  maxBootstrapBudget,
+  permanentOtfCap,
   requiredLaunchBalance,
-  launchReferenceFdvWei,
-  targetReferenceFdvWei,
+  bootstrapLiquidity,
+  permanentLiquidity,
   poolFee,
   tickSpacing,
   otfIsCurrency0,
@@ -313,13 +326,15 @@ const [
   finalSqrtPriceX96,
   initialOtfPriceWethWad,
   finalOtfPriceWethWad,
+  poolId,
+  bootstrapSqrtPriceBounds,
+  derivedLaunchAmounts,
 ] = await Promise.all([
-  readLaunch("MAX_SUPPLY"),
-  readLaunch("BOOTSTRAP_ALLOCATION"),
-  readLaunch("PERMANENT_LIQUIDITY_RESERVE"),
+  readLaunch("MAX_BOOTSTRAP_BUDGET"),
+  readLaunch("PERMANENT_OTF_CAP"),
   readLaunch("REQUIRED_OTF_BALANCE"),
-  readLaunch("LAUNCH_REFERENCE_FDV_WEI"),
-  readLaunch("TARGET_REFERENCE_FDV_WEI"),
+  readLaunch("BOOTSTRAP_LIQUIDITY"),
+  readLaunch("PERMANENT_LIQUIDITY"),
   readLaunch("LP_FEE"),
   readLaunch("TICK_SPACING"),
   readLaunch("otfIsCurrency0"),
@@ -329,6 +344,9 @@ const [
   readLaunch("finalSqrtPriceX96"),
   readLaunch("initialOtfPriceWethWad"),
   readLaunch("finalOtfPriceWethWad"),
+  readLaunch("poolId"),
+  readLaunch("bootstrapSqrtPriceBounds"),
+  readLaunch("derivedLaunchAmounts"),
 ]);
 const expectedOtfIsCurrency0 = BigInt(otfToken.address) < BigInt(weth);
 const expectedInitialTick = expectedOtfIsCurrency0 ? -177_284 : 177_284;
@@ -344,12 +362,11 @@ const requireLaunchValue = (name, actual, expected) => {
     throw new Error(`Launch ${name} mismatch: expected ${expected}, received ${actual}`);
   }
 };
-requireLaunchValue("MAX_SUPPLY", launchMaxSupply, 1_000_000_000n * 10n ** 18n);
-requireLaunchValue("BOOTSTRAP_ALLOCATION", bootstrapAllocation, 150_000_000n * 10n ** 18n);
-requireLaunchValue("PERMANENT_LIQUIDITY_RESERVE", permanentLiquidityReserve, 50_000_000n * 10n ** 18n);
+requireLaunchValue("MAX_BOOTSTRAP_BUDGET", maxBootstrapBudget, 150_000_000n * 10n ** 18n);
+requireLaunchValue("PERMANENT_OTF_CAP", permanentOtfCap, 50_000_000n * 10n ** 18n);
 requireLaunchValue("REQUIRED_OTF_BALANCE", requiredLaunchBalance, 200_000_000n * 10n ** 18n);
-requireLaunchValue("LAUNCH_REFERENCE_FDV_WEI", launchReferenceFdvWei, 20n * 10n ** 18n);
-requireLaunchValue("TARGET_REFERENCE_FDV_WEI", targetReferenceFdvWei, 180n * 10n ** 18n);
+requireLaunchValue("BOOTSTRAP_LIQUIDITY", bootstrapLiquidity, 31_819_848_221_821_239_732_818n);
+requireLaunchValue("PERMANENT_LIQUIDITY", permanentLiquidity, 21_213_049_526_830_492_717_974n);
 requireLaunchValue("LP_FEE", poolFee, 0);
 requireLaunchValue("TICK_SPACING", tickSpacing, 1);
 requireLaunchValue("otfIsCurrency0", otfIsCurrency0, expectedOtfIsCurrency0);
@@ -365,21 +382,30 @@ requireLaunchValue(
   21_973,
 );
 
+const [derivedBootstrapOtf, derivedBootstrapWeth, derivedPermanentOtf, derivedPermanentWeth] = derivedLaunchAmounts;
+const expectedBootstrapOtf = expectedOtfIsCurrency0
+  ? 149_997_417_396_300_392_474_813_256n
+  : 149_997_417_396_300_392_474_813_274n;
+requireLaunchValue("derived bootstrap OTF", derivedBootstrapOtf, expectedBootstrapOtf);
+requireLaunchValue("derived bootstrap WETH", derivedBootstrapWeth, 8_999_869_404_555_266_670n);
+requireLaunchValue("derived permanent OTF", derivedPermanentOtf, 49_999_999_999_999_999_999_998_809n);
+requireLaunchValue("derived permanent WETH", derivedPermanentWeth, 8_999_869_404_555_266_670n);
+requireLaunchValue("bootstrap/permanent WETH equality", derivedBootstrapWeth, derivedPermanentWeth);
+if (derivedBootstrapOtf > maxBootstrapBudget || derivedPermanentOtf > permanentOtfCap) {
+  throw new Error("Derived launch amounts exceed their OTF safety caps");
+}
+const expectedBootstrapBounds = expectedOtfIsCurrency0
+  ? [11_204_665_816_975_040_385_623_596n, expectedFinalSqrtPriceX96]
+  : [expectedFinalSqrtPriceX96, 560_222_128_702_570_272_483_239_940_334_470n];
+requireLaunchValue("bootstrap lower sqrt boundary", bootstrapSqrtPriceBounds[0], expectedBootstrapBounds[0]);
+requireLaunchValue("bootstrap upper sqrt boundary", bootstrapSqrtPriceBounds[1], expectedBootstrapBounds[1]);
 const q96 = 1n << 96n;
-const bootstrapWethProceeds = otfIsCurrency0
-  ? (bootstrapAllocation * (initialSqrtPriceX96 * finalSqrtPriceX96 / q96)
-      / (finalSqrtPriceX96 - initialSqrtPriceX96))
-      * (finalSqrtPriceX96 - initialSqrtPriceX96) / q96
-  : ((((bootstrapAllocation * q96 / (initialSqrtPriceX96 - finalSqrtPriceX96)) << 96n)
-      * (initialSqrtPriceX96 - finalSqrtPriceX96) / initialSqrtPriceX96)
-      / finalSqrtPriceX96);
-requireLaunchValue(
-  "bootstrap WETH proceeds",
-  bootstrapWethProceeds,
-  8_999_934_702_040_754_827n,
-);
-const actualFinalReferenceFdvWei = finalOtfPriceWethWad * 1_000_000_000n;
+const actualFinalReferenceFdvWei = otfIsCurrency0
+  ? finalSqrtPriceX96 * finalSqrtPriceX96 * 10n ** 27n / (q96 * q96)
+  : q96 * q96 * 10n ** 27n / (finalSqrtPriceX96 * finalSqrtPriceX96);
+requireLaunchValue("actualFinalReferenceFdvWei", actualFinalReferenceFdvWei, 179_997_388_091_105_356_396n);
 
+const launchRouter = await deploy("OTFLaunchRouter", [launchManager.address]);
 const buybackCollector = await deploy("BuybackCollector", [
   launchManager.address,
   uniswapUniversalRouter,
@@ -458,6 +484,32 @@ setupTransactions.launchInitialization = await transact(
   "initializeLaunch",
 );
 
+const [actualBootstrapOtf, initializedPoolState, bootstrapPositionLiquidity] = await Promise.all([
+  readLaunch("bootstrapOtfDeposited"),
+  publicClient.readContract({
+    address: uniswapV4StateView,
+    abi: [{
+      type: "function",
+      name: "getSlot0",
+      stateMutability: "view",
+      inputs: [{ name: "poolId", type: "bytes32" }],
+      outputs: [
+        { name: "sqrtPriceX96", type: "uint160" },
+        { name: "tick", type: "int24" },
+        { name: "protocolFee", type: "uint24" },
+        { name: "lpFee", type: "uint24" },
+      ],
+    }],
+    functionName: "getSlot0",
+    args: [poolId],
+  }),
+  readLaunch("bootstrapLiquidity"),
+]);
+requireLaunchValue("actual bootstrap OTF debit", actualBootstrapOtf, expectedBootstrapOtf);
+requireLaunchValue("initialized pool sqrt price", initializedPoolState[0], expectedInitialSqrtPriceX96);
+requireLaunchValue("initialized pool tick", initializedPoolState[1], expectedOtfIsCurrency0 ? -177_285 : 177_284);
+requireLaunchValue("initialized bootstrap liquidity", bootstrapPositionLiquidity, bootstrapLiquidity);
+
 const tokenBalance = (holder) => publicClient.readContract({
   address: otfToken.address,
   abi: artifact("OTFToken").abi,
@@ -472,6 +524,10 @@ const [
   totalSupply,
   deployedTeamBeneficiary,
   pendingTeamBeneficiary,
+  launchOtfAllowance,
+  launchWethAllowance,
+  launchOtfPermit2Allowance,
+  launchWethPermit2Allowance,
 ] = await Promise.all([
     tokenBalance(account.address),
     tokenBalance(teamVesting.address),
@@ -492,21 +548,32 @@ const [
       abi: artifact("TeamMarketCapVesting").abi,
       functionName: "pendingBeneficiary",
     }),
+    publicClient.readContract({ address: otfToken.address, abi: artifact("OTFToken").abi, functionName: "allowance", args: [launchManager.address, permit2] }),
+    publicClient.readContract({ address: weth, abi: artifact("OTFToken").abi, functionName: "allowance", args: [launchManager.address, permit2] }),
+    publicClient.readContract({
+      address: permit2,
+      abi: [{ type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "token", type: "address" }, { name: "spender", type: "address" }], outputs: [{ name: "amount", type: "uint160" }, { name: "expiration", type: "uint48" }, { name: "nonce", type: "uint48" }] }],
+      functionName: "allowance",
+      args: [launchManager.address, otfToken.address, uniswapV4PositionManager],
+    }),
+    publicClient.readContract({
+      address: permit2,
+      abi: [{ type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "token", type: "address" }, { name: "spender", type: "address" }], outputs: [{ name: "amount", type: "uint160" }, { name: "expiration", type: "uint48" }, { name: "nonce", type: "uint48" }] }],
+      functionName: "allowance",
+      args: [launchManager.address, weth, uniswapV4PositionManager],
+    }),
   ]);
 if (deployerOtfBalance !== 0n) throw new Error("Unrestricted deployer retained OTF");
 if (teamOtfBalance !== 100_000_000n * 10n ** 18n) throw new Error("Team allocation mismatch");
-const permanentLaunchReserve = 50_000_000n * 10n ** 18n;
-const maximumBootstrapDust = 10_000n * 10n ** 18n;
-if (
-  launchReserveBalance < permanentLaunchReserve
-  || launchReserveBalance > permanentLaunchReserve + maximumBootstrapDust
-) throw new Error("Launch reserve or bootstrap dust mismatch");
+if (launchReserveBalance !== requiredLaunchBalance - actualBootstrapOtf) throw new Error("Launch reserve does not reconcile to the actual bootstrap debit");
 if (rewardsOtfBalance !== 700_000_000n * 10n ** 18n) throw new Error("Rewards allocation mismatch");
 if (totalSupply !== 1_000_000_000n * 10n ** 18n) throw new Error("Original OTF issuance mismatch");
 if (deployedTeamBeneficiary !== teamBeneficiary) throw new Error("Initial team beneficiary mismatch");
 if (pendingTeamBeneficiary !== "0x0000000000000000000000000000000000000000") {
   throw new Error("Unexpected pending team beneficiary");
 }
+if (launchOtfAllowance !== 0n || launchWethAllowance !== 0n) throw new Error("Launch manager retained an ERC20 allowance");
+if (launchOtfPermit2Allowance[0] !== 0n || launchWethPermit2Allowance[0] !== 0n) throw new Error("Launch manager retained a Permit2 allowance");
 
 const deployment = {
   network: "robinhood-testnet",
@@ -519,6 +586,7 @@ const deployment = {
   contracts: {
     otfToken,
     launchManager,
+    launchRouter,
     teamVesting,
     buybackCollector,
     merkleRewardsDistributor,
@@ -544,10 +612,17 @@ const deployment = {
   launch: {
     poolFee,
     tickSpacing,
-    bootstrapOtf: bootstrapAllocation,
-    permanentLiquidityReserveOtf: permanentLiquidityReserve,
-    launchReferenceFdvWei,
-    targetReferenceFdvWei,
+    maxBootstrapBudgetOtf: maxBootstrapBudget,
+    permanentOtfCap,
+    requiredLaunchBalanceOtf: requiredLaunchBalance,
+    bootstrapLiquidity,
+    permanentLiquidity,
+    derivedBootstrapOtf,
+    derivedBootstrapWethPrincipalWei: derivedBootstrapWeth,
+    derivedPermanentOtf,
+    derivedPermanentWeth: derivedPermanentWeth,
+    exactInitializationReferenceFdvWei: 20n * 10n ** 18n,
+    nominalTargetReferenceFdvWei: 180n * 10n ** 18n,
     actualFinalReferenceFdvWei,
     initialOtfPriceWethWad,
     finalOtfPriceWethWad,
@@ -556,7 +631,8 @@ const deployment = {
     finalTick,
     initialSqrtPriceX96,
     finalSqrtPriceX96,
-    expectedBootstrapWethProceedsWei: bootstrapWethProceeds,
+    bootstrapSqrtPriceLowerX96: bootstrapSqrtPriceBounds[0],
+    bootstrapSqrtPriceUpperX96: bootstrapSqrtPriceBounds[1],
   },
   allocations: {
     teamVestingOtf: "100000000000000000000000000",
@@ -569,6 +645,7 @@ const deployment = {
     approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
     uniswapV3Adapter: uniswapV3Adapter.address,
     uniswapV4Adapter: uniswapV4Adapter.address,
+    launchRouter: launchRouter.address,
     nativeEntryExitEnabled: true,
     v4RouteData: "abi.encode((address,uint24,int24,address,bytes)[])",
     maxV4HopsPerLeg: 3,

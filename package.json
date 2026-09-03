@@ -19,8 +19,10 @@
   },
   "devDependencies": {
     "@openzeppelin/merkle-tree": "1.0.8",
+    "@uniswap/v4-core": "1.0.2",
+    "@uniswap/v4-periphery": "1.0.3",
     "slopless": "^0.2.36",
-    "solc": "0.8.36",
+    "solc": "0.8.26",
     "solhint": "6.2.4"
   },
   "dependencies": {
