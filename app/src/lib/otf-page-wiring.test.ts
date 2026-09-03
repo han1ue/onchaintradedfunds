@@ -19,6 +19,13 @@ describe("$OTF page wiring", () => {
     expect(operate).toContain('? "/assets/tokens/eth.png"');
   });
 
+  it("offers native ETH for testnet protocol-token and fund routes", () => {
+    expect(operate).toContain("if (canonicalWeth) configured.unshift");
+    expect(operate).toContain("configuredDefaultInputFor(chainId)");
+    expect(operate).not.toContain('asset.isProtocolToken && counterpart.kind === "native"');
+    expect(operate).not.toContain('configuredAssets.filter((asset) => asset.kind !== "native")');
+  });
+
   it("has a simple header and exactly three top metrics", () => {
     expect(component).toContain(">Docs<");
     expect(component).not.toContain("Specification");
@@ -41,6 +48,7 @@ describe("$OTF page wiring", () => {
     expect(component).toContain("$OTF");
     expect(component).toContain('artifactState === "empty" ? "0 $OTF"');
     expect(component).toContain('className="tokenTopRow"');
+    expect(css).toMatch(/\.tokenClaimAmountRow > strong \{[^}]*font-size: 1rem;/u);
     expect(component.indexOf("<ClaimPanel")).toBeLessThan(component.indexOf("tokenSwapLifecycleGrid"));
     expect(component).not.toContain("Merkle rewards");
     expect(operate.indexOf("<ClaimPanel")).toBe(-1);

@@ -51,7 +51,7 @@ At least one side of a Swap pair must be a vault share or protocol OTF. The appl
 
 Protocol-token pairs request a direct route. Fund-share pairs may request direct pool, basket mint, basket burn, or burn-and-mint candidates. The interface selects the fresh candidate with the highest integer expected output among those queried and retains manual override. It describes this as the best queried route, not the best possible market route.
 
-ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval. Max native input reserves estimated gas. The final execution plan converts ETH to canonical WETH only inside the router call and unwraps WETH only for native output; ETH/WETH is not offered as a standalone pair.
+ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval, and Max native input reserves estimated gas. Testnet fund and protocol-token routes support native ETH through the configured Universal Router. The standalone ETH/WETH pair remains an explicit 1:1 exception that calls canonical WETH directly without a quote service or swap router.
 
 ### Quote sources and execution
 

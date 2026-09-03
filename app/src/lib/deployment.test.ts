@@ -17,11 +17,12 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetAddresses.launchManager).toBeUndefined();
     expect(robinhoodTestnetAddresses.buybackCollector).toBeUndefined();
     expect(robinhoodTestnetV4).toEqual({
-      poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-      stateView: "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
-      universalRouter: "0x8876789976dEcBfCbBbe364623C63652db8C0904",
-      positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
-      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      poolManager: "0x949257d5181128a7c793619b922e47B849cb81e6",
+      stateView: "0x585906972e2C513cbbc97d9C159f27Df9daf3A21",
+      quoter: "0x35587Cd9Aee64Fe364438bBfD68033CA6aEC6906",
+      universalRouter: "0x5274B13F0B60425f403A84Dc85b58951E880664c",
+      positionManager: "0xF839356eA23e6799972C3685f5c7B60158e4e96d",
+      permit2: "0xA03bd7D6d7193051dB730AaD27BF25E46570c43F",
     });
   });
 });

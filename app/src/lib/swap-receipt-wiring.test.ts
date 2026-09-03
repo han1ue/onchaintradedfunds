@@ -17,6 +17,18 @@ describe("swap receipt wiring", () => {
     expect(component).toContain('<input ref={amountInputRef} inputMode="decimal"');
   });
 
+  it("uses a concise ready-state action label", () => {
+    expect(component).toContain(': "Swap";');
+    expect(component).not.toContain("Review and submit swap");
+  });
+
+  it("caps pay and receive amounts at eight fractional digits", () => {
+    expect(component).toContain("const MAX_SWAP_FRACTION_DIGITS = 8;");
+    expect(component).toContain("decimalInputValue(event.target.value, Math.min(input.decimals, MAX_SWAP_FRACTION_DIGITS))");
+    expect(component).toContain("cappedSwapAmount(usableQuote");
+    expect(css).toMatch(/\.swapAmountEntry input,[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;/u);
+  });
+
   it("transitions within the card and supplies a reduced-motion path", () => {
     expect(component).toContain("swapCardPane swapFormPane");
     expect(component).toContain("swapCardPane swapReceiptPane");

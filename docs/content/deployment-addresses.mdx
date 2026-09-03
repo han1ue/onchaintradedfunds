@@ -23,7 +23,7 @@ A production deployment must provide WETH, Uniswap V3 Factory and SwapRouter02, 
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
 **Status:** Not deployed
 
-`app/src/config/robinhood-testnet.json` retains reviewed external addresses and expected runtime code hashes for the V4 PoolManager, StateView, PositionManager, Universal Router, and Permit2. Its `contracts` object and approved-adapter list remain empty until deployment succeeds.
+`app/src/config/robinhood-testnet.json` retains reviewed external addresses and expected runtime code hashes for the V4 PoolManager, StateView, PositionManager, Quoter, Universal Router, and Permit2. Its `contracts` object and approved-adapter list remain empty until deployment succeeds.
 
 The deployment script checks dependency identities and bytecode, deploys the protocol, configures the factory and entry router once, approves adapters, initializes the canonical launch, and reconciles allocations. It records protocol addresses only after every check completes.
 

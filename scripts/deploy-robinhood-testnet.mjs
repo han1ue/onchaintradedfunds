@@ -96,7 +96,7 @@ const configuredTeamBeneficiary = address(
 if (teamBeneficiary !== configuredTeamBeneficiary) {
   throw new Error("TEAM_BENEFICIARY does not match the repository-configured initial beneficiary");
 }
-const weth = address("WETH", env("WETH"));
+const requestedWeth = address("WETH", env("WETH"));
 const oracleMaxAge = positiveInteger("ORACLE_MAX_AGE_SECONDS", env("ORACLE_MAX_AGE_SECONDS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
 const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim()
@@ -104,6 +104,10 @@ const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim()
   || "https://rpc.testnet.chain.robinhood.com";
 const chainId = 46630;
 const external = previous.externalContracts ?? {};
+const weth = address("externalContracts.weth", external.weth);
+if (requestedWeth !== weth) {
+  throw new Error("WETH does not match the repository-configured testnet dependency");
+}
 const uniswapV3Factory = address(
   "externalContracts.uniswapV3Factory",
   external.uniswapV3Factory,
@@ -120,21 +124,33 @@ const uniswapV4StateView = address(
   "externalContracts.uniswapV4StateView",
   external.uniswapV4StateView,
 );
+const uniswapV4Quoter = address(
+  "externalContracts.uniswapV4Quoter",
+  external.uniswapV4Quoter,
+);
 const uniswapUniversalRouter = address(
   "externalContracts.uniswapUniversalRouter",
   external.uniswapUniversalRouter,
 );
 const permit2 = address("externalContracts.permit2", external.permit2);
 const uniswapV4PositionManager = address(
+  "externalContracts.uniswapV4PositionManager",
+  external.uniswapV4PositionManager,
+);
+const requestedV4PositionManager = address(
   "UNISWAP_V4_POSITION_MANAGER",
   env("UNISWAP_V4_POSITION_MANAGER"),
 );
+if (requestedV4PositionManager !== uniswapV4PositionManager) {
+  throw new Error("UNISWAP_V4_POSITION_MANAGER does not match the repository-configured dependency");
+}
 const pinnedCodehashes = previous.expectedCodehashes ?? {};
 
 const expectedCodehashes = {
   uniswapV4PoolManager: pinnedCodehash(pinnedCodehashes, "uniswapV4PoolManager", "UNISWAP_V4_POOL_MANAGER_CODEHASH"),
   uniswapV4StateView: pinnedCodehash(pinnedCodehashes, "uniswapV4StateView", "UNISWAP_V4_STATE_VIEW_CODEHASH"),
-  uniswapV4PositionManager: bytes32("UNISWAP_V4_POSITION_MANAGER_CODEHASH", env("UNISWAP_V4_POSITION_MANAGER_CODEHASH")),
+  uniswapV4PositionManager: pinnedCodehash(pinnedCodehashes, "uniswapV4PositionManager", "UNISWAP_V4_POSITION_MANAGER_CODEHASH"),
+  uniswapV4Quoter: pinnedCodehash(pinnedCodehashes, "uniswapV4Quoter", "UNISWAP_V4_QUOTER_CODEHASH"),
   uniswapUniversalRouter: pinnedCodehash(pinnedCodehashes, "uniswapUniversalRouter", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH"),
   permit2: pinnedCodehash(pinnedCodehashes, "permit2", "PERMIT2_CODEHASH"),
 };
@@ -158,13 +174,49 @@ async function verifyCodehash(name, contractAddress, expected) {
   if (actual !== expected) {
     throw new Error(`${name} codehash mismatch: expected ${expected}, received ${actual}`);
   }
+  return code;
+}
+
+function verifyEmbeddedAddress(name, code, expected) {
+  if (!code.toLowerCase().includes(expected.slice(2).toLowerCase())) {
+    throw new Error(`${name} does not embed ${expected}`);
+  }
+}
+
+async function verifyAddressBinding(name, contractAddress, functionName, expected) {
+  const observed = await publicClient.readContract({
+    address: contractAddress,
+    abi: [{
+      type: "function",
+      name: functionName,
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ name: "", type: "address" }],
+    }],
+    functionName,
+  });
+  if (getAddress(observed) !== expected) {
+    throw new Error(`${name} mismatch: expected ${expected}, received ${observed}`);
+  }
 }
 
 await verifyCodehash("Uniswap V4 PoolManager", uniswapV4PoolManager, expectedCodehashes.uniswapV4PoolManager);
 await verifyCodehash("Uniswap V4 StateView", uniswapV4StateView, expectedCodehashes.uniswapV4StateView);
-await verifyCodehash("Uniswap V4 PositionManager", uniswapV4PositionManager, expectedCodehashes.uniswapV4PositionManager);
-await verifyCodehash("Uniswap Universal Router", uniswapUniversalRouter, expectedCodehashes.uniswapUniversalRouter);
+const positionManagerCode = await verifyCodehash("Uniswap V4 PositionManager", uniswapV4PositionManager, expectedCodehashes.uniswapV4PositionManager);
+await verifyCodehash("Uniswap V4 Quoter", uniswapV4Quoter, expectedCodehashes.uniswapV4Quoter);
+const universalRouterCode = await verifyCodehash("Uniswap Universal Router", uniswapUniversalRouter, expectedCodehashes.uniswapUniversalRouter);
 await verifyCodehash("Permit2", permit2, expectedCodehashes.permit2);
+await Promise.all([
+  verifyAddressBinding("StateView PoolManager", uniswapV4StateView, "poolManager", uniswapV4PoolManager),
+  verifyAddressBinding("PositionManager PoolManager", uniswapV4PositionManager, "poolManager", uniswapV4PoolManager),
+  verifyAddressBinding("Quoter PoolManager", uniswapV4Quoter, "poolManager", uniswapV4PoolManager),
+  verifyAddressBinding("Universal Router PoolManager", uniswapUniversalRouter, "poolManager", uniswapV4PoolManager),
+  verifyAddressBinding("Universal Router PositionManager", uniswapUniversalRouter, "V4_POSITION_MANAGER", uniswapV4PositionManager),
+]);
+verifyEmbeddedAddress("PositionManager WETH", positionManagerCode, weth);
+verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
+verifyEmbeddedAddress("Universal Router WETH", universalRouterCode, weth);
+verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
 async function deploy(name, args = []) {
   const compiled = artifact(name);
@@ -483,6 +535,7 @@ const deployment = {
     uniswapV4PoolManager,
     uniswapV4StateView,
     uniswapV4PositionManager,
+    uniswapV4Quoter,
     uniswapUniversalRouter,
     permit2,
     weth,

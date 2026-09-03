@@ -10,6 +10,7 @@ import {
   enforceFirstPurchaseMinimum,
   executionPlanForQuote,
   executionStages,
+  isNativeWrapPair,
   isPositiveDecimalAmount,
   liquidityActionLabel,
   pastedAsset,
@@ -232,6 +233,13 @@ describe("swap state model", () => {
     expect(nativeMaxAmount(5n, 2n, 3n)).toBe(0n);
   });
 
+  it("recognizes only the canonical native ETH and WETH pair as a wrap", () => {
+    expect(isNativeWrapPair(ETH, WETH, WETH.address)).toBe(true);
+    expect(isNativeWrapPair(WETH, ETH, WETH.address)).toBe(true);
+    expect(isNativeWrapPair(ETH, USDG, WETH.address)).toBe(false);
+    expect(isNativeWrapPair(ETH, WETH, USDG.address)).toBe(false);
+  });
+
   it("does not quote an ERC20-to-ERC20 pair", async () => {
     const direct = vi.fn(async () => quote("direct", 9n));
     const basket = vi.fn(async () => quote("basket", 10n));
@@ -279,8 +287,10 @@ describe("swap state model", () => {
     expect(enforceFirstPurchaseMinimum([quote("basket", 1n)], FUND_A, undefined)[0].state).toBe("unavailable");
   });
 
-  it("validates decimal input without silently repairing it", () => {
+  it("validates decimal input and caps its displayed precision", () => {
     expect(decimalInputValue("1.25")).toBe("1.25");
+    expect(decimalInputValue("1.123456789", 8)).toBe("1.12345678");
+    expect(decimalInputValue("1.12345678", 8)).toBe("1.12345678");
     expect(decimalInputValue("1..2")).toBeUndefined();
     expect(isPositiveDecimalAmount("0")).toBe(false);
     expect(decimalAmount("1.25", 2)).toBe(125n);

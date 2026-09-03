@@ -285,6 +285,19 @@ export function swapIncludesOtf(
     || output?.isProtocolToken === true;
 }
 
+export function isNativeWrapPair(
+  input: Pick<SwapAsset, "address" | "kind"> | undefined,
+  output: Pick<SwapAsset, "address" | "kind"> | undefined,
+  weth: Address | undefined,
+): boolean {
+  if (!input || !output || !weth) return false;
+  const kindsMatch = (input.kind === "native" && output.kind === "erc20")
+    || (input.kind === "erc20" && output.kind === "native");
+  return kindsMatch
+    && input.address.toLowerCase() === weth.toLowerCase()
+    && output.address.toLowerCase() === weth.toLowerCase();
+}
+
 export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset, chainId?: number): boolean {
   if (!input || !output || !swapIncludesOtf(input, output)) return false;
   return chainId === 46630 ? testnetSwapPairAllowed(input, output) : true;
@@ -333,9 +346,12 @@ export function decimalAmount(value: string, decimals = 18): bigint | undefined 
   return amount <= maxUint256 ? amount : undefined;
 }
 
-export function decimalInputValue(value: string): string | undefined {
-  if (value === "" || /^\d*(?:\.\d*)?$/.test(value)) return value;
-  return undefined;
+export function decimalInputValue(value: string, maximumFractionDigits?: number): string | undefined {
+  if (value !== "" && !/^\d*(?:\.\d*)?$/.test(value)) return undefined;
+  if (maximumFractionDigits === undefined) return value;
+  const [whole, fraction] = value.split(".");
+  if (fraction === undefined || fraction.length <= maximumFractionDigits) return value;
+  return maximumFractionDigits === 0 ? whole : `${whole}.${fraction.slice(0, maximumFractionDigits)}`;
 }
 
 export function isPositiveDecimalAmount(value: string, decimals = 18): boolean {

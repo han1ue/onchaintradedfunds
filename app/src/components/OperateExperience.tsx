@@ -57,6 +57,7 @@ import {
   ERC20_APPROVE_ABI,
   enforceFirstPurchaseMinimum,
   executionPlanForQuote,
+  isNativeWrapPair,
   isPositiveDecimalAmount,
   nativeMaxAmount,
   pastedAsset,
@@ -111,6 +112,7 @@ export type OperateView = "landing" | "swap" | "detail" | "vaults" | "launch" | 
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com";
 const X_URL = "https://x.com/OTFProtocol";
+const MAX_SWAP_FRACTION_DIGITS = 8;
 const FULL_RANGE_LOWER_SQRT = 4_295_128_739n;
 const FULL_RANGE_UPPER_SQRT = 1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342n;
 const PERMIT2_APPROVE_ABI = [{
@@ -131,6 +133,19 @@ const ERC20_BALANCE_ABI = [{
   stateMutability: "view",
   inputs: [{ name: "account", type: "address" }],
   outputs: [{ name: "", type: "uint256" }],
+}] as const;
+const WETH_ABI = [{
+  type: "function",
+  name: "deposit",
+  stateMutability: "payable",
+  inputs: [],
+  outputs: [],
+}, {
+  type: "function",
+  name: "withdraw",
+  stateMutability: "nonpayable",
+  inputs: [{ name: "amount", type: "uint256" }],
+  outputs: [],
 }] as const;
 const EMPTY_ERC20: SwapAsset = {
   address: zeroAddress,
@@ -204,6 +219,14 @@ function configuredUsdgFor(chainId: number): SwapAsset | undefined {
 
 function configuredNativeFor(chainId: number): SwapAsset | undefined {
   return configuredAssetsFor(chainId).find((asset) => asset.kind === "native");
+}
+
+function configuredWethFor(chainId: number): SwapAsset | undefined {
+  return configuredAssetsFor(chainId).find((asset) => asset.kind === "erc20" && asset.symbol === "WETH");
+}
+
+function configuredDefaultInputFor(chainId: number): SwapAsset | undefined {
+  return configuredNativeFor(chainId) ?? configuredWethFor(chainId);
 }
 
 function configuredProtocolTokenFor(chainId: number): SwapAsset | undefined {
@@ -546,9 +569,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const routeFundAddress = addressFromLocation();
   const routeFund = embeddedFund ?? (routeFundAddress ? { address: routeFundAddress, symbol: "OTF", name: "Unresolved fund route address", kind: "otf" as const, decimals: 18, metadataResolved: false } : undefined);
   const pinnedAsset = protocolTokenMode ? configuredProtocolTokenFor(chainId) : embeddedFund;
-  const [input, setInput] = useState<SwapAsset>(() => protocolTokenMode
-    ? configuredNativeFor(chainId) ?? EMPTY_ERC20
-    : configuredNativeFor(chainId) ?? EMPTY_ERC20);
+  const [input, setInput] = useState<SwapAsset>(() => configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
   const [output, setOutput] = useState<SwapAsset>(() => embeddedFund ?? (protocolTokenMode ? configuredProtocolTokenFor(chainId) ?? EMPTY_OTF : EMPTY_OTF));
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
@@ -590,7 +611,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const sameAssetSelected = sameAsset(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
   const hasOtfSide = swapIncludesOtf(input, output);
-  const missingOtfAsset = pairValid && !hasOtfSide;
+  const configuredWeth = configuredWethFor(chainId);
+  const nativeWrapPair = isNativeWrapPair(input, output, configuredWeth?.address);
+  const missingOtfAsset = pairValid && !hasOtfSide && !nativeWrapPair;
   const protocolToken = robinhoodTestnetAddresses.otfToken;
   const canonicalWeth = robinhoodTestnetAddresses.weth;
   const launchManager = robinhoodTestnetAddresses.launchManager;
@@ -601,7 +624,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     && ((input.address.toLowerCase() === protocolToken.toLowerCase() && output.address.toLowerCase() === canonicalWeth.toLowerCase())
       || (output.address.toLowerCase() === protocolToken.toLowerCase() && input.address.toLowerCase() === canonicalWeth.toLowerCase())),
   );
-  const directionSupported = canonicalOtfPair || supportedSwapDirection(input, output, chainId);
+  const directionSupported = nativeWrapPair || canonicalOtfPair || supportedSwapDirection(input, output, chainId);
   const amountValid = isPositiveDecimalAmount(amount, input.decimals);
   const supportedNetwork = chainId === robinhoodChainTestnet.id || chainId === robinhoodChain.id;
   const canonicalReadAddress = launchManager ?? zeroAddress;
@@ -652,7 +675,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     }
   }, [canonicalAmountRaw, canonicalOtfPair, canonicalPhase, canonicalPoolReads, input.isProtocolToken, slippageBps]);
   const canonicalQuoteUsable = Boolean(canonicalQuote?.fullyFilled && (canonicalPhase === 1 || canonicalPhase === 3));
-  const usableQuote = canonicalOtfPair ? canonicalQuoteUsable : Boolean(activeQuote && quoteIsFresh(activeQuote, now));
+  const usableQuote = nativeWrapPair ? amountValid : canonicalOtfPair ? canonicalQuoteUsable : Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
   const executionConfigured = executionPlan?.kind === "direct-api"
@@ -660,14 +683,16 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     : executionPlan?.kind === "direct-v3"
       ? chainId === robinhoodChainTestnet.id && executionPlan.swapRouter02.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
       : executionPlan?.kind === "basket-router" && robinhoodTestnetDeploymentReady;
-  const quoteNetworkConfigured = chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
-  const routingLabel = chainId === robinhoodChain.id
-    ? "Mainnet · Uniswap API"
-    : canonicalOtfPair
-      ? "Testnet · Canonical V4"
-    : chainId === robinhoodChainTestnet.id
-      ? "Testnet · Synthra V3"
-      : "Unsupported network";
+  const quoteNetworkConfigured = nativeWrapPair ? Boolean(configuredWeth) : chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
+  const routingLabel = nativeWrapPair
+    ? "Native wrap · 1:1"
+    : chainId === robinhoodChain.id
+      ? "Mainnet · Uniswap API"
+      : canonicalOtfPair
+        ? "Testnet · Canonical V4"
+        : chainId === robinhoodChainTestnet.id
+          ? "Testnet · Synthra V3"
+          : "Unsupported network";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
   const inputBalanceEnabled = Boolean(address && inputSelected && assetHasExecutableMetadata(input));
@@ -741,7 +766,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   useEffect(() => {
     if (protocolTokenMode) {
-      setInput(configuredNativeFor(chainId) ?? EMPTY_ERC20);
+      setInput(configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
       setOutput(configuredProtocolTokenFor(chainId) ?? EMPTY_OTF);
       return;
     }
@@ -751,11 +776,17 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       setOutput((current) => current.verified ? EMPTY_ERC20 : current);
       return;
     }
-    setInput(configuredNativeFor(chainId) ?? EMPTY_ERC20);
+    setInput(configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
     setOutput(EMPTY_OTF);
   }, [chainId, embedded, protocolTokenMode]);
 
   useEffect(() => {
+    if (nativeWrapPair) {
+      setQuotes([]);
+      setActiveQuote(undefined);
+      setPreflightMessage(undefined);
+      return;
+    }
     if (canonicalOtfPair) {
       setQuotes([]);
       setActiveQuote(undefined);
@@ -819,7 +850,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       if (!cancelled) setQuotes([]);
     });
     return () => { cancelled = true; };
-  }, [address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
+  }, [address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, nativeWrapPair, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
 
   function selectAsset(which: "input" | "output", asset: SwapAsset) {
     if (pinnedAsset && ((which === "input" && sameAsset(input, pinnedAsset)) || (which === "output" && sameAsset(output, pinnedAsset)))) return;
@@ -916,6 +947,33 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   async function executeSwap() {
     if (!address || !publicClient || !walletClient) return;
+    if (nativeWrapPair) {
+      if (!configuredWeth || !inputAmountRaw) return;
+      const wrapping = input.kind === "native";
+      const data = wrapping
+        ? encodeFunctionData({ abi: WETH_ABI, functionName: "deposit" })
+        : encodeFunctionData({ abi: WETH_ABI, functionName: "withdraw", args: [inputAmountRaw] });
+      const value = wrapping ? inputAmountRaw : 0n;
+      try {
+        setExecutionMessage(undefined);
+        setPreflightMessage(undefined);
+        setExecution("simulation");
+        await publicClient.call({ account: address, to: configuredWeth.address, data, value });
+        const gas = await publicClient.estimateGas({ account: address, to: configuredWeth.address, data, value });
+        setPreflightMessage(`${wrapping ? "Wrap" : "Unwrap"} preflight passed · 1:1 output · gas estimate ${gas.toLocaleString()}.`);
+        setExecution("submission");
+        const hash = await walletClient.sendTransaction({ account: address, to: configuredWeth.address, data, value });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error(`The WETH ${wrapping ? "wrap" : "unwrap"} reverted.`);
+        setExecution("success");
+        setExecutionMessage(`${wrapping ? "Wrapped ETH to WETH" : "Unwrapped WETH to ETH"}: ${shortAddress(hash)}.`);
+        await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
+      } catch (error) {
+        setExecution("failure");
+        setExecutionMessage(error instanceof Error ? error.message : `The WETH ${wrapping ? "wrap" : "unwrap"} failed.`);
+      }
+      return;
+    }
     if (canonicalOtfPair) {
       if (!canonicalQuoteUsable || !canonicalQuote || !canonicalAmountRaw || !launchManager) return;
       const universalRouter = robinhoodTestnetV4.universalRouter;
@@ -1123,7 +1181,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const executionBusy = execution === "approval" || execution === "simulation" || execution === "submission";
   const canonicalExecutionConfigured = Boolean(launchManager && robinhoodTestnetV4.universalRouter && (input.kind === "native" || robinhoodTestnetV4.permit2));
   const canExecute = Boolean(address && publicClient && walletClient && pairExecutable && !insufficientBalance && !executionBusy && (
-    canonicalOtfPair
+    nativeWrapPair
+      ? amountValid && configuredWeth
+      : canonicalOtfPair
       ? canonicalQuoteUsable && canonicalExecutionConfigured
       : executionPlan && executionConfigured
   ));
@@ -1153,7 +1213,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                         ? "Simulating swap"
                         : execution === "submission"
                           ? "Submitting swap"
-                          : "Review and submit swap";
+                          : nativeWrapPair
+                            ? input.kind === "native" ? "Wrap ETH" : "Unwrap WETH"
+                            : "Swap";
   const statusMessage = executionMessage
     ?? (!supportedNetwork
       ? "Switch to Robinhood Chain to continue."
@@ -1205,6 +1267,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     return <button type="button" className="swapAssetButton" aria-label={`Select token to ${which === "input" ? "pay" : "receive"}`} onClick={() => setPicker(which)}><AssetMark asset={asset} /><strong className={isUnselectedOtf(asset) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(asset) ? "—" : asset.symbol}</strong><ChevronDown size={15} /></button>;
   }
 
+  function cappedSwapAmount(value: string, asset: SwapAsset) {
+    return decimalInputValue(value, Math.min(asset.decimals, MAX_SWAP_FRACTION_DIGITS)) ?? "0";
+  }
+
   const swapCard = (
         <section className={`swapCard${swapReceipt ? " showReceipt" : ""}`} aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
           <SwapConfetti active={confettiActive} />
@@ -1225,12 +1291,12 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
               <div className="swapPair">
                 <div className="swapAmountBox">
                   <div className="swapAmountTop"><span>You pay</span></div>
-                  <div className="swapAmountEntry"><input ref={amountInputRef} inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted)} /></span></div></div>
+                  <div className="swapAmountEntry"><input ref={amountInputRef} inputMode="decimal" value={amount} onChange={(event) => { const next = decimalInputValue(event.target.value, Math.min(input.decimals, MAX_SWAP_FRACTION_DIGITS)); if (next !== undefined) setAmount(next); }} placeholder="0" aria-label={`Amount of ${input.symbol} to pay`} /><div className="swapAssetColumn">{assetControl("input", input)}<span className="swapBalanceSlot"><SwapBalance active={inputBalanceEnabled} loading={inputBalanceLoading} balance={inputBalance} symbol={input.symbol} onUse={() => inputBalance && setAmount(cappedSwapAmount(input.kind === "native" ? formatUnits(nativeMaxAmount(inputBalance.value, 1n, nativeGasReserve), input.decimals) : inputBalance.formatted, input))} /></span></div></div>
                 </div>
                 <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
                 <div className="swapAmountBox receive">
                   <div className="swapAmountTop"><span>You receive</span></div>
-                  <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{usableQuote ? canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0"}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
+                  <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{cappedSwapAmount(usableQuote ? nativeWrapPair ? amount : canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0", output)}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
                 </div>
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>

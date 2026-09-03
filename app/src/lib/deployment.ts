@@ -79,6 +79,7 @@ export const robinhoodTestnetV3 = Object.freeze({
 export const robinhoodTestnetV4 = Object.freeze({
   poolManager: address(testnetExternalContracts.uniswapV4PoolManager),
   stateView: address(testnetExternalContracts.uniswapV4StateView),
+  quoter: address(testnetExternalContracts.uniswapV4Quoter),
   universalRouter: address(testnetExternalContracts.uniswapUniversalRouter),
   positionManager: address(testnetExternalContracts.uniswapV4PositionManager),
   permit2: address(testnetExternalContracts.permit2),

@@ -716,12 +716,15 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   border: 0;
   outline: 0;
   height: 48px;
+  overflow: hidden;
   background: transparent;
   color: var(--text);
   font-size: clamp(25px, 7vw, 32px);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
   line-height: 48px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .swapAmountEntry input::placeholder { color: var(--text-faint); }
@@ -1463,7 +1466,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .tokenClaimPanel { display: grid; min-width: 0; align-content: center; gap: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; }
 .tokenClaimPanel > h2 { margin: 0; color: var(--text); font-size: 0.78rem; font-weight: 650; }
 .tokenClaimAmountRow { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
-.tokenClaimAmountRow > strong { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.28; }
+.tokenClaimAmountRow > strong { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-size: 1rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.28; }
 .tokenClaimAmountRow > .primaryAction { width: auto; min-height: 40px; flex: 0 0 auto; padding-inline: 13px; }
 .tokenClaimLive { display: flex; min-height: 0.9rem; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: 0.61rem; }
 .tokenClaimLive:empty { display: none; }
