@@ -93,7 +93,7 @@ function ClaimPanel({ distributor, explorer }: { distributor?: Address; explorer
   }
 
   const status = claimState === "wallet" ? "Confirm the claim in your wallet." : claimState === "pending" ? "Claim submitted. Waiting for confirmation." : claimState === "success" ? "Rewards claimed successfully." : claimState === "rejected" ? "The wallet request was rejected. Nothing was submitted." : claimState === "reverted" ? "The claim reverted. Refresh and try again." : undefined;
-  const available = !address ? "— $OTF" : artifactState === "loading" ? "Loading…" : artifactState === "ready" ? `${tokenNumber(claimable, 4)} $OTF` : "Unavailable";
+  const available = !address ? "— $OTF" : artifactState === "loading" ? "Loading…" : artifactState === "empty" ? "0 $OTF" : artifactState === "ready" ? `${tokenNumber(claimable, 4)} $OTF` : "Unavailable";
 
   return <section className="tokenClaimPanel" aria-labelledby="claim-title">
     <h2 id="claim-title">Available to claim</h2>

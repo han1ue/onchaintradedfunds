@@ -39,6 +39,7 @@ describe("$OTF page wiring", () => {
     expect(component).not.toContain("Claim rewards");
     expect(component).toContain('className="tokenClaimAmountRow"');
     expect(component).toContain("$OTF");
+    expect(component).toContain('artifactState === "empty" ? "0 $OTF"');
     expect(component).toContain('className="tokenTopRow"');
     expect(component.indexOf("<ClaimPanel")).toBeLessThan(component.indexOf("tokenSwapLifecycleGrid"));
     expect(component).not.toContain("Merkle rewards");
