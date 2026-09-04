@@ -420,7 +420,9 @@ contract OTFEntryExitRouter is Ownable2Step {
         for (uint256 i = 0; i < sourceAssets.length; i++) {
             if (!_isSkipped(request.sourceSkipMask, i)) continue;
             for (uint256 j = 0; j < targetAssets.length; j++) {
-                if (sourceAssets[i] == targetAssets[j]) revert ForbiddenRouteToken(sourceAssets[i]);
+                if (sourceAssets[i] == targetAssets[j]) {
+                    revert ForbiddenRouteToken(sourceAssets[i]);
+                }
             }
         }
 
@@ -552,7 +554,9 @@ contract OTFEntryExitRouter is Ownable2Step {
         uint256[] calldata minimums,
         uint256 skipMask
     ) private pure {
-        if (skipMask >> assets.length != 0) revert InvalidSkipMask(skipMask, assets.length);
+        if (skipMask >> assets.length != 0) {
+            revert InvalidSkipMask(skipMask, assets.length);
+        }
         for (uint256 i = 0; i < assets.length; i++) {
             if (_isSkipped(skipMask, i) && minimums[i] != 0) {
                 revert SkippedAssetMinimumNotZero(assets[i], minimums[i]);
@@ -560,11 +564,10 @@ contract OTFEntryExitRouter is Ownable2Step {
         }
     }
 
-    function _rejectSkippedLegs(
-        SwapLeg[] calldata legs,
-        address[] memory assets,
-        uint256 skipMask
-    ) private pure {
+    function _rejectSkippedLegs(SwapLeg[] calldata legs, address[] memory assets, uint256 skipMask)
+        private
+        pure
+    {
         for (uint256 i = 0; i < legs.length; i++) {
             if (_isSkippedAsset(legs[i].tokenIn, assets, skipMask)) {
                 revert ForbiddenRouteToken(legs[i].tokenIn);
@@ -728,10 +731,8 @@ contract OTFEntryExitRouter is Ownable2Step {
             if (_isSkipped(skipMask, i)) continue;
             balancesBefore[i] = IERC20(assets[i]).balanceOf(address(this));
         }
-        uint256[] memory reported =
-            IOTFSettlementVault(vault).routerRedeem(
-                shares, owner, address(this), minimums, skipMask
-            );
+        uint256[] memory reported = IOTFSettlementVault(vault)
+            .routerRedeem(shares, owner, address(this), minimums, skipMask);
         if (reported.length != assets.length) revert InvalidArrayLength();
 
         uint256 ownerAfter = IOTFSettlementVault(vault).balanceOf(owner);

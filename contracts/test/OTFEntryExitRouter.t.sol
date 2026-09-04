@@ -145,9 +145,7 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
 
         request.skipMask = 4;
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(OTFEntryExitRouter.InvalidSkipMask.selector, 4, 2)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OTFEntryExitRouter.InvalidSkipMask.selector, 4, 2));
         router.redeemToToken(request, minimums, new SwapLeg[](0));
     }
 

@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {OTFLaunchManager} from "../src/OTFLaunchManager.sol";
-import {OTFLaunchManagerDeployer} from "../src/OTFLaunchManagerDeployer.sol";
-import {OTFLaunchRouter} from "../src/OTFLaunchRouter.sol";
-import {MockWETH} from "./mocks/MockWETH.sol";
-import {TestBase, Vm} from "./TestBase.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
+import { OTFLaunchManagerDeployer } from "../src/OTFLaunchManagerDeployer.sol";
+import { OTFLaunchRouter } from "../src/OTFLaunchRouter.sol";
+import { MockWETH } from "./mocks/MockWETH.sol";
+import { TestBase, Vm } from "./TestBase.sol";
 
-import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
-import {PoolDonateTest} from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
-import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
+import { PoolManager } from "@uniswap/v4-core/src/PoolManager.sol";
+import { IPoolManager } from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import { BalanceDelta } from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
+import { PoolId } from "@uniswap/v4-core/src/types/PoolId.sol";
+import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
+import { SwapParams, ModifyLiquidityParams } from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import { PoolSwapTest } from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import { PoolDonateTest } from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
+import { PoolModifyLiquidityTest } from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 
-import {PositionManager} from "@uniswap/v4-periphery/src/PositionManager.sol";
-import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
-import {IPositionDescriptor} from "@uniswap/v4-periphery/src/interfaces/IPositionDescriptor.sol";
-import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
-import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
-import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
-import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
+import { PositionManager } from "@uniswap/v4-periphery/src/PositionManager.sol";
+import { IPositionManager } from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
+import { IPositionDescriptor } from "@uniswap/v4-periphery/src/interfaces/IPositionDescriptor.sol";
+import { IWETH9 } from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
+import { StateView } from "@uniswap/v4-periphery/src/lens/StateView.sol";
+import { IAllowanceTransfer } from "permit2/src/interfaces/IAllowanceTransfer.sol";
+import { DeployPermit2 } from "permit2/test/utils/DeployPermit2.sol";
 
 contract IntegrationOTF is ERC20 {
     uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
 
-    constructor() ERC20("Onchain Traded Funds", "OTF") {}
+    constructor() ERC20("Onchain Traded Funds", "OTF") { }
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
@@ -116,7 +116,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
         vm.prank(BUYER);
         (uint256 amountIn,) =
-            setup.router.buyOtfWithEth{value: 20 ether}(1, BUYER, block.timestamp + 1);
+            setup.router.buyOtfWithEth{ value: 20 ether }(1, BUYER, block.timestamp + 1);
 
         assertEq(amountIn, INVERSE_BOUNDARY_WETH_INPUT);
         assertEq(BUYER.balance, 20 ether - INVERSE_BOUNDARY_WETH_INPUT);
@@ -370,7 +370,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             BalanceDelta
         ) {
             revert("ready buy succeeded");
-        } catch {}
+        } catch { }
         try swapper.swap(
             key,
             SwapParams({
@@ -386,7 +386,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             BalanceDelta
         ) {
             revert("ready sell succeeded");
-        } catch {}
+        } catch { }
         vm.stopPrank();
 
         (uint160 priceAfter,) = setup.launch.currentPoolState();
@@ -591,7 +591,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             BalanceDelta
         ) {
             revert("thin bridge overshoot succeeded");
-        } catch {}
+        } catch { }
 
         (uint160 priceAfterAttack,) = setup.launch.currentPoolState();
         (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();

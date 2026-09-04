@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20, IERC20Metadata, IOTFToken} from "./interfaces/IERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { IERC20, IERC20Metadata, IOTFToken } from "./interfaces/IERC20.sol";
 import {
     IPermit2AllowanceTransfer,
     IUniswapV4ImmutableState,
@@ -12,9 +12,9 @@ import {
     UniswapV4PoolKey,
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
-import {V4PriceMath} from "./libraries/V4PriceMath.sol";
-import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import { V4PriceMath } from "./libraries/V4PriceMath.sol";
+import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 /// @notice Canonical OTF/WETH V4 bootstrap hook and permanent-liquidity lock.
 /// @dev The after-swap hook only marks graduation ready. Permissionless finalization runs after the
@@ -44,7 +44,8 @@ contract OTFLaunchManager {
     uint160 private constant DIRECT_INITIAL_SQRT_PRICE_X96 = 11_204_554_194_957_227_983_746_388;
     int24 private constant INVERSE_INITIAL_TICK = 177_284;
     int24 private constant INVERSE_FINAL_TICK = 155_311;
-    uint160 private constant INVERSE_INITIAL_SQRT_PRICE_X96 = 560_227_709_747_861_399_187_319_382_274_581;
+    uint160 private constant INVERSE_INITIAL_SQRT_PRICE_X96 =
+        560_227_709_747_861_399_187_319_382_274_581;
 
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
     uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;
@@ -74,7 +75,11 @@ contract OTFLaunchManager {
     error Reentrancy();
 
     event BootstrapInitialized(
-        bytes32 indexed poolId, uint256 indexed positionTokenId, int24 initialTick, int24 finalTick, uint128 liquidity
+        bytes32 indexed poolId,
+        uint256 indexed positionTokenId,
+        int24 initialTick,
+        int24 finalTick,
+        uint128 liquidity
     );
     event GraduationReady(uint256 indexed blockNumber, int24 tick);
     event RemainingOtfBurned(uint256 amount);
@@ -181,7 +186,11 @@ contract OTFLaunchManager {
     }
 
     /// @notice Uniswap V4 beforeInitialize hook. PoolManager skips this callback for hook self-calls.
-    function beforeInitialize(address initializer, UniswapV4PoolKey calldata, uint160) external view returns (bytes4) {
+    function beforeInitialize(address initializer, UniswapV4PoolKey calldata, uint160)
+        external
+        view
+        returns (bytes4)
+    {
         if (msg.sender != poolManager) revert UnauthorizedPoolManager(msg.sender);
         if (initializer != address(this)) revert UnauthorizedInitializer(initializer);
         return this.beforeInitialize.selector;
@@ -195,8 +204,12 @@ contract OTFLaunchManager {
             revert InsufficientLaunchTokens(REQUIRED_OTF_BALANCE, otfBalance);
         }
         IUniswapV4PoolManager(poolManager).initialize(poolKey, initialSqrtPriceX96);
-        (uint256 expectedBootstrapOtf, uint256 expectedBootstrapWeth, uint256 permanentOtf, uint256 permanentWeth) =
-            derivedLaunchAmounts();
+        (
+            uint256 expectedBootstrapOtf,
+            uint256 expectedBootstrapWeth,
+            uint256 permanentOtf,
+            uint256 permanentWeth
+        ) = derivedLaunchAmounts();
         if (
             expectedBootstrapOtf > MAX_BOOTSTRAP_BUDGET || permanentOtf > PERMANENT_OTF_CAP
                 || expectedBootstrapWeth != permanentWeth
@@ -216,14 +229,19 @@ contract OTFLaunchManager {
             revert BootstrapDebitExceedsBudget(bootstrapOtfDeposited);
         }
         phase = Phase.BootstrapActive;
-        emit BootstrapInitialized(poolId, bootstrapPositionTokenId, initialTick, finalTick, bootstrapLiquidity);
+        emit BootstrapInitialized(
+            poolId, bootstrapPositionTokenId, initialTick, finalTick, bootstrapLiquidity
+        );
     }
 
     /// @notice Uniswap V4 afterSwap hook. The return delta is always zero.
-    function afterSwap(address, UniswapV4PoolKey calldata key, UniswapV4SwapParams calldata, int256, bytes calldata)
-        external
-        returns (bytes4, int128)
-    {
+    function afterSwap(
+        address,
+        UniswapV4PoolKey calldata key,
+        UniswapV4SwapParams calldata,
+        int256,
+        bytes calldata
+    ) external returns (bytes4, int128) {
         if (msg.sender != poolManager) revert UnauthorizedPoolManager(msg.sender);
         if (_poolId(key) != poolId) revert InvalidPool();
         Phase currentPhase = phase;
@@ -255,8 +273,12 @@ contract OTFLaunchManager {
         if (currentSqrtPriceX96 != finalSqrtPriceX96) {
             revert GraduationPriceNotReached(currentSqrtPriceX96, finalSqrtPriceX96);
         }
-        (, uint256 expectedBootstrapWeth, uint256 expectedPermanentOtf, uint256 expectedPermanentWeth) =
-            derivedLaunchAmounts();
+        (
+            ,
+            uint256 expectedBootstrapWeth,
+            uint256 expectedPermanentOtf,
+            uint256 expectedPermanentWeth
+        ) = derivedLaunchAmounts();
 
         uint256 otfBefore = IERC20(otf).balanceOf(address(this));
         uint256 wethBefore = IERC20(weth).balanceOf(address(this));
@@ -281,7 +303,8 @@ contract OTFLaunchManager {
         permanentOtfLiquidity = otfBefore - IERC20(otf).balanceOf(address(this));
         permanentWethLiquidity = wethBefore - IERC20(weth).balanceOf(address(this));
         if (
-            permanentOtfLiquidity > PERMANENT_OTF_CAP || permanentWethLiquidity != expectedPermanentWeth
+            permanentOtfLiquidity > PERMANENT_OTF_CAP
+                || permanentWethLiquidity != expectedPermanentWeth
                 || expectedPermanentOtf > PERMANENT_OTF_CAP
         ) revert PermanentDebitInvalid(permanentOtfLiquidity, permanentWethLiquidity);
 
@@ -322,7 +345,11 @@ contract OTFLaunchManager {
         return Math.mulDiv(currentOtfPriceWethWad(), IOTFToken(otf).MAX_SUPPLY(), 1e18);
     }
 
-    function bootstrapSqrtPriceBounds() public view returns (uint160 lowerSqrtPriceX96, uint160 upperSqrtPriceX96) {
+    function bootstrapSqrtPriceBounds()
+        public
+        view
+        returns (uint160 lowerSqrtPriceX96, uint160 upperSqrtPriceX96)
+    {
         lowerSqrtPriceX96 = TickMath.getSqrtPriceAtTick(otfIsCurrency0 ? initialTick : finalTick);
         upperSqrtPriceX96 = TickMath.getSqrtPriceAtTick(otfIsCurrency0 ? finalTick : initialTick);
     }
@@ -330,21 +357,42 @@ contract OTFLaunchManager {
     function derivedLaunchAmounts()
         public
         view
-        returns (uint256 bootstrapOtf, uint256 bootstrapWeth, uint256 permanentOtf, uint256 permanentWeth)
+        returns (
+            uint256 bootstrapOtf,
+            uint256 bootstrapWeth,
+            uint256 permanentOtf,
+            uint256 permanentWeth
+        )
     {
         (uint160 bootstrapLower, uint160 bootstrapUpper) = bootstrapSqrtPriceBounds();
         uint160 fullRangeLower = TickMath.getSqrtPriceAtTick(FULL_RANGE_LOWER_TICK);
         uint160 fullRangeUpper = TickMath.getSqrtPriceAtTick(FULL_RANGE_UPPER_TICK);
         if (otfIsCurrency0) {
-            bootstrapOtf = SqrtPriceMath.getAmount0Delta(bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, true);
-            bootstrapWeth = SqrtPriceMath.getAmount1Delta(bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, false);
-            permanentOtf = SqrtPriceMath.getAmount0Delta(finalSqrtPriceX96, fullRangeUpper, PERMANENT_LIQUIDITY, true);
-            permanentWeth = SqrtPriceMath.getAmount1Delta(fullRangeLower, finalSqrtPriceX96, PERMANENT_LIQUIDITY, true);
+            bootstrapOtf = SqrtPriceMath.getAmount0Delta(
+                bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, true
+            );
+            bootstrapWeth = SqrtPriceMath.getAmount1Delta(
+                bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, false
+            );
+            permanentOtf = SqrtPriceMath.getAmount0Delta(
+                finalSqrtPriceX96, fullRangeUpper, PERMANENT_LIQUIDITY, true
+            );
+            permanentWeth = SqrtPriceMath.getAmount1Delta(
+                fullRangeLower, finalSqrtPriceX96, PERMANENT_LIQUIDITY, true
+            );
         } else {
-            bootstrapOtf = SqrtPriceMath.getAmount1Delta(bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, true);
-            bootstrapWeth = SqrtPriceMath.getAmount0Delta(bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, false);
-            permanentOtf = SqrtPriceMath.getAmount1Delta(fullRangeLower, finalSqrtPriceX96, PERMANENT_LIQUIDITY, true);
-            permanentWeth = SqrtPriceMath.getAmount0Delta(finalSqrtPriceX96, fullRangeUpper, PERMANENT_LIQUIDITY, true);
+            bootstrapOtf = SqrtPriceMath.getAmount1Delta(
+                bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, true
+            );
+            bootstrapWeth = SqrtPriceMath.getAmount0Delta(
+                bootstrapLower, bootstrapUpper, BOOTSTRAP_LIQUIDITY, false
+            );
+            permanentOtf = SqrtPriceMath.getAmount1Delta(
+                fullRangeLower, finalSqrtPriceX96, PERMANENT_LIQUIDITY, true
+            );
+            permanentWeth = SqrtPriceMath.getAmount0Delta(
+                finalSqrtPriceX96, fullRangeUpper, PERMANENT_LIQUIDITY, true
+            );
         }
     }
 
@@ -367,22 +415,34 @@ contract OTFLaunchManager {
         if (otfIsCurrency0) {
             traveled = sqrtPriceX96 <= startSqrtPriceX96
                 ? 0
-                : sqrtPriceX96 >= upperSqrtPriceX96 ? distance : uint256(sqrtPriceX96 - startSqrtPriceX96);
+                : sqrtPriceX96 >= upperSqrtPriceX96
+                    ? distance
+                    : uint256(sqrtPriceX96 - startSqrtPriceX96);
         } else {
             traveled = sqrtPriceX96 >= startSqrtPriceX96
                 ? 0
-                : sqrtPriceX96 <= lowerSqrtPriceX96 ? distance : uint256(startSqrtPriceX96 - sqrtPriceX96);
+                : sqrtPriceX96 <= lowerSqrtPriceX96
+                    ? distance
+                    : uint256(startSqrtPriceX96 - sqrtPriceX96);
         }
         progressBps = traveled * 10_000 / distance;
         uint256 amount0;
         uint256 amount1;
         if (sqrtPriceX96 <= lowerSqrtPriceX96) {
-            amount0 = SqrtPriceMath.getAmount0Delta(lowerSqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false);
+            amount0 = SqrtPriceMath.getAmount0Delta(
+                lowerSqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false
+            );
         } else if (sqrtPriceX96 < upperSqrtPriceX96) {
-            amount0 = SqrtPriceMath.getAmount0Delta(sqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false);
-            amount1 = SqrtPriceMath.getAmount1Delta(lowerSqrtPriceX96, sqrtPriceX96, bootstrapLiquidity, false);
+            amount0 = SqrtPriceMath.getAmount0Delta(
+                sqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false
+            );
+            amount1 = SqrtPriceMath.getAmount1Delta(
+                lowerSqrtPriceX96, sqrtPriceX96, bootstrapLiquidity, false
+            );
         } else {
-            amount1 = SqrtPriceMath.getAmount1Delta(lowerSqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false);
+            amount1 = SqrtPriceMath.getAmount1Delta(
+                lowerSqrtPriceX96, upperSqrtPriceX96, bootstrapLiquidity, false
+            );
         }
         otfRemaining = otfIsCurrency0 ? amount0 : amount1;
         if (otfRemaining > bootstrapOtfDeposited) otfRemaining = bootstrapOtfDeposited;
@@ -395,10 +455,13 @@ contract OTFLaunchManager {
         wethDust = IERC20(weth).balanceOf(address(this));
     }
 
-    function _mintPosition(int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 amount0Max, uint256 amount1Max)
-        private
-        returns (uint256 tokenId)
-    {
+    function _mintPosition(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity,
+        uint256 amount0Max,
+        uint256 amount1Max
+    ) private returns (uint256 tokenId) {
         tokenId = IUniswapV4PositionManager(positionManager).nextTokenId();
         _setPositionManagerAllowance(poolKey.currency0, amount0Max);
         _setPositionManagerAllowance(poolKey.currency1, amount1Max);
@@ -419,7 +482,8 @@ contract OTFLaunchManager {
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1);
         IUniswapV4PositionManager(positionManager)
             .modifyLiquidities(
-                abi.encode(abi.encodePacked(MINT_POSITION_ACTION, SETTLE_PAIR_ACTION), params), block.timestamp
+                abi.encode(abi.encodePacked(MINT_POSITION_ACTION, SETTLE_PAIR_ACTION), params),
+                block.timestamp
             );
         _setPositionManagerAllowance(poolKey.currency0, 0);
         _setPositionManagerAllowance(poolKey.currency1, 0);
@@ -431,7 +495,8 @@ contract OTFLaunchManager {
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1, address(this));
         IUniswapV4PositionManager(positionManager)
             .modifyLiquidities(
-                abi.encode(abi.encodePacked(BURN_POSITION_ACTION, TAKE_PAIR_ACTION), params), block.timestamp
+                abi.encode(abi.encodePacked(BURN_POSITION_ACTION, TAKE_PAIR_ACTION), params),
+                block.timestamp
             );
     }
 
@@ -446,11 +511,14 @@ contract OTFLaunchManager {
         // forge-lint: disable-next-line(unsafe-typecast)
         uint160 permitAmount = uint160(amount);
         IPermit2AllowanceTransfer(permit2)
-            .approve(token, positionManager, permitAmount, amount == 0 ? 0 : uint48(block.timestamp + 1));
+            .approve(
+                token, positionManager, permitAmount, amount == 0 ? 0 : uint48(block.timestamp + 1)
+            );
     }
 
     function _poolId(UniswapV4PoolKey calldata key) private pure returns (bytes32) {
-        return keccak256(abi.encode(key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks));
+        return
+            keccak256(abi.encode(key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks));
     }
 
     function _requireContract(address dependency) private view {

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IWETH} from "./interfaces/IWETH.sol";
-import {IUniswapV4PoolManager, UniswapV4PoolKey, UniswapV4SwapParams} from "./interfaces/IUniswapV4.sol";
-import {SafeTransferLib} from "./libraries/SafeTransferLib.sol";
+import { IWETH } from "./interfaces/IWETH.sol";
+import {
+    IUniswapV4PoolManager,
+    UniswapV4PoolKey,
+    UniswapV4SwapParams
+} from "./interfaces/IUniswapV4.sol";
+import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface ILaunchManagerRouter {
     function otf() external view returns (address);
@@ -12,7 +16,10 @@ interface ILaunchManagerRouter {
     function otfIsCurrency0() external view returns (bool);
     function finalSqrtPriceX96() external view returns (uint160);
     function phase() external view returns (uint8);
-    function bootstrapSqrtPriceBounds() external view returns (uint160 lowerSqrtPriceX96, uint160 upperSqrtPriceX96);
+    function bootstrapSqrtPriceBounds()
+        external
+        view
+        returns (uint160 lowerSqrtPriceX96, uint160 upperSqrtPriceX96);
     function poolKey()
         external
         view
@@ -47,7 +54,11 @@ contract OTFLaunchRouter {
     error Reentrancy();
 
     event BootstrapSwap(
-        address indexed payer, address indexed recipient, bool indexed buyOtf, uint256 amountIn, uint256 amountOut
+        address indexed payer,
+        address indexed recipient,
+        bool indexed buyOtf,
+        uint256 amountIn,
+        uint256 amountOut
     );
 
     address public immutable launchManager;
@@ -68,7 +79,8 @@ contract OTFLaunchRouter {
         if (poolManager_.code.length == 0) revert InvalidDependency(poolManager_);
         if (otf_.code.length == 0) revert InvalidDependency(otf_);
         if (weth_.code.length == 0) revert InvalidDependency(weth_);
-        (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) = launch.poolKey();
+        (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) =
+            launch.poolKey();
         bool otfIsCurrency0_ = launch.otfIsCurrency0();
         if (
             hooks != launchManager_ || currency0 != (otfIsCurrency0_ ? otf_ : weth_)
@@ -90,13 +102,16 @@ contract OTFLaunchRouter {
         _entered = false;
     }
 
-    function buyOtfWithWeth(uint256 amountInMaximum, uint256 amountOutMinimum, address recipient, uint256 deadline)
-        external
-        nonReentrant
-        returns (uint256 amountIn, uint256 amountOut)
-    {
-        (amountIn, amountOut) =
-            _swap(CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, true, false), deadline);
+    function buyOtfWithWeth(
+        uint256 amountInMaximum,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 amountIn, uint256 amountOut) {
+        (amountIn, amountOut) = _swap(
+            CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, true, false),
+            deadline
+        );
     }
 
     function buyOtfWithEth(uint256 amountOutMinimum, address recipient, uint256 deadline)
@@ -105,22 +120,26 @@ contract OTFLaunchRouter {
         nonReentrant
         returns (uint256 amountIn, uint256 amountOut)
     {
-        (amountIn, amountOut) =
-            _swap(CallbackData(msg.sender, recipient, msg.value, amountOutMinimum, true, true), deadline);
+        (amountIn, amountOut) = _swap(
+            CallbackData(msg.sender, recipient, msg.value, amountOutMinimum, true, true), deadline
+        );
         uint256 refund = msg.value - amountIn;
         if (refund != 0) {
-            (bool success,) = msg.sender.call{value: refund}("");
+            (bool success,) = msg.sender.call{ value: refund }("");
             if (!success) revert RefundFailed();
         }
     }
 
-    function sellOtfForWeth(uint256 amountInMaximum, uint256 amountOutMinimum, address recipient, uint256 deadline)
-        external
-        nonReentrant
-        returns (uint256 amountIn, uint256 amountOut)
-    {
-        (amountIn, amountOut) =
-            _swap(CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, false, false), deadline);
+    function sellOtfForWeth(
+        uint256 amountInMaximum,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 amountIn, uint256 amountOut) {
+        (amountIn, amountOut) = _swap(
+            CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, false, false),
+            deadline
+        );
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory result) {
@@ -164,7 +183,7 @@ contract OTFLaunchRouter {
         address outputToken = callback.buyOtf ? otf : weth;
         IUniswapV4PoolManager(poolManager).sync(inputToken);
         if (callback.nativeInput) {
-            IWETH(weth).deposit{value: amountIn}();
+            IWETH(weth).deposit{ value: amountIn }();
             weth.safeTransfer(poolManager, amountIn);
         } else {
             inputToken.safeTransferFrom(callback.payer, poolManager, amountIn);
@@ -182,13 +201,17 @@ contract OTFLaunchRouter {
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlinePassed(deadline);
         if (callback.recipient == address(0)) revert ZeroAddress();
-        if (callback.amountInMaximum == 0 || callback.amountInMaximum > uint256(uint128(type(int128).max))) {
+        if (
+            callback.amountInMaximum == 0
+                || callback.amountInMaximum > uint256(uint128(type(int128).max))
+        ) {
             revert InvalidAmount();
         }
         uint8 currentPhase = ILaunchManagerRouter(launchManager).phase();
         if (currentPhase != BOOTSTRAP_ACTIVE) revert InvalidPhase(currentPhase);
-        (amountIn, amountOut) =
-            abi.decode(IUniswapV4PoolManager(poolManager).unlock(abi.encode(callback)), (uint256, uint256));
+        (amountIn, amountOut) = abi.decode(
+            IUniswapV4PoolManager(poolManager).unlock(abi.encode(callback)), (uint256, uint256)
+        );
         if (ILaunchManagerRouter(launchManager).phase() == GRADUATION_READY) {
             ILaunchManagerRouter(launchManager).finalizeGraduation();
         }

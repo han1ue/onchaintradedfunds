@@ -218,7 +218,13 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault),
+            new uint256[](0),
+            0,
+            _route(address(adapter)),
+            1,
+            1,
+            block.timestamp + 1
         );
     }
 
@@ -286,7 +292,13 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.NothingToSettle.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault),
+            new uint256[](0),
+            0,
+            _route(address(adapter)),
+            1,
+            1,
+            block.timestamp + 1
         );
     }
 
@@ -330,7 +342,13 @@ contract BuybackCollectorTest is TestBase {
         vm.prank(BENEFICIARY);
         vm.expectPartialRevert(BuybackCollector.DeadlineExpired.selector);
         collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp - 1
+            address(feeVault),
+            new uint256[](0),
+            0,
+            _route(address(adapter)),
+            1,
+            1,
+            block.timestamp - 1
         );
 
         MockFeeVault fake = new MockFeeVault(address(factory), address(collector), BENEFICIARY);
@@ -419,7 +437,13 @@ contract BuybackCollectorTest is TestBase {
         feeVault.queueFeeShares(0, 1);
         vm.prank(BENEFICIARY);
         (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = collector.settleFeesViaRedemption(
-            address(feeVault), new uint256[](0), 0, _route(address(adapter)), 1, 1, block.timestamp + 1
+            address(feeVault),
+            new uint256[](0),
+            0,
+            _route(address(adapter)),
+            1,
+            1,
+            block.timestamp + 1
         );
         assertEq(creatorWeth, 0);
         assertEq(buybackWeth, 1);

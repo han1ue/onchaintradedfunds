@@ -92,14 +92,12 @@ contract BuybackCollectorShutdownTest is TestBase {
     function testLowSupplyCollectorResidualSettlesAfterShutdown() public {
         _redeemHolderAndTriggerLowSupplyShutdown();
         uint256 collectorShares = vault.balanceOf(address(collector));
-        (uint256 creatorShares, uint256 buybackShares,) =
-            collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
         uint256 wethAvailable = vault.previewRedeem(collectorShares, 0)[0];
         uint256 expectedCreatorWeth = wethAvailable * creatorShares / collectorShares;
         uint256 supplyBefore = otf.totalSupply();
 
-        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) =
-            _settle(wethAvailable, 1);
+        (uint256 creatorWeth, uint256 buybackWeth, uint256 burned) = _settle(wethAvailable, 1);
 
         assertEq(creatorWeth, expectedCreatorWeth);
         assertEq(buybackWeth, wethAvailable - expectedCreatorWeth);
@@ -126,8 +124,7 @@ contract BuybackCollectorShutdownTest is TestBase {
 
         assertTrue(vault.shutdown());
         assertEq(vault.balanceOf(address(collector)), pending);
-        (uint256 creatorShares, uint256 buybackShares,) =
-            collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
         assertEq(creatorShares + buybackShares, pending);
         uint256 wethAvailable = vault.previewRedeem(pending, 0)[0];
         assertGt(wethAvailable, 0);
@@ -142,8 +139,7 @@ contract BuybackCollectorShutdownTest is TestBase {
     function testBuybackFailureRestoresSharesFeeAccountsAndVaultAccounting() public {
         _redeemHolderAndTriggerLowSupplyShutdown();
         uint256 collectorShares = vault.balanceOf(address(collector));
-        (uint256 creatorShares, uint256 buybackShares,) =
-            collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
         uint256 accounted = vault.accountedBalance(address(weth));
         uint256 vaultWeth = weth.balanceOf(address(vault));
         uint256 supply = vault.totalSupply();

@@ -542,12 +542,10 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint256 supply,
         uint256 skipMask,
         bool shutdown_
-    )
-        internal
-        view
-        returns (uint256[] memory amountsOut)
-    {
-        if (supply == 0 || shares > supply) revert SharesExceedSupply(shares, supply);
+    ) internal view returns (uint256[] memory amountsOut) {
+        if (supply == 0 || shares > supply) {
+            revert SharesExceedSupply(shares, supply);
+        }
         uint256 length = _assets.length;
         amountsOut = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
