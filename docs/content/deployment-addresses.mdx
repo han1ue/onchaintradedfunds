@@ -5,7 +5,7 @@ description: Protocol deployment status and required external configuration.
 
 # Deployment addresses
 
-The protocol is not deployed on Robinhood Chain Testnet or Mainnet. The application configuration contains no protocol contract addresses.
+The protocol is deployed on Robinhood Chain Testnet. It is not deployed on Mainnet.
 
 ## Robinhood Chain Mainnet
 
@@ -21,10 +21,25 @@ A production deployment must provide WETH, Uniswap V3 Factory and SwapRouter02, 
 
 **Chain ID:** `46630` <br />
 **Explorer:** [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com/) <br />
-**Status:** Not deployed
+**Status:** Deployed on September 4, 2026
 
-`app/src/config/robinhood-testnet.json` retains reviewed external addresses and expected runtime code hashes for the V4 PoolManager, StateView, PositionManager, Quoter, Universal Router, and Permit2. Its `contracts` object and approved-adapter list remain empty until deployment succeeds.
+| Contract | Address |
+| --- | --- |
+| OTF token | `0xdaB5d0511bf6e6E7D53047C321FF7cCDD030B5EA` |
+| Launch manager | `0x1BEDC53a5F3B4F0d0D1ED219b5BC80AC1D4eE040` |
+| Launch router | `0x1baeD75C0549c7473ad403D09806D10a51882C9E` |
+| Team vesting | `0x2bbF6E2584E4c30255FF9E0D857d34e087e4dB68` |
+| Buyback collector | `0x0959BcE1ABA02005120Fb8D9c4cF100341aE6c07` |
+| Merkle rewards distributor | `0xA92283015943b586f733A7C5038C6a5575271ed0` |
+| Testnet ETH/USD oracle | `0xFAB1bAa3b0f80a64E60BE85006216784836F1531` |
+| Vault implementation | `0x0FA559C1b98988E58af1A671bcA145a26881da51` |
+| Factory | `0x4Ef9a30b0949269eA80d768fb493DFfecd028Bd1` |
+| Entry/exit router | `0xFc4706E8C63bD3fc9126461A1aF6Fbf8233d77E4` |
+| Uniswap V3 adapter | `0xC06f5f07A47B93D9Ae3E69d55bf16BfC1c8086CD` |
+| Uniswap V4 adapter | `0xD8201a3D9DA949a198ecb8eB3fA7bfF3944Ec66a` |
 
-The deployment script checks dependency identities and bytecode, mines the exact `0x2040` hook address, deploys the launch manager and boundary router, verifies pinned-core derived amounts, configures the factory and entry router, approves adapters, initializes the canonical launch, checks cleared allowances, and reconciles the actual bootstrap debit against the one-billion-OTF allocation. It records protocol addresses only after every check completes.
+The application reads these addresses from `app/src/config/robinhood-testnet.json`. That manifest also records deployment and setup transaction hashes, block numbers, gas usage, approved adapters, launch parameters, and the pinned hashes for external V4 contracts.
+
+The deployment completed its dependency, launch-parameter, role, allowance, and token-allocation checks before writing the manifest. The configured protocol administrator and team beneficiary are both `0xc340D7085E321B82CF550904310EE44bae9e4CD2`.
 
 Testnet uses an unofficial V4 mirror. Matching the configured bytecode hashes confirms the reviewed runtime bytes at the selected addresses; it does not make that deployment official or remove its operational risk.

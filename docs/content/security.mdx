@@ -51,7 +51,7 @@ The entry router accepts native ETH only through `mintFromNative` and accepts ca
 
 The router's reentrancy guard covers wrapping, unwrapping, refunds, and native sends. Rejected sends revert. Pre-existing or forcibly sent ETH and WETH remain untouched. Native identifiers never enter a vault, adapter leg, pool, or buyback route.
 
-Application support for native basket execution remains disabled until a compatible router deployment is recorded.
+Application support for native basket execution is enabled on testnet through the deployed canonical-WETH entry router.
 
 ## Launch and market assumptions
 
@@ -77,7 +77,7 @@ Production deployment requires explicit WETH, PoolManager, StateView, PositionMa
 
 The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
 
-The current architecture is not deployed. Earlier Robinhood testnet protocol addresses are incompatible and disabled in the application; there is no migration or legacy claim path.
+The current architecture is deployed on Robinhood Chain Testnet. Earlier testnet protocol addresses remain incompatible and disabled in the application; there is no migration or legacy claim path.
 
 ## Production blockers
 

@@ -2,7 +2,7 @@
 
 Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults on Robinhood Chain. Each vault has an ordered constituent list, fixed bootstrap units, immutable fee rates, and an immutable expense beneficiary. The contracts do not use prices, calculate net asset value, or rebalance.
 
-The protocol is pre-mainnet, unaudited, and not ready to hold value. Its contracts have not been deployed on Robinhood Chain Testnet or Mainnet.
+The protocol is pre-mainnet, unaudited, and not ready to hold value. Its contracts are deployed on Robinhood Chain Testnet, but not on Mainnet.
 
 ## How an OTF works
 
