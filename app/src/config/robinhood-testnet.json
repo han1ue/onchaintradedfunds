@@ -45,6 +45,7 @@
       "address": "0xA92283015943b586f733A7C5038C6a5575271ed0",
       "transactionHash": "0x5aa9706952b4487db2f75260abb44f444c35ff53a782975f5dcfcb27eaa7da24",
       "blockNumber": "112626576",
+      "blockTimestamp": "2026-09-04T02:13:00.000Z",
       "gasUsed": "561262"
     },
     "fakeEthUsdOracle": {

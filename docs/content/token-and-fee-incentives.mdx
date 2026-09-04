@@ -122,7 +122,7 @@ The weekly target starts at 14 million OTF and declines by approximately 1.968% 
 weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
 ```
 
-`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The publishing process must use sufficient precision or reconcile the final weekly distribution so aggregate emissions equal exactly 700,000,000 OTF. The repository does not currently contain an exact decay constant or final-week adjustment.
+`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The application uses the rounded formula for weeks 1 through 207 and assigns the remaining allocation to week 208, approximately 229,144.55 OTF, so its schedule model totals exactly 700,000,000 OTF. The reward publisher must apply the same reconciliation or an equivalently precise schedule.
 
 | Checkpoint | Approximate weekly emission |
 | --- | ---: |
@@ -143,7 +143,7 @@ weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
 
 The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week, without cliffs, monthly buckets, quarterly steps, or periodic halvings. Its four-year endpoint caps this incentive allocation and prevents it from becoming a perpetual source of inflation.
 
-Incentive APY is variable and is neither fixed nor guaranteed. It depends on that week's OTF emission, OTF's market value, total eligible deposits or AUM, and the user's share of eligible activity or deposits. Because each weekly token amount is fixed by the schedule, the rate attributable to each eligible deposit naturally falls as eligible deposits or AUM increase.
+Incentive APY is variable and is neither fixed nor guaranteed. The application derives the emission week from the rewards distributor's deployment-block timestamp, values OTF using the canonical Uniswap OTF/WETH pool and CoinGecko's ETH/USD price, and treats 100% of the weekly emission as available to eligible fund deposits. It annualizes the current weekly reward value over 52 weeks and divides it by total eligible fund AUM, so the Funds and fund-detail pages show the same pro-rata rate. When total eligible AUM is exactly zero, the estimate uses a $100 denominator and labels that baseline; the displayed AUM remains zero. Because each weekly token amount is fixed by the schedule, the rate attributable to each eligible deposit naturally falls as eligible AUM increases.
 
 The emission schedule is a distribution policy, not logic enforced by `MerkleRewardsDistributor`. Its owner publishes an immediately active cumulative Merkle root. The contract defines no reward formula, schedule, delay, or period cap, so the publisher can allocate the distributor's remaining balance faster than the documented schedule. The owner cannot withdraw reward principal.
 

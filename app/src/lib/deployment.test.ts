@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   robinhoodMainnetAddresses,
   robinhoodTestnetAddresses,
+  robinhoodTestnetRewardsDeploymentBlock,
+  robinhoodTestnetRewardsDeployedAtMs,
   robinhoodTestnetDeploymentReady,
   robinhoodTestnetNativeEntryReady,
   robinhoodTestnetV4,
@@ -13,6 +15,8 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetDeploymentReady).toBe(true);
     expect(robinhoodTestnetV4AdapterReady).toBe(true);
     expect(robinhoodTestnetNativeEntryReady).toBe(true);
+    expect(robinhoodTestnetRewardsDeploymentBlock).toBe(112626576n);
+    expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-04T02:13:00.000Z"));
     expect(robinhoodTestnetAddresses).toMatchObject({
       otfToken: "0xdaB5d0511bf6e6E7D53047C321FF7cCDD030B5EA",
       launchManager: "0x1BEDC53a5F3B4F0d0D1ED219b5BC80AC1D4eE040",

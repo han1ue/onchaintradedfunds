@@ -7,7 +7,7 @@ import {
 } from "./asset-catalog";
 import { getAddress, isAddress, type Address } from "viem";
 
-type ContractDeployment = { address?: unknown };
+type ContractDeployment = { address?: unknown; blockNumber?: unknown; blockTimestamp?: unknown };
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -31,6 +31,18 @@ function address(value: unknown): Address | undefined {
 function safePositiveInteger(value: unknown): number | undefined {
   const parsed = typeof value === "number" ? value : Number.NaN;
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function safePositiveBigInt(value: unknown): bigint | undefined {
+  if (typeof value !== "string" || !/^\d+$/u.test(value)) return undefined;
+  const parsed = BigInt(value);
+  return parsed > 0n ? parsed : undefined;
+}
+
+function timestampMillis(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 const testnet = record(testnetDeployment);
@@ -64,6 +76,14 @@ export const robinhoodTestnetAddresses = Object.freeze({
   usdg: testnetAssetById("usdg")?.address,
   weth: testnetAssetById("weth")?.address,
 });
+
+export const robinhoodTestnetRewardsDeploymentBlock = testnetConfigValid && testnet.status === "deployed"
+  ? safePositiveBigInt(testnetContracts.merkleRewardsDistributor?.blockNumber)
+  : undefined;
+
+export const robinhoodTestnetRewardsDeployedAtMs = robinhoodTestnetRewardsDeploymentBlock
+  ? timestampMillis(testnetContracts.merkleRewardsDistributor?.blockTimestamp)
+  : undefined;
 
 export const robinhoodTestnetLiquidity = Object.freeze({
   venue: testnetLiquidity.venue === "Synthra" && testnetVenue.id === "synthra-v3" ? "Synthra" : undefined,

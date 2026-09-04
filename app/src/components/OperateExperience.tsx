@@ -48,6 +48,7 @@ import {
   robinhoodTestnetV4,
 } from "@/lib/deployment";
 import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
+import { estimatedRewardsApy } from "@/lib/incentive-apy";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -1799,6 +1800,17 @@ type FundValuation = {
   usesBootstrapNav: boolean;
 };
 
+type DirectoryAum = { state: "loading" | "ready" | "unavailable"; value?: number };
+
+type RewardsApy = {
+  state: "loading" | "ready" | "unavailable";
+  percent?: number;
+  weeklyEmissionOtf?: number;
+  usesZeroAumBaseline: boolean;
+  week?: number;
+  ended: boolean;
+};
+
 function valuationAsset(value: unknown): CreationAssetData | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const asset = value as Record<string, unknown>;
@@ -1908,9 +1920,157 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
   return valuation;
 }
 
+function useDirectoryAum(vaults: FactoryVaultSummary[], enabled: boolean): DirectoryAum {
+  const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
+  const [directoryAum, setDirectoryAum] = useState<DirectoryAum>({ state: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled || !publicClient || chainId !== robinhoodChainTestnet.id) {
+      setDirectoryAum({ state: enabled ? "unavailable" : "loading" });
+      return;
+    }
+    if (!vaults.length) {
+      setDirectoryAum({ state: "ready", value: 0 });
+      return;
+    }
+    setDirectoryAum({ state: "loading" });
+    const controller = new AbortController();
+    const assetRequest = fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
+      return response.json() as Promise<{ data?: unknown[] }>;
+    });
+    void Promise.all([
+      assetRequest,
+      Promise.all(vaults.map((vault) => publicClient.readContract({
+        address: vault.address,
+        abi: managedOtfVaultAbi,
+        functionName: "accountedBalances",
+      }))),
+    ]).then(([payload, balancesByVault]) => {
+      const prices = (payload.data ?? []).flatMap((value) => {
+        const parsed = valuationAsset(value);
+        return parsed ? [parsed] : [];
+      });
+      const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
+      const totalAumUsdWad = vaults.reduce((directoryTotal, vault, vaultIndex) => {
+        const balances = balancesByVault[vaultIndex];
+        if (!balances || balances.length !== vault.assets.length) throw new Error("VALUATION_BALANCES_INVALID");
+        return directoryTotal + balances.reduce((fundTotal, quantity, assetIndex) => {
+          const asset = priceByAddress.get(vault.assets[assetIndex]!.toLowerCase());
+          if (!asset) throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
+          const priceUsdWad = parseFixedDecimal(asset.priceUsd, 18);
+          if (!priceUsdWad) throw new Error("VALUATION_PRICE_INVALID");
+          return fundTotal + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
+        }, 0n);
+      }, 0n);
+      return Number(formatUnits(totalAumUsdWad, 18));
+    }).then((value) => {
+      if (!cancelled) setDirectoryAum({ state: "ready", value });
+    }).catch((error) => {
+      if (!cancelled && !(error instanceof Error && error.name === "AbortError")) {
+        setDirectoryAum({ state: "unavailable" });
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [chainId, enabled, publicClient, vaults]);
+
+  return directoryAum;
+}
+
+function useRewardsApy(eligibleAumUsd: number | undefined): RewardsApy {
+  const chainId = useChainId();
+  const [pricing, setPricing] = useState<{
+    state: "loading" | "ready" | "unavailable";
+    week?: number;
+    weeklyEmissionOtf?: number;
+    otfPriceUsd?: number;
+    ended: boolean;
+  }>({ state: "loading", ended: false });
+
+  useEffect(() => {
+    if (chainId !== robinhoodChainTestnet.id) {
+      setPricing({ state: "unavailable", ended: false });
+      return;
+    }
+    let cancelled = false;
+    let controller: AbortController | undefined;
+    const load = () => {
+      controller?.abort();
+      controller = new AbortController();
+      void fetch(`/api/incentive-apy?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+        if (!response.ok) throw new Error("INCENTIVE_APY_UNAVAILABLE");
+        return response.json() as Promise<Record<string, unknown>>;
+      }).then((payload) => {
+        const valid = Number.isInteger(payload.week) && Number(payload.week) >= 1
+          && typeof payload.weeklyEmissionOtf === "number" && Number.isFinite(payload.weeklyEmissionOtf) && payload.weeklyEmissionOtf >= 0
+          && typeof payload.otfPriceUsd === "number" && Number.isFinite(payload.otfPriceUsd) && payload.otfPriceUsd > 0
+          && typeof payload.ended === "boolean";
+        if (!valid) throw new Error("INCENTIVE_APY_INVALID");
+        if (!cancelled) {
+          setPricing({
+            state: "ready",
+            week: Number(payload.week),
+            weeklyEmissionOtf: payload.weeklyEmissionOtf as number,
+            otfPriceUsd: payload.otfPriceUsd as number,
+            ended: payload.ended as boolean,
+          });
+        }
+      }).catch((error) => {
+        if (!cancelled && !(error instanceof Error && error.name === "AbortError")) {
+          setPricing({ state: "unavailable", ended: false });
+        }
+      });
+    };
+    setPricing({ state: "loading", ended: false });
+    load();
+    const refresh = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(refresh);
+      controller?.abort();
+    };
+  }, [chainId]);
+
+  if (pricing.state !== "ready" || eligibleAumUsd === undefined) {
+    return { state: pricing.state === "unavailable" ? "unavailable" : "loading", usesZeroAumBaseline: false, ended: pricing.ended };
+  }
+  const estimate = estimatedRewardsApy({
+    weeklyEmissionOtf: pricing.weeklyEmissionOtf!,
+    otfPriceUsd: pricing.otfPriceUsd!,
+    eligibleAumUsd,
+  });
+  return estimate
+    ? {
+        state: "ready",
+        percent: estimate.percent,
+        weeklyEmissionOtf: pricing.weeklyEmissionOtf,
+        usesZeroAumBaseline: estimate.usesZeroAumBaseline,
+        week: pricing.week,
+        ended: pricing.ended,
+      }
+    : { state: "unavailable", usesZeroAumBaseline: false, ended: pricing.ended };
+}
+
 function formatUsd(value: number | undefined, maximumFractionDigits = 2): string {
   if (value === undefined || !Number.isFinite(value)) return "—";
   return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits });
+}
+
+function formatApy(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return `${value.toLocaleString(undefined, value >= 10_000
+    ? { notation: "compact", maximumFractionDigits: 1 }
+    : { maximumFractionDigits: value >= 100 ? 0 : 2 })}%`;
+}
+
+function formatCompactNumber(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("en", { notation: "compact", maximumFractionDigits: 1 });
 }
 
 type ValuationRange = "24h" | "7d" | "30d" | "all";
@@ -2032,13 +2192,23 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const testnet = chainId === robinhoodChainTestnet.id;
   const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
-  const { state: factoryDirectoryState, vaults } = useFactoryVaults({ enabled: !detail });
+  const { state: factoryDirectoryState, vaults } = useFactoryVaults();
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
   const [directorySearch, setDirectorySearch] = useState("");
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
+  const directoryAum = useDirectoryAum(vaults, factoryDirectoryState === "ready");
+  const eligibleAumUsd = directoryAum.state === "ready" ? directoryAum.value : undefined;
+  const rewardsApy = useRewardsApy(eligibleAumUsd);
+  const rewardsApyText = rewardsApy.state === "loading" ? "…" : formatApy(rewardsApy.percent);
+  const rewardsApyLabel = rewardsApy.state === "ready"
+    ? `Estimated rewards APY ${rewardsApyText}, emission week ${rewardsApy.week}${rewardsApy.usesZeroAumBaseline ? ", modeled with a $100 eligible AUM baseline" : ""}`
+    : rewardsApy.state === "loading" ? "Estimated rewards APY loading" : "Estimated rewards APY unavailable";
+  const weeklyEmissionText = rewardsApy.state === "ready"
+    ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} OTF this week`
+    : rewardsApy.state === "loading" ? "OTF distribution loading" : "OTF distribution unavailable";
   useEffect(() => {
     if (!detail || !routeAddress) {
       setCreationMetadata(null);
@@ -2105,7 +2275,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailMetrics" aria-label="Fund metrics">
                 <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
                 <div><span>AUM</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-                <div><span>Rewards APY</span><strong aria-label="Rewards APY unavailable">—</strong></div>
+                <div><span>Est. rewards APY</span><strong aria-label={rewardsApyLabel} title={rewardsApyLabel}>{rewardsApyText}</strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>
             </div>
@@ -2141,7 +2311,17 @@ function FundsSurface({ detail }: { detail: boolean }) {
     <DashboardPage className="fundsPage">
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <div className="fundsAum"><div className="fundsHeadlineMetrics"><strong aria-label="Total AUM">$0.00</strong><span className="fundsMetricSeparator" aria-hidden="true">·</span><strong className="fundsApy" aria-label="Rewards APY unavailable">— APY</strong></div><span className="fundsAumContext">in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span></div>
+          <div className="fundsHeadlineMetrics">
+            <div className="fundsHeadlineMetric fundsAum">
+              <strong aria-label="Total AUM">{directoryAum.state === "loading" ? "…" : formatUsd(directoryAum.value)}</strong>
+              <span>in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
+            </div>
+            <span className="fundsMetricSeparator" aria-hidden="true" />
+            <div className="fundsHeadlineMetric fundsApy">
+              <strong aria-label={rewardsApyLabel} title={rewardsApyLabel}>{rewardsApyText} APY</strong>
+              <span>{weeklyEmissionText}{rewardsApy.usesZeroAumBaseline ? " · APY modeled at $100 AUM" : ""}</span>
+            </div>
+          </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (

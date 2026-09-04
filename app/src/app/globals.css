@@ -1300,11 +1300,12 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 .fundsSummary { display: flex; min-height: 96px; align-items: center; justify-content: space-between; gap: 24px; border-radius: 20px; background: color-mix(in srgb, var(--card) 72%, var(--background)); padding: 18px 20px; }
-.fundsHeadlineMetrics { display: flex; align-items: center; gap: 12px; }
-.fundsHeadlineMetrics strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
-.fundsHeadlineMetrics .fundsApy { color: var(--text-soft); font-size: clamp(1.15rem, 2.5vw, 1.5rem); letter-spacing: -0.02em; }
-.fundsMetricSeparator { color: var(--border-strong); font-size: 1.2rem; line-height: 1; }
-.fundsAumContext { display: block; margin-top: 8px; color: var(--text-muted); font-size: 0.7rem; }
+.fundsHeadlineMetrics { display: flex; align-items: stretch; gap: 20px; }
+.fundsHeadlineMetric { display: flex; min-width: 0; flex-direction: column; justify-content: center; gap: 8px; }
+.fundsHeadlineMetric strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
+.fundsHeadlineMetric > span { color: var(--text-muted); font-size: 0.7rem; }
+.fundsHeadlineMetric.fundsApy strong { color: var(--text-soft); font-size: clamp(1.15rem, 2.5vw, 1.5rem); letter-spacing: -0.02em; }
+.fundsMetricSeparator { width: 1px; flex: 0 0 1px; align-self: stretch; background: var(--border-strong); }
 .fundsSummary .primaryAction,
 .fundsSummary .secondaryAction { border-radius: 8px; }
 .fundsView .sectionCard { border-radius: 20px; }
