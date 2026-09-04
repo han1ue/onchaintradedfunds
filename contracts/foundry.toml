@@ -13,7 +13,7 @@ remappings = [
     "forge-std/=../node_modules/@uniswap/v4-periphery/lib/v4-core/lib/forge-std/src/",
 ]
 solc_version = "0.8.26"
-evm_version = "shanghai"
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 1
 via_ir = true

@@ -80,7 +80,7 @@ jobs:
         run: |
           forge --version
           forge --version | grep -F "forge Version: 1.7.1"
-          node -e 'const version = require("solc").version(); if (!version.startsWith("0.8.36+")) { throw new Error(`unexpected solc ${version}`); }'
+          node -e 'const version = require("solc").version(); if (!version.startsWith("0.8.26+")) { throw new Error(`unexpected solc ${version}`); }'
 
       - name: Check Solidity formatting
         working-directory: contracts
