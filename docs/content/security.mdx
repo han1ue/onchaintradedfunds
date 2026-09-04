@@ -23,7 +23,7 @@ These controls constrain contract calls. They do not make external assets, venue
 
 ### Reward-root publisher
 
-The publisher chooses cumulative reward entitlements and is responsible for applying the documented 208-week emission schedule. A valid root can allocate the distributor's full remaining balance at any time because the contract does not enforce weekly limits or the four-year endpoint. The contract prevents forged proofs and duplicate claims, but it cannot detect an unfair allocation, an early allocation, or a compromised publisher.
+The publisher chooses cumulative reward entitlements and must apply the documented 208-week schedule, the 650-million depositor bucket, the 50-million creator bucket, and the 10-million-OTF cap on each pro-rata weight. A valid root can allocate the distributor's full remaining balance at any time because the contract enforces none of those rules. The contract prevents forged proofs and duplicate claims, but it cannot detect an incorrect allocation, an early allocation, or a compromised publisher.
 
 ### Expense beneficiary
 

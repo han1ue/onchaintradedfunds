@@ -9,7 +9,7 @@ import {
   coinGeckoEthUsd,
   incentiveWeekAt,
   OTF_INCENTIVE_WEEKS,
-  weeklyEmissionOtf,
+  weeklyEmissionBucketsOtf,
 } from "@/lib/incentive-apy";
 
 export const dynamic = "force-dynamic";
@@ -31,12 +31,36 @@ async function currentEthUsd() {
 }
 
 export async function GET(request: Request) {
-  const chainId = Number(new URL(request.url).searchParams.get("chainId"));
+  const searchParams = new URL(request.url).searchParams;
+  const chainId = Number(searchParams.get("chainId"));
+  const includePrice = searchParams.get("includePrice") !== "false";
   if (!Number.isSafeInteger(chainId) || chainId <= 0) {
     return Response.json({ error: "INVALID_CHAIN_ID" }, { status: 400 });
   }
   const launchManager = robinhoodTestnetAddresses.launchManager;
-  if (chainId !== robinhoodChainTestnet.id || !launchManager || robinhoodTestnetRewardsDeployedAtMs === undefined) {
+  if (chainId !== robinhoodChainTestnet.id || robinhoodTestnetRewardsDeployedAtMs === undefined) {
+    return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });
+  }
+
+  const calculatedWeek = incentiveWeekAt(robinhoodTestnetRewardsDeployedAtMs, Date.now());
+  if (calculatedWeek === undefined) {
+    return Response.json({ error: "INCENTIVE_SCHEDULE_NOT_STARTED" }, { status: 503 });
+  }
+  const ended = calculatedWeek > OTF_INCENTIVE_WEEKS;
+  const buckets = ended
+    ? { total: 0, depositors: 0, creators: 0 }
+    : weeklyEmissionBucketsOtf(calculatedWeek);
+  const schedule = {
+    week: ended ? OTF_INCENTIVE_WEEKS : calculatedWeek,
+    weeklyEmissionOtf: buckets.total,
+    weeklyDepositorEmissionOtf: buckets.depositors,
+    weeklyCreatorEmissionOtf: buckets.creators,
+    ended,
+  };
+  if (!includePrice) {
+    return Response.json(schedule, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
+  }
+  if (!launchManager) {
     return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });
   }
 
@@ -55,16 +79,11 @@ export async function GET(request: Request) {
     ]);
     const otfPriceWeth = Number(formatUnits(otfPriceWethWad, 18));
     if (!Number.isFinite(otfPriceWeth) || otfPriceWeth <= 0) throw new Error("OTF_PRICE_INVALID");
-    const calculatedWeek = incentiveWeekAt(robinhoodTestnetRewardsDeployedAtMs, Date.now());
-    if (calculatedWeek === undefined) throw new Error("INCENTIVE_SCHEDULE_NOT_STARTED");
-    const ended = calculatedWeek > OTF_INCENTIVE_WEEKS;
     return Response.json({
-      week: ended ? OTF_INCENTIVE_WEEKS : calculatedWeek,
-      weeklyEmissionOtf: ended ? 0 : weeklyEmissionOtf(calculatedWeek),
+      ...schedule,
       otfPriceUsd: otfPriceWeth * ethUsd.priceUsd,
       ethUsd: ethUsd.priceUsd,
       priceUpdatedAt: ethUsd.updatedAt,
-      ended,
     }, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
   } catch {
     return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });

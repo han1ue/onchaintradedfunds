@@ -32,6 +32,33 @@ export type FeeSettlementRoutes = {
   redemption?: RedemptionFeeSettlementRoute;
   shareSale?: ShareSaleFeeSettlementRoute;
 };
+export type FeeClaimReadState = "pending" | "failed" | "wrong-beneficiary" | "verified";
+
+export function feeClaimReadState({
+  isPending,
+  isError,
+  feeAccountsStatus,
+  previewExpenseFeesStatus,
+  connectedAccount,
+  beneficiary,
+}: {
+  isPending: boolean;
+  isError: boolean;
+  feeAccountsStatus?: "success" | "failure";
+  previewExpenseFeesStatus?: "success" | "failure";
+  connectedAccount?: string;
+  beneficiary: string;
+}): FeeClaimReadState {
+  if (isPending) return "pending";
+  if (
+    isError
+    || feeAccountsStatus !== "success"
+    || previewExpenseFeesStatus !== "success"
+  ) return "failed";
+  return connectedAccount?.toLowerCase() === beneficiary.toLowerCase()
+    ? "verified"
+    : "wrong-beneficiary";
+}
 
 export function pendingFeeShares(
   recordedCreator: bigint,

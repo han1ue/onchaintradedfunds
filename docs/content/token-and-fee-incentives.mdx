@@ -17,7 +17,7 @@ The contracts implement the token allocation and claim mechanics described here.
 | --- | ---: | --- |
 | Team market-cap vesting | 100,000,000 | Ten live-FDV milestones |
 | V4 launch manager | 200,000,000 | Bootstrap and permanent liquidity |
-| Cumulative rewards distributor | 700,000,000 | Protocol and community incentives published by multisig |
+| Cumulative rewards distributor | 700,000,000 | 650 million for depositors and 50 million for fund creators, published by multisig |
 
 ## Canonical V4 launch
 
@@ -108,13 +108,13 @@ The first route may use intermediate tokens, but it must consume the exact pendi
 
 Actual WETH is split in proportion to the creator and buyback share counts recorded at accrual. The creator payment rounds down and goes to the beneficiary. Only the remaining WETH may be spent on OTF.
 
-The complete operation is atomic. Registration, share sale or redemption, constituent conversion, beneficiary payment, OTF purchase, and burn either all succeed or all revert. A share sale leaves those vault shares outstanding with market counterparties; redemption burns the shares and removes their proportional backing.
+The complete operation is atomic. Fee checkpointing, share sale or redemption, constituent conversion, beneficiary payment, OTF purchase, and burn either all succeed or all revert. A share sale leaves those vault shares outstanding with market counterparties; redemption burns the shares and removes their proportional backing.
 
 The final swap can use only the canonical OTF/WETH V4 pool key. It enforces its own deadline and minimum output, then burns every OTF purchased. The collector has no arbitrary-call, withdrawal, or rescue function. Buybacks may execute during bootstrap or after graduation.
 
 ## Cumulative rewards and incentive emissions
 
-`MerkleRewardsDistributor` receives 700 million OTF, 70% of the original one-billion-OTF supply. This fixed protocol and community incentive budget is distributed once a week for exactly four years, or 208 weeks. Emissions stop after week 208.
+`MerkleRewardsDistributor` receives 700 million OTF, 70% of the original one-billion-OTF supply. The incentive policy reserves 650 million OTF, or 65% of the original supply, for depositors and 50 million OTF, or 5%, for fund creators. The combined budget is distributed once a week for exactly four years, or 208 weeks. Emissions stop after week 208.
 
 The weekly target starts at 14 million OTF and declines by approximately 1.968% every week:
 
@@ -122,7 +122,16 @@ The weekly target starts at 14 million OTF and declines by approximately 1.968% 
 weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
 ```
 
-`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The application uses the rounded formula for weeks 1 through 207 and assigns the remaining allocation to week 208, approximately 229,144.55 OTF, so its schedule model totals exactly 700,000,000 OTF. The reward publisher must apply the same reconciliation or an equivalently precise schedule.
+Each weekly target is divided in the same 65-to-5 proportion as the full rewards budget:
+
+```text
+depositorEmission(n) = weeklyEmission(n) × 13 / 14
+creatorEmission(n) = weeklyEmission(n) - depositorEmission(n)
+```
+
+Week 1 therefore assigns 13 million OTF to depositors and 1 million OTF to creators. Across all 208 weeks, the two buckets must reconcile to exactly 650 million and 50 million OTF.
+
+`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The application uses the rounded formula for weeks 1 through 207 and assigns the remaining allocation to week 208, approximately 229,144.55 OTF, so its schedule model totals exactly 700,000,000 OTF. The reward publisher must apply the same reconciliation or an equivalently precise schedule, then reconcile both weekly buckets to their fixed totals.
 
 | Checkpoint | Approximate weekly emission |
 | --- | ---: |
@@ -141,11 +150,20 @@ weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
 | 3 years, week 156 | 643,000 OTF |
 | Week 208 | 229,000 OTF |
 
-The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week, without cliffs, monthly buckets, quarterly steps, or periodic halvings. Its four-year endpoint caps this incentive allocation and prevents it from becoming a perpetual source of inflation.
+The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week. It has no monthly buckets, quarterly steps, or periodic halvings. The four-year endpoint caps the incentive allocation.
 
-Incentive APY is variable and is neither fixed nor guaranteed. The application derives the emission week from the rewards distributor's deployment-block timestamp, values OTF using the canonical Uniswap OTF/WETH pool and CoinGecko's ETH/USD price, and treats 100% of the weekly emission as available to eligible fund deposits. It annualizes the current weekly reward value over 52 weeks and divides it by total eligible fund AUM, so the Funds and fund-detail pages show the same pro-rata rate. When total eligible AUM is exactly zero, the estimate uses a $100 denominator and labels that baseline; the displayed AUM remains zero. Because each weekly token amount is fixed by the schedule, the rate attributable to each eligible deposit naturally falls as eligible AUM increases.
+Both buckets use capped pro-rata weights:
 
-The emission schedule is a distribution policy, not logic enforced by `MerkleRewardsDistributor`. Its owner publishes an immediately active cumulative Merkle root. The contract defines no reward formula, schedule, delay, or period cap, so the publisher can allocate the distributor's remaining balance faster than the documented schedule. The owner cannot withdraw reward principal.
+```text
+cappedWeight(i) = min(eligible OTF balance(i), 10,000,000 OTF)
+allocation(i) = bucketEmission × cappedWeight(i) / sum(cappedWeight)
+```
+
+The depositor calculation uses eligible deposit balances. The creator calculation uses each fund creator's eligible OTF balance. A balance above 10 million OTF receives no additional weight for that weekly allocation. The publisher determines eligible accounts and balances from the weekly snapshot, applies integer rounding, and keeps the combined allocations within that week's target.
+
+The Funds page shows only the combined weekly distribution. Each fund page shows a fund-specific depositor APY estimate based on the 65% depositor bucket, OTF's current USD value, and that fund's current informational AUM. The estimate annualizes the current weekly value over 52 weeks. A fund with exactly zero AUM uses a labeled $100 calculation baseline without changing the displayed AUM. The estimate is variable, is not guaranteed, and does not determine a user's Merkle entitlement.
+
+The schedule, 65% and 5% split, eligibility rules, and 10 million OTF weight cap are publisher policy. `MerkleRewardsDistributor` does not enforce them. Its owner publishes an immediately active cumulative Merkle root, and the contract defines no reward formula, schedule, delay, or period cap. A valid root can allocate the remaining balance faster than the documented schedule. The owner cannot withdraw reward principal.
 
 Each standard-tree leaf commits to chain ID, distributor address, user address, and cumulative entitlement. Anyone may submit a proof, but payment always goes to the committed user. The distributor records prior claims and transfers only the difference between the proven cumulative amount and the amount already claimed. Invalid proofs, duplicate claims, and decreasing entitlements revert.
 
@@ -159,7 +177,7 @@ corepack pnpm rewards:tree -- \
   --distributor <address>
 ```
 
-The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate weekly emissions, determine eligibility, or reconcile the 700 million OTF schedule.
+The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate weekly emissions, split depositor and creator rewards, apply the weight cap, determine eligibility, or reconcile the 700 million OTF schedule.
 
 ## Trusted inputs
 

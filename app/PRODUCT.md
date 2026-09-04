@@ -39,7 +39,9 @@ After verifying the factory event, the application opens a dedicated confirmatio
 
 The Funds directory reads `vaultCount`, each vault address, identity, creator, constituent count, supply, and fee data from the configured factory and vault contracts. A confirmed factory creation therefore appears without a separate indexing service.
 
-The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices. The Funds summary and fund detail header place estimated rewards APY after AUM. The estimate derives the current emission week from the rewards distributor's deployment-block timestamp, values OTF from the canonical OTF/WETH pool and CoinGecko ETH/USD, assigns 100% of weekly emissions to eligible fund deposits, and annualizes the weekly rate over 52 weeks. Both pages divide by total eligible fund AUM and therefore show the same pro-rata rate. An exact zero aggregate uses a labeled $100 calculation baseline without changing the displayed AUM.
+The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices.
+
+The Funds summary shows the combined weekly OTF distribution. Each fund detail header estimates that fund's depositor rewards APY from the 65% depositor bucket, the current OTF price, and the fund's current AUM. A fund with exactly zero AUM uses a labeled $100 calculation baseline without changing the displayed AUM. The estimate is informational and does not determine Merkle entitlements.
 
 For an empty vault, the first mint must produce at least `0.01` shares. The application accepts a quote only when its guaranteed minimum output meets that threshold. There is no first-mint maximum, and the extra check disappears after supply becomes nonzero.
 

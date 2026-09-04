@@ -115,13 +115,14 @@ adapter.
 
 ## Buyback collector
 
-The collector MUST accept fee accounting only from vaults recognized by the factory and MUST read
-each vault's immutable expense beneficiary when fees are settled.
-Unregistered or fake vaults MUST be rejected. Only that beneficiary MAY settle its vault. Settlement
-MUST checkpoint annual fees, consume the complete recorded creator and buyback share balances,
-and use exactly one beneficiary-selected route: sell the combined registered-vault shares through
-approved adapters to canonical WETH, or redeem the combined shares and liquidate every basket
-constituent to canonical WETH.
+The collector MUST accept fee accounting and settlement only from canonical vaults recognized by
+`OTFFactory.isVault` and MUST read each vault's immutable expense beneficiary when fees are settled.
+The collector MUST NOT maintain a second vault registry. Unrecognized or noncanonical vaults MUST be
+rejected. Only the immutable beneficiary MAY settle its vault. Settlement MUST checkpoint annual
+fees, consume the complete recorded creator and buyback share balances, and use exactly one
+beneficiary-selected route: sell the combined canonical vault shares through approved adapters to
+canonical WETH, or redeem the combined shares and liquidate every basket constituent to canonical
+WETH.
 
 A share-sale route MUST consume the exact pending share balance, MAY use approved intermediate
 tokens, and MUST leave only WETH as transient output. Only the configured collector MAY call the
@@ -140,14 +141,25 @@ withdrawals, rescue functions, or configurable final routes.
 
 ## Cumulative rewards
 
-The 700-million-OTF incentive allocation MUST be distributed in 208 weekly periods. Week 1 MUST
-allocate 14 million OTF, and each later weekly target MUST decline smoothly by approximately 1.968%
-according to `14,000,000 × 0.9803203^(n - 1)`, where `n` starts at 1. The schedule MUST NOT use
+The 700-million-OTF incentive allocation MUST reserve 650 million OTF for depositors and 50 million
+OTF for fund creators. It MUST be distributed in 208 weekly periods. Week 1 MUST allocate 14 million
+OTF in total, of which 13 million is the depositor bucket and 1 million is the creator bucket. Each
+later weekly target MUST decline smoothly by approximately 1.968% according to
+`14,000,000 × 0.9803203^(n - 1)`, where `n` starts at 1. Every weekly target MUST be divided in the
+same 13-to-1 ratio, with rounding reconciled against that week's total. The schedule MUST NOT use
 monthly buckets, quarterly steps, or periodic halvings. No emission MAY be allocated after week 208.
 
 The displayed decay factor is approximate. The publishing process MUST use sufficient precision or
 reconcile the final weekly distribution so the 208 periods total exactly 700 million OTF. It MUST
-NOT treat the rounded formula's approximately 699,999,574.95-OTF sum as the final aggregate.
+NOT treat the rounded formula's approximately 699,999,574.95-OTF sum as the final aggregate. The
+complete schedule MUST also reconcile to exactly 650 million depositor OTF and 50 million creator
+OTF.
+
+Both buckets MUST calculate each participant's pro-rata weight as
+`min(eligible OTF balance, 10,000,000 OTF)`. Depositor weights MUST use eligible deposit balances.
+Creator weights MUST use the eligible OTF balance of each fund creator. Balances above the cap MUST
+NOT increase a participant's weight. The publisher MUST calculate eligibility, snapshot balances,
+rounding, and cumulative entitlements offchain before publishing the root.
 
 Only the configured publisher MAY set a root. A new root MUST be active immediately. Leaves MUST
 commit to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree
@@ -157,9 +169,11 @@ Anyone MAY submit a proof, but tokens MUST go to the committed user. A claim MUS
 cumulative entitlement less stored prior claims. Invalid proofs, double claims, and decreasing
 cumulative values MUST revert. The publisher MUST have no rewards-principal withdrawal path.
 
-The distributor does not enforce the weekly schedule, period caps, eligibility, or APY. Operational
-root publication MUST enforce the schedule, while documentation and application displays MUST treat
-incentive APY as variable rather than fixed or guaranteed.
+The distributor does not enforce the weekly schedule, bucket split, balance cap, eligibility, or
+APY. Operational root publication MUST enforce this policy. The Funds page MUST show the combined
+weekly distribution instead of one directory-wide APY. A fund page MAY show a fund-specific
+depositor APY estimate, but it MUST identify the estimate as variable and MUST NOT present it as a
+Merkle entitlement or guarantee.
 
 ## Deployment and verification
 

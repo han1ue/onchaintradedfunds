@@ -11,8 +11,8 @@ import { wagmiConfig } from "@/lib/wagmi";
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
   const walletTheme = darkTheme({
-    accentColor: "#37b7aa",
-    accentColorForeground: "#071716",
+    accentColor: "#ccff00",
+    accentColorForeground: "#090909",
     borderRadius: "small",
     fontStack: "system",
     overlayBlur: "small",

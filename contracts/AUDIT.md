@@ -13,7 +13,7 @@ Reviewers should pay particular attention to:
 
 - canonical-WETH handling, native refunds, checked ETH sends, and callback reentrancy in the entry router;
 - accounted-balance settlement, shutdown redemption, and fee-share rounding in vaults;
-- factory-only fee-account registration and beneficiary-controlled atomic settlement in the collector;
+- factory recognition of canonical vaults and beneficiary-controlled atomic settlement in the collector;
 - bootstrap-corridor enforcement, partial-fill settlement and refunds, atomic graduation, and permanently locked liquidity;
 - spot-FDV vesting, oracle freshness, and beneficiary succession;
 - adapter path validation, transient-balance isolation, and allowance cleanup.

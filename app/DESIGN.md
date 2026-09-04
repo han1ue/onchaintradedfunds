@@ -1,22 +1,22 @@
 ---
 name: Onchain Traded Funds
-description: A restrained dark finance interface for transparent onchain fund operations.
+description: A dark Robinhood-native finance interface for transparent onchain fund operations.
 colors:
-  background: "#0e1218"
-  nav: "#0f141b"
-  card: "#131820"
-  card-raised: "#181e27"
-  border: "#282f3a"
-  text: "#edf2f7"
-  text-muted: "#8794a7"
-  teal: "#37b7aa"
+  background: "#050505"
+  nav: "#111405"
+  card: "#101010"
+  card-raised: "#151515"
+  border: "#2c2c2c"
+  text: "#f7f7f5"
+  text-muted: "#999991"
+  lime: "#ccff00"
   gold: "#f1b93d"
   danger: "#eb6570"
-  splash-ground: "#071014"
+  splash-ground: "#050505"
   splash-lockup: "#f2f7f8"
-  splash-flow: "#48d5c6"
-  splash-entry: "#e7f5f2"
-  splash-entry-ink: "#071411"
+  splash-flow: "#ccff00"
+  splash-entry: "#ccff00"
+  splash-entry-ink: "#090909"
 typography:
   display:
     fontFamily: "Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif"
@@ -48,8 +48,8 @@ spacing:
   section: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.teal}"
-    textColor: "#071716"
+    backgroundColor: "{colors.lime}"
+    textColor: "#090909"
     rounded: "{rounded.control}"
     height: "46px"
   surface-card:
@@ -66,21 +66,21 @@ components:
 
 ## Design principles
 
-The application presents financial state with compact controls, clear hierarchy, and restrained color. Swap stays focused on one exchange task; creation, fund detail, and liquidity pages can use denser layouts where the workflow requires them.
+The application presents financial state with compact controls, clear hierarchy, and a single dark Robinhood palette. Swap stays focused on one exchange task; creation, fund detail, and liquidity pages can use denser layouts where the workflow requires them.
 
-Teal identifies an available action, active selection, keyboard focus, or confirmed state. Gold marks caution or unavailable behavior, and rose marks validation or transaction failure. Adjacent surface tones and thin borders provide most visual separation, limiting the need for shadows or nested cards.
+Robinhood lime identifies an available action, active selection, keyboard focus, or confirmed state. Gold marks caution or unavailable behavior, and rose marks validation or transaction failure. Adjacent black surface tones and thin borders provide most visual separation.
 
 The splash screen is a separate entry surface. Its large Instrument Sans title, convergence field, and pale entry control end when the user enters the application. Interior routes use the compact Inter-based system.
 
 ## Color
 
 - `background` is the page field; `nav`, `card`, and `card-raised` define increasing surface emphasis.
-- `teal` is reserved for interaction and confirmed readiness, not decoration.
+- `lime` is reserved for interaction and confirmed readiness, apart from the branded ambient field and logo.
 - `gold` is reserved for experimental, unavailable, or cautionary states.
 - `danger` is reserved for errors and failed transactions.
 - Splash colors apply only to the entry screen.
 
-Both themes must preserve these semantic roles. A theme may change values but cannot make a warning color look interactive or use action color as ambient decoration.
+The app has no theme selector or alternate palette. Robinhood dark is the sole visual system.
 
 ## Typography
 
@@ -92,17 +92,17 @@ The splash title uses self-hosted Instrument Sans with the specified width, weig
 
 Swap centers one compact surface in a broad field. Payment, reversal, receipt, current status, and the primary action form one vertical sequence. Alternate routes, fees, price impact, and hops remain behind a disclosure until requested.
 
-Other routes use wider ruled sections. The shared header is inset below the Testnet warning and stays on one row down to 320 px, reducing or hiding the brand label before controls overflow.
+Other routes use wider ruled sections. The shared header uses an olive-black Robinhood surface with a lime keyline. It stays on one row down to 320 px, reducing or hiding the brand label before controls overflow.
 
 The splash fills the dynamic viewport below the warning. Desktop places the title on the left, convergence field on the right, and entry action at the lower right. At 760 px and below, the field moves behind the content and the copy and entry action align to a 20 px left edge. Short viewports reduce title size rather than add promotional sections or forced scrolling.
 
 ## Surfaces and controls
 
-The primary Swap card uses a 16 px radius and the application's only diffuse resting shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Regular token marks are circular, while OTF marks use the shared softened-square form.
+The primary Swap card uses a 16 px radius and the application's only diffuse resting shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Regular token marks are circular. Every OTF mark is a literal black square with a heavy lime border.
 
-Primary buttons use teal only when the action can proceed. Disabled controls must name the blocking condition. Secondary controls use transparent or card-toned surfaces with a border. Focus remains visible without relying on animation.
+Primary buttons use lime only when the action can proceed. Disabled controls must name the blocking condition. Secondary controls use transparent or card-toned surfaces with a border. Focus remains visible without relying on animation.
 
-Inputs use the raised-slate surface and ledger border. Focus changes the border to teal. Disabled or failed states pair color with explicit text.
+Inputs use the raised-black surface and ledger border. Focus changes the border to lime. Disabled or failed states pair color with explicit text.
 
 Navigation contains Swap, Funds, and `$OTF`, followed by the Robinhood network selector, wallet control, and settings. The closed network selector remains icon-only.
 

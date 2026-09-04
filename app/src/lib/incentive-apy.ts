@@ -1,7 +1,10 @@
 export const OTF_INCENTIVE_WEEKS = 208;
 export const OTF_INCENTIVE_TOTAL = 700_000_000;
+export const OTF_DEPOSITOR_INCENTIVE_TOTAL = 650_000_000;
+export const OTF_CREATOR_INCENTIVE_TOTAL = 50_000_000;
 export const OTF_WEEK_ONE_EMISSION = 14_000_000;
 export const OTF_WEEKLY_DECAY_FACTOR = 0.9803203;
+export const OTF_REWARD_WEIGHT_CAP = 10_000_000;
 export const ZERO_AUM_BASELINE_USD = 100;
 
 const WEEK_MS = 7 * 24 * 60 * 60_000;
@@ -22,20 +25,35 @@ export function weeklyEmissionOtf(week: number): number {
   return OTF_INCENTIVE_TOTAL - first207Weeks;
 }
 
+export function weeklyEmissionBucketsOtf(week: number) {
+  const total = weeklyEmissionOtf(week);
+  const depositors = total * OTF_DEPOSITOR_INCENTIVE_TOTAL / OTF_INCENTIVE_TOTAL;
+  return {
+    total,
+    depositors,
+    creators: total - depositors,
+  };
+}
+
+export function cappedRewardWeightOtf(eligibleBalanceOtf: number): number | undefined {
+  if (!Number.isFinite(eligibleBalanceOtf) || eligibleBalanceOtf < 0) return undefined;
+  return Math.min(eligibleBalanceOtf, OTF_REWARD_WEIGHT_CAP);
+}
+
 export function estimatedRewardsApy(input: {
-  weeklyEmissionOtf: number;
+  weeklyDepositorEmissionOtf: number;
   otfPriceUsd: number;
-  eligibleAumUsd: number;
+  fundAumUsd: number;
 }) {
   if (
-    !Number.isFinite(input.weeklyEmissionOtf) || input.weeklyEmissionOtf < 0
+    !Number.isFinite(input.weeklyDepositorEmissionOtf) || input.weeklyDepositorEmissionOtf < 0
     || !Number.isFinite(input.otfPriceUsd) || input.otfPriceUsd <= 0
-    || !Number.isFinite(input.eligibleAumUsd) || input.eligibleAumUsd < 0
+    || !Number.isFinite(input.fundAumUsd) || input.fundAumUsd < 0
   ) return undefined;
-  const usesZeroAumBaseline = input.eligibleAumUsd === 0;
-  const denominatorUsd = usesZeroAumBaseline ? ZERO_AUM_BASELINE_USD : input.eligibleAumUsd;
+  const usesZeroAumBaseline = input.fundAumUsd === 0;
+  const denominatorUsd = usesZeroAumBaseline ? ZERO_AUM_BASELINE_USD : input.fundAumUsd;
   return {
-    percent: input.weeklyEmissionOtf * input.otfPriceUsd * 52 / denominatorUsd * 100,
+    percent: input.weeklyDepositorEmissionOtf * input.otfPriceUsd * 52 / denominatorUsd * 100,
     denominatorUsd,
     usesZeroAumBaseline,
   };

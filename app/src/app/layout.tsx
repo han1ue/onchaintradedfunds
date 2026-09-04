@@ -41,7 +41,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           dangerouslySetInnerHTML={{
             __html: `<!--
 THESIS: A stark entry plate where many market lines converge into one OTF; it refuses the former long marketing page and any card-based hero.
-OWN-WORLD: A blue-black field, near-white lowercase Instrument Sans lockup, scarce teal flow geometry, and one pale rectangular entry control.
+OWN-WORLD: A black Robinhood field, near-white lowercase Instrument Sans lockup, scarce lime flow geometry, and one lime entry control.
 STORY: Read the product name, absorb “the standard for the new era,” then enter the existing app; no added claims or proof blocks.
 FIRST VIEWPORT: Full viewport below the warning; title and tagline on the left, convergence field on the right, CTA lower-right on desktop and lower-left on mobile.
 FORM: User-pinned minimal splash; code-led established-world extension; form 1 of 1; seed user-pinned-no-roll.

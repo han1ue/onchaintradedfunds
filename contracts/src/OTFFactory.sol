@@ -10,6 +10,10 @@ interface ICanonicalEntryExitRouter {
     function factory() external view returns (address);
 }
 
+interface ICanonicalBuybackCollector {
+    function factory() external view returns (address);
+}
+
 /// @notice Permissionless OTF creation from creator-supplied immutable bootstrap basket units.
 contract OTFFactory {
     uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
@@ -72,6 +76,25 @@ contract OTFFactory {
         if (observedFactory != address(this)) {
             revert RouterFactoryMismatch(address(this), observedFactory);
         }
+        (bool success, bytes memory result) =
+            buybackCollector.staticcall(abi.encodeCall(ICanonicalBuybackCollector.factory, ()));
+        if (!success || result.length != 32) {
+            revert InvalidDependency(buybackCollector);
+        }
+        uint256 observedCollectorFactoryWord;
+        assembly ("memory-safe") {
+            observedCollectorFactoryWord := mload(add(result, 0x20))
+        }
+        if (observedCollectorFactoryWord > type(uint160).max) {
+            revert InvalidDependency(buybackCollector);
+        }
+        address observedCollectorFactory;
+        assembly ("memory-safe") {
+            observedCollectorFactory := observedCollectorFactoryWord
+        }
+        if (observedCollectorFactory != address(this)) {
+            revert InvalidDependency(buybackCollector);
+        }
         entryExitRouter = router;
         emit EntryExitRouterConfigured(router);
     }
@@ -89,8 +112,7 @@ contract OTFFactory {
         nonReentrantCreation
         returns (address vault)
     {
-        address router = entryExitRouter;
-        if (router == address(0)) revert RouterNotConfigured();
+        if (entryExitRouter == address(0)) revert RouterNotConfigured();
         vault = Clones.clone(vaultImplementation);
         ManagedOTFVault(vault).initialize(params, msg.sender);
 

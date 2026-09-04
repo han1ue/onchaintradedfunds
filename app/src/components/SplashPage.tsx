@@ -27,16 +27,16 @@ export function SplashPage() {
         <svg viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
           <defs>
             <linearGradient id="splash-flow" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#173c42" stopOpacity="0" />
-              <stop offset="0.44" stopColor="#48d5c6" />
-              <stop offset="0.68" stopColor="#d8fff8" />
-              <stop offset="1" stopColor="#37b7aa" stopOpacity="0" />
+              <stop offset="0" stopColor="#526600" stopOpacity="0" />
+              <stop offset="0.44" stopColor="#ccff00" />
+              <stop offset="0.68" stopColor="#efffb0" />
+              <stop offset="1" stopColor="#ccff00" stopOpacity="0" />
             </linearGradient>
             <radialGradient id="splash-core" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="#e5fff9" stopOpacity="0.92" />
-              <stop offset="0.16" stopColor="#6ce2d4" stopOpacity="0.64" />
-              <stop offset="0.5" stopColor="#1a7e78" stopOpacity="0.2" />
-              <stop offset="1" stopColor="#071014" stopOpacity="0" />
+              <stop offset="0" stopColor="#f7ffd8" stopOpacity="0.92" />
+              <stop offset="0.16" stopColor="#d8ff3d" stopOpacity="0.64" />
+              <stop offset="0.5" stopColor="#718c00" stopOpacity="0.2" />
+              <stop offset="1" stopColor="#050505" stopOpacity="0" />
             </radialGradient>
             <filter id="splash-soft-glow" x="-80%" y="-80%" width="260%" height="260%">
               <feGaussianBlur stdDeviation="34" />
@@ -81,8 +81,8 @@ export function SplashPage() {
             ))}
           </g>
 
-          <circle className="splashCoreRing" cx="590" cy="440" r="72" fill="none" stroke="#cffff6" strokeOpacity="0.72" strokeWidth="1.2" />
-          <circle cx="590" cy="440" r="5" fill="#e8fffb" />
+          <circle className="splashCoreRing" cx="590" cy="440" r="72" fill="none" stroke="#efffb0" strokeOpacity="0.72" strokeWidth="1.2" />
+          <circle cx="590" cy="440" r="5" fill="#f7ffd8" />
         </svg>
       </div>
 

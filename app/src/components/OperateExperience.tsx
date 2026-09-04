@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
-import circularOtfIcon from "@onchaintradedfunds/brand/assets/otf-circular-icon.svg";
 import {
   ArrowDown,
   ArrowLeft,
@@ -84,6 +83,7 @@ import {
   type SwapReceipt,
 } from "@/lib/swap-receipt";
 import {
+  feeClaimReadState,
   feeSettlementCall,
   pendingFeeShares,
   proportionalWethSplit,
@@ -262,7 +262,7 @@ function AssetLogo({ symbol }: { symbol: string }) {
 function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
   if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={isUnselectedOtf(asset) ? "OTF" : asset.symbol} />;
-  if (asset.isProtocolToken) mark = <Image className="swapAssetImage" src={circularOtfIcon} alt="" width={30} height={30} />;
+  if (asset.isProtocolToken) mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker="OTF" />;
   const tokenIcon = asset.kind === "native"
     ? "/assets/tokens/eth.png"
     : asset.symbol.toUpperCase() === "WETH"
@@ -498,7 +498,7 @@ const SWAP_CONFETTI_PIECES = Array.from({ length: 18 }, (_, index) => ({
   y: 92 + (index % 4) * 18,
   rotation: (index % 2 ? 1 : -1) * (110 + index * 19),
   delay: (index % 5) * 18,
-  color: index % 3 === 0 ? "var(--teal)" : index % 3 === 1 ? "var(--gold)" : "var(--text-muted)",
+  color: index % 3 === 0 ? "var(--lime)" : index % 3 === 1 ? "var(--gold)" : "var(--text-muted)",
 }));
 
 function SwapConfetti({ active }: { active: boolean }) {
@@ -1512,11 +1512,21 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
     ],
     query: { enabled: configured, refetchInterval: 12_000 },
   });
-  const recorded = feeReads.data?.[0]?.result;
-  const annual = feeReads.data?.[1]?.result;
-  const accountMatches = Boolean(
-    address?.toLowerCase() === beneficiary.toLowerCase(),
-  );
+  const feeAccountsRead = feeReads.data?.[0];
+  const previewExpenseFeesRead = feeReads.data?.[1];
+  const readState = feeClaimReadState({
+    isPending: feeReads.isPending,
+    isError: feeReads.isError,
+    feeAccountsStatus: feeAccountsRead?.status,
+    previewExpenseFeesStatus: previewExpenseFeesRead?.status,
+    connectedAccount: address,
+    beneficiary,
+  });
+  const recorded = feeAccountsRead?.status === "success" ? feeAccountsRead.result : undefined;
+  const annual = previewExpenseFeesRead?.status === "success"
+    ? previewExpenseFeesRead.result
+    : undefined;
+  const accountMatches = readState === "verified";
   const pending = useMemo(() => recorded && annual
     ? pendingFeeShares(recorded[0], recorded[1], annual[1], annual[2])
     : undefined, [annual, recorded]);
@@ -1752,19 +1762,21 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
             ? "Settlement failed. Refresh the quote and try again."
             : !configured
               ? "Fee settlement is unavailable until the current contracts are deployed."
-              : feeReads.isError || !accountMatches
-                ? "The vault fee account could not be verified."
-                : pending?.total === 0n
-                  ? ""
-                  : quoteState === "missing"
-                    ? "No complete share-sale or basket-redemption route to WETH is currently available."
-                    : quoteState === "ready" && !settlementRoute
-                      ? "The selected settlement route is unavailable. Choose another route."
-                      : quoteState === "ready" && !minOtfOut && !canonicalReads.isPending
-                        ? "The WETH-to-OTF buyback route cannot satisfy the selected minimum."
-                    : claimReady
-                      ? `${selectedRouteLabel}. ${routeQuoteSummary}`
-                      : "Loading pending fees and routes…";
+              : readState === "pending"
+                ? "Loading pending fees and routes…"
+                : readState !== "verified"
+                  ? "The vault fee account could not be verified."
+                  : pending?.total === 0n
+                    ? ""
+                    : quoteState === "missing"
+                      ? "No complete share-sale or basket-redemption route to WETH is currently available."
+                      : quoteState === "ready" && !settlementRoute
+                        ? "The selected settlement route is unavailable. Choose another route."
+                        : quoteState === "ready" && !minOtfOut && !canonicalReads.isPending
+                          ? "The WETH-to-OTF buyback route cannot satisfy the selected minimum."
+                          : claimReady
+                            ? `${selectedRouteLabel}. ${routeQuoteSummary}`
+                            : "Loading pending fees and routes…";
 
   return (
     <section className="fundFeeClaim" aria-label="Claim creator fees">
@@ -1806,6 +1818,8 @@ type RewardsApy = {
   state: "loading" | "ready" | "unavailable";
   percent?: number;
   weeklyEmissionOtf?: number;
+  weeklyDepositorEmissionOtf?: number;
+  weeklyCreatorEmissionOtf?: number;
   usesZeroAumBaseline: boolean;
   week?: number;
   ended: boolean;
@@ -1982,12 +1996,14 @@ function useDirectoryAum(vaults: FactoryVaultSummary[], enabled: boolean): Direc
   return directoryAum;
 }
 
-function useRewardsApy(eligibleAumUsd: number | undefined): RewardsApy {
+function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): RewardsApy {
   const chainId = useChainId();
   const [pricing, setPricing] = useState<{
     state: "loading" | "ready" | "unavailable";
     week?: number;
     weeklyEmissionOtf?: number;
+    weeklyDepositorEmissionOtf?: number;
+    weeklyCreatorEmissionOtf?: number;
     otfPriceUsd?: number;
     ended: boolean;
   }>({ state: "loading", ended: false });
@@ -2002,13 +2018,15 @@ function useRewardsApy(eligibleAumUsd: number | undefined): RewardsApy {
     const load = () => {
       controller?.abort();
       controller = new AbortController();
-      void fetch(`/api/incentive-apy?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      void fetch(`/api/incentive-apy?chainId=${chainId}&includePrice=${includeApy}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
         if (!response.ok) throw new Error("INCENTIVE_APY_UNAVAILABLE");
         return response.json() as Promise<Record<string, unknown>>;
       }).then((payload) => {
         const valid = Number.isInteger(payload.week) && Number(payload.week) >= 1
           && typeof payload.weeklyEmissionOtf === "number" && Number.isFinite(payload.weeklyEmissionOtf) && payload.weeklyEmissionOtf >= 0
-          && typeof payload.otfPriceUsd === "number" && Number.isFinite(payload.otfPriceUsd) && payload.otfPriceUsd > 0
+          && typeof payload.weeklyDepositorEmissionOtf === "number" && Number.isFinite(payload.weeklyDepositorEmissionOtf) && payload.weeklyDepositorEmissionOtf >= 0
+          && typeof payload.weeklyCreatorEmissionOtf === "number" && Number.isFinite(payload.weeklyCreatorEmissionOtf) && payload.weeklyCreatorEmissionOtf >= 0
+          && (!includeApy || (typeof payload.otfPriceUsd === "number" && Number.isFinite(payload.otfPriceUsd) && payload.otfPriceUsd > 0))
           && typeof payload.ended === "boolean";
         if (!valid) throw new Error("INCENTIVE_APY_INVALID");
         if (!cancelled) {
@@ -2016,6 +2034,8 @@ function useRewardsApy(eligibleAumUsd: number | undefined): RewardsApy {
             state: "ready",
             week: Number(payload.week),
             weeklyEmissionOtf: payload.weeklyEmissionOtf as number,
+            weeklyDepositorEmissionOtf: payload.weeklyDepositorEmissionOtf as number,
+            weeklyCreatorEmissionOtf: payload.weeklyCreatorEmissionOtf as number,
             otfPriceUsd: payload.otfPriceUsd as number,
             ended: payload.ended as boolean,
           });
@@ -2034,26 +2054,29 @@ function useRewardsApy(eligibleAumUsd: number | undefined): RewardsApy {
       window.clearInterval(refresh);
       controller?.abort();
     };
-  }, [chainId]);
+  }, [chainId, includeApy]);
 
-  if (pricing.state !== "ready" || eligibleAumUsd === undefined) {
+  if (pricing.state !== "ready" || (includeApy && fundAumUsd === undefined)) {
     return { state: pricing.state === "unavailable" ? "unavailable" : "loading", usesZeroAumBaseline: false, ended: pricing.ended };
   }
-  const estimate = estimatedRewardsApy({
-    weeklyEmissionOtf: pricing.weeklyEmissionOtf!,
+  const estimate = includeApy ? estimatedRewardsApy({
+    weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf!,
     otfPriceUsd: pricing.otfPriceUsd!,
-    eligibleAumUsd,
-  });
-  return estimate
-    ? {
-        state: "ready",
-        percent: estimate.percent,
-        weeklyEmissionOtf: pricing.weeklyEmissionOtf,
-        usesZeroAumBaseline: estimate.usesZeroAumBaseline,
-        week: pricing.week,
-        ended: pricing.ended,
-      }
-    : { state: "unavailable", usesZeroAumBaseline: false, ended: pricing.ended };
+    fundAumUsd: fundAumUsd!,
+  }) : undefined;
+  if (includeApy && !estimate) {
+    return { state: "unavailable", usesZeroAumBaseline: false, ended: pricing.ended };
+  }
+  return {
+    state: "ready",
+    percent: estimate?.percent,
+    weeklyEmissionOtf: pricing.weeklyEmissionOtf,
+    weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf,
+    weeklyCreatorEmissionOtf: pricing.weeklyCreatorEmissionOtf,
+    usesZeroAumBaseline: estimate?.usesZeroAumBaseline ?? false,
+    week: pricing.week,
+    ended: pricing.ended,
+  };
 }
 
 function formatUsd(value: number | undefined, maximumFractionDigits = 2): string {
@@ -2199,16 +2222,22 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
-  const directoryAum = useDirectoryAum(vaults, factoryDirectoryState === "ready");
-  const eligibleAumUsd = directoryAum.state === "ready" ? directoryAum.value : undefined;
-  const rewardsApy = useRewardsApy(eligibleAumUsd);
-  const rewardsApyText = rewardsApy.state === "loading" ? "…" : formatApy(rewardsApy.percent);
-  const rewardsApyLabel = rewardsApy.state === "ready"
-    ? `Estimated rewards APY ${rewardsApyText}, emission week ${rewardsApy.week}${rewardsApy.usesZeroAumBaseline ? ", modeled with a $100 eligible AUM baseline" : ""}`
-    : rewardsApy.state === "loading" ? "Estimated rewards APY loading" : "Estimated rewards APY unavailable";
+  const directoryAum = useDirectoryAum(vaults, !detail && factoryDirectoryState === "ready");
+  const fundAumUsd = valuation.state === "ready" ? valuation.current?.aumUsd : undefined;
+  const rewardsApy = useRewardsApy(fundAumUsd, detail);
+  const rewardsApyUnavailable = detail && valuation.state === "unavailable";
+  const rewardsApyText = rewardsApyUnavailable ? "—" : rewardsApy.state === "loading" ? "…" : formatApy(rewardsApy.percent);
+  const rewardsApyLabel = rewardsApyUnavailable
+    ? "Estimated depositor rewards APY unavailable"
+    : rewardsApy.state === "ready"
+    ? `Estimated depositor rewards APY for this fund ${rewardsApyText}, emission week ${rewardsApy.week}${rewardsApy.usesZeroAumBaseline ? ", modeled with a $100 fund AUM baseline" : ""}`
+    : rewardsApy.state === "loading" ? "Estimated depositor rewards APY loading" : "Estimated depositor rewards APY unavailable";
   const weeklyEmissionText = rewardsApy.state === "ready"
-    ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} OTF this week`
-    : rewardsApy.state === "loading" ? "OTF distribution loading" : "OTF distribution unavailable";
+    ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} OTF`
+    : rewardsApy.state === "loading" ? "…" : "—";
+  const weeklyDistributionLabel = rewardsApy.state === "ready"
+    ? `Weekly distribution ${weeklyEmissionText}, emission week ${rewardsApy.week}`
+    : rewardsApy.state === "loading" ? "Weekly distribution loading" : "Weekly distribution unavailable";
   useEffect(() => {
     if (!detail || !routeAddress) {
       setCreationMetadata(null);
@@ -2317,9 +2346,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <span>in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span>
             </div>
             <span className="fundsMetricSeparator" aria-hidden="true" />
-            <div className="fundsHeadlineMetric fundsApy">
-              <strong aria-label={rewardsApyLabel} title={rewardsApyLabel}>{rewardsApyText} APY</strong>
-              <span>{weeklyEmissionText}{rewardsApy.usesZeroAumBaseline ? " · APY modeled at $100 AUM" : ""}</span>
+            <div className="fundsHeadlineMetric fundsDistribution">
+              <strong aria-label={weeklyDistributionLabel} title={weeklyDistributionLabel}>{weeklyEmissionText}</strong>
+              <span>Weekly distribution{rewardsApy.week ? ` · week ${rewardsApy.week}` : ""}</span>
             </div>
           </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>

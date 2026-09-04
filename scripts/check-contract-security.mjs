@@ -191,6 +191,17 @@ const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "ut
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
 assert(!/registerVault/u.test(factorySource), "factory retains collector vault registration");
+const routerConfigurationSource = factorySource.match(
+  /function\s+configureEntryExitRouter[\s\S]*?\n\s*function\s+vaultCount/u,
+)?.[0] ?? "";
+assert(
+  (factorySource.match(/abi\.encodeCall\(ICanonicalBuybackCollector\.factory/gu) ?? []).length === 1
+    && /buybackCollector\.staticcall/u.test(routerConfigurationSource)
+    && /!success\s*\|\|\s*result\.length\s*!=\s*32/u.test(routerConfigurationSource)
+    && /observedCollectorFactory\s*!=\s*address\(this\)/u.test(routerConfigurationSource)
+    && /revert InvalidDependency\(buybackCollector\)/u.test(routerConfigurationSource),
+  "factory does not validate its reciprocal collector binding during one-time router configuration",
+);
 
 const vaultErrorNames = new Set(compiled.ManagedOTFVault.abi.filter((item) => item.type === "error").map((item) => item.name));
 assert(!vaultErrorNames.has("ResidualSupplyTooSmall"), "vault retains the removed residual supply revert");
@@ -279,8 +290,16 @@ for (const name of ["configureFactory", "recordFeeShares", "settleFeesViaRedempt
 for (const removed of ["configureEntryExitRouter", "registerVault", "entryExitRouter"]) {
   assert(!buybackNames.has(removed), `buyback collector retains redundant ${removed} surface`);
 }
+const buybackEvents = new Set(
+  compiled.BuybackCollector.abi.filter((item) => item.type === "event").map((item) => item.name),
+);
+assert(!buybackEvents.has("VaultRegistered"), "buyback collector retains the removed VaultRegistered event");
 const feeAccounts = functions(compiled.BuybackCollector).find((item) => item.name === "feeAccounts");
-assert(feeAccounts.outputs.map((output) => output.type).join(",") === "uint256,uint256", "collector fee account retains shadow beneficiary state");
+assert(
+  feeAccounts.outputs.map((output) => `${output.name}:${output.type}`).join(",")
+    === "creatorFeeShares:uint256,buybackFeeShares:uint256",
+  "collector feeAccounts output is not exactly creator and buyback fee shares",
+);
 const settleFeesViaRedemption = functions(compiled.BuybackCollector).find((item) => item.name === "settleFeesViaRedemption");
 assert(settleFeesViaRedemption.inputs.map((input) => input.type).join(",") === "address,uint256[],uint256,tuple[],uint256,uint256,uint256", "collector redemption settlement is not skip-aware");
 for (const removed of ["executeBuyback", "settleFees", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {

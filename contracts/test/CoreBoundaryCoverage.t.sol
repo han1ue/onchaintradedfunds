@@ -8,6 +8,25 @@ import { VaultCreationParams } from "../src/VaultTypes.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
 import { BootstrapTestBase, MockBuybackReceiver, MockCoreRouter } from "./BootstrapTestBase.sol";
 
+contract MissingFactoryGetterCollector {
+    function recordFeeShares(uint256, uint256) external { }
+}
+
+contract RevertingFactoryGetterCollector {
+    function factory() external pure returns (address) {
+        revert("NO_FACTORY");
+    }
+}
+
+contract MalformedFactoryGetterCollector {
+    fallback() external {
+        assembly ("memory-safe") {
+            mstore(0, 1)
+            return(31, 1)
+        }
+    }
+}
+
 contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testFeeBenefitCurveReferenceValuesAndDonationDoesNotCount() public {
         (OTFFactory factory,, MockCoreRouter router) = _deployFactory();
@@ -168,6 +187,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
             new OTFFactory(address(implementation), address(collector), address(protocolOtf));
         OTFFactory otherFactory =
             new OTFFactory(address(implementation), address(collector), address(protocolOtf));
+        collector.configureFactory(address(unconfigured));
         MockCoreRouter wrongRouter = new MockCoreRouter(address(otherFactory));
         vm.expectPartialRevert(OTFFactory.RouterFactoryMismatch.selector);
         unconfigured.configureEntryExitRouter(address(wrongRouter));
@@ -200,6 +220,27 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         vm.prank(CREATOR);
         vm.expectPartialRevert(ManagedOTFVaultStorage.RedeemFeeTooHigh.selector);
         unconfigured.createVault(invalid);
+    }
+
+    function testCollectorFactoryGetterFailuresAreInvalidDependencies() public {
+        ManagedOTFVault implementation = new ManagedOTFVault();
+        MockStockToken protocolOtf = new MockStockToken("OTF", "OTF", 18);
+
+        _assertCollectorFactoryRejected(
+            address(implementation),
+            address(new MissingFactoryGetterCollector()),
+            address(protocolOtf)
+        );
+        _assertCollectorFactoryRejected(
+            address(implementation),
+            address(new RevertingFactoryGetterCollector()),
+            address(protocolOtf)
+        );
+        _assertCollectorFactoryRejected(
+            address(implementation),
+            address(new MalformedFactoryGetterCollector()),
+            address(protocolOtf)
+        );
     }
 
     function _newOtfVault(
@@ -250,5 +291,17 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         );
         assertEq(creatorRedeem + buybackRedeem, redeemFee);
         assertEq(vault.totalSupply(), grossShares - redeemedShares);
+    }
+
+    function _assertCollectorFactoryRejected(
+        address implementation,
+        address collector,
+        address protocolOtf
+    ) private {
+        OTFFactory factory = new OTFFactory(implementation, collector, protocolOtf);
+        MockCoreRouter router = new MockCoreRouter(address(factory));
+        vm.expectRevert(abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, collector));
+        factory.configureEntryExitRouter(address(router));
+        assertEq(factory.entryExitRouter(), address(0));
     }
 }

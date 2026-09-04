@@ -104,24 +104,25 @@ describe("$OTF page wiring", () => {
     expect(operate).not.toContain('className="iconOnly compact walletExplorerLink"');
   });
 
-  it("uses the fund header space for metrics and gives the thesis the full hero width", () => {
+  it("uses the fund header space for fund-specific metrics and gives the thesis the full hero width", () => {
     const detail = operate.slice(operate.indexOf('className="fundDetailHero"'), operate.indexOf('className="fundDetailPrimaryGrid"'));
     const header = detail.slice(detail.indexOf('className="fundDetailHeader"'));
     expect(header).toContain('className="fundDetailMetrics"');
     expect(header.indexOf(">AUM<")).toBeLessThan(header.indexOf(">Est. rewards APY<"));
     expect(header).toContain("rewardsApyLabel");
+    expect(operate).toContain("fundAumUsd, detail");
     expect(detail).toContain('className="fundThesis"');
     expect(css).toContain(".fundDetailHeader { display: grid;");
     expect(css).toContain(".valuationPerformance small { margin-top: 1px;");
   });
 
-  it("places the directory APY after AUM with a visible separator", () => {
+  it("places the weekly distribution after directory AUM with a visible separator", () => {
     const summary = operate.slice(operate.indexOf('className="fundsSummary"'), operate.indexOf("!testnet ?", operate.indexOf('className="fundsSummary"')));
-    expect(summary.indexOf('aria-label="Total AUM"')).toBeLessThan(summary.indexOf("rewardsApyLabel"));
+    expect(summary.indexOf('aria-label="Total AUM"')).toBeLessThan(summary.indexOf("weeklyDistributionLabel"));
     expect(summary).toContain('className="fundsMetricSeparator"');
-    expect(summary).toContain("{rewardsApyText} APY");
     expect(summary).toContain("{weeklyEmissionText}");
-    expect(summary).toContain("APY modeled at $100 AUM");
+    expect(summary).toContain("Weekly distribution");
+    expect(summary).not.toContain("{rewardsApyText} APY");
     expect(css).toContain(".fundsMetricSeparator { width: 1px;");
   });
 

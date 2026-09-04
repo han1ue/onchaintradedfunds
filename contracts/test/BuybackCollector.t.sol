@@ -3,15 +3,19 @@ pragma solidity ^0.8.24;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { BuybackCollector } from "../src/BuybackCollector.sol";
+import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { BasketRedeemRequest, FeeShareSwapRequest, SwapLeg } from "../src/OTFEntryExitRouter.sol";
 import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
+import { VaultCreationParams } from "../src/VaultTypes.sol";
 import {
     MockPermit2,
     MockUniswapUniversalRouter,
     MockUniswapV4PoolManager
 } from "./mocks/MockUniswapV4.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
+import { MockCoreRouter } from "./BootstrapTestBase.sol";
 import { TestBase } from "./TestBase.sol";
 
 contract MockBuybackLaunchSource {
@@ -183,6 +187,50 @@ contract BuybackCollectorTest is TestBase {
         weth.mint(address(entryRouter), 1_000 ether);
         vm.prank(HOLDER);
         token.transfer(address(universalRouter), 1_000 ether);
+    }
+
+    function testFactoryRejectsCollectorBoundToAnotherFactoryAndPairedStackRecordsFees() public {
+        BuybackCollector pairedCollector = new BuybackCollector(
+            collector.launchManager(), address(universalRouter), address(permit2)
+        );
+        ManagedOTFVault implementation = new ManagedOTFVault();
+        OTFFactory factoryA =
+            new OTFFactory(address(implementation), address(pairedCollector), address(token));
+        OTFFactory factoryB =
+            new OTFFactory(address(implementation), address(pairedCollector), address(token));
+        pairedCollector.configureFactory(address(factoryB));
+        assertEq(factoryA.routerConfigurator(), factoryB.routerConfigurator());
+        assertEq(pairedCollector.factory(), address(factoryB));
+
+        MockCoreRouter routerA = new MockCoreRouter(address(factoryA));
+        assertEq(routerA.factory(), address(factoryA));
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFFactory.InvalidDependency.selector, address(pairedCollector))
+        );
+        factoryA.configureEntryExitRouter(address(routerA));
+        assertEq(factoryA.entryExitRouter(), address(0));
+
+        VaultCreationParams memory params = _canonicalVaultParams();
+        vm.expectRevert(OTFFactory.RouterNotConfigured.selector);
+        factoryA.createVault(params);
+
+        MockCoreRouter routerB = new MockCoreRouter(address(factoryB));
+        assertEq(routerB.factory(), address(factoryB));
+        factoryB.configureEntryExitRouter(address(routerB));
+        ManagedOTFVault vault = ManagedOTFVault(factoryB.createVault(params));
+        assertTrue(factoryB.isVault(address(vault)));
+
+        uint256[] memory amounts = vault.previewMint(1 ether);
+        weth.mint(address(routerB), amounts[0]);
+        basketAsset.mint(address(routerB), amounts[1]);
+        routerB.approveAsset(address(weth), address(vault), amounts[0]);
+        routerB.approveAsset(address(basketAsset), address(vault), amounts[1]);
+        routerB.mint(vault, 1 ether, address(this), amounts);
+
+        (uint256 creatorShares, uint256 buybackShares) = pairedCollector.feeAccounts(address(vault));
+        assertGt(creatorShares, 0);
+        assertGt(buybackShares, 0);
+        assertEq(vault.balanceOf(address(pairedCollector)), creatorShares + buybackShares);
     }
 
     function testBeneficiarySettlesCheckpointedFeesIntoWethAndBuybackBurn() public {
@@ -472,6 +520,26 @@ contract BuybackCollectorTest is TestBase {
         (uint256 creatorPending, uint256 buybackPending) = collector.feeAccounts(address(feeVault));
         assertEq(creatorPending, 0);
         assertEq(buybackPending, 0);
+    }
+
+    function _canonicalVaultParams() private view returns (VaultCreationParams memory params) {
+        address[] memory constituents = new address[](2);
+        constituents[0] = address(weth);
+        constituents[1] = address(basketAsset);
+        uint256[] memory bootstrapUnits = new uint256[](2);
+        bootstrapUnits[0] = 1 ether;
+        bootstrapUnits[1] = 1 ether;
+        params = VaultCreationParams({
+            name: "Canonical Fund",
+            symbol: "CANON",
+            fundThesis: "Canonical factory and collector trust-boundary coverage.",
+            expenseBeneficiary: BENEFICIARY,
+            annualCreatorExpenseRatioBps: 0,
+            mintFeeBps: 200,
+            redeemFeeBps: 0,
+            constituents: constituents,
+            bootstrapBasketUnitsPerOTF: bootstrapUnits
+        });
     }
 
     function _route(address adapter_) private view returns (SwapLeg[] memory legs) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Address, Hex } from "viem";
 import {
+  feeClaimReadState,
   feeSettlementCall,
   pendingFeeShares,
   proportionalWethSplit,
@@ -18,6 +19,8 @@ const collector = "0x0000000000000000000000000000000000000005" as Address;
 const venue = "0x0000000000000000000000000000000000000006" as Address;
 const usdg = "0x0000000000000000000000000000000000000007" as Address;
 const path = "0x1234" as Hex;
+const beneficiary = "0x0000000000000000000000000000000000000008" as Address;
+const otherAccount = "0x0000000000000000000000000000000000000009" as Address;
 
 function redemptionQuote(): SwapQuote {
   const leg = { adapter, tokenIn: usdg, tokenOut: weth, amountIn: 1n, minAmountOut: 1n, data: path, hops: [] };
@@ -78,6 +81,59 @@ function shareSaleQuote(): SwapQuote {
 }
 
 describe("fee settlement model", () => {
+  it("keeps the fee account in its initial pending state", () => {
+    expect(feeClaimReadState({
+      isPending: true,
+      isError: false,
+      connectedAccount: beneficiary,
+      beneficiary,
+    })).toBe("pending");
+  });
+
+  it("verifies successful fee reads for the immutable beneficiary", () => {
+    expect(feeClaimReadState({
+      isPending: false,
+      isError: false,
+      feeAccountsStatus: "success",
+      previewExpenseFeesStatus: "success",
+      connectedAccount: beneficiary,
+      beneficiary,
+    })).toBe("verified");
+  });
+
+  it("rejects successful fee reads for a different account", () => {
+    expect(feeClaimReadState({
+      isPending: false,
+      isError: false,
+      feeAccountsStatus: "success",
+      previewExpenseFeesStatus: "success",
+      connectedAccount: otherAccount,
+      beneficiary,
+    })).toBe("wrong-beneficiary");
+  });
+
+  it("fails verification when the individual feeAccounts read fails", () => {
+    expect(feeClaimReadState({
+      isPending: false,
+      isError: false,
+      feeAccountsStatus: "failure",
+      previewExpenseFeesStatus: "success",
+      connectedAccount: beneficiary,
+      beneficiary,
+    })).toBe("failed");
+  });
+
+  it("fails verification when the individual previewExpenseFees read fails", () => {
+    expect(feeClaimReadState({
+      isPending: false,
+      isError: false,
+      feeAccountsStatus: "success",
+      previewExpenseFeesStatus: "failure",
+      connectedAccount: beneficiary,
+      beneficiary,
+    })).toBe("failed");
+  });
+
   it("combines recorded and newly checkpointable fee shares without recomputing either split", () => {
     expect(pendingFeeShares(60n, 40n, 9n, 1n)).toEqual({ creator: 69n, buyback: 41n, total: 110n });
   });

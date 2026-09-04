@@ -42,8 +42,15 @@ contract MockCoreRouter {
 }
 
 contract MockBuybackReceiver {
+    address public factory;
     mapping(address => uint256) public creatorFeeShares;
     mapping(address => uint256) public buybackFeeShares;
+
+    function configureFactory(address factory_) external {
+        require(factory == address(0), "FACTORY_SET");
+        require(factory_.code.length != 0, "INVALID_FACTORY");
+        factory = factory_;
+    }
 
     function recordFeeShares(uint256 creatorShares, uint256 buybackShares) external {
         creatorFeeShares[msg.sender] += creatorShares;
@@ -143,6 +150,7 @@ abstract contract BootstrapTestBase is TestBase {
         collector = address(new MockBuybackReceiver());
         MockStockToken protocolOtf = new MockStockToken("Onchain Traded Funds", "OTF", 18);
         factory = new OTFFactory(address(implementation), collector, address(protocolOtf));
+        MockBuybackReceiver(collector).configureFactory(address(factory));
         router = new MockCoreRouter(address(factory));
         factory.configureEntryExitRouter(address(router));
     }

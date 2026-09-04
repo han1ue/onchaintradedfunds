@@ -4,10 +4,10 @@
   height: 30px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgb(var(--accent-rgb) / 34%);
-  border-radius: 6px;
-  background: rgb(var(--accent-rgb) / 13%);
-  color: var(--accent-text, var(--teal));
+  border: 2px solid var(--accent-text, #ccff00);
+  border-radius: 0;
+  background: #090909;
+  color: var(--accent-text, #ccff00);
   font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: .56rem;
   font-weight: 800;

@@ -42,5 +42,8 @@ describe("fund fee claim wiring", () => {
     }
     expect(component).toContain('aria-live="polite"');
     expect(component).toContain("The selected settlement route is unavailable. Choose another route.");
+    expect(component).toContain('feeAccountsStatus: feeAccountsRead?.status');
+    expect(component).toContain('previewExpenseFeesStatus: previewExpenseFeesRead?.status');
+    expect(component).not.toContain("recorded[2]");
   });
 });

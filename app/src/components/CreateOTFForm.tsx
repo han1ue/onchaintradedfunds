@@ -82,7 +82,7 @@ type SubmittedSnapshot = {
 };
 
 const MAX_MANDATE_BYTES = 2_048;
-const ALLOCATION_COLORS = ["#37b7aa", "#6f8cff", "#f1b93d", "#d879d8", "#eb6570", "#65c982"];
+const ALLOCATION_COLORS = ["#ccff00", "#6f8cff", "#f1b93d", "#d879d8", "#eb6570", "#65c982"];
 
 const steps = [
   { label: "Identity", description: "Onchain identity and thesis" },

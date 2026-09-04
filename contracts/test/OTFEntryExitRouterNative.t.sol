@@ -8,6 +8,8 @@ import {
     SwapLeg
 } from "../src/OTFEntryExitRouter.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
+import { MockOTFSettlementVault } from "./mocks/MockOTFSettlement.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 
 contract NativeReceiver {
     OTFEntryExitRouter private immutable _router;
@@ -28,6 +30,19 @@ contract NativeReceiver {
         (bool success,) =
             vault.call(abi.encodeWithSignature("approve(address,uint256)", _router, amount));
         require(success, "APPROVE_FAILED");
+    }
+
+    function mint(BasketMintRequest calldata request, SwapLeg[] calldata legs)
+        external
+        payable
+        returns (
+            uint256 shares,
+            address[] memory refundTokens,
+            uint256[] memory refundAmounts,
+            uint256 nativeRefunded
+        )
+    {
+        return _router.mintFromNative{ value: msg.value }(request, legs);
     }
 
     function redeem(
@@ -61,6 +76,7 @@ contract OTFEntryExitRouterNativeTest is AtomicRouterTestBase {
     function setUp() public {
         _setUpAtomicRouter();
         vm.deal(ALICE, 100 ether);
+        vm.deal(address(this), 100 ether);
     }
 
     function testNativeMintWrapsExactInputAndRefundsNativeAndErc20Residuals() public {
@@ -264,6 +280,134 @@ contract OTFEntryExitRouterNativeTest is AtomicRouterTestBase {
         assertEq(address(receiver).balance, 2 * ONE);
     }
 
+    function testRejectingNativeMintRefundRollsBackAtomically() public {
+        NativeReceiver receiver = new NativeReceiver(router);
+        vm.deal(address(receiver), 10 * ONE);
+        receiver.configure(true, "");
+        SwapLeg[] memory legs = _nativeMintRefundLegs();
+        uint256 senderNativeBefore = address(this).balance;
+        uint256 receiverNativeBefore = address(receiver).balance;
+        uint256 wethNativeBefore = address(weth).balance;
+        uint256 adapterAWethBefore = weth.balanceOf(address(adapterA));
+        uint256 adapterBWethBefore = weth.balanceOf(address(adapterB));
+        uint256 adapterAAssetBefore = assetC.balanceOf(address(adapterA));
+        uint256 adapterBAssetBefore = assetD.balanceOf(address(adapterB));
+
+        vm.expectPartialRevert(OTFEntryExitRouter.NativeTransferFailed.selector);
+        receiver.mint{ value: 4 * ONE }(_nativeMintRequest(4 * ONE, ONE), legs);
+
+        assertEq(address(this).balance, senderNativeBefore);
+        assertEq(address(receiver).balance, receiverNativeBefore);
+        assertEq(address(weth).balance, wethNativeBefore);
+        assertEq(targetVault.totalSupply(), 0);
+        assertEq(targetVault.balanceOf(address(receiver)), 0);
+        assertEq(assetC.balanceOf(address(targetVault)), 0);
+        assertEq(assetD.balanceOf(address(targetVault)), 0);
+        assertEq(targetVault.checkpointCalls(), 0);
+        assertEq(targetVault.routerMintCalls(), 0);
+        assertEq(weth.balanceOf(address(adapterA)), adapterAWethBefore);
+        assertEq(weth.balanceOf(address(adapterB)), adapterBWethBefore);
+        assertEq(assetC.balanceOf(address(adapterA)), adapterAAssetBefore);
+        assertEq(assetD.balanceOf(address(adapterB)), adapterBAssetBefore);
+        assertEq(assetC.balanceOf(address(receiver)), 0);
+        assertEq(assetD.balanceOf(address(receiver)), 0);
+        assertEq(weth.allowance(address(router), address(adapterA)), 0);
+        assertEq(weth.allowance(address(router), address(adapterB)), 0);
+        _assertRouterClean();
+        assertEq(address(router).balance, 0);
+    }
+
+    function testNativeMintRefundReentrancyIsRejectedAndOuterMintCompletes() public {
+        NativeReceiver receiver = new NativeReceiver(router);
+        vm.deal(address(receiver), 10 * ONE);
+        BasketMintRequest memory reentry = _nativeMintRequest(ONE, ONE);
+        receiver.configure(
+            false, abi.encodeCall(OTFEntryExitRouter.mintFromNative, (reentry, new SwapLeg[](0)))
+        );
+        uint256 receiverNativeBefore = address(receiver).balance;
+        uint256 wethNativeBefore = address(weth).balance;
+
+        (
+            uint256 shares,
+            address[] memory refundTokens,
+            uint256[] memory refundAmounts,
+            uint256 nativeRefunded
+        ) = receiver.mint{ value: 4 * ONE }(
+            _nativeMintRequest(4 * ONE, ONE), _nativeMintRefundLegs()
+        );
+
+        assertEq(shares, ONE);
+        assertEq(nativeRefunded, ONE);
+        assertEq(refundTokens.length, 1);
+        assertEq(refundTokens[0], address(assetC));
+        assertEq(refundAmounts[0], ONE);
+        assertTrue(receiver.reentryRejected());
+        assertEq(address(receiver).balance, receiverNativeBefore + ONE);
+        assertEq(address(weth).balance, wethNativeBefore + 3 * ONE);
+        assertEq(targetVault.totalSupply(), ONE);
+        assertEq(targetVault.balanceOf(address(receiver)), ONE);
+        assertEq(assetC.balanceOf(address(receiver)), ONE);
+        assertEq(assetC.balanceOf(address(targetVault)), ONE);
+        assertEq(assetD.balanceOf(address(targetVault)), ONE);
+        assertEq(targetVault.checkpointCalls(), 1);
+        assertEq(targetVault.routerMintCalls(), 1);
+        assertEq(weth.allowance(address(router), address(adapterA)), 0);
+        assertEq(weth.allowance(address(router), address(adapterB)), 0);
+        _assertRouterClean();
+        assertEq(address(router).balance, 0);
+    }
+
+    function testNativeMintSecondResidualPassRejectsReintroducedWethAndRollsBack() public {
+        MockReentrantToken callbackAsset = new MockReentrantToken("Callback Asset", "CALL", 18);
+        address[] memory targetAssets = new address[](2);
+        targetAssets[0] = address(callbackAsset);
+        targetAssets[1] = address(assetD);
+        targetVault = new MockOTFSettlementVault("Callback OTF", "CB", targetAssets);
+        protocolFactory.setVault(address(targetVault), true);
+        targetVault.setRouter(address(router));
+        callbackAsset.mint(address(adapterA), 1_000_000 * ONE);
+        adapterA.setRate(address(weth), address(callbackAsset), 1, 1);
+        weth.mint(address(callbackAsset), ONE);
+        callbackAsset.configureCallback(
+            address(weth), abi.encodeCall(weth.transfer, (address(router), ONE)), true
+        );
+        callbackAsset.configureCallbackSender(address(router));
+
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = _leg(adapterA, address(weth), address(callbackAsset), 2 * ONE, 2 * ONE);
+        legs[1] = _leg(adapterB, address(weth), address(assetD), ONE, ONE);
+        uint256 nativeBefore = ALICE.balance;
+        uint256 wethNativeBefore = address(weth).balance;
+        uint256 callbackWethBefore = weth.balanceOf(address(callbackAsset));
+        uint256 adapterAWethBefore = weth.balanceOf(address(adapterA));
+        uint256 adapterBWethBefore = weth.balanceOf(address(adapterB));
+        uint256 adapterACallbackBefore = callbackAsset.balanceOf(address(adapterA));
+        uint256 adapterBAssetBefore = assetD.balanceOf(address(adapterB));
+
+        vm.prank(ALICE);
+        vm.expectPartialRevert(OTFEntryExitRouter.ResidualBalance.selector);
+        router.mintFromNative{ value: 4 * ONE }(_nativeMintRequest(4 * ONE, ONE), legs);
+
+        assertEq(ALICE.balance, nativeBefore);
+        assertEq(address(weth).balance, wethNativeBefore);
+        assertEq(weth.balanceOf(address(callbackAsset)), callbackWethBefore);
+        assertEq(targetVault.totalSupply(), 0);
+        assertEq(targetVault.balanceOf(ALICE), 0);
+        assertEq(callbackAsset.balanceOf(address(targetVault)), 0);
+        assertEq(assetD.balanceOf(address(targetVault)), 0);
+        assertEq(targetVault.checkpointCalls(), 0);
+        assertEq(targetVault.routerMintCalls(), 0);
+        assertEq(weth.balanceOf(address(adapterA)), adapterAWethBefore);
+        assertEq(weth.balanceOf(address(adapterB)), adapterBWethBefore);
+        assertEq(callbackAsset.balanceOf(address(adapterA)), adapterACallbackBefore);
+        assertEq(assetD.balanceOf(address(adapterB)), adapterBAssetBefore);
+        assertEq(weth.allowance(address(router), address(adapterA)), 0);
+        assertEq(weth.allowance(address(router), address(adapterB)), 0);
+        _assertRouterClean();
+        assertEq(callbackAsset.balanceOf(address(router)), 0);
+        assertEq(address(router).balance, 0);
+    }
+
     function _nativeMintRequest(uint256 amountIn, uint256 minShares)
         private
         view
@@ -297,5 +441,11 @@ contract OTFEntryExitRouterNativeTest is AtomicRouterTestBase {
         legs = new SwapLeg[](2);
         legs[0] = _leg(adapterA, address(assetA), address(weth), ONE, ONE);
         legs[1] = _leg(adapterB, address(assetB), address(weth), ONE, ONE);
+    }
+
+    function _nativeMintRefundLegs() private view returns (SwapLeg[] memory legs) {
+        legs = new SwapLeg[](2);
+        legs[0] = _leg(adapterA, address(weth), address(assetC), 2 * ONE, 2 * ONE);
+        legs[1] = _leg(adapterB, address(weth), address(assetD), ONE, ONE);
     }
 }
