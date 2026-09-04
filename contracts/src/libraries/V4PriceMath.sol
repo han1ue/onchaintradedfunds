@@ -2,11 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ProtocolConstants } from "./ProtocolConstants.sol";
 
 library V4PriceMath {
     uint256 internal constant Q96 = 1 << 96;
     uint256 internal constant Q192 = 1 << 192;
-    uint256 internal constant WAD = 1e18;
+    uint256 internal constant WAD = ProtocolConstants.WAD;
 
     /// @notice WETH per OTF scaled by 1e18. Both canonical currencies are validated as 18 decimals.
     function otfPriceWethWad(uint160 sqrtPriceX96, bool otfIsCurrency0)

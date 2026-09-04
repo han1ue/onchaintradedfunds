@@ -184,7 +184,7 @@ function parseCreationMetadata(value: unknown, chainId: number, vaultAddress: Ad
     || typeof record.marketCapSnapshotAt !== "string"
     || !Number.isFinite(Date.parse(record.marketCapSnapshotAt))
     || !Array.isArray(record.constituents)
-    || record.constituents.length === 0 || record.constituents.length > 20
+    || record.constituents.length < 2 || record.constituents.length > 20
   ) return undefined;
 
   const constituents = record.constituents.flatMap((value): CreationMetadataConstituent[] => {

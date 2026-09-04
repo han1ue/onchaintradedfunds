@@ -108,9 +108,18 @@ describe("$OTF page wiring", () => {
     const detail = operate.slice(operate.indexOf('className="fundDetailHero"'), operate.indexOf('className="fundDetailPrimaryGrid"'));
     const header = detail.slice(detail.indexOf('className="fundDetailHeader"'));
     expect(header).toContain('className="fundDetailMetrics"');
+    expect(header.indexOf(">AUM<")).toBeLessThan(header.indexOf(">Rewards APY<"));
+    expect(header).toContain('aria-label="Rewards APY unavailable"');
     expect(detail).toContain('className="fundThesis"');
     expect(css).toContain(".fundDetailHeader { display: grid;");
     expect(css).toContain(".valuationPerformance small { margin-top: 1px;");
+  });
+
+  it("places the directory APY after AUM with a visible separator", () => {
+    const summary = operate.slice(operate.indexOf('className="fundsSummary"'), operate.indexOf("!testnet ?", operate.indexOf('className="fundsSummary"')));
+    expect(summary.indexOf('aria-label="Total AUM"')).toBeLessThan(summary.indexOf('aria-label="Rewards APY unavailable"'));
+    expect(summary).toContain('className="fundsMetricSeparator"');
+    expect(summary).toContain("— APY");
   });
 
   it("keeps focus, narrow-layout, and reduced-motion affordances", () => {

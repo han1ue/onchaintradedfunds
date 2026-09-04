@@ -16,6 +16,7 @@ import {
     OTFEntryExitRouter,
     SwapLeg
 } from "./OTFEntryExitRouter.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 interface IOTFBurnable is IERC20 {
@@ -30,28 +31,24 @@ interface IBuybackLaunchManager {
 
 interface IBuybackFactory {
     function buybackCollector() external view returns (address);
+    function entryExitRouter() external view returns (address);
     function isVault(address vault) external view returns (bool);
 }
 
 interface IBuybackVault is IERC20 {
-    function buybackCollector() external view returns (address);
     function checkpointFees() external returns (uint256 totalFeeShares);
     function expenseBeneficiary() external view returns (address);
-    function factory() external view returns (address);
-}
-
-interface IBuybackEntryExitRouter {
-    function factory() external view returns (address);
 }
 
 /// @notice Settles fund fees into creator WETH plus an atomic OTF buyback and burn.
 contract BuybackCollector {
     using SafeTransferLib for address;
 
-    bytes1 private constant V4_SWAP_COMMAND = 0x10;
-    bytes1 private constant SWAP_EXACT_IN_ACTION = 0x07;
-    bytes1 private constant SETTLE_ALL_ACTION = 0x0c;
-    bytes1 private constant TAKE_ALL_ACTION = 0x0f;
+    bytes1 private constant V4_SWAP_COMMAND = ProtocolConstants.UNISWAP_V4_SWAP_COMMAND;
+    bytes1 private constant SWAP_EXACT_IN_ACTION =
+        ProtocolConstants.UNISWAP_V4_SWAP_EXACT_IN_ACTION;
+    bytes1 private constant SETTLE_ALL_ACTION = ProtocolConstants.UNISWAP_V4_SETTLE_ALL_ACTION;
+    bytes1 private constant TAKE_ALL_ACTION = ProtocolConstants.UNISWAP_V4_TAKE_ALL_ACTION;
 
     error ZeroAddress();
     error InvalidDependency(address dependency);
@@ -67,16 +64,13 @@ contract BuybackCollector {
     error BalanceDeltaMismatch(address token, uint256 expected, uint256 observed);
     error MinimumOutputNotMet(address token, uint256 minimum, uint256 actual);
     error Reentrancy();
-    error RouterAlreadyConfigured();
     error FactoryAlreadyConfigured();
     error FactoryNotConfigured();
     error UnauthorizedRouterConfigurator(address caller);
-    error RouterFactoryMismatch(address expected, address actual);
 
     struct VaultFeeAccount {
         uint256 creatorFeeShares;
         uint256 buybackFeeShares;
-        address expenseBeneficiary;
     }
 
     struct PendingSettlement {
@@ -86,7 +80,6 @@ contract BuybackCollector {
         address beneficiary;
     }
 
-    event VaultRegistered(address indexed vault, address indexed expenseBeneficiary);
     event FeeSharesRecorded(
         address indexed vault,
         uint256 creatorFeeShares,
@@ -105,7 +98,6 @@ contract BuybackCollector {
         uint256 otfBurned
     );
     event FactoryConfigured(address indexed factory);
-    event EntryExitRouterConfigured(address indexed router);
 
     address public immutable routerConfigurator;
     address public immutable launchManager;
@@ -115,7 +107,6 @@ contract BuybackCollector {
     address public immutable permit2;
     address public immutable poolManager;
     address public factory;
-    address public entryExitRouter;
     mapping(address => VaultFeeAccount) public feeAccounts;
     bool private _entered;
 
@@ -149,25 +140,6 @@ contract BuybackCollector {
         _entered = false;
     }
 
-    function configureEntryExitRouter(address router) external {
-        if (msg.sender != routerConfigurator) {
-            revert UnauthorizedRouterConfigurator(msg.sender);
-        }
-        if (entryExitRouter != address(0)) revert RouterAlreadyConfigured();
-        address factory_ = factory;
-        if (factory_ == address(0)) revert FactoryNotConfigured();
-        _requireContract(router);
-        address observedFactory;
-        try IBuybackEntryExitRouter(router).factory() returns (address value) {
-            observedFactory = value;
-        } catch {
-            revert InvalidDependency(router);
-        }
-        if (observedFactory != factory_) revert RouterFactoryMismatch(factory_, observedFactory);
-        entryExitRouter = router;
-        emit EntryExitRouterConfigured(router);
-    }
-
     function configureFactory(address factory_) external {
         if (msg.sender != routerConfigurator) {
             revert UnauthorizedRouterConfigurator(msg.sender);
@@ -185,28 +157,10 @@ contract BuybackCollector {
         emit FactoryConfigured(factory_);
     }
 
-    function registerVault(address vault, address expenseBeneficiary) external {
-        address factory_ = factory;
-        if (msg.sender != factory_) revert InvalidVault(vault);
-        if (
-            expenseBeneficiary == address(0) || vault.code.length == 0
-                || !IBuybackFactory(factory_).isVault(vault)
-        ) revert InvalidVault(vault);
-        VaultFeeAccount storage account = feeAccounts[vault];
-        if (account.expenseBeneficiary != address(0)) revert InvalidVault(vault);
-        if (
-            IBuybackVault(vault).factory() != factory_
-                || IBuybackVault(vault).buybackCollector() != address(this)
-                || IBuybackVault(vault).expenseBeneficiary() != expenseBeneficiary
-        ) revert InvalidVault(vault);
-        account.expenseBeneficiary = expenseBeneficiary;
-        emit VaultRegistered(vault, expenseBeneficiary);
-    }
-
     function recordFeeShares(uint256 creatorFeeShares, uint256 buybackFeeShares) external {
         address vault = msg.sender;
         VaultFeeAccount storage account = feeAccounts[vault];
-        if (!_isRegisteredVault(vault, account.expenseBeneficiary)) {
+        if (!_isFactoryVault(vault)) {
             revert UnauthorizedVault(vault);
         }
         if (creatorFeeShares + buybackFeeShares == 0) revert InvalidAmount();
@@ -230,7 +184,7 @@ contract BuybackCollector {
         uint256 minOtfOut,
         uint256 deadline
     ) external nonReentrant returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
-        address router = entryExitRouter;
+        address router = _entryExitRouter();
         _requireContract(router);
         _validateLegs(router, legs, vault);
         PendingSettlement memory pending = _consumePending(vault, minWethOut, minOtfOut, deadline);
@@ -262,7 +216,7 @@ contract BuybackCollector {
         uint256 minOtfOut,
         uint256 deadline
     ) external nonReentrant returns (uint256 creatorWeth, uint256 buybackWeth, uint256 otfBurned) {
-        address router = entryExitRouter;
+        address router = _entryExitRouter();
         _requireContract(router);
         _validateLegs(router, legs, address(0));
         PendingSettlement memory pending = _consumePending(vault, minWethOut, minOtfOut, deadline);
@@ -294,10 +248,13 @@ contract BuybackCollector {
         if (
             minWethOut == 0 || minOtfOut == 0 || minWethOut > type(uint128).max
                 || minOtfOut > type(uint128).max
-        ) revert InvalidAmount();
+        ) {
+            revert InvalidAmount();
+        }
         VaultFeeAccount storage account = feeAccounts[vault];
-        pending.beneficiary = account.expenseBeneficiary;
-        if (!_isRegisteredVault(vault, pending.beneficiary)) revert InvalidVault(vault);
+        if (!_isFactoryVault(vault)) revert InvalidVault(vault);
+        pending.beneficiary = IBuybackVault(vault).expenseBeneficiary();
+        if (pending.beneficiary == address(0)) revert InvalidVault(vault);
         if (msg.sender != pending.beneficiary) {
             revert UnauthorizedBeneficiary(msg.sender, pending.beneficiary);
         }
@@ -452,10 +409,16 @@ contract BuybackCollector {
         }
     }
 
-    function _isRegisteredVault(address vault, address beneficiary) private view returns (bool) {
+    function _isFactoryVault(address vault) private view returns (bool) {
         address factory_ = factory;
-        return factory_ != address(0) && beneficiary != address(0) && vault.code.length != 0
+        return factory_ != address(0) && vault.code.length != 0
             && IBuybackFactory(factory_).isVault(vault);
+    }
+
+    function _entryExitRouter() private view returns (address router) {
+        address factory_ = factory;
+        if (factory_ == address(0)) revert FactoryNotConfigured();
+        router = IBuybackFactory(factory_).entryExitRouter();
     }
 
     function _requireContract(address dependency) private view {

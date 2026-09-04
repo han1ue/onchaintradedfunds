@@ -98,7 +98,7 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 }));
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
-  "_initialized", "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
+  "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
   "_buybackCollector", "_entryExitRouter", "_otfToken", "_fundThesis", "_annualCreatorExpenseRatioBps",
   "_mintFeeBps", "_redeemFeeBps", "_shutdownAt",
   "_assets", "_bootstrapBasketUnitsPerOTF", "_accountedBalance", "_feeEpochTimestamp",
@@ -114,10 +114,17 @@ assert(!existsSync(join(contracts, "src", "ERC20Base.sol")), "hand-written ERC20
 assert(/ManagedOTFVaultStorage is ERC20Upgradeable/u.test(vaultStorageSource), "vault shares do not use OpenZeppelin ERC20Upgradeable");
 assert(
   /_disableInitializers\(\)/u.test(vaultSource)
-    && /external initializer nonReentrant/u.test(vaultSource)
+    && /external\s+initializer\s+nonReentrant/u.test(vaultSource)
     && /__ERC20_init\(params\.name, params\.symbol\)/u.test(vaultSource),
   "vault ERC20 initialization is not clone-safe and implementation-locked",
 );
+const vaultInitializers = functions(compiled.ManagedOTFVault).filter((item) => item.name === "initialize");
+assert(vaultInitializers.length === 1, "vault exposes more than one initializer");
+assert(
+  vaultInitializers[0].inputs.map((input) => input.type).join(",") === "tuple,address",
+  "vault initializer does not use the canonical creation tuple and creator",
+);
+assert(!/VaultInitParams/u.test(vaultSource), "vault retains the legacy initialization tuple");
 assert(
   /import\s*\{\s*ERC20Burnable\s*\}\s*from\s*[\r\n\s]*"@openzeppelin\/contracts\/token\/ERC20\/extensions\/ERC20Burnable\.sol"/u.test(otfTokenSource)
     && /OTFToken is ERC20Burnable/u.test(otfTokenSource),
@@ -183,6 +190,7 @@ assert(factoryCtor.inputs.map((input) => input.type).join(",") === "address,addr
 const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "utf8");
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
+assert(!/registerVault/u.test(factorySource), "factory retains collector vault registration");
 
 const vaultErrorNames = new Set(compiled.ManagedOTFVault.abi.filter((item) => item.type === "error").map((item) => item.name));
 assert(!vaultErrorNames.has("ResidualSupplyTooSmall"), "vault retains the removed residual supply revert");
@@ -227,14 +235,22 @@ assert(/MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS\s*=\s*1_000/u.test(sourceConstants)
 assert(/MAX_MINT_FEE_BPS\s*=\s*200/u.test(sourceConstants), "maximum mint fee is not 200 bps");
 assert(/MAX_REDEEM_FEE_BPS\s*=\s*100/u.test(sourceConstants), "maximum redeem fee is not 100 bps");
 assert(/OTF_FEE_BENEFIT_CAP\s*=\s*10_000_000 ether/u.test(sourceConstants), "OTF fee benefit is not capped at 10 million OTF");
+assert(/MIN_CONSTITUENTS\s*=\s*2/u.test(sourceConstants), "minimum constituents is not 2");
 assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(sourceConstants), "maximum constituents is not 20");
+assert(/MAX_SWAP_HOPS\s*=\s*3/u.test(sourceConstants), "maximum swap hops is not 3");
 assert(/MAX_FUND_THESIS_BYTES\s*=\s*2_048/u.test(sourceConstants), "maximum fund thesis is not 2048 bytes");
 assert(/MINIMUM_SHARE_SUPPLY\s*=\s*1e16/u.test(sourceConstants), "bootstrap and shutdown threshold is not 0.01 OTF");
+for (const sharedV4Constant of ["UNISWAP_V4_SWAP_COMMAND", "UNISWAP_V4_SWAP_EXACT_IN_ACTION", "UNISWAP_V4_SETTLE_ALL_ACTION", "UNISWAP_V4_TAKE_ALL_ACTION"]) {
+  assert(sourceConstants.includes(sharedV4Constant), `shared V4 constant ${sharedV4Constant} is absent`);
+}
 const routerSource = readFileSync(join(contracts, "src", "OTFEntryExitRouter.sol"), "utf8");
 assert(/msg\.sender\s*!=\s*IOTFSettlementFactory\(factory\)\.buybackCollector\(\)/u.test(routerSource), "fee-share sale is not restricted to the factory collector");
-assert(/MAX_CONSTITUENTS\s*=\s*20/u.test(routerSource), "router maximum constituents is not 20");
+assert(/MIN_CONSTITUENTS\s*=\s*ProtocolConstants\.MIN_CONSTITUENTS/u.test(routerSource), "router minimum constituents is not shared");
+assert(/MAX_CONSTITUENTS\s*=\s*ProtocolConstants\.MAX_CONSTITUENTS/u.test(routerSource), "router maximum constituents is not shared");
 const adapterSource = readFileSync(join(contracts, "src", "UniswapV3Adapter.sol"), "utf8");
 const v4AdapterSource = readFileSync(join(contracts, "src", "UniswapV4Adapter.sol"), "utf8");
+assert(/MAX_HOPS\s*=\s*ProtocolConstants\.MAX_SWAP_HOPS/u.test(adapterSource), "V3 adapter maximum hops is not shared");
+assert(/MAX_HOPS\s*=\s*ProtocolConstants\.MAX_SWAP_HOPS/u.test(v4AdapterSource), "V4 adapter maximum hops is not shared");
 assert(!/delegatecall/u.test(routerSource + adapterSource + v4AdapterSource), "router or adapter contains delegatecall execution");
 assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource + v4AdapterSource), "router or adapter exposes an arbitrary target");
 assert(/recipient:\s*entryExitRouter/u.test(adapterSource), "V3 adapter recipient is not fixed to the entry router");
@@ -257,9 +273,14 @@ assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(buybackSource), "buyback c
 assert(!/delegatecall|\.call\s*\{/u.test(buybackSource), "buyback collector exposes arbitrary execution");
 assert(/IOTFBurnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
 const buybackNames = functionNames(compiled.BuybackCollector);
-for (const name of ["configureFactory", "configureEntryExitRouter", "registerVault", "recordFeeShares", "settleFeesViaRedemption", "settleFeesViaShareSale", "feeAccounts"]) {
+for (const name of ["configureFactory", "recordFeeShares", "settleFeesViaRedemption", "settleFeesViaShareSale", "feeAccounts"]) {
   assert(buybackNames.has(name), `buyback collector function ${name} is absent`);
 }
+for (const removed of ["configureEntryExitRouter", "registerVault", "entryExitRouter"]) {
+  assert(!buybackNames.has(removed), `buyback collector retains redundant ${removed} surface`);
+}
+const feeAccounts = functions(compiled.BuybackCollector).find((item) => item.name === "feeAccounts");
+assert(feeAccounts.outputs.map((output) => output.type).join(",") === "uint256,uint256", "collector fee account retains shadow beneficiary state");
 const settleFeesViaRedemption = functions(compiled.BuybackCollector).find((item) => item.name === "settleFeesViaRedemption");
 assert(settleFeesViaRedemption.inputs.map((input) => input.type).join(",") === "address,uint256[],uint256,tuple[],uint256,uint256,uint256", "collector redemption settlement is not skip-aware");
 for (const removed of ["executeBuyback", "settleFees", "owner", "pendingOwner", "transferOwnership", "routeExecutor"]) {

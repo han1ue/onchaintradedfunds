@@ -30,15 +30,19 @@ contract MockApprovedAdapter { }
 
 contract MockBuybackFactory {
     BuybackCollector public immutable buybackCollector;
+    address public entryExitRouter;
     mapping(address => bool) public isVault;
 
     constructor(BuybackCollector collector_) {
         buybackCollector = collector_;
     }
 
-    function register(address vault, address beneficiary) external {
+    function register(address vault) external {
         isVault[vault] = true;
-        buybackCollector.registerVault(vault, beneficiary);
+    }
+
+    function configureEntryExitRouter(address router) external {
+        entryExitRouter = router;
     }
 }
 
@@ -170,11 +174,11 @@ contract BuybackCollectorTest is TestBase {
         factory = new MockBuybackFactory(collector);
         feeVault = new MockFeeVault(address(factory), address(collector), BENEFICIARY);
         collector.configureFactory(address(factory));
-        factory.register(address(feeVault), BENEFICIARY);
+        factory.register(address(feeVault));
         entryRouter = new MockBuybackEntryRouter(address(factory), address(weth));
         adapter = new MockApprovedAdapter();
         entryRouter.setAdapter(address(adapter), true);
-        collector.configureEntryExitRouter(address(entryRouter));
+        factory.configureEntryExitRouter(address(entryRouter));
 
         weth.mint(address(entryRouter), 1_000 ether);
         vm.prank(HOLDER);
@@ -205,11 +209,9 @@ contract BuybackCollectorTest is TestBase {
         assertEq(token.balanceOf(address(collector)), 0);
         assertEq(weth.balanceOf(address(collector)), 0);
         assertEq(feeVault.balanceOf(address(entryRouter)), 100 ether);
-        (uint256 creatorPending, uint256 buybackPending, address beneficiary) =
-            collector.feeAccounts(address(feeVault));
+        (uint256 creatorPending, uint256 buybackPending) = collector.feeAccounts(address(feeVault));
         assertEq(creatorPending, 0);
         assertEq(buybackPending, 0);
-        assertEq(beneficiary, BENEFICIARY);
         assertEq(universalRouter.lastIntermediateCurrency(), address(token));
         assertEq(universalRouter.lastFee(), 0);
         assertTrue(universalRouter.lastTickSpacing() == 1);
@@ -285,7 +287,7 @@ contract BuybackCollectorTest is TestBase {
         assertEq(feeVault.totalSupply(), supplyBefore + 100 ether);
         assertEq(feeVault.balanceOf(address(entryRouter)), 100 ether);
         assertEq(token.totalSupply(), otfSupplyBefore - 80 ether);
-        (uint256 creatorPending, uint256 buybackPending,) = collector.feeAccounts(address(feeVault));
+        (uint256 creatorPending, uint256 buybackPending) = collector.feeAccounts(address(feeVault));
         assertEq(creatorPending, 0);
         assertEq(buybackPending, 0);
 
@@ -407,7 +409,7 @@ contract BuybackCollectorTest is TestBase {
     function testMultipleVaultAccountsStaySeparated() public {
         MockFeeVault other =
             new MockFeeVault(address(factory), address(collector), OTHER_BENEFICIARY);
-        factory.register(address(other), OTHER_BENEFICIARY);
+        factory.register(address(other));
         feeVault.queueFeeShares(3 ether, 2 ether);
         other.queueFeeShares(7 ether, 3 ether);
         feeVault.checkpointFees();
@@ -424,11 +426,9 @@ contract BuybackCollectorTest is TestBase {
             block.timestamp + 1
         );
 
-        (uint256 creatorPending, uint256 buybackPending, address beneficiary) =
-            collector.feeAccounts(address(other));
+        (uint256 creatorPending, uint256 buybackPending) = collector.feeAccounts(address(other));
         assertEq(creatorPending, 7 ether);
         assertEq(buybackPending, 3 ether);
-        assertEq(beneficiary, OTHER_BENEFICIARY);
         assertEq(other.balanceOf(address(collector)), 10 ether);
         assertEq(weth.balanceOf(OTHER_BENEFICIARY), 0);
     }
@@ -469,7 +469,7 @@ contract BuybackCollectorTest is TestBase {
         assertEq(feeVault.queuedCreatorShares(), 60 ether);
         assertEq(feeVault.queuedBuybackShares(), 40 ether);
         assertEq(feeVault.balanceOf(address(collector)), 0);
-        (uint256 creatorPending, uint256 buybackPending,) = collector.feeAccounts(address(feeVault));
+        (uint256 creatorPending, uint256 buybackPending) = collector.feeAccounts(address(feeVault));
         assertEq(creatorPending, 0);
         assertEq(buybackPending, 0);
     }

@@ -10,6 +10,7 @@ import {
   formatPercentageDisplay,
   minimumPercentageUnitsForOneRaw,
   normalizeMarketCapPercentageUnits,
+  normalizeFundThesisLineBreaks,
   percentageTotal,
   percentageUnits,
   percentageUnitsForSelectionChange,
@@ -47,6 +48,15 @@ describe("vault creation transaction params", () => {
       mintFeeBps: 25,
       redeemFeeBps: 10,
     }));
+  });
+
+  it("replaces fund thesis line breaks with spaces", () => {
+    expect(normalizeFundThesisLineBreaks("Infrastructure\nfor\r\nthe\rnew era"))
+      .toBe("Infrastructure for the new era");
+    expect(normalizeFundThesisLineBreaks("One  \n  \n  thesis"))
+      .toBe("One thesis");
+    expect(normalizeFundThesisLineBreaks("Global\u2028assets\u2029onchain"))
+      .toBe("Global assets onchain");
   });
 });
 
@@ -134,6 +144,15 @@ describe("selection percentage behavior", () => {
 });
 
 describe("fixed $1 bootstrap basket calculation", () => {
+  it("requires at least two constituents", () => {
+    expect(() => calculateBootstrapBasketUnits([{
+      symbol: "ONLY",
+      decimals: 18,
+      percentageUnits: pct("100"),
+      priceUsd: "1",
+    }])).toThrow("at least two assets");
+  });
+
   it("uses only bigint fixed-point arithmetic and rounds raw units down", () => {
     const result = calculateBootstrapBasketUnits([
       { symbol: "A", decimals: 18, percentageUnits: pct("60"), priceUsd: "2" },

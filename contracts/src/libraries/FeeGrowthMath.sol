@@ -2,12 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ProtocolConstants } from "./ProtocolConstants.sol";
 
 /// @notice Fixed-point exponentiation used by cadence-independent expense-ratio accounting.
 /// @dev Adapted from Solady's FixedPointMathLib at commit
 /// c251232428b668a073293eb04c6c288b19ad5728 (MIT), originally credited to Remco Bloemen.
 library FeeGrowthMath {
-    int256 internal constant WAD = 1e18;
+    int256 internal constant WAD = int256(ProtocolConstants.WAD);
 
     error ExpOverflow();
     error LnWadUndefined();
@@ -22,11 +23,13 @@ library FeeGrowthMath {
         pure
         returns (uint256 growthWad)
     {
-        if (annualExpenseRatioBps >= 10_000) {
+        if (annualExpenseRatioBps >= ProtocolConstants.BPS) {
             revert InvalidAnnualExpenseRatio(annualExpenseRatioBps);
         }
-        uint256 retentionWad = 1e18 - Math.mulDiv(annualExpenseRatioBps, 1e18, 10_000);
-        uint256 elapsedYearsWad = Math.mulDiv(elapsed, 1e18, 365 days);
+        uint256 retentionWad = ProtocolConstants.WAD
+            - Math.mulDiv(annualExpenseRatioBps, ProtocolConstants.WAD, ProtocolConstants.BPS);
+        uint256 elapsedYearsWad =
+            Math.mulDiv(elapsed, ProtocolConstants.WAD, ProtocolConstants.YEAR);
         // The ratio bounds keep retention within 1e18, and elapsed originates from uint64
         // timestamps, so both values are far below int256.max.
         // forge-lint: disable-next-line(unsafe-typecast)

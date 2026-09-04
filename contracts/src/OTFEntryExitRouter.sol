@@ -5,6 +5,7 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
 import { IOTFSettlementFactory, IOTFSettlementVault } from "./interfaces/IOTFSettlement.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
@@ -59,7 +60,8 @@ struct FeeShareSwapRequest {
 contract OTFEntryExitRouter is Ownable2Step {
     using SafeTransferLib for address;
 
-    uint256 public constant MAX_CONSTITUENTS = 20;
+    uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
+    uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
     uint256 public constant MAX_LEGS = 40;
     /// @dev Two share tokens, two baskets, and two explicit endpoint tokens per leg.
     uint256 public constant MAX_TRACKED_TOKENS = 2 + 2 * MAX_CONSTITUENTS + 2 * MAX_LEGS;
@@ -514,7 +516,7 @@ contract OTFEntryExitRouter is Ownable2Step {
 
     function _validatedAssets(address vault) private view returns (address[] memory assets) {
         assets = IOTFSettlementVault(vault).assets();
-        if (assets.length == 0 || assets.length > MAX_CONSTITUENTS) {
+        if (assets.length < MIN_CONSTITUENTS || assets.length > MAX_CONSTITUENTS) {
             revert InvalidArrayLength();
         }
         for (uint256 i = 0; i < assets.length; i++) {
@@ -840,43 +842,22 @@ contract OTFEntryExitRouter is Ownable2Step {
             uint256 nativeRefunded
         )
     {
-        refundTokens = new address[](sheet.count);
-        refundAmounts = new uint256[](sheet.count);
-        uint256 refundCount;
-        for (uint256 i = 0; i < sheet.count; i++) {
-            address token = sheet.tokens[i];
-            uint256 current = IERC20(token).balanceOf(address(this));
-            uint256 baseline = sheet.baselines[i];
-            if (current < baseline) revert UnexpectedBalanceDecrease(token, baseline, current);
-            uint256 refund = current - baseline;
-            if (refund != 0) {
-                if (token == weth) {
-                    nativeRefunded = refund;
-                    IWETH(weth).withdraw(refund);
-                    _sendNative(msg.sender, refund);
-                } else {
-                    refundTokens[refundCount] = token;
-                    refundAmounts[refundCount] = refund;
-                    refundCount++;
-                    _recordCredit(sheet, token, refund);
-                    _pushExact(token, msg.sender, refund);
-                }
-            }
-            uint256 closed = IERC20(token).balanceOf(address(this));
-            if (closed != baseline) revert ResidualBalance(token, baseline, closed);
+        uint256 wethIndex = _tokenIndex(sheet, weth);
+        uint256 wethBaseline = sheet.baselines[wethIndex];
+        uint256 currentWeth = IERC20(weth).balanceOf(address(this));
+        if (currentWeth < wethBaseline) {
+            revert UnexpectedBalanceDecrease(weth, wethBaseline, currentWeth);
         }
-        for (uint256 i = 0; i < sheet.count; i++) {
-            address token = sheet.tokens[i];
-            uint256 closed = IERC20(token).balanceOf(address(this));
-            uint256 baseline = sheet.baselines[i];
-            if (closed != baseline) revert ResidualBalance(token, baseline, closed);
+        nativeRefunded = currentWeth - wethBaseline;
+        if (nativeRefunded != 0) {
+            IWETH(weth).withdraw(nativeRefunded);
+            _sendNative(msg.sender, nativeRefunded);
         }
+        uint256 closedWeth = IERC20(weth).balanceOf(address(this));
+        if (closedWeth != wethBaseline) revert ResidualBalance(weth, wethBaseline, closedWeth);
+
+        (refundTokens, refundAmounts) = _refundAndClose(sheet, msg.sender);
         _assertNativeBaseline(nativeBaseline);
-        _assertCallerDeltas(sheet, msg.sender);
-        assembly ("memory-safe") {
-            mstore(refundTokens, refundCount)
-            mstore(refundAmounts, refundCount)
-        }
     }
 
     function _wrapExact(uint256 amount) private {

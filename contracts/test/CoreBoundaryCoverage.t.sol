@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
+import { ManagedOTFVaultStorage } from "../src/ManagedOTFVaultStorage.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { VaultCreationParams } from "../src/VaultTypes.sol";
 import { MockStockToken } from "./mocks/MockStockToken.sol";
@@ -45,10 +46,13 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testImmutableMintAndRedeemFeesMatchPreviewsAndExecution() public {
         (OTFFactory factory, address collector, MockCoreRouter router) = _deployFactory();
         MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
-        address[] memory assets = new address[](1);
+        MockStockToken assetB = new MockStockToken("Asset B", "ASSET-B", 18);
+        address[] memory assets = new address[](2);
         assets[0] = address(asset);
-        uint256[] memory units = new uint256[](1);
+        assets[1] = address(assetB);
+        uint256[] memory units = new uint256[](2);
         units[0] = WAD;
+        units[1] = WAD;
         VaultCreationParams memory params = _creationParams(assets, units, 0);
         params.mintFeeBps = 200;
         params.redeemFeeBps = 100;
@@ -61,10 +65,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         {
             uint256 mintFee;
             (grossShares, mintFee, creatorMint, buybackMint,) = vault.previewMintFee(100 ether);
-            uint256[] memory amounts = vault.previewMint(100 ether);
-            asset.mint(address(router), amounts[0]);
-            router.approveAsset(address(asset), address(vault), amounts[0]);
-            router.mint(vault, 100 ether, ALICE, amounts);
+            _bootstrap(vault, router, assets, 100 ether);
             assertEq(vault.totalSupply(), grossShares);
             assertEq(vault.balanceOf(ALICE), 100 ether);
             assertEq(vault.balanceOf(BENEFICIARY), 0);
@@ -128,10 +129,13 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
     function testNormalInKindRedeemChargesFeeButShutdownRedeemIsFree() public {
         (OTFFactory factory,, MockCoreRouter router) = _deployFactory();
         MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
-        address[] memory assets = new address[](1);
+        MockStockToken assetB = new MockStockToken("Asset B", "ASSET-B", 18);
+        address[] memory assets = new address[](2);
         assets[0] = address(asset);
-        uint256[] memory units = new uint256[](1);
+        assets[1] = address(assetB);
+        uint256[] memory units = new uint256[](2);
         units[0] = WAD;
+        units[1] = WAD;
         VaultCreationParams memory params = _creationParams(assets, units, 0);
         params.redeemFeeBps = 100;
         vm.prank(CREATOR);
@@ -140,7 +144,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
 
         (, uint256 feeShares,,,) = vault.previewRedeemFee(10 ether);
         vm.prank(ALICE);
-        vault.redeemInKind(10 ether, ALICE, new uint256[](1), 0);
+        vault.redeemInKind(10 ether, ALICE, new uint256[](2), 0);
         assertGt(feeShares, 0);
 
         vm.prank(CREATOR);
@@ -152,7 +156,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         assertEq(shutdownFee, 0);
         assertEq(vault.previewRedeem(balance, 0)[0], balance);
         vm.prank(ALICE);
-        vault.redeemInKind(balance, ALICE, new uint256[](1), 0);
+        vault.redeemInKind(balance, ALICE, new uint256[](2), 0);
         assertEq(vault.totalSupply(), supplyBefore - balance);
     }
 
@@ -174,24 +178,27 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         unconfigured.configureEntryExitRouter(address(router));
 
         MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
-        address[] memory assets = new address[](1);
+        MockStockToken assetB = new MockStockToken("Asset B", "ASSET-B", 18);
+        address[] memory assets = new address[](2);
         assets[0] = address(asset);
-        uint256[] memory units = new uint256[](1);
+        assets[1] = address(assetB);
+        uint256[] memory units = new uint256[](2);
         units[0] = WAD;
+        units[1] = WAD;
 
         VaultCreationParams memory invalid = _creationParams(assets, units, 1_001);
         vm.prank(CREATOR);
-        vm.expectPartialRevert(OTFFactory.ExpenseRatioTooHigh.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.ExpenseRatioTooHigh.selector);
         unconfigured.createVault(invalid);
         invalid = _creationParams(assets, units, 0);
         invalid.mintFeeBps = 201;
         vm.prank(CREATOR);
-        vm.expectPartialRevert(OTFFactory.MintFeeTooHigh.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.MintFeeTooHigh.selector);
         unconfigured.createVault(invalid);
         invalid = _creationParams(assets, units, 0);
         invalid.redeemFeeBps = 101;
         vm.prank(CREATOR);
-        vm.expectPartialRevert(OTFFactory.RedeemFeeTooHigh.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.RedeemFeeTooHigh.selector);
         unconfigured.createVault(invalid);
     }
 

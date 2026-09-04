@@ -24,6 +24,8 @@ Annual expense, mint, and redeem fees accrue as vault shares. `BuybackCollector`
 | V4 launch manager | 200,000,000 |
 | Cumulative rewards distributor | 700,000,000 |
 
+The rewards distributor holds the 70% protocol and community incentive allocation. The finalized policy distributes its 700 million OTF budget weekly for 208 weeks, starting at 14 million OTF and declining by approximately 1.97% each week. Emissions stop after week 208. See [OTF token economics](docs/content/token-and-fee-incentives.mdx) for the schedule, exact-total reconciliation requirement, and the variables that determine incentive APY.
+
 The launch manager receives 200 million OTF. Its fixed one-sided position consumes approximately 149,997,417.3963 OTF under a 150 million cap. At the final tick, it replaces that position with full-range liquidity using `8.999869404555266670 WETH` and 50 million OTF minus 1,191 raw units, then burns all OTF left in the manager. The pool starts at an exact 20 ETH reference FDV and graduates at approximately 179.997388091105356396 ETH. See [OTF token economics](docs/content/token-and-fee-incentives.mdx) for the exact ticks, amounts, and boundary-router behavior.
 
 ## Repository layout

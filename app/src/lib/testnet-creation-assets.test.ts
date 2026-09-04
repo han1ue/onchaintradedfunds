@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   configuredTestnetCreationAssets,
   marketCapUsdFromYahoo,
+  protocolOtfCreationAsset,
+  stockPriceUsdFromYahoo,
 } from "./testnet-creation-assets";
+import { getAddress } from "viem";
 
 const sourceRows = {
   data: ["TSLA", "AMZN", "PLTR", "NFLX", "AMD"].map((symbol, index) => ({
@@ -48,5 +51,31 @@ describe("configured Robinhood testnet creation assets", () => {
       meta: { type: ["quarterlyMarketCap"] },
       quarterlyMarketCap: [{ reportedValue: { raw: "90.5" } }],
     }] } })).toBe("90.5");
+  });
+
+  it("reads a current Yahoo chart price and timestamp", () => {
+    expect(stockPriceUsdFromYahoo({ chart: { result: [{ meta: {
+      regularMarketPrice: 376.37,
+      regularMarketTime: 1_788_220_800,
+    } }] } })).toEqual({
+      priceUsd: "376.37",
+      priceUpdatedAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(stockPriceUsdFromYahoo({ chart: { result: null } })).toBeUndefined();
+  });
+
+  it("builds the protocol OTF constituent from current onchain values", () => {
+    expect(protocolOtfCreationAsset({
+      address: getAddress("0xdaB5d0511bf6e6E7D53047C321FF7cCDD030B5EA"),
+      priceWethWad: 20_000_000_000n,
+      ethUsdAnswer: 350_000_000_000n,
+      totalSupply: 1_000_000_000n * 10n ** 18n,
+    })).toEqual(expect.objectContaining({
+      symbol: "OTF",
+      priceUsd: "0.00007",
+      marketCapUsd: "70000",
+      decimals: 18,
+      verified: true,
+    }));
   });
 });

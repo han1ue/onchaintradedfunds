@@ -13,7 +13,7 @@ The main application creates, trades, and inspects oracleless basket OTFs. It is
 
 ## Vault creation
 
-The connected wallet becomes the creator. The form collects a name, symbol, fund thesis, one to 20 ordered constituents, three fee rates, and a fixed expense beneficiary. The factory stores the creator, thesis, constituent order, raw bootstrap units, rates, and beneficiary in a new empty vault clone.
+The connected wallet becomes the creator. The form collects a name, symbol, fund thesis, two to 20 ordered constituents, three fee rates, and a fixed expense beneficiary. The factory stores the creator, thesis, constituent order, raw bootstrap units, rates, and beneficiary in a new empty vault clone. The form starts with the protocol $OTF token and one randomly selected verified asset.
 
 The fund thesis must contain no more than 2,048 UTF-8 bytes. Annual expense, mint, and redeem rates are limited to 10%, 2%, and 1%. All three rates and the beneficiary are permanent.
 
@@ -39,7 +39,7 @@ After verifying the factory event, the application opens a dedicated confirmatio
 
 The Funds directory reads `vaultCount`, each vault address, identity, creator, constituent count, supply, and fee data from the configured factory and vault contracts. A confirmed factory creation therefore appears without a separate indexing service.
 
-The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices.
+The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices. The Funds summary and fund detail header place rewards APY after AUM, but show it as unavailable until the application has the current emission week, OTF market value, eligibility data, and total eligible AUM needed for an estimate.
 
 For an empty vault, the first mint must produce at least `0.01` shares. The application accepts a quote only when its guaranteed minimum output meets that threshold. There is no first-mint maximum, and the extra check disappears after supply becomes nonzero.
 

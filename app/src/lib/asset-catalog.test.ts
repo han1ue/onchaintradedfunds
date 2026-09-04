@@ -10,6 +10,7 @@ import {
   testnetSwapPairAllowed,
   testnetVenue,
 } from "./asset-catalog";
+import verifiedAssets from "../config/verified_assets.json";
 
 const OTF_A = { address: "0x00000000000000000000000000000000000000F1" as const, kind: "otf" as const };
 const OTF_B = { address: "0x00000000000000000000000000000000000000F2" as const, kind: "otf" as const };
@@ -48,5 +49,15 @@ describe("asset catalogs", () => {
   it("keeps production discovery chain-aware and informational", () => {
     expect(productionAssetsForChain(4663).map((asset) => asset.symbol)).toEqual(["USDG", "WETH"]);
     expect(productionAssetsForChain(46630)).toEqual([]);
+  });
+
+  it("registers the protocol OTF and every testnet fund constituent as verified", () => {
+    const verifiedTestnetAddresses = verifiedAssets
+      .filter((asset) => asset.chainId === 46630)
+      .map((asset) => asset.tokenAddress.toLowerCase());
+    expect(verifiedTestnetAddresses).toContain("0xdab5d0511bf6e6e7d53047c321ff7ccdd030b5ea");
+    expect(testnetFundAssets.every((asset) => (
+      verifiedTestnetAddresses.includes(asset.address.toLowerCase())
+    ))).toBe(true);
   });
 });

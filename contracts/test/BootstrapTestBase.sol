@@ -42,17 +42,10 @@ contract MockCoreRouter {
 }
 
 contract MockBuybackReceiver {
-    mapping(address => address) public expenseBeneficiary;
     mapping(address => uint256) public creatorFeeShares;
     mapping(address => uint256) public buybackFeeShares;
 
-    function registerVault(address vault, address beneficiary) external {
-        require(expenseBeneficiary[vault] == address(0), "REGISTERED");
-        expenseBeneficiary[vault] = beneficiary;
-    }
-
     function recordFeeShares(uint256 creatorShares, uint256 buybackShares) external {
-        require(expenseBeneficiary[msg.sender] != address(0), "UNREGISTERED");
         creatorFeeShares[msg.sender] += creatorShares;
         buybackFeeShares[msg.sender] += buybackShares;
     }

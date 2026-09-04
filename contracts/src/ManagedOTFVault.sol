@@ -7,7 +7,7 @@ import { ManagedOTFVaultStorage, IOTFFactoryTokenPolicy } from "./ManagedOTFVaul
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-import { VaultInitParams } from "./VaultTypes.sol";
+import { VaultCreationParams } from "./VaultTypes.sol";
 
 interface IFeeShareCollector {
     function recordFeeShares(uint256 creatorFeeShares, uint256 buybackFeeShares) external;
@@ -23,25 +23,46 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         _disableInitializers();
     }
 
-    function initialize(VaultInitParams calldata params) external initializer nonReentrant {
+    /// @notice Initializes a factory-created vault from the canonical public creation tuple.
+    function initialize(VaultCreationParams calldata params, address creator_)
+        external
+        initializer
+        nonReentrant
+    {
         if (msg.sender.code.length == 0) revert UnauthorizedFactory();
+        IOTFFactoryTokenPolicy factory_ = IOTFFactoryTokenPolicy(msg.sender);
+        address entryExitRouter_ = factory_.entryExitRouter();
+        address buybackCollector_ = factory_.buybackCollector();
+        address otfToken_ = factory_.otfToken();
+
         if (
-            params.creator == address(0) || params.expenseBeneficiary == address(0)
-                || params.entryExitRouter == address(0) || params.buybackCollector == address(0)
-                || params.otfToken == address(0)
+            creator_ == address(0) || params.expenseBeneficiary == address(0)
+                || entryExitRouter_ == address(0) || buybackCollector_ == address(0)
+                || otfToken_ == address(0)
         ) revert ZeroAddress();
-        if (params.creator == address(this) || params.expenseBeneficiary == address(this)) {
+        if (creator_ == address(this) || params.expenseBeneficiary == address(this)) {
             revert InvalidReceiver(address(this));
         }
-        if (params.entryExitRouter.code.length == 0) {
-            revert InvalidDependency(params.entryExitRouter);
+        if (bytes(params.name).length == 0 || bytes(params.symbol).length == 0) {
+            revert InvalidVaultMetadata();
         }
-        if (params.buybackCollector.code.length == 0) {
-            revert InvalidDependency(params.buybackCollector);
+        uint256 fundThesisBytes = bytes(params.fundThesis).length;
+        if (fundThesisBytes == 0) revert FundThesisRequired();
+        if (fundThesisBytes > ProtocolConstants.MAX_FUND_THESIS_BYTES) {
+            revert FundThesisTooLong(fundThesisBytes, ProtocolConstants.MAX_FUND_THESIS_BYTES);
         }
-        if (params.otfToken.code.length == 0) revert InvalidDependency(params.otfToken);
+        if (entryExitRouter_.code.length == 0) {
+            revert InvalidDependency(entryExitRouter_);
+        }
+        if (buybackCollector_.code.length == 0) {
+            revert InvalidDependency(buybackCollector_);
+        }
+        if (otfToken_.code.length == 0) revert InvalidDependency(otfToken_);
         uint256 length = params.constituents.length;
-        if (length == 0 || length > ProtocolConstants.MAX_CONSTITUENTS) {
+        if (length < ProtocolConstants.MIN_CONSTITUENTS) {
+            revert InvalidArrayLength(ProtocolConstants.MIN_CONSTITUENTS, length);
+        }
+        if (length > ProtocolConstants.MAX_CONSTITUENTS) {
             revert InvalidArrayLength(ProtocolConstants.MAX_CONSTITUENTS, length);
         }
         if (params.bootstrapBasketUnitsPerOTF.length != length) {
@@ -62,14 +83,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (params.redeemFeeBps > ProtocolConstants.MAX_REDEEM_FEE_BPS) {
             revert RedeemFeeTooHigh(params.redeemFeeBps, ProtocolConstants.MAX_REDEEM_FEE_BPS);
         }
-        _initialized = true;
         __ERC20_init(params.name, params.symbol);
         _factory = msg.sender;
-        _creator = params.creator;
+        _creator = creator_;
         _expenseBeneficiary = params.expenseBeneficiary;
-        _entryExitRouter = params.entryExitRouter;
-        _buybackCollector = params.buybackCollector;
-        _otfToken = params.otfToken;
+        _entryExitRouter = entryExitRouter_;
+        _buybackCollector = buybackCollector_;
+        _otfToken = otfToken_;
         _fundThesis = params.fundThesis;
         _annualCreatorExpenseRatioBps = params.annualCreatorExpenseRatioBps;
         _mintFeeBps = params.mintFeeBps;
@@ -90,7 +110,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         uint64 timestamp = uint64(block.timestamp);
         _feeEpochTimestamp = timestamp;
         _lastFeeCheckpointTimestamp = timestamp;
-        emit VaultInitialized(msg.sender, params.creator, params.expenseBeneficiary);
+        emit VaultInitialized(msg.sender, creator_, params.expenseBeneficiary);
     }
 
     // Bootstrap and policy views

@@ -14,20 +14,3 @@ struct VaultCreationParams {
     address[] constituents;
     uint256[] bootstrapBasketUnitsPerOTF;
 }
-
-/// @dev Initialization data passed by the factory to a vault clone.
-struct VaultInitParams {
-    string name;
-    string symbol;
-    string fundThesis;
-    address creator;
-    address expenseBeneficiary;
-    address entryExitRouter;
-    address buybackCollector;
-    address otfToken;
-    address[] constituents;
-    uint256[] bootstrapBasketUnitsPerOTF;
-    uint16 annualCreatorExpenseRatioBps;
-    uint16 mintFeeBps;
-    uint16 redeemFeeBps;
-}

@@ -5,6 +5,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../src/OTFLaunchManagerDeployer.sol";
 import { OTFLaunchRouter } from "../src/OTFLaunchRouter.sol";
+import { UniswapV4PoolKey, UniswapV4SwapParams } from "../src/interfaces/IUniswapV4.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";
 import { TestBase, Vm } from "./TestBase.sol";
 
@@ -13,7 +14,6 @@ import { IPoolManager } from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
-import { BalanceDelta } from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { PoolId } from "@uniswap/v4-core/src/types/PoolId.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -21,6 +21,8 @@ import { SwapParams, ModifyLiquidityParams } from "@uniswap/v4-core/src/types/Po
 import { PoolSwapTest } from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import { PoolDonateTest } from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 import { PoolModifyLiquidityTest } from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
+import { CustomRevert } from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import { Hooks } from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import { PositionManager } from "@uniswap/v4-periphery/src/PositionManager.sol";
 import { IPositionManager } from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
@@ -41,6 +43,87 @@ contract IntegrationOTF is ERC20 {
 
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
+    }
+}
+
+contract RejectingRefundBuyer {
+    OTFLaunchRouter private immutable _router;
+
+    constructor(OTFLaunchRouter router_) {
+        _router = router_;
+    }
+
+    function buy(address recipient, uint256 deadline) external {
+        _router.buyOtfWithEth{ value: address(this).balance }(1, recipient, deadline);
+    }
+
+    receive() external payable {
+        revert("refund rejected");
+    }
+}
+
+contract ReentrantRefundBuyer {
+    OTFLaunchRouter private immutable _router;
+    bytes4 public reentrySelector;
+
+    constructor(OTFLaunchRouter router_) {
+        _router = router_;
+    }
+
+    function buy(address recipient, uint256 deadline) external {
+        _router.buyOtfWithEth{ value: address(this).balance }(1, recipient, deadline);
+    }
+
+    receive() external payable {
+        if (reentrySelector != bytes4(0)) return;
+        try _router.buyOtfWithEth(0, address(this), type(uint256).max) returns (uint256, uint256) {
+            revert("reentry succeeded");
+        } catch (bytes memory reason) {
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            reentrySelector = selector;
+        }
+    }
+}
+
+contract BoundaryMultiSwap {
+    IPoolManager private immutable _poolManager;
+
+    constructor(IPoolManager poolManager_) {
+        _poolManager = poolManager_;
+    }
+
+    function attack(PoolKey calldata key, bool otfIsCurrency0, uint160 finalSqrtPriceX96) external {
+        _poolManager.unlock(abi.encode(key, otfIsCurrency0, finalSqrtPriceX96));
+    }
+
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        require(msg.sender == address(_poolManager), "unauthorized callback");
+        (PoolKey memory key, bool otfIsCurrency0, uint160 finalSqrtPriceX96) =
+            abi.decode(data, (PoolKey, bool, uint160));
+        _poolManager.swap(
+            key,
+            SwapParams({
+                zeroForOne: !otfIsCurrency0,
+                amountSpecified: -int256(20 ether),
+                sqrtPriceLimitX96: finalSqrtPriceX96
+            }),
+            bytes("")
+        );
+        _poolManager.swap(
+            key,
+            SwapParams({
+                zeroForOne: otfIsCurrency0,
+                amountSpecified: -int256(1 ether),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
+                    otfIsCurrency0 ? int24(-177_284) : int24(177_284)
+                )
+            }),
+            bytes("")
+        );
+        return bytes("");
     }
 }
 
@@ -128,6 +211,110 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _assertPartialBuyAndSell(_deploy(false));
     }
 
+    function testFuzzRouterBuysSellsAndBoundaryRefunds(
+        bool direct,
+        bool nativeInput,
+        uint96 buySeed,
+        uint96 sellSeed,
+        uint96 surplusSeed
+    ) public {
+        Setup memory setup = _deploy(direct);
+        uint256 buyAmount = bound(uint256(buySeed), 1e12, 4 ether);
+        uint256 boughtOtf;
+        if (nativeInput) {
+            vm.deal(BUYER, buyAmount);
+            vm.prank(BUYER);
+            (, boughtOtf) =
+                setup.router.buyOtfWithEth{ value: buyAmount }(1, BUYER, block.timestamp + 1);
+            assertEq(BUYER.balance, 0);
+        } else {
+            setup.weth.mint(BUYER, buyAmount);
+            vm.startPrank(BUYER);
+            setup.weth.approve(address(setup.router), buyAmount);
+            (, boughtOtf) = setup.router.buyOtfWithWeth(buyAmount, 1, BUYER, block.timestamp + 1);
+            vm.stopPrank();
+            assertEq(setup.weth.balanceOf(BUYER), 0);
+        }
+        assertGt(boughtOtf, 0);
+
+        uint256 sellAmount = bound(uint256(sellSeed), 1e12, boughtOtf);
+        uint256 wethBeforeSell = setup.weth.balanceOf(BUYER);
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(setup.router), sellAmount);
+        (uint256 soldOtf, uint256 wethOut) =
+            setup.router.sellOtfForWeth(sellAmount, 1, BUYER, block.timestamp + 1);
+        vm.stopPrank();
+        assertEq(soldOtf, sellAmount);
+        assertEq(setup.otf.balanceOf(BUYER), boughtOtf - soldOtf);
+        assertEq(setup.weth.balanceOf(BUYER), wethBeforeSell + wethOut);
+
+        uint256 boundaryInput = direct ? DIRECT_BOUNDARY_WETH_INPUT : INVERSE_BOUNDARY_WETH_INPUT;
+        uint256 surplus = bound(uint256(surplusSeed), 1, 20 ether);
+        uint256 oversizedInput = boundaryInput + surplus;
+        uint256 boundarySpent;
+        if (nativeInput) {
+            vm.deal(BUYER, oversizedInput);
+            vm.prank(BUYER);
+            (boundarySpent,) =
+                setup.router.buyOtfWithEth{ value: oversizedInput }(1, BUYER, block.timestamp + 1);
+            assertEq(BUYER.balance, oversizedInput - boundarySpent);
+        } else {
+            uint256 wethNeeded = oversizedInput;
+            if (setup.weth.balanceOf(BUYER) < wethNeeded) {
+                setup.weth.mint(BUYER, wethNeeded - setup.weth.balanceOf(BUYER));
+            }
+            uint256 beforeBoundaryBuy = setup.weth.balanceOf(BUYER);
+            vm.startPrank(BUYER);
+            setup.weth.approve(address(setup.router), oversizedInput);
+            (boundarySpent,) =
+                setup.router.buyOtfWithWeth(oversizedInput, 1, BUYER, block.timestamp + 1);
+            vm.stopPrank();
+            assertEq(setup.weth.balanceOf(BUYER), beforeBoundaryBuy - boundarySpent);
+        }
+        assertLt(boundarySpent, oversizedInput);
+        _assertGraduated(setup, direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN);
+    }
+
+    function testFuzzExactAndNearBoundarySqrtPrices(bool direct, uint8 distanceSeed) public {
+        Setup memory setup = _deploy(direct);
+        uint256 distance = bound(uint256(distanceSeed), 1, 32);
+        uint160 nearBoundary = TickMath.getSqrtPriceAtTick(
+            setup.launch.finalTick() + (direct ? -int24(uint24(distance)) : int24(uint24(distance)))
+        );
+        PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
+        setup.weth.mint(BUYER, 20 ether);
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: -int256(20 ether),
+                sqrtPriceLimitX96: nearBoundary
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        (uint160 nearPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(nearPrice), uint256(nearBoundary));
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+
+        swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: -int256(20 ether),
+                sqrtPriceLimitX96: setup.launch.finalSqrtPriceX96()
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        vm.stopPrank();
+        (uint160 finalPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(finalPrice), uint256(setup.launch.finalSqrtPriceX96()));
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+    }
+
     function testDeadlineAndMinimumOutputRevertWithoutChangingPool() public {
         Setup memory setup = _deploy(true);
         setup.weth.mint(BUYER, 2 ether);
@@ -147,6 +334,122 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(setup.weth.balanceOf(BUYER), 2 ether);
     }
 
+    function testUnauthorizedCallbacksInvalidPoolAndWrongPhasesUseIntendedErrors() public {
+        Setup memory uninitialized = _deployUninitialized(true);
+        UniswapV4PoolKey memory managerKey = _managerKey(uninitialized);
+        UniswapV4SwapParams memory params = UniswapV4SwapParams(false, -int256(1), 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFLaunchManager.UnauthorizedPoolManager.selector, address(this))
+        );
+        uninitialized.launch.beforeInitialize(address(uninitialized.launch), managerKey, 1);
+
+        vm.prank(address(uninitialized.poolManager));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.InvalidPhase.selector,
+                OTFLaunchManager.Phase.BootstrapActive,
+                OTFLaunchManager.Phase.NotInitialized
+            )
+        );
+        uninitialized.launch.afterSwap(address(this), managerKey, params, 0, bytes(""));
+
+        Setup memory setup = _deploy(true);
+        UniswapV4PoolKey memory invalidKey = _managerKey(setup);
+        invalidKey.fee = 1;
+        vm.prank(address(setup.poolManager));
+        vm.expectRevert(OTFLaunchManager.InvalidPool.selector);
+        setup.launch.afterSwap(address(this), invalidKey, params, 0, bytes(""));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFLaunchRouter.UnauthorizedPoolManager.selector, address(this))
+        );
+        setup.router.unlockCallback(bytes(""));
+    }
+
+    function testUnauthorizedPoolInitializationCannotInitializeLaunch() public {
+        Setup memory setup = _deployUninitialized(true);
+        setup.otf.mint(address(setup.launch), setup.launch.REQUIRED_OTF_BALANCE());
+        PoolKey memory key = _key(setup);
+        uint160 initialPrice = setup.launch.initialSqrtPriceX96();
+        bytes memory inner = abi.encodeWithSelector(
+            OTFLaunchManager.UnauthorizedInitializer.selector, address(this)
+        );
+        vm.expectRevert(_wrappedHookRevert(setup, IHooks.beforeInitialize.selector, inner));
+        setup.poolManager.initialize(key, initialPrice);
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized));
+
+        setup.launch.initializeLaunch();
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchManager.InvalidPhase.selector,
+                OTFLaunchManager.Phase.NotInitialized,
+                OTFLaunchManager.Phase.BootstrapActive
+            )
+        );
+        setup.launch.initializeLaunch();
+    }
+
+    function testRouterRejectsZeroOversizedRecipientDeadlineAndReadyPhase() public {
+        Setup memory setup = _deploy(true);
+        vm.expectRevert(OTFLaunchRouter.InvalidAmount.selector);
+        setup.router.buyOtfWithWeth(0, 0, BUYER, block.timestamp);
+        vm.expectRevert(OTFLaunchRouter.InvalidAmount.selector);
+        setup.router
+            .buyOtfWithWeth(uint256(uint128(type(int128).max)) + 1, 0, BUYER, block.timestamp);
+        vm.expectRevert(OTFLaunchRouter.ZeroAddress.selector);
+        setup.router.buyOtfWithWeth(1, 0, address(0), block.timestamp);
+        vm.expectRevert(
+            abi.encodeWithSelector(OTFLaunchRouter.DeadlinePassed.selector, block.timestamp - 1)
+        );
+        setup.router.buyOtfWithWeth(1, 0, BUYER, block.timestamp - 1);
+
+        _reachGraduationReady(setup);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OTFLaunchRouter.InvalidPhase.selector, uint8(OTFLaunchManager.Phase.GraduationReady)
+            )
+        );
+        setup.router.buyOtfWithWeth(1, 0, BUYER, block.timestamp);
+    }
+
+    function testRejectingEthRefundRollsBackAndRefundReentrancyIsBlocked() public {
+        Setup memory rejectingSetup = _deploy(true);
+        RejectingRefundBuyer rejecting = new RejectingRefundBuyer(rejectingSetup.router);
+        vm.deal(address(rejecting), 20 ether);
+        (uint160 priceBefore,) = rejectingSetup.launch.currentPoolState();
+        vm.expectRevert(OTFLaunchRouter.RefundFailed.selector);
+        rejecting.buy(BUYER, block.timestamp + 1);
+        (uint160 priceAfter,) = rejectingSetup.launch.currentPoolState();
+        assertEq(uint256(priceAfter), uint256(priceBefore));
+        assertEq(
+            uint256(rejectingSetup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive)
+        );
+        assertEq(address(rejecting).balance, 20 ether);
+
+        Setup memory reentrantSetup = _deploy(false);
+        ReentrantRefundBuyer reentrant = new ReentrantRefundBuyer(reentrantSetup.router);
+        vm.deal(address(reentrant), 20 ether);
+        reentrant.buy(BUYER, block.timestamp + 1);
+        assertEq(
+            uint256(uint32(reentrant.reentrySelector())),
+            uint256(uint32(OTFLaunchRouter.Reentrancy.selector))
+        );
+        assertEq(address(reentrant).balance, 20 ether - INVERSE_BOUNDARY_WETH_INPUT);
+        _assertGraduated(reentrantSetup, INVERSE_FINAL_BURN);
+    }
+
+    function testExactOutputBoundaryAndPermissionlessFinalizationForBothOrderings() public {
+        _assertExactOutputBoundaryAndPermissionlessFinalization(_deploy(true));
+        _assertExactOutputBoundaryAndPermissionlessFinalization(_deploy(false));
+    }
+
+    function testMultiSwapBoundaryThenReverseRollsBackForBothOrderings() public {
+        _assertBoundaryThenReverseRollback(_deploy(true));
+        _assertBoundaryThenReverseRollback(_deploy(false));
+    }
+
     function testFinalizationFailureRollsBackBoundaryPurchase() public {
         Setup memory setup = _deploy(true);
         vm.prank(address(setup.launch));
@@ -155,15 +458,33 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         vm.prank(BUYER);
         setup.weth.approve(address(setup.router), 20 ether);
         (uint160 beforePrice,) = setup.launch.currentPoolState();
+        uint256 managerOtfBefore = setup.otf.balanceOf(address(setup.launch));
+        uint256 managerWethBefore = setup.weth.balanceOf(address(setup.launch));
+        uint128 bootstrapLiquidityBefore =
+            setup.positionManager.getPositionLiquidity(setup.launch.bootstrapPositionTokenId());
+        uint128 poolLiquidityBefore =
+            setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId()));
 
         vm.prank(BUYER);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "TRANSFER_FROM_FAILED"));
         setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
 
         (uint160 afterPrice,) = setup.launch.currentPoolState();
         assertEq(uint256(afterPrice), uint256(beforePrice));
         assertEq(setup.weth.balanceOf(BUYER), 20 ether);
+        assertEq(setup.otf.balanceOf(BUYER), 0);
+        assertEq(setup.otf.balanceOf(address(setup.launch)), managerOtfBefore);
+        assertEq(setup.weth.balanceOf(address(setup.launch)), managerWethBefore);
+        assertEq(
+            setup.positionManager.getPositionLiquidity(setup.launch.bootstrapPositionTokenId()),
+            bootstrapLiquidityBefore
+        );
+        assertEq(
+            setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), poolLiquidityBefore
+        );
+        assertEq(setup.launch.permanentPositionTokenId(), 0);
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+        _assertAllowancesCleared(setup);
     }
 
     function testStandardRouterOvershootsRevertCompletely() public {
@@ -350,48 +671,47 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         PoolKey memory key = _key(setup);
         bool direct = setup.launch.otfIsCurrency0();
         uint160 finalPrice = setup.launch.finalSqrtPriceX96();
+        uint160 buyLimit =
+            TickMath.getSqrtPriceAtTick(setup.launch.finalTick() + (direct ? int24(10) : -10));
+        uint160 sellLimit =
+            TickMath.getSqrtPriceAtTick(setup.launch.finalTick() + (direct ? -10 : int24(10)));
+        uint128 liquidityBefore = setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId()));
         uint256 wethBefore = setup.weth.balanceOf(BUYER);
         uint256 otfBefore = setup.otf.balanceOf(BUYER);
 
         vm.startPrank(BUYER);
         setup.otf.approve(address(swapper), type(uint256).max);
-        try swapper.swap(
+        bytes memory inner = abi.encodeWithSelector(
+            OTFLaunchManager.InvalidPhase.selector,
+            OTFLaunchManager.Phase.BootstrapActive,
+            OTFLaunchManager.Phase.GraduationReady
+        );
+        vm.expectRevert(_wrappedHookRevert(setup, IHooks.afterSwap.selector, inner));
+        swapper.swap(
             key,
             SwapParams({
                 zeroForOne: !direct,
                 amountSpecified: -int256(0.01 ether),
-                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
-                    setup.launch.finalTick() + (direct ? int24(10) : -10)
-                )
+                sqrtPriceLimitX96: buyLimit
             }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
-        ) returns (
-            BalanceDelta
-        ) {
-            revert("ready buy succeeded");
-        } catch { }
-        try swapper.swap(
+        );
+        vm.expectRevert(_wrappedHookRevert(setup, IHooks.afterSwap.selector, inner));
+        swapper.swap(
             key,
             SwapParams({
-                zeroForOne: direct,
-                amountSpecified: -int256(1 ether),
-                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
-                    setup.launch.finalTick() + (direct ? -10 : int24(10))
-                )
+                zeroForOne: direct, amountSpecified: -int256(1 ether), sqrtPriceLimitX96: sellLimit
             }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
-        ) returns (
-            BalanceDelta
-        ) {
-            revert("ready sell succeeded");
-        } catch { }
+        );
         vm.stopPrank();
 
         (uint160 priceAfter,) = setup.launch.currentPoolState();
         assertEq(uint256(priceAfter), uint256(finalPrice));
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), liquidityBefore);
         assertEq(setup.weth.balanceOf(BUYER), wethBefore);
         assertEq(setup.otf.balanceOf(BUYER), otfBefore);
     }
@@ -576,22 +896,23 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     ) private {
         uint256 wethBeforeAttack = setup.weth.balanceOf(BUYER);
         uint256 otfBeforeAttack = setup.otf.balanceOf(BUYER);
-        try swapper.swap(
-            _key(setup),
+        PoolKey memory key = _key(setup);
+        uint160 attackLimit =
+            TickMath.getSqrtPriceAtTick(setup.launch.finalTick() + (direct ? int24(16) : -16));
+        bytes memory inner = abi.encodeWithSelector(
+            OTFLaunchManager.BootstrapPriceOutOfBounds.selector, attackLimit
+        );
+        vm.expectRevert(_wrappedHookRevert(setup, IHooks.afterSwap.selector, inner));
+        swapper.swap(
+            key,
             SwapParams({
                 zeroForOne: !direct,
                 amountSpecified: -int256(1 ether),
-                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
-                    setup.launch.finalTick() + (direct ? int24(16) : -16)
-                )
+                sqrtPriceLimitX96: attackLimit
             }),
             PoolSwapTest.TestSettings(false, false),
             bytes("")
-        ) returns (
-            BalanceDelta
-        ) {
-            revert("thin bridge overshoot succeeded");
-        } catch { }
+        );
 
         (uint160 priceAfterAttack,) = setup.launch.currentPoolState();
         (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();
@@ -770,6 +1091,58 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
     }
 
+    function _assertExactOutputBoundaryAndPermissionlessFinalization(Setup memory setup) private {
+        PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
+        bool direct = setup.launch.otfIsCurrency0();
+        setup.weth.mint(BUYER, 20 ether);
+        uint256 wethBefore = setup.weth.balanceOf(BUYER);
+        uint256 otfBefore = setup.otf.balanceOf(BUYER);
+        vm.startPrank(BUYER);
+        setup.weth.approve(address(swapper), type(uint256).max);
+        swapper.swap(
+            _key(setup),
+            SwapParams({
+                zeroForOne: !direct,
+                amountSpecified: int256(200_000_000 ether),
+                sqrtPriceLimitX96: setup.launch.finalSqrtPriceX96()
+            }),
+            PoolSwapTest.TestSettings(false, false),
+            bytes("")
+        );
+        vm.stopPrank();
+        assertLt(setup.weth.balanceOf(BUYER), wethBefore);
+        assertGt(setup.otf.balanceOf(BUYER), otfBefore);
+        assertLt(setup.otf.balanceOf(BUYER) - otfBefore, 200_000_000 ether);
+        (uint160 finalPrice,) = setup.launch.currentPoolState();
+        assertEq(uint256(finalPrice), uint256(setup.launch.finalSqrtPriceX96()));
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.GraduationReady));
+
+        address finalizer = address(0xF1A11E);
+        vm.prank(finalizer);
+        setup.launch.finalizeGraduation();
+        _assertGraduated(setup, direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN);
+    }
+
+    function _assertBoundaryThenReverseRollback(Setup memory setup) private {
+        BoundaryMultiSwap attacker = new BoundaryMultiSwap(IPoolManager(address(setup.poolManager)));
+        PoolKey memory key = _key(setup);
+        bool direct = setup.launch.otfIsCurrency0();
+        uint160 finalPrice = setup.launch.finalSqrtPriceX96();
+        (uint160 priceBefore,) = setup.launch.currentPoolState();
+        uint128 liquidityBefore = setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId()));
+        bytes memory inner = abi.encodeWithSelector(
+            OTFLaunchManager.InvalidPhase.selector,
+            OTFLaunchManager.Phase.BootstrapActive,
+            OTFLaunchManager.Phase.GraduationReady
+        );
+        vm.expectRevert(_wrappedHookRevert(setup, IHooks.afterSwap.selector, inner));
+        attacker.attack(key, direct, finalPrice);
+        (uint160 priceAfter,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfter), uint256(priceBefore));
+        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), liquidityBefore);
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+    }
+
     function _assertStandardOvershootsRevert(Setup memory setup) private {
         PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
         PoolKey memory key = _key(setup);
@@ -780,7 +1153,15 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         bool direct = setup.launch.otfIsCurrency0();
         uint160 buyLimit =
             direct ? TickMath.getSqrtPriceAtTick(-155_310) : TickMath.getSqrtPriceAtTick(155_310);
-        vm.expectRevert();
+        vm.expectRevert(
+            _wrappedHookRevert(
+                setup,
+                IHooks.afterSwap.selector,
+                abi.encodeWithSelector(
+                    OTFLaunchManager.BootstrapPriceOutOfBounds.selector, buyLimit
+                )
+            )
+        );
         swapper.swap(
             key,
             SwapParams({
@@ -800,7 +1181,15 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         (uint160 beforeSellPrice,) = setup.launch.currentPoolState();
         uint160 sellLimit =
             direct ? TickMath.getSqrtPriceAtTick(-177_285) : TickMath.getSqrtPriceAtTick(177_285);
-        vm.expectRevert();
+        vm.expectRevert(
+            _wrappedHookRevert(
+                setup,
+                IHooks.afterSwap.selector,
+                abi.encodeWithSelector(
+                    OTFLaunchManager.BootstrapPriceOutOfBounds.selector, sellLimit
+                )
+            )
+        );
         swapper.swap(
             key,
             SwapParams({
@@ -825,7 +1214,44 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(setup.launch.finalOtfBurned(), expectedBurn);
         assertEq(setup.otf.balanceOf(address(setup.launch)), 0);
         assertEq(setup.launch.bootstrapOtfReturned(), 0);
+        assertEq(
+            setup.positionManager.ownerOf(setup.launch.permanentPositionTokenId()),
+            address(setup.launch)
+        );
+        assertEq(
+            setup.positionManager.getPositionLiquidity(setup.launch.permanentPositionTokenId()),
+            setup.launch.PERMANENT_LIQUIDITY()
+        );
+        assertEq(
+            setup.positionManager.getPositionLiquidity(setup.launch.bootstrapPositionTokenId()), 0
+        );
+        (bool bootstrapNftExists,) = address(setup.positionManager)
+            .staticcall(
+                abi.encodeWithSignature("ownerOf(uint256)", setup.launch.bootstrapPositionTokenId())
+            );
+        assertFalse(bootstrapNftExists);
+        (bool canWithdraw,) = address(setup.launch)
+            .staticcall(abi.encodeWithSignature("withdraw(address,uint256)", BUYER, 1));
+        assertFalse(canWithdraw);
         _assertAllowancesCleared(setup);
+    }
+
+    function _wrappedHookRevert(Setup memory setup, bytes4 callback, bytes memory inner)
+        private
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(setup.launch),
+            callback,
+            inner,
+            abi.encodePacked(Hooks.HookCallFailed.selector)
+        );
+    }
+
+    function _managerKey(Setup memory setup) private view returns (UniswapV4PoolKey memory key) {
+        (key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks) = setup.launch.poolKey();
     }
 
     function _assertAllowancesCleared(Setup memory setup) private view {

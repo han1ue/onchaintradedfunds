@@ -5,6 +5,7 @@ import { IERC20 } from "./interfaces/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { IUniswapV3Factory, IUniswapV3PoolImmutables } from "./interfaces/IUniswapV3Factory.sol";
 import { IUniswapV3SwapRouter } from "./interfaces/IUniswapV3SwapRouter.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { UniswapV3Path } from "./libraries/UniswapV3Path.sol";
 
@@ -12,7 +13,7 @@ import { UniswapV3Path } from "./libraries/UniswapV3Path.sol";
 contract UniswapV3Adapter is ITradeAdapter {
     using SafeTransferLib for address;
 
-    uint256 public constant MAX_HOPS = 3;
+    uint256 public constant MAX_HOPS = ProtocolConstants.MAX_SWAP_HOPS;
 
     error UnauthorizedCaller(address caller);
     error ZeroAddress();

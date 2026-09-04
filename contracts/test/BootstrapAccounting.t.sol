@@ -43,7 +43,7 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         params.fundThesis = "";
 
         vm.prank(CREATOR);
-        vm.expectRevert(OTFFactory.FundThesisRequired.selector);
+        vm.expectRevert(ManagedOTFVaultStorage.FundThesisRequired.selector);
         factory.createVault(params);
     }
 
@@ -52,7 +52,7 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         params.fundThesis = string(new bytes(2_049));
 
         vm.prank(CREATOR);
-        vm.expectPartialRevert(OTFFactory.FundThesisTooLong.selector);
+        vm.expectPartialRevert(ManagedOTFVaultStorage.FundThesisTooLong.selector);
         factory.createVault(params);
     }
 
@@ -100,6 +100,20 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         units[1] = 1;
         vm.prank(CREATOR);
         vm.expectPartialRevert(ManagedOTFVaultStorage.DuplicateConstituent.selector);
+        factory.createVault(_creationParams(assets, units, 0));
+        assertEq(factory.vaultCount(), 0);
+    }
+
+    function testCreationRequiresAtLeastTwoConstituents() public {
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint256[] memory units = new uint256[](1);
+        units[0] = 1;
+
+        vm.prank(CREATOR);
+        vm.expectRevert(
+            abi.encodeWithSelector(ManagedOTFVaultStorage.InvalidArrayLength.selector, 2, 1)
+        );
         factory.createVault(_creationParams(assets, units, 0));
         assertEq(factory.vaultCount(), 0);
     }

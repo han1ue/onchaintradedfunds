@@ -4,18 +4,15 @@ pragma solidity ^0.8.24;
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { ManagedOTFVault } from "./ManagedOTFVault.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { VaultCreationParams, VaultInitParams } from "./VaultTypes.sol";
+import { VaultCreationParams } from "./VaultTypes.sol";
 
 interface ICanonicalEntryExitRouter {
     function factory() external view returns (address);
 }
 
-interface IFeeCollectorRegistry {
-    function registerVault(address vault, address expenseBeneficiary) external;
-}
-
 /// @notice Permissionless OTF creation from creator-supplied immutable bootstrap basket units.
 contract OTFFactory {
+    uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
     uint16 public constant MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS =
         ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS;
@@ -28,12 +25,6 @@ contract OTFFactory {
     error RouterNotConfigured();
     error UnauthorizedRouterConfigurator(address caller);
     error RouterFactoryMismatch(address expected, address actual);
-    error InvalidVaultMetadata();
-    error FundThesisRequired();
-    error FundThesisTooLong(uint256 suppliedBytes, uint256 maximumBytes);
-    error ExpenseRatioTooHigh(uint16 supplied, uint16 maximum);
-    error MintFeeTooHigh(uint16 supplied, uint16 maximum);
-    error RedeemFeeTooHigh(uint16 supplied, uint16 maximum);
     error Reentrancy();
 
     event EntryExitRouterConfigured(address indexed router);
@@ -100,54 +91,11 @@ contract OTFFactory {
     {
         address router = entryExitRouter;
         if (router == address(0)) revert RouterNotConfigured();
-        if (
-            bytes(params.name).length == 0 || bytes(params.symbol).length == 0
-                || params.expenseBeneficiary == address(0)
-        ) revert InvalidVaultMetadata();
-        uint256 fundThesisBytes = bytes(params.fundThesis).length;
-        if (fundThesisBytes == 0) revert FundThesisRequired();
-        if (fundThesisBytes > ProtocolConstants.MAX_FUND_THESIS_BYTES) {
-            revert FundThesisTooLong(fundThesisBytes, ProtocolConstants.MAX_FUND_THESIS_BYTES);
-        }
-        if (
-            params.annualCreatorExpenseRatioBps
-                > ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
-        ) {
-            revert ExpenseRatioTooHigh(
-                params.annualCreatorExpenseRatioBps,
-                ProtocolConstants.MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS
-            );
-        }
-        if (params.mintFeeBps > ProtocolConstants.MAX_MINT_FEE_BPS) {
-            revert MintFeeTooHigh(params.mintFeeBps, ProtocolConstants.MAX_MINT_FEE_BPS);
-        }
-        if (params.redeemFeeBps > ProtocolConstants.MAX_REDEEM_FEE_BPS) {
-            revert RedeemFeeTooHigh(params.redeemFeeBps, ProtocolConstants.MAX_REDEEM_FEE_BPS);
-        }
-
         vault = Clones.clone(vaultImplementation);
-        ManagedOTFVault(vault)
-            .initialize(
-                VaultInitParams({
-                name: params.name,
-                symbol: params.symbol,
-                fundThesis: params.fundThesis,
-                creator: msg.sender,
-                expenseBeneficiary: params.expenseBeneficiary,
-                entryExitRouter: router,
-                buybackCollector: buybackCollector,
-                otfToken: otfToken,
-                constituents: params.constituents,
-                bootstrapBasketUnitsPerOTF: params.bootstrapBasketUnitsPerOTF,
-                annualCreatorExpenseRatioBps: params.annualCreatorExpenseRatioBps,
-                mintFeeBps: params.mintFeeBps,
-                redeemFeeBps: params.redeemFeeBps
-            })
-            );
+        ManagedOTFVault(vault).initialize(params, msg.sender);
 
         isVault[vault] = true;
         _vaults.push(vault);
-        IFeeCollectorRegistry(buybackCollector).registerVault(vault, params.expenseBeneficiary);
         emit VaultCreated(msg.sender, vault, params.name, params.symbol);
     }
 

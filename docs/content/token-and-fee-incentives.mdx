@@ -1,11 +1,11 @@
 ---
 title: OTF token economics
-description: OTF supply, canonical V4 launch, fund fees, buybacks, vesting, and cumulative rewards.
+description: OTF supply, incentive emissions, canonical V4 launch, fund fees, buybacks, vesting, and cumulative rewards.
 ---
 
 # OTF token economics
 
-The contracts implement the economics described here, but the current architecture is unaudited and has not been deployed. Earlier testnet contracts are incompatible.
+The contracts implement the token allocation and claim mechanics described here. The emission schedule is a publisher policy rather than an onchain restriction. The current architecture is unaudited and has not been deployed; earlier testnet contracts are incompatible.
 
 ## Supply and allocation
 
@@ -17,7 +17,7 @@ The contracts implement the economics described here, but the current architectu
 | --- | ---: | --- |
 | Team market-cap vesting | 100,000,000 | Ten live-FDV milestones |
 | V4 launch manager | 200,000,000 | Bootstrap and permanent liquidity |
-| Cumulative rewards distributor | 700,000,000 | Multisig-published rewards |
+| Cumulative rewards distributor | 700,000,000 | Protocol and community incentives published by multisig |
 
 ## Canonical V4 launch
 
@@ -95,7 +95,7 @@ The contract floors the square-root result to an integer basis-point creator sha
 
 The vault checkpoints accrued expense before an operation changes accounted OTF. Direct OTF donations are not accounted and do not affect the split. Fund-owned OTF remains an ordinary constituent and is never burned merely because the vault holds it.
 
-Both portions are minted to `BuybackCollector`. The vault records the exact creator and buyback share counts during the fee transaction. Each registered vault has a separate collector account tied to its immutable beneficiary.
+Both portions are minted to `BuybackCollector`. The vault records the exact creator and buyback share counts during the fee transaction. Each factory-recognized vault has a separate collector account, and the collector reads its immutable beneficiary from the vault when settling fees.
 
 ## Fee settlement and burn
 
@@ -112,9 +112,40 @@ The complete operation is atomic. Registration, share sale or redemption, consti
 
 The final swap can use only the canonical OTF/WETH V4 pool key. It enforces its own deadline and minimum output, then burns every OTF purchased. The collector has no arbitrary-call, withdrawal, or rescue function. Buybacks may execute during bootstrap or after graduation.
 
-## Cumulative rewards
+## Cumulative rewards and incentive emissions
 
-`MerkleRewardsDistributor` receives 700 million OTF. Its owner publishes an immediately active cumulative Merkle root. The contract defines no reward formula, schedule, delay, or period cap, and the owner cannot withdraw reward principal.
+`MerkleRewardsDistributor` receives 700 million OTF, 70% of the original one-billion-OTF supply. This fixed protocol and community incentive budget is distributed once a week for exactly four years, or 208 weeks. Emissions stop after week 208.
+
+The weekly target starts at 14 million OTF and declines by approximately 1.968% every week:
+
+```text
+weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
+```
+
+`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The publishing process must use sufficient precision or reconcile the final weekly distribution so aggregate emissions equal exactly 700,000,000 OTF. The repository does not currently contain an exact decay constant or final-week adjustment.
+
+| Checkpoint | Approximate weekly emission |
+| --- | ---: |
+| Week 1 | 14.000 million OTF |
+| Week 2 | 13.724 million OTF |
+| Week 3 | 13.454 million OTF |
+| Week 4 | 13.190 million OTF |
+| Week 5 | 12.930 million OTF |
+| Week 6 | 12.676 million OTF |
+| Week 7 | 12.426 million OTF |
+| Week 8 | 12.182 million OTF |
+| 3 months, week 13 | 11.03 million OTF |
+| 6 months, week 26 | 8.52 million OTF |
+| 1 year, week 52 | 5.08 million OTF |
+| 2 years, week 104 | 1.81 million OTF |
+| 3 years, week 156 | 643,000 OTF |
+| Week 208 | 229,000 OTF |
+
+The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week, without cliffs, monthly buckets, quarterly steps, or periodic halvings. Its four-year endpoint caps this incentive allocation and prevents it from becoming a perpetual source of inflation.
+
+Incentive APY is variable and is neither fixed nor guaranteed. It depends on that week's OTF emission, OTF's market value, total eligible deposits or AUM, and the user's share of eligible activity or deposits. Because each weekly token amount is fixed by the schedule, the rate attributable to each eligible deposit naturally falls as eligible deposits or AUM increase.
+
+The emission schedule is a distribution policy, not logic enforced by `MerkleRewardsDistributor`. Its owner publishes an immediately active cumulative Merkle root. The contract defines no reward formula, schedule, delay, or period cap, so the publisher can allocate the distributor's remaining balance faster than the documented schedule. The owner cannot withdraw reward principal.
 
 Each standard-tree leaf commits to chain ID, distributor address, user address, and cumulative entitlement. Anyone may submit a proof, but payment always goes to the committed user. The distributor records prior claims and transfers only the difference between the proven cumulative amount and the amount already claimed. Invalid proofs, duplicate claims, and decreasing entitlements revert.
 
@@ -128,7 +159,7 @@ corepack pnpm rewards:tree -- \
   --distributor <address>
 ```
 
-The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate rewards.
+The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate weekly emissions, determine eligibility, or reconcile the 700 million OTF schedule.
 
 ## Trusted inputs
 

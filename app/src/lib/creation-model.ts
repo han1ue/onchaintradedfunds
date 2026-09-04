@@ -68,10 +68,14 @@ export type VaultCreationTransactionParams = {
   bootstrapBasketUnitsPerOTF: bigint[];
 };
 
+export function normalizeFundThesisLineBreaks(value: string): string {
+  return value.replace(/(?:[ \t]*(?:\r\n|[\n\r\u2028\u2029]))+[ \t]*/gu, " ");
+}
+
 export function vaultCreationTransactionParams(
   input: VaultCreationTransactionParams,
 ): VaultCreationTransactionParams {
-  return { ...input, fundThesis: input.fundThesis.trim() };
+  return { ...input, fundThesis: normalizeFundThesisLineBreaks(input.fundThesis).trim() };
 }
 
 export type PercentageSelectionCurrent = {
@@ -380,7 +384,7 @@ export function zeroRawUnitError(
 export function calculateBootstrapBasketUnits(
   assets: readonly BasketCalculationAsset[],
 ): BasketCalculation {
-  if (assets.length === 0) throw new Error("Select at least one asset.");
+  if (assets.length < 2) throw new Error("Select at least two assets.");
   if (assets.some((asset) => asset.percentageUnits <= 0n)) {
     throw new Error("Every selected constituent must have a positive percentage.");
   }

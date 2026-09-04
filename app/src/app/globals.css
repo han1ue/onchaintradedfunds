@@ -1300,10 +1300,11 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 .fundsSummary { display: flex; min-height: 96px; align-items: center; justify-content: space-between; gap: 24px; border-radius: 20px; background: color-mix(in srgb, var(--card) 72%, var(--background)); padding: 18px 20px; }
-.fundsAum strong,
-.fundsAum span { display: block; }
-.fundsAum strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
-.fundsAum span { margin-top: 8px; color: var(--text-muted); font-size: 0.7rem; }
+.fundsHeadlineMetrics { display: flex; align-items: center; gap: 12px; }
+.fundsHeadlineMetrics strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
+.fundsHeadlineMetrics .fundsApy { color: var(--text-soft); font-size: clamp(1.15rem, 2.5vw, 1.5rem); letter-spacing: -0.02em; }
+.fundsMetricSeparator { color: var(--border-strong); font-size: 1.2rem; line-height: 1; }
+.fundsAumContext { display: block; margin-top: 8px; color: var(--text-muted); font-size: 0.7rem; }
 .fundsSummary .primaryAction,
 .fundsSummary .secondaryAction { border-radius: 8px; }
 .fundsView .sectionCard { border-radius: 20px; }
@@ -1658,7 +1659,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundThesisMark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); color: var(--text-soft); }
 .fundThesis h2 { margin: 1px 0 0; font-size: 0.72rem; font-weight: 650; }
 .fundThesis p { max-width: 74ch; margin: 6px 0 0; color: var(--text-soft); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; text-wrap: pretty; }
-.fundDetailMetrics { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fundDetailMetrics { display: grid; min-width: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fundDetailMetrics > div { min-width: 0; border-left: 1px solid var(--border); padding: 12px 16px; }
 .fundDetailMetrics > div:first-child { border-left: 0; }
 .fundDetailMetrics span,
@@ -2643,9 +2644,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .fundThesis p { margin-top: 5px; font-size: 0.74rem; line-height: 1.6; }
   .fundDetailTitleLine { align-items: flex-start; flex-direction: column; gap: 6px; }
   .fundDetailTitleLine h1 { max-width: 100%; white-space: normal; }
-  .fundDetailMetrics { grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--border); padding-top: 11px; }
+  .fundDetailMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border); padding-top: 11px; }
   .fundDetailMetrics > div { border-left: 1px solid var(--border); padding: 0 8px; }
-  .fundDetailMetrics > div:first-child { border-left: 0; }
+  .fundDetailMetrics > div:nth-child(odd) { border-left: 0; }
+  .fundDetailMetrics > div:nth-child(n + 3) { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
   .valuationMetricControl { justify-content: space-between; }
   .valuationSummary { align-items: flex-start; flex-direction: column; }
   .valuationRangeToggle { width: 100%; justify-content: space-between; }

@@ -109,6 +109,18 @@ jobs:
           --fuzz-seed "$CI_FUZZ_SEED"
           --summary
 
+      - name: Run V4 launch invariant suite
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: integration
+          FOUNDRY_INVARIANT_RUNS: "128"
+          FOUNDRY_INVARIANT_DEPTH: "64"
+        run: >-
+          forge test
+          --match-path test/OTFLaunchV4Invariant.t.sol
+          --fuzz-seed "$CI_FUZZ_SEED"
+          --summary
+
       - name: Run 10,000-case fuzz campaign
         working-directory: contracts
         run: >-

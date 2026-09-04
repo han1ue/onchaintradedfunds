@@ -5,6 +5,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IERC20 } from "./interfaces/IERC20.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IUniswapV4StateView } from "./interfaces/IUniswapV4.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
 
@@ -139,8 +140,8 @@ contract TeamMarketCapVesting {
     function liveFdvUsdWad() public view returns (uint256) {
         (uint256 ethUsdPriceWad,,) = oracleStatus();
         uint256 marketValueWeth =
-            Math.mulDiv(currentOtfPriceWethWad(), IERC20(otf).totalSupply(), 1e18);
-        return Math.mulDiv(marketValueWeth, ethUsdPriceWad, 1e18);
+            Math.mulDiv(currentOtfPriceWethWad(), IERC20(otf).totalSupply(), ProtocolConstants.WAD);
+        return Math.mulDiv(marketValueWeth, ethUsdPriceWad, ProtocolConstants.WAD);
     }
 
     function checkpoint() external returns (uint256 cumulativeUnlocked) {
@@ -173,14 +174,15 @@ contract TeamMarketCapVesting {
         returns (uint256 fdvUsdWad, uint256 additionalUnlock, uint256 progressWad)
     {
         uint256 completed = unlockedAmount / TRANCHE_SIZE;
-        if (completed >= MILESTONE_COUNT) return (0, 0, 1e18);
+        if (completed >= MILESTONE_COUNT) return (0, 0, ProtocolConstants.WAD);
         fdvUsdWad = (completed + 1) * FDV_MILESTONE_USD_WAD;
         additionalUnlock = TRANCHE_SIZE;
         uint256 currentFdv = liveFdvUsdWad();
         uint256 previousFdv = completed * FDV_MILESTONE_USD_WAD;
         if (currentFdv <= previousFdv) return (fdvUsdWad, additionalUnlock, 0);
-        progressWad = Math.mulDiv(currentFdv - previousFdv, 1e18, FDV_MILESTONE_USD_WAD);
-        if (progressWad > 1e18) progressWad = 1e18;
+        progressWad =
+            Math.mulDiv(currentFdv - previousFdv, ProtocolConstants.WAD, FDV_MILESTONE_USD_WAD);
+        if (progressWad > ProtocolConstants.WAD) progressWad = ProtocolConstants.WAD;
     }
 
     function _requireContract(address dependency) private view {

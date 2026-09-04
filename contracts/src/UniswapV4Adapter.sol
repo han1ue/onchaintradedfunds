@@ -11,6 +11,7 @@ import {
     UniswapV4ExactInputParams,
     UniswapV4PathKey
 } from "./interfaces/IUniswapV4.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 /// @notice Bounded Uniswap V4 exact-input adapter for one OTF entry/exit router.
@@ -19,15 +20,16 @@ import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 contract UniswapV4Adapter is ITradeAdapter {
     using SafeTransferLib for address;
 
-    uint256 public constant MAX_HOPS = 3;
+    uint256 public constant MAX_HOPS = ProtocolConstants.MAX_SWAP_HOPS;
     uint256 public constant MAX_HOOK_DATA_LENGTH = 1_024;
     uint24 private constant DYNAMIC_FEE_FLAG = 0x800000;
     uint24 private constant MAX_STATIC_FEE = 1_000_000;
     int24 private constant MAX_TICK_SPACING = 32_767;
-    bytes1 private constant V4_SWAP_COMMAND = 0x10;
-    bytes1 private constant SWAP_EXACT_IN_ACTION = 0x07;
-    bytes1 private constant SETTLE_ALL_ACTION = 0x0c;
-    bytes1 private constant TAKE_ALL_ACTION = 0x0f;
+    bytes1 private constant V4_SWAP_COMMAND = ProtocolConstants.UNISWAP_V4_SWAP_COMMAND;
+    bytes1 private constant SWAP_EXACT_IN_ACTION =
+        ProtocolConstants.UNISWAP_V4_SWAP_EXACT_IN_ACTION;
+    bytes1 private constant SETTLE_ALL_ACTION = ProtocolConstants.UNISWAP_V4_SETTLE_ALL_ACTION;
+    bytes1 private constant TAKE_ALL_ACTION = ProtocolConstants.UNISWAP_V4_TAKE_ALL_ACTION;
 
     error UnauthorizedCaller(address caller);
     error ZeroAddress();

@@ -1,6 +1,11 @@
 import { testnetFundAssets } from "./asset-catalog";
 import { robinhoodChainTestnet } from "./chains";
-import { creationAssetsFromApi, type CreationAssetData } from "./creation-model";
+import {
+  creationAssetsFromApi,
+  formatFixedDecimal,
+  type CreationAssetData,
+} from "./creation-model";
+import type { Address } from "viem";
 
 const SOURCE_CHAIN_ID = 4_663;
 
@@ -18,6 +23,14 @@ export const testnetCreationAssetConfigs = testnetFundAssets.map((asset) => ({
   name: assetNames[asset.symbol] ?? asset.name,
   decimals: asset.decimals,
 }));
+
+const WAD = 10n ** 18n;
+const TESTNET_ORACLE_DECIMALS = 8;
+
+export type YahooStockPrice = {
+  priceUsd: string;
+  priceUpdatedAt?: string;
+};
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -64,6 +77,30 @@ export function configuredTestnetCreationAssets(
   return creationAssetsFromApi({ data: aliasedRows }, robinhoodChainTestnet.id);
 }
 
+export function protocolOtfCreationAsset(input: {
+  address: Address;
+  priceWethWad: bigint;
+  ethUsdAnswer: bigint;
+  totalSupply: bigint;
+}): CreationAssetData | undefined {
+  if (input.priceWethWad <= 0n || input.ethUsdAnswer <= 0n || input.totalSupply <= 0n) {
+    return undefined;
+  }
+  const ethUsdWad = input.ethUsdAnswer * 10n ** BigInt(18 - TESTNET_ORACLE_DECIMALS);
+  const priceUsdWad = input.priceWethWad * ethUsdWad / WAD;
+  const marketCapUsdWad = input.totalSupply * priceUsdWad / WAD;
+  if (priceUsdWad <= 0n || marketCapUsdWad <= 0n) return undefined;
+  return {
+    address: input.address,
+    symbol: "OTF",
+    name: "Onchain Traded Funds",
+    decimals: 18,
+    priceUsd: formatFixedDecimal(priceUsdWad, 18),
+    marketCapUsd: formatFixedDecimal(marketCapUsdWad, 18),
+    verified: true,
+  };
+}
+
 function latestReportedValue(rows: unknown): string | undefined {
   if (!Array.isArray(rows)) return undefined;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -88,4 +125,24 @@ export function marketCapUsdFromYahoo(payload: unknown): string | undefined {
     if (value) return value;
   }
   return undefined;
+}
+
+export function stockPriceUsdFromYahoo(payload: unknown): YahooStockPrice | undefined {
+  const chart = record(payload)?.chart;
+  const results = Array.isArray(record(chart)?.result) ? record(chart)?.result as unknown[] : [];
+  const meta = record(record(results[0])?.meta);
+  const rawPrice = meta?.regularMarketPrice;
+  const priceUsd = typeof rawPrice === "number" && Number.isFinite(rawPrice) && rawPrice > 0
+    ? rawPrice.toString()
+    : typeof rawPrice === "string" && /^\d+(?:\.\d+)?$/u.test(rawPrice) && Number(rawPrice) > 0
+      ? rawPrice
+      : undefined;
+  if (!priceUsd) return undefined;
+  const marketTime = meta?.regularMarketTime;
+  return {
+    priceUsd,
+    priceUpdatedAt: Number.isSafeInteger(marketTime) && Number(marketTime) > 0
+      ? new Date(Number(marketTime) * 1_000).toISOString()
+      : undefined,
+  };
 }

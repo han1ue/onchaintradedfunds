@@ -58,12 +58,13 @@ contract BuybackCollectorShutdownTest is TestBase {
         collector.configureFactory(address(factory));
         entryRouter = new OTFEntryExitRouter(address(factory), address(this), address(weth));
         factory.configureEntryExitRouter(address(entryRouter));
-        collector.configureEntryExitRouter(address(entryRouter));
 
-        address[] memory assets = new address[](1);
+        address[] memory assets = new address[](2);
         assets[0] = address(weth);
-        uint256[] memory units = new uint256[](1);
+        assets[1] = address(otf);
+        uint256[] memory units = new uint256[](2);
         units[0] = 1 ether;
+        units[1] = 1 ether;
         VaultCreationParams memory params = VaultCreationParams({
             name: "Fee Residual OTF",
             symbol: "FEE",
@@ -80,8 +81,12 @@ contract BuybackCollectorShutdownTest is TestBase {
 
         uint256[] memory amounts = vault.previewMint(1 ether);
         weth.mint(address(entryRouter), amounts[0]);
+        vm.prank(HOLDER);
+        assertTrue(otf.transfer(address(entryRouter), amounts[1]));
         vm.prank(address(entryRouter));
         weth.approve(address(vault), amounts[0]);
+        vm.prank(address(entryRouter));
+        otf.approve(address(vault), amounts[1]);
         vm.prank(address(entryRouter));
         vault.routerMint(1 ether, HOLDER, amounts);
 
@@ -92,7 +97,7 @@ contract BuybackCollectorShutdownTest is TestBase {
     function testLowSupplyCollectorResidualSettlesAfterShutdown() public {
         _redeemHolderAndTriggerLowSupplyShutdown();
         uint256 collectorShares = vault.balanceOf(address(collector));
-        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         uint256 wethAvailable = vault.previewRedeem(collectorShares, 0)[0];
         uint256 expectedCreatorWeth = wethAvailable * creatorShares / collectorShares;
         uint256 supplyBefore = otf.totalSupply();
@@ -124,7 +129,7 @@ contract BuybackCollectorShutdownTest is TestBase {
 
         assertTrue(vault.shutdown());
         assertEq(vault.balanceOf(address(collector)), pending);
-        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         assertEq(creatorShares + buybackShares, pending);
         uint256 wethAvailable = vault.previewRedeem(pending, 0)[0];
         assertGt(wethAvailable, 0);
@@ -139,7 +144,7 @@ contract BuybackCollectorShutdownTest is TestBase {
     function testBuybackFailureRestoresSharesFeeAccountsAndVaultAccounting() public {
         _redeemHolderAndTriggerLowSupplyShutdown();
         uint256 collectorShares = vault.balanceOf(address(collector));
-        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         uint256 accounted = vault.accountedBalance(address(weth));
         uint256 vaultWeth = weth.balanceOf(address(vault));
         uint256 supply = vault.totalSupply();
@@ -150,7 +155,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         collector.settleFeesViaRedemption(
             address(vault),
             _singleMinimum(accounted),
-            0,
+            2,
             new SwapLeg[](0),
             accounted,
             1,
@@ -161,7 +166,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         assertEq(vault.totalSupply(), supply);
         assertEq(vault.accountedBalance(address(weth)), accounted);
         assertEq(weth.balanceOf(address(vault)), vaultWeth);
-        (uint256 creatorAfter, uint256 buybackAfter,) = collector.feeAccounts(address(vault));
+        (uint256 creatorAfter, uint256 buybackAfter) = collector.feeAccounts(address(vault));
         assertEq(creatorAfter, creatorShares);
         assertEq(buybackAfter, buybackShares);
         assertEq(weth.balanceOf(BENEFICIARY), 0);
@@ -175,7 +180,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         assertLt(pending, 0.01 ether);
 
         vm.prank(HOLDER);
-        vault.redeemInKind(1 ether, HOLDER, new uint256[](1), 0);
+        vault.redeemInKind(1 ether, HOLDER, new uint256[](2), 0);
 
         assertTrue(vault.shutdown());
         assertEq(vault.totalSupply(), pending);
@@ -190,7 +195,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         return collector.settleFeesViaRedemption(
             address(vault),
             _singleMinimum(minimumWeth),
-            0,
+            2,
             new SwapLeg[](0),
             minimumWeth,
             minimumOtf,
@@ -199,12 +204,12 @@ contract BuybackCollectorShutdownTest is TestBase {
     }
 
     function _singleMinimum(uint256 amount) private pure returns (uint256[] memory minimums) {
-        minimums = new uint256[](1);
+        minimums = new uint256[](2);
         minimums[0] = amount;
     }
 
     function _assertSettlementClean() private view {
-        (uint256 creatorShares, uint256 buybackShares,) = collector.feeAccounts(address(vault));
+        (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         assertEq(creatorShares, 0);
         assertEq(buybackShares, 0);
         _assertOperationBalancesClean();

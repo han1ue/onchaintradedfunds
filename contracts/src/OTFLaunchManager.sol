@@ -12,6 +12,7 @@ import {
     UniswapV4PoolKey,
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
+import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
 import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -342,7 +343,10 @@ contract OTFLaunchManager {
     }
 
     function currentLaunchReferenceFdvWeth() external view returns (uint256) {
-        return Math.mulDiv(currentOtfPriceWethWad(), IOTFToken(otf).MAX_SUPPLY(), 1e18);
+        return
+            Math.mulDiv(
+                currentOtfPriceWethWad(), IOTFToken(otf).MAX_SUPPLY(), ProtocolConstants.WAD
+            );
     }
 
     function bootstrapSqrtPriceBounds()
@@ -403,7 +407,7 @@ contract OTFLaunchManager {
     {
         if (phase == Phase.NotInitialized) return (0, 0, 0, 0);
         if (phase == Phase.Graduated) {
-            return (10_000, bootstrapOtfDeposited, 0, bootstrapWethPrincipal);
+            return (ProtocolConstants.BPS, bootstrapOtfDeposited, 0, bootstrapWethPrincipal);
         }
         (uint160 sqrtPriceX96,) = currentPoolState();
         (uint160 lowerSqrtPriceX96, uint160 upperSqrtPriceX96) = bootstrapSqrtPriceBounds();
@@ -425,7 +429,7 @@ contract OTFLaunchManager {
                     ? distance
                     : uint256(startSqrtPriceX96 - sqrtPriceX96);
         }
-        progressBps = traveled * 10_000 / distance;
+        progressBps = traveled * ProtocolConstants.BPS / distance;
         uint256 amount0;
         uint256 amount1;
         if (sqrtPriceX96 <= lowerSqrtPriceX96) {

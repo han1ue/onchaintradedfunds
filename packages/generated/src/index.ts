@@ -275,6 +275,27 @@ export const managedOtfVaultAbi = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "FundThesisRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "suppliedBytes",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maximumBytes",
+        "type": "uint256"
+      }
+    ],
+    "name": "FundThesisTooLong",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -364,6 +385,11 @@ export const managedOtfVaultAbi = [
       }
     ],
     "name": "InvalidSkipMask",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidVaultMetadata",
     "type": "error"
   },
   {
@@ -1178,38 +1204,8 @@ export const managedOtfVaultAbi = [
           },
           {
             "internalType": "address",
-            "name": "creator",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
             "name": "expenseBeneficiary",
             "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "entryExitRouter",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "buybackCollector",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "otfToken",
-            "type": "address"
-          },
-          {
-            "internalType": "address[]",
-            "name": "constituents",
-            "type": "address[]"
-          },
-          {
-            "internalType": "uint256[]",
-            "name": "bootstrapBasketUnitsPerOTF",
-            "type": "uint256[]"
           },
           {
             "internalType": "uint16",
@@ -1225,11 +1221,26 @@ export const managedOtfVaultAbi = [
             "internalType": "uint16",
             "name": "redeemFeeBps",
             "type": "uint16"
+          },
+          {
+            "internalType": "address[]",
+            "name": "constituents",
+            "type": "address[]"
+          },
+          {
+            "internalType": "uint256[]",
+            "name": "bootstrapBasketUnitsPerOTF",
+            "type": "uint256[]"
           }
         ],
-        "internalType": "struct VaultInitParams",
+        "internalType": "struct VaultCreationParams",
         "name": "params",
         "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "creator_",
+        "type": "address"
       }
     ],
     "name": "initialize",
@@ -1733,45 +1744,8 @@ export const otfFactoryAbi = [
     "type": "constructor"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint16",
-        "name": "supplied",
-        "type": "uint16"
-      },
-      {
-        "internalType": "uint16",
-        "name": "maximum",
-        "type": "uint16"
-      }
-    ],
-    "name": "ExpenseRatioTooHigh",
-    "type": "error"
-  },
-  {
     "inputs": [],
     "name": "FailedDeployment",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "FundThesisRequired",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "suppliedBytes",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "maximumBytes",
-        "type": "uint256"
-      }
-    ],
-    "name": "FundThesisTooLong",
     "type": "error"
   },
   {
@@ -1804,43 +1778,6 @@ export const otfFactoryAbi = [
   {
     "inputs": [],
     "name": "InvalidImplementation",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidVaultMetadata",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint16",
-        "name": "supplied",
-        "type": "uint16"
-      },
-      {
-        "internalType": "uint16",
-        "name": "maximum",
-        "type": "uint16"
-      }
-    ],
-    "name": "MintFeeTooHigh",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint16",
-        "name": "supplied",
-        "type": "uint16"
-      },
-      {
-        "internalType": "uint16",
-        "name": "maximum",
-        "type": "uint16"
-      }
-    ],
-    "name": "RedeemFeeTooHigh",
     "type": "error"
   },
   {
@@ -1976,6 +1913,19 @@ export const otfFactoryAbi = [
         "internalType": "uint16",
         "name": "",
         "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MIN_CONSTITUENTS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -3081,6 +3031,19 @@ export const otfEntryExitRouterAbi = [
   {
     "inputs": [],
     "name": "MAX_TRACKED_TOKENS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MIN_CONSTITUENTS",
     "outputs": [
       {
         "internalType": "uint256",
@@ -4700,27 +4663,6 @@ export const buybackCollectorAbi = [
   },
   {
     "inputs": [],
-    "name": "RouterAlreadyConfigured",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "expected",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "actual",
-        "type": "address"
-      }
-    ],
-    "name": "RouterFactoryMismatch",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "SafeTransferFailed",
     "type": "error"
   },
@@ -4777,19 +4719,6 @@ export const buybackCollectorAbi = [
     "inputs": [],
     "name": "ZeroAddress",
     "type": "error"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "router",
-        "type": "address"
-      }
-    ],
-    "name": "EntryExitRouterConfigured",
-    "type": "event"
   },
   {
     "anonymous": false,
@@ -4897,38 +4826,6 @@ export const buybackCollectorAbi = [
     "type": "event"
   },
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "vault",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "expenseBeneficiary",
-        "type": "address"
-      }
-    ],
-    "name": "VaultRegistered",
-    "type": "event"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "router",
-        "type": "address"
-      }
-    ],
-    "name": "configureEntryExitRouter",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -4939,19 +4836,6 @@ export const buybackCollectorAbi = [
     "name": "configureFactory",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "entryExitRouter",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -4986,11 +4870,6 @@ export const buybackCollectorAbi = [
         "internalType": "uint256",
         "name": "buybackFeeShares",
         "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "expenseBeneficiary",
-        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -5062,24 +4941,6 @@ export const buybackCollectorAbi = [
       }
     ],
     "name": "recordFeeShares",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "vault",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "expenseBeneficiary",
-        "type": "address"
-      }
-    ],
-    "name": "registerVault",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

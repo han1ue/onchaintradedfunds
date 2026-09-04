@@ -39,6 +39,7 @@ import {
   formatPercentageDisplay,
   formatPercentageExact,
   formatPercentageInput,
+  normalizeFundThesisLineBreaks,
   percentageUnits,
   percentageUnitsForSelectionChange,
   previewBootstrapBasketUnits,
@@ -58,6 +59,7 @@ import {
   type OtfCreationMetadataDraft,
 } from "@/lib/creation-metadata";
 import {
+  defaultCreationAssetSelection,
   filterCreationAssetOptions,
   manualCreationAsset,
   type OnchainAssetMetadata,
@@ -250,7 +252,7 @@ export function CreateOTFForm() {
       });
       if (controller.signal.aborted) return;
       setAvailableAssets(assets);
-      const initial = applyMarketCapDefaults(assets.slice(0, 1));
+      const initial = applyMarketCapDefaults(defaultCreationAssetSelection(assets));
       setSelectedAssets(initial);
       setMarketCapWeighted(true);
       setMarketCapSnapshotAt(new Date(payload.marketCapSnapshotAt).toISOString());
@@ -362,7 +364,7 @@ export function CreateOTFForm() {
   const creationMetadata = creationMetadataResult.value;
   const basketGlobalError = previewRowsResult.error
     ?? (assetErrors.some(Boolean) ? undefined : calculationResult.error ?? creationMetadataResult.error);
-  const basketValid = selectedAssets.length > 0 && selectedAssets.length <= 20
+  const basketValid = selectedAssets.length >= 2 && selectedAssets.length <= 20
     && percentagesValid && !assetErrors.some(Boolean) && Boolean(calculation && creationMetadata);
   const annualExpenseRatioBps = annualExpenseRatioBpsFromPercentage(expenseRatio);
   const mintFeeBps = annualExpenseRatioBpsFromPercentage(mintFee);
@@ -694,8 +696,8 @@ export function CreateOTFForm() {
               </div>
               <label>
                 <div className="subHeader"><span>Fund thesis</span><small>{mandateBytes.toLocaleString()} / {MAX_MANDATE_BYTES.toLocaleString()} bytes</small></div>
-                <textarea value={mandate} onChange={(event) => { setMandate(event.target.value); resetSubmission(); }} rows={4} maxLength={MAX_MANDATE_BYTES} placeholder="Describe what this basket is designed to represent." aria-invalid={mandateBytes === 0 || mandateBytes > MAX_MANDATE_BYTES} aria-describedby="create-mandate-help" />
-                <small id="create-mandate-help">Stored permanently onchain when the fund is created and cannot be changed.</small>
+                <textarea value={mandate} onChange={(event) => { setMandate(normalizeFundThesisLineBreaks(event.target.value)); resetSubmission(); }} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} rows={4} maxLength={MAX_MANDATE_BYTES} placeholder="Describe what this basket is designed to represent." aria-invalid={mandateBytes === 0 || mandateBytes > MAX_MANDATE_BYTES} aria-describedby="create-mandate-help" />
+                <small id="create-mandate-help">Use a single-line description. It is stored permanently onchain and cannot be changed.</small>
               </label>
               {!identityValid ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Complete the identity</strong><span>Use a valid name and ticker, and add a thesis within the byte limit.</span></div></div> : null}
             </div>
@@ -812,7 +814,7 @@ export function CreateOTFForm() {
                   })}
                 </div>
               </div>
-              {!selectedAssets.length ? <div className="inlineEmptyState">{assetLoadState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} aria-label="Please wait" /> : <Plus size={17} />}<div>{assetLoadState === "loading" ? null : <><strong>Select at least one priced asset</strong><span>The app needs current price, market cap and token decimals before it can calculate raw bootstrap units.</span></>}</div></div> : null}
+              {selectedAssets.length < 2 ? <div className="inlineEmptyState">{assetLoadState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} aria-label="Please wait" /> : <Plus size={17} />}<div>{assetLoadState === "loading" ? null : <><strong>Select at least two priced assets</strong><span>Every OTF requires two to 20 constituents with current price, market cap, and token decimals.</span></>}</div></div> : null}
               {basketGlobalError && selectedAssets.length ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Basket calculation needs attention</strong><span>{basketGlobalError}</span></div></div> : null}
               {marketCapSnapshotAt ? <small className="constituentsSnapshot">Prices and market caps: {formatMarketCapSnapshotTimestamp(marketCapSnapshotAt)}.</small> : null}
             </div>

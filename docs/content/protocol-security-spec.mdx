@@ -12,7 +12,8 @@ The keywords MUST, MUST NOT, and SHOULD describe requirements for the current ar
 `OTFToken` MUST mint exactly `1,000,000,000 ether` in its constructor and MUST expose no later mint
 path. `MAX_SUPPLY` MUST remain fixed while `totalSupply()` MUST fall when a holder burns owned or
 properly allowed tokens. Deployment MUST allocate exactly 100 million to team vesting, 200 million
-to the launch manager, and 700 million to rewards, leaving the deployer with zero OTF.
+to the launch manager, and 700 million, or 70% of the original supply, to protocol and community
+incentives through the rewards distributor, leaving the deployer with zero OTF.
 
 ## Canonical launch
 
@@ -114,7 +115,8 @@ adapter.
 
 ## Buyback collector
 
-The factory MUST register every vault and its immutable expense beneficiary with the collector.
+The collector MUST accept fee accounting only from vaults recognized by the factory and MUST read
+each vault's immutable expense beneficiary when fees are settled.
 Unregistered or fake vaults MUST be rejected. Only that beneficiary MAY settle its vault. Settlement
 MUST checkpoint annual fees, consume the complete recorded creator and buyback share balances,
 and use exactly one beneficiary-selected route: sell the combined registered-vault shares through
@@ -138,6 +140,15 @@ withdrawals, rescue functions, or configurable final routes.
 
 ## Cumulative rewards
 
+The 700-million-OTF incentive allocation MUST be distributed in 208 weekly periods. Week 1 MUST
+allocate 14 million OTF, and each later weekly target MUST decline smoothly by approximately 1.968%
+according to `14,000,000 × 0.9803203^(n - 1)`, where `n` starts at 1. The schedule MUST NOT use
+monthly buckets, quarterly steps, or periodic halvings. No emission MAY be allocated after week 208.
+
+The displayed decay factor is approximate. The publishing process MUST use sufficient precision or
+reconcile the final weekly distribution so the 208 periods total exactly 700 million OTF. It MUST
+NOT treat the rounded formula's approximately 699,999,574.95-OTF sum as the final aggregate.
+
 Only the configured publisher MAY set a root. A new root MUST be active immediately. Leaves MUST
 commit to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree
 encoding.
@@ -145,6 +156,10 @@ encoding.
 Anyone MAY submit a proof, but tokens MUST go to the committed user. A claim MUST equal the proven
 cumulative entitlement less stored prior claims. Invalid proofs, double claims, and decreasing
 cumulative values MUST revert. The publisher MUST have no rewards-principal withdrawal path.
+
+The distributor does not enforce the weekly schedule, period caps, eligibility, or APY. Operational
+root publication MUST enforce the schedule, while documentation and application displays MUST treat
+incentive APY as variable rather than fixed or guaranteed.
 
 ## Deployment and verification
 

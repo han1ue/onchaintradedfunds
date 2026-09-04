@@ -452,11 +452,6 @@ setupTransactions.factoryRouter = await transact(
   "configureEntryExitRouter",
   [entryRouter.address],
 );
-setupTransactions.collectorRouter = await transact(
-  { ...buybackCollector, name: "BuybackCollector" },
-  "configureEntryExitRouter",
-  [entryRouter.address],
-);
 setupTransactions.v3AdapterApproval = await transact(
   { ...entryRouter, name: "OTFEntryExitRouter" },
   "setAdapterApproved",

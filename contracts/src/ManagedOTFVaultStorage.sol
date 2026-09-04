@@ -8,6 +8,8 @@ import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 
 interface IOTFFactoryTokenPolicy {
     function otfToken() external view returns (address);
+    function buybackCollector() external view returns (address);
+    function entryExitRouter() external view returns (address);
     function otfTokenURI() external pure returns (string memory);
 }
 
@@ -26,6 +28,9 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error Reentrancy();
     error ZeroAddress();
     error InvalidReceiver(address receiver);
+    error InvalidVaultMetadata();
+    error FundThesisRequired();
+    error FundThesisTooLong(uint256 suppliedBytes, uint256 maximumBytes);
     error InvalidArrayLength(uint256 expected, uint256 actual);
     error InvalidConstituent(address constituent);
     error DuplicateConstituent(address constituent);
@@ -92,7 +97,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     event EmergencyShutdown(address indexed caller, uint64 timestamp);
     event LowSupplyShutdown(address indexed caller, uint64 timestamp, uint256 remainingSupply);
 
-    bool internal _initialized;
     bool internal _shutdown;
     uint256 internal _entered;
 
@@ -122,7 +126,7 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     uint256 internal _expenseCreatorSplitRemainderBps;
 
     modifier onlyInitialized() {
-        if (!_initialized) revert NotInitialized();
+        if (_factory == address(0)) revert NotInitialized();
         _;
     }
 

@@ -35,6 +35,12 @@ describe("onchain fund thesis wiring", () => {
     expect(source.indexOf('className="fundThesis"')).toBeLessThan(source.indexOf('className="fundTradePanel"'));
   });
 
+  it("keeps the creation thesis single-line without changing the contract rule", () => {
+    const source = readFileSync(new URL("../components/CreateOTFForm.tsx", import.meta.url), "utf8");
+    expect(source).toContain("setMandate(normalizeFundThesisLineBreaks(event.target.value))");
+    expect(source).toContain('if (event.key === "Enter") event.preventDefault();');
+  });
+
   it("keeps allocation separate and leads the valuation summary with range performance", () => {
     const source = readFileSync(new URL("../components/OperateExperience.tsx", import.meta.url), "utf8");
     expect(source).toContain('className="fundValuationColumn"');

@@ -72,4 +72,3 @@ contract MockFeeOnTransferToken is IERC20Metadata {
         if (fee != 0) emit Transfer(from, address(0), fee);
     }
 }
-

@@ -12,7 +12,7 @@ The current protocol is pre-mainnet and unaudited. It requires an independent co
 - `OTFToken` mints one billion tokens in its constructor and has no later mint, tax, blacklist, seizure, or upgrade path. Burns reduce live supply.
 - Vault fee rates and beneficiaries are immutable. Fee shares use per-vault creator and buyback accounting recorded when each fee is charged.
 - Vault accounting excludes token donations. A donation cannot improve backing in the ledger or change the OTF fee split.
-- The collector can settle only factory-registered vaults through the configured entry router and approved adapters. Its final purchase uses the immutable canonical OTF/WETH V4 pool.
+- The collector can settle only factory-recognized vaults through the factory's canonical entry router and approved adapters. Its final purchase uses the immutable canonical OTF/WETH V4 pool.
 - Reward claims require a valid cumulative proof and always pay the user committed in the leaf. The root publisher cannot withdraw reward principal.
 - Only the current team-vesting beneficiary can checkpoint or nominate and cancel a successor. A nominee must accept before receiving that authority.
 - The launch manager enforces the bootstrap price corridor, burns its final OTF balance once, owns the permanent V4 position, and exposes no liquidity removal, repricing, migration, or replacement function.
@@ -23,7 +23,7 @@ These controls constrain contract calls. They do not make external assets, venue
 
 ### Reward-root publisher
 
-The publisher chooses cumulative reward entitlements. A valid root can allocate the distributor's full remaining balance. The contract prevents forged proofs and duplicate claims, but it cannot detect an unfair allocation or a compromised publisher.
+The publisher chooses cumulative reward entitlements and is responsible for applying the documented 208-week emission schedule. A valid root can allocate the distributor's full remaining balance at any time because the contract does not enforce weekly limits or the four-year endpoint. The contract prevents forged proofs and duplicate claims, but it cannot detect an unfair allocation, an early allocation, or a compromised publisher.
 
 ### Expense beneficiary
 

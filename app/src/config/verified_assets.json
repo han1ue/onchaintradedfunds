@@ -1,1 +1,68 @@
-[]
+[
+  {
+    "chainId": 46630,
+    "tokenAddress": "0xdaB5d0511bf6e6E7D53047C321FF7cCDD030B5EA",
+    "approvedPricingConfigs": [
+      {
+        "source": "otf-launch-manager",
+        "feedAddress": "0x1BEDC53a5F3B4F0d0D1ED219b5BC80AC1D4eE040",
+        "maxStaleness": 90000
+      }
+    ]
+  },
+  {
+    "chainId": 46630,
+    "tokenAddress": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+    "approvedPricingConfigs": [
+      {
+        "source": "chainlink-robinhood",
+        "feedAddress": "0x293A308331c61CEA5CcCC5AA73805E24eEA6C081",
+        "maxStaleness": 90000
+      }
+    ]
+  },
+  {
+    "chainId": 46630,
+    "tokenAddress": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+    "approvedPricingConfigs": [
+      {
+        "source": "chainlink-robinhood",
+        "feedAddress": "0xDBc2eC3ceC0201e3Ff199a353e52c6b19D84d758",
+        "maxStaleness": 90000
+      }
+    ]
+  },
+  {
+    "chainId": 46630,
+    "tokenAddress": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+    "approvedPricingConfigs": [
+      {
+        "source": "chainlink-robinhood",
+        "feedAddress": "0xfa5dE3691fbe6597e4d2F51edbE584fBA3BA2aA0",
+        "maxStaleness": 90000
+      }
+    ]
+  },
+  {
+    "chainId": 46630,
+    "tokenAddress": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+    "approvedPricingConfigs": [
+      {
+        "source": "chainlink-robinhood",
+        "feedAddress": "0x717e107EF82e89c6e53F3664662428c051c1BDD7",
+        "maxStaleness": 90000
+      }
+    ]
+  },
+  {
+    "chainId": 46630,
+    "tokenAddress": "0x71178BAc73cBeb415514eB542a8995b82669778d",
+    "approvedPricingConfigs": [
+      {
+        "source": "chainlink-robinhood",
+        "feedAddress": "0x551d8c2118F6Ff36389638292B58a3CF69C50056",
+        "maxStaleness": 90000
+      }
+    ]
+  }
+]

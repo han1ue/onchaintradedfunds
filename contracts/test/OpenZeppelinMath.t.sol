@@ -38,4 +38,3 @@ contract OpenZeppelinMathTest is TestBase {
         assertEq(harness.ceil(type(uint256).max, 1, 1), type(uint256).max);
     }
 }
-

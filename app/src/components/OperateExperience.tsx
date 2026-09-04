@@ -1514,9 +1514,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   const recorded = feeReads.data?.[0]?.result;
   const annual = feeReads.data?.[1]?.result;
   const accountMatches = Boolean(
-    recorded
-    && recorded[2].toLowerCase() === beneficiary.toLowerCase()
-    && address?.toLowerCase() === beneficiary.toLowerCase(),
+    address?.toLowerCase() === beneficiary.toLowerCase(),
   );
   const pending = useMemo(() => recorded && annual
     ? pendingFeeShares(recorded[0], recorded[1], annual[1], annual[2])
@@ -2106,7 +2104,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               <div className="fundDetailMetrics" aria-label="Fund metrics">
                 <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
-                <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
+                <div><span>AUM</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
+                <div><span>Rewards APY</span><strong aria-label="Rewards APY unavailable">—</strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>
             </div>
@@ -2142,7 +2141,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     <DashboardPage className="fundsPage">
       <div className="appView fundsView">
         <section className="fundsSummary" aria-label="Funds overview">
-          <div className="fundsAum"><strong aria-label="Total AUM">$0.00</strong><span>in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span></div>
+          <div className="fundsAum"><div className="fundsHeadlineMetrics"><strong aria-label="Total AUM">$0.00</strong><span className="fundsMetricSeparator" aria-hidden="true">·</span><strong className="fundsApy" aria-label="Rewards APY unavailable">— APY</strong></div><span className="fundsAumContext">in {vaults.length} OTF{vaults.length === 1 ? "" : "s"}</span></div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!testnet ? (

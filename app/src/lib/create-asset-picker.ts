@@ -7,6 +7,23 @@ export type OnchainAssetMetadata = {
   decimals: number;
 };
 
+export function defaultCreationAssetSelection(
+  assets: readonly CreationAssetData[],
+  random: () => number = Math.random,
+): CreationAssetData[] {
+  const protocolOtf = assets.find((asset) => asset.verified && asset.symbol === "OTF");
+  if (!protocolOtf) return assets.filter((asset) => asset.verified).slice(0, 2);
+  const otherVerifiedAssets = assets.filter((asset) => (
+    asset.verified && asset.address.toLowerCase() !== protocolOtf.address.toLowerCase()
+  ));
+  if (!otherVerifiedAssets.length) return [protocolOtf];
+  const randomIndex = Math.min(
+    otherVerifiedAssets.length - 1,
+    Math.max(0, Math.floor(random() * otherVerifiedAssets.length)),
+  );
+  return [protocolOtf, otherVerifiedAssets[randomIndex]];
+}
+
 export function filterCreationAssetOptions(
   assets: readonly CreationAssetData[],
   selectedAddresses: readonly Address[],
