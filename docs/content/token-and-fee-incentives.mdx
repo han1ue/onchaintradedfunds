@@ -3,6 +3,8 @@ title: OTF token economics
 description: OTF supply, incentive emissions, canonical V4 launch, fund fees, buybacks, vesting, and cumulative rewards.
 ---
 
+import { RewardsUnlockChart, TeamUnlockChart } from "../components/TokenUnlockCharts"
+
 # OTF token economics
 
 The contracts implement the token allocation and claim mechanics described here. The emission schedule is a publisher policy rather than an onchain restriction. The current architecture is unaudited and has not been deployed; earlier testnet contracts are incompatible.
@@ -61,6 +63,8 @@ canonical OTF/WETH V4 spot price
 The calculation handles either pool currency order and uses full-precision integer arithmetic. It uses current spot price rather than a TWAP. Restricting checkpoints is an explicit trusted-beneficiary design choice; it does not make the spot price manipulation-resistant. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet deployment tooling uses a fixed `$2,000` fake oracle; production requires an explicit oracle address.
 
 Each completed $1 million milestone unlocks 10 million OTF, up to $10 million and the full allocation. Values between milestones round down. Once unlocked, a tranche cannot relock after a price or supply decline.
+
+<TeamUnlockChart />
 
 The current beneficiary can claim the cumulative unlocked amount minus prior claims. The beneficiary may nominate, replace, or cancel a successor. The nominee receives claim authority only after accepting; a pending nomination does not interrupt the current beneficiary's authority. A transfer changes neither unlocked nor claimed accounting.
 
@@ -149,6 +153,8 @@ Week 1 therefore assigns 13 million OTF to depositors and 1 million OTF to creat
 | 2 years, week 104 | 1.81 million OTF |
 | 3 years, week 156 | 643,000 OTF |
 | Week 208 | 229,000 OTF |
+
+<RewardsUnlockChart />
 
 The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week. It has no monthly buckets, quarterly steps, or periodic halvings. The four-year endpoint caps the incentive allocation.
 

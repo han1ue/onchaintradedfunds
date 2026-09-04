@@ -1394,7 +1394,12 @@ function CreatedFundSurface() {
   const transactionHash = transactionHashFromLocation();
   const [confirmation, setConfirmation] = useState<"checking" | "confirmed" | "failure">("checking");
   const [details, setDetails] = useState<FactoryVaultSummary>();
+  const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setCreationMetadata(address ? loadCreationMetadata(window.localStorage, chainId, address) ?? null : null);
+  }, [address, chainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1433,16 +1438,104 @@ function CreatedFundSurface() {
   }
 
   const destination = address ? `/funds/${address}` : "/funds";
+  const revealBurst = [
+    [-184, -92, -22], [-130, -144, 18], [-52, -164, -14], [45, -170, 26],
+    [126, -142, -20], [184, -82, 16], [205, -4, -28], [166, 84, 24],
+    [102, 142, -18], [24, 166, 28], [-62, 156, -26], [-142, 122, 20],
+    [-205, 46, -16], [-216, -30, 24], [0, -198, -20], [0, 194, 18],
+  ];
+
+  if (confirmation === "checking") {
+    return (
+      <DashboardPage className="fundsPage">
+        <div className="appView">
+          <section className="createdConfirmation createdRevealChecking" aria-labelledby="created-otf-title" aria-busy="true">
+            <div className="createdRevealMachine" aria-hidden="true">
+              <span className="createdRevealOrbit createdRevealOrbitOuter" />
+              <span className="createdRevealOrbit createdRevealOrbitInner" />
+              <OtfTokenIcon className="createdRevealMark" size={64} ticker="OTF" />
+            </div>
+            <div className="createdRevealCheckingCopy">
+              <h2 id="created-otf-title">Verifying your launch</h2>
+              <p>Matching the confirmed transaction to its new onchain vault.</p>
+              <span role="status" aria-live="polite"><LoaderCircle className="createAssetSpinner" size={14} />Reading the launch receipt</span>
+            </div>
+          </section>
+        </div>
+      </DashboardPage>
+    );
+  }
+
+  if (confirmation === "failure") {
+    return (
+      <DashboardPage className="fundsPage">
+        <div className="appView">
+          <section className="createdConfirmation createdRevealFailure" aria-labelledby="created-otf-title">
+            <div className="createdStatus">
+              <span className="createdStatusIcon failure"><X size={22} /></span>
+              <div>
+                <h2 id="created-otf-title">Unable to verify launch</h2>
+                <p>Inspect the transaction before trying again. The interface will not invent a successful launch when the factory event is unavailable.</p>
+              </div>
+            </div>
+            {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
+            <div className="createdActions"><Link className="secondaryAction" href="/launch"><ArrowLeft size={14} />Back to launch</Link></div>
+          </section>
+        </div>
+      </DashboardPage>
+    );
+  }
+
   return (
     <DashboardPage className="fundsPage">
       <div className="appView">
-        <section className="createdConfirmation" aria-labelledby="created-otf-title">
-          <div className="createdStatus">
-            <span className={`createdStatusIcon ${confirmation === "failure" ? "failure" : ""}`}>{confirmation === "confirmed" ? <Check size={24} /> : confirmation === "failure" ? <X size={22} /> : <LoaderCircle className="createAssetSpinner" size={22} />}</span>
-            <div>
-              <h2 id="created-otf-title">{confirmation === "confirmed" ? details?.name ?? "Deployment confirmed" : confirmation === "failure" ? "Unable to verify launch" : "Verifying onchain confirmation"}</h2>
-              <p>{confirmation === "confirmed" ? `${details?.symbol ? `$${details.symbol}` : "The new OTF"} is live. Deposits are opening and fees will start accruing to the selected address.` : confirmation === "failure" ? "Use the transaction explorer link below to inspect its status before trying again." : "The fund-page link will appear after the factory launch event is verified."}</p>
+        <section className="createdConfirmation createdRevealConfirmed" aria-labelledby="created-otf-title">
+          <div className="createdRevealBurst" aria-hidden="true">
+            {revealBurst.map(([x, y, rotation], index) => <span key={`${x}-${y}`} style={{ "--burst-x": `${x}px`, "--burst-y": `${y}px`, "--burst-rotation": `${rotation}deg`, "--burst-delay": `${index * 18}ms` } as CSSProperties} />)}
+          </div>
+          <div className="createdJackpotHeader">
+            <span className="createdJackpotLights" aria-hidden="true" />
+            <div className="createdRevealSeal" aria-hidden="true">
+              <span />
+              <OtfTokenIcon className="createdRevealMark" size={72} ticker={details?.symbol ?? "OTF"} />
             </div>
+            <div className="createdJackpotCopy">
+              <h2 id="created-otf-title">{details?.name ?? "Your OTF is live"}</h2>
+              <p><strong>{details?.symbol ? `$${details.symbol}` : "OTF"}</strong> has landed onchain. Here is the allocation you launched.</p>
+              <span className="createdLiveBadge"><Check size={13} />Launch confirmed</span>
+            </div>
+          </div>
+          <div className="createdRevealBody">
+            <div className="createdRevealHeading">
+              <div>
+                <h3>Constituent allocation</h3>
+                <p>{creationMetadata ? weightingMethodLabel(creationMetadata.weightingMethod) : "Allocation metadata is unavailable in this browser."}</p>
+              </div>
+              <strong>{details?.assetCount ?? creationMetadata?.constituents.length ?? "—"}<span>assets</span></strong>
+            </div>
+            {creationMetadata ? (
+              <div className="createdAllocationReveal" role="list" aria-label="Created OTF allocation">
+                {creationMetadata.constituents.map((asset, index) => {
+                  const allocation = Math.max(0, Math.min(100, Number(BigInt(asset.finalPercentageUnits)) / 1e18));
+                  return (
+                    <div className="createdAllocationRow" key={asset.address} role="listitem" style={{ "--allocation": `${allocation}%`, "--reveal-index": Math.min(index, 8) } as CSSProperties}>
+                      <div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div>
+                      <div className="createdAllocationTrack" aria-hidden="true"><span /></div>
+                      <strong className="createdAllocationValue">{formatStoredPercentage(asset.finalPercentageUnits)}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>The launch is confirmed, but this browser does not have the offchain allocation snapshot.</span></div></div>
+            )}
+            {details?.fundThesis ? <blockquote className="createdThesis"><span>Fund thesis</span><p>{details.fundThesis}</p></blockquote> : null}
+            <dl className="createdRevealFacts">
+              <div><dt>Creator</dt><dd>{details ? shortAddress(details.creator) : "—"}</dd></div>
+              <div><dt>Annual expense</dt><dd>{details ? formatAnnualExpenseRatioPercentage(details.annualCreatorExpenseRatioBps) : "—"}</dd></div>
+              <div><dt>Mint fee</dt><dd>{details ? formatAnnualExpenseRatioPercentage(details.mintFeeBps) : "—"}</dd></div>
+              <div><dt>Redeem fee</dt><dd>{details ? formatAnnualExpenseRatioPercentage(details.redeemFeeBps) : "—"}</dd></div>
+            </dl>
           </div>
           {address ? (
             <div className="createdAddressBlock">
@@ -1454,20 +1547,6 @@ function CreatedFundSurface() {
             </div>
           ) : null}
           {copied ? <span className="createdCopyFeedback" role="status" aria-live="polite">Address copied</span> : null}
-          <div className="createdDetails" aria-label="Created OTF details">
-            <section className="createdDetailGroup" aria-labelledby="created-fund-details-title">
-              <h3 id="created-fund-details-title">Fund</h3>
-              <div><span>Symbol</span><strong>{details?.symbol ?? "—"}</strong></div>
-              <div><span>Assets</span><strong>{details?.assetCount ?? "—"}</strong></div>
-              <div><span>Creator</span><strong>{details ? shortAddress(details.creator) : "—"}</strong></div>
-            </section>
-            <section className="createdDetailGroup" aria-labelledby="created-fee-details-title">
-              <h3 id="created-fee-details-title">Fees</h3>
-              <div><span>Creator</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.annualCreatorExpenseRatioBps) : "—"}</strong></div>
-              <div><span>Mint</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.mintFeeBps) : "—"}</strong></div>
-              <div><span>Redeem</span><strong>{details ? formatAnnualExpenseRatioPercentage(details.redeemFeeBps) : "—"}</strong></div>
-            </section>
-          </div>
           {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
             <Link className="secondaryAction" href="/launch"><FilePlus2 size={14} />Launch another</Link>
