@@ -50,7 +50,7 @@ The four phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and 
 
 ## Team market-cap vesting
 
-`TeamMarketCapVesting` holds 100 million OTF. Anyone can checkpoint it. The contract calculates live USD FDV from:
+`TeamMarketCapVesting` holds 100 million OTF. Only the current beneficiary can checkpoint it. The contract calculates live USD FDV from:
 
 ```text
 canonical OTF/WETH V4 spot price
@@ -58,7 +58,7 @@ canonical OTF/WETH V4 spot price
 × OTF.totalSupply()
 ```
 
-The calculation handles either pool currency order and uses full-precision integer arithmetic. It uses current spot price rather than a TWAP. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet deployment tooling uses a fixed `$2,000` fake oracle; production requires an explicit oracle address.
+The calculation handles either pool currency order and uses full-precision integer arithmetic. It uses current spot price rather than a TWAP. Restricting checkpoints is an explicit trusted-beneficiary design choice; it does not make the spot price manipulation-resistant. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet deployment tooling uses a fixed `$2,000` fake oracle; production requires an explicit oracle address.
 
 Each completed $1 million milestone unlocks 10 million OTF, up to $10 million and the full allocation. Values between milestones round down. Once unlocked, a tranche cannot relock after a price or supply decline.
 

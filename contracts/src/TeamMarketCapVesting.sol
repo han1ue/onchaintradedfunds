@@ -144,6 +144,7 @@ contract TeamMarketCapVesting {
     }
 
     function checkpoint() external returns (uint256 cumulativeUnlocked) {
+        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
         uint256 liveFdv = liveFdvUsdWad();
         uint256 milestones = liveFdv / FDV_MILESTONE_USD_WAD;
         if (milestones > MILESTONE_COUNT) milestones = MILESTONE_COUNT;

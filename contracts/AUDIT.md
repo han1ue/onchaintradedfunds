@@ -1,7 +1,5 @@
 # Contract review status
 
-These contracts have not received an independent audit. A previous report covered different contracts and a different custody model, so it does not apply to this codebase.
-
 The review scope includes:
 
 - `OTFToken`, `OTFLaunchManager`, `OTFLaunchManagerDeployer`, and `OTFLaunchRouter`;

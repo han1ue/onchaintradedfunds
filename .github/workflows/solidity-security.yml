@@ -99,6 +99,16 @@ jobs:
         working-directory: contracts
         run: forge test --fuzz-seed "$CI_FUZZ_SEED" --summary
 
+      - name: Run real V4 integration suite
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: integration
+        run: >-
+          forge test
+          --match-path test/OTFLaunchV4Integration.t.sol
+          --fuzz-seed "$CI_FUZZ_SEED"
+          --summary
+
       - name: Run 10,000-case fuzz campaign
         working-directory: contracts
         run: >-

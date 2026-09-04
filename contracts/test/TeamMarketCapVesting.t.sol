@@ -88,23 +88,49 @@ contract TeamMarketCapVestingTest is TestBase {
         assertEq(vesting.pendingBeneficiary(), address(0));
     }
 
+    function testOnlyCurrentBeneficiaryCanCheckpoint() public {
+        _setDirectFdv(1_000_000 ether);
+
+        vm.prank(STRANGER);
+        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vesting.checkpoint();
+
+        vm.prank(BENEFICIARY);
+        assertEq(vesting.checkpoint(), 10_000_000 ether);
+    }
+
+    function testCheckpointAuthorityFollowsBeneficiarySuccession() public {
+        vm.prank(BENEFICIARY);
+        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vm.prank(NEXT_BENEFICIARY);
+        vesting.acceptBeneficiaryTransfer();
+        _setDirectFdv(1_000_000 ether);
+
+        vm.prank(BENEFICIARY);
+        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vesting.checkpoint();
+
+        vm.prank(NEXT_BENEFICIARY);
+        assertEq(vesting.checkpoint(), 10_000_000 ether);
+    }
+
     function testUnlocksBelowAtAndAboveEveryMillionAndNeverRelocks() public {
         for (uint256 milestone = 1; milestone <= 10; milestone++) {
             _setDirectFdv(milestone * 1_000_000 ether - 1 ether);
-            vesting.checkpoint();
+            _checkpointAsBeneficiary();
             assertEq(vesting.unlockedAmount(), (milestone - 1) * 10_000_000 ether);
 
             _setDirectFdv(milestone * 1_000_000 ether);
-            vesting.checkpoint();
+            _checkpointAsBeneficiary();
             assertEq(vesting.unlockedAmount(), milestone * 10_000_000 ether);
 
             _setDirectFdv(milestone * 1_000_000 ether + 1 ether);
-            vesting.checkpoint();
+            _checkpointAsBeneficiary();
             assertEq(vesting.unlockedAmount(), milestone * 10_000_000 ether);
         }
 
         _setDirectFdv(500_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         assertEq(vesting.unlockedAmount(), 100_000_000 ether);
     }
 
@@ -126,13 +152,13 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testBurnsReduceLiveFdvWithoutRelocking() public {
         _setDirectFdv(2_000_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         uint256 beforeBurn = vesting.liveFdvUsdWad();
         vm.prank(HOLDER);
         token.burn(500_000_000 ether);
         uint256 afterBurn = vesting.liveFdvUsdWad();
         assertApproxEqAbs(afterBurn * 2, beforeBurn, 2);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         assertEq(vesting.unlockedAmount(), 20_000_000 ether);
     }
 
@@ -155,7 +181,7 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testOnlyBeneficiaryClaimsAndCannotExceedUnlocked() public {
         _setDirectFdv(1_000_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         vm.prank(address(0xBAD));
         vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
         vesting.claim();
@@ -185,7 +211,7 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testCurrentBeneficiaryRetainsClaimAuthorityWhileTransferIsPending() public {
         _setDirectFdv(1_000_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         vm.prank(BENEFICIARY);
         vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
 
@@ -256,12 +282,12 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testAcceptedTransferChangesAuthorityWithoutChangingAccounting() public {
         _setDirectFdv(1_000_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         vm.prank(BENEFICIARY);
         assertEq(vesting.claim(), 10_000_000 ether);
 
         _setDirectFdv(2_000_000 ether);
-        vesting.checkpoint();
+        _checkpointAsBeneficiary();
         uint256 unlockedBefore = vesting.unlockedAmount();
         uint256 claimedBefore = vesting.claimedAmount();
         vm.prank(BENEFICIARY);
@@ -291,6 +317,11 @@ contract TeamMarketCapVestingTest is TestBase {
         uint256 sqrtRatio = Math.sqrt(ratio);
         if (sqrtRatio * sqrtRatio < ratio) sqrtRatio++;
         stateView.setPool(poolId, uint160(sqrtRatio));
+    }
+
+    function _checkpointAsBeneficiary() private returns (uint256 cumulativeUnlocked) {
+        vm.prank(BENEFICIARY);
+        return vesting.checkpoint();
     }
 
     function _priceForFdv(uint256 fdvUsdWad) private view returns (uint256) {

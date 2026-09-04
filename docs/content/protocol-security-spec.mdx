@@ -66,9 +66,11 @@ Checkpoints MUST round down to a completed $1 million milestone, make 10 million
 milestone through $10 million, and never decrease. Claims MUST go only to the current beneficiary and
 MUST NOT exceed the claimable amount less prior claims.
 
-Only the current beneficiary MAY nominate, replace, or cancel a pending successor. A nonzero nominee
-MUST explicitly accept before receiving claim authority; until then, only the current beneficiary MAY
-claim. Acceptance MUST clear the pending nomination without changing unlocked or claimed accounting.
+Only the current beneficiary MAY checkpoint, claim, nominate, replace, or cancel a pending successor.
+A nonzero nominee MUST explicitly accept before receiving that authority; until then, only the current
+beneficiary MAY perform those actions. Acceptance MUST clear the pending nomination without changing
+unlocked or claimed accounting. Beneficiary-only checkpointing is an explicit trusted-beneficiary
+design choice and MUST NOT be represented as making the V4 spot price manipulation-resistant.
 
 ## Fund fees and accounted OTF
 

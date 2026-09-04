@@ -14,7 +14,7 @@ The current protocol is pre-mainnet and unaudited. It requires an independent co
 - Vault accounting excludes token donations. A donation cannot improve backing in the ledger or change the OTF fee split.
 - The collector can settle only factory-registered vaults through the configured entry router and approved adapters. Its final purchase uses the immutable canonical OTF/WETH V4 pool.
 - Reward claims require a valid cumulative proof and always pay the user committed in the leaf. The root publisher cannot withdraw reward principal.
-- Team-vesting beneficiary changes require nomination by the current beneficiary and acceptance by the nominee.
+- Only the current team-vesting beneficiary can checkpoint or nominate and cancel a successor. A nominee must accept before receiving that authority.
 - The launch manager enforces the bootstrap price corridor, burns its final OTF balance once, owns the permanent V4 position, and exposes no liquidity removal, repricing, migration, or replacement function.
 
 These controls constrain contract calls. They do not make external assets, venues, administrators, or price inputs safe.
@@ -43,7 +43,7 @@ Routes are supplied offchain. The contracts validate their shape and observed tr
 
 Team vesting trusts the configured ETH/USD oracle. The vesting contract rejects nonpositive, future, or stale answers. A fresh but incorrect answer can still satisfy a vesting milestone.
 
-The other input to vesting is the current canonical V4 spot price. The contract uses no TWAP, liquidity threshold, observation delay, or manipulation guard.
+The other input to vesting is the current canonical V4 spot price. Only the current beneficiary can record a checkpoint. This is an explicit trust assumption, not a manipulation-resistant price design: the contract uses no TWAP, liquidity threshold, observation delay, or manipulation guard.
 
 ## Native ETH boundary
 
