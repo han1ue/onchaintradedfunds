@@ -26,7 +26,14 @@ The manager MUST read `MAX_SUPPLY` from `OTFToken` and MUST NOT duplicate it. Th
 `134.997562702653186573 ETH` reference FDV. The next tick in the direction of increasing OTF price
 MUST exceed 135 ETH.
 
-The manager MUST receive at least 200 million OTF. Liquidity MUST use these fixed values:
+`initializeLaunch()` MUST remain permissionless and pull exactly `REQUIRED_OTF_BALANCE`
+(200 million OTF) from `msg.sender` after the phase and hook checks. The caller MUST supply the
+full balance and allowance; existing manager balances or donations MUST NOT reduce this transfer.
+Funding, pool initialization, and bootstrap liquidity creation MUST succeed in one transaction or
+revert together. Deployment MUST approve exactly this amount to the manager, then call
+`initializeLaunch()` from the funding wallet.
+
+Liquidity MUST use these fixed values:
 
 | Position | Liquidity |
 | --- | --- |
@@ -92,8 +99,9 @@ in the beneficiary and MUST NOT be described as protection against spot-price ma
 
 Annual creator expense, mint, and redeem rates MUST be immutable and capped at 1,000, 200, and
 100 bps respectively. Mint fees MUST apply to all minting through the entry router. Redeem fees MUST
-apply to routed and direct in-kind redemption. Redemptions after shutdown MUST charge no redeem fee.
-Preview and execution functions MUST use identical integer arithmetic.
+apply to routed and direct in-kind redemption, except when the share owner is the configured collector.
+Collector redemptions and redemptions after shutdown MUST charge no redeem fee.
+Redemption previews MUST take the share owner and use the same fee exemption and integer arithmetic as execution.
 
 While a vault is active, operations that change accounted OTF MUST checkpoint accrued annual fees
 first. Token donations MUST NOT change accounted balances or fee benefits. The creator share MUST be:

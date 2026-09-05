@@ -14,6 +14,7 @@ import {
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
+import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
 import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -241,6 +242,7 @@ contract OTFLaunchManager {
     function initializeLaunch() external nonReentrant {
         if (phase != Phase.NotInitialized) revert InvalidPhase(Phase.NotInitialized, phase);
         if (!hookPermissionsValid()) revert InvalidHookAddress(address(this));
+        SafeTransferLib.safeTransferFrom(otf, msg.sender, address(this), REQUIRED_OTF_BALANCE);
         uint256 otfBalance = IERC20(otf).balanceOf(address(this));
         if (otfBalance < REQUIRED_OTF_BALANCE) {
             revert InsufficientLaunchTokens(REQUIRED_OTF_BALANCE, otfBalance);

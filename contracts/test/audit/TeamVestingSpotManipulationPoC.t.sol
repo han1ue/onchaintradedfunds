@@ -156,7 +156,7 @@ contract TeamVestingSpotManipulationPoCTest is TestBase {
             hooks: IHooks(hooks)
         });
 
-        otf.transfer(address(launch), 200_000_000 ether);
+        otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE());
         launch.initializeLaunch();
         OTFLaunchRouter router = new OTFLaunchRouter(address(launch));
         weth.mint(address(this), 20 ether);

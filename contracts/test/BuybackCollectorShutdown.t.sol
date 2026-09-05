@@ -98,7 +98,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         _redeemHolderAndTriggerLowSupplyShutdown();
         uint256 collectorShares = vault.balanceOf(address(collector));
         (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
-        uint256 wethAvailable = vault.previewRedeem(collectorShares, 0)[0];
+        uint256 wethAvailable = vault.previewRedeem(collectorShares, address(collector), 0)[0];
         uint256 expectedCreatorWeth = wethAvailable * creatorShares / collectorShares;
         uint256 supplyBefore = otf.totalSupply();
 
@@ -131,7 +131,7 @@ contract BuybackCollectorShutdownTest is TestBase {
         assertEq(vault.balanceOf(address(collector)), pending);
         (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         assertEq(creatorShares + buybackShares, pending);
-        uint256 wethAvailable = vault.previewRedeem(pending, 0)[0];
+        uint256 wethAvailable = vault.previewRedeem(pending, address(collector), 0)[0];
         assertGt(wethAvailable, 0);
 
         _settle(wethAvailable, 1);

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
+import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import {
     UniswapV4PoolKey,
     UniswapV4SwapParams,
@@ -39,6 +40,7 @@ contract AuthorizationDependencies {
 
     function initialize(UniswapV4PoolKey calldata, uint160 value) external returns (int24) {
         price = value;
+        if (mutation == 10) revert("pool initialization failed");
         return 0;
     }
 
@@ -105,7 +107,127 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
             address(0x2840)
         );
         launch = OTFLaunchManager(address(0x2840));
-        otf.mint(address(launch), launch.REQUIRED_OTF_BALANCE());
+        otf.mint(address(this), launch.REQUIRED_OTF_BALANCE());
+        otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE());
+    }
+
+    function testApprovedFundedCallerCanInitializePermissionlessly() public {
+        address caller = makeAddr("launch funder");
+        uint256 required = launch.REQUIRED_OTF_BALANCE();
+        otf.transfer(caller, required);
+        vm.startPrank(caller);
+        otf.approve(address(launch), required);
+        launch.initializeLaunch();
+        vm.stopPrank();
+
+        assertEq(otf.balanceOf(caller), 0);
+        assertEq(otf.allowance(caller, address(launch)), 0);
+        assertEq(otf.balanceOf(address(launch)), required);
+        assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+        assertEq(dependencies.price(), launch.initialSqrtPriceX96());
+        assertEq(launch.bootstrapPositionTokenId(), 1);
+        assertEq(launch.bootstrapLiquidity(), launch.BOOTSTRAP_LIQUIDITY());
+    }
+
+    function testInitializationRequiresFullCallerBalance() public {
+        otf.transfer(address(0xBEEF), 1);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE() - 1);
+        assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE());
+        _assertInitializationRolledBack();
+    }
+
+    function testInitializationRequiresFullCallerAllowance() public {
+        otf.approve(address(launch), 0);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE() - 1);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE() - 1);
+        _assertInitializationRolledBack();
+    }
+
+    function testAnotherCallerCannotUseFundingWalletApproval() public {
+        address caller = makeAddr("another caller");
+        otf.mint(caller, launch.REQUIRED_OTF_BALANCE());
+        vm.prank(caller);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(caller), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE());
+        _assertInitializationRolledBack();
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(caller), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.balanceOf(address(this)), 0);
+    }
+
+    function testPrefundingCannotReplaceCallerFunding() public {
+        uint256 required = launch.REQUIRED_OTF_BALANCE();
+        otf.transfer(address(launch), required);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(launch)), required);
+        assertEq(otf.balanceOf(address(this)), 0);
+        assertEq(otf.allowance(address(this), address(launch)), required);
+        assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized));
+        assertEq(dependencies.price(), 0);
+        assertEq(dependencies.nextTokenId(), 1);
+
+        otf.mint(address(this), required);
+        otf.approve(address(launch), 0);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(launch)), required);
+        assertEq(otf.balanceOf(address(this)), required);
+    }
+
+    function testInitializationPullsFullAmountDespiteDonation() public {
+        uint256 required = launch.REQUIRED_OTF_BALANCE();
+        otf.mint(address(launch), required + 1);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(this)), 0);
+        assertEq(otf.allowance(address(this), address(launch)), 0);
+        assertEq(otf.balanceOf(address(launch)), 2 * required + 1);
+        assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+    }
+
+    function testPoolInitializationFailureRollsBackFunding() public {
+        _assertDownstreamFailureRollsBackFunding(10, bytes("pool initialization failed"));
+    }
+
+    function testLiquidityCreationFailureRollsBackFunding() public {
+        _assertDownstreamFailureRollsBackFunding(9, bytes("mint failed after hook"));
+    }
+
+    function _assertDownstreamFailureRollsBackFunding(uint8 mutation, bytes memory reason) private {
+        dependencies.setMutation(mutation);
+        vm.expectRevert(reason);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.allowance(address(launch), address(dependencies)), 0);
+        _assertInitializationRolledBack();
+        _assertNoAuthorization(false);
+        dependencies.setMutation(0);
+        launch.initializeLaunch();
+        assertEq(otf.balanceOf(address(this)), 0);
+        assertEq(otf.allowance(address(this), address(launch)), 0);
+        assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
+    }
+
+    function _assertInitializationRolledBack() private view {
+        assertEq(otf.balanceOf(address(launch)), 0);
+        assertEq(uint256(launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized));
+        assertEq(launch.bootstrapPositionTokenId(), 0);
+        assertEq(launch.bootstrapLiquidity(), 0);
+        assertEq(launch.bootstrapWethPrincipal(), 0);
+        assertEq(launch.bootstrapOtfDeposited(), 0);
+        assertEq(dependencies.price(), 0);
+        assertEq(dependencies.nextTokenId(), 1);
     }
 
     function testHookPermissionsRequireExactNewMask() public {

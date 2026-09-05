@@ -38,8 +38,9 @@ contract MainnetDeploymentTest is MainnetRehearsalBase {
         assertEq(vesting.maxOracleAge(), oracleMaxAge);
         assertTrue(router.isAdapterApproved(address(v3Adapter)));
         assertTrue(router.isAdapterApproved(address(v4Adapter)));
-        assertEq(otf.balanceOf(deployer), 0);
-        assertEq(otf.balanceOf(address(launch)), 200_000_000 ether);
+        assertEq(otf.balanceOf(deployer), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.allowance(deployer, address(launch)), launch.REQUIRED_OTF_BALANCE());
+        assertEq(otf.balanceOf(address(launch)), 0);
         assertEq(otf.balanceOf(address(vesting)), 100_000_000 ether);
         assertEq(otf.balanceOf(address(rewards)), 700_000_000 ether);
         assertEq(otf.totalSupply(), 1_000_000_000 ether);
@@ -48,6 +49,8 @@ contract MainnetDeploymentTest is MainnetRehearsalBase {
     function testInitializationGraduationLockedPositionAndSupplyReconcile() public {
         uint256 managerOtfBefore = otf.balanceOf(poolManager);
         _graduate();
+        assertEq(otf.balanceOf(deployer), 0);
+        assertEq(otf.allowance(deployer, address(launch)), 0);
         assertGt(launch.finalOtfBurned(), 0);
         assertEq(otf.totalSupply() + launch.finalOtfBurned(), 1_000_000_000 ether);
         assertEq(otf.balanceOf(address(launch)), 0);

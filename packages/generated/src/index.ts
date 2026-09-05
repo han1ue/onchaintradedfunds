@@ -1431,6 +1431,11 @@ export const managedOtfVaultAbi = [
         "type": "uint256"
       },
       {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
         "internalType": "uint256",
         "name": "skipMask",
         "type": "uint256"
@@ -1453,6 +1458,11 @@ export const managedOtfVaultAbi = [
         "internalType": "uint256",
         "name": "investorShares",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
       }
     ],
     "name": "previewRedeemFee",
@@ -5753,6 +5763,11 @@ export const otfLaunchManagerAbi = [
   {
     "inputs": [],
     "name": "Reentrancy",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "SafeTransferFromFailed",
     "type": "error"
   },
   {

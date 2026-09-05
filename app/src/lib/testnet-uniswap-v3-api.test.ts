@@ -75,7 +75,7 @@ function routingClient(overrides: Partial<TestnetRoutingClient> = {}): TestnetRo
     quoteExactOutput: vi.fn(async (_path, amountOut) => (amountOut + 999_999_999_999n) / 1_000_000_000_000n),
     vaultAssets: vi.fn(async (vault) => vaultAssets.get(vault.toLowerCase()) ?? []),
     previewMint: vi.fn(async (_vault, shares) => [shares / 2n, shares - shares / 2n]),
-    previewRedeem: vi.fn(async (_vault, shares, skipMask) => {
+    previewRedeem: vi.fn(async (_vault, shares, _owner, skipMask) => {
       if (skipMask !== 0n) throw new Error("Unexpected skip mask");
       return [shares / 2n, shares - shares / 2n];
     }),
@@ -227,6 +227,34 @@ describe("Uniswap V3 testnet quote planner", () => {
     expect(parseResponse(redeemResult.body, redeem).execution).toMatchObject({ kind: "basket-router", call: { method: "redeemToToken" } });
     expect(parseResponse(convertResult.body, convert).execution).toMatchObject({ kind: "basket-router", call: { method: "swapBasketToBasket" } });
     expect((convertResult.body as Record<string, unknown>).routeLabel).toBe("Burn + mint");
+    expect(client.previewRedeem).toHaveBeenCalledTimes(2);
+    expect(client.previewRedeem).toHaveBeenNthCalledWith(1, OTF_A, redeem.inputAmountRaw, CALLER, 0n);
+    expect(client.previewRedeem).toHaveBeenNthCalledWith(2, OTF_A, convert.inputAmountRaw, CALLER, 0n);
+  });
+
+  it.each(["erc20", "native"] as const)("uses owner-specific redemption previews for %s quotes after NAV fees", async (kind) => {
+    const collector = "0x00000000000000000000000000000000000000c1" as Address;
+    const client = routingClient({
+      previewRedeem: vi.fn(async (_vault, shares, owner) => {
+        // The vault has accrued 10% annual NAV fees and charges investors 1% to redeem.
+        const backing = shares * 9n / 10n;
+        const redeemable = owner === collector ? backing : backing * 99n / 100n;
+        return [redeemable / 2n, redeemable - redeemable / 2n];
+      }),
+    });
+    const request = plannerRequest(otf(OTF_A), { ...asset(weth), kind }, "basket");
+    const investorResult = await quoteTestnetSwap(request, dependencies(client));
+    const collectorRequest = { ...request, caller: collector };
+    const collectorResult = await quoteTestnetSwap(collectorRequest, dependencies(client));
+    const investorQuote = parseResponse(investorResult.body, request);
+    const collectorQuote = parseResponse(collectorResult.body, collectorRequest);
+
+    expect(client.previewRedeem).toHaveBeenNthCalledWith(1, OTF_A, request.inputAmountRaw, CALLER, 0n);
+    expect(client.previewRedeem).toHaveBeenNthCalledWith(2, OTF_A, request.inputAmountRaw, collector, 0n);
+    const backing = request.inputAmountRaw * 9n / 10n;
+    expect(investorQuote.expectedOutputRaw).toBe(backing * 99n / 100n * 2n);
+    expect(collectorQuote.expectedOutputRaw).toBe(backing * 2n);
+    expect(collectorQuote.minimumReceivedRaw).toBeGreaterThan(investorQuote.minimumReceivedRaw!);
   });
 
   it("normalizes zero-liquidity routes as unavailable", async () => {

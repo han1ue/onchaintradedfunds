@@ -547,7 +547,11 @@ const transfer = async (to, amount) => transact(
   [to, amount],
 );
 setupTransactions.teamAllocation = await transfer(teamVesting.address, 100_000_000n * 10n ** 18n);
-setupTransactions.launchAllocation = await transfer(launchManager.address, 200_000_000n * 10n ** 18n);
+setupTransactions.launchApproval = await transact(
+  { ...otfToken, name: "OTFToken" },
+  "approve",
+  [launchManager.address, requiredLaunchBalance],
+);
 setupTransactions.rewardsAllocation = await transfer(
   merkleRewardsDistributor.address,
   700_000_000n * 10n ** 18n,

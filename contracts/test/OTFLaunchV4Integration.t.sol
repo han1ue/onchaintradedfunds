@@ -6,6 +6,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../src/OTFLaunchManagerDeployer.sol";
 import { OTFLaunchRouter } from "../src/OTFLaunchRouter.sol";
+import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
 import { UniswapV4PoolKey, UniswapV4SwapParams } from "../src/interfaces/IUniswapV4.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";
 import { TestBase, Vm } from "./TestBase.sol";
@@ -372,7 +373,8 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
     function testUnauthorizedPoolInitializationCannotInitializeLaunch() public {
         Setup memory setup = _deployUninitialized(true);
-        setup.otf.mint(address(setup.launch), setup.launch.REQUIRED_OTF_BALANCE());
+        setup.otf.mint(address(this), setup.launch.REQUIRED_OTF_BALANCE());
+        setup.otf.approve(address(setup.launch), setup.launch.REQUIRED_OTF_BALANCE());
         PoolKey memory key = _key(setup);
         uint160 initialPrice = setup.launch.initialSqrtPriceX96();
         bytes memory inner = abi.encodeWithSelector(
@@ -728,20 +730,21 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     function _assertFundingBoundary(bool direct) private {
         Setup memory underfunded = _deployUninitialized(direct);
         uint256 required = underfunded.launch.REQUIRED_OTF_BALANCE();
-        underfunded.otf.mint(address(underfunded.launch), required - 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OTFLaunchManager.InsufficientLaunchTokens.selector, required, required - 1
-            )
-        );
+        underfunded.otf.mint(address(this), required - 1);
+        underfunded.otf.approve(address(underfunded.launch), required);
+        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
         underfunded.launch.initializeLaunch();
         assertEq(
             uint256(underfunded.launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized)
         );
+        underfunded.otf.burn(required - 1);
 
         Setup memory exact = _deployUninitialized(direct);
-        exact.otf.mint(address(exact.launch), required);
+        exact.otf.mint(address(this), required);
+        exact.otf.approve(address(exact.launch), required);
         exact.launch.initializeLaunch();
+        assertEq(exact.otf.balanceOf(address(this)), 0);
+        assertEq(exact.otf.allowance(address(this), address(exact.launch)), 0);
         (uint256 bootstrapOtf,, uint256 permanentOtf,) = exact.launch.derivedLaunchAmounts();
         uint256 expectedBurn = direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN;
         assertEq(uint256(exact.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
@@ -1389,7 +1392,8 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
     function _deploy(bool direct) private returns (Setup memory setup) {
         setup = _deployUninitialized(direct);
-        setup.otf.mint(address(setup.launch), 200_000_000 ether);
+        setup.otf.mint(address(this), setup.launch.REQUIRED_OTF_BALANCE());
+        setup.otf.approve(address(setup.launch), setup.launch.REQUIRED_OTF_BALANCE());
         setup.launch.initializeLaunch();
     }
 

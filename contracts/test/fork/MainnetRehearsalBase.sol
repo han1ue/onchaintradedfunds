@@ -174,7 +174,7 @@ abstract contract MainnetRehearsalBase is Test {
         );
         collector.configureFactory(address(factory));
         factory.configureEntryExitRouter(address(router));
-        assertTrue(otf.transfer(address(launch), 200_000_000 ether));
+        assertTrue(otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE()));
         assertTrue(otf.transfer(address(vesting), 100_000_000 ether));
         assertTrue(otf.transfer(address(rewards), 700_000_000 ether));
         vm.stopPrank();
@@ -187,6 +187,7 @@ abstract contract MainnetRehearsalBase is Test {
     }
 
     function _graduate() internal {
+        vm.prank(deployer);
         launch.initializeLaunch();
         vm.prank(investor);
         launchRouter.buyOtfWithEth{ value: 20 ether }(1, investor, block.timestamp);

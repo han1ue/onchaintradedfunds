@@ -136,7 +136,7 @@ assert(
 assert(!/function\s+burn(?:From)?\s*\(/u.test(otfTokenSource), "OTFToken hand-writes a burn function");
 for (const fragment of [
   'viewBox="0 0 256 256"', 'fill="#090909"', 'stroke="#ccff00"',
-  'stroke-width="12"', 'font-weight="700"',
+  'stroke-width="16"', 'font-weight="700"',
 ]) {
   assert(otfMetadataSource.includes(fragment), `onchain OTF metadata is missing ${fragment}`);
   assert(squareIconSource.includes(fragment), `square brand SVG is missing ${fragment}`);
@@ -230,7 +230,9 @@ assert(redeemInKind.inputs.map((input) => input.type).join(",") === "uint256,add
 const routerRedeem = functions(compiled.ManagedOTFVault).find((item) => item.name === "routerRedeem");
 assert(routerRedeem.inputs.map((input) => input.type).join(",") === "uint256,address,address,uint256[],uint256", "routerRedeem is not skip-aware");
 const previewRedeem = functions(compiled.ManagedOTFVault).find((item) => item.name === "previewRedeem");
-assert(previewRedeem.inputs.map((input) => input.type).join(",") === "uint256,uint256", "previewRedeem is not skip-aware");
+assert(previewRedeem.inputs.map((input) => input.type).join(",") === "uint256,address,uint256", "previewRedeem must include the share owner and skip mask");
+const previewRedeemFee = functions(compiled.ManagedOTFVault).find((item) => item.name === "previewRedeemFee");
+assert(previewRedeemFee.inputs.map((input) => input.type).join(",") === "uint256,address", "previewRedeemFee must include the share owner");
 assert(!functionNames(compiled.ManagedOTFVault).has("emergencyRedeem"), "vault retains emergencyRedeem");
 assert(!vaultErrorNames.has("VaultNotShutdown"), "vault retains the emergency-redemption-only error");
 

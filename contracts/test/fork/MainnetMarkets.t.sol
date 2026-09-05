@@ -60,9 +60,9 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
                     symbol: "REAL5",
                     fundThesis: "Mainnet market integration test.",
                     expenseBeneficiary: beneficiary,
-                    annualCreatorExpenseRatioBps: 0,
+                    annualCreatorExpenseRatioBps: 1_000,
                     mintFeeBps: 200,
-                    redeemFeeBps: 0,
+                    redeemFeeBps: 100,
                     constituents: stocks,
                     bootstrapBasketUnitsPerOTF: units
                 })
@@ -89,7 +89,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
         assertEq(before - investor.balance, 0.05 ether);
         assertGt(shares, 0);
         _cleared();
-        SwapLeg[] memory exitLegs = _exit(shares);
+        SwapLeg[] memory exitLegs = _exit(shares, investor);
         before = investor.balance;
         vm.prank(investor);
         (uint256 received,,) =
@@ -101,7 +101,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
 
     function testRealStockInKindExitWithAdaptersRevoked() public {
         uint256 shares = _mint(0.01 ether);
-        uint256[] memory expected = vault.previewRedeem(shares, 0);
+        uint256[] memory expected = vault.previewRedeem(shares, investor, 0);
         uint256[] memory balances = new uint256[](stocks.length);
         for (uint256 i; i < stocks.length; ++i) {
             balances[i] = IERC20(stocks[i]).balanceOf(investor);
@@ -126,10 +126,13 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
     function testRealStockFeesRedeemThroughLiveMarketsAndBurnOtf() public {
         _graduate();
         _mint(0.01 ether);
+        vm.warp(block.timestamp + 30 days);
+        uint256 navFees = vault.checkpointFees();
+        assertGt(navFees, 0);
         (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         assertGt(creatorShares, 0);
         assertGt(buybackShares, 0);
-        SwapLeg[] memory legs = _exit(creatorShares + buybackShares);
+        SwapLeg[] memory legs = _exit(creatorShares + buybackShares, address(collector));
         uint256 before = weth.balanceOf(beneficiary);
         uint256 supply = otf.totalSupply();
         vm.prank(beneficiary);
@@ -161,7 +164,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
 
     function _roundTrip(uint256 perLeg) private {
         uint256 shares = _mint(perLeg);
-        SwapLeg[] memory legs = _exit(shares);
+        SwapLeg[] memory legs = _exit(shares, investor);
         uint256 before = weth.balanceOf(investor);
         vm.prank(investor);
         (uint256 received,,) =
@@ -198,8 +201,8 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
         }
     }
 
-    function _exit(uint256 shares) private returns (SwapLeg[] memory legs) {
-        uint256[] memory amounts = vault.previewRedeem(shares, 0);
+    function _exit(uint256 shares, address owner) private returns (SwapLeg[] memory legs) {
+        uint256[] memory amounts = vault.previewRedeem(shares, owner, 0);
         legs = new SwapLeg[](stocks.length);
         for (uint256 i; i < stocks.length; ++i) {
             bytes memory path =

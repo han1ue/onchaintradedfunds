@@ -14,6 +14,7 @@ import {
 
 contract MainnetVestingTest is MainnetRehearsalBase {
     function testLiveOracleAndCanonicalPoolPriceAtLaunchAndGraduation() public {
+        vm.prank(deployer);
         launch.initializeLaunch();
         (, int256 answer,, uint256 updatedAt,) = oracle.latestRoundData();
         assertGt(answer, 0);

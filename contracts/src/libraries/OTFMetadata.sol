@@ -6,7 +6,7 @@ import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 /// @notice Canonical fully onchain metadata for the protocol token and OTF vault shares.
 library OTFMetadata {
     string internal constant SQUARE_ICON_SVG =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect x="7" y="7" width="242" height="242" fill="#090909" stroke="#ccff00" stroke-width="12"/><text x="128" y="156" fill="#ccff00" font-family="Instrument Sans,Arial,sans-serif" font-size="76" font-weight="700" letter-spacing="-2" text-anchor="middle">OTF</text></svg>';
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect x="9" y="9" width="238" height="238" fill="#090909" stroke="#ccff00" stroke-width="16"/><text x="128" y="156" fill="#ccff00" font-family="Instrument Sans,Arial,sans-serif" font-size="76" font-weight="700" letter-spacing="-2" text-anchor="middle">OTF</text></svg>';
 
     function protocolTokenURI() internal pure returns (string memory) {
         return _tokenURI(

@@ -27,6 +27,12 @@ The active September 5 deployment runs on Robinhood Chain Testnet with the 15/13
 
 The launch manager creates one OTF/WETH Uniswap V4 pool with a fixed 0% LP fee and tick spacing 1. The pool starts at `0.000000015 WETH` per OTF, a 15 ETH reference fully diluted valuation (FDV) against the original one-billion-token supply. At the price boundary just below 135 ETH reference FDV, the launch can graduate to permanent liquidity.
 
+Anyone can initialize the launch by approving the manager to spend 200 million OTF and calling
+`initializeLaunch()` from the same wallet. The call pulls the full amount from the caller, initializes
+the pool, and creates bootstrap liquidity in one transaction. If any step fails, the transfer also
+reverts. OTF already held by the manager does not reduce the caller's funding requirement. The
+deployment script approves exactly `REQUIRED_OTF_BALANCE` before calling initialization.
+
 The launch has four phases:
 
 | Phase | What happens |
@@ -89,7 +95,7 @@ Each vault creator selects three rates at creation:
 
 The rates and expense beneficiary cannot change. A mint fee increases the deposit needed for a requested share amount. A redeem fee reduces the basket returned. Annual expense increases share supply over time, reducing the backing per share.
 
-The vault collects all three fees by issuing vault shares and records accrued annual expense at checkpoints. Redemptions after shutdown have no redeem fee. Previews use the same arithmetic as execution.
+The vault collects all three fees by issuing vault shares and records accrued annual expense at checkpoints. Redemptions by the configured collector and redemptions after shutdown have no redeem fee. Redemption previews take the share owner as an argument and use the same arithmetic as execution.
 
 Holding OTF as an accounted vault constituent changes the division of fee shares, not the fee charged to the investor:
 

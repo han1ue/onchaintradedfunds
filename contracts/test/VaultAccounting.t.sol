@@ -176,7 +176,7 @@ contract VaultAccountingTest is BootstrapTestBase {
 
         vm.prank(BOB);
         vault.approve(address(router), WAD);
-        uint256[] memory expected = vault.previewRedeem(WAD, 0);
+        uint256[] memory expected = vault.previewRedeem(WAD, ALICE, 0);
         router.redeem(vault, WAD, BOB, BOB, _zeroes(2));
         assertEq(vault.accountedBalance(address(tokenA)), accountedA - expected[0]);
         assertEq(vault.accountedBalance(address(tokenB)), accountedB - expected[1]);
@@ -186,9 +186,9 @@ contract VaultAccountingTest is BootstrapTestBase {
         ManagedOTFVault vault = _newVault(6, 0);
         address[] memory assets = _assets(address(tokenA), address(tokenB));
         _bootstrap(vault, router, assets, WAD);
-        uint256[] memory entitlement = vault.previewRedeem(WAD, 0);
+        uint256[] memory entitlement = vault.previewRedeem(WAD, ALICE, 0);
         tokenA.mint(address(vault), 7 * WAD);
-        uint256[] memory afterDonation = vault.previewRedeem(WAD, 0);
+        uint256[] memory afterDonation = vault.previewRedeem(WAD, ALICE, 0);
         assertEq(afterDonation[0], entitlement[0]);
         assertEq(afterDonation[1], entitlement[1]);
 
@@ -455,7 +455,7 @@ contract VaultAccountingTest is BootstrapTestBase {
         _bootstrap(vault, router, _assets(address(tokenA), address(tokenB)), WAD);
         vm.warp(block.timestamp + 1 days);
 
-        uint256[] memory expected = vault.previewRedeem(WAD, 0);
+        uint256[] memory expected = vault.previewRedeem(WAD, ALICE, 0);
         assertGt(expected[0], 0);
 
         vm.prank(ALICE);

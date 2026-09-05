@@ -487,7 +487,8 @@ contract OTFLaunchV4InvariantTest is TestBase, InvariantTestBase {
             address(permit2)
         );
         OTFLaunchRouter router = new OTFLaunchRouter(address(launch));
-        otf.mint(address(launch), launch.REQUIRED_OTF_BALANCE());
+        otf.mint(address(this), launch.REQUIRED_OTF_BALANCE());
+        otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE());
         launch.initializeLaunch();
         handler = new OTFLaunchV4Handler(
             otf, weth, launch, router, poolManager, stateView, positionManager, permit2

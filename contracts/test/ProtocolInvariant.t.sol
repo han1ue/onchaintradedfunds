@@ -117,7 +117,7 @@ contract ProtocolInvariantTest is BootstrapTestBase, InvariantTestBase {
         vault.checkpointFees();
         uint256 supply = vault.totalSupply();
         if (supply == 0) return;
-        uint256[] memory outputs = vault.previewRedeem(supply, 0);
+        uint256[] memory outputs = vault.previewRedeem(supply, address(handler), 0);
         assertEq(outputs[0], vault.accountedBalance(address(tokenA)));
         assertEq(outputs[1], vault.accountedBalance(address(tokenB)));
     }

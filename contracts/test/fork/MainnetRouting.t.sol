@@ -106,9 +106,9 @@ contract MainnetRoutingTest is Test {
                     symbol: "FORK",
                     fundThesis: "Mainnet router validation.",
                     expenseBeneficiary: address(this),
-                    annualCreatorExpenseRatioBps: 0,
+                    annualCreatorExpenseRatioBps: 1_000,
                     mintFeeBps: 200,
-                    redeemFeeBps: 0,
+                    redeemFeeBps: 100,
                     constituents: assets,
                     bootstrapBasketUnitsPerOTF: units
                 })
@@ -221,6 +221,8 @@ contract MainnetRoutingTest is Test {
         assertEq(weth.balanceOf(address(this)) - exitBefore, received);
         _assertCleared();
 
+        vm.warp(block.timestamp + 30 days);
+        assertGt(vault.checkpointFees(), 0);
         (uint256 creatorShares, uint256 buybackShares) = collector.feeAccounts(address(vault));
         assertGt(creatorShares, 0);
         assertGt(buybackShares, 0);
@@ -283,7 +285,7 @@ contract MainnetRoutingTest is Test {
         launch = deployer.deploy(
             salt, address(otf), address(weth), poolManager, stateView, positionManager, permit2
         );
-        assertTrue(otf.transfer(address(launch), launch.REQUIRED_OTF_BALANCE()));
+        assertTrue(otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE()));
         launch.initializeLaunch();
         OTFLaunchRouter launchRouter = OTFLaunchRouter(
             payable(deployCode("OTFLaunchRouter.sol:OTFLaunchRouter", abi.encode(address(launch))))

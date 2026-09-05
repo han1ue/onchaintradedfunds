@@ -161,7 +161,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         _bootstrap(vault, router, assets, 100 ether);
 
-        (, uint256 feeShares,,,) = vault.previewRedeemFee(10 ether);
+        (, uint256 feeShares,,,) = vault.previewRedeemFee(10 ether, ALICE);
         vm.prank(ALICE);
         vault.redeemInKind(10 ether, ALICE, new uint256[](2), 0);
         assertGt(feeShares, 0);
@@ -170,10 +170,10 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         vault.activateEmergencyShutdown();
         uint256 supplyBefore = vault.totalSupply();
         uint256 balance = vault.balanceOf(ALICE);
-        (uint256 shutdownRedeemed, uint256 shutdownFee,,,) = vault.previewRedeemFee(balance);
+        (uint256 shutdownRedeemed, uint256 shutdownFee,,,) = vault.previewRedeemFee(balance, ALICE);
         assertEq(shutdownRedeemed, balance);
         assertEq(shutdownFee, 0);
-        assertEq(vault.previewRedeem(balance, 0)[0], balance);
+        assertEq(vault.previewRedeem(balance, ALICE, 0)[0], balance);
         vm.prank(ALICE);
         vault.redeemInKind(balance, ALICE, new uint256[](2), 0);
         assertEq(vault.totalSupply(), supplyBefore - balance);
@@ -212,7 +212,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
             assertEq(vault.totalSupply(), effectiveSupply);
         }
 
-        uint256[] memory preview = vault.previewRedeem(effectiveSupply, 0);
+        uint256[] memory preview = vault.previewRedeem(effectiveSupply, ALICE, 0);
         uint256 netShares = effectiveSupply;
         if (chargeRedeemFee && !shutdownMode) {
             netShares -= (effectiveSupply * 100 + 9_999) / 10_000;
@@ -224,7 +224,7 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
             ManagedOTFVaultStorage.SharesExceedSupply.selector, effectiveSupply + 1, effectiveSupply
         );
         vm.expectRevert(expectedError);
-        vault.previewRedeem(effectiveSupply + 1, 0);
+        vault.previewRedeem(effectiveSupply + 1, ALICE, 0);
         vm.prank(ALICE);
         vm.expectRevert(expectedError);
         vault.redeemInKind(effectiveSupply + 1, ALICE, new uint256[](2), 0);
@@ -336,8 +336,8 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         uint256 buybackMint
     ) private {
         (uint256 redeemedShares, uint256 redeemFee, uint256 creatorRedeem, uint256 buybackRedeem,) =
-            vault.previewRedeemFee(50 ether);
-        uint256[] memory preview = vault.previewRedeem(50 ether, 0);
+            vault.previewRedeemFee(50 ether, ALICE);
+        uint256[] memory preview = vault.previewRedeem(50 ether, ALICE, 0);
         vm.prank(ALICE);
         vault.approve(address(router), 50 ether);
         router.redeem(vault, 50 ether, ALICE, ALICE, preview);

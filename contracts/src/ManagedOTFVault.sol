@@ -322,7 +322,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         amountsIn = _previewMintWithSupply(_grossMintShares(shares), effectiveSupply);
     }
 
-    function previewRedeem(uint256 shares, uint256 skipMask)
+    function previewRedeem(uint256 shares, address owner, uint256 skipMask)
         public
         view
         returns (uint256[] memory amountsOut)
@@ -334,11 +334,14 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
             _shutdown ? totalSupply() : totalSupply() + pendingExpenseFeeShares();
         if (shares > effectiveSupply) revert SharesExceedSupply(shares, effectiveSupply);
         amountsOut = _previewRedeemWithSupply(
-            _shutdown ? shares : _netRedeemShares(shares), effectiveSupply, skipMask, _shutdown
+            _shutdown ? shares : _netRedeemShares(shares, owner),
+            effectiveSupply,
+            skipMask,
+            _shutdown
         );
     }
 
-    function previewRedeemFee(uint256 investorShares)
+    function previewRedeemFee(uint256 investorShares, address owner)
         external
         view
         returns (
@@ -350,7 +353,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         )
     {
         if (investorShares == 0) revert ZeroShares();
-        redeemedShares = _shutdown ? investorShares : _netRedeemShares(investorShares);
+        redeemedShares = _shutdown ? investorShares : _netRedeemShares(investorShares, owner);
         feeShares = investorShares - redeemedShares;
         creatorShareBps = feeCreatorShareBps();
         (creatorShares, buybackShares) = _splitFeeShares(feeShares, creatorShareBps);
@@ -454,7 +457,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         }
         uint256 supply = totalSupply();
         if (shares > supply) revert SharesExceedSupply(shares, supply);
-        uint256 redeemedShares = shutdown_ ? shares : _netRedeemShares(shares);
+        uint256 redeemedShares = shutdown_ ? shares : _netRedeemShares(shares, owner);
 
         amountsOut = new uint256[](length);
         forfeitedAmounts = new uint256[](length);
@@ -689,8 +692,13 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         return Math.mulDiv(investorShares, BPS, BPS - _mintFeeBps, Math.Rounding.Ceil);
     }
 
-    function _netRedeemShares(uint256 investorShares) internal view returns (uint256 redeemed) {
-        if (_redeemFeeBps == 0) return investorShares;
+    function _netRedeemShares(uint256 investorShares, address owner)
+        internal
+        view
+        returns (uint256 redeemed)
+    {
+        // Realizing collected fees must not create another fee credit to the same owner.
+        if (_redeemFeeBps == 0 || owner == _buybackCollector) return investorShares;
         uint256 feeShares = Math.mulDiv(investorShares, _redeemFeeBps, BPS, Math.Rounding.Ceil);
         redeemed = investorShares - feeShares;
         if (redeemed == 0) revert ZeroNetShares();

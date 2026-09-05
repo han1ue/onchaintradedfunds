@@ -114,7 +114,7 @@ export type TestnetRoutingClient = {
   quoteExactOutput(path: Hex, amountOut: bigint): Promise<bigint>;
   vaultAssets(vault: Address): Promise<readonly Address[]>;
   previewMint(vault: Address, shares: bigint): Promise<readonly bigint[]>;
-  previewRedeem(vault: Address, shares: bigint, skipMask: bigint): Promise<readonly bigint[]>;
+  previewRedeem(vault: Address, shares: bigint, owner: Address, skipMask: bigint): Promise<readonly bigint[]>;
 };
 
 type Route = {
@@ -241,7 +241,7 @@ function defaultRoutingClient(): TestnetRoutingClient {
     quoteExactOutput: (path, amountOut) => quote("quoteExactOutput", path, amountOut),
     vaultAssets: (vault) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "assets" }),
     previewMint: (vault, shares) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewMint", args: [shares] }),
-    previewRedeem: (vault, shares, skipMask) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewRedeem", args: [shares, skipMask] }),
+    previewRedeem: (vault, shares, owner, skipMask) => publicClient.readContract({ address: vault, abi: managedOtfVaultAbi, functionName: "previewRedeem", args: [shares, owner, skipMask] }),
   };
 }
 
@@ -363,6 +363,7 @@ async function planMint(
 async function liquidationPlan(
   vault: Address,
   shares: bigint,
+  owner: Address,
   output: CatalogAsset,
   slippageBps: number,
   adapter: Address,
@@ -370,7 +371,7 @@ async function liquidationPlan(
 ) {
   const assets = await client.vaultAssets(vault);
   if (assets.length === 0 || assets.length > 20 || assets.some((asset) => testnetAssetRole(asset) !== "fund")) throw new Error("The OTF contains an unsupported testnet constituent.");
-  const amounts = await client.previewRedeem(vault, shares, 0n);
+  const amounts = await client.previewRedeem(vault, shares, owner, 0n);
   if (amounts.length !== assets.length) throw new Error("The OTF redemption preview is malformed.");
   const routes = await Promise.all(assets.map((asset) => routeFor({ address: asset, kind: "erc20" }, { address: output.address, kind: "erc20" }, client)));
   const expected = await Promise.all(amounts.map((amount, index) => client.quoteExactInput(routes[index]!.path, amount)));
@@ -492,7 +493,7 @@ async function basketQuote(
     const nativeOutput = request.output.kind === "native";
     const output = testnetQuoteAssets.find((asset) => sameAddress(asset.address, request.output.address));
     if (!output) throw new Error("Basket redemption output must be a configured quote asset.");
-    const plan = await liquidationPlan(request.input.address, request.inputAmountRaw, output, request.slippageBps, adapter, client);
+    const plan = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, output, request.slippageBps, adapter, client);
     return availableResponse(request, now, plan.expectedOutput, plan.minimumOutput, "Burn basket", {
       kind: "basket-router",
       chainId: request.chainId,
@@ -510,7 +511,7 @@ async function basketQuote(
   }
   if (request.input.kind === "otf" && request.output.kind === "otf") {
     const usdg = testnetAssetById("usdg")!;
-    const liquidation = await liquidationPlan(request.input.address, request.inputAmountRaw, usdg, request.slippageBps, adapter, client);
+    const liquidation = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, usdg, request.slippageBps, adapter, client);
     const mint = await planMint(request.output.address, usdg, liquidation.minimumOutput, request.slippageBps, adapter, client);
     const residuals = mint.residual > 0n ? [{ token: usdg.address, amount: mint.residual.toString(), displayAmount: formatRaw(mint.residual, usdg.decimals) }] : undefined;
     const legs = [...liquidation.legs, ...mint.legs];

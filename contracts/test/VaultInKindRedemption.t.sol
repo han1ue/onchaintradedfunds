@@ -211,19 +211,19 @@ contract VaultInKindRedemptionTest is BootstrapTestBase {
         deficient.slash(address(vault), WAD);
 
         vm.expectPartialRevert(ManagedOTFVaultStorage.BackingDeficient.selector);
-        vault.previewRedeem(WAD, 0);
-        uint256[] memory skipped = vault.previewRedeem(WAD, 1);
+        vault.previewRedeem(WAD, ALICE, 0);
+        uint256[] memory skipped = vault.previewRedeem(WAD, ALICE, 1);
         assertEq(skipped[0], 0);
         assertEq(skipped[1], WAD);
 
         vm.prank(BOB);
         vault.activateEmergencyShutdown();
-        uint256[] memory shutdownAmounts = vault.previewRedeem(WAD, 0);
+        uint256[] memory shutdownAmounts = vault.previewRedeem(WAD, ALICE, 0);
         assertEq(shutdownAmounts[0], WAD / 2);
         assertEq(shutdownAmounts[1], WAD);
 
         deficient.setBalanceReadsDisabled(true);
-        skipped = vault.previewRedeem(WAD, 1);
+        skipped = vault.previewRedeem(WAD, ALICE, 1);
         assertEq(skipped[0], 0);
         assertEq(skipped[1], WAD);
     }
