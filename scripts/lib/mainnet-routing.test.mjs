@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { getMainnetRoutingBlockNumber, verifyMainnetRoutingRuntime } from "./mainnet-routing.mjs";
+import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, verifyMainnetRoutingRuntime } from "./mainnet-routing.mjs";
 
 const { keccak256 } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
 const pin = JSON.parse(readFileSync(new URL("../fixtures/robinhood-mainnet-routing.json", import.meta.url)));
+const rehearsal = JSON.parse(readFileSync(new URL("../fixtures/robinhood-mainnet-rehearsal.json", import.meta.url)));
+
+test("pins the oracle implementation and every real stock market", () => {
+  const dependencies = mainnetRehearsalDependencies(rehearsal);
+  assert.equal(Object.keys(dependencies).length, 15);
+  assert.equal(dependencies.ethUsdAggregator.address, rehearsal.oracle.aggregator.address);
+  for (const [index, stock] of rehearsal.stocks.entries()) {
+    assert.equal(dependencies[`stock${index}`].address, stock.address);
+    assert.equal(dependencies[`stock${index}UsdgPool`].address, stock.pool.address);
+  }
+  assert.throws(() => mainnetRehearsalDependencies({ ...rehearsal, chainId: 46630 }), /mainnet/);
+  assert.throws(() => mainnetRehearsalDependencies({ ...rehearsal, stocks: [] }), /five/);
+});
 const runtime = "0x6000";
 const fixture = {
   ...pin,

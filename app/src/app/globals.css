@@ -1468,9 +1468,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .launchLifecycleNode em { border: 1px solid rgb(var(--accent-rgb) / 34%); border-radius: 4px; color: var(--accent-text); padding: 2px 5px; font-size: 0.52rem; font-style: normal; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .launchLifecycleNode p { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--text-muted); font-size: 0.61rem; line-height: 1.45; }
 .launchLiveProgress { color: var(--accent-text) !important; font-variant-numeric: tabular-nums; font-weight: 650; }
-.launchProgressRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.launchProgressRow { display: grid; gap: 8px; margin-top: 8px; }
 .launchProgressRow .launchLiveProgress { margin: 0; }
-.launchProgressBar { flex: 1 1 100px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--border-strong); }
+.launchProgressBar { height: 6px; overflow: hidden; border-radius: 3px; background: var(--border-strong); }
 .launchProgressBar > span { display: block; height: 100%; background: var(--accent-text); }
 .launchFinalize { display: grid; gap: 6px; margin-top: 8px; }
 .launchFinalize .primaryAction { width: 100%; min-height: 36px; }

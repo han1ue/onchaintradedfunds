@@ -1,0 +1,103 @@
+{
+  "chainId": 4663,
+  "blockNumber": "55375783",
+  "blockHash": "0x54234eafb4c2d83ac8fd8c3061c7a04ed62517faad6b81fb5d0172636dd0a31f",
+  "sources": [
+    "https://api.robinhood.com/rhj/assets",
+    "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json"
+  ],
+  "oracle": {
+    "address": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+    "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2",
+    "aggregator": {
+      "address": "0x6091E64eb7138EEF066a80FD3A0d7427B91f2721",
+      "codehash": "0x8cbea1fd25321771256158fd6beb8689fe60cd36230b22c65e77c2a03c5972fd"
+    },
+    "decimals": 8,
+    "heartbeatSeconds": 86400,
+    "maxAgeSeconds": 90000
+  },
+  "quoter": {
+    "address": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    "codehash": "0x3db0868d945e9304c9bc6a8b2181948109ea617647142f3c4083e14393496a28"
+  },
+  "usdg": {
+    "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "codehash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6",
+    "decimals": 6
+  },
+  "wethMarket": {
+    "symbol": "WETH",
+    "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "codehash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+    "decimals": 18,
+    "pool": {
+      "address": "0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca",
+      "codehash": "0x3298b5dd4e6f115074c526a55ad05a36fd73a0034ac22ec6cbaab32cc9c1e8d2",
+      "fee": 100
+    },
+    "referenceLiquidity": "12450255892811399104"
+  },
+  "stocks": [
+    {
+      "symbol": "TSLA",
+      "address": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
+        "codehash": "0x3051864bf6341e841e6ee2a1bd7f5e5fe03b8f5ff633e02e00c6d13923b8ec19",
+        "fee": 3000
+      },
+      "referenceLiquidity": "3971929454723778943"
+    },
+    {
+      "symbol": "AMZN",
+      "address": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x8AC92DA74AB5F3b1d024Dc1943Ad7e15Dc4179Ef",
+        "codehash": "0x191671d26bc1c6db2d6313ed04651a5c23d04c93efdad353a8dd6ff0adf2692a",
+        "fee": 3000
+      },
+      "referenceLiquidity": "3353260990202955010"
+    },
+    {
+      "symbol": "PLTR",
+      "address": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x851680416A4f4E1c463d45171d61ACDdBc8554c0",
+        "codehash": "0x030660d256a69c9dadce0d462caaf45c6a0740934771e822864fb867c2bb8253",
+        "fee": 3000
+      },
+      "referenceLiquidity": "625459681060145691"
+    },
+    {
+      "symbol": "NFLX",
+      "address": "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x59895C0302F41aEaa129D2fa2442CEc01E7eF45E",
+        "codehash": "0xe8cab93914e070d6519a74a1e8bf313a03cbb439d33f6388e9d1b8912b48faca",
+        "fee": 3000
+      },
+      "referenceLiquidity": "1488644937544000889"
+    },
+    {
+      "symbol": "AMD",
+      "address": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x48D284A2A4d3DC1b3Da08231Fe44317e7e7Aa51f",
+        "codehash": "0x1c21637dafc804de5eab9be901cd75196a18796f37a69693ec6d7d8bce2e6a3c",
+        "fee": 3000
+      },
+      "referenceLiquidity": "398513929649742967"
+    }
+  ]
+}

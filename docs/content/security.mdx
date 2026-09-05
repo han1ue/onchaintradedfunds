@@ -87,12 +87,16 @@ Production deployment requires explicit WETH, PoolManager, StateView, PositionMa
 The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
 
 Run `corepack pnpm contracts:validate:mainnet-routing` to fork Robinhood mainnet at
-one recent block and verify eight pinned dependency runtimes. The eight tests exercise
+one recent block and verify 23 pinned dependency runtimes. The routing tests exercise
 launch graduation, V3/V4 basket entry and exit, native ETH, mixed adapters, fee
 settlement, buyback burns, and slippage rollback. The Solidity security workflow
 runs them on matching pushes and pull requests, as well as manual runs.
-Constituent tokens and pool liquidity are created locally; real stock-token
-markets and a complete production deployment rehearsal remain untested.
+Additional suites rehearse deployment with separate funded accounts, reconcile
+the complete token allocation, trade five real stock tokens through existing V3
+markets, redeem in kind after adapter revocation, and exercise vesting against the
+live ETH/USD feed. The rehearsal uses a 90,000-second oracle age limit, based on
+the feed's 86,400-second heartbeat plus a one-hour buffer. Final production roles,
+multisig execution, and the broadcast deployment procedure remain unvalidated.
 
 The mainnet fork exposed a V4 tuple mismatch. Current source encodes the mainnet
 router's five-field tuple, including an empty per-hop array. The historical testnet
@@ -109,7 +113,7 @@ and the previous V3 adapter is revoked. Existing locked launch positions remain 
 Before mainnet use, the project needs:
 
 - an independent audit of the current contracts and economic arithmetic;
-- fork tests of real constituent markets, vesting dependencies, and the complete production deployment procedure;
+- rehearsal of the final production deployment procedure with the selected roles and multisig;
 - reviewed multisig, beneficiary, WETH, oracle, and adapter configuration;
 - deployment and verification of the canonical-WETH entry router, including receiver and callback-reentrancy tests;
 - deployed-bytecode checks and reconciliation of the complete one-billion-OTF allocation;

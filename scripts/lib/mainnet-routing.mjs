@@ -6,6 +6,22 @@ const requiredDependencies = [
   "uniswapV4StateView", "uniswapV4PositionManager", "uniswapUniversalRouter", "permit2",
 ];
 
+export function mainnetRehearsalDependencies(fixture) {
+  if (fixture.chainId !== 4663 || fixture.stocks?.length !== 5) {
+    throw new Error("Rehearsal requires Robinhood mainnet and five pinned stock markets");
+  }
+  return {
+    ethUsdOracle: fixture.oracle,
+    ethUsdAggregator: fixture.oracle.aggregator,
+    uniswapV3Quoter: fixture.quoter,
+    usdg: fixture.usdg,
+    wethUsdgPool: fixture.wethMarket.pool,
+    ...Object.fromEntries(fixture.stocks.flatMap((stock, index) => [
+      [`stock${index}`, stock], [`stock${index}UsdgPool`, stock.pool],
+    ])),
+  };
+}
+
 export async function getMainnetRoutingBlockNumber(client, requestedBlock) {
   if (requestedBlock !== undefined) return requestedBlock;
   // The public endpoint does not retain historical state indefinitely.
@@ -17,7 +33,7 @@ export async function verifyMainnetRoutingRuntime(client, pin, blockNumber) {
   if (pin.chainId !== 4663 || await client.getChainId() !== 4663) {
     throw new Error("Fork tests require Robinhood mainnet, chain 4663");
   }
-  for (const name of requiredDependencies) {
+  for (const name of new Set([...requiredDependencies, ...Object.keys(pin.dependencies)])) {
     const dependency = pin.dependencies[name];
     if (!/^0x[\da-f]{40}$/i.test(dependency?.address ?? "")
       || !/^0x[\da-f]{64}$/i.test(dependency?.codehash ?? "")) {
