@@ -30,7 +30,7 @@ export function OtfTokenIcon({ className, size = 32, ticker = "OTF" }: OtfTokenI
   const label = iconTicker(ticker);
 
   return <svg className={className} width={size} height={size} viewBox="0 0 256 256" aria-hidden="true" focusable="false">
-    <rect x="7" y="7" width="242" height="242" fill="#090909" stroke="#ccff00" strokeWidth="12" />
+    <rect x="9" y="9" width="238" height="238" fill="#090909" stroke="#ccff00" strokeWidth="16" />
     <text x="128" y="156" fill="#ccff00" fontFamily="Instrument Sans, Arial, sans-serif" fontSize={tickerFontSize(label)} fontWeight="700" letterSpacing="-2" textAnchor="middle" textLength={tickerTextLength(label)} lengthAdjust="spacingAndGlyphs">{label}</text>
   </svg>;
 }
