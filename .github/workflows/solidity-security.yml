@@ -13,7 +13,8 @@ on:
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
       - "scripts/generate-contract-abis.mjs"
-      - "scripts/verify-testnet-routing.mjs"
+      - "scripts/verify-mainnet-routing.mjs"
+      - "scripts/lib/mainnet-routing*"
       - "scripts/lib/testnet-routing*"
       - "scripts/fixtures/**"
       - "packages/generated/**"
@@ -29,17 +30,12 @@ on:
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
       - "scripts/generate-contract-abis.mjs"
-      - "scripts/verify-testnet-routing.mjs"
+      - "scripts/verify-mainnet-routing.mjs"
+      - "scripts/lib/mainnet-routing*"
       - "scripts/lib/testnet-routing*"
       - "scripts/fixtures/**"
       - "packages/generated/**"
   workflow_dispatch:
-    inputs:
-      run_testnet_routing:
-        description: "Run live testnet runtime and fork checks"
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -122,9 +118,11 @@ jobs:
       - name: Validate pinned testnet router configuration
         run: node --test scripts/lib/testnet-routing.test.mjs
 
-      - name: Validate actual testnet routing runtimes
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_testnet_routing }}
-        run: corepack pnpm contracts:validate:testnet-routing
+      - name: Validate mainnet fork guards
+        run: node --test scripts/lib/mainnet-routing.test.mjs
+
+      - name: Run pinned Robinhood mainnet fork suite
+        run: corepack pnpm contracts:validate:mainnet-routing
 
       - name: Run V4 launch invariant suite
         working-directory: contracts

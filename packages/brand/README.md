@@ -4,7 +4,8 @@
 
 - `OtfTokenIcon` renders the square fund-share mark with the fund's ticker.
 - `OtfCoinIcon` renders the circular protocol $OTF coin mark.
-- `assets/otf-icon.svg` is the square app mark and favicon used by the app and documentation.
+- `assets/otf-icon.svg` is the square app mark.
+- `assets/otf-favicon.svg` adds padding for browser tabs and is used by the app and documentation.
 - `assets/otf-circular-icon.png` and `assets/otf-circular-icon.svg` are the Twitter profile mark.
 - `assets/otf-twitter-header.png` is the Twitter header.
 

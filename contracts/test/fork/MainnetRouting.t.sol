@@ -46,8 +46,8 @@ interface ForkV3Pool {
 }
 
 /// @dev Only test tokens and protocol contracts are created locally. Venue code and storage come
-///      from the pinned testnet fork; no venue call or response is mocked.
-contract TestnetRoutingTest is Test {
+///      from the pinned Robinhood mainnet fork; no venue call or response is mocked.
+contract MainnetRoutingTest is Test {
     address private poolManager;
     address private stateView;
     address private positionManager;
@@ -68,8 +68,9 @@ contract TestnetRoutingTest is Test {
     MockStockToken private assetB;
 
     function setUp() public {
-        string memory fixture = vm.readFile("../scripts/fixtures/robinhood-testnet-routing.json");
-        assertEq(block.number, vm.envUint("TESTNET_FORK_BLOCK"));
+        string memory fixture = vm.readFile("../scripts/fixtures/robinhood-mainnet-routing.json");
+        assertEq(block.number, vm.envUint("MAINNET_FORK_BLOCK"));
+        assertEq(block.chainid, 4663);
         assertEq(block.chainid, vm.parseJsonUint(fixture, ".chainId"));
         poolManager = _dependency(fixture, "uniswapV4PoolManager");
         stateView = _dependency(fixture, "uniswapV4StateView");
@@ -103,7 +104,7 @@ contract TestnetRoutingTest is Test {
                     VaultCreationParams({
                     name: "Fork validation fund",
                     symbol: "FORK",
-                    fundThesis: "Testnet router validation.",
+                    fundThesis: "Mainnet router validation.",
                     expenseBeneficiary: address(this),
                     annualCreatorExpenseRatioBps: 0,
                     mintFeeBps: 200,
@@ -126,9 +127,38 @@ contract TestnetRoutingTest is Test {
     }
 
     function testV3NativeBasketEntryExit() public {
+        _nativeEntryExit(true);
+    }
+
+    function testV4NativeBasketEntryExit() public {
+        _nativeEntryExit(false);
+    }
+
+    function testMixedV3V4BasketEntryExit() public {
+        SwapLeg[] memory entryLegs = _entryLegs(false);
+        entryLegs[0] = _leg(address(weth), address(assetA), 1 ether, true);
+        (uint256 shares,,) = router.mintFromToken(_mintRequest(), entryLegs);
+        assertGt(shares, 0);
+        _assertCleared();
+
+        SwapLeg[] memory exitLegs = _exitLegs(false);
+        exitLegs[0] = _leg(address(assetA), address(weth), type(uint256).max, true);
+        uint256 beforeExit = weth.balanceOf(address(this));
+        (uint256 received,,) = router.redeemToToken(
+            BasketRedeemRequest(address(vault), address(weth), shares, 1, 0, block.timestamp),
+            new uint256[](2),
+            exitLegs
+        );
+        assertGt(received, 0);
+        assertEq(weth.balanceOf(address(this)) - beforeExit, received);
+        assertEq(vault.balanceOf(address(this)), 0);
+        _assertCleared();
+    }
+
+    function _nativeEntryExit(bool v3) private {
         uint256 beforeBalance = address(this).balance;
         (uint256 shares,,,) =
-            router.mintFromNative{ value: 2 ether }(_mintRequest(), _entryLegs(true));
+            router.mintFromNative{ value: 2 ether }(_mintRequest(), _entryLegs(v3));
         assertGt(shares, 0);
         assertLt(address(this).balance, beforeBalance);
         _assertCleared();
@@ -136,7 +166,7 @@ contract TestnetRoutingTest is Test {
         (uint256 received,,) = router.redeemToNative(
             BasketRedeemRequest(address(vault), address(weth), shares, 1, 0, block.timestamp),
             new uint256[](2),
-            _exitLegs(true)
+            _exitLegs(v3)
         );
         assertGt(received, 0);
         assertEq(address(this).balance - beforeExit, received);

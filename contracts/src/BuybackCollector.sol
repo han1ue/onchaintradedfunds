@@ -356,6 +356,7 @@ contract BuybackCollector {
             UniswapV4ExactInputParams({
                 currencyIn: weth,
                 path: path,
+                minHopPriceX36: new uint256[](0),
                 // Both values are explicitly bounded before this call.
                 // forge-lint: disable-next-line(unsafe-typecast)
                 amountIn: uint128(amountIn),

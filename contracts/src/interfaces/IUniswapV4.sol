@@ -10,10 +10,11 @@ struct UniswapV4PathKey {
     bytes hookData;
 }
 
-/// @dev ABI-compatible with the pinned testnet router and v4-periphery 1.0.3's ExactInputParams.
+/// @dev ABI-compatible with the pinned Robinhood mainnet Universal Router's ExactInputParams.
 struct UniswapV4ExactInputParams {
     address currencyIn;
     UniswapV4PathKey[] path;
+    uint256[] minHopPriceX36;
     uint128 amountIn;
     uint128 amountOutMinimum;
 }

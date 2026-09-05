@@ -4,11 +4,10 @@ pragma solidity ^0.8.24;
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
-    IUniswapV4StateView
+    IUniswapV4StateView,
+    UniswapV4ExactInputParams,
+    UniswapV4PathKey
 } from "../../src/interfaces/IUniswapV4.sol";
-import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
-import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
-import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
 contract MockUniswapV4PoolManager { }
@@ -121,23 +120,21 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
             abi.decode(inputs[0], (bytes, bytes[]));
         require(keccak256(actions) == keccak256(hex"070c0f") && actionParams.length == 3, "ACTIONS");
 
-        IV4Router.ExactInputParams memory params =
-            abi.decode(actionParams[0], (IV4Router.ExactInputParams));
+        UniswapV4ExactInputParams memory params =
+            abi.decode(actionParams[0], (UniswapV4ExactInputParams));
+        require(params.minHopPriceX36.length == 0, "HOP_PRICES");
         (address settleToken, uint256 settleMaximum) =
             abi.decode(actionParams[1], (address, uint256));
         (address takeToken, uint256 takeMinimum) = abi.decode(actionParams[2], (address, uint256));
         require(params.path.length != 0, "PATH");
-        PathKey memory finalKey = params.path[params.path.length - 1];
-        lastIntermediateCurrency = Currency.unwrap(finalKey.intermediateCurrency);
+        UniswapV4PathKey memory finalKey = params.path[params.path.length - 1];
+        lastIntermediateCurrency = finalKey.intermediateCurrency;
         lastFee = finalKey.fee;
         lastTickSpacing = finalKey.tickSpacing;
         lastHooks = address(finalKey.hooks);
+        require(settleToken == params.currencyIn && settleMaximum == params.amountIn, "SETTLE");
         require(
-            settleToken == Currency.unwrap(params.currencyIn) && settleMaximum == params.amountIn,
-            "SETTLE"
-        );
-        require(
-            takeToken == Currency.unwrap(params.path[params.path.length - 1].intermediateCurrency)
+            takeToken == params.path[params.path.length - 1].intermediateCurrency
                 && takeMinimum == params.amountOutMinimum,
             "TAKE"
         );

@@ -1,5 +1,9 @@
 # Uniswap V3 replacement on Robinhood testnet
 
+This is a historical testnet report. The maintained Foundry fork suite now targets
+Robinhood mainnet; see [mainnet fork tests](MAINNET_FORK_TESTS.md). Current source
+uses the mainnet V4 router encoding and cannot be redeployed against the old testnet router.
+
 All six pools and the complete fresh protocol are live on chain 46630. The previous V3 adapter
 is revoked, and the application configuration targets the new contracts. Live receipts, local checks, and
 fork simulations are recorded below. This task created no Git commit.

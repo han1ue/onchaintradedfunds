@@ -1,0 +1,45 @@
+{
+  "chainId": 4663,
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "sources": [
+    "https://developers.uniswap.org/docs/protocols/v4/deployments",
+    "https://developers.uniswap.org/docs/protocols/v3/deployments/v3-robinhood-chain-deployments",
+    "https://docs.robinhood.com/chain/contracts/"
+  ],
+  "dependencies": {
+    "uniswapV3Factory": {
+      "address": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+      "codehash": "0xec72b1abd1f2faee020cfea9c646bd8994f9fb389054f6e574f103a895091739"
+    },
+    "uniswapV3SwapRouter02": {
+      "address": "0xcaf681a66d020601342297493863e78c959e5cb2",
+      "codehash": "0x6f36c378e272c6324c48f045182bcb54bd8ad654cf9ebd42e8893d52c4cb25dc"
+    },
+    "uniswapV4PoolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "codehash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+    },
+    "uniswapV4StateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "codehash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+    },
+    "uniswapV4PositionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "codehash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2"
+    },
+    "uniswapUniversalRouter": {
+      "address": "0x8876789976decbfcbbbe364623c63652db8c0904",
+      "codehash": "0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde"
+    },
+    "permit2": {
+      "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "codehash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca"
+    },
+    "weth": {
+      "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "codehash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+    }
+  },
+  "blockNumber": "55357373",
+  "blockHash": "0xb8d976717f5eeabd874aedf1c8133e738ba5941dda867ff40caa79509d0f211c"
+}

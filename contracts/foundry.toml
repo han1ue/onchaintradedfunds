@@ -45,9 +45,9 @@ runs = 128
 depth = 64
 fail_on_revert = false
 
-[profile.testnet]
+[profile.mainnet]
 test = "test/fork"
-out = "out/testnet"
+out = "out/mainnet"
 skip = []
 fs_permissions = [{ access = "read", path = "../scripts/fixtures" }]
 

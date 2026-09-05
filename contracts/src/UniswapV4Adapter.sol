@@ -170,7 +170,11 @@ contract UniswapV4Adapter is ITradeAdapter {
         bytes[] memory actionParams = new bytes[](3);
         actionParams[0] = abi.encode(
             UniswapV4ExactInputParams({
-                currencyIn: tokenIn, path: path, amountIn: amountIn, amountOutMinimum: minAmountOut
+                currencyIn: tokenIn,
+                path: path,
+                minHopPriceX36: new uint256[](0),
+                amountIn: amountIn,
+                amountOutMinimum: minAmountOut
             })
         );
         actionParams[1] = abi.encode(tokenIn, uint256(amountIn));

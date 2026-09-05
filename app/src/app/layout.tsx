@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import otfFavicon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.svg";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";

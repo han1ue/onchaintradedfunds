@@ -394,7 +394,7 @@ const testnetRoutingPin = JSON.parse(readFileSync(join(root, "scripts", "fixture
 assertTestnetRoutingConfiguration(testnetConfig, testnetRoutingPin);
 const v4InterfaceSource = readFileSync(join(contracts, "src", "interfaces", "IUniswapV4.sol"), "utf8");
 const exactInputFields = v4InterfaceSource.match(/struct UniswapV4ExactInputParams\s*\{([^}]+)\}/u)?.[1].trim().split(/\s*;\s*/u).filter(Boolean);
-assert(JSON.stringify(exactInputFields) === JSON.stringify(["address currencyIn", "UniswapV4PathKey[] path", "uint128 amountIn", "uint128 amountOutMinimum"]), "V4 exact-input tuple differs from the pinned testnet router");
+assert(JSON.stringify(exactInputFields) === JSON.stringify(["address currencyIn", "UniswapV4PathKey[] path", "uint256[] minHopPriceX36", "uint128 amountIn", "uint128 amountOutMinimum"]), "V4 exact-input tuple differs from the pinned mainnet router");
 assert(/verifyTestnetRoutingRuntime\(publicClient, previous, routingPin\)/u.test(deploySource), "deployment does not enforce the validated testnet runtime binding");
 assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
 assert(!("architecture" in testnetConfig), "testnet configuration must not use an architecture version gate");

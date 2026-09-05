@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import otfFavicon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.svg";
 import { Head } from "nextra/components";
 import { getPageMap } from "nextra/page-map";
 import { Footer, Layout, Navbar } from "nextra-theme-docs";

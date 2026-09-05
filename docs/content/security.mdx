@@ -86,12 +86,18 @@ Production deployment requires explicit WETH, PoolManager, StateView, PositionMa
 
 The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
 
-Testnet routing validation binds eleven dependency runtimes and the Universal Router's verified
-four-field exact-input tuple. The fork suite exercises basket entry, exit, and collector settlement
-through the deployed V3 and V4 venues. Rerun `corepack pnpm contracts:validate:testnet-routing` when
-the routing contracts or venue dependencies change. In the Solidity security workflow, these live
-checks run only when manually selected; ordinary CI retains the local contract and configuration
-checks. These checks cover the selected testnet dependencies; mainnet validation remains open.
+Run `corepack pnpm contracts:validate:mainnet-routing` to fork Robinhood mainnet at
+one recent block and verify eight pinned dependency runtimes. The eight tests exercise
+launch graduation, V3/V4 basket entry and exit, native ETH, mixed adapters, fee
+settlement, buyback burns, and slippage rollback. The Solidity security workflow
+runs them on matching pushes and pull requests, as well as manual runs.
+Constituent tokens and pool liquidity are created locally; real stock-token
+markets and a complete production deployment rehearsal remain untested.
+
+The mainnet fork exposed a V4 tuple mismatch. Current source encodes the mainnet
+router's five-field tuple, including an empty per-hop array. The historical testnet
+router accepts four fields, so fresh testnet deployment stops until its venue is
+replaced and reviewed. The existing testnet deployment retains its original encoding.
 
 The fresh September 5 testnet deployment includes the H-01 liquidity-capacity fix with hook mask
 `0x2840`, the four-field V4 tuple, and Permit2 cleanup corrections. Deployment tooling mined a fresh
@@ -103,7 +109,7 @@ and the previous V3 adapter is revoked. Existing locked launch positions remain 
 Before mainnet use, the project needs:
 
 - an independent audit of the current contracts and economic arithmetic;
-- fork and integration tests against the selected official production deployments;
+- fork tests of real constituent markets, vesting dependencies, and the complete production deployment procedure;
 - reviewed multisig, beneficiary, WETH, oracle, and adapter configuration;
 - deployment and verification of the canonical-WETH entry router, including receiver and callback-reentrancy tests;
 - deployed-bytecode checks and reconciliation of the complete one-billion-OTF allocation;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+// Historical deployment inspection helper. Maintained fork tests run through verify-mainnet-routing.mjs.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";

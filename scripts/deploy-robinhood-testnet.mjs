@@ -4,9 +4,11 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
-import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
+import { assertTestnetDeploymentEncoding, verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+const routingPin = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-routing.json"), "utf8"));
+assertTestnetDeploymentEncoding(routingPin);
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
 const simulation = process.env.DEPLOYMENT_MODE === "simulate";
 const outputPath = simulation ? join(root, "test-results/v3-auth/protocol-simulation.json") : deploymentPath;
@@ -233,7 +235,6 @@ verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
 verifyEmbeddedAddress("Universal Router WETH", universalRouterCode, weth);
 verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
-const routingPin = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-routing.json"), "utf8"));
 await verifyTestnetRoutingRuntime(publicClient, previous, routingPin);
 
 const assetCatalog = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), "utf8"));

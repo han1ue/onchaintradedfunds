@@ -3,14 +3,11 @@ import { createRequire } from "node:module";
 const appRequire = createRequire(new URL("../../app/package.json", import.meta.url));
 const { keccak256 } = appRequire("viem");
 
-export async function getTestnetRoutingBlock(client, requestedBlock) {
-  let blockNumber = requestedBlock;
-  if (blockNumber === undefined) {
-    // Give RPC backends time to serve state for the selected block.
-    const head = await client.getBlockNumber({ cacheTime: 0 });
-    blockNumber = head > 64n ? head - 64n : 0n;
+export function assertTestnetDeploymentEncoding(pin) {
+  const fields = ["Currency currencyIn;", "PathKey[] path;", "uint256[] minHopPriceX36;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
+  if (JSON.stringify(pin.universalRouterSource?.exactInputParams) !== JSON.stringify(fields)) {
+    throw new Error("Current contracts require the mainnet five-field V4 tuple; the pinned testnet router is incompatible. Review and replace the testnet venue before redeploying.");
   }
-  return retryStateRead(() => client.getBlock({ blockNumber }));
 }
 
 export function assertTestnetRoutingConfiguration(config, pin) {
