@@ -27,7 +27,6 @@ export const CANONICAL_EXACT_INPUT_PARAM = [{
         { name: "hookData", type: "bytes" },
       ],
     },
-    { name: "maxHopSlippage", type: "uint256[]" },
     { name: "amountIn", type: "uint128" },
     { name: "amountOutMinimum", type: "uint128" },
   ],
@@ -50,7 +49,6 @@ export function canonicalV4Execution(input: {
   const swapParams = encodeAbiParameters(CANONICAL_EXACT_INPUT_PARAM, [{
     currencyIn: input.tokenIn,
     path: [{ intermediateCurrency: input.tokenOut, fee: 0, tickSpacing: 1, hooks: input.launchManager, hookData: "0x" }],
-    maxHopSlippage: [],
     amountIn: input.amountIn,
     amountOutMinimum: input.amountOutMinimum,
   }]);

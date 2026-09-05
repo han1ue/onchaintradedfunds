@@ -1,4 +1,4 @@
-import { decodeAbiParameters, decodeFunctionData, getAddress } from "viem";
+import { decodeAbiParameters, decodeFunctionData, getAddress, parseAbiParameters } from "viem";
 import { describe, expect, it } from "vitest";
 import {
   canonicalV4Execution,
@@ -12,6 +12,17 @@ const OTF = getAddress("0x00000000000000000000000000000000000000b2");
 const LAUNCH = getAddress("0x00000000000000000000000000000000000000c3");
 
 describe("canonical native V4 execution", () => {
+  it.each([[false, false], [true, false], [false, true]])("encodes the pinned testnet tuple for native input %s and output %s", (nativeInput, nativeOutput) => {
+    const plan = canonicalV4Execution({ tokenIn: WETH, tokenOut: OTF, amountIn: 10n, amountOutMinimum: 8n, launchManager: LAUNCH, deadline: 100n, nativeInput, nativeOutput });
+    const [, parameters] = decodeAbiParameters([{ type: "bytes" }, { type: "bytes[]" }], plan.routerInput);
+    // Decode independently of the application encoder using the verified testnet router shape.
+    const [swap] = decodeAbiParameters(parseAbiParameters("(address currencyIn, (address intermediateCurrency, uint24 fee, int24 tickSpacing, address hooks, bytes hookData)[] path, uint128 amountIn, uint128 amountOutMinimum)"), parameters[0]!);
+    expect(swap.currencyIn).toBe(WETH);
+    expect(swap.amountIn).toBe(10n);
+    expect(swap.amountOutMinimum).toBe(8n);
+    expect(swap.path).toEqual([{ intermediateCurrency: OTF, fee: 0, tickSpacing: 1, hooks: LAUNCH, hookData: "0x" }]);
+  });
+
   it("wraps exact ETH before V4 SETTLE and TAKE", () => {
     const plan = canonicalV4Execution({ tokenIn: WETH, tokenOut: OTF, amountIn: 10n, amountOutMinimum: 8n, launchManager: LAUNCH, deadline: 100n, nativeInput: true, nativeOutput: false });
     const decoded = decodeFunctionData({ abi: UNIVERSAL_ROUTER_EXECUTE_ABI, data: plan.data });

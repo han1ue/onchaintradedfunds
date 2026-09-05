@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { assertTestnetRoutingConfiguration } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const contracts = join(root, "contracts");
@@ -344,7 +345,21 @@ for (const constant of [
   assert(launchSource.includes(constant), `launch manager is missing derived curve constant ${constant}`);
 }
 assert(/BEFORE_INITIALIZE_FLAG\s*=\s*1\s*<<\s*13/u.test(launchSource), "launch manager is missing the beforeInitialize hook flag");
-assert(/REQUIRED_HOOK_FLAGS\s*=\s*BEFORE_INITIALIZE_FLAG\s*\|\s*AFTER_SWAP_FLAG/u.test(launchSource), "launch manager hook permissions are not exactly beforeInitialize + afterSwap");
+assert(/REQUIRED_HOOK_FLAGS\s*=\s*BEFORE_INITIALIZE_FLAG\s*\|\s*BEFORE_ADD_LIQUIDITY_FLAG\s*\|\s*AFTER_SWAP_FLAG/u.test(launchSource), "launch manager hook permissions are not exactly beforeInitialize + beforeAddLiquidity + afterSwap");
+assert(/BEFORE_ADD_LIQUIDITY_FLAG\s*=\s*1\s*<<\s*11/u.test(launchSource), "launch manager is missing the beforeAddLiquidity hook flag");
+assert(functionNames(compiled.OTFLaunchManager).has("beforeAddLiquidity"), "launch manager ABI is missing beforeAddLiquidity");
+const addLiquidityHook = launchSource.slice(launchSource.indexOf("function beforeAddLiquidity("), launchSource.indexOf("function initializeLaunch("));
+for (const check of [
+  "msg.sender != poolManager", "_poolId(key) != poolId", "sender != positionManager",
+  "_internalMint == InternalMint.Bootstrap && phase == Phase.NotInitialized",
+  "_internalMint == InternalMint.Permanent && phase == Phase.GraduationReady",
+  "params.tickLower !=", "params.tickUpper !=",
+  "params.liquidityDelta != int256(uint256(BOOTSTRAP_LIQUIDITY))",
+  "params.liquidityDelta != int256(uint256(PERMANENT_LIQUIDITY))",
+  "phase == Phase.Graduated",
+]) assert(addLiquidityHook.includes(check), `liquidity authorization is missing ${check}`);
+assert(/_internalMint = InternalMint\.Bootstrap;\s*bootstrapPositionTokenId = _mintPosition\([\s\S]*?\);\s*delete _internalMint;/u.test(launchSource), "bootstrap mint authorization is not scoped to its synchronous call");
+assert(/_internalMint = InternalMint\.Permanent;\s*permanentPositionTokenId = _mintPosition\([\s\S]*?\);\s*delete _internalMint;/u.test(launchSource), "permanent mint authorization is not scoped to its synchronous call");
 assert(/&\s*ALL_HOOK_MASK\s*==\s*REQUIRED_HOOK_FLAGS/u.test(launchSource), "launch manager does not enforce the exact required hook flags");
 assert(/function\s+beforeInitialize\s*\(\s*address\s+initializer,\s*UniswapV4PoolKey\s+calldata,\s*uint160\s*\)/u.test(launchSource), "launch manager is missing the typed beforeInitialize callback");
 assert(/msg\.sender\s*!=\s*poolManager/u.test(launchSource), "launch callbacks do not authenticate the immutable PoolManager");
@@ -375,6 +390,12 @@ for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "Mer
 }
 assert(/functionName:\s*"beneficiary"/u.test(deploySource) && /functionName:\s*"pendingBeneficiary"/u.test(deploySource), "deployment does not verify initial team beneficiary state");
 const testnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"));
+const testnetRoutingPin = JSON.parse(readFileSync(join(root, "scripts", "fixtures", "robinhood-testnet-routing.json"), "utf8"));
+assertTestnetRoutingConfiguration(testnetConfig, testnetRoutingPin);
+const v4InterfaceSource = readFileSync(join(contracts, "src", "interfaces", "IUniswapV4.sol"), "utf8");
+const exactInputFields = v4InterfaceSource.match(/struct UniswapV4ExactInputParams\s*\{([^}]+)\}/u)?.[1].trim().split(/\s*;\s*/u).filter(Boolean);
+assert(JSON.stringify(exactInputFields) === JSON.stringify(["address currencyIn", "UniswapV4PathKey[] path", "uint128 amountIn", "uint128 amountOutMinimum"]), "V4 exact-input tuple differs from the pinned testnet router");
+assert(/verifyTestnetRoutingRuntime\(publicClient, previous, routingPin\)/u.test(deploySource), "deployment does not enforce the validated testnet runtime binding");
 assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
 assert(!("architecture" in testnetConfig), "testnet configuration must not use an architecture version gate");
 assert(testnetConfig.status === "not-deployed" || testnetConfig.status === "deployed", "testnet configuration has an invalid deployment status");
@@ -406,7 +427,8 @@ if (testnetConfig.status === "not-deployed") {
 const mainnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-mainnet.json"), "utf8"));
 assert(!("architecture" in mainnetConfig), "mainnet configuration must not use an architecture version gate");
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");
-assert(/requiredLaunchHookFlags\s*=\s*0x2040n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2040");
+assert(/requiredLaunchHookFlags\s*=\s*0x2840n/u.test(deploySource), "deployment does not mine the exact launch hook mask 0x2840");
+assert(deploySource.includes('readLaunch("hookPermissionsValid")'), "deployment does not validate deployed hook permissions");
 assert(/BigInt\(predicted\)\s*&\s*allHookFlags\)\s*===\s*requiredLaunchHookFlags/u.test(deploySource), "deployment does not enforce the launch hook mask during CREATE2 mining");
 for (const validation of [
   "MAX_BOOTSTRAP_BUDGET", "PERMANENT_OTF_CAP", "initialSqrtPriceX96",

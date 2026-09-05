@@ -63,6 +63,12 @@ fees, including pending expense fees and shutdown.
 
 ## Production dependency validation remains incomplete
 
+Follow-up, 5 September 2026: testnet source and runtime inspection confirmed that its configured
+Universal Router uses four fields. The adapter, collector, and application encoding now match it.
+The testnet fork also exposed and corrected the adapter's Permit2 cleanup expiration check.
+See [testnet routing validation](TESTNET_ROUTING_VALIDATION.md) for runtime bindings, execution
+coverage, and remaining mainnet work. The following paragraphs preserve the original review.
+
 The V4 adapter and collector encode a five-field exact-input tuple, including `maxHopSlippage`
 (`src/interfaces/IUniswapV4.sol:13-20`). The installed `@uniswap/v4-periphery` 1.0.3 interface has
 four fields. Current [upstream Uniswap source](https://github.com/Uniswap/v4-periphery/blob/main/src/interfaces/IV4Router.sol)

@@ -7,6 +7,18 @@ description: Protocol deployment status and required external configuration.
 
 The protocol is deployed on Robinhood Chain Testnet. It is not deployed on Mainnet.
 
+The recorded testnet contracts predate the H-01 fix and retain hook mask `0x2040`. The fixed launch
+manager requires `0x2840` (`beforeInitialize`, `beforeAddLiquidity`, and `afterSwap`) and a new
+deployment. The addresses and salts in the manifest are historical deployment records, not address
+expectations for the updated bytecode. Run the deployment script with fresh artifacts to mine a
+new salt and verify the resulting address before funding the launch.
+
+The V4 adapter, collector, and application now encode the four-field tuple used by the configured
+testnet Universal Router. The adapter also handles Permit2's zero-expiration semantics during
+approval cleanup. These corrections require fresh protocol contracts. The testnet deployment
+script rejects dependency addresses or runtime hashes that differ from the routing validation
+manifest; mainnet addresses cannot substitute for contracts on this testnet.
+
 ## Robinhood Chain Mainnet
 
 **Chain ID:** `4663` <br />

@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
+import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
@@ -218,6 +219,9 @@ verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
 verifyEmbeddedAddress("Universal Router WETH", universalRouterCode, weth);
 verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
+const routingPin = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-routing.json"), "utf8"));
+await verifyTestnetRoutingRuntime(publicClient, previous, routingPin);
+
 if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
   const deployerBalance = await publicClient.getBalance({ address: account.address });
   const gasPrice = await publicClient.getGasPrice();
@@ -278,7 +282,7 @@ const encodedConstructorArgs = encodeAbiParameters(
 );
 const launchInitCodeHash = keccak256(concatHex([bytecode("OTFLaunchManager"), encodedConstructorArgs]));
 const allHookFlags = 0x3fffn;
-const requiredLaunchHookFlags = 0x2040n;
+const requiredLaunchHookFlags = 0x2840n;
 let launchSalt;
 let launchAddress;
 for (let candidate = 0n; candidate < 1_000_000n; candidate++) {
@@ -295,10 +299,10 @@ for (let candidate = 0n; candidate < 1_000_000n; candidate++) {
   }
 }
 if (!launchSalt || !launchAddress) {
-  throw new Error("Could not mine beforeInitialize + afterSwap hook address with mask 0x2040");
+  throw new Error("Could not mine beforeInitialize + beforeAddLiquidity + afterSwap hook address with mask 0x2840");
 }
 if ((BigInt(launchAddress) & allHookFlags) !== requiredLaunchHookFlags) {
-  throw new Error("Mined launch-manager hook address does not have the exact 0x2040 mask");
+  throw new Error("Mined launch-manager hook address does not have the exact 0x2840 mask");
 }
 const launchDeploymentTx = await transact(
   { ...launchManagerDeployer, name: "OTFLaunchManagerDeployer" },
@@ -311,6 +315,9 @@ const readLaunch = (functionName) => publicClient.readContract({
   abi: artifact("OTFLaunchManager").abi,
   functionName,
 });
+if (!await readLaunch("hookPermissionsValid")) {
+  throw new Error("Deployed launch manager rejects its hook permissions");
+}
 const [
   maxBootstrapBudget,
   permanentOtfCap,

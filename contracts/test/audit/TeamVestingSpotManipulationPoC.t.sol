@@ -108,7 +108,7 @@ contract AtomicVestingSpotManipulator {
 
 contract TeamVestingSpotManipulationPoCTest is TestBase {
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
-    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 6);
+    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 11) | (1 << 6);
     address private constant BENEFICIARY = address(0xBEEF);
 
     OTFToken private otf;

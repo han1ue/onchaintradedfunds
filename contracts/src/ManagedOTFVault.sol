@@ -332,6 +332,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (skipMask >> length != 0) revert InvalidSkipMask(skipMask, length);
         uint256 effectiveSupply =
             _shutdown ? totalSupply() : totalSupply() + pendingExpenseFeeShares();
+        if (shares > effectiveSupply) revert SharesExceedSupply(shares, effectiveSupply);
         amountsOut = _previewRedeemWithSupply(
             _shutdown ? shares : _netRedeemShares(shares), effectiveSupply, skipMask, _shutdown
         );

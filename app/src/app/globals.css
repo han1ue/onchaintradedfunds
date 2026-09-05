@@ -209,8 +209,8 @@ a { color: inherit; }
   min-height: calc(100dvh - var(--testnet-banner-height));
   overflow: hidden;
   background:
-    radial-gradient(circle at 72% 46%, rgb(var(--accent-rgb) / 10%), transparent 31%),
-    linear-gradient(118deg, #050505 0%, #090a05 54%, #050505 100%);
+    radial-gradient(circle at 72% 46%, rgb(var(--accent-rgb) / 11%), transparent 31%),
+    linear-gradient(118deg, #080907 0%, #0c0e08 54%, #080907 100%);
   color: var(--text);
   color-scheme: dark;
 }
@@ -219,7 +219,7 @@ a { color: inherit; }
   position: absolute;
   z-index: 1;
   inset: 0;
-  background: linear-gradient(90deg, rgb(5 5 5 / 96%) 0%, rgb(5 5 5 / 72%) 34%, transparent 61%);
+  background: linear-gradient(90deg, rgb(8 9 7 / 94%) 0%, rgb(8 9 7 / 70%) 34%, transparent 61%);
   content: "";
   pointer-events: none;
 }

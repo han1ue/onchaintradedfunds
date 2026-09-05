@@ -19,6 +19,7 @@ import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { PoolId } from "@uniswap/v4-core/src/types/PoolId.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
 import { SwapParams, ModifyLiquidityParams } from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import { Pool } from "@uniswap/v4-core/src/libraries/Pool.sol";
 import { PoolSwapTest } from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import { PoolDonateTest } from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 import { PoolModifyLiquidityTest } from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
@@ -130,7 +131,7 @@ contract BoundaryMultiSwap {
 
 contract OTFLaunchV4IntegrationTest is TestBase {
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
-    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 6);
+    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 11) | (1 << 6);
     address private constant BUYER = address(0xB0B);
 
     uint256 private constant DIRECT_BOOTSTRAP_OTF = 149_997_417_396_300_389_512_897_535;
@@ -578,53 +579,136 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(wethDust, 1_776);
     }
 
-    function testExternalLiquidityCanBeAddedAndRemovedWhileReadyWithoutChangingPriceOrSizing()
-        public
-    {
-        Setup memory setup = _deploy(true);
-        _reachGraduationReady(setup);
-        (uint160 readyPrice,) = setup.launch.currentPoolState();
+    function testFindingExternalFullRangeLiquidityRejectedAndGraduationSucceeds() public {
+        _assertLiquidityCapacityProtected(_deploy(true), false);
+        _assertLiquidityCapacityProtected(_deploy(false), false);
+    }
+
+    function testLiquidityCapacityProtectedThroughAtomicRouterGraduation() public {
+        _assertLiquidityCapacityProtected(_deploy(true), true);
+        _assertLiquidityCapacityProtected(_deploy(false), true);
+    }
+
+    function _assertLiquidityCapacityProtected(Setup memory setup, bool atomic) private {
+        bool direct = setup.launch.otfIsCurrency0();
+        assertEq(
+            setup.positionManager.ownerOf(setup.launch.bootstrapPositionTokenId()),
+            address(setup.launch)
+        );
+        uint128 blockingLiquidity =
+            Pool.tickSpacingToMaxLiquidityPerTick(1) - setup.launch.PERMANENT_LIQUIDITY() + 1;
         PoolModifyLiquidityTest externalLp =
             new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
-        setup.otf.mint(BUYER, 10_000 ether);
-        setup.weth.mint(BUYER, 10 ether);
+        setup.otf.mint(BUYER, type(uint128).max);
+        setup.weth.mint(BUYER, type(uint128).max);
         vm.startPrank(BUYER);
         setup.otf.approve(address(externalLp), type(uint256).max);
         setup.weth.approve(address(externalLp), type(uint256).max);
-        externalLp.modifyLiquidity(
-            _key(setup),
-            ModifyLiquidityParams({
-                tickLower: -887_272,
-                tickUpper: 887_272,
-                liquidityDelta: int256(uint256(1 ether)),
-                salt: bytes32("external")
-            }),
-            bytes("")
-        );
-        (uint160 priceAfterAdd,) = setup.launch.currentPoolState();
-        assertEq(uint256(priceAfterAdd), uint256(readyPrice));
-        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), 1 ether);
-        externalLp.modifyLiquidity(
-            _key(setup),
-            ModifyLiquidityParams({
-                tickLower: -887_272,
-                tickUpper: 887_272,
-                liquidityDelta: -int256(uint256(1 ether)),
-                salt: bytes32("external")
-            }),
-            bytes("")
-        );
+        setup.otf.approve(address(setup.permit2), type(uint256).max);
+        setup.weth.approve(address(setup.permit2), type(uint256).max);
+        setup.permit2
+            .approve(
+                address(setup.otf),
+                address(setup.positionManager),
+                type(uint160).max,
+                type(uint48).max
+            );
+        setup.permit2
+            .approve(
+                address(setup.weth),
+                address(setup.positionManager),
+                type(uint160).max,
+                type(uint48).max
+            );
         vm.stopPrank();
 
-        (uint160 priceAfterRemove,) = setup.launch.currentPoolState();
-        assertEq(uint256(priceAfterRemove), uint256(readyPrice));
-        assertEq(setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())), 0);
-        setup.launch.finalizeGraduation();
+        _expectExternalLiquidityRejected(setup, externalLp, blockingLiquidity);
+        _expectSharedPositionManagerMintRejected(setup);
+        if (atomic) {
+            vm.startPrank(BUYER);
+            setup.weth.approve(address(setup.router), 20 ether);
+            setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
+            vm.stopPrank();
+        } else {
+            _reachGraduationReady(setup);
+            _expectExternalLiquidityRejected(setup, externalLp, blockingLiquidity);
+            _expectSharedPositionManagerMintRejected(setup);
+            setup.launch.finalizeGraduation();
+        }
+        _assertGraduated(setup, direct ? DIRECT_FINAL_BURN : INVERSE_FINAL_BURN);
 
-        assertEq(setup.launch.bootstrapWethProceeds(), PERMANENT_WETH);
-        assertEq(setup.launch.bootstrapWethPrincipal(), PERMANENT_WETH);
-        assertEq(setup.launch.permanentOtfLiquidity(), DIRECT_PERMANENT_OTF);
-        assertEq(setup.launch.permanentWethLiquidity(), PERMANENT_WETH);
+        // Both entry points become available only after the permanent position exists.
+        PoolKey memory key = _key(setup);
+        vm.prank(BUYER);
+        externalLp.modifyLiquidity(
+            key, ModifyLiquidityParams(-887_272, 887_272, 1 ether, bytes32("external")), bytes("")
+        );
+        uint256 externalTokenId = setup.positionManager.nextTokenId();
+        bytes memory mintData = _externalMintData(setup);
+        vm.prank(BUYER);
+        setup.positionManager.modifyLiquidities(mintData, block.timestamp);
+        assertEq(setup.positionManager.ownerOf(externalTokenId), BUYER);
+        assertEq(
+            setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())),
+            setup.launch.PERMANENT_LIQUIDITY() + 2 ether
+        );
+        assertEq(
+            setup.positionManager.ownerOf(setup.launch.permanentPositionTokenId()),
+            address(setup.launch)
+        );
+    }
+
+    function _expectExternalLiquidityRejected(
+        Setup memory setup,
+        PoolModifyLiquidityTest externalLp,
+        uint128 liquidity
+    ) private {
+        PoolKey memory key = _key(setup);
+        bytes memory reason = _wrappedHookRevert(
+            setup,
+            IHooks.beforeAddLiquidity.selector,
+            abi.encodeWithSelector(OTFLaunchManager.UnauthorizedLiquidityAddition.selector)
+        );
+        vm.prank(BUYER);
+        vm.expectRevert(reason);
+        externalLp.modifyLiquidity(
+            key,
+            ModifyLiquidityParams(
+                -887_272, 887_272, int256(uint256(liquidity)), bytes32("blocks graduation")
+            ),
+            bytes("")
+        );
+    }
+
+    function _expectSharedPositionManagerMintRejected(Setup memory setup) private {
+        bytes memory data = _externalMintData(setup);
+        uint256 nextTokenId = setup.positionManager.nextTokenId();
+        bytes memory reason = _wrappedHookRevert(
+            setup,
+            IHooks.beforeAddLiquidity.selector,
+            abi.encodeWithSelector(OTFLaunchManager.UnauthorizedLiquidityAddition.selector)
+        );
+        vm.prank(BUYER);
+        vm.expectRevert(reason);
+        setup.positionManager.modifyLiquidities(data, block.timestamp);
+        assertEq(setup.positionManager.nextTokenId(), nextTokenId);
+    }
+
+    function _externalMintData(Setup memory setup) private view returns (bytes memory) {
+        PoolKey memory key = _key(setup);
+        bytes[] memory params = new bytes[](2);
+        params[0] = abi.encode(
+            key,
+            int24(-887_272),
+            int24(887_272),
+            uint256(1 ether),
+            type(uint128).max,
+            type(uint128).max,
+            BUYER,
+            bytes("")
+        );
+        params[1] = abi.encode(key.currency0, key.currency1);
+        return abi.encode(hex"020d", params);
     }
 
     function testPostGraduationBuysAndSellsPreservePermanentPositionForBothCurrencyOrderings()
@@ -804,10 +888,10 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertTrue(closeTick >= bridgeLower && closeTick < bridgeUpper);
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
 
-        PoolModifyLiquidityTest thinLp = _addThinBridge(setup, bridgeLower, bridgeUpper);
+        _assertThinBridgeRejected(setup, bridgeLower, bridgeUpper);
         assertEq(
             setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())),
-            setup.launch.BOOTSTRAP_LIQUIDITY() + 1 ether
+            setup.launch.BOOTSTRAP_LIQUIDITY()
         );
 
         PoolSwapTest swapper = new PoolSwapTest(IPoolManager(address(setup.poolManager)));
@@ -816,7 +900,6 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _assertThinBridgeAttackReverts(setup, swapper, closePrice, direct);
         vm.stopPrank();
 
-        _removeThinBridge(setup, thinLp, bridgeLower, bridgeUpper);
         assertEq(
             setup.stateView.getLiquidity(PoolId.wrap(setup.launch.poolId())),
             setup.launch.BOOTSTRAP_LIQUIDITY()
@@ -824,17 +907,25 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _completeLegitimateGraduation(setup, swapper, direct);
     }
 
-    function _addThinBridge(Setup memory setup, int24 tickLower, int24 tickUpper)
+    function _assertThinBridgeRejected(Setup memory setup, int24 tickLower, int24 tickUpper)
         private
-        returns (PoolModifyLiquidityTest thinLp)
     {
-        thinLp = new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
+        PoolModifyLiquidityTest thinLp =
+            new PoolModifyLiquidityTest(IPoolManager(address(setup.poolManager)));
         setup.otf.mint(BUYER, 1_000_000 ether);
         vm.startPrank(BUYER);
         setup.otf.approve(address(thinLp), type(uint256).max);
         setup.weth.approve(address(thinLp), type(uint256).max);
+        PoolKey memory key = _key(setup);
+        vm.expectRevert(
+            _wrappedHookRevert(
+                setup,
+                IHooks.beforeAddLiquidity.selector,
+                abi.encodeWithSelector(OTFLaunchManager.UnauthorizedLiquidityAddition.selector)
+            )
+        );
         thinLp.modifyLiquidity(
-            _key(setup),
+            key,
             ModifyLiquidityParams({
                 tickLower: tickLower,
                 tickUpper: tickUpper,
@@ -844,25 +935,6 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             bytes("")
         );
         vm.stopPrank();
-    }
-
-    function _removeThinBridge(
-        Setup memory setup,
-        PoolModifyLiquidityTest thinLp,
-        int24 tickLower,
-        int24 tickUpper
-    ) private {
-        vm.prank(BUYER);
-        thinLp.modifyLiquidity(
-            _key(setup),
-            ModifyLiquidityParams({
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                liquidityDelta: -int256(uint256(1 ether)),
-                salt: bytes32("thin bridge")
-            }),
-            bytes("")
-        );
     }
 
     function _completeLegitimateGraduation(Setup memory setup, PoolSwapTest swapper, bool direct)

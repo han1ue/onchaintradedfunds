@@ -9,14 +9,14 @@ const FLOW_LINES = Array.from({ length: 24 }, (_, index) => {
 
   return {
     d: `M 80 ${startY} C 300 ${startY - 42} 420 ${pinchY - 96} 568 ${pinchY} C 720 ${pinchY + 110} 852 ${endY - 58} 1120 ${endY}`,
-    opacity: 0.12 + (index % 6) * 0.055,
+    opacity: 0.135 + (index % 6) * 0.058,
   };
 });
 
 const ORBIT_LINES = Array.from({ length: 14 }, (_, index) => ({
   rx: 118 + index * 18,
   ry: 36 + index * 9,
-  opacity: 0.1 + index * 0.022,
+  opacity: 0.11 + index * 0.023,
   rotation: -24 + index * 2.2,
 }));
 

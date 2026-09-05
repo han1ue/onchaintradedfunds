@@ -12,7 +12,7 @@ colors:
   lime: "#ccff00"
   gold: "#f1b93d"
   danger: "#eb6570"
-  splash-ground: "#050505"
+  splash-ground: "#080907"
   splash-lockup: "#f2f7f8"
   splash-flow: "#ccff00"
   splash-entry: "#ccff00"

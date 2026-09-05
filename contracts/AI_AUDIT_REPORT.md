@@ -501,6 +501,11 @@ an open question rather than presented as a vulnerability.
 
 ### Universal Router V4 exact-input ABI
 
+Follow-up, 5 September 2026: the configured testnet runtime uses four fields. Encoding and Permit2
+cleanup corrections now have tests against the deployed venue contracts on a local fork. See
+[testnet routing validation](TESTNET_ROUTING_VALIDATION.md). Mainnet runtime validation remains open;
+the original assessment below describes the audit baseline.
+
 This is not a confirmed finding. The local production interface declares a five-field
 `UniswapV4ExactInputParams` with `maxHopSlippage` at
 `contracts/src/interfaces/IUniswapV4.sol:13-20`. The V4 adapter and collector encode that type at

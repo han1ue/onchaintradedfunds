@@ -38,9 +38,22 @@ equal derived permanent WETH.
 Reducing bootstrap liquidity by one MUST underfund that WETH principal. Increasing permanent
 liquidity by one MUST exceed the permanent OTF cap in both currency orderings.
 
-The hook address MUST encode exactly `beforeInitialize` and `afterSwap`. Every third-party pool
+The hook address MUST encode exactly `beforeInitialize`, `beforeAddLiquidity`, and `afterSwap` (`0x2840`). Every third-party pool
 initialization MUST revert, including while the predicted CREATE2 manager address has no code. The
 hook MUST NOT add `beforeSwap`.
+
+Before `Graduated`, `beforeAddLiquidity` MUST reject additions unless the immutable PoolManager
+calls for the canonical pool, the sender is the immutable PositionManager, and an internal mint
+authorization is active. PositionManager identity alone MUST NOT authorize third-party mints.
+
+Bootstrap authorization MUST require `NotInitialized`, the ordered bootstrap ticks, and exactly
+`BOOTSTRAP_LIQUIDITY`. Permanent authorization MUST require `GraduationReady`, both full-range ticks,
+and exactly `PERMANENT_LIQUIDITY`. Both deltas MUST be positive. Each authorization MUST surround
+only its synchronous mint call and MUST clear on success or roll back on failure.
+
+These restrictions reserve tick capacity for graduation. After the permanent position exists and
+the phase becomes `Graduated`, external liquidity additions MUST be allowed. The permanent position
+MUST remain locked regardless of external liquidity activity.
 
 During bootstrap, `afterSwap` MUST reject final prices outside either
 tick-derived boundary. It MUST mark readiness only when current `sqrtPriceX96` exactly equals the

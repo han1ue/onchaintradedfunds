@@ -4,10 +4,11 @@ pragma solidity ^0.8.24;
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
-    IUniswapV4StateView,
-    UniswapV4ExactInputParams,
-    UniswapV4PathKey
+    IUniswapV4StateView
 } from "../../src/interfaces/IUniswapV4.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
 
 contract MockUniswapV4PoolManager { }
@@ -37,7 +38,7 @@ contract MockPermit2 is IPermit2AllowanceTransfer {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external {
         StoredAllowance storage value = _allowances[msg.sender][token][spender];
         value.amount = amount;
-        value.expiration = expiration;
+        value.expiration = expiration == 0 ? uint48(block.timestamp) : expiration;
     }
 
     function transferFrom(address from, address to, uint160 amount, address token) external {
@@ -120,20 +121,23 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
             abi.decode(inputs[0], (bytes, bytes[]));
         require(keccak256(actions) == keccak256(hex"070c0f") && actionParams.length == 3, "ACTIONS");
 
-        UniswapV4ExactInputParams memory params =
-            abi.decode(actionParams[0], (UniswapV4ExactInputParams));
+        IV4Router.ExactInputParams memory params =
+            abi.decode(actionParams[0], (IV4Router.ExactInputParams));
         (address settleToken, uint256 settleMaximum) =
             abi.decode(actionParams[1], (address, uint256));
         (address takeToken, uint256 takeMinimum) = abi.decode(actionParams[2], (address, uint256));
-        require(params.path.length != 0 && params.maxHopSlippage.length == 0, "PATH");
-        UniswapV4PathKey memory finalKey = params.path[params.path.length - 1];
-        lastIntermediateCurrency = finalKey.intermediateCurrency;
+        require(params.path.length != 0, "PATH");
+        PathKey memory finalKey = params.path[params.path.length - 1];
+        lastIntermediateCurrency = Currency.unwrap(finalKey.intermediateCurrency);
         lastFee = finalKey.fee;
         lastTickSpacing = finalKey.tickSpacing;
-        lastHooks = finalKey.hooks;
-        require(settleToken == params.currencyIn && settleMaximum == params.amountIn, "SETTLE");
+        lastHooks = address(finalKey.hooks);
         require(
-            takeToken == params.path[params.path.length - 1].intermediateCurrency
+            settleToken == Currency.unwrap(params.currencyIn) && settleMaximum == params.amountIn,
+            "SETTLE"
+        );
+        require(
+            takeToken == Currency.unwrap(params.path[params.path.length - 1].intermediateCurrency)
                 && takeMinimum == params.amountOutMinimum,
             "TAKE"
         );

@@ -13,6 +13,8 @@ on:
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
       - "scripts/generate-contract-abis.mjs"
+      - "scripts/verify-testnet-routing.mjs"
+      - "scripts/lib/testnet-routing*"
       - "scripts/fixtures/**"
       - "packages/generated/**"
   pull_request:
@@ -27,6 +29,8 @@ on:
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
       - "scripts/generate-contract-abis.mjs"
+      - "scripts/verify-testnet-routing.mjs"
+      - "scripts/lib/testnet-routing*"
       - "scripts/fixtures/**"
       - "packages/generated/**"
   workflow_dispatch:
@@ -108,6 +112,12 @@ jobs:
           --match-path test/OTFLaunchV4Integration.t.sol
           --fuzz-seed "$CI_FUZZ_SEED"
           --summary
+
+      - name: Validate pinned testnet router configuration
+        run: node --test scripts/lib/testnet-routing.test.mjs
+
+      - name: Validate actual testnet routing runtimes
+        run: corepack pnpm contracts:validate:testnet-routing
 
       - name: Run V4 launch invariant suite
         working-directory: contracts

@@ -67,6 +67,7 @@ contract OTFLaunchV4Handler {
     uint8 public highestPhase;
     bool public graduatedAtExactPrice;
     uint128 public externalLiquidity;
+    bool public prematureLiquidityAdded;
     uint256 public successfulRouterSwaps;
     uint256 public failedActions;
     uint256 public routerInput;
@@ -193,6 +194,9 @@ contract OTFLaunchV4Handler {
             bytes("")
         ) {
             externalLiquidity += amount;
+            if (launch.phase() != OTFLaunchManager.Phase.Graduated) {
+                prematureLiquidityAdded = true;
+            }
         } catch {
             failedActions++;
             _assertCoreRollback(beforeState);
@@ -346,7 +350,7 @@ contract OTFLaunchV4Handler {
 
 contract OTFLaunchV4InvariantTest is TestBase, InvariantTestBase {
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
-    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 6);
+    uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 11) | (1 << 6);
 
     OTFLaunchV4Handler private _directHandler;
     OTFLaunchV4Handler private _inverseHandler;
@@ -377,6 +381,11 @@ contract OTFLaunchV4InvariantTest is TestBase, InvariantTestBase {
     function invariantRouterNeverRetainsUserDust() public view {
         _assertRouterDust(_directHandler);
         _assertRouterDust(_inverseHandler);
+    }
+
+    function invariantExternalLiquidityCannotConsumeCapacityBeforeGraduation() public view {
+        assertFalse(_directHandler.prematureLiquidityAdded());
+        assertFalse(_inverseHandler.prematureLiquidityAdded());
     }
 
     function _assertPhase(OTFLaunchV4Handler handler) private view {

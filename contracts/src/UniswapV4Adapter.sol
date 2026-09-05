@@ -167,15 +167,10 @@ contract UniswapV4Adapter is ITradeAdapter {
         uint128 amountIn,
         uint128 minAmountOut
     ) private {
-        uint256[] memory maxHopSlippage = new uint256[](0);
         bytes[] memory actionParams = new bytes[](3);
         actionParams[0] = abi.encode(
             UniswapV4ExactInputParams({
-                currencyIn: tokenIn,
-                path: path,
-                maxHopSlippage: maxHopSlippage,
-                amountIn: amountIn,
-                amountOutMinimum: minAmountOut
+                currencyIn: tokenIn, path: path, amountIn: amountIn, amountOutMinimum: minAmountOut
             })
         );
         actionParams[1] = abi.encode(tokenIn, uint256(amountIn));
@@ -257,6 +252,9 @@ contract UniswapV4Adapter is ITradeAdapter {
         private
     {
         IPermit2AllowanceTransfer(permit2).approve(token, spender, amount, expiration);
+        // Permit2 stores the current timestamp when the requested expiration is zero.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (expiration == 0) expiration = uint48(block.timestamp);
         (uint160 observedAmount, uint48 observedExpiration,) =
             IPermit2AllowanceTransfer(permit2).allowance(address(this), token, spender);
         if (observedAmount != amount || observedExpiration != expiration) {

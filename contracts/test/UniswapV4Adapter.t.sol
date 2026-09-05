@@ -80,6 +80,7 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
     }
 
     function testAuthenticatedThreeHopPathExecutesAndPreservesDonations() public {
+        vm.warp(1_800_000_000);
         _createV4Pool(address(input), address(assetA));
         _createV4Pool(address(assetA), address(assetB));
         _createV4Pool(address(assetB), address(assetC));
@@ -102,7 +103,7 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         (uint160 permitAmount, uint48 expiration,) =
             permit2.allowance(address(v4Adapter), address(input), address(universalRouter));
         assertEq(permitAmount, 0);
-        assertEq(expiration, 0);
+        assertEq(expiration, block.timestamp);
     }
 
     function testMalformedEndpointBoundsAndMissingPoolsAreRejected() public {

@@ -55,6 +55,15 @@ Application support for native basket execution is enabled on testnet through th
 
 ## Launch and market assumptions
 
+The `beforeAddLiquidity` hook reserves tick capacity until graduation. It rejects external additions
+during bootstrap and while `GraduationReady`, including mints through the shared PositionManager.
+The manager authorizes only its synchronous bootstrap or permanent mint, with the expected phase,
+ticks, and exact positive liquidity delta. The callback also checks the PoolManager, canonical pool,
+and PositionManager. Successful calls clear authorization; failed transactions roll it back.
+
+External additions become available after the permanent mint and transition to `Graduated`.
+External LPs cannot withdraw or transfer the manager's permanent position.
+
 The canonical pool initializes at exactly 15 ETH reference FDV. Its fixed final tick represents approximately `134.997562702653186573 ETH`; the next price-direction tick represents `135.011062458923451891 ETH` and exceeds the nominal 135 ETH target. Fixed bootstrap liquidity consumes approximately `149,997,417.3963 OTF` and returns exactly `6.749878135132658333 WETH` of principal at the final boundary. That principal funds the permanent position with 50 million OTF minus 2,027 raw units when OTF is currency0 or 2,026 raw units when it is currency1.
 
 The hook rejects a swap that finishes outside either bootstrap boundary. It records `GraduationReady` only at exact final `sqrtPriceX96` equality and blocks further swaps until finalization. The dedicated launch router supplies the boundary limit, partially fills oversized input, and normally finalizes after the PoolManager returns control in the same outer transaction. Anyone can also finalize separately after another router lands exactly on the boundary.
@@ -77,7 +86,16 @@ Production deployment requires explicit WETH, PoolManager, StateView, PositionMa
 
 The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
 
-The current architecture is deployed on Robinhood Chain Testnet. Earlier testnet protocol addresses remain incompatible and disabled in the application; there is no migration or legacy claim path.
+Testnet routing validation binds eight dependency runtimes and the Universal Router's verified
+four-field exact-input tuple. The fork suite exercises basket entry, exit, and collector settlement
+through the deployed V3 and V4 venues. Run `corepack pnpm contracts:validate:testnet-routing` before
+redeployment. These checks cover the selected testnet dependencies; mainnet validation remains open.
+
+The recorded September 5 testnet deployment predates the H-01 liquidity-capacity fix. Its hook mask
+is `0x2040`; the fixed manager requires exactly `0x2840`. Deployment tooling mines a fresh CREATE2
+salt against the current initcode and verifies the deployed hook permissions. The fixed contracts
+require a new deployment; changing local artifacts does not update existing contracts.
+The recorded deployment also predates the V4 tuple and Permit2 cleanup corrections.
 
 ## Production blockers
 

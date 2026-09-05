@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { OTFLaunchManager } from "./OTFLaunchManager.sol";
 
-/// @notice Deterministic deployer used to mine the V4 afterSwap hook permission bits.
+/// @notice Deterministic deployer for the V4 beforeInitialize, beforeAddLiquidity and afterSwap hook.
 contract OTFLaunchManagerDeployer {
     event LaunchManagerDeployed(address indexed launchManager, bytes32 indexed salt);
 

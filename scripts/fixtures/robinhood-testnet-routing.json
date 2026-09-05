@@ -1,0 +1,52 @@
+{
+  "chainId": 46630,
+  "blockNumber": 113511825,
+  "blockHash": "0xabb37140bcef6e86958d3afd0b969c40ab40b773094f9731e4ada9169f6e1a69",
+  "dependencies": {
+    "uniswapV3Factory": {
+      "address": "0x911b4000D3422F482F4062a913885f7b035382Df",
+      "codehash": "0xfc5ecedb7f06fb9c9a0d19e0d5f36456bdce2dfd2e12b8e85d40075d5fd25aa4"
+    },
+    "uniswapV3SwapRouter02": {
+      "address": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
+      "codehash": "0xbab2cf24dd73f84128e43b7a241c35093278cfe539251f192166d66b4e6e1c77"
+    },
+    "uniswapV4PoolManager": {
+      "address": "0x949257d5181128a7c793619b922e47B849cb81e6",
+      "codehash": "0xa2d06106d2dbbea31998f94c853077aee2837d47510889f2ef121f6b9aca178d"
+    },
+    "uniswapV4StateView": {
+      "address": "0x585906972e2C513cbbc97d9C159f27Df9daf3A21",
+      "codehash": "0x36504153775af84be5d8e708f15d4edc465e81300bd46e6ff387945670b94d25"
+    },
+    "uniswapV4PositionManager": {
+      "address": "0xF839356eA23e6799972C3685f5c7B60158e4e96d",
+      "codehash": "0xb3a9c91caaf3fdc4f8ab9af3612831e7f381485d79a2878a660a70c6b0b74a91"
+    },
+    "uniswapUniversalRouter": {
+      "address": "0x5274B13F0B60425f403A84Dc85b58951E880664c",
+      "codehash": "0x92f22990e708a113ca7119502c3be3e28d5fda4e10d354c332cdac70bc3f6394"
+    },
+    "permit2": {
+      "address": "0xA03bd7D6d7193051dB730AaD27BF25E46570c43F",
+      "codehash": "0x225d61e1f94c895e16d118b21f7f0b28a73816cfb370b6c4a04c50a2855c8cbc"
+    },
+    "weth": {
+      "address": "0x33e4191705c386532ba27cBF171Db86919200B94",
+      "codehash": "0x55f8ac53c64450f01880d8249fc5cb0c69c064e4bcb097ea80a02fff40485a7c"
+    }
+  },
+  "universalRouterSource": {
+    "url": "https://explorer.testnet.chain.robinhood.com/api/v2/smart-contracts/0x5274B13F0B60425f403A84Dc85b58951E880664c",
+    "verified": true,
+    "compiler": "v0.8.26+commit.8a97fa7a",
+    "interfacePath": "node_modules/@uniswap/v4-periphery/src/interfaces/IV4Router.sol",
+    "interfaceSha256": "f83c8443f5c1716d4d767dca5e1ead213fc16f012014a58edfe7e7979145366a",
+    "exactInputParams": [
+      "Currency currencyIn;",
+      "PathKey[] path;",
+      "uint128 amountIn;",
+      "uint128 amountOutMinimum;"
+    ]
+  }
+}

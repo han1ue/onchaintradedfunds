@@ -10,15 +10,13 @@ library OTFMetadata {
 
     function protocolTokenURI() internal pure returns (string memory) {
         return _tokenURI(
-            "Onchain Traded Funds",
-            "The fixed-supply protocol token of Onchain Traded Funds."
+            "Onchain Traded Funds", "The fixed-supply protocol token of Onchain Traded Funds."
         );
     }
 
     function shareTokenURI() internal pure returns (string memory) {
         return _tokenURI(
-            "Onchain Traded Fund Share",
-            "A share token issued by an Onchain Traded Funds vault."
+            "Onchain Traded Fund Share", "A share token issued by an Onchain Traded Funds vault."
         );
     }
 

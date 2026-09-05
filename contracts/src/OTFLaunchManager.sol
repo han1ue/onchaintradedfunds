@@ -10,6 +10,7 @@ import {
     IUniswapV4PositionManager,
     IUniswapV4StateView,
     UniswapV4PoolKey,
+    UniswapV4ModifyLiquidityParams,
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
@@ -26,6 +27,12 @@ contract OTFLaunchManager {
         BootstrapActive,
         GraduationReady,
         Graduated
+    }
+
+    enum InternalMint {
+        None,
+        Bootstrap,
+        Permanent
     }
 
     uint256 public constant MAX_BOOTSTRAP_BUDGET = 150_000_000 ether;
@@ -50,8 +57,10 @@ contract OTFLaunchManager {
 
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
     uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;
+    uint160 private constant BEFORE_ADD_LIQUIDITY_FLAG = 1 << 11;
     uint160 private constant AFTER_SWAP_FLAG = 1 << 6;
-    uint160 private constant REQUIRED_HOOK_FLAGS = BEFORE_INITIALIZE_FLAG | AFTER_SWAP_FLAG;
+    uint160 private constant REQUIRED_HOOK_FLAGS =
+        BEFORE_INITIALIZE_FLAG | BEFORE_ADD_LIQUIDITY_FLAG | AFTER_SWAP_FLAG;
     bytes1 private constant MINT_POSITION_ACTION = 0x02;
     bytes1 private constant BURN_POSITION_ACTION = 0x03;
     bytes1 private constant SETTLE_PAIR_ACTION = 0x0d;
@@ -66,6 +75,7 @@ contract OTFLaunchManager {
     error UnauthorizedPoolManager(address caller);
     error UnauthorizedInitializer(address initializer);
     error InvalidPool();
+    error UnauthorizedLiquidityAddition();
     error GraduationPriceNotReached(uint160 currentSqrtPriceX96, uint160 finalSqrtPriceX96);
     error BootstrapPriceOutOfBounds(uint160 currentSqrtPriceX96);
     error InvalidLaunchAmounts();
@@ -123,6 +133,7 @@ contract OTFLaunchManager {
     uint256 public permanentWethLiquidity;
     uint256 public finalOtfBurned;
     bool private _entered;
+    InternalMint private _internalMint;
 
     constructor(
         address otf_,
@@ -197,6 +208,36 @@ contract OTFLaunchManager {
         return this.beforeInitialize.selector;
     }
 
+    /// @notice Reserve tick capacity for the launch positions until graduation completes.
+    function beforeAddLiquidity(
+        address sender,
+        UniswapV4PoolKey calldata key,
+        UniswapV4ModifyLiquidityParams calldata params,
+        bytes calldata
+    ) external view returns (bytes4) {
+        if (msg.sender != poolManager) revert UnauthorizedPoolManager(msg.sender);
+        if (_poolId(key) != poolId) revert InvalidPool();
+        if (phase == Phase.Graduated) return this.beforeAddLiquidity.selector;
+        if (sender != positionManager) revert UnauthorizedLiquidityAddition();
+
+        if (_internalMint == InternalMint.Bootstrap && phase == Phase.NotInitialized) {
+            if (
+                params.tickLower != (otfIsCurrency0 ? initialTick : finalTick)
+                    || params.tickUpper != (otfIsCurrency0 ? finalTick : initialTick)
+                    || params.liquidityDelta != int256(uint256(BOOTSTRAP_LIQUIDITY))
+            ) revert UnauthorizedLiquidityAddition();
+        } else if (_internalMint == InternalMint.Permanent && phase == Phase.GraduationReady) {
+            if (
+                params.tickLower != FULL_RANGE_LOWER_TICK
+                    || params.tickUpper != FULL_RANGE_UPPER_TICK
+                    || params.liquidityDelta != int256(uint256(PERMANENT_LIQUIDITY))
+            ) revert UnauthorizedLiquidityAddition();
+        } else {
+            revert UnauthorizedLiquidityAddition();
+        }
+        return this.beforeAddLiquidity.selector;
+    }
+
     function initializeLaunch() external nonReentrant {
         if (phase != Phase.NotInitialized) revert InvalidPhase(Phase.NotInitialized, phase);
         if (!hookPermissionsValid()) revert InvalidHookAddress(address(this));
@@ -218,6 +259,7 @@ contract OTFLaunchManager {
         bootstrapWethPrincipal = expectedBootstrapWeth;
         bootstrapLiquidity = BOOTSTRAP_LIQUIDITY;
         uint256 otfBefore = IERC20(otf).balanceOf(address(this));
+        _internalMint = InternalMint.Bootstrap;
         bootstrapPositionTokenId = _mintPosition(
             otfIsCurrency0 ? initialTick : finalTick,
             otfIsCurrency0 ? finalTick : initialTick,
@@ -225,6 +267,7 @@ contract OTFLaunchManager {
             otfIsCurrency0 ? MAX_BOOTSTRAP_BUDGET : 0,
             otfIsCurrency0 ? 0 : MAX_BOOTSTRAP_BUDGET
         );
+        delete _internalMint;
         bootstrapOtfDeposited = otfBefore - IERC20(otf).balanceOf(address(this));
         if (bootstrapOtfDeposited > MAX_BOOTSTRAP_BUDGET) {
             revert BootstrapDebitExceedsBudget(bootstrapOtfDeposited);
@@ -294,6 +337,7 @@ contract OTFLaunchManager {
         permanentLiquidity = PERMANENT_LIQUIDITY;
         otfBefore = IERC20(otf).balanceOf(address(this));
         wethBefore = IERC20(weth).balanceOf(address(this));
+        _internalMint = InternalMint.Permanent;
         permanentPositionTokenId = _mintPosition(
             FULL_RANGE_LOWER_TICK,
             FULL_RANGE_UPPER_TICK,
@@ -301,6 +345,7 @@ contract OTFLaunchManager {
             otfIsCurrency0 ? PERMANENT_OTF_CAP : expectedPermanentWeth,
             otfIsCurrency0 ? expectedPermanentWeth : PERMANENT_OTF_CAP
         );
+        delete _internalMint;
         permanentOtfLiquidity = otfBefore - IERC20(otf).balanceOf(address(this));
         permanentWethLiquidity = wethBefore - IERC20(weth).balanceOf(address(this));
         if (

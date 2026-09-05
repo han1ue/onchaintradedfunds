@@ -351,13 +351,11 @@ contract BuybackCollector {
 
         UniswapV4PathKey[] memory path = new UniswapV4PathKey[](1);
         path[0] = UniswapV4PathKey(otf, 0, 1, launchManager, "");
-        uint256[] memory maxHopSlippage = new uint256[](0);
         bytes[] memory actionParams = new bytes[](3);
         actionParams[0] = abi.encode(
             UniswapV4ExactInputParams({
                 currencyIn: weth,
                 path: path,
-                maxHopSlippage: maxHopSlippage,
                 // Both values are explicitly bounded before this call.
                 // forge-lint: disable-next-line(unsafe-typecast)
                 amountIn: uint128(amountIn),

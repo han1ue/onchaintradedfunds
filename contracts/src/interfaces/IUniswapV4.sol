@@ -10,11 +10,10 @@ struct UniswapV4PathKey {
     bytes hookData;
 }
 
-/// @dev ABI-compatible with Uniswap v4-periphery 2.1.1's ExactInputParams.
+/// @dev ABI-compatible with the pinned testnet router and v4-periphery 1.0.3's ExactInputParams.
 struct UniswapV4ExactInputParams {
     address currencyIn;
     UniswapV4PathKey[] path;
-    uint256[] maxHopSlippage;
     uint128 amountIn;
     uint128 amountOutMinimum;
 }
@@ -33,6 +32,14 @@ struct UniswapV4SwapParams {
     bool zeroForOne;
     int256 amountSpecified;
     uint160 sqrtPriceLimitX96;
+}
+
+/// @dev ABI-compatible with v4-core's ModifyLiquidityParams.
+struct UniswapV4ModifyLiquidityParams {
+    int24 tickLower;
+    int24 tickUpper;
+    int256 liquidityDelta;
+    bytes32 salt;
 }
 
 interface IUniswapV4ImmutableState {

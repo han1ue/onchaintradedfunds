@@ -179,6 +179,72 @@ contract CoreBoundaryCoverageTest is BootstrapTestBase {
         assertEq(vault.totalSupply(), supplyBefore - balance);
     }
 
+    function testFuzzPreviewRedeemSupplyBoundary(
+        bool chargeRedeemFee,
+        bool pendingExpenses,
+        bool shutdownMode
+    ) public {
+        (OTFFactory factory, address collector, MockCoreRouter router) = _deployFactory();
+        MockStockToken asset = new MockStockToken("Asset", "ASSET", 18);
+        MockStockToken assetB = new MockStockToken("Asset B", "ASSET-B", 18);
+        address[] memory assets = new address[](2);
+        assets[0] = address(asset);
+        assets[1] = address(assetB);
+        uint256[] memory units = new uint256[](2);
+        units[0] = WAD;
+        units[1] = 2 * WAD;
+        VaultCreationParams memory params = _creationParams(assets, units, 1_000);
+        params.redeemFeeBps = chargeRedeemFee ? 100 : 0;
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        _bootstrap(vault, router, assets, 100 ether);
+
+        if (pendingExpenses) {
+            vm.warp(block.timestamp + 180 days);
+            assertGt(vault.pendingExpenseFeeShares(), 0);
+        }
+        uint256 effectiveSupply = vault.totalSupply() + vault.pendingExpenseFeeShares();
+        if (shutdownMode) {
+            vm.prank(CREATOR);
+            vault.activateEmergencyShutdown();
+            vm.warp(block.timestamp + 365 days);
+            assertEq(vault.pendingExpenseFeeShares(), 0);
+            assertEq(vault.totalSupply(), effectiveSupply);
+        }
+
+        uint256[] memory preview = vault.previewRedeem(effectiveSupply, 0);
+        uint256 netShares = effectiveSupply;
+        if (chargeRedeemFee && !shutdownMode) {
+            netShares -= (effectiveSupply * 100 + 9_999) / 10_000;
+        }
+        assertEq(preview[0], 100 ether * netShares / effectiveSupply);
+        assertEq(preview[1], 200 ether * netShares / effectiveSupply);
+
+        bytes memory expectedError = abi.encodeWithSelector(
+            ManagedOTFVaultStorage.SharesExceedSupply.selector, effectiveSupply + 1, effectiveSupply
+        );
+        vm.expectRevert(expectedError);
+        vault.previewRedeem(effectiveSupply + 1, 0);
+        vm.prank(ALICE);
+        vm.expectRevert(expectedError);
+        vault.redeemInKind(effectiveSupply + 1, ALICE, new uint256[](2), 0);
+
+        // Collect accrued shares so ALICE can redeem the entire effective supply.
+        vault.checkpointFees();
+        uint256 collectorShares = vault.balanceOf(collector);
+        if (collectorShares != 0) {
+            vm.prank(collector);
+            vault.transfer(ALICE, collectorShares);
+        }
+        assertEq(vault.balanceOf(ALICE), effectiveSupply);
+        vm.prank(ALICE);
+        uint256[] memory actual = vault.redeemInKind(effectiveSupply, ALICE, preview, 0);
+        assertEq(actual[0], preview[0]);
+        assertEq(actual[1], preview[1]);
+        assertEq(asset.balanceOf(ALICE), preview[0]);
+        assertEq(assetB.balanceOf(ALICE), preview[1]);
+    }
+
     function testCreationFeeCapsAndRouterConfigurationBoundaries() public {
         ManagedOTFVault implementation = new ManagedOTFVault();
         MockBuybackReceiver collector = new MockBuybackReceiver();

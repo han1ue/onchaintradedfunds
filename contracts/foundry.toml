@@ -19,7 +19,7 @@ optimizer_runs = 1
 via_ir = true
 bytecode_hash = "none"
 extra_output = ["storageLayout"]
-skip = ["test/OTFLaunchV4Integration.t.sol", "test/OTFLaunchV4Invariant.t.sol"]
+skip = ["test/OTFLaunchV4Integration.t.sol", "test/OTFLaunchV4Invariant.t.sol", "test/fork/**"]
 # OpenZeppelin 5.6.1 uses a local named `error`; solc 0.8.36 emits the upstream-only
 # future-keyword warning even when linting this repository's source directory.
 ignored_error_codes = [6335]
@@ -35,7 +35,7 @@ fail_on_revert = false
 [profile.integration]
 evm_version = "cancun"
 out = "out/integration"
-skip = []
+skip = ["test/fork/**"]
 
 [profile.integration.fuzz]
 runs = 64
@@ -44,6 +44,12 @@ runs = 64
 runs = 128
 depth = 64
 fail_on_revert = false
+
+[profile.testnet]
+test = "test/fork"
+out = "out/testnet"
+skip = []
+fs_permissions = [{ access = "read", path = "../scripts/fixtures" }]
 
 [fmt]
 line_length = 100
