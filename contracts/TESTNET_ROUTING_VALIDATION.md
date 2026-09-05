@@ -1,7 +1,7 @@
 # Uniswap V3 replacement on Robinhood testnet
 
 All six pools and the complete fresh protocol are live on chain 46630. The previous V3 adapter
-is revoked, and application routing uses the new contracts. Live receipts, local checks, and
+is revoked, and the application configuration targets the new contracts. Live receipts, local checks, and
 fork simulations are recorded below. This task created no Git commit.
 
 ## Dependency authentication
@@ -175,6 +175,12 @@ The [live liquidity journal](../deployments/robinhood-testnet-v3-liquidity.json)
 A fresh fork of the actual live deployment passed the five real-asset flow checks again. Those basket, native, and collector transactions ran only in the fork and were reverted afterward. Live operations were pool creation, initialization, funding, protocol deployment, and configuration; no live basket trades were broadcast.
 
 Final commands include `node scripts/verify-live-uniswap-v3-testnet.mjs`, `FLOW_DEPLOYMENT_FILE=app/src/config/robinhood-testnet.json node scripts/validate-uniswap-v3-testnet-flows.mjs` on the local fork, and `corepack pnpm --filter @onchaintradedfunds/app build`. The application production build passed.
+
+Application changes and generated configuration are in the repository. This task did not publish
+or verify a hosted frontend deployment.
+
+The final rebuild initially failed on a missing generated Next.js page. Clearing app/.next and
+rerunning the same build command passed; output is in test-results/v3-auth/app-final-clean-build.log.
 
 The CREATE2 launch-manager deployer is `0x4017f98bD801fDEE082d2190432a2cB5c3AFf150`, deployed in [this receipt](https://explorer.testnet.chain.robinhood.com/tx/0x9e4e867f63c305d5ab94a031b537db531174923757ecb2ab7692385b17bba732). It is recorded separately under deploymentTools in the application manifest.
 

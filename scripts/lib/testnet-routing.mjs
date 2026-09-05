@@ -3,6 +3,16 @@ import { createRequire } from "node:module";
 const appRequire = createRequire(new URL("../../app/package.json", import.meta.url));
 const { keccak256 } = appRequire("viem");
 
+export async function getTestnetRoutingBlock(client, requestedBlock) {
+  let blockNumber = requestedBlock;
+  if (blockNumber === undefined) {
+    // Give RPC backends time to serve state for the selected block.
+    const head = await client.getBlockNumber({ cacheTime: 0 });
+    blockNumber = head > 64n ? head - 64n : 0n;
+  }
+  return retryStateRead(() => client.getBlock({ blockNumber }));
+}
+
 export function assertTestnetRoutingConfiguration(config, pin) {
   if (config.chainId !== 46630 || pin.chainId !== 46630) {
     throw new Error("Routing validation requires Robinhood testnet, chain 46630");
@@ -25,19 +35,22 @@ export async function verifyTestnetRoutingRuntime(client, config, pin, blockNumb
   assertTestnetRoutingConfiguration(config, pin);
   if (await client.getChainId() !== pin.chainId) throw new Error("Routing RPC chain ID mismatch");
   await Promise.all(Object.entries(pin.dependencies).map(async ([name, expected]) => {
-    const code = await readCode(client, expected.address, blockNumber);
+    const code = await retryStateRead(() => client.getCode({
+      address: expected.address, ...(blockNumber === undefined ? {} : { blockNumber }),
+    }));
     if (!code || code === "0x" || keccak256(code) !== expected.codehash) {
       throw new Error(`${name} runtime differs from the validated testnet bytecode`);
     }
   }));
 }
 
-async function readCode(client, address, blockNumber) {
+async function retryStateRead(read) {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await client.getCode({ address, ...(blockNumber === undefined ? {} : { blockNumber }) });
+      return await read();
     } catch (error) {
-      if (attempt >= 4 || !error.details?.includes("metadata is not found")) throw error;
+      const unavailable = /metadata is not found|unsupported block number/i.test(error.details ?? "");
+      if (attempt >= 4 || !unavailable) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }

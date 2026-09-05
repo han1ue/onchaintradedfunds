@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
+import { getTestnetRoutingBlock, verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const config = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-testnet.json"), "utf8"));
@@ -11,8 +11,9 @@ const appRequire = createRequire(new URL("../app/package.json", import.meta.url)
 const { createPublicClient, http } = appRequire("viem");
 const rpcUrl = process.env.TESTNET_RPC_URL || config.rpcUrl;
 const client = createPublicClient({ transport: http(rpcUrl) });
-const blockNumber = process.env.TESTNET_FORK_BLOCK ? BigInt(process.env.TESTNET_FORK_BLOCK) : await client.getBlockNumber();
-const block = await client.getBlock({ blockNumber });
+const requestedBlock = process.env.TESTNET_FORK_BLOCK ? BigInt(process.env.TESTNET_FORK_BLOCK) : undefined;
+const block = await getTestnetRoutingBlock(client, requestedBlock);
+const blockNumber = block.number;
 if (blockNumber === BigInt(pin.blockNumber) && block.hash !== pin.blockHash) throw new Error("Reference testnet block hash mismatch");
 await verifyTestnetRoutingRuntime(client, config, pin, blockNumber);
 console.log(`Verified ${Object.keys(pin.dependencies).length} runtimes at block ${blockNumber} (${block.hash}).`);
