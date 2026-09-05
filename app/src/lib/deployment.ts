@@ -86,7 +86,7 @@ export const robinhoodTestnetRewardsDeployedAtMs = robinhoodTestnetRewardsDeploy
   : undefined;
 
 export const robinhoodTestnetLiquidity = Object.freeze({
-  venue: testnetLiquidity.venue === "Synthra" && testnetVenue.id === "synthra-v3" ? "Synthra" : undefined,
+  venue: testnetLiquidity.venue === "Uniswap V3" && testnetVenue.id === "uniswap-v3" ? "Uniswap V3" : undefined,
   baseUrl: httpsUrl(testnetLiquidity.baseUrl) === testnetVenue.baseUrl ? testnetVenue.baseUrl : undefined,
 });
 
@@ -107,6 +107,7 @@ export const robinhoodTestnetV4 = Object.freeze({
 });
 
 export const robinhoodTestnetV4AdapterReady = testnet.status === "deployed"
+  && testnetRouting.status === "ready"
   && Boolean(
     robinhoodTestnetAddresses.entryRouter
     && robinhoodTestnetAddresses.uniswapV4Adapter
@@ -125,9 +126,11 @@ export const robinhoodTestnetCreation = Object.freeze({
 });
 
 export const robinhoodTestnetCreationReady = testnet.status === "deployed"
+  && testnetRouting.status === "ready"
   && Boolean(robinhoodTestnetAddresses.factory);
 
 export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
+  && testnetRouting.status === "ready"
   && Boolean(
     robinhoodTestnetAddresses.factory
     && robinhoodTestnetAddresses.entryRouter

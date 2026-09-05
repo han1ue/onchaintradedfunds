@@ -58,10 +58,10 @@ describe("$OTF page wiring", () => {
   it("renders four semantic launch phases with a textual current step and no countdown", () => {
     for (const text of ["Not initialized", "Bootstrap active", "Graduation ready", "Graduated"]) expect(component).toContain(text);
     expect(component).toContain("Exact 15 ETH launch reference valuation.");
-    expect(component).toContain("15 ETH to approximately 134.997562702653186573 ETH reference valuation.");
-    expect(component).toContain("corrected boundary-aware launch contracts");
-    expect(component).toContain("approximately 149,997,417.3963 OTF");
-    expect(component).toContain("50 million OTF minus 2,026 raw units");
+    expect(component).toContain("15 ETH to 135 ETH reference valuation.");
+    expect(component).toContain("partially fills an order at either bootstrap boundary");
+    expect(component).toContain("Initialization deposits 150 million OTF.");
+    expect(component).toContain("50 million OTF are locked as full-range liquidity.");
     expect(component).toContain('functionName: "MAX_SUPPLY"');
     expect(component).not.toContain("const MAX_SUPPLY =");
     expect(component).toContain('<ol className="launchLifecycle"');
@@ -121,7 +121,7 @@ describe("$OTF page wiring", () => {
     expect(summary.indexOf('aria-label="Total AUM"')).toBeLessThan(summary.indexOf("weeklyDistributionLabel"));
     expect(summary).toContain('className="fundsMetricSeparator"');
     expect(summary).toContain("{weeklyEmissionText}");
-    expect(summary).toContain("Weekly distribution");
+    expect(summary).toContain("Distributed in week");
     expect(summary).not.toContain("{rewardsApyText} APY");
     expect(css).toContain(".fundsMetricSeparator { width: 1px;");
   });
@@ -137,8 +137,9 @@ describe("$OTF page wiring", () => {
     expect(confirmation).not.toContain("window.location.replace");
     expect(confirmation).not.toContain("redirectSeconds");
     expect(confirmation).not.toContain("The launch transaction is confirmed on Robinhood Testnet.");
-    expect(confirmation).toContain("Deposits are opening and fees will start accruing to the selected address.");
+    expect(confirmation).toContain("Launch confirmed");
     expect(confirmation).toContain(">View OTF<");
-    expect(confirmation.match(/className="createdDetailGroup"/gu)).toHaveLength(2);
+    expect(confirmation).toContain('className="createdRevealFacts"');
+    expect(confirmation).toContain("Constituent allocation");
   });
 });

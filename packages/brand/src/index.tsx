@@ -34,3 +34,10 @@ export function OtfTokenIcon({ className, size = 32, ticker = "OTF" }: OtfTokenI
     <text x="128" y="156" fill="#ccff00" fontFamily="Instrument Sans, Arial, sans-serif" fontSize={tickerFontSize(label)} fontWeight="700" letterSpacing="-2" textAnchor="middle" textLength={tickerTextLength(label)} lengthAdjust="spacingAndGlyphs">{label}</text>
   </svg>;
 }
+
+export function OtfCoinIcon({ className, size = 32 }: MarkProps & { size?: number }) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+    <circle cx="512" cy="512" r="470" fill="#090909" stroke="#ccff00" strokeWidth="40" />
+    <text x="512" y="620" fill="#ccff00" fontFamily="Instrument Sans, Arial, sans-serif" fontSize="300" fontWeight="700" letterSpacing="24" textAnchor="middle">OTF</text>
+  </svg>;
+}

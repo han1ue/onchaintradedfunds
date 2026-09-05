@@ -1,0 +1,123 @@
+{
+  "chainId": 46630,
+  "checkedAt": "2026-09-05T18:17:50.052Z",
+  "result": "passed",
+  "contracts": {
+    "otfToken": {
+      "address": "0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab",
+      "runtimeCodehash": "0x138dcc410ab245635262afdf810d85a0f9407029f7885873951e2c88391aca7e",
+      "transactionHash": "0x29eb85efbf5e6c06d0c76f24f7eac4ad6c9539a40f462794a521d86082f30c4f"
+    },
+    "launchManager": {
+      "address": "0xdeAdc1F7542f404A8548AF28659771c1ebbFa840",
+      "runtimeCodehash": "0x28bb23ed29e77cb6bd4fb5bfe9aca0b28c6da2c6140fab6578d66e76e50a1b2f",
+      "transactionHash": "0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2"
+    },
+    "launchRouter": {
+      "address": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
+      "runtimeCodehash": "0x5ae8798d2936545b53144389e4dc4892e2847916204dabd3107cf83b6af4f332",
+      "transactionHash": "0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a"
+    },
+    "teamVesting": {
+      "address": "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
+      "runtimeCodehash": "0x508f72d1df8a8d51043773fdf45b52ca697cab2c9b487897ebbb6174a6d7c6b4",
+      "transactionHash": "0x6e7d57a0e3427db159d5efff55abaa7e66e2bfea7173c8514594d6b4a51b7c12"
+    },
+    "buybackCollector": {
+      "address": "0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC",
+      "runtimeCodehash": "0x38f479b989f8198c32e36688af0f29d1dc0f73ef90701fafd017e3b95a98d337",
+      "transactionHash": "0x5e8a052485097271cab1bc95e62111eec65e8f1e27cf842e958a38f16f3924e6"
+    },
+    "merkleRewardsDistributor": {
+      "address": "0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B",
+      "runtimeCodehash": "0xe67a049d089218fb360c0cb3890895f9db49157cd78292c8d374dfa9b2a5e5af",
+      "transactionHash": "0xd27ec6c5537296a9b08317669abfbb8da86902c8eb660dbc48a15d4c4a076b2e"
+    },
+    "fakeEthUsdOracle": {
+      "address": "0xDE1e4B0f8f0B8BD67D51354766fD8D9b48706B67",
+      "runtimeCodehash": "0x72347f8de82f3921b5ce00c0ff0bb9af53b00bdd4b601a80ed7b2bf6e385b1e3",
+      "transactionHash": "0xcf130789615d05e2aa83d51394ef7cf21d50c0ff92ee09353aa586db95e1e71c"
+    },
+    "vaultImplementation": {
+      "address": "0x59B5923264e22c04CFc57F787ADDD53b48A3D84c",
+      "runtimeCodehash": "0x8ea579de583b1b748562387754208eda147032c44b1bdcd8c5d487256a7432dc",
+      "transactionHash": "0x1e7b0b6c63f7c2982f2bdbe81397f0368702acfbe447d5e42a3be5dc5bafff3e"
+    },
+    "factory": {
+      "address": "0x7619eB1Ec1302e6f9E1a618D875B05dCF5EcFE34",
+      "runtimeCodehash": "0xe1ff1fe0511442868880a4aa49229fa61930a2d0e40a7b089ba97e7f015eeb41",
+      "transactionHash": "0xbdd2ac32f3c16c72bc39eb28664744a85521337cc048eaad127dfe550f05ff12"
+    },
+    "entryRouter": {
+      "address": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
+      "runtimeCodehash": "0x2120bff05366830d43f0f0c7793fc5b6d45c26e6f347f6d2d6cbe5368ff3f6e0",
+      "transactionHash": "0xf2c586f4c59db957ec541068a03859ffa2b5e205dd3054774ea7cf2bd71a3aa5"
+    },
+    "uniswapV3Adapter": {
+      "address": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
+      "runtimeCodehash": "0x245fdf6cd80b1e384a5d5a9e24a6cc489c77cbe54ffa2a711d37371e6efd0668",
+      "transactionHash": "0xe8c38546f9a1cdde97b8aa274d529c782a22947ebb32ba8f59af11b0b225fd19"
+    },
+    "uniswapV4Adapter": {
+      "address": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
+      "runtimeCodehash": "0xe728e8be705caba153536b3bcf2468c13044bdea4e63f8d62f0a6feb3ce3c1be",
+      "transactionHash": "0x6076d2219a9c99472de0841cc001fae7c5327e5df597fbe8a0a51ebfc2b4be05"
+    }
+  },
+  "pools": [
+    {
+      "id": "weth-usdg",
+      "address": "0x569A6EC352b20437874fd17Ac944d393c01D2e51",
+      "runtimeCodehash": "0x17f51eaabb6bf71b9cd8f24c2cb19872cf225b5a6363a3c8f917b3d401957b6e",
+      "liquidity": "1259312841506",
+      "tokenId": "19",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    },
+    {
+      "id": "tsla-usdg",
+      "address": "0x60cEc08DE2ee550C432921966Ca39Ae689b05715",
+      "runtimeCodehash": "0x81a6713a4b9b8ccaf3e8f555610db0d2eb10a22181430e454d0e1639d13fda35",
+      "liquidity": "7056612725058",
+      "tokenId": "20",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    },
+    {
+      "id": "amzn-usdg",
+      "address": "0x57300242B643748C335aAaa7f1b2c943D83B8a82",
+      "runtimeCodehash": "0xa73cc0d134c1c74a5a86409b1ee405669a5cb608c95f0736960c9dd48810eaf9",
+      "liquidity": "5985698892775",
+      "tokenId": "21",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    },
+    {
+      "id": "pltr-usdg",
+      "address": "0x04D498be8D6caa6925dcaD525418efaf60DF605A",
+      "runtimeCodehash": "0x058a3d4492b9393e1d051add34cfd277de2cd536359d749809aca680f19920b7",
+      "liquidity": "9608442432703",
+      "tokenId": "22",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    },
+    {
+      "id": "nflx-usdg",
+      "address": "0xD5f0BCB42684A8CD541ae565A50426bf69D7DE2B",
+      "runtimeCodehash": "0x3c06458e3f39662ad57f9a582047d2cc13d8d503c4f15e42b4289ffad516fcb5",
+      "liquidity": "9734789997278",
+      "tokenId": "23",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    },
+    {
+      "id": "amd-usdg",
+      "address": "0xE5d116a21BC3b38e7C150C87bF445E0Dcc7E30fc",
+      "runtimeCodehash": "0xac2e72c05fc9ad623c0f2710bea9e179dc2d2f68a79780d82fc29bdf19c8bed4",
+      "liquidity": "7293775813907",
+      "tokenId": "24",
+      "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
+    }
+  ],
+  "revokedAdapter": "0xF4263c38E09e2d59Eb7af5fE25abB0e2088e8D6E",
+  "previousRouter": "0x88a8c94f0eCb600ce980cAAEefD9eC68c7c95614",
+  "revocationTransactionHash": "0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a",
+  "seedGasSpendWei": "326616450000000",
+  "deploymentGasSpendWei": "295367410000000",
+  "totalGasSpendWei": "621983860000000"
+}

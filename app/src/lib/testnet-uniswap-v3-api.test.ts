@@ -9,10 +9,10 @@ import { parseTypedQuoteResponse, type SwapAsset, type SwapQuoteRequest } from "
 import {
   encodeV3Path,
   quoteTestnetSwap,
-  synthraSwapRouterAbi,
+  uniswapV3SwapRouterAbi,
   type TestnetPlannerRequest,
   type TestnetRoutingClient,
-} from "./testnet-synthra-api";
+} from "./testnet-uniswap-v3-api";
 
 const CALLER = "0x00000000000000000000000000000000000000C0" as const;
 const OTF_A = "0x00000000000000000000000000000000000000f1" as const;
@@ -62,6 +62,7 @@ function routingClient(overrides: Partial<TestnetRoutingClient> = {}): TestnetRo
     [OTF_B.toLowerCase(), [amzn.address, tsla.address]],
   ]);
   return {
+    verifyBindings: vi.fn(async () => {}),
     isVault: vi.fn(async () => true),
     poolFor: vi.fn(async (tokenA, tokenB, fee) => {
       const configured = testnetPoolForPair(tokenA, tokenB);
@@ -119,7 +120,7 @@ function parseResponse(response: unknown, request: TestnetPlannerRequest) {
   });
 }
 
-describe("Synthra testnet quote planner", () => {
+describe("Uniswap V3 testnet quote planner", () => {
   it("returns a validated direct exact-input plan for an OTF pool", async () => {
     const request = plannerRequest();
     const result = await quoteTestnetSwap(request, dependencies());
@@ -129,10 +130,10 @@ describe("Synthra testnet quote planner", () => {
     expect(execution.path).toBe(encodeV3Path([usdg.address, OTF_A], [500]));
     const transaction = execution.transaction as { to: Address; data: Hex };
     expect(transaction.to).toBe(testnetVenue.swapRouter02);
-    expect(decodeFunctionData({ abi: synthraSwapRouterAbi, data: transaction.data })).toMatchObject({ functionName: "exactInput" });
+    expect(decodeFunctionData({ abi: uniswapV3SwapRouterAbi, data: transaction.data })).toMatchObject({ functionName: "exactInput" });
     const parsed = parseResponse(result.body, request);
     expect(parsed.execution).toMatchObject({ kind: "direct-v3", amountIn: 10_000_000n });
-    expect(parsed.hops?.[0]).toMatchObject({ venue: "Synthra V3", feeTier: 500 });
+    expect(parsed.hops?.[0]).toMatchObject({ venue: "Uniswap V3", feeTier: 500 });
   });
 
   it("rejects a tampered direct router target before execution", async () => {
@@ -151,7 +152,7 @@ describe("Synthra testnet quote planner", () => {
     const result = await quoteTestnetSwap(request, dependencies());
     expect(result.status).toBe(200);
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
-    expect(execution.path).toBe(encodeV3Path([weth.address, usdg.address, OTF_A], [100, 500]));
+    expect(execution.path).toBe(encodeV3Path([weth.address, usdg.address, OTF_A], [500, 500]));
   });
 
   it("keeps unsafe native direct routes unavailable and uses explicit native basket calls", async () => {
@@ -192,10 +193,24 @@ describe("Synthra testnet quote planner", () => {
     expect(client.poolFor).not.toHaveBeenCalled();
   });
 
-  it("refuses a constituent pool that does not match the Synthra factory", async () => {
+  it("refuses a constituent pool that does not match the Uniswap V3 factory", async () => {
     const client = routingClient({ poolFor: vi.fn(async () => OTF_POOL) });
     const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client));
     expect(result.body).toMatchObject({ state: "unavailable", reason: "No executable basket route is currently available." });
+  });
+
+  it("rejects a stale adapter before requesting a quote", async () => {
+    const client = routingClient({ verifyBindings: vi.fn(async () => { throw new Error("Stale V3 adapter"); }) });
+    expect((await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client))).status).toBe(503);
+    expect(client.quoteExactInput).not.toHaveBeenCalled();
+    expect(client.quoteExactOutput).not.toHaveBeenCalled();
+  });
+
+  it("rejects native basket routing when the connecting WETH market is missing", async () => {
+    const normal = routingClient();
+    const client = routingClient({ poolFor: vi.fn(async (a, b, fee) => a.toLowerCase() === weth.address.toLowerCase() || b.toLowerCase() === weth.address.toLowerCase() ? undefined : normal.poolFor(a, b, fee)) });
+    const eth = { ...asset(weth), kind: "native" as const };
+    expect((await quoteTestnetSwap(plannerRequest(eth, otf(OTF_A), "basket"), dependencies(client))).status).toBe(503);
   });
 
   it("returns typed mint, redeem, and OTF-to-OTF basket plans", async () => {

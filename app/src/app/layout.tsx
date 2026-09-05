@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.png";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
@@ -11,7 +11,7 @@ import { headers } from "next/headers";
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
   description: "Managed onchain traded funds with enforceable portfolio safety limits.",
-  icons: { icon: otfFavicon.src },
+  icons: { icon: { url: otfFavicon.src, type: "image/svg+xml", sizes: "any" } },
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

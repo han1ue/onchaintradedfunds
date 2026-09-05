@@ -17,6 +17,7 @@ import {
   getAddress,
   isAddress,
   isAddressEqual,
+  keccak256,
   parseEventLogs,
   parseUnits,
   zeroAddress,
@@ -38,6 +39,7 @@ import {
   testnetVenue,
 } from "@/lib/asset-catalog";
 import { robinhoodChainTestnet } from "@/lib/chains";
+import { verifyTestnetV3Venue } from "@/lib/testnet-v3-bindings";
 
 const MIN_TICK = -887272;
 const MAX_TICK = 887272;
@@ -289,6 +291,17 @@ export function TestnetLiquiditySurface() {
     if (!canAdd || !address || !publicClient || !token0 || !token1 || !range || !amount0Desired || !amount1Desired || fee === undefined) return;
     try {
       setLastHash(undefined);
+      setPhase("simulating");
+      setStatusText("Verifying the Uniswap V3 deployment and selected pool.");
+      await verifyTestnetV3Venue(publicClient);
+      const currentPool = await publicClient.readContract({ address: factory, abi: factoryAbi, functionName: "getPool", args: [token0, token1, fee] });
+      if (!poolAddress || !isAddressEqual(currentPool, poolAddress)) throw new Error("The selected pool binding changed.");
+      const configuredPool = testnetPools.find((pool) => pool.assetA.address.toLowerCase() === assetAddress?.toLowerCase() || pool.assetB.address.toLowerCase() === assetAddress?.toLowerCase());
+      if (!isOtfMarket && (!configuredPool || !isAddressEqual(currentPool, configuredPool.address))) throw new Error("The pool differs from the configured market.");
+      if (configuredPool) {
+        const code = await publicClient.getCode({ address: currentPool });
+        if (!code || keccak256(code) !== configuredPool.runtimeCodehash) throw new Error("The pool runtime differs from the authenticated market.");
+      }
       await approveIfNeeded(token0, token0Allowance, amount0Desired, token0Symbol ?? "token 0");
       await approveIfNeeded(token1, token1Allowance, amount1Desired, token1Symbol ?? "token 1");
       const baseParams = {
@@ -322,6 +335,13 @@ export function TestnetLiquiditySurface() {
       setStatusText("Transaction submitted. Waiting for confirmation.");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");
+      for (const token of [token0, token1]) {
+        const remaining = await publicClient.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [address, positionManager] });
+        if (remaining > 0n) {
+          const clear = await writeContractAsync({ address: token, abi: erc20Abi, functionName: "approve", args: [positionManager, 0n], chainId: robinhoodChainTestnet.id });
+          if ((await publicClient.waitForTransactionReceipt({ hash: clear })).status !== "success") throw new Error("Position minted; remaining approval cleanup failed.");
+        }
+      }
       const minted = parseEventLogs({ abi: transferEventAbi, logs: receipt.logs, eventName: "Transfer", strict: false }).find((event) => isAddressEqual(event.address, positionManager) && event.args.from && event.args.to && isAddressEqual(event.args.from, zeroAddress) && isAddressEqual(event.args.to, address));
       setPhase("confirmed");
       setStatusText(minted?.args.tokenId !== undefined ? `Full-range position #${minted.args.tokenId} created in your wallet.` : "Full-range liquidity position created in your wallet.");
@@ -337,8 +357,8 @@ export function TestnetLiquiditySurface() {
   return (
     <>
       <section className="liquidityIntro">
-        <div><h1>Testnet pools liquidity</h1><p>Add wallet-owned, full-range Synthra V3 liquidity to the configured test-asset and OTF pools. Every market is paired only with USDG.</p></div>
-        <div className="liquidityBadges" aria-label="Liquidity constraints"><span>Synthra V3</span><span>USDG only</span><span>Testnet</span></div>
+        <div><h1>Testnet pools liquidity</h1><p>Add wallet-owned, full-range Uniswap V3 liquidity to the configured test-asset and OTF pools. Every market is paired only with USDG.</p></div>
+        <div className="liquidityBadges" aria-label="Liquidity constraints"><span>Uniswap V3</span><span>USDG only</span><span>Testnet</span></div>
       </section>
 
       <div className="liquidityLayout">
@@ -358,7 +378,7 @@ export function TestnetLiquiditySurface() {
             <label className="liquidityField">
               <span>OTF address</span>
               <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" spellCheck={false} autoComplete="off" />
-              <small>The OTF/USDG pool is resolved directly from the configured Synthra V3 factory.</small>
+              <small>The OTF/USDG pool is resolved directly from the configured Uniswap V3 factory.</small>
             </label>
           ) : null}
           <div className="liquidityPoolRecord">

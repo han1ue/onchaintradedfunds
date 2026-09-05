@@ -11,7 +11,9 @@ import {
   CheckCircle,
   ChevronDown,
   CircleAlert,
+  ExternalLink,
   FilePlus2,
+  Info,
   LoaderCircle,
   LockKeyhole,
   Plus,
@@ -715,6 +717,11 @@ export function CreateOTFForm() {
                 </div>
               </div>
               <span id="basket-percentage-total" className="visuallyHidden" role="status" aria-live="polite">Allocation total: {formatPercentageDisplay(totalPercentage)}</span>
+
+              <div className="constituentsRewardsNote">
+                <Info size={16} aria-hidden="true" />
+                <p>Weekly distributions are based on eligible $OTF balances, as determined by the weekly rewards snapshot. <a href="https://docs.onchaintradedfunds.com/token-and-fee-incentives#cumulative-rewards-and-incentive-emissions" target="_blank" rel="noreferrer">How rewards work<ExternalLink size={12} aria-hidden="true" /></a></p>
+              </div>
 
               <div className="allocationComposer">
                 <div className="allocationChartPanel combinedAllocationOverview">

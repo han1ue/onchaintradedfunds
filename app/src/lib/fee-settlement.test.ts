@@ -60,8 +60,8 @@ function shareSaleQuote(): SwapQuote {
     minimumReceivedRaw: 91n,
     routeLabel: "Direct pool",
     hops: [
-      { venue: "Synthra V3", tokenIn: vault, tokenOut: usdg, feeTier: 3_000 },
-      { venue: "Synthra V3", tokenIn: usdg, tokenOut: weth, feeTier: 3_000 },
+      { venue: "Uniswap V3", tokenIn: vault, tokenOut: usdg, feeTier: 3_000 },
+      { venue: "Uniswap V3", tokenIn: usdg, tokenOut: weth, feeTier: 3_000 },
     ],
     execution: {
       kind: "direct-v3",

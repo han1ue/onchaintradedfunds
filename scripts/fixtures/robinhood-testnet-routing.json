@@ -1,15 +1,15 @@
 {
   "chainId": 46630,
-  "blockNumber": 113511825,
-  "blockHash": "0xabb37140bcef6e86958d3afd0b969c40ab40b773094f9731e4ada9169f6e1a69",
+  "blockNumber": 113589461,
+  "blockHash": "0x6e5c7a97f1a8057e263b2fda7acd2174f2bc4fe6e191a3a264ded468154d8cdb",
   "dependencies": {
     "uniswapV3Factory": {
-      "address": "0x911b4000D3422F482F4062a913885f7b035382Df",
-      "codehash": "0xfc5ecedb7f06fb9c9a0d19e0d5f36456bdce2dfd2e12b8e85d40075d5fd25aa4"
+      "address": "0x09b6D850382787115969A2699f107f5A974c781b",
+      "codehash": "0x6fd25264cf4ace4e9a07e63d83238fae88ecac94dcec49f0275232d91adb0d2d"
     },
     "uniswapV3SwapRouter02": {
-      "address": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
-      "codehash": "0xbab2cf24dd73f84128e43b7a241c35093278cfe539251f192166d66b4e6e1c77"
+      "address": "0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4",
+      "codehash": "0x03119bd7ea4cbf742e8d7a31fec0162ce6c381aadea59f7734c9e2b0a076d20b"
     },
     "uniswapV4PoolManager": {
       "address": "0x949257d5181128a7c793619b922e47B849cb81e6",
@@ -34,6 +34,18 @@
     "weth": {
       "address": "0x33e4191705c386532ba27cBF171Db86919200B94",
       "codehash": "0x55f8ac53c64450f01880d8249fc5cb0c69c064e4bcb097ea80a02fff40485a7c"
+    },
+    "uniswapV3PositionManager": {
+      "address": "0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B",
+      "codehash": "0xd22d26765593d2782b1445665ac09a40125a1c31c4a4c7f00bb6986e1fb91186"
+    },
+    "uniswapV3QuoterV2": {
+      "address": "0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a",
+      "codehash": "0x2ca416ef022f7b771ca58c9dccbb802f8f4c3d567cad02797d606ce4ae9a349e"
+    },
+    "uniswapV3Weth9": {
+      "address": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e",
+      "codehash": "0xa65773b9d0e7817b3e1ea6639ec0aabb40f38ddd6dbc1d77cddf5251a357d24f"
     }
   },
   "universalRouterSource": {
@@ -48,5 +60,6 @@
       "uint128 amountIn;",
       "uint128 amountOutMinimum;"
     ]
-  }
+  },
+  "v3ArtifactManifest": "scripts/fixtures/robinhood-testnet-v3.json"
 }

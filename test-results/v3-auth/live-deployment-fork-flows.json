@@ -1,0 +1,71 @@
+{
+  "chainId": 46630,
+  "simulation": true,
+  "deploymentFile": "app/src/config/robinhood-testnet.json",
+  "result": "passed",
+  "vault": "0x1DA7e61FF9B3521cf67981b322Bd291f7C128c7c",
+  "tests": [
+    "Five real constituent pools: USDG basket entry and allowance cleanup",
+    "Five real constituent pools: USDG basket exit",
+    "Native entry/exit uses protocol WETH and the supporting WETH/USDG pool",
+    "Collector redemption settlement, canonical OTF buyback/burn, and ERC-20/Permit2 cleanup",
+    "Minimum-output rejection preserves balances and clears wallet approval"
+  ],
+  "receipts": [
+    {
+      "functionName": "createVault",
+      "transactionHash": "0x819dfd2159d2217f55c6549102e50625dc5a2709d46a55a192105e36c416a78b",
+      "gasUsed": "768764"
+    },
+    {
+      "functionName": "approve",
+      "transactionHash": "0x1694f4a29dd19b037c8dfcbc5872e85fdddc60683f3ce7e52873169f0438b03c",
+      "gasUsed": "57976"
+    },
+    {
+      "functionName": "mintFromToken",
+      "transactionHash": "0x89b6556636d01870455df7bb08f929af89fb1fa5256f156fbd37ef835fcf3b2f",
+      "gasUsed": "2175516"
+    },
+    {
+      "functionName": "approve",
+      "transactionHash": "0x39963c587e7a4df34a213d1230ae32d6e1d03ba704110c91dd4236366a2051d4",
+      "gasUsed": "48795"
+    },
+    {
+      "functionName": "redeemToToken",
+      "transactionHash": "0x53bef5919b299ad3dffe75417ca74fdd6faec7ac9e8e6408200dd42157d0b3db",
+      "gasUsed": "1730626"
+    },
+    {
+      "functionName": "mintFromNative",
+      "transactionHash": "0x5c178373101549a8530e6e3be95cbc87731f4b308cd28172b71c3e4a885d143d",
+      "gasUsed": "2122820"
+    },
+    {
+      "functionName": "approve",
+      "transactionHash": "0x8357d929523269499fe5ac86b42c3e57d4322abf757460a5b402135daacf10c1",
+      "gasUsed": "48795"
+    },
+    {
+      "functionName": "redeemToNative",
+      "transactionHash": "0x7ce6fcd8c2762eb7f8c59133b45bf0108973750f66f5a8c6c84982fffdea825e",
+      "gasUsed": "1935361"
+    },
+    {
+      "functionName": "settleFeesViaRedemption",
+      "transactionHash": "0x0bfa188785a60a5b12e96dcac37562a3ffbe9592284e4ffa2d0cc8220440e650",
+      "gasUsed": "2256881"
+    },
+    {
+      "functionName": "approve",
+      "transactionHash": "0x796cd55b21a51863bc72abb02d5fbafcc4ad121f702088eff1a966eed47091de",
+      "gasUsed": "57976"
+    },
+    {
+      "functionName": "approve",
+      "transactionHash": "0x24a01b4c02fe9967d09f3a6155702ce42ba992bd46653e0a5467e5f9f0e487a0",
+      "gasUsed": "36040"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "chainId": 46630,
+  "markets": [
+    {
+      "id": "weth-usdg",
+      "sourcePool": "0xFF8789F34290f889fE0A201f2c90f5894DD6503d",
+      "sourceBlock": "113589461",
+      "sourceFee": 100,
+      "sqrtPriceX96": "3145690248798696245054113"
+    },
+    {
+      "id": "tsla-usdg",
+      "sourcePool": "0x33130082660AD87a99Ad6120269F91329C82f7c2",
+      "sourceBlock": "113589461",
+      "sourceFee": 3000,
+      "sqrtPriceX96": "55908245978115625373367597339273413"
+    },
+    {
+      "id": "amzn-usdg",
+      "sourcePool": "0x6C0a5Ef3C4e0D29a56D3AB463f9c28F18482c047",
+      "sourceBlock": "113589461",
+      "sourceFee": 3000,
+      "sqrtPriceX96": "132362425730927245182885"
+    },
+    {
+      "id": "pltr-usdg",
+      "sourcePool": "0x5c82380e87dB94f55dda0B1443EB046437158969",
+      "sourceBlock": "113589461",
+      "sourceFee": 3000,
+      "sqrtPriceX96": "82456821768119151032579"
+    },
+    {
+      "id": "nflx-usdg",
+      "sourcePool": "0x81EDa513eb0f5FdAf3903220432ebDb0a5FC6B02",
+      "sourceBlock": "113589461",
+      "sourceFee": 3000,
+      "sqrtPriceX96": "81386617006029722018998"
+    },
+    {
+      "id": "amd-usdg",
+      "sourcePool": "0xe3abEa804606228C89CC3196ECD2fedf27d2A586",
+      "sourceBlock": "113589461",
+      "sourceFee": 3000,
+      "sqrtPriceX96": "108624345655365012764305"
+    }
+  ]
+}

@@ -1,0 +1,440 @@
+{
+  "chainId": 46630,
+  "blockNumber": "113589461",
+  "blockHash": "0x6e5c7a97f1a8057e263b2fda7acd2174f2bc4fe6e191a3a264ded468154d8cdb",
+  "dependencies": {
+    "uniswapV3Factory": {
+      "address": "0x09b6D850382787115969A2699f107f5A974c781b",
+      "codehash": "0x6fd25264cf4ace4e9a07e63d83238fae88ecac94dcec49f0275232d91adb0d2d",
+      "package": "@uniswap/v3-core",
+      "version": "1.0.1",
+      "artifactPath": "node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json",
+      "creationCodehash": "0xa9cb11ffa1b1bf9a9a2b70b66f6a22db3e8328b37ec44e6ce602749081efdb6d",
+      "constructorArguments": [],
+      "immutableSubstitutions": [
+        {
+          "offset": 1361,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        }
+      ],
+      "bindings": {},
+      "sourceUrl": "https://explorer.testnet.chain.robinhood.com/api/v2/smart-contracts/0x09b6d850382787115969a2699f107f5a974c781b",
+      "artifactCorrespondence": "exact creation and runtime with constructor immutables"
+    },
+    "uniswapV3PositionManager": {
+      "address": "0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B",
+      "codehash": "0xd22d26765593d2782b1445665ac09a40125a1c31c4a4c7f00bb6986e1fb91186",
+      "package": "@uniswap/v3-periphery",
+      "version": "1.4.4",
+      "artifactPath": "node_modules/@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json",
+      "creationCodehash": "0x6d4a795ab08d4b4737c563d58af66cd9c1fe56a4ff3258fec16fd7c5eeade093",
+      "constructorArguments": [
+        "0x09b6d850382787115969a2699f107f5a974c781b",
+        "0x0dd1df4fdd55808c9d530c9599bea5107f6b9b4e",
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "immutableSubstitutions": [
+        {
+          "offset": 665,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 2727,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 3550,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 3749,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 5342,
+          "value": "0x193ae757ecb6ead396a72d38c6cc38e1be93297aa66ffefea29e32ce3045475f"
+        },
+        {
+          "offset": 5375,
+          "value": "0xc89efdaa54c0f20c7adf612882df0950f5a951637e0307cdcb4c672f298b8bc6"
+        },
+        {
+          "offset": 5912,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 6158,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 6294,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 10781,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 11043,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 11844,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 14049,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 15965,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 16035,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 16151,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        }
+      ],
+      "bindings": {
+        "factory": "0x09b6D850382787115969A2699f107f5A974c781b",
+        "WETH9": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e"
+      },
+      "sourceUrl": "https://explorer.testnet.chain.robinhood.com/api/v2/smart-contracts/0x15e98cf94a32c7fd23a36fabb4fee612277da47b",
+      "artifactCorrespondence": "exact creation and runtime with constructor immutables"
+    },
+    "uniswapV3QuoterV2": {
+      "address": "0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a",
+      "codehash": "0x2ca416ef022f7b771ca58c9dccbb802f8f4c3d567cad02797d606ce4ae9a349e",
+      "package": "@uniswap/v3-periphery",
+      "version": "1.4.4",
+      "artifactPath": "node_modules/@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json",
+      "creationCodehash": "0x807900529037b0db5b299ed312e4b1820210b5e9922b6c4fcd4c23de67ee5f1a",
+      "constructorArguments": [
+        "0x09b6d850382787115969a2699f107f5a974c781b",
+        "0x0dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+      ],
+      "immutableSubstitutions": [
+        {
+          "offset": 801,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 1399,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 2397,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 2962,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        }
+      ],
+      "bindings": {
+        "factory": "0x09b6D850382787115969A2699f107f5A974c781b",
+        "WETH9": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e"
+      },
+      "sourceUrl": "https://explorer.testnet.chain.robinhood.com/api/v2/smart-contracts/0x3e3d78f0e8d0b0b227c2261f407b7cda97126b9a",
+      "artifactCorrespondence": "exact creation and runtime with constructor immutables"
+    },
+    "uniswapV3SwapRouter02": {
+      "address": "0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4",
+      "codehash": "0x03119bd7ea4cbf742e8d7a31fec0162ce6c381aadea59f7734c9e2b0a076d20b",
+      "package": "@uniswap/swap-router-contracts",
+      "version": "1.3.1",
+      "artifactPath": "node_modules/@uniswap/swap-router-contracts/artifacts/contracts/SwapRouter02.sol/SwapRouter02.json",
+      "creationCodehash": "0x603dca716e6cc8be026ebc49ab95f5c163b4b2ec4019615e607ec91710734841",
+      "constructorArguments": [
+        "0x0000000000000000000000000000000000000000",
+        "0x09b6d850382787115969a2699f107f5a974c781b",
+        "0x15e98cf94a32c7fd23a36fabb4fee612277da47b",
+        "0x0dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+      ],
+      "immutableSubstitutions": [
+        {
+          "offset": 705,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 2876,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 4781,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 5079,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 5246,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 5743,
+          "value": "0x00000000000000000000000015e98cf94a32c7fd23a36fabb4fee612277da47b"
+        },
+        {
+          "offset": 5807,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 6105,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 6938,
+          "value": "0x00000000000000000000000015e98cf94a32c7fd23a36fabb4fee612277da47b"
+        },
+        {
+          "offset": 7756,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 7836,
+          "value": "0x00000000000000000000000015e98cf94a32c7fd23a36fabb4fee612277da47b"
+        },
+        {
+          "offset": 9439,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        },
+        {
+          "offset": 11663,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 11759,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 11888,
+          "value": "0x0000000000000000000000000dd1df4fdd55808c9d530c9599bea5107f6b9b4e"
+        },
+        {
+          "offset": 12966,
+          "value": "0x00000000000000000000000015e98cf94a32c7fd23a36fabb4fee612277da47b"
+        },
+        {
+          "offset": 15579,
+          "value": "0x00000000000000000000000009b6d850382787115969a2699f107f5a974c781b"
+        }
+      ],
+      "bindings": {
+        "factory": "0x09b6D850382787115969A2699f107f5A974c781b",
+        "WETH9": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e",
+        "positionManager": "0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B",
+        "factoryV2": "0x0000000000000000000000000000000000000000"
+      },
+      "sourceUrl": "https://explorer.testnet.chain.robinhood.com/api/v2/smart-contracts/0xf4edb91d541dd1bde41cebbe72bf2d44492adca4",
+      "artifactCorrespondence": "exact creation and runtime with constructor immutables"
+    },
+    "uniswapV3Weth9": {
+      "address": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e",
+      "codehash": "0xa65773b9d0e7817b3e1ea6639ec0aabb40f38ddd6dbc1d77cddf5251a357d24f",
+      "artifactCorrespondence": "Separate WETH dependency; not a Uniswap V3 package artifact. Not used for protocol wrapping or pool funding."
+    }
+  },
+  "poolInitCodehash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+  "protocolWeth": "0x33e4191705c386532ba27cBF171Db86919200B94",
+  "peripheryWeth": "0x0dd1df4fdd55808c9d530c9599bea5107f6b9b4e",
+  "balances": {
+    "USDG": {
+      "address": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "decimals": 6,
+      "raw": "764613966",
+      "formatted": "764.613966"
+    },
+    "WETH": {
+      "address": "0x33e4191705c386532ba27cBF171Db86919200B94",
+      "decimals": 18,
+      "raw": "11504",
+      "formatted": "0.000000000000011504"
+    },
+    "TSLA": {
+      "address": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+      "decimals": 18,
+      "raw": "36736173173439701929",
+      "formatted": "36.736173173439701929"
+    },
+    "AMZN": {
+      "address": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+      "decimals": 18,
+      "raw": "32767227722580809692",
+      "formatted": "32.767227722580809692"
+    },
+    "PLTR": {
+      "address": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+      "decimals": 18,
+      "raw": "34538450472152373528",
+      "formatted": "34.538450472152373528"
+    },
+    "NFLX": {
+      "address": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+      "decimals": 18,
+      "raw": "42100938882766546852",
+      "formatted": "42.100938882766546852"
+    },
+    "AMD": {
+      "address": "0x71178BAc73cBeb415514eB542a8995b82669778d",
+      "decimals": 18,
+      "raw": "32403592075920035943",
+      "formatted": "32.403592075920035943"
+    }
+  },
+  "nativeBalanceWei": "72855290296476000",
+  "markets": [
+    {
+      "id": "weth-usdg",
+      "asset": "WETH",
+      "quote": "USDG",
+      "assetAddress": "0x33e4191705c386532ba27cBF171Db86919200B94",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0xFF8789F34290f889fE0A201f2c90f5894DD6503d",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "3145690248798696245054113",
+      "priceUsdg": "1576.422935062981",
+      "token0": "0x33e4191705c386532ba27cBF171Db86919200B94",
+      "token1": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourceFee": 100,
+      "fee": 500,
+      "tickSpacing": 10,
+      "tickLower": -887270,
+      "tickUpper": 887270,
+      "address": "0x569A6EC352b20437874fd17Ac944d393c01D2e51",
+      "exists": false,
+      "proposedAssetRaw": "31717376655651361",
+      "proposedQuoteRaw": "50000000",
+      "proposedAssetAmount": "0.031717376655651361",
+      "proposedQuoteAmount": "50"
+    },
+    {
+      "id": "tsla-usdg",
+      "asset": "TSLA",
+      "quote": "USDG",
+      "assetAddress": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0x33130082660AD87a99Ad6120269F91329C82f7c2",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "55908245978115625373367597339273413",
+      "priceUsdg": "2.008202174385",
+      "token0": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "token1": "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E",
+      "sourceFee": 3000,
+      "fee": 3000,
+      "tickSpacing": 60,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "address": "0x60cEc08DE2ee550C432921966Ca39Ae689b05715",
+      "exists": false,
+      "proposedAssetRaw": "4979578315145678112",
+      "proposedQuoteRaw": "10000000",
+      "proposedAssetAmount": "4.979578315145678112",
+      "proposedQuoteAmount": "10"
+    },
+    {
+      "id": "amzn-usdg",
+      "asset": "AMZN",
+      "quote": "USDG",
+      "assetAddress": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0x6C0a5Ef3C4e0D29a56D3AB463f9c28F18482c047",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "132362425730927245182885",
+      "priceUsdg": "2.791067037612",
+      "token0": "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02",
+      "token1": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourceFee": 3000,
+      "fee": 3000,
+      "tickSpacing": 60,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "address": "0x57300242B643748C335aAaa7f1b2c943D83B8a82",
+      "exists": false,
+      "proposedAssetRaw": "3582859123496957887",
+      "proposedQuoteRaw": "10000000",
+      "proposedAssetAmount": "3.582859123496957887",
+      "proposedQuoteAmount": "10"
+    },
+    {
+      "id": "pltr-usdg",
+      "asset": "PLTR",
+      "quote": "USDG",
+      "assetAddress": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0x5c82380e87dB94f55dda0B1443EB046437158969",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "82456821768119151032579",
+      "priceUsdg": "1.083163495307",
+      "token0": "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0",
+      "token1": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourceFee": 3000,
+      "fee": 3000,
+      "tickSpacing": 60,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "address": "0x04D498be8D6caa6925dcaD525418efaf60DF605A",
+      "exists": false,
+      "proposedAssetRaw": "9232216598257195280",
+      "proposedQuoteRaw": "10000000",
+      "proposedAssetAmount": "9.23221659825719528",
+      "proposedQuoteAmount": "10"
+    },
+    {
+      "id": "nflx-usdg",
+      "asset": "NFLX",
+      "quote": "USDG",
+      "assetAddress": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0x81EDa513eb0f5FdAf3903220432ebDb0a5FC6B02",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "81386617006029722018998",
+      "priceUsdg": "1.055229261355",
+      "token0": "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93",
+      "token1": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourceFee": 3000,
+      "fee": 3000,
+      "tickSpacing": 60,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "address": "0xD5f0BCB42684A8CD541ae565A50426bf69D7DE2B",
+      "exists": false,
+      "proposedAssetRaw": "9476613629111568542",
+      "proposedQuoteRaw": "10000000",
+      "proposedAssetAmount": "9.476613629111568542",
+      "proposedQuoteAmount": "10"
+    },
+    {
+      "id": "amd-usdg",
+      "asset": "AMD",
+      "quote": "USDG",
+      "assetAddress": "0x71178BAc73cBeb415514eB542a8995b82669778d",
+      "quoteAddress": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourcePool": "0xe3abEa804606228C89CC3196ECD2fedf27d2A586",
+      "sourceBlock": "113589461",
+      "sqrtPriceX96": "108624345655365012764305",
+      "priceUsdg": "1.879728729349",
+      "token0": "0x71178BAc73cBeb415514eB542a8995b82669778d",
+      "token1": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "sourceFee": 3000,
+      "fee": 3000,
+      "tickSpacing": 60,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "address": "0xE5d116a21BC3b38e7C150C87bF445E0Dcc7E30fc",
+      "exists": false,
+      "proposedAssetRaw": "5319916562354386980",
+      "proposedQuoteRaw": "10000000",
+      "proposedAssetAmount": "5.31991656235438698",
+      "proposedQuoteAmount": "10"
+    }
+  ],
+  "peripheryWethRuntime": "0x60806040526004361015610022575b3615610018575f80fd5b6100206107a0565b005b5f3560e01c806306fdde031461046f578063095ea7b3146103f757806318160ddd146103dc57806323b872dd146103ad5780632e1a7d4d14610298578063313ce5671461027857806370a082311461024057806395d89b411461013c578063a9059cbb1461010a578063d0e30db0146100f75763dd62ed3e0361000e57346100f35760403660031901126100f3576100b8610573565b6001600160a01b036100c8610589565b91165f5260046020526001600160a01b0360405f2091165f52602052602060405f2054604051908152f35b5f80fd5b5f3660031901126100f3576100206107a0565b346100f35760403660031901126100f3576020610132610128610573565b6024359033610618565b6040519015158152f35b346100f3575f3660031901126100f3576040515f6001548060011c90600181168015610236575b602083108114610222578285529081156101fe57506001146101a0575b61019c8361019081850382610527565b60405191829182610549565b0390f35b60015f9081527fb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6939250905b8082106101e457509091508101602001610190610180565b9192600181602092548385880101520191019092916101cc565b60ff191660208086019190915291151560051b840190910191506101909050610180565b634e487b7160e01b5f52602260045260245ffd5b91607f1691610163565b346100f35760203660031901126100f3576001600160a01b03610261610573565b165f526003602052602060405f2054604051908152f35b346100f3575f3660031901126100f357602060ff60025416604051908152f35b346100f35760203660031901126100f357600435335f5260036020526102c48160405f2054101561059f565b335f52600360205260405f206102db8282546105ea565b90555f80808084335af13d156103a8573d67ffffffffffffffff81116103945760405190610313601f8201601f191660200183610527565b81525f60203d92013e5b15610350576040519081527f7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b6560203392a2005b606460405162461bcd60e51b815260206004820152600b60248201527f57455448393a2073656e640000000000000000000000000000000000000000006044820152fd5b634e487b7160e01b5f52604160045260245ffd5b61031d565b346100f35760603660031901126100f35760206101326103cb610573565b6103d3610589565b60443591610618565b346100f3575f3660031901126100f357602047604051908152f35b346100f35760403660031901126100f357610410610573565b6001600160a01b0360243591335f52600460205260405f208282165f526020528260405f205560405192835216907f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b92560203392a3602060405160018152f35b346100f3575f3660031901126100f3576040515f80548060011c9060018116801561051d575b602083108114610222578285529081156101fe57506001146104c15761019c8361019081850382610527565b5f8080527f290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563939250905b80821061050357509091508101602001610190610180565b9192600181602092548385880101520191019092916104eb565b91607f1691610495565b90601f8019910116810190811067ffffffffffffffff82111761039457604052565b602060409281835280519182918282860152018484015e5f828201840152601f01601f1916010190565b600435906001600160a01b03821682036100f357565b602435906001600160a01b03821682036100f357565b156105a657565b606460405162461bcd60e51b815260206004820152600e60248201527f57455448393a2062616c616e63650000000000000000000000000000000000006044820152fd5b919082039182116105f757565b634e487b7160e01b5f52601160045260245ffd5b919082018092116105f757565b6001600160a01b031690815f52600360205261063a8360405f2054101561059f565b3382141580610775575b6106b3575b60206001600160a01b037fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef92845f526003835260405f2061068b8782546105ea565b90551693845f526003825260405f206106a582825461060b565b9055604051908152a3600190565b815f52600460205260405f206001600160a01b0333165f526020528260405f2054106107315760206001600160a01b037fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef92845f526004835260405f208233165f52835260405f206107268782546105ea565b905592505050610649565b606460405162461bcd60e51b815260206004820152601060248201527f57455448393a20616c6c6f77616e6365000000000000000000000000000000006044820152fd5b50815f52600460205260405f206001600160a01b0333165f5260205260405f205f1990541415610644565b335f52600360205260405f206107b734825461060b565b90556040513481527fe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c60203392a256fea2646970667358221220b84a11ddf259ab3be7602681dde9733658762f7a068ad107714592cf28b459d364736f6c634300081a0033",
+  "gasPriceWei": "10000000",
+  "fundingBudget": "scripts/fixtures/robinhood-testnet-v3-budget.json"
+}

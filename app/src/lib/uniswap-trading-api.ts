@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
 import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
 import { ERC20_APPROVE_ABI, swapIncludesOtf } from "./swap-model";
-import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-synthra-api";
+import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
 
 const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const QUOTE_LIFETIME_MS = 20_000;

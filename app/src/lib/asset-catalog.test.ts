@@ -23,9 +23,9 @@ describe("asset catalogs", () => {
     ]);
     expect(testnetFundAssets.map((asset) => asset.symbol)).toEqual(["TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
     expect(testnetPools).toHaveLength(6);
-    expect(testnetPools.find((pool) => pool.id === "weth-usdg")).toMatchObject({ fee: 100 });
+    expect(testnetPools.find((pool) => pool.id === "weth-usdg")).toMatchObject({ fee: 500 });
     expect(otfPoolDiscovery).toMatchObject({ quoteAsset: { symbol: "USDG" }, fee: 500 });
-    expect(testnetVenue.name).toBe("Synthra V3");
+    expect(testnetVenue.name).toBe("Uniswap V3");
   });
 
   it("keeps constituent pool routes internal and requires an OTF in user swaps", () => {
@@ -55,7 +55,7 @@ describe("asset catalogs", () => {
     const verifiedTestnetAddresses = verifiedAssets
       .filter((asset) => asset.chainId === 46630)
       .map((asset) => asset.tokenAddress.toLowerCase());
-    expect(verifiedTestnetAddresses).toContain("0x568133fa261d979e0e24c2e81bde2fac9b8a3842");
+    expect(verifiedTestnetAddresses).toContain("0xddc627874ca2b28f13031b31c45e9d5ea7a705ab");
     expect(testnetFundAssets.every((asset) => (
       verifiedTestnetAddresses.includes(asset.address.toLowerCase())
     ))).toBe(true);

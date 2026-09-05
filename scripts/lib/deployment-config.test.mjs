@@ -4,8 +4,8 @@ import { appOwnedIntegrationConfiguration } from "./deployment-config.mjs";
 
 const appConfiguration = {
   externalLiquidity: {
-    venue: "Synthra",
-    baseUrl: "https://app.synthra.org/",
+    venue: "Uniswap V3",
+    baseUrl: "https://app.onchaintradedfunds.com/liquidity",
   },
   creation: { assetDataEndpoint: "https://launch.onchaintradedfunds.com/api/assets" },
 };
@@ -18,7 +18,7 @@ test("rejects unsafe integration URLs", () => {
   assert.throws(
     () => appOwnedIntegrationConfiguration({
       ...appConfiguration,
-      externalLiquidity: { ...appConfiguration.externalLiquidity, baseUrl: "http://app.synthra.org/" },
+      externalLiquidity: { ...appConfiguration.externalLiquidity, baseUrl: "http://app.onchaintradedfunds.com/liquidity" },
     }),
     /externalLiquidity\.baseUrl must be an HTTPS URL/,
   );

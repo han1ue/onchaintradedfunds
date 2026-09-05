@@ -9,7 +9,7 @@ The main application creates, trades, and inspects oracleless basket OTFs. It is
 - `/funds` lists vaults from the configured factory.
 - `/funds/<address>` reads a vault by address.
 - `/launch` creates a vault. This route is unrelated to the separate competition under `launch/`.
-- `/liquidity` is a testnet-only Synthra V3 liquidity utility.
+- `/liquidity` is a testnet-only Uniswap V3 liquidity utility.
 
 ## Vault creation
 
@@ -57,11 +57,11 @@ ETH and WETH are separate selector assets and have separate balances. ETH input 
 
 ### Quote sources and execution
 
-Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Synthra V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF bootstrap routes use the boundary-aware launch router; graduated routes use the ordinary V4 Universal Router.
+Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Uniswap V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF bootstrap routes use the boundary-aware launch router; graduated routes use the ordinary V4 Universal Router.
 
 Testnet basket execution sends typed `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` requests with ordered adapter legs. Before wallet submission, the application simulates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`.
 
-`robinhood-testnet-assets.json` distinguishes USDG and WETH quote assets from the five supported constituents and records active Synthra pools. Those constituent pools support basket settlement and the testnet liquidity utility; they are not general Swap pairs. `assets.json` provides production discovery defaults and is not an onchain allowlist.
+`robinhood-testnet-assets.json` distinguishes USDG and WETH quote assets from the five supported constituents and records active Uniswap V3 pools. Those constituent pools support basket settlement and the testnet liquidity utility; they are not general Swap pairs. `assets.json` provides production discovery defaults and is not an onchain allowlist.
 
 Verification labels cover identity and ordinary metadata only. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
 

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
-import { OtfTokenIcon } from "@onchaintradedfunds/brand";
+import { OtfCoinIcon, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   ArrowDown,
   ArrowLeft,
@@ -262,7 +262,7 @@ function AssetLogo({ symbol }: { symbol: string }) {
 function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
   if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={isUnselectedOtf(asset) ? "OTF" : asset.symbol} />;
-  if (asset.isProtocolToken) mark = <OtfTokenIcon className="swapAssetImage squareOtfAsset" size={30} />;
+  if (asset.isProtocolToken) mark = <OtfCoinIcon className="swapAssetImage" size={30} />;
   const tokenIcon = asset.kind === "native"
     ? "/assets/tokens/eth.png"
     : asset.symbol.toUpperCase() === "WETH"
@@ -697,7 +697,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       : canonicalOtfPair
         ? canonicalPhase === 1 ? "Testnet · Launch boundary router" : "Testnet · Canonical V4"
         : chainId === robinhoodChainTestnet.id
-          ? "Testnet · Synthra V3"
+          ? "Testnet · Uniswap V3"
           : "Unsupported network";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
@@ -1126,7 +1126,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
         preflight = `Exact direct-swap preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
       } else if (executionPlan.kind === "direct-v3") {
-        if (executionPlan.swapRouter02.toLowerCase() !== testnetVenue.swapRouter02.toLowerCase()) throw new Error("The direct plan has an unsupported Synthra router target.");
+        if (executionPlan.swapRouter02.toLowerCase() !== testnetVenue.swapRouter02.toLowerCase()) throw new Error("The direct plan has an unsupported Uniswap V3 router target.");
         const allowance = await publicClient.readContract({
           address: executionPlan.approval.token,
           abi: ERC20_APPROVE_ABI,
@@ -1142,7 +1142,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             args: [executionPlan.approval.spender, approvalAmount],
           });
           const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-          if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Synthra approval reset reverted." : "The exact Synthra approval reverted.");
+          if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Uniswap V3 approval reset reverted." : "The exact Uniswap V3 approval reverted.");
         });
         target = executionPlan.transaction.to;
         data = executionPlan.transaction.data;
@@ -1150,7 +1150,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         setExecution("simulation");
         await publicClient.call({ account: address, to: target, data, value });
         const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
-        preflight = `Exact Synthra V3 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
+        preflight = `Exact Uniswap V3 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
       } else {
         if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) throw new Error("The basket plan has an unsupported entry-router target.");
         if (executionPlan.approval) {
@@ -2315,7 +2315,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} OTF`
     : rewardsApy.state === "loading" ? "…" : "—";
   const weeklyDistributionLabel = rewardsApy.state === "ready"
-    ? `Weekly distribution ${weeklyEmissionText}, emission week ${rewardsApy.week}`
+    ? `${weeklyEmissionText} distributed in week ${rewardsApy.week}`
     : rewardsApy.state === "loading" ? "Weekly distribution loading" : "Weekly distribution unavailable";
   useEffect(() => {
     if (!detail || !routeAddress) {
@@ -2427,7 +2427,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <span className="fundsMetricSeparator" aria-hidden="true" />
             <div className="fundsHeadlineMetric fundsDistribution">
               <strong aria-label={weeklyDistributionLabel} title={weeklyDistributionLabel}>{weeklyEmissionText}</strong>
-              <span>Weekly distribution{rewardsApy.week ? ` · week ${rewardsApy.week}` : ""}</span>
+              <span>{rewardsApy.week ? `Distributed in week ${rewardsApy.week}` : "Weekly distribution"}</span>
             </div>
           </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>

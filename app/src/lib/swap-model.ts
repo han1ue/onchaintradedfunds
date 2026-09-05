@@ -35,7 +35,7 @@ export type QuoteRoute = "direct" | "basket";
 export type QuoteState = "available" | "unavailable" | "loading" | "stale" | "failed";
 
 export type SwapRouteHop = {
-  venue: "Uniswap V3" | "Uniswap V4" | "Synthra V3";
+  venue: "Uniswap V3" | "Uniswap V4";
   tokenIn: Address;
   tokenOut: Address;
   feeTier?: number;
@@ -219,7 +219,7 @@ export const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
-const SYNTHRA_SWAP_ROUTER_ABI = [{
+const UNISWAP_V3_SWAP_ROUTER_ABI = [{
   type: "function",
   name: "exactInput",
   stateMutability: "payable",
@@ -683,14 +683,14 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
 }
 
 function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext): DirectV3Execution {
-  if (!context.swapRouter02 || !context.request.caller) throw new Error("Synthra direct execution is not configured.");
-  if (context.request.input.kind === "native" || context.request.output.kind === "native") throw new Error("An atomic native Synthra route has not been verified.");
+  if (!context.swapRouter02 || !context.request.caller) throw new Error("Uniswap V3 direct execution is not configured.");
+  if (context.request.input.kind === "native" || context.request.output.kind === "native") throw new Error("An atomic native Uniswap V3 route has not been verified.");
   const execution = object(value, "execution");
   exactKeys(execution, [
     "kind", "chainId", "caller", "inputToken", "outputToken", "swapRouter02", "amountIn", "minAmountOut",
     "expiresAtMs", "approval", "path", "transaction",
   ], "execution");
-  if (string(execution.kind, "execution.kind") !== "direct-v3") throw new Error("Synthra quote has the wrong execution kind.");
+  if (string(execution.kind, "execution.kind") !== "direct-v3") throw new Error("Uniswap V3 quote has the wrong execution kind.");
   const plan = {
     kind: "direct-v3" as const,
     chainId: integer(execution.chainId, "execution.chainId"),
@@ -709,12 +709,12 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
     || !sameAddress(plan.inputToken, context.request.input.address)
     || !sameAddress(plan.outputToken, context.request.output.address)
     || !sameAddress(plan.swapRouter02, context.swapRouter02)
-  ) throw new Error("Synthra execution does not match the selected chain, caller, pair, or router.");
+  ) throw new Error("Uniswap V3 execution does not match the selected chain, caller, pair, or router.");
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
-  if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Synthra execution has the wrong exact input amount.");
-  if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Synthra execution has an invalid expiry.");
-  const hops = parseV3Path(plan.path, "Synthra V3");
-  if (!sameAddress(hops[0]!.tokenIn, plan.inputToken) || !sameAddress(hops.at(-1)!.tokenOut, plan.outputToken)) throw new Error("Synthra path endpoints do not match the selected pair.");
+  if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Uniswap V3 execution has the wrong exact input amount.");
+  if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Uniswap V3 execution has an invalid expiry.");
+  const hops = parseV3Path(plan.path, "Uniswap V3");
+  if (!sameAddress(hops[0]!.tokenIn, plan.inputToken) || !sameAddress(hops.at(-1)!.tokenOut, plan.outputToken)) throw new Error("Uniswap V3 path endpoints do not match the selected pair.");
 
   const approvalValue = object(execution.approval, "execution.approval");
   exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
@@ -723,26 +723,26 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
     spender: address(approvalValue.spender, "execution.approval.spender"),
     amount: uint(approvalValue.amount, "execution.approval.amount", false),
   };
-  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, plan.swapRouter02) || approval.amount !== plan.amountIn) throw new Error("Synthra approval does not match the exact route input.");
+  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, plan.swapRouter02) || approval.amount !== plan.amountIn) throw new Error("Uniswap V3 approval does not match the exact route input.");
   const transaction = parseTransaction(execution.transaction, "execution.transaction", {
     chainId: context.chainId,
     caller: plan.caller,
     target: plan.swapRouter02,
   });
-  let decoded: ReturnType<typeof decodeFunctionData<typeof SYNTHRA_SWAP_ROUTER_ABI>>;
+  let decoded: ReturnType<typeof decodeFunctionData<typeof UNISWAP_V3_SWAP_ROUTER_ABI>>;
   try {
-    decoded = decodeFunctionData({ abi: SYNTHRA_SWAP_ROUTER_ABI, data: transaction.data });
+    decoded = decodeFunctionData({ abi: UNISWAP_V3_SWAP_ROUTER_ABI, data: transaction.data });
   } catch {
-    throw new Error("Synthra transaction is not an exact-input swap.");
+    throw new Error("Uniswap V3 transaction is not an exact-input swap.");
   }
-  if (decoded.functionName !== "exactInput") throw new Error("Synthra transaction is not an exact-input swap.");
+  if (decoded.functionName !== "exactInput") throw new Error("Uniswap V3 transaction is not an exact-input swap.");
   const [params] = decoded.args;
   if (
     params.path.toLowerCase() !== plan.path.toLowerCase()
     || !sameAddress(getAddress(params.recipient), plan.caller)
     || params.amountIn !== plan.amountIn
     || params.amountOutMinimum !== plan.minAmountOut
-  ) throw new Error("Synthra calldata does not match the quoted path, recipient, or amounts.");
+  ) throw new Error("Uniswap V3 calldata does not match the quoted path, recipient, or amounts.");
   return { ...plan, approval, transaction };
 }
 
@@ -799,7 +799,7 @@ function parseBasketCall(
   const request = object(execution.request, "execution.request");
   const legsValue = array(execution.legs, "execution.legs");
   if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
-  const venue: SwapRouteHop["venue"] = context.chainId === 46630 ? "Synthra V3" : "Uniswap V3";
+  const venue: SwapRouteHop["venue"] = "Uniswap V3";
   const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, venue));
   const funding = parseFunding(execution.funding);
   assertLegFunding(legs, funding);
@@ -969,7 +969,7 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
       const hop = object(hopValue, `hops[${index}]`);
       exactKeys(hop, ["venue", "tokenIn", "tokenOut", "feeTier"], `hops[${index}]`);
       const venue = string(hop.venue, `hops[${index}].venue`);
-      if (venue !== "Uniswap V3" && venue !== "Uniswap V4" && venue !== "Synthra V3") throw new Error("Quote uses an unsupported venue.");
+      if (venue !== "Uniswap V3" && venue !== "Uniswap V4") throw new Error("Quote uses an unsupported venue.");
       return {
         venue: venue as SwapRouteHop["venue"],
         tokenIn: address(hop.tokenIn, `hops[${index}].tokenIn`),
@@ -1125,9 +1125,9 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
   };
 }
 
-export type LiquidityVenue = { name: "Uniswap" | "Synthra"; href: string; prefilled: boolean };
+export type LiquidityVenue = { name: "Uniswap" | "Uniswap V3"; href: string; prefilled: boolean };
 type LiquidityNetworkConfig = {
-  venue: "uniswap" | "synthra";
+  venue: "uniswap" | "app-v3";
   chainSlug?: string;
   officialBaseUrl: string;
   usdgAddress?: Address;
@@ -1146,8 +1146,8 @@ const LIQUIDITY_NETWORKS: Record<number, LiquidityNetworkConfig> = {
     isDynamic: robinhoodMainnetLiquidity.isDynamic,
   },
   46630: {
-    venue: "synthra",
-    officialBaseUrl: robinhoodTestnetLiquidity.venue === "Synthra" ? robinhoodTestnetLiquidity.baseUrl ?? "" : "",
+    venue: "app-v3",
+    officialBaseUrl: robinhoodTestnetLiquidity.venue === "Uniswap V3" ? robinhoodTestnetLiquidity.baseUrl ?? "" : "",
     usdgAddress: robinhoodTestnetAddresses.usdg,
   },
 };
@@ -1156,7 +1156,7 @@ export function liquidityVenueFor(chainId: number | undefined, otf: SwapAsset | 
   if (!chainId || !otf || !usdg || otf.kind !== "otf" || !otf.isFactoryVault || usdg.kind !== "erc20" || usdg.symbol.toUpperCase() !== "USDG" || !validSwapPair(otf, usdg)) return undefined;
   const config = LIQUIDITY_NETWORKS[chainId];
   if (!config?.officialBaseUrl || !config.usdgAddress || config.usdgAddress.toLowerCase() !== usdg.address.toLowerCase()) return undefined;
-  if (config.venue === "synthra") return { name: "Synthra", href: config.officialBaseUrl, prefilled: false };
+  if (config.venue === "app-v3") return { name: "Uniswap V3", href: `/liquidity?vault=${otf.address}`, prefilled: true };
   if (!config.chainSlug || !config.feeAmount || !config.tickSpacing || config.isDynamic !== false) return undefined;
   const params = new URLSearchParams({
     chain: config.chainSlug,

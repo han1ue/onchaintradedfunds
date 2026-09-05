@@ -98,7 +98,7 @@ The splash fills the dynamic viewport below the warning. Desktop places the titl
 
 ## Surfaces and controls
 
-The primary Swap card uses a 16 px radius and the application's only diffuse resting shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Regular token marks are circular. Every OTF mark is a literal black square with a heavy lime border.
+The primary Swap card uses a 16 px radius and the application's only diffuse resting shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Regular token marks and the protocol $OTF coin mark are circular. OTF fund-share marks are black squares with a heavy lime border.
 
 Primary buttons use lime only when the action can proceed. Disabled controls must name the blocking condition. Secondary controls use transparent or card-toned surfaces with a border. Focus remains visible without relying on animation.
 

@@ -1,0 +1,43 @@
+{
+  "chainId": 46630,
+  "authorized": true,
+  "recipient": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
+  "maxNativeWrapWei": "31717376655651361",
+  "maxGasPriceWei": "20000000",
+  "maxSeedGasSpendWei": "1000000000000000",
+  "maxDeploymentGasSpendWei": "1000000000000000",
+  "markets": [
+    {
+      "id": "weth-usdg",
+      "assetRaw": "31717376655651361",
+      "quoteRaw": "50000000"
+    },
+    {
+      "id": "tsla-usdg",
+      "assetRaw": "4979578315145678112",
+      "quoteRaw": "10000000"
+    },
+    {
+      "id": "amzn-usdg",
+      "assetRaw": "3582859123496957887",
+      "quoteRaw": "10000000"
+    },
+    {
+      "id": "pltr-usdg",
+      "assetRaw": "9232216598257195280",
+      "quoteRaw": "10000000"
+    },
+    {
+      "id": "nflx-usdg",
+      "assetRaw": "9476613629111568542",
+      "quoteRaw": "10000000"
+    },
+    {
+      "id": "amd-usdg",
+      "assetRaw": "5319916562354386980",
+      "quoteRaw": "10000000"
+    }
+  ],
+  "authorization": "User approved the exact per-token seed amounts, native wrapping cap, and combined 0.002 ETH gas cap in this task.",
+  "authorizedAt": "2026-09-05T18:07:47.151Z"
+}

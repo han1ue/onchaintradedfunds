@@ -3,7 +3,7 @@
   "chainId": 46630,
   "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
   "status": "deployed",
-  "deployedAt": "2026-09-05T02:47:43.235Z",
+  "deployedAt": "2026-09-05T18:14:18.372Z",
   "deployer": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
   "trustedRoles": {
     "protocolMultisig": "0xc340D7085E321B82CF550904310EE44bae9e4CD2",
@@ -11,90 +11,105 @@
   },
   "contracts": {
     "otfToken": {
-      "address": "0x568133FA261D979e0E24C2e81bdE2fAC9b8A3842",
-      "transactionHash": "0xd72149238ea4d7853c33e98c046a661b1569cfc13b58af7cb54101d831d23847",
-      "blockNumber": "113198172",
-      "gasUsed": "926773"
+      "address": "0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab",
+      "runtimeCodehash": "0x138dcc410ab245635262afdf810d85a0f9407029f7885873951e2c88391aca7e",
+      "transactionHash": "0x29eb85efbf5e6c06d0c76f24f7eac4ad6c9539a40f462794a521d86082f30c4f",
+      "blockNumber": "113608625",
+      "gasUsed": "932771"
     },
     "launchManager": {
-      "address": "0x8DcC4a7F668155262A72a3a6FcF80a0d4616a040",
-      "transactionHash": "0x81751dc3c04580216e9fa399a8c9d8fbe9b4cc742a2b1245c6a9e06020e98444",
-      "blockNumber": "113198248",
-      "gasUsed": "3212862",
-      "salt": "0x000000000000000000000000000000000000000000000000000000000000399b"
+      "address": "0xdeAdc1F7542f404A8548AF28659771c1ebbFa840",
+      "transactionHash": "0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2",
+      "blockNumber": "113608726",
+      "gasUsed": "3394756",
+      "salt": "0x000000000000000000000000000000000000000000000000000000000000732f",
+      "runtimeCodehash": "0x28bb23ed29e77cb6bd4fb5bfe9aca0b28c6da2c6140fab6578d66e76e50a1b2f"
     },
     "launchRouter": {
-      "address": "0x9eDFF402f7f51B9fCb0B2C64cCA2edD0100C717F",
-      "transactionHash": "0x8967acb5bbeade21ab6e00fd6db47507692e196c1fcee7da6a917639dfdfd4d2",
-      "blockNumber": "113198269",
-      "gasUsed": "1218784"
+      "address": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
+      "runtimeCodehash": "0x5ae8798d2936545b53144389e4dc4892e2847916204dabd3107cf83b6af4f332",
+      "transactionHash": "0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a",
+      "blockNumber": "113608757",
+      "gasUsed": "1219854"
     },
     "teamVesting": {
-      "address": "0x7ED373E7b1464F819aaF796b0b41314FBE2c2BdA",
-      "transactionHash": "0x25a1c4e34f07acd0f9a733c7c223805671099a83af7205b4801069d32911cce8",
-      "blockNumber": "113198405",
-      "gasUsed": "1043049"
+      "address": "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
+      "runtimeCodehash": "0x508f72d1df8a8d51043773fdf45b52ca697cab2c9b487897ebbb6174a6d7c6b4",
+      "transactionHash": "0x6e7d57a0e3427db159d5efff55abaa7e66e2bfea7173c8514594d6b4a51b7c12",
+      "blockNumber": "113608958",
+      "gasUsed": "1044367"
     },
     "buybackCollector": {
-      "address": "0x3401E6d4EA0982e36FCA57c544Dc0365Bf51052E",
-      "transactionHash": "0xd450c6fc93c7fbbc6f845d0cc6f9881e53cb81d84063f8846a84b678fcc1c09a",
-      "blockNumber": "113198285",
-      "gasUsed": "3584893"
+      "address": "0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC",
+      "runtimeCodehash": "0x38f479b989f8198c32e36688af0f29d1dc0f73ef90701fafd017e3b95a98d337",
+      "transactionHash": "0x5e8a052485097271cab1bc95e62111eec65e8f1e27cf842e958a38f16f3924e6",
+      "blockNumber": "113608790",
+      "gasUsed": "3548229"
     },
     "merkleRewardsDistributor": {
-      "address": "0x00D3dA9228Fec76a794E614f3dc77630CE1a17e6",
-      "transactionHash": "0x65c2ccedf92d9627cce0b829ca3cd457577493944349b1b32cffe7d271c70292",
-      "blockNumber": "113198427",
-      "gasUsed": "575566",
-      "blockTimestamp": "2026-09-05T02:47:25.000Z"
+      "address": "0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B",
+      "runtimeCodehash": "0xe67a049d089218fb360c0cb3890895f9db49157cd78292c8d374dfa9b2a5e5af",
+      "transactionHash": "0xd27ec6c5537296a9b08317669abfbb8da86902c8eb660dbc48a15d4c4a076b2e",
+      "blockNumber": "113608985",
+      "gasUsed": "576161",
+      "blockTimestamp": "2026-09-05T18:13:48.000Z"
     },
     "fakeEthUsdOracle": {
-      "address": "0xC233b05f217c26E6F2de67d540D13Ce64aB671e1",
-      "transactionHash": "0x96637f3e31d797dab3778f614d3296b06ef5430f7ff091a82660a01b535f3b20",
-      "blockNumber": "113198190",
-      "gasUsed": "171081"
+      "address": "0xDE1e4B0f8f0B8BD67D51354766fD8D9b48706B67",
+      "runtimeCodehash": "0x72347f8de82f3921b5ce00c0ff0bb9af53b00bdd4b601a80ed7b2bf6e385b1e3",
+      "transactionHash": "0xcf130789615d05e2aa83d51394ef7cf21d50c0ff92ee09353aa586db95e1e71c",
+      "blockNumber": "113608654",
+      "gasUsed": "171053"
     },
     "vaultImplementation": {
-      "address": "0xf76a768F8b3e39CB1Bc7dcbf07BaA5CDe6c8fD13",
-      "transactionHash": "0xb4d03e38fdb781b9f7a9520afe75f4aa955edfa572a3d7db9dc89b93ee08e38a",
-      "blockNumber": "113198308",
-      "gasUsed": "4708026"
+      "address": "0x59B5923264e22c04CFc57F787ADDD53b48A3D84c",
+      "runtimeCodehash": "0x8ea579de583b1b748562387754208eda147032c44b1bdcd8c5d487256a7432dc",
+      "transactionHash": "0x1e7b0b6c63f7c2982f2bdbe81397f0368702acfbe447d5e42a3be5dc5bafff3e",
+      "blockNumber": "113608814",
+      "gasUsed": "4718631"
     },
     "factory": {
-      "address": "0xBbC0bfaF8AD273A11420c586860b27e7DB5f9093",
-      "transactionHash": "0xbd80f5dc37afee702eaac7b6fbd07905411462921d4195288ff905f4971e430f",
-      "blockNumber": "113198325",
-      "gasUsed": "1039585"
+      "address": "0x7619eB1Ec1302e6f9E1a618D875B05dCF5EcFE34",
+      "runtimeCodehash": "0xe1ff1fe0511442868880a4aa49229fa61930a2d0e40a7b089ba97e7f015eeb41",
+      "transactionHash": "0xbdd2ac32f3c16c72bc39eb28664744a85521337cc048eaad127dfe550f05ff12",
+      "blockNumber": "113608839",
+      "gasUsed": "1045672"
     },
     "entryRouter": {
-      "address": "0x88a8c94f0eCb600ce980cAAEefD9eC68c7c95614",
-      "transactionHash": "0x8980d9da461461546aa6ec45329245b8138c88e1131f8cd895babbafd089999c",
-      "blockNumber": "113198348",
-      "gasUsed": "4346340"
+      "address": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
+      "runtimeCodehash": "0x2120bff05366830d43f0f0c7793fc5b6d45c26e6f347f6d2d6cbe5368ff3f6e0",
+      "transactionHash": "0xf2c586f4c59db957ec541068a03859ffa2b5e205dd3054774ea7cf2bd71a3aa5",
+      "blockNumber": "113608868",
+      "gasUsed": "4350183"
     },
     "uniswapV3Adapter": {
-      "address": "0xF4263c38E09e2d59Eb7af5fE25abB0e2088e8D6E",
-      "transactionHash": "0xd99c1bfb1507e5072db0c58e4ce32f168a0cb1507d50414b5fa4a7b55d0566cc",
-      "blockNumber": "113198369",
-      "gasUsed": "1098040"
+      "address": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
+      "runtimeCodehash": "0x245fdf6cd80b1e384a5d5a9e24a6cc489c77cbe54ffa2a711d37371e6efd0668",
+      "transactionHash": "0xe8c38546f9a1cdde97b8aa274d529c782a22947ebb32ba8f59af11b0b225fd19",
+      "blockNumber": "113608899",
+      "gasUsed": "1098784"
     },
     "uniswapV4Adapter": {
-      "address": "0x000D3ccc2Da8b2dcBC326E274Ed7d735dBBb631C",
-      "transactionHash": "0x93a23095a752b5f5512e663d51dcca9c46761d05756d271f4dc5476fac6f47ad",
-      "blockNumber": "113198386",
-      "gasUsed": "1766164"
+      "address": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
+      "runtimeCodehash": "0xe728e8be705caba153536b3bcf2468c13044bdea4e63f8d62f0a6feb3ce3c1be",
+      "transactionHash": "0x6076d2219a9c99472de0841cc001fae7c5327e5df597fbe8a0a51ebfc2b4be05",
+      "blockNumber": "113608931",
+      "gasUsed": "1767264"
     }
   },
   "externalContracts": {
-    "uniswapV3Factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
-    "uniswapV3SwapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
+    "uniswapV3Factory": "0x09b6D850382787115969A2699f107f5A974c781b",
+    "uniswapV3SwapRouter02": "0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4",
     "uniswapV4PoolManager": "0x949257d5181128a7c793619b922e47B849cb81e6",
     "uniswapV4StateView": "0x585906972e2C513cbbc97d9C159f27Df9daf3A21",
     "uniswapV4PositionManager": "0xF839356eA23e6799972C3685f5c7B60158e4e96d",
     "uniswapV4Quoter": "0x35587Cd9Aee64Fe364438bBfD68033CA6aEC6906",
     "uniswapUniversalRouter": "0x5274B13F0B60425f403A84Dc85b58951E880664c",
     "permit2": "0xA03bd7D6d7193051dB730AaD27BF25E46570c43F",
-    "weth": "0x33e4191705c386532ba27cBF171Db86919200B94"
+    "weth": "0x33e4191705c386532ba27cBF171Db86919200B94",
+    "uniswapV3PositionManager": "0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B",
+    "uniswapV3QuoterV2": "0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a",
+    "uniswapV3Weth9": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e"
   },
   "expectedCodehashes": {
     "uniswapV4PoolManager": "0xa2d06106d2dbbea31998f94c853077aee2837d47510889f2ef121f6b9aca178d",
@@ -102,7 +117,12 @@
     "uniswapV4PositionManager": "0xb3a9c91caaf3fdc4f8ab9af3612831e7f381485d79a2878a660a70c6b0b74a91",
     "uniswapV4Quoter": "0xef6d86872c9f1b551277a1f27f06ccb81c2db2cbb20be9cd5d990638d13125c4",
     "uniswapUniversalRouter": "0x92f22990e708a113ca7119502c3be3e28d5fda4e10d354c332cdac70bc3f6394",
-    "permit2": "0x225d61e1f94c895e16d118b21f7f0b28a73816cfb370b6c4a04c50a2855c8cbc"
+    "permit2": "0x225d61e1f94c895e16d118b21f7f0b28a73816cfb370b6c4a04c50a2855c8cbc",
+    "uniswapV3Factory": "0x6fd25264cf4ace4e9a07e63d83238fae88ecac94dcec49f0275232d91adb0d2d",
+    "uniswapV3PositionManager": "0xd22d26765593d2782b1445665ac09a40125a1c31c4a4c7f00bb6986e1fb91186",
+    "uniswapV3QuoterV2": "0x2ca416ef022f7b771ca58c9dccbb802f8f4c3d567cad02797d606ce4ae9a349e",
+    "uniswapV3SwapRouter02": "0x03119bd7ea4cbf742e8d7a31fec0162ce6c381aadea59f7734c9e2b0a076d20b",
+    "uniswapV3Weth9": "0xa65773b9d0e7817b3e1ea6639ec0aabb40f38ddd6dbc1d77cddf5251a357d24f"
   },
   "launch": {
     "poolFee": 0,
@@ -136,14 +156,15 @@
     "unrestrictedDeployerOtf": "0"
   },
   "routing": {
+    "status": "ready",
     "integration": "approved-trade-adapters",
     "approvedAdapters": [
-      "0xF4263c38E09e2d59Eb7af5fE25abB0e2088e8D6E",
-      "0x000D3ccc2Da8b2dcBC326E274Ed7d735dBBb631C"
+      "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
+      "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4"
     ],
-    "uniswapV3Adapter": "0xF4263c38E09e2d59Eb7af5fE25abB0e2088e8D6E",
-    "uniswapV4Adapter": "0x000D3ccc2Da8b2dcBC326E274Ed7d735dBBb631C",
-    "launchRouter": "0x9eDFF402f7f51B9fCb0B2C64cCA2edD0100C717F",
+    "uniswapV3Adapter": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
+    "uniswapV4Adapter": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
+    "launchRouter": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
     "nativeEntryExitEnabled": true,
     "v4RouteData": "abi.encode((address,uint24,int24,address,bytes)[])",
     "maxV4HopsPerLeg": 3,
@@ -151,52 +172,66 @@
   },
   "setupTransactions": {
     "collectorFactory": {
-      "transactionHash": "0x30a843a9898cd518495d6193da5325cd83f9514d1d16188b3ed8228eeaf4f319",
-      "blockNumber": "113198451",
-      "gasUsed": "53692"
+      "transactionHash": "0xc2da0a90909aef7a1318b1a25c87fbf229d92f66cd971f8f86c8a7d3113e6f82",
+      "blockNumber": "113609011",
+      "gasUsed": "53674"
     },
     "factoryRouter": {
-      "transactionHash": "0xd3743630d31d9327d62f9ee81a432868c9714a5fd8a3931e06ab2e53da9a7511",
-      "blockNumber": "113198467",
-      "gasUsed": "59610"
+      "transactionHash": "0x9b27ad9d70d6ab2270539bc6dcd605f6074f8a1665ddd4000d0b3008261d266f",
+      "blockNumber": "113609039",
+      "gasUsed": "59592"
     },
     "v3AdapterApproval": {
-      "transactionHash": "0x56a434a942467b9f60849641c7ac2ab45e1adba26177ca98eb7654d9ef032779",
-      "blockNumber": "113198481",
-      "gasUsed": "57463"
+      "transactionHash": "0x832b87d3696d94bd0886891036c33fb2d491acbbac1911326786ea4355e6c550",
+      "blockNumber": "113609059",
+      "gasUsed": "57456"
     },
     "v4AdapterApproval": {
-      "transactionHash": "0x330b74772202f9d156449d870ece7d8c24dac8291d8568d43a40fafdc591b0fe",
-      "blockNumber": "113198494",
-      "gasUsed": "57466"
+      "transactionHash": "0x46c7c4047d72a305599e7219b2be71854fcaeab3c1bd62f7590b6c36eeda5aa2",
+      "blockNumber": "113609086",
+      "gasUsed": "57471"
     },
     "teamAllocation": {
-      "transactionHash": "0xa949d02d8a1c8d6f7ffdb01bd7449892129c9f076219e8b98dbdcdd15a42c59a",
-      "blockNumber": "113198509",
-      "gasUsed": "57663"
+      "transactionHash": "0x9deb740f36e0039b6ab72c02154268c06094cb0f4caaf3a7c85a76e0bcf309eb",
+      "blockNumber": "113609119",
+      "gasUsed": "57656"
     },
     "launchAllocation": {
-      "transactionHash": "0x39b58f55ac1f0aff8aa71e17c63490fbf165e01b77206d2d1143ddd0ecc98560",
-      "blockNumber": "113198525",
-      "gasUsed": "57663"
+      "transactionHash": "0xe5b7e4a92a37f1bfa58d36ea2b907e0233fc34a617dd730b7538d8190b4ba0c2",
+      "blockNumber": "113609147",
+      "gasUsed": "57656"
     },
     "rewardsAllocation": {
-      "transactionHash": "0xbc54c1afe41e4be3e13dc483e1055ea15875d4b82adeb6d12e155a009e353edb",
-      "blockNumber": "113198546",
-      "gasUsed": "52863"
+      "transactionHash": "0x2f01e91fa52fac62cc368896eddf94e540cdbaad3840b11592b69c2a0c4ca445",
+      "blockNumber": "113609177",
+      "gasUsed": "52868"
     },
     "launchInitialization": {
-      "transactionHash": "0x5a00cb6796b05f0d5ceeb8433eec6019cee4e8c7211642288a91048f9c7f5fe7",
-      "blockNumber": "113198563",
-      "gasUsed": "593410"
+      "transactionHash": "0x07b9c89a05827e3e4777649eb23d0bbf9b11fd62222a90039b6daba4b00ede1e",
+      "blockNumber": "113609210",
+      "gasUsed": "597133"
+    },
+    "revokePreviousV3Adapter": {
+      "transactionHash": "0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a",
+      "blockNumber": "113609250",
+      "gasUsed": "32132"
     }
   },
   "externalLiquidity": {
-    "venue": "Synthra",
-    "baseUrl": "https://app.synthra.org/"
+    "venue": "Uniswap V3",
+    "baseUrl": "https://app.onchaintradedfunds.com/liquidity"
   },
   "creation": {
     "assetDataEndpoint": "https://launch.onchaintradedfunds.com/api/assets"
   },
-  "note": "Protocol contracts are deployed."
+  "note": "Protocol contracts are deployed.",
+  "deploymentTools": {
+    "launchManagerDeployer": {
+      "address": "0x4017f98bD801fDEE082d2190432a2cB5c3AFf150",
+      "runtimeCodehash": "0x5032ca97e3673bd1a1958b188734523a5fdda9546f0b8cff53ea6496ed1cb9d6",
+      "transactionHash": "0x9e4e867f63c305d5ab94a031b537db531174923757ecb2ab7692385b17bba732",
+      "blockNumber": "113608681",
+      "gasUsed": "4643378"
+    }
+  }
 }

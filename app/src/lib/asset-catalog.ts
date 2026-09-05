@@ -1,6 +1,6 @@
 import productionCatalog from "../config/assets.json";
 import testnetCatalog from "../config/robinhood-testnet-assets.json";
-import { getAddress, isAddress, type Address } from "viem";
+import { getAddress, isAddress, type Address, type Hex } from "viem";
 
 export type CatalogAsset = {
   id: string;
@@ -18,6 +18,7 @@ export type TestnetPool = {
   assetB: CatalogAsset;
   address: Address;
   fee: number;
+  runtimeCodehash: Hex;
 };
 
 type ObjectRecord = Record<string, unknown>;
@@ -77,7 +78,7 @@ for (const [role, assets] of [["quote", testnetQuoteAssets], ["fund", testnetFun
 
 const venue = record(testnet.venue, "testnet asset catalog venue");
 const venueId = nonempty(venue.id, "venue.id");
-if (venueId !== "synthra-v3") throw new Error("The testnet venue must be Synthra V3.");
+if (venueId !== "uniswap-v3") throw new Error("The testnet venue must be Uniswap V3.");
 const venueBaseUrl = nonempty(venue.baseUrl, "venue.baseUrl");
 if (new URL(venueBaseUrl).protocol !== "https:") throw new Error("venue.baseUrl must be HTTPS.");
 
@@ -89,6 +90,7 @@ export const testnetVenue = Object.freeze({
   swapRouter02: address(venue.swapRouter02, "venue.swapRouter02"),
   quoter: address(venue.quoter, "venue.quoter"),
   positionManager: address(venue.positionManager, "venue.positionManager"),
+  weth9: address(venue.weth9, "venue.weth9"),
 });
 
 const poolSources = Array.isArray(testnet.pools) ? testnet.pools : [];
@@ -107,7 +109,9 @@ export const testnetPools = Object.freeze(poolSources.map((value, index): Testne
   seenPoolIds.add(id);
   seenPoolAddresses.add(poolAddress.toLowerCase());
   seenPoolPairs.add(pair);
-  return { id, assetA, assetB, address: poolAddress, fee: positiveInteger(source.fee, `pools[${index}].fee`, 1_000_000) };
+  const runtimeCodehash = nonempty(source.runtimeCodehash, `pools[${index}].runtimeCodehash`);
+  if (!/^0x[0-9a-f]{64}$/u.test(runtimeCodehash)) throw new Error("The configured pool runtime hash is invalid.");
+  return { id, assetA, assetB, address: poolAddress, runtimeCodehash: runtimeCodehash as Hex, fee: positiveInteger(source.fee, `pools[${index}].fee`, 1_000_000) };
 }));
 
 const discovery = record(testnet.otfPoolDiscovery, "otfPoolDiscovery");

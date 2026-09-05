@@ -82,7 +82,7 @@ A normal redemption pays the floored pro-rata accounted balance of each constitu
 
 If a redemption leaves total supply below `0.01` OTF, the vault completes that redemption and enters permanent shutdown. A balance of exactly `0.01` remains live. Shutdown disables minting and fee accrual but keeps holder exits available; a vault that reaches zero cannot bootstrap again.
 
-Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly, while the entry router uses the same vault redemption logic. Active redemptions accrue and charge the configured fees and require every unskipped asset to be fully backed. Shutdown redemptions accrue no new fees, charge no redemption fee, and limit payouts to `min(actual, accounted)`. A set bit in `skipMask` forfeits that constituent entitlement permanently: the vault reduces its ledger without calling the token and leaves the physical balance as unaccounted excess. The normal application does not expose this recovery control.
+Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly, while the entry router uses the same vault redemption logic. Active redemptions accrue and charge the configured fees and require every unskipped asset to be fully backed. Shutdown redemptions accrue no new fees, charge no redemption fee, and limit payouts to `min(actual, accounted)`. A set bit in `skipMask` permanently forfeits your entitlement to that asset. The vault reduces its ledger without calling the token and leaves the tokens untouched. If backing is deficient, remaining holders may benefit from the balance left behind. The normal application does not expose this recovery control.
 
 ## Fees
 
@@ -115,7 +115,7 @@ Vaults, adapter legs, pools, and buybacks never receive native ETH or a native-t
 
 The Swap application requires a vault share or protocol OTF on at least one side. It is not a general token exchange. Fund pairs may request direct-pool, basket mint, basket burn, or burn-and-mint quotes. The application selects the fresh candidate with the highest integer expected output among the routes it queried and allows manual override.
 
-Production direct quotes use the same-origin Uniswap Trading API integration. Robinhood testnet fund routes use configured Synthra V3 pools, while WETH/OTF uses the canonical V4 pool. The testnet constituent pools support basket settlement and the separate liquidity utility; the Swap interface does not expose them as general constituent pairs.
+Production direct quotes use the same-origin Uniswap Trading API integration. Robinhood testnet fund routes use configured Uniswap V3 pools, while WETH/OTF uses the canonical V4 pool. The testnet constituent pools support basket settlement and the separate liquidity utility; the Swap interface does not expose them as general constituent pairs.
 
 ETH and WETH remain separate selector assets. The execution plan converts native ETH only at the router boundary, never requests token approval for ETH, and reserves gas when applying Max to a native balance.
 

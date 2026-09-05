@@ -1,13 +1,14 @@
 {
   "chainId": 46630,
   "venue": {
-    "id": "synthra-v3",
-    "name": "Synthra V3",
-    "baseUrl": "https://app.synthra.org/",
-    "factory": "0x911b4000D3422F482F4062a913885f7b035382Df",
-    "swapRouter02": "0x3Ce954107b1A675826B33bF23060Dd655e3758fE",
-    "quoter": "0x231606c321A99DE81e28fE48B07a93F1ba49e713",
-    "positionManager": "0x54A0EF7da351cb8fD1998E7945cc51E5825fB233"
+    "id": "uniswap-v3",
+    "name": "Uniswap V3",
+    "baseUrl": "https://app.onchaintradedfunds.com/liquidity",
+    "factory": "0x09b6D850382787115969A2699f107f5A974c781b",
+    "swapRouter02": "0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4",
+    "quoter": "0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a",
+    "positionManager": "0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B",
+    "weth9": "0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e"
   },
   "quoteAssets": [
     {
@@ -69,43 +70,67 @@
       "id": "weth-usdg",
       "assetA": "weth",
       "assetB": "usdg",
-      "address": "0xFF8789F34290f889fE0A201f2c90f5894DD6503d",
-      "fee": 100
+      "address": "0x569A6EC352b20437874fd17Ac944d393c01D2e51",
+      "fee": 500,
+      "status": "seeded",
+      "runtimeCodehash": "0x17f51eaabb6bf71b9cd8f24c2cb19872cf225b5a6363a3c8f917b3d401957b6e",
+      "positionTokenId": "19",
+      "mintTransactionHash": "0x7a9948ea3ebd35b7d9d9173ad13b9431bc34e342b22f3035fc0d70e768fab028"
     },
     {
       "id": "tsla-usdg",
       "assetA": "tsla",
       "assetB": "usdg",
-      "address": "0x33130082660AD87a99Ad6120269F91329C82f7c2",
-      "fee": 3000
+      "address": "0x60cEc08DE2ee550C432921966Ca39Ae689b05715",
+      "fee": 3000,
+      "status": "seeded",
+      "runtimeCodehash": "0x81a6713a4b9b8ccaf3e8f555610db0d2eb10a22181430e454d0e1639d13fda35",
+      "positionTokenId": "20",
+      "mintTransactionHash": "0x6a71fe67de017b592a97102440c32f26262e1fb14e22c3a1cfe33b5f36ad4736"
     },
     {
       "id": "amzn-usdg",
       "assetA": "amzn",
       "assetB": "usdg",
-      "address": "0x6C0a5Ef3C4e0D29a56D3AB463f9c28F18482c047",
-      "fee": 3000
+      "address": "0x57300242B643748C335aAaa7f1b2c943D83B8a82",
+      "fee": 3000,
+      "status": "seeded",
+      "runtimeCodehash": "0xa73cc0d134c1c74a5a86409b1ee405669a5cb608c95f0736960c9dd48810eaf9",
+      "positionTokenId": "21",
+      "mintTransactionHash": "0x19b8c6b27422ba9f4612b67bbd5b47767038e0bfa4f6b04f9e02fbd328397ee2"
     },
     {
       "id": "pltr-usdg",
       "assetA": "pltr",
       "assetB": "usdg",
-      "address": "0x5c82380e87dB94f55dda0B1443EB046437158969",
-      "fee": 3000
+      "address": "0x04D498be8D6caa6925dcaD525418efaf60DF605A",
+      "fee": 3000,
+      "status": "seeded",
+      "runtimeCodehash": "0x058a3d4492b9393e1d051add34cfd277de2cd536359d749809aca680f19920b7",
+      "positionTokenId": "22",
+      "mintTransactionHash": "0xa3b4e9b120f9a796b5c8f7dc5dae49c52039ec0d98349dffb35c8100c2bc5ffb"
     },
     {
       "id": "nflx-usdg",
       "assetA": "nflx",
       "assetB": "usdg",
-      "address": "0x81EDa513eb0f5FdAf3903220432ebDb0a5FC6B02",
-      "fee": 3000
+      "address": "0xD5f0BCB42684A8CD541ae565A50426bf69D7DE2B",
+      "fee": 3000,
+      "status": "seeded",
+      "runtimeCodehash": "0x3c06458e3f39662ad57f9a582047d2cc13d8d503c4f15e42b4289ffad516fcb5",
+      "positionTokenId": "23",
+      "mintTransactionHash": "0xe6d858ae7f0d168e07c1206305787b3a9cb0f69eabcef7a1031a88d7fc833fe4"
     },
     {
       "id": "amd-usdg",
       "assetA": "amd",
       "assetB": "usdg",
-      "address": "0xe3abEa804606228C89CC3196ECD2fedf27d2A586",
-      "fee": 3000
+      "address": "0xE5d116a21BC3b38e7C150C87bF445E0Dcc7E30fc",
+      "fee": 3000,
+      "status": "seeded",
+      "runtimeCodehash": "0xac2e72c05fc9ad623c0f2710bea9e179dc2d2f68a79780d82fc29bdf19c8bed4",
+      "positionTokenId": "24",
+      "mintTransactionHash": "0x6d76a3bfe3d9ebfccf0e4da8c1642414d10b75e1c69b702318a93be194f463b4"
     }
   ],
   "otfPoolDiscovery": {

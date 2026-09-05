@@ -2,6 +2,44 @@
 
 Review baseline: `df910e3411e41fc1bb6a4259e33a8d3349c32ec7`, with a clean working tree at the start.
 
+## Follow-up verification, 5 September 2026
+
+Reviewed commit: `f35232392807035e47af644ef90d781d45970da4`.
+
+H-01 is corrected in source. `OTFLaunchManager.beforeAddLiquidity()` authenticates the PoolManager,
+canonical pool, PositionManager, internal mint operation, phase, ticks, and liquidity. Temporary
+authorization surrounds only the manager's synchronous bootstrap or permanent mint. Deployment
+mining and security checks use the new `0x2840` hook mask. Regression coverage includes both currency
+orderings, both graduation paths, shared-PositionManager rejection, and authorization rollback.
+
+L-01 is corrected in source. `ManagedOTFVault.previewRedeem()` now checks requested shares against
+effective supply before deducting the redeem fee. Its regression covers fees, pending expenses,
+shutdown, and agreement with execution at the supply boundary.
+
+The four-field V4 tuple and Permit2 cleanup corrections are also present. The separate
+[routing validation report](TESTNET_ROUTING_VALIDATION.md) records four successful testnet fork tests;
+those network-dependent tests were not rerun during this follow-up.
+
+The fresh testnet deployment now includes these corrections and the Uniswap V3 replacement;
+application configuration points to its new contracts. Mainnet dependency and ABI validation is still
+outstanding. The deficient-asset forfeiture wording remains broader than the implementation, and
+spot-price vesting remains an explicitly accepted beneficiary trust assumption.
+
+Fresh follow-up checks passed:
+
+- Foundry integration profile: 171 tests across 20 suites, including 23 real V4 launch integration
+  tests and five launch invariants. The run used `forge test --offline --no-match-path 'test/audit/*'
+  --summary` with `FOUNDRY_PROFILE=integration`; fork tests remained excluded by that profile.
+- Seven fuzz tests ran 64 cases each. All nine vault and launch invariants ran 128 campaigns at
+  depth 64, with 8,192 handler calls per invariant.
+- Solhint, Solidity formatting, and `forge lint src --deny warnings --offline` passed.
+- Seven deployment/configuration Node tests and five application routing-encoding tests passed.
+
+The local Foundry output is retained in `contracts/fix-verification.log`. Only this report was
+edited during follow-up; no production contract, test, deployment, or commit was changed.
+
+## Original review
+
 One High-severity availability defect should block mainnet deployment. A Low-severity preview
 inconsistency also needs correction. The findings below come from static inspection of the current
 contracts and pinned dependencies; neither finding was reproduced through an attack transaction.
@@ -134,4 +172,4 @@ invariant-discovery functions; the four vault invariants subsequently executed t
 and passed. The default profile excludes the separate real V4 launch integration and invariant
 files. Those files were inspected but not executed in this review. The audit proof-of-concept
 directory was excluded from test execution. Passing the existing suite does not validate a fix for
-H-01 or L-01; both remain unpatched.
+H-01 or L-01; both remained unpatched at the original review baseline.

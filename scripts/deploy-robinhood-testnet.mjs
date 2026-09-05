@@ -8,6 +8,12 @@ import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.json");
+const simulation = process.env.DEPLOYMENT_MODE === "simulate";
+const outputPath = simulation ? join(root, "test-results/v3-auth/protocol-simulation.json") : deploymentPath;
+const journalPath = join(root, simulation ? "test-results/v3-auth/deployment-simulate-journal.json" : "deployments/robinhood-testnet-v3-journal.json");
+if (!simulation && process.env.DEPLOYMENT_PREFLIGHT_ONLY !== "true" && existsSync(journalPath)) {
+  throw new Error("A deployment journal already exists; reconcile its transactions before another deployment");
+}
 const localEnvPath = join(root, ".env.deploy.local");
 if (existsSync(localEnvPath)) {
   for (const line of readFileSync(localEnvPath, "utf8").split(/\r?\n/u)) {
@@ -167,6 +173,14 @@ const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
 if (await publicClient.getChainId() !== chainId) {
   throw new Error("RPC chain ID does not match Robinhood Testnet");
 }
+if (simulation) {
+  if (!["127.0.0.1", "localhost"].includes(new URL(rpcUrl).hostname)
+    || !(await publicClient.request({ method: "web3_clientVersion" })).toLowerCase().includes("anvil")) {
+    throw new Error("Deployment simulation requires a local Anvil testnet fork");
+  }
+} else if (process.env.DEPLOYMENT_BROADCAST !== "true" && process.env.DEPLOYMENT_PREFLIGHT_ONLY !== "true") {
+  throw new Error("Run DEPLOYMENT_MODE=simulate on a local fork first; live deployment requires DEPLOYMENT_BROADCAST=true");
+}
 
 async function verifyCodehash(name, contractAddress, expected) {
   const code = await publicClient.getCode({ address: contractAddress });
@@ -222,6 +236,13 @@ verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 const routingPin = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-routing.json"), "utf8"));
 await verifyTestnetRoutingRuntime(publicClient, previous, routingPin);
 
+const assetCatalog = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), "utf8"));
+for (const pool of assetCatalog.pools) {
+  const liquidity = await publicClient.readContract({ address: pool.address,
+    abi: [{ type: "function", name: "liquidity", stateMutability: "view", inputs: [], outputs: [{ type: "uint128" }] }], functionName: "liquidity" });
+  if (liquidity === 0n) throw new Error(`Seed ${pool.id} before switching the protocol`);
+}
+
 if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
   const deployerBalance = await publicClient.getBalance({ address: account.address });
   const gasPrice = await publicClient.getGasPrice();
@@ -236,15 +257,45 @@ if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
   process.exit(0);
 }
 
+let totalGas = 0n;
+let gasSpend = 0n;
+const transactions = [];
+const saveJournal = () => {
+  mkdirSync(dirname(journalPath), { recursive: true });
+  writeFileSync(journalPath, json({ chainId, simulation, transactions, totalGas, gasSpend }) + "\n");
+};
+const fundingBudget = !simulation && process.env.LIQUIDITY_BUDGET_FILE
+  ? JSON.parse(readFileSync(resolve(root, process.env.LIQUIDITY_BUDGET_FILE), "utf8")) : undefined;
+if (!simulation && (!fundingBudget || fundingBudget.chainId !== 46630 || fundingBudget.authorized !== true)) {
+  throw new Error("An explicitly authorized testnet funding budget is required for the fresh deployment");
+}
+const transactionGasPrice = async () => simulation
+  ? BigInt(JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-v3.json"), "utf8")).gasPriceWei)
+  : publicClient.getGasPrice();
+async function reserveGas(gas) {
+  if (totalGas + gas > 30_000_000n) throw new Error("Deployment exceeds the existing 30,000,000 gas budget");
+  const gasPrice = await transactionGasPrice();
+  if (fundingBudget && (gasPrice > BigInt(fundingBudget.maxGasPriceWei) || gasSpend + gas * gasPrice > BigInt(fundingBudget.maxDeploymentGasSpendWei))) throw new Error("Deployment exceeds the authorized gas budget");
+  return gasPrice;
+}
 async function deploy(name, args = []) {
   const compiled = artifact(name);
-  const hash = await wallet.deployContract({ abi: compiled.abi, bytecode: bytecode(name), args, chain, account });
+  const data = viem.encodeDeployData({ abi: compiled.abi, bytecode: bytecode(name), args });
+  const estimatedGas = await publicClient.estimateGas({ account, data });
+  const gas = estimatedGas * 125n / 100n + 50_000n;
+  const gasPrice = await reserveGas(gas);
+  const hash = await wallet.deployContract({ abi: compiled.abi, bytecode: bytecode(name), args, chain, account, gas, gasPrice });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success" || !receipt.contractAddress) {
     throw new Error(`${name} deployment reverted`);
   }
+  totalGas += receipt.gasUsed;
+  gasSpend += receipt.gasUsed * receipt.effectiveGasPrice;
+  transactions.push({ kind: "deploy", name, data, transactionHash: hash, gasUsed: receipt.gasUsed });
+  saveJournal();
   return {
     address: getAddress(receipt.contractAddress),
+    runtimeCodehash: keccak256(await publicClient.getCode({ address: receipt.contractAddress })),
     transactionHash: hash,
     blockNumber: receipt.blockNumber,
     gasUsed: receipt.gasUsed,
@@ -252,6 +303,9 @@ async function deploy(name, args = []) {
 }
 
 async function transact(contract, functionName, args = []) {
+  await publicClient.simulateContract({ address: contract.address, abi: artifact(contract.name).abi, functionName, args, account });
+  const gas = (await publicClient.estimateContractGas({ address: contract.address, abi: artifact(contract.name).abi, functionName, args, account })) * 125n / 100n + 50_000n;
+  const gasPrice = await reserveGas(gas);
   const hash = await wallet.writeContract({
     address: contract.address,
     abi: artifact(contract.name).abi,
@@ -259,9 +313,16 @@ async function transact(contract, functionName, args = []) {
     args,
     chain,
     account,
+    gas,
+    gasPrice,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`${contract.name}.${functionName} reverted`);
+  totalGas += receipt.gasUsed;
+  gasSpend += receipt.gasUsed * receipt.effectiveGasPrice;
+  transactions.push({ kind: "call", name: contract.name, functionName, to: contract.address,
+    data: viem.encodeFunctionData({ abi: artifact(contract.name).abi, functionName, args }), transactionHash: hash, gasUsed: receipt.gasUsed });
+  saveJournal();
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
 
@@ -586,6 +647,28 @@ if (pendingTeamBeneficiary !== "0x0000000000000000000000000000000000000000") {
 if (launchOtfAllowance !== 0n || launchWethAllowance !== 0n) throw new Error("Launch manager retained an ERC20 allowance");
 if (launchOtfPermit2Allowance[0] !== 0n || launchWethPermit2Allowance[0] !== 0n) throw new Error("Launch manager retained a Permit2 allowance");
 
+await Promise.all([
+  verifyAddressBinding("New adapter entry router", uniswapV3Adapter.address, "entryExitRouter", entryRouter.address),
+  verifyAddressBinding("New adapter factory", uniswapV3Adapter.address, "uniswapV3Factory", uniswapV3Factory),
+  verifyAddressBinding("New adapter SwapRouter02", uniswapV3Adapter.address, "uniswapV3Router", uniswapV3SwapRouter02),
+  verifyAddressBinding("New router WETH", entryRouter.address, "weth", weth),
+  verifyAddressBinding("New router factory", entryRouter.address, "factory", factory.address),
+  verifyAddressBinding("New collector factory", buybackCollector.address, "factory", factory.address),
+]);
+for (const adapter of [uniswapV3Adapter.address, uniswapV4Adapter.address]) {
+  if (!await publicClient.readContract({ address: entryRouter.address, abi: artifact("OTFEntryExitRouter").abi, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Replacement adapter is not approved");
+}
+
+const previousRouter = previous.contracts?.entryRouter?.address;
+const previousAdapter = previous.contracts?.uniswapV3Adapter?.address;
+if (previousRouter && previousAdapter) {
+  setupTransactions.revokePreviousV3Adapter = await transact(
+    { name: "OTFEntryExitRouter", address: previousRouter }, "setAdapterApproved", [previousAdapter, false],
+  );
+  const approved = await publicClient.readContract({ address: previousRouter, abi: artifact("OTFEntryExitRouter").abi,
+    functionName: "isAdapterApproved", args: [previousAdapter] });
+  if (approved) throw new Error("Previous V3 adapter was not revoked");
+}
 const deployment = {
   network: "robinhood-testnet",
   chainId,
@@ -608,7 +691,9 @@ const deployment = {
     uniswapV3Adapter,
     uniswapV4Adapter,
   },
+  deploymentTools: { launchManagerDeployer },
   externalContracts: {
+    ...external,
     uniswapV3Factory,
     uniswapV3SwapRouter02,
     uniswapV4PoolManager,
@@ -619,7 +704,7 @@ const deployment = {
     permit2,
     weth,
   },
-  expectedCodehashes,
+  expectedCodehashes: { ...pinnedCodehashes, ...expectedCodehashes },
   launch: {
     poolFee,
     tickSpacing,
@@ -652,6 +737,7 @@ const deployment = {
     unrestrictedDeployerOtf: "0",
   },
   routing: {
+    status: "ready",
     integration: "approved-trade-adapters",
     approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
     uniswapV3Adapter: uniswapV3Adapter.address,
@@ -665,7 +751,17 @@ const deployment = {
   setupTransactions,
   ...appOwnedIntegrations,
   note: "Protocol contracts are deployed.",
+  ...(simulation ? { simulation: true, transactions, totalGas } : {}),
 };
-mkdirSync(dirname(deploymentPath), { recursive: true });
-writeFileSync(deploymentPath, `${json(deployment)}\n`);
-console.log(`Deployment configuration written to ${deploymentPath}`);
+mkdirSync(dirname(outputPath), { recursive: true });
+writeFileSync(outputPath, `${json(deployment)}\n`);
+if (!simulation) {
+  const verifiedPath = join(root, "app/src/config/verified_assets.json");
+  const verified = JSON.parse(readFileSync(verifiedPath, "utf8")).filter((asset) =>
+    !(asset.chainId === chainId && asset.tokenAddress.toLowerCase() === previous.contracts.otfToken.address.toLowerCase()));
+  verified.unshift({ chainId, tokenAddress: otfToken.address, approvedPricingConfigs: [{ source: "otf-launch-manager", feedAddress: launchManager.address, maxStaleness: 90000 }] });
+  writeFileSync(verifiedPath, `${json(verified)}\n`);
+  for (const pool of assetCatalog.pools) pool.status = "seeded";
+  writeFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), `${json(assetCatalog)}\n`);
+}
+console.log(`Deployment ${simulation ? "simulation" : "configuration"} written to ${outputPath}; gas ${totalGas}`);

@@ -411,7 +411,8 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     }
 
     /// @notice Burns the caller's shares for basket assets without using swap liquidity.
-    /// @dev Skipped entitlements are irrevocably forfeited and become unaccounted vault excess.
+    /// @dev Skipped entitlements are permanently forfeited; skipped tokens remain untouched.
+    ///      If backing is deficient, remaining holders may benefit from the balance left behind.
     function redeemInKind(
         uint256 shares,
         address receiver,

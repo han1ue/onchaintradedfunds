@@ -6,8 +6,10 @@ import {
   encodeFunctionData,
   getAddress,
   http,
+  keccak256,
   maxUint256,
   numberToHex,
+  parseAbi,
   zeroAddress,
   type Address,
   type Hex,
@@ -26,6 +28,7 @@ import {
   type TestnetPool,
 } from "./asset-catalog";
 import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetNativeEntryReady } from "./deployment";
+import { verifyTestnetV3Adapter } from "./testnet-v3-bindings";
 
 const QUOTE_LIFETIME_MS = 20_000;
 const ROUTER_DEADLINE_SECONDS = 120;
@@ -74,7 +77,7 @@ const v3QuoterAbi = [
   },
 ] as const;
 
-export const synthraSwapRouterAbi = [{
+export const uniswapV3SwapRouterAbi = [{
   type: "function",
   name: "exactInput",
   stateMutability: "payable",
@@ -103,6 +106,7 @@ export type TestnetPlannerRequest = {
 };
 
 export type TestnetRoutingClient = {
+  verifyBindings(factory: Address, router: Address, adapter: Address): Promise<void>;
   isVault(vault: Address): Promise<boolean>;
   poolFor(tokenA: Address, tokenB: Address, fee: number): Promise<Address | undefined>;
   poolLiquidity(pool: Address): Promise<bigint>;
@@ -117,7 +121,7 @@ type Route = {
   tokens: readonly Address[];
   fees: readonly number[];
   path: Hex;
-  hops: readonly { venue: "Synthra V3"; tokenIn: Address; tokenOut: Address; feeTier: number }[];
+  hops: readonly { venue: "Uniswap V3"; tokenIn: Address; tokenOut: Address; feeTier: number }[];
 };
 
 type PlannedLeg = {
@@ -159,11 +163,11 @@ function applySlippageUp(value: bigint, slippageBps: number): bigint {
 }
 
 export function encodeV3Path(tokens: readonly Address[], fees: readonly number[]): Hex {
-  if (tokens.length !== fees.length + 1 || fees.length === 0 || fees.length > 3) throw new Error("Synthra path has an invalid shape.");
+  if (tokens.length !== fees.length + 1 || fees.length === 0 || fees.length > 3) throw new Error("Uniswap V3 path has an invalid shape.");
   const parts: Hex[] = [tokens[0] as Hex];
   for (let index = 0; index < fees.length; index += 1) {
     const fee = fees[index]!;
-    if (!Number.isInteger(fee) || fee <= 0 || fee > 1_000_000 || sameAddress(tokens[index]!, tokens[index + 1]!)) throw new Error("Synthra path has an invalid hop.");
+    if (!Number.isInteger(fee) || fee <= 0 || fee > 1_000_000 || sameAddress(tokens[index]!, tokens[index + 1]!)) throw new Error("Uniswap V3 path has an invalid hop.");
     parts.push(numberToHex(fee, { size: 3 }), tokens[index + 1] as Hex);
   }
   return concatHex(parts);
@@ -181,7 +185,7 @@ function routeFrom(tokens: readonly Address[], fees: readonly number[]): Route {
     fees,
     path: encodeV3Path(tokens, fees),
     hops: fees.map((feeTier, index) => ({
-      venue: "Synthra V3" as const,
+      venue: "Uniswap V3" as const,
       tokenIn: tokens[index]!,
       tokenOut: tokens[index + 1]!,
       feeTier,
@@ -206,15 +210,31 @@ function defaultRoutingClient(): TestnetRoutingClient {
       args: [path, amount],
     });
     const result = await publicClient.call({ to: testnetVenue.quoter, data });
-    if (!result.data) throw new Error("Synthra Quoter returned no data.");
+    if (!result.data) throw new Error("Uniswap V3 Quoter returned no data.");
     const decoded = decodeFunctionResult({ abi: v3QuoterAbi, functionName, data: result.data });
     return decoded[0];
   };
   return {
+    verifyBindings: (factory, router, adapter) => verifyTestnetV3Adapter(publicClient, factory, router, adapter),
     isVault: (vault) => publicClient.readContract({ address: robinhoodTestnetAddresses.factory!, abi: otfFactoryAbi, functionName: "isVault", args: [vault] }),
     poolFor: async (tokenA, tokenB, fee) => {
       const pool = await publicClient.readContract({ address: testnetVenue.factory, abi: v3FactoryAbi, functionName: "getPool", args: [tokenA, tokenB, fee] });
-      return sameAddress(pool, zeroAddress) ? undefined : getAddress(pool);
+      if (sameAddress(pool, zeroAddress)) return undefined;
+      const configured = testnetPoolForPair(tokenA, tokenB);
+      if (configured) {
+        const code = await publicClient.getCode({ address: pool });
+        if (!sameAddress(pool, configured.address) || !code || keccak256(code) !== configured.runtimeCodehash) throw new Error("The configured V3 pool runtime changed.");
+      }
+      const abi = parseAbi(["function factory() view returns (address)", "function token0() view returns (address)", "function token1() view returns (address)", "function fee() view returns (uint24)"]);
+      const [factory, token0, token1, actualFee] = await Promise.all([
+        publicClient.readContract({ address: pool, abi, functionName: "factory" }),
+        publicClient.readContract({ address: pool, abi, functionName: "token0" }),
+        publicClient.readContract({ address: pool, abi, functionName: "token1" }),
+        publicClient.readContract({ address: pool, abi, functionName: "fee" }),
+      ]);
+      const ordered = [tokenA, tokenB].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+      if (!sameAddress(factory, testnetVenue.factory) || !sameAddress(token0, ordered[0]!) || !sameAddress(token1, ordered[1]!) || actualFee !== fee) throw new Error("The V3 pool bindings do not match the selected market.");
+      return getAddress(pool);
     },
     poolLiquidity: (pool) => publicClient.readContract({ address: pool, abi: v3PoolAbi, functionName: "liquidity" }),
     quoteExactInput: (path, amountIn) => quote("quoteExactInput", path, amountIn),
@@ -246,7 +266,7 @@ async function validatedConnection(
     fee = configuredPool.fee;
   }
   const pool = await client.poolFor(asset.address, usdg.address, fee);
-  if (!pool || configuredPool && !sameAddress(pool, configuredPool.address)) throw new Error("The configured pool does not match the Synthra factory.");
+  if (!pool || configuredPool && !sameAddress(pool, configuredPool.address)) throw new Error("The configured pool does not match the Uniswap V3 factory.");
   if (await client.poolLiquidity(pool) === 0n) throw new Error("The configured pool has no active liquidity.");
   return { asset: asset.address, pool, fee };
 }
@@ -387,7 +407,7 @@ function availableResponse(
     status: 200,
     body: {
       state: "available",
-      id: `synthra-${request.route}-${request.requestedAtMs}`,
+      id: `uniswap-v3-${request.route}-${request.requestedAtMs}`,
       route: request.route,
       chainId: request.chainId,
       caller: request.caller,
@@ -408,7 +428,7 @@ function availableResponse(
 }
 
 async function directQuote(request: TestnetPlannerRequest, client: TestnetRoutingClient, now: number) {
-  if (request.input.kind === "native" || request.output.kind === "native") throw new Error("The deployed Synthra router has no verified atomic native path.");
+  if (request.input.kind === "native" || request.output.kind === "native") throw new Error("The deployed Uniswap V3 router has no verified atomic native path.");
   const route = await routeFor(request.input, request.output, client);
   const expectedOutput = await client.quoteExactInput(route.path, request.inputAmountRaw);
   const minimumOutput = applySlippageDown(expectedOutput, request.slippageBps);
@@ -417,7 +437,7 @@ async function directQuote(request: TestnetPlannerRequest, client: TestnetRoutin
     from: request.caller,
     to: testnetVenue.swapRouter02,
     data: encodeFunctionData({
-      abi: synthraSwapRouterAbi,
+      abi: uniswapV3SwapRouterAbi,
       functionName: "exactInput",
       args: [{ path: route.path, recipient: request.caller, amountIn: request.inputAmountRaw, amountOutMinimum: minimumOutput }],
     }),
@@ -552,11 +572,12 @@ export async function quoteTestnetSwap(
   const now = (dependencies.now ?? Date.now)();
   const client = dependencies.client ?? defaultRoutingClient();
   try {
+    await client.verifyBindings(deployment.factory, deployment.entryRouter, deployment.uniswapV3Adapter);
     await assertVaults(request, client);
     return request.route === "direct"
       ? await directQuote(request, client, now)
       : await basketQuote(request, client, now, deployment.entryRouter, deployment.uniswapV3Adapter);
   } catch {
-    return { status: 503, body: { state: "unavailable", route: request.route, reason: request.route === "direct" ? "No executable Synthra V3 route is currently available." : "No executable basket route is currently available." } };
+    return { status: 503, body: { state: "unavailable", route: request.route, reason: request.route === "direct" ? "No executable Uniswap V3 route is currently available." : "No executable basket route is currently available." } };
   }
 }

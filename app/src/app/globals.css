@@ -779,7 +779,6 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapAssetIconFrame { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; }
 .swapAssetIconFrame > .swapAssetMark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #536073; color: white; font-size: 11px; font-weight: 800; }
 .swapAssetIconFrame > .swapAssetImage { display: block; width: 30px; height: 30px; border-radius: 50%; object-fit: contain; }
-.swapAssetIconFrame > .swapAssetImage.squareOtfAsset { border-radius: 0; }
 .swapAssetIconFrame > .swapAssetBrandMark { width: 30px; height: 30px; border-radius: 0; font-size: .56rem; }
 .swapTokenOption > .swapAssetIconFrame { margin-right: 0; }
 
@@ -1278,7 +1277,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .appPageActions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 .fundsSummary { display: flex; min-height: 96px; align-items: center; justify-content: space-between; gap: 24px; border-radius: 20px; background: color-mix(in srgb, var(--card) 72%, var(--background)); padding: 18px 20px; }
-.fundsHeadlineMetrics { display: flex; align-items: stretch; gap: 20px; }
+.fundsHeadlineMetrics { display: flex; align-items: stretch; gap: clamp(24px, 3vw, 32px); }
 .fundsHeadlineMetric { display: flex; min-width: 0; flex-direction: column; justify-content: center; gap: 8px; }
 .fundsHeadlineMetric strong { color: var(--text); font-size: clamp(1.8rem, 4vw, 2.35rem); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -0.035em; line-height: 1; }
 .fundsHeadlineMetric > span { color: var(--text-muted); font-size: 0.7rem; }
@@ -1469,6 +1468,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .launchLifecycleNode em { border: 1px solid rgb(var(--accent-rgb) / 34%); border-radius: 4px; color: var(--accent-text); padding: 2px 5px; font-size: 0.52rem; font-style: normal; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .launchLifecycleNode p { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--text-muted); font-size: 0.61rem; line-height: 1.45; }
 .launchLiveProgress { color: var(--accent-text) !important; font-variant-numeric: tabular-nums; font-weight: 650; }
+.launchProgressRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.launchProgressRow .launchLiveProgress { margin: 0; }
+.launchProgressBar { flex: 1 1 100px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--border-strong); }
+.launchProgressBar > span { display: block; height: 100%; background: var(--accent-text); }
 .launchFinalize { display: grid; gap: 6px; margin-top: 8px; }
 .launchFinalize .primaryAction { width: 100%; min-height: 36px; }
 .launchFinalize > span { display: flex; min-height: 0.8rem; flex-wrap: wrap; gap: 7px; color: var(--text-muted); font-size: 0.59rem; }
@@ -1830,6 +1833,10 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .createAssetPickerEmpty > .secondaryAction { min-height: 32px; }
 .createAssetRow.constituentAssetRow > .removeCreateAsset { height: 50px; }
 .constituentsIntro { align-items: flex-start; }
+.constituentsRewardsNote { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); padding: 12px 14px; color: var(--text-soft); }
+.constituentsRewardsNote > svg { flex: 0 0 auto; margin-top: 2px; color: var(--text-muted); }
+.constituentsRewardsNote p { margin: 0; font-size: 0.75rem; line-height: 1.6; }
+.constituentsRewardsNote a { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
 .constituentsActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .weightingModeButton[aria-pressed="true"] { border-color: rgb(var(--accent-rgb) / 42%); background: rgb(var(--accent-rgb) / 12%); color: var(--accent-text); }
 .constituentWeightRow { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(130px, 0.48fr) minmax(220px, 0.9fr) 32px; align-items: start; gap: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); padding: 14px; }

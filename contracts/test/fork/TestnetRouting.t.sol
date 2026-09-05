@@ -125,6 +125,37 @@ contract TestnetRoutingTest is Test {
         _entryExitAndSettle(true, false);
     }
 
+    function testV3NativeBasketEntryExit() public {
+        uint256 beforeBalance = address(this).balance;
+        (uint256 shares,,,) =
+            router.mintFromNative{ value: 2 ether }(_mintRequest(), _entryLegs(true));
+        assertGt(shares, 0);
+        assertLt(address(this).balance, beforeBalance);
+        _assertCleared();
+        uint256 beforeExit = address(this).balance;
+        (uint256 received,,) = router.redeemToNative(
+            BasketRedeemRequest(address(vault), address(weth), shares, 1, 0, block.timestamp),
+            new uint256[](2),
+            _exitLegs(true)
+        );
+        assertGt(received, 0);
+        assertEq(address(this).balance - beforeExit, received);
+        _assertCleared();
+    }
+
+    function testV3MinimumOutputRollback() public {
+        uint256 beforeBalance = weth.balanceOf(address(this));
+        SwapLeg[] memory legs = _entryLegs(true);
+        legs[0].minAmountOut = 100 ether;
+        vm.expectRevert();
+        router.mintFromToken(_mintRequest(), legs);
+        assertEq(weth.balanceOf(address(this)), beforeBalance);
+        assertEq(vault.totalSupply(), 0);
+        _assertCleared();
+    }
+
+    receive() external payable { }
+
     function testV4FeeShareSaleSettlement() public {
         _entryExitAndSettle(false, true);
     }
@@ -299,7 +330,7 @@ contract TestnetRoutingTest is Test {
         mintingV3Pool = address(0);
     }
 
-    function synthraV3MintCallback(uint256 amount0, uint256 amount1, bytes calldata) external {
+    function uniswapV3MintCallback(uint256 amount0, uint256 amount1, bytes calldata) external {
         require(msg.sender == mintingV3Pool && msg.sender != address(0), "unexpected LP callback");
         assertTrue(IERC20(ForkV3Pool(msg.sender).token0()).transfer(msg.sender, amount0));
         assertTrue(IERC20(ForkV3Pool(msg.sender).token1()).transfer(msg.sender, amount1));

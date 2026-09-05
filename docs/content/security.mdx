@@ -86,16 +86,15 @@ Production deployment requires explicit WETH, PoolManager, StateView, PositionMa
 
 The testnet configuration references an unofficial V4 mirror and pins expected runtime code hashes. A successful hash check identifies the reviewed runtime bytes at that address. It does not endorse the deployment or its operators.
 
-Testnet routing validation binds eight dependency runtimes and the Universal Router's verified
+Testnet routing validation binds eleven dependency runtimes and the Universal Router's verified
 four-field exact-input tuple. The fork suite exercises basket entry, exit, and collector settlement
 through the deployed V3 and V4 venues. Run `corepack pnpm contracts:validate:testnet-routing` before
 redeployment. These checks cover the selected testnet dependencies; mainnet validation remains open.
 
-The recorded September 5 testnet deployment predates the H-01 liquidity-capacity fix. Its hook mask
-is `0x2040`; the fixed manager requires exactly `0x2840`. Deployment tooling mines a fresh CREATE2
-salt against the current initcode and verifies the deployed hook permissions. The fixed contracts
-require a new deployment; changing local artifacts does not update existing contracts.
-The recorded deployment also predates the V4 tuple and Permit2 cleanup corrections.
+The fresh September 5 testnet deployment includes the H-01 liquidity-capacity fix with hook mask
+`0x2840`, the four-field V4 tuple, and Permit2 cleanup corrections. Deployment tooling mined a fresh
+CREATE2 salt and verified the deployed hook permissions. Both replacement adapters are approved,
+and the previous V3 adapter is revoked. Existing locked launch positions remain untouched.
 
 ## Production blockers
 
