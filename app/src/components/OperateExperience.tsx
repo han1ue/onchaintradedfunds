@@ -387,7 +387,7 @@ function OperateFooter() {
 
   return (
     <footer className="dashboardFooter">
-      <span>Onchain Traded Funds · experimental, unaudited software</span>
+      <span>Onchain Traded Funds · experimental software</span>
       <div className="footerLinks">
         {showTestnetLinks ? <a href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer">ETH Faucet</a> : null}
         {showTestnetLinks ? <a href="https://faucet.paxos.com/" target="_blank" rel="noreferrer">USDG Faucet</a> : null}

@@ -39,7 +39,7 @@ const navbar = (
 const footer = (
   <Footer>
     <span className="otf-footer-content">
-      <span>Onchain Traded Funds · Experimental, unaudited, and pre-mainnet.</span>
+      <span>Onchain Traded Funds · Experimental and pre-mainnet.</span>
       <a href="https://app.onchaintradedfunds.com">Open app</a>
     </span>
   </Footer>

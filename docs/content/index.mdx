@@ -7,12 +7,12 @@ import { Callout, Cards } from 'nextra/components'
 
 # Onchain Traded Funds
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults. A creator fixes the constituent order, raw bootstrap units, fee rates, expense beneficiary, and fund thesis when the vault is created. The contracts do not use prices, calculate NAV, or rebalance.
+Onchain Traded Funds (OTFs) are experimental vaults that hold a basket of ERC-20 tokens. Each vault issues shares in its basket. The creator fixes the basket, initial token quantities, fee rates, fee beneficiary, and fund thesis at creation.
 
-The application uses a `$1` target and offchain market data to prepare the initial basket. Those inputs are creation metadata, not an onchain price or peg.
+The application uses offchain prices and a `$1` target to prepare the initial basket. The contracts do not calculate net asset value (NAV), maintain a dollar peg, or rebalance.
 
 <Callout type="warning" emoji="">
-  The contracts are unaudited, undeployed on mainnet, and not ready to hold value.
+  The protocol is deployed on Robinhood Chain Testnet. It is pre-mainnet and not ready to hold value.
 </Callout>
 
 ## Read the protocol documentation
@@ -27,4 +27,4 @@ The application uses a `$1` target and offchain market data to prepare the initi
 
 ## Scope
 
-These pages describe the current pre-mainnet implementation. They do not certify the contracts or any deployment. The application under `launch/` is a separate prelaunch competition and has no protocol-governance authority.
+These pages describe the current implementation. Start with the overview for how funds work, then use the security specification for contract requirements and the deployment page for network addresses and status.

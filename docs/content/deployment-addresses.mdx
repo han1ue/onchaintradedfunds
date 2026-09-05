@@ -5,9 +5,7 @@ description: Current protocol deployments and external dependencies.
 
 # Deployment addresses
 
-The complete protocol was redeployed on Robinhood Chain Testnet on September 5, 2026.
-The application uses the fresh contracts and unmodified Uniswap V3 dependencies. No protocol
-is deployed on Mainnet.
+The application uses the September 5, 2026 deployment on Robinhood Chain Testnet. The repository records no protocol deployment on Mainnet.
 
 ## Robinhood Chain Testnet
 
@@ -28,17 +26,11 @@ Chain ID: 46630. Deployment completed at 2026-09-05T18:14:18.372Z.
 | Uniswap V3 adapter | `0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xe8c38546f9a1cdde97b8aa274d529c782a22947ebb32ba8f59af11b0b225fd19) |
 | Uniswap V4 adapter | `0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x6076d2219a9c99472de0841cc001fae7c5327e5df597fbe8a0a51ebfc2b4be05) |
 
-The launch manager includes the H-01 correction and has hook mask 0x2840. The V4 adapter and
-collector encode the configured Universal Router's four-field tuple and clear ERC-20 and Permit2
-allowances after execution. The factory, router, collector, token allocations, and adapter approvals
-were configured together. Existing launch positions remain untouched onchain.
+The launch manager includes the liquidity-capacity correction and uses hook mask `0x2840`. The deployed V4 adapter and collector use the testnet Universal Router's four-field tuple and clear ERC-20 and Permit2 allowances after execution. Current source targets a five-field tuple; see [deployment controls](/security#deployment-controls) before redeploying.
 
-The previous V3 adapter was revoked in [this transaction](https://explorer.testnet.chain.robinhood.com/tx/0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a).
-There are no compatibility aliases to the previous venue.
+The previous V3 adapter was [revoked](https://explorer.testnet.chain.robinhood.com/tx/0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a). Old launch positions remain onchain.
 
-The manifest at app/src/config/robinhood-testnet.json records addresses, runtime hashes,
-deployment receipts, launch parameters, and configuration transactions. Routing status is ready.
-The protocol administrator and team beneficiary are both 0xc340D7085E321B82CF550904310EE44bae9e4CD2.
+The deployment manifest, `app/src/config/robinhood-testnet.json`, records contract addresses, code hashes, receipts, launch parameters, and configuration transactions. It marks routing as ready for these deployed contracts. The protocol administrator and team beneficiary are both `0xc340D7085E321B82CF550904310EE44bae9e4CD2`.
 
 ## V3 dependencies and liquidity
 
@@ -50,32 +42,18 @@ The protocol administrator and team beneficiary are both 0xc340D7085E321B82CF550
 | SwapRouter02 | 0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4 |
 | Periphery WETH9 | 0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e |
 
-The four V3 contracts match the published Uniswap artifacts and their constructor arguments.
-Package versions, runtime hashes, and immutable bindings are recorded in the repository's
-scripts/fixtures/robinhood-testnet-v3.json manifest. The position manager's NFT descriptor is zero;
-position ownership and liquidity work, while NFT tokenURI rendering is unavailable.
+The four V3 contracts match the published Uniswap artifacts. The repository's `scripts/fixtures/robinhood-testnet-v3.json` records package versions, code hashes, and constructor bindings. The position manager has no NFT descriptor: ownership and liquidity work, but NFT `tokenURI` rendering is unavailable.
 
-TSLA/USDG, AMZN/USDG, PLTR/USDG, NFLX/USDG, and AMD/USDG are initialized and seeded at 0.3%.
+The seeded USDG pairs with TSLA, AMZN, PLTR, NFLX, and AMD charge 0.3%. WETH/USDG uses 0.05%; the factory does not enable 0.01%. The application's `/liquidity` page manages liquidity additions.
 
-The supporting WETH/USDG pool uses 0.05%; the replacement factory does not enable 0.01%.
-The application's /liquidity page manages additions to these testnet markets.
+Protocol WETH is `0x33e4191705c386532ba27cBF171Db86919200B94`. The entry/exit router wraps and unwraps ETH through this address. V3, V4, the launch router, and buybacks also use this token. The separate periphery WETH9 address in the table does not replace it.
 
-Protocol WETH remains 0x33e4191705c386532ba27cBF171Db86919200B94. V3 treats it as an ERC-20. Native basket
-entry and exit wrap or unwrap protocol WETH in the OTF router. The different periphery WETH9
-is not substituted for it. V4, the canonical OTF/WETH pool, the launch router, collector, and
-Permit2 retain the protocol WETH binding.
-
-Live deployment and seed receipts are stored under deployments. The validation report at
-contracts/TESTNET_ROUTING_VALIDATION.md separates live operations from fork execution tests.
-Testnet V4 uses the existing mirror deployment with pinned runtime hashes.
+Live deployment and seed receipts are in `deployments/`. The report at `contracts/TESTNET_ROUTING_VALIDATION.md` distinguishes live operations from fork tests. Testnet V4 uses a mirror deployment with pinned code hashes.
 
 ## Robinhood Chain Mainnet
 
 Chain ID: 4663. Status: configuration required.
 
-The repository records the Robinhood ETH/USD oracle at
-0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9. This is an external dependency, not a protocol deployment.
+The configured external ETH/USD oracle is `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`.
 
-Production deployment still requires WETH, V3 and V4 venue addresses, Permit2, oracle maximum age,
-a protocol multisig, and a team beneficiary. Validate those dependencies on a mainnet fork.
-The testnet results do not establish production readiness.
+Production deployment requires WETH, V3 and V4 venue addresses, Permit2, oracle maximum age, a protocol multisig, and a team beneficiary. Validate these dependencies on a mainnet fork; testnet results do not establish production readiness.

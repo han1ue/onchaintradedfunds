@@ -14,7 +14,7 @@ The Nextra site adapts the main application's visual system for long-form techni
 
 Nextra supplies navigation, search, page outline, previous and next links, repository and edit links, feedback, and the footer.
 
-The index opens with a plain description and an unaudited warning, followed by links to the protocol overview, security specification, risk model, token economics, and deployment status. Detailed pages should introduce a mechanism before discussing its risks or operational consequences.
+The index opens with a plain description and testnet status, followed by links to the protocol overview, security specification, risk model, token economics, and deployment status. Each page explains a mechanism before its risks or operational requirements.
 
 ## Responsive and accessible behavior
 

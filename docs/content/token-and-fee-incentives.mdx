@@ -7,11 +7,13 @@ import { RewardsUnlockChart, TeamUnlockChart } from "../components/TokenUnlockCh
 
 # OTF token economics
 
-The contracts implement the token allocation and claim mechanics described here. The emission schedule is a publisher policy rather than an onchain restriction. The current architecture is unaudited and deployed only on Robinhood Chain Testnet. The active September 5 deployment uses the 15/135 ETH launch curve; the former September 4 deployment remains recorded separately with its original 20/180 ETH parameters.
+OTF has a fixed initial supply and rewards distributed through cumulative claims. Contracts define the token and claim mechanics; the reward publisher controls the emission schedule.
+
+The active September 5 deployment runs on Robinhood Chain Testnet with the 15/135 ETH launch curve. See [Deployment addresses](/deployment-addresses) for the current contracts.
 
 ## Supply and allocation
 
-`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Its constructor mints `MAX_SUPPLY = 1,000,000,000 ether` once. No later mint, tax, blacklist, seizure, or upgrade path exists. Holders can burn their own OTF, and `burnFrom` requires allowance.
+`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Its constructor mints one billion OTF (`MAX_SUPPLY = 1,000,000,000 ether`). It has no later mint, tax, blacklist, seizure, or upgrade function. Holders can burn their own OTF; `burnFrom` requires allowance.
 
 `MAX_SUPPLY` records the original issuance. `totalSupply()` records live supply after burns. The deployment script allocates every token and leaves the deployer with none:
 
@@ -23,7 +25,7 @@ The contracts implement the token allocation and claim mechanics described here.
 
 ## Canonical V4 launch
 
-The launch manager creates one OTF/WETH Uniswap V4 pool with a static 0% LP fee and tick spacing 1. It initializes at exactly `0.000000015 WETH` per OTF, which is a 15 ETH reference FDV against the original one-billion-token supply.
+The launch manager creates one OTF/WETH Uniswap V4 pool with a fixed 0% LP fee and tick spacing 1. Its initial price is `0.000000015 WETH` per OTF: a 15 ETH reference fully diluted valuation (FDV) against the original one-billion-token supply.
 
 The pool price is exact at initialization, while each liquidity boundary comes from V4 `TickMath`:
 
@@ -32,23 +34,23 @@ The pool price is exact at initialization, while each liquidity boundary comes f
 | OTF is currency0 | 9703428570912459262669889 | -180161 / 9703508046175219238931631 | -158188 / 29110022932210076965716350 |
 | OTF is currency1 | 646895238060830617511325894307352 | 180161 / 646889939753375374376401562675059 | 158188 / 215633692560272871859121182412411 |
 
-The exact initialization price sits just outside the starting position boundary. It produces Slot0 tick `-180162` when OTF is currency0 and `180161` when OTF is currency1. The final tick represents approximately `0.000000134997562702653186573 WETH` per OTF, or `134.997562702653186573 ETH` reference FDV. It is `0.002437297346813427 ETH` below the nominal 135 ETH target. The next price-direction tick represents `135.011062458923451891 ETH`, which exceeds the target.
+The initial price sits just outside the starting position boundary. The final boundary is the closest tick-derived OTF price below the 135 ETH target, at approximately `134.997562702653186573 ETH` reference FDV.
 
-Permanent liquidity is fixed at `18371007233046122951295`, the greatest integer liquidity whose V4 round-up OTF requirement stays within the 50 million cap. It requires `49999999999999999999997973` raw OTF when OTF is currency0 and `49999999999999999999997974` when OTF is currency1, leaving 2,027 or 2,026 raw units below the cap. Increasing liquidity by one would require `50000000000000000000000695` or `50000000000000000000000696` raw OTF, exceeding the cap by 695 or 696 units. Either ordering requires `6749878135132658333` raw WETH.
+Permanent liquidity is fixed at `18371007233046122951295`. It pairs just under 50 million OTF with `6.749878135132658333 WETH`. This is the greatest integer liquidity that stays within the 50 million OTF cap after V4 rounding.
 
-Bootstrap liquidity is fixed at `27556748080852150400017`, the smallest integer liquidity whose V4 round-down removal returns the permanent position's full `6749878135132658333` raw WETH principal. One less unit of bootstrap liquidity returns one less raw WETH unit. V4 add-liquidity rounding consumes `149997417396300389512897535` raw OTF when OTF is currency0 and `149997417396300389512897549` when it is currency1. Those amounts leave `2582603699610487102465` or `2582603699610487102451` raw OTF units below the 150 million cap. Swap-step round-up across tick-bitmap words makes a boundary purchase consume `6749878135132658377` raw WETH in the currency0 ordering or `6749878135132658378` in the currency1 ordering, 44 or 45 units more than the principal later returned by position removal.
+Bootstrap liquidity is fixed at `27556748080852150400017` and uses approximately 149,997,417.3963 OTF from its 150 million cap. It is the smallest integer liquidity that returns the permanent position's full WETH principal at graduation. Swap rounding adds 44 or 45 wei of WETH to a purchase that reaches the final boundary, depending on currency order. The [security specification](/protocol-security-spec#canonical-launch) defines the rounding requirements.
 
-The `afterSwap` hook enforces the full bootstrap corridor using exact sqrt prices. It marks `GraduationReady` only when the pool lands exactly on the final boundary; the inverse ordering reports tick `158187` at the `TickMath(158188)` boundary, so tick equality is not a valid graduation test. Swaps attempted while ready revert.
+The `afterSwap` hook keeps the pool price within the bootstrap boundaries. It marks `GraduationReady` only at the exact final sqrt price; tick equality alone is insufficient. Further swaps revert until finalization.
 
-`OTFLaunchRouter` is the supported bootstrap route. It sets the appropriate boundary price, partially fills an oversized buy or sell, settles only consumed input, leaves unused WETH in the buyer's wallet, and refunds unused native ETH. After the PoolManager returns control, a boundary purchase calls permissionless finalization in the same outer transaction. Any finalization failure reverts the purchase as well.
+`OTFLaunchRouter` is the supported bootstrap route. It partially fills buys or sells at the boundaries, takes only the input used, and refunds unused native ETH. A purchase that reaches the final boundary also finalizes graduation after PoolManager returns control. Both steps succeed or the entire transaction reverts. Anyone can also call finalization separately once the pool is ready.
 
-Ordinary Uniswap UI trades can succeed while they remain inside the corridor. A standard router order that would cross either boundary reverts in full because it cannot supply the required limit. Adding a `beforeSwap` hook would reduce some wasted gas but could not make that order partially fill, so the permanent hook path contains `beforeInitialize`, `beforeAddLiquidity`, and `afterSwap`. After graduation, normal Uniswap trading resumes.
+Ordinary Uniswap UI trades can succeed within the corridor. Orders that cross a boundary revert because the standard router cannot supply the required price limit. The launch hook uses `beforeInitialize`, `beforeAddLiquidity`, and `afterSwap`. Normal Uniswap trading resumes after graduation.
 
-Finalization removes the bootstrap position, measures both returned tokens, and supplies only the derived principal to the permanent full-range position. Donated or unsolicited WETH cannot enlarge it and remains visible as locked dust. Once the permanent mint succeeds, the manager burns its entire OTF balance in one call, including unsolicited OTF. The ordinary burn is `2582603699610487104492` raw OTF in the currency0 ordering and `2582603699610487104477` in the currency1 ordering. The permanent NFT remains owned by the manager, which has no withdrawal or replacement function.
+Finalization removes the bootstrap position and funds a permanent full-range position with the derived principal. Extra WETH stays locked in the manager and cannot enlarge the position. After the permanent mint succeeds, the manager burns its entire remaining OTF balance, normally about 2,582.6037 OTF plus any unsolicited OTF. The manager owns the permanent NFT and has no withdrawal or replacement function.
 
-`MAX_SUPPLY` exists only in `OTFToken` and records the original issuance. Launch reference-FDV displays use that value rather than live supply, which falls as OTF is burned.
+Launch reference FDV uses `OTFToken.MAX_SUPPLY()`, so burns do not change the launch targets.
 
-The four phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and `Graduated`. Price movement controls the transition; there is no launch schedule or countdown.
+The four phases are `NotInitialized`, `BootstrapActive`, `GraduationReady`, and `Graduated`. Graduation depends on price, with no schedule or countdown.
 
 ## Team market-cap vesting
 
@@ -60,13 +62,13 @@ canonical OTF/WETH V4 spot price
 × OTF.totalSupply()
 ```
 
-The calculation handles either pool currency order and uses full-precision integer arithmetic. It uses current spot price rather than a TWAP. Restricting checkpoints is an explicit trusted-beneficiary design choice; it does not make the spot price manipulation-resistant. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet deployment tooling uses a fixed `$2,000` fake oracle; production requires an explicit oracle address.
+The calculation handles either currency order with full-precision integer arithmetic. It uses the current spot price, which can be manipulated. Beneficiary-only checkpoints do not remove that risk. The ETH/USD answer must be positive, no older than `maxOracleAge`, and not from the future. Testnet uses a fixed $2,000 fake oracle; production requires an explicit oracle address.
 
 Each completed $1 million milestone unlocks 10 million OTF, up to $10 million and the full allocation. Values between milestones round down. Once unlocked, a tranche cannot relock after a price or supply decline.
 
 <TeamUnlockChart />
 
-The current beneficiary can claim the cumulative unlocked amount minus prior claims. The beneficiary may nominate, replace, or cancel a successor. The nominee receives claim authority only after accepting; a pending nomination does not interrupt the current beneficiary's authority. A transfer changes neither unlocked nor claimed accounting.
+The beneficiary can claim unlocked tokens minus prior claims and nominate a successor. They can replace or cancel the nomination. Authority transfers only when the nominee accepts, preserving unlocked and claimed amounts.
 
 ## Immutable fund fees
 
@@ -78,7 +80,7 @@ Each vault creator selects three rates at creation:
 | Mint | 0% | 2% / 200 bps |
 | Redeem | 0% | 1% / 100 bps |
 
-The rates and expense beneficiary cannot change. Annual expense accrues through lazy share inflation. Mint and normal redemption fees are also issued as vault shares. Shutdown and final emergency redemptions have no redeem fee. Preview and execution functions share the same arithmetic.
+The rates and expense beneficiary cannot change. The vault collects all three fees by issuing vault shares, recording accrued annual expense at checkpoints. Redemptions after shutdown have no redeem fee. Previews use the same arithmetic as execution.
 
 Holding OTF as an accounted vault constituent changes the division of fee shares, not the fee charged to the investor:
 
@@ -95,30 +97,30 @@ buyback share = 100% - creator share
 | 5 million | 78.28% | 21.72% |
 | 10 million or more | 90% | 10% |
 
-The contract floors the square-root result to an integer basis-point creator share. Mint and redeem creator portions round down, leaving the remainder for buyback. Annual expense accounting carries its fractional split remainder between checkpoints so checkpoint frequency does not alter cumulative allocation.
+The contract rounds the creator's percentage down to whole basis points. Mint and redeem creator portions also round down, leaving the remainder for buyback. Annual expense carries fractional split remainders between checkpoints so their frequency does not change the cumulative split.
 
-The vault checkpoints accrued expense before an operation changes accounted OTF. Direct OTF donations are not accounted and do not affect the split. Fund-owned OTF remains an ordinary constituent and is never burned merely because the vault holds it.
+The vault records accrued expense before accounted OTF changes. Direct donations do not affect the split. OTF held in the fund remains a constituent and is not burned merely because the fund holds it.
 
-Both portions are minted to `BuybackCollector`. The vault records the exact creator and buyback share counts during the fee transaction. Each factory-recognized vault has a separate collector account, and the collector reads its immutable beneficiary from the vault when settling fees.
+`BuybackCollector` receives both portions and records their exact share counts in a separate account for each factory-recognized vault. At settlement, it reads the vault's immutable beneficiary.
 
 ## Fee settlement and burn
 
-Only a vault's expense beneficiary can settle its fee account. Settlement checkpoints annual fees, consumes the complete pending creator and buyback share balances, and uses one of two routes:
+Only the expense beneficiary can settle a vault's fee account. Settlement records accrued annual fees and consumes all pending creator and buyback shares through one of two routes:
 
 1. Sell the combined vault shares through approved adapters to canonical WETH.
-2. Redeem the shares and sell every constituent to canonical WETH.
+2. Redeem the shares and convert the returned constituents to canonical WETH.
 
-The first route may use intermediate tokens, but it must consume the exact pending share balance and leave only WETH as transient output. The caller supplies minimum aggregate WETH, minimum OTF, and a deadline. The collector does not discover routes, calculate fair value, consult an oracle or TWAP, or impose its own slippage value.
+The share-sale route may use intermediate tokens but must consume the exact pending balance and leave only WETH as transient output. The beneficiary supplies routes, minimum WETH and OTF outputs, and a deadline. The collector does not price assets or choose slippage limits.
 
-Actual WETH is split in proportion to the creator and buyback share counts recorded at accrual. The creator payment rounds down and goes to the beneficiary. Only the remaining WETH may be spent on OTF.
+The collector splits received WETH using the share counts recorded when fees accrued. It pays the beneficiary's portion, rounded down, and spends the remainder on OTF.
 
-The complete operation is atomic. Fee checkpointing, share sale or redemption, constituent conversion, beneficiary payment, OTF purchase, and burn either all succeed or all revert. A share sale leaves those vault shares outstanding with market counterparties; redemption burns the shares and removes their proportional backing.
+Settlement, beneficiary payment, OTF purchase, and burn all succeed or all revert. Selling shares leaves them outstanding with buyers; redeeming burns them and removes their proportional backing.
 
-The final swap can use only the canonical OTF/WETH V4 pool key. It enforces its own deadline and minimum output, then burns every OTF purchased. The collector has no arbitrary-call, withdrawal, or rescue function. Buybacks may execute during bootstrap or after graduation.
+The final swap uses only the canonical OTF/WETH V4 pool, enforces the deadline and minimum output, and burns every OTF purchased. Buybacks can execute during bootstrap or after graduation. The collector has no arbitrary-call, withdrawal, or rescue function.
 
 ## Cumulative rewards and incentive emissions
 
-`MerkleRewardsDistributor` receives 700 million OTF, 70% of the original one-billion-OTF supply. The incentive policy reserves 650 million OTF, or 65% of the original supply, for depositors and 50 million OTF, or 5%, for fund creators. The combined budget is distributed once a week for exactly four years, or 208 weeks. Emissions stop after week 208.
+`MerkleRewardsDistributor` receives 700 million OTF: 650 million for depositors and 50 million for fund creators, or 65% and 5% of the original supply. The publisher's policy distributes this budget weekly over 208 weeks (four years), then ends emissions.
 
 The weekly target starts at 14 million OTF and declines by approximately 1.968% every week:
 
@@ -126,16 +128,16 @@ The weekly target starts at 14 million OTF and declines by approximately 1.968% 
 weeklyEmission(n) = 14,000,000 × 0.9803203^(n - 1)
 ```
 
-Each weekly target is divided in the same 65-to-5 proportion as the full rewards budget:
+Each week uses the same 65-to-5 split:
 
 ```text
 depositorEmission(n) = weeklyEmission(n) × 13 / 14
 creatorEmission(n) = weeklyEmission(n) - depositorEmission(n)
 ```
 
-Week 1 therefore assigns 13 million OTF to depositors and 1 million OTF to creators. Across all 208 weeks, the two buckets must reconcile to exactly 650 million and 50 million OTF.
+Week 1 assigns 13 million OTF to depositors and 1 million OTF to creators.
 
-`n` starts at 1. The factor shown above is rounded for documentation. Applied literally for 208 weeks, it totals approximately 699,999,574.95 OTF, about 425.05 OTF below the fixed allocation. The application uses the rounded formula for weeks 1 through 207 and assigns the remaining allocation to week 208, approximately 229,144.55 OTF, so its schedule model totals exactly 700,000,000 OTF. The reward publisher must apply the same reconciliation or an equivalently precise schedule, then reconcile both weekly buckets to their fixed totals.
+`n` starts at 1. The rounded decay factor leaves a shortfall of about 425.05 OTF over 208 weeks. The application applies it for weeks 1–207 and assigns the remainder to week 208, approximately 229,144.55 OTF. The publisher must reconcile the schedule to exactly 650 million depositor OTF and 50 million creator OTF.
 
 | Checkpoint | Approximate weekly emission |
 | --- | ---: |
@@ -156,8 +158,6 @@ Week 1 therefore assigns 13 million OTF to depositors and 1 million OTF to creat
 
 <RewardsUnlockChart />
 
-The schedule concentrates rewards in the protocol's earliest growth phase and reduces them every week. It has no monthly buckets, quarterly steps, or periodic halvings. The four-year endpoint caps the incentive allocation.
-
 Both buckets use capped pro-rata weights:
 
 ```text
@@ -165,13 +165,13 @@ cappedWeight(i) = min(eligible OTF balance(i), 10,000,000 OTF)
 allocation(i) = bucketEmission × cappedWeight(i) / sum(cappedWeight)
 ```
 
-The depositor calculation uses eligible deposit balances. The creator calculation uses each fund creator's eligible OTF balance. A balance above 10 million OTF receives no additional weight for that weekly allocation. The publisher determines eligible accounts and balances from the weekly snapshot, applies integer rounding, and keeps the combined allocations within that week's target.
+Depositor weights use eligible deposit balances; creator weights use each creator's eligible OTF balance. Balances above 10 million OTF receive no extra weight. The publisher determines eligibility from weekly snapshots and rounds allocations within each weekly target.
 
-The Funds page shows only the combined weekly distribution. Each fund page shows a fund-specific depositor APY estimate based on the 65% depositor bucket, OTF's current USD value, and that fund's current informational AUM. The estimate annualizes the current weekly value over 52 weeks. A fund with exactly zero AUM uses a labeled $100 calculation baseline without changing the displayed AUM. The estimate is variable, is not guaranteed, and does not determine a user's Merkle entitlement.
+The Funds page shows the combined weekly distribution. Each fund page estimates depositor APY using the depositor bucket, current OTF USD price, and the fund's informational AUM, annualized over 52 weeks. Zero-AUM funds use a labeled $100 calculation baseline without changing displayed AUM. This variable estimate is not guaranteed and does not determine claim entitlements.
 
-The schedule, 65% and 5% split, eligibility rules, and 10 million OTF weight cap are publisher policy. `MerkleRewardsDistributor` does not enforce them. Its owner publishes an immediately active cumulative Merkle root, and the contract defines no reward formula, schedule, delay, or period cap. A valid root can allocate the remaining balance faster than the documented schedule. The owner cannot withdraw reward principal.
+`MerkleRewardsDistributor` does not enforce the schedule, allocation split, eligibility rules, or weight cap. Its owner publishes an immediately active cumulative Merkle root with no delay or per-period limit. A valid root can allocate the entire remaining balance ahead of schedule. The owner has no function to withdraw reward principal.
 
-Each standard-tree leaf commits to chain ID, distributor address, user address, and cumulative entitlement. Anyone may submit a proof, but payment always goes to the committed user. The distributor records prior claims and transfers only the difference between the proven cumulative amount and the amount already claimed. Invalid proofs, duplicate claims, and decreasing entitlements revert.
+Each standard-tree leaf binds a cumulative entitlement to a chain, distributor, and user. Anyone may submit its proof; payment goes to that user. The distributor pays the proven amount minus prior claims. Invalid proofs, duplicate claims, and entitlements below the amount already claimed revert.
 
 Generate an allocation artifact with:
 
@@ -183,7 +183,7 @@ corepack pnpm rewards:tree -- \
   --distributor <address>
 ```
 
-The script validates addresses, amount syntax, signs, and duplicate users. It does not calculate weekly emissions, split depositor and creator rewards, apply the weight cap, determine eligibility, or reconcile the 700 million OTF schedule.
+The script validates addresses and amount syntax and rejects signed amounts and duplicate users. The publisher must calculate emissions, eligibility, capped weights, and the allocation split before running it, including reconciliation to the 700 million OTF budget.
 
 ## Trusted inputs
 

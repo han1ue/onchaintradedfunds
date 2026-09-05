@@ -5,196 +5,179 @@ description: Normative invariants for OTF token economics, fund fees, launch, bu
 
 # Protocol security specification
 
-The keywords MUST, MUST NOT, and SHOULD describe requirements for the current architecture.
+MUST, MUST NOT, MAY, and SHOULD define requirements and permissions for the current architecture.
+For an explanation of the trust assumptions behind these requirements, see [Security](/security).
 
 ## OTF supply
 
-`OTFToken` MUST mint exactly `1,000,000,000 ether` in its constructor and MUST expose no later mint
-path. `MAX_SUPPLY` MUST remain fixed while `totalSupply()` MUST fall when a holder burns owned or
-properly allowed tokens. Deployment MUST allocate exactly 100 million to team vesting, 200 million
-to the launch manager, and 700 million, or 70% of the original supply, to protocol and community
-incentives through the rewards distributor, leaving the deployer with zero OTF.
+`OTFToken` MUST mint exactly `1,000,000,000 ether` in its constructor, with no later mint path.
+`MAX_SUPPLY` MUST remain fixed; `totalSupply()` MUST fall when a holder burns owned or approved tokens.
+Deployment MUST allocate 100 million OTF to team vesting, 200 million to the launch manager, and
+700 million to the rewards distributor, leaving the deployer with zero OTF.
 
 ## Canonical launch
 
 The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST
-initialize at the fixed sqrt price representing exactly 15 ETH reference FDV against the original
-issuance.
+initialize at the fixed square-root price for exactly 15 ETH reference FDV against original issuance.
 
-`MAX_SUPPLY` MUST remain canonical in `OTFToken` and MUST NOT be duplicated in the launch
-manager. The final tick MUST be `-158188` when OTF is currency0 and `158188` when OTF is currency1,
-representing approximately `134.997562702653186573 ETH` reference FDV; the next price-direction tick
+The manager MUST read `MAX_SUPPLY` from `OTFToken` and MUST NOT duplicate it. The final tick MUST be
+`-158188` when OTF is currency0 and `158188` when OTF is currency1, approximately
+`134.997562702653186573 ETH` reference FDV. The next tick in the direction of increasing OTF price
 MUST exceed 135 ETH.
 
-The manager MUST receive at least 200 million OTF. Bootstrap and permanent liquidity MUST be the
-fixed values `27556748080852150400017` and `18371007233046122951295`.
+The manager MUST receive at least 200 million OTF. Liquidity MUST use these fixed values:
 
-Tick boundaries and required
-token amounts MUST be derived with the pinned V4 `TickMath` and `SqrtPriceMath`, using round-up for
-mint requirements and round-down for bootstrap removal. Bootstrap OTF MUST remain at or below 150
-million, permanent OTF MUST remain at or below 50 million, and derived bootstrap WETH principal MUST
-equal derived permanent WETH.
+| Position | Liquidity |
+| --- | --- |
+| Bootstrap | `27556748080852150400017` |
+| Permanent | `18371007233046122951295` |
+
+Tick boundaries and token amounts MUST use pinned V4 `TickMath` and `SqrtPriceMath`, rounding up
+mint requirements and down bootstrap removal. Bootstrap OTF MUST stay within 150 million and
+permanent OTF within 50 million. Derived bootstrap WETH principal MUST equal derived permanent WETH.
 
 Reducing bootstrap liquidity by one MUST underfund that WETH principal. Increasing permanent
 liquidity by one MUST exceed the permanent OTF cap in both currency orderings.
 
-The hook address MUST encode exactly `beforeInitialize`, `beforeAddLiquidity`, and `afterSwap` (`0x2840`). Every third-party pool
-initialization MUST revert, including while the predicted CREATE2 manager address has no code. The
-hook MUST NOT add `beforeSwap`.
+The hook address MUST encode exactly `beforeInitialize`, `beforeAddLiquidity`, and `afterSwap`
+(`0x2840`), with no `beforeSwap`. Third-party pool initialization MUST revert, including before the
+predicted CREATE2 manager address has code.
 
-Before `Graduated`, `beforeAddLiquidity` MUST reject additions unless the immutable PoolManager
-calls for the canonical pool, the sender is the immutable PositionManager, and an internal mint
-authorization is active. PositionManager identity alone MUST NOT authorize third-party mints.
+Before `Graduated`, `beforeAddLiquidity` MUST require the immutable PoolManager, canonical pool,
+immutable PositionManager as sender, and active internal mint authorization. PositionManager identity
+alone MUST NOT authorize third-party mints.
 
-Bootstrap authorization MUST require `NotInitialized`, the ordered bootstrap ticks, and exactly
-`BOOTSTRAP_LIQUIDITY`. Permanent authorization MUST require `GraduationReady`, both full-range ticks,
-and exactly `PERMANENT_LIQUIDITY`. Both deltas MUST be positive. Each authorization MUST surround
-only its synchronous mint call and MUST clear on success or roll back on failure.
+Bootstrap authorization MUST require `NotInitialized`, ordered bootstrap ticks, and exactly
+`BOOTSTRAP_LIQUIDITY`. Permanent authorization MUST require `GraduationReady`, full-range ticks,
+and exactly `PERMANENT_LIQUIDITY`. Both deltas MUST be positive. Authorization MUST exist only during
+its synchronous mint call, clearing on success or rolling back on failure.
 
-These restrictions reserve tick capacity for graduation. After the permanent position exists and
-the phase becomes `Graduated`, external liquidity additions MUST be allowed. The permanent position
-MUST remain locked regardless of external liquidity activity.
+These checks reserve tick capacity for graduation. Once the permanent position exists and the phase
+is `Graduated`, external liquidity additions MUST be allowed. The permanent position MUST stay locked.
 
-During bootstrap, `afterSwap` MUST reject final prices outside either
-tick-derived boundary. It MUST mark readiness only when current `sqrtPriceX96` exactly equals the
-final boundary. While ready, every swap MUST revert. The graduated path MUST return without a pool
-state read.
+During bootstrap, `afterSwap` MUST reject prices outside the tick-derived boundaries. It MUST mark
+`GraduationReady` only at exact final `sqrtPriceX96` equality and reject swaps while ready. After
+graduation, it MUST return without reading pool state.
 
-The dedicated launch router MUST use the final boundary for buys and the initialization-side
-boundary for sells. It MUST settle only consumed input, preserve unused WETH, refund unused ETH,
-enforce minimum output and deadline, and call normal permissionless finalization only after the
-PoolManager returns control. A failure in finalization MUST revert the complete boundary purchase.
+The launch router MUST limit buys at the final boundary and sells at the initialization-side
+boundary. It MUST settle only consumed input, preserve unused WETH, refund unused ETH, and enforce
+minimum output and deadline. It MUST call permissionless finalization only after the PoolManager
+returns control. Finalization failure MUST revert the complete boundary purchase.
 
-Finalization MUST recompute derived amounts, remove the bootstrap position, and measure both returned
-tokens. It MUST provide only the derived WETH principal and no more than 50 million OTF to fixed
-full-range permanent liquidity. Additional WETH MUST remain locked and MUST NOT change sizing.
+Finalization MUST recompute amounts, remove the bootstrap position, and measure both returned tokens.
+The fixed full-range permanent position MUST receive only the derived WETH principal and at most
+50 million OTF. Extra WETH MUST stay locked without changing position size.
 
-After
-the permanent mint succeeds, the manager MUST burn its complete OTF balance once, including
-unsolicited OTF. The permanent NFT MUST remain owned by the manager, and no callable path may remove,
-reprice, rebalance, migrate, or replace its principal.
+After the permanent mint, the manager MUST burn its entire OTF balance once, including unsolicited
+OTF. It MUST retain the permanent NFT, with no callable path to remove, reprice, rebalance, migrate,
+or replace its principal.
 
 ## Team vesting
 
-Live FDV MUST use canonical V4 spot state, the configured ETH/USD answer, and the current token
-`totalSupply()`. Both currency orderings MUST produce the same economic price. The oracle answer MUST
-be positive, no older than `maxOracleAge`, and not from the future.
+Live FDV MUST use canonical V4 spot state, the configured ETH/USD answer, and current `totalSupply()`.
+Both currency orderings MUST produce the same economic price. Oracle answers MUST be positive,
+no older than `maxOracleAge`, and not from the future.
 
-Checkpoints MUST round down to a completed $1 million milestone, make 10 million OTF claimable per
-milestone through $10 million, and never decrease. Claims MUST go only to the current beneficiary and
-MUST NOT exceed the claimable amount less prior claims.
+Checkpoints MUST make 10 million OTF claimable for each completed $1 million FDV milestone, capped at
+$10 million. Cumulative unlocks MUST NOT decrease. Claims MUST go to the current beneficiary and
+MUST NOT exceed unlocked OTF less prior claims.
 
-Only the current beneficiary MAY checkpoint, claim, nominate, replace, or cancel a pending successor.
-A nonzero nominee MUST explicitly accept before receiving that authority; until then, only the current
-beneficiary MAY perform those actions. Acceptance MUST clear the pending nomination without changing
-unlocked or claimed accounting. Beneficiary-only checkpointing is an explicit trusted-beneficiary
-design choice and MUST NOT be represented as making the V4 spot price manipulation-resistant.
+Only the current beneficiary MAY checkpoint, claim, nominate a successor, or replace or cancel a
+pending nomination. A nonzero nominee MUST accept before receiving that authority. Acceptance MUST clear the
+nomination and preserve unlocked and claimed amounts. Beneficiary-only checkpointing requires trust
+in the beneficiary and MUST NOT be described as protection against spot-price manipulation.
 
 ## Fund fees and accounted OTF
 
-Annual creator expense, mint, and redeem rates MUST be immutable and capped at 1,000, 200, and 100
-bps. Mint fees MUST apply to direct and routed minting. Redeem fees MUST apply to direct, routed, and
-normal in-kind redemption. Shutdown and final emergency exits MUST charge no redeem fee. Preview and
-execution functions MUST use identical integer arithmetic.
+Annual creator expense, mint, and redeem rates MUST be immutable and capped at 1,000, 200, and
+100 bps respectively. Mint fees MUST apply to all minting through the entry router. Redeem fees MUST
+apply to routed and direct in-kind redemption. Redemptions after shutdown MUST charge no redeem fee.
+Preview and execution functions MUST use identical integer arithmetic.
 
-Every operation that changes accounted OTF MUST checkpoint accrued annual fees first. Direct token
-donations MUST NOT change accounted balance or fee benefit. The creator share MUST be:
+While a vault is active, operations that change accounted OTF MUST checkpoint accrued annual fees
+first. Token donations MUST NOT change accounted balances or fee benefits. The creator share MUST be:
 
 ```text
 5000 bps + floor(4000 bps × sqrt(min(accounted OTF, 10m OTF) / 10m OTF))
 ```
 
-The creator share MUST remain between 5,000 and 9,000 bps. Mint and redeem creator fee shares MUST
-round down; annual expense splitting MUST carry its fractional remainder across checkpoints.
+The creator share MUST stay between 5,000 and 9,000 bps. Mint and redeem creator shares MUST round
+down; annual expense splits MUST carry fractional remainders across checkpoints.
 
-All creator and buyback fee shares MUST be minted to the collector. The vault MUST record both
-portions with the collector when each fee is charged, and settlement MUST NOT recalculate a split
-from later accounted OTF.
+The vault MUST mint both fee portions to the collector and record the split when charging each fee.
+Settlement MUST NOT recalculate that split from later accounted OTF.
 
-No fund-owned constituent OTF may be transferred to the collector merely because it is OTF.
+The vault MUST NOT transfer constituent OTF to the collector merely because it is OTF.
 
 ## Native entry and exit
 
 `OTFEntryExitRouter` MUST store a nonzero immutable canonical WETH. Native mint MUST require nonzero
-`amountIn` and exact `msg.value == amountIn`; every ERC-20 endpoint MUST reject native value. It MUST
-wrap exactly the accepted ETH and use only WETH in basket planning, vault calls, and adapter legs.
-Transient WETH refunds MUST be unwrapped and returned as ETH while other constituent refunds remain
-ERC-20 transfers.
+`amountIn` and exact `msg.value == amountIn`; ERC-20 endpoints MUST reject native value. The router
+MUST wrap exactly the accepted ETH and use WETH for basket planning, vault calls, and adapter legs.
+It MUST refund the current operation's unused WETH as ETH and other constituents as ERC-20 transfers.
 
-Native redemption MUST route to canonical WETH, enforce the aggregate WETH minimum, unwrap exactly
-the transient output, and send exactly that ETH to the caller. ETH sends MUST be checked and revert
-atomically on rejection.
+Native redemption MUST route to canonical WETH, enforce the aggregate minimum, unwrap only the
+current operation's output, and send exactly that ETH to the caller. Rejected ETH sends MUST revert
+the transaction.
 
-The router MUST accept callback ETH only from canonical WETH, keep every wrap, unwrap, send, and
-refund inside the reentrancy guard, clear temporary approvals, and preserve all pre-existing or
-forcibly sent ETH and WETH. No native sentinel, zero address, or ETH may reach a vault, `SwapLeg`, or
-adapter.
+The router MUST accept callback ETH only from canonical WETH, guard wrapping, unwrapping, sends,
+and refunds against reentrancy, clear temporary approvals, and preserve pre-existing or forcibly
+sent ETH and WETH. Native sentinels, zero addresses, and ETH MUST NOT reach vaults, `SwapLeg`s, or adapters.
 
 ## Buyback collector
 
-The collector MUST accept fee accounting and settlement only from canonical vaults recognized by
-`OTFFactory.isVault` and MUST read each vault's immutable expense beneficiary when fees are settled.
-The collector MUST NOT maintain a second vault registry. Unrecognized or noncanonical vaults MUST be
-rejected. Only the immutable beneficiary MAY settle its vault. Settlement MUST checkpoint annual
-fees, consume the complete recorded creator and buyback share balances, and use exactly one
-beneficiary-selected route: sell the combined canonical vault shares through approved adapters to
-canonical WETH, or redeem the combined shares and liquidate every basket constituent to canonical
-WETH.
+The collector MUST accept fee accounting only from canonical vaults recognized by `OTFFactory.isVault`,
+without maintaining a second registry. Settlement MUST reject unrecognized vaults, read the vault's
+immutable expense beneficiary, and allow only that beneficiary to settle.
 
-A share-sale route MUST consume the exact pending share balance, MAY use approved intermediate
-tokens, and MUST leave only WETH as transient output. Only the configured collector MAY call the
-entry router's fee-share sale function. Every leg MUST name exact input and output tokens and a
-positive minimum output.
+Settlement MUST checkpoint annual fees and consume all recorded creator and buyback shares through
+one beneficiary-selected route: sell the combined shares through approved adapters to canonical
+WETH, or redeem them and liquidate every unskipped basket constituent to canonical WETH.
 
-The operation MUST enforce the caller's deadline, minimum aggregate WETH, observed WETH delta,
-minimum final OTF, and observed OTF delta. Actual WETH MUST be split proportionally using the stored
-fee-share counts. The creator portion MUST be transferred exactly to the beneficiary; only the
-buyback portion MAY be spent for OTF. The protocol MUST NOT add an oracle, TWAP, route discovery,
-protocol fair-value floor, or hardcoded slippage.
+A share-sale route MUST consume the exact pending shares and leave only WETH from the operation.
+It MAY use intermediate tokens through approved adapters. Only the configured collector MAY call the
+entry router's fee-share sale function. Each leg MUST name exact input and output tokens and a positive
+minimum output.
 
-The WETH-to-OTF swap MUST use only the immutable canonical V4 pool key. All OTF acquired by that
-execution MUST be burned before success. The collector MUST NOT expose arbitrary calls, token
-withdrawals, rescue functions, or configurable final routes.
+Settlement MUST enforce the caller's deadline, aggregate WETH minimum, final OTF minimum, and
+observed WETH and OTF deltas. It MUST split actual WETH in proportion to stored fee shares and transfer
+the exact creator portion to the beneficiary. Only the buyback portion MAY purchase OTF. Fee settlement
+MUST NOT add an oracle, TWAP, route discovery, protocol fair-value floor, or hardcoded slippage.
+
+The WETH-to-OTF swap MUST use the immutable canonical V4 pool key and burn all acquired OTF before
+success. The collector MUST NOT expose arbitrary calls, token withdrawals, rescue functions, or
+configurable final routes.
 
 ## Cumulative rewards
 
-The 700-million-OTF incentive allocation MUST reserve 650 million OTF for depositors and 50 million
-OTF for fund creators.
+The publisher MUST distribute 700 million OTF over 208 weeks: 650 million for depositors and
+50 million for fund creators. Week 1 MUST allocate 13 million to depositors and 1 million to creators.
+Later weekly targets MUST decline by approximately 1.968%, following
+`14,000,000 × 0.9803203^(n - 1)` with `n` starting at 1.
 
-It MUST be distributed in 208 weekly periods. Week 1 MUST allocate 14 million
-OTF in total, of which 13 million is the depositor bucket and 1 million is the creator bucket. Each
-later weekly target MUST decline smoothly by approximately 1.968% according to
-`14,000,000 × 0.9803203^(n - 1)`, where `n` starts at 1.
+Each week MUST keep the 13-to-1 ratio and reconcile rounding to its total. The schedule MUST NOT use
+monthly buckets, quarterly steps, or periodic halvings, or allocate emissions after week 208.
 
-Every weekly target MUST be divided in the
-same 13-to-1 ratio, with rounding reconciled against that week's total. The schedule MUST NOT use
-monthly buckets, quarterly steps, or periodic halvings. No emission MAY be allocated after week 208.
+The decay factor is approximate. Publication MUST use enough precision or reconcile the final week
+to reach exactly 700 million OTF, including exactly 650 million for depositors and 50 million for
+creators. It MUST NOT use the rounded formula's approximately 699,999,574.95-OTF sum as the final total.
 
-The displayed decay factor is approximate. The publishing process MUST use sufficient precision or
-reconcile the final weekly distribution so the 208 periods total exactly 700 million OTF. It MUST
-NOT treat the rounded formula's approximately 699,999,574.95-OTF sum as the final aggregate. The
-complete schedule MUST also reconcile to exactly 650 million depositor OTF and 50 million creator
-OTF.
+Both buckets MUST weight each participant by `min(eligible OTF balance, 10,000,000 OTF)`, using
+eligible deposits for depositors and each creator's eligible OTF balance for creators. Balances above
+the cap MUST NOT increase weight. The publisher MUST calculate eligibility, snapshot balances,
+rounding, and cumulative entitlements offchain before publishing.
 
-Both buckets MUST calculate each participant's pro-rata weight as
-`min(eligible OTF balance, 10,000,000 OTF)`. Depositor weights MUST use eligible deposit balances.
-Creator weights MUST use the eligible OTF balance of each fund creator. Balances above the cap MUST
-NOT increase a participant's weight. The publisher MUST calculate eligibility, snapshot balances,
-rounding, and cumulative entitlements offchain before publishing the root.
+Only the configured publisher MAY set a root, which MUST take effect immediately. Leaves MUST commit
+to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree encoding.
 
-Only the configured publisher MAY set a root. A new root MUST be active immediately. Leaves MUST
-commit to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree
-encoding.
+Anyone MAY submit a proof. Tokens MUST go to the committed user, for the proven cumulative entitlement
+less prior claims. Invalid proofs, duplicate claims, and entitlements below prior claims MUST revert.
+The publisher MUST have no direct withdrawal path for reward principal.
 
-Anyone MAY submit a proof, but tokens MUST go to the committed user. A claim MUST equal the proven
-cumulative entitlement less stored prior claims. Invalid proofs, double claims, and decreasing
-cumulative values MUST revert. The publisher MUST have no rewards-principal withdrawal path.
-
-The distributor does not enforce the weekly schedule, bucket split, balance cap, eligibility, or
-APY. Operational root publication MUST enforce this policy. The Funds page MUST show the combined
-weekly distribution instead of one directory-wide APY. A fund page MAY show a fund-specific
-depositor APY estimate, but it MUST identify the estimate as variable and MUST NOT present it as a
-Merkle entitlement or guarantee.
+The distributor does not enforce the schedule, bucket split, balance cap, eligibility, or APY.
+Root publication MUST enforce this policy. The Funds page MUST show combined weekly distribution
+instead of a directory-wide APY. Fund pages MAY show a variable depositor APY estimate, clearly labeled
+as an estimate, and MUST NOT present it as a Merkle entitlement or guarantee.
 
 ## Deployment and verification
 

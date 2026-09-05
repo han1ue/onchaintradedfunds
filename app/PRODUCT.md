@@ -1,6 +1,6 @@
 # Onchain Traded Funds application
 
-The main application creates, trades, and inspects oracleless basket OTFs. It is an operating interface for the protocol, not an independent source of protocol state.
+The application lets users create, trade, and inspect oracleless basket OTFs. It reads protocol state from the configured contracts.
 
 ## Routes
 
@@ -8,71 +8,73 @@ The main application creates, trades, and inspects oracleless basket OTFs. It is
 - `/token` embeds the same Swap implementation with protocol OTF selected by default.
 - `/funds` lists vaults from the configured factory.
 - `/funds/<address>` reads a vault by address.
-- `/launch` creates a vault. This route is unrelated to the separate competition under `launch/`.
+- `/launch` creates a vault.
 - `/liquidity` is a testnet-only Uniswap V3 liquidity utility.
 
 ## Vault creation
 
-The connected wallet becomes the creator. The form collects a name, symbol, fund thesis, two to 20 ordered constituents, three fee rates, and a fixed expense beneficiary. The factory stores the creator, thesis, constituent order, raw bootstrap units, rates, and beneficiary in a new empty vault clone. The form starts with the protocol $OTF token and one randomly selected verified asset.
+The connected wallet becomes the creator. The form collects a name, symbol, fund thesis, two to 20 ordered constituents, three fee rates, and a fixed expense beneficiary. It starts with protocol $OTF and one randomly selected verified asset. The factory creates an empty vault with these settings and the calculated raw bootstrap units.
 
 The fund thesis must contain no more than 2,048 UTF-8 bytes. Annual expense, mint, and redeem rates are limited to 10%, 2%, and 1%. All three rates and the beneficiary are permanent.
 
 ### Basket calculation
 
-The form obtains current USD prices, market caps, and token decimals from the application asset source. It uses a fixed `$1` target initial basket value. That target is neither a peg nor a promised market price.
+The form uses current USD prices, market caps, and token decimals to calculate a `$1` initial basket. This is a calculation target, not a peg or price guarantee.
 
-Market-cap weighting is an explicit mode. While selected, any constituent addition, replacement, or removal recalculates the complete percentage set from current market caps. Editing a percentage switches to manual mode. A new manual constituent begins at 0%, and removing one leaves the remaining manual values unchanged. The creator can restore market-cap mode explicitly.
+In market-cap mode, adding, replacing, or removing a constituent recalculates all percentages. Editing a percentage switches to manual mode: new constituents start at 0%, and removing one leaves the remaining percentages unchanged. The creator can restore market-cap mode.
 
-Percentages use 18-decimal fixed-point units. Each percentage must be positive and the internal sum must equal exactly 100%. The application computes raw bootstrap units with bigint arithmetic, rounds them down, and rejects any allocation that produces zero raw units. It shows the current price, market cap, minimum viable percentage, raw quantity, formatted token quantity, and realized percentage after rounding.
+Percentages use 18-decimal fixed-point units, must be positive, and must sum to exactly 100%. The application calculates raw bootstrap units with bigint arithmetic, rounds down, and rejects zero-unit allocations. The preview shows prices, market caps, minimum viable percentages, raw and formatted token quantities, and percentages after rounding.
 
-The label `Market-cap weighted` requires every final percentage unit to match its calculated default. Any difference produces `Modified market-cap weighted`. Per-asset multipliers compare the final and default percentage units; token rounding and current vault balances do not affect the label.
+`Market-cap weighted` means every final percentage unit matches its calculated default; any difference gives `Modified market-cap weighted`. Per-asset multipliers compare final and default percentages. Token rounding and vault balances do not affect the label.
 
-The transaction contains the thesis, constituents, and raw units. Prices, market caps, percentages, target value, and weighting method remain offchain metadata. After a confirmed `VaultCreated` event, the browser stores the weighting snapshot by chain and vault. If that record is missing or invalid, the fund page displays `Weighting method unavailable`.
+The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Missing or invalid snapshots display `Weighting method unavailable`.
 
 ### Submission state
 
-The confirmation view uses the payload captured before submission. Editing, navigation, and resubmission remain locked after broadcast while the transaction is pending, confirmed, or has an indeterminate receipt. A pre-broadcast failure or explicit onchain revert unlocks retry.
+Confirmation uses the submitted payload. Editing, navigation, and resubmission stay locked after broadcast while the transaction is pending, confirmed, or has an unknown receipt. A failure before broadcast or an onchain revert allows retry.
 
-After verifying the factory event, the application opens a dedicated confirmation route with the transaction and new vault address. It does not redirect to the fund page until the user chooses to continue.
+After verifying the factory event, the application shows the transaction and new vault address on a confirmation route. The user chooses when to open the fund page.
 
 ## Fund data
 
-The Funds directory reads `vaultCount`, each vault address, identity, creator, constituent count, supply, and fee data from the configured factory and vault contracts. A confirmed factory creation therefore appears without a separate indexing service.
+The Funds directory reads vault addresses, identity, creator, constituent count, supply, and fees from the configured factory and vaults. Confirmed vaults appear without a separate indexer.
 
-The fund page reads the permanent thesis and accounted constituent balances onchain. Informational NAV per share and AUM use current offchain prices. Their history is browser-local and cannot affect contract settlement or execution prices.
+The fund page reads the permanent thesis and accounted balances onchain. NAV per share and AUM use offchain prices, with history stored in the browser. These informational values do not affect settlement or execution prices.
 
-The Funds summary shows the combined weekly OTF distribution. Each fund detail header estimates that fund's depositor rewards APY from the 65% depositor bucket, the current OTF price, and the fund's current AUM. A fund with exactly zero AUM uses a labeled $100 calculation baseline without changing the displayed AUM. The estimate is informational and does not determine Merkle entitlements.
+The Funds summary shows the combined weekly OTF distribution. Each fund estimates depositor rewards APY using emissions from the 65% depositor allocation, current OTF price, and its AUM. Zero-AUM funds use a labeled $100 baseline for the calculation; displayed AUM stays zero. The estimate does not determine Merkle entitlements.
 
-For an empty vault, the first mint must produce at least `0.01` shares. The application accepts a quote only when its guaranteed minimum output meets that threshold. There is no first-mint maximum, and the extra check disappears after supply becomes nonzero.
+An empty vault's first mint must produce at least `0.01` shares. The quote's guaranteed minimum output must meet this threshold. There is no first-mint maximum; the minimum check ends once supply is nonzero.
 
-Holders can redeem constituents directly through the contract without swap liquidity. The advanced skip mask is intentionally absent from the interface because selecting a bit permanently forfeits that constituent entitlement.
+Holders can redeem constituents directly through the contract without swap liquidity. The interface omits the advanced skip mask because it permanently forfeits selected constituent entitlements.
 
 ## Swap
 
-At least one side of a Swap pair must be a vault share or protocol OTF. The application does not expose arbitrary ERC-20 pairs.
+At least one side of a Swap pair must be a vault share or protocol OTF, except for direct ETH/WETH wrapping.
 
-Protocol-token pairs request a direct route. Fund-share pairs may request direct pool, basket mint, basket burn, or burn-and-mint candidates. The interface selects the fresh candidate with the highest integer expected output among those queried and retains manual override. It describes this as the best queried route, not the best possible market route.
+Protocol-token pairs request a direct route. Fund-share pairs can use a direct pool, basket mint, basket burn, or burn-and-mint route. The interface selects the fresh quote with the highest integer expected output and allows manual override. This is the best queried route; it does not cover every market route.
 
-ETH and WETH are separate selector assets and have separate balances. ETH input never requests ERC-20 or Permit2 approval, and Max native input reserves estimated gas. During protocol-token bootstrap, the dedicated launch router limits buys and sells to the active range boundary. It consumes only the required WETH, refunds unused ETH, and can finalize graduation after the PoolManager call returns. After graduation, protocol-token trades use the configured Universal Router. The standalone ETH/WETH pair remains an explicit 1:1 exception that calls canonical WETH directly without a quote service or swap router.
+ETH and WETH have separate selector entries and balances. ETH needs no ERC-20 or Permit2 approval, and Max reserves estimated gas. ETH/WETH wrapping calls canonical WETH directly at 1:1 without a quote service or swap router.
+
+During protocol-token bootstrap, the launch router limits trades to the active range boundary. It consumes only required WETH, refunds unused ETH, and can finalize graduation after the PoolManager call returns. After graduation, trades use the configured Universal Router.
 
 ### Quote sources and execution
 
-Production direct routes use the same-origin server integration with Uniswap Trading API exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` remains server-only. Robinhood testnet fund routes use the configured Uniswap V3 factory, Quoter, SwapRouter02, and active pools. Canonical WETH/OTF bootstrap routes use the boundary-aware launch router; graduated routes use the ordinary V4 Universal Router.
+Production direct routes use the same-origin Uniswap Trading API integration with exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` stays server-only. Robinhood testnet fund routes use the configured Uniswap V3 factory, Quoter, SwapRouter02, and active pools.
 
-Testnet basket execution sends typed `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` requests with ordered adapter legs. Before wallet submission, the application simulates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`.
+Testnet basket execution uses `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` with ordered adapter legs. Before submission, the application simulates the exact sender, target, calldata, value, and route using `eth_call` and `estimateGas`.
 
-`robinhood-testnet-assets.json` distinguishes USDG and WETH quote assets from the five supported constituents and records active Uniswap V3 pools. Those constituent pools support basket settlement and the testnet liquidity utility; they are not general Swap pairs. `assets.json` provides production discovery defaults and is not an onchain allowlist.
+`robinhood-testnet-assets.json` lists USDG and WETH quote assets, five constituents, and active V3 pools. Constituent pools support basket settlement and testnet liquidity, rather than general Swap pairs. `assets.json` supplies production discovery defaults, not an onchain allowlist.
 
 Verification labels cover identity and ordinary metadata only. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
 
 ## Fee settlement
 
-Annual expense, mint, and redeem fees accrue as vault shares held by `BuybackCollector`. The collector retains the creator and buyback portions recorded when each fee was charged.
+Annual expense, mint, and redeem fees accrue as vault shares in `BuybackCollector`, which records the creator and buyback portions when each fee is charged.
 
-Only the immutable beneficiary sees the fee-claim interface. It compares a sale of the exact pending vault shares with a redemption and sale of every constituent, defaults to the higher quoted WETH amount, and permits manual override. The selected atomic settlement pays the recorded creator portion in WETH, spends the buyback portion on OTF, and burns the OTF received.
+Only the fixed beneficiary sees the fee-claim interface. It compares selling the pending shares with redeeming and selling every constituent, selects the higher WETH quote, and allows manual override. Settlement atomically pays the creator portion in WETH, buys OTF with the buyback portion, and burns the OTF received.
 
 ## Current limits
 
-The active Robinhood Chain Testnet deployment uses the 15-to-approximately-134.997562702653186573-ETH launch curve. The application reads the deployed manager, launch router, derived amounts, and approved adapters from the deployment manifest.
+The active Robinhood Chain Testnet launch uses a reference FDV of 15 ETH at initialization and approximately 134.997562702653186573 ETH at graduation. The application reads contracts, launch amounts, and approved adapters from the deployment manifest.
 
-Native basket execution is enabled on testnet through the canonical-WETH entry router. Robinhood Mainnet direct quotes remain unavailable without the server API key. The application does not infer or fabricate missing addresses.
+Testnet native basket execution uses the canonical-WETH entry router. Robinhood Mainnet direct quotes require the server API key. Missing addresses remain unavailable.

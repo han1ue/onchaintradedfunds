@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Onchain Traded Funds — launch teaser</title>
+  <style>
+    @font-face {
+      font-family: 'Instrument Sans';
+      src: url('/app/public/fonts/instrument-sans-variable.woff2') format('woff2');
+      font-weight: 400 700;
+      font-stretch: 75% 100%;
+      font-display: block;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080907; }
+    body { display: grid; place-items: center; }
+    #stage { position: relative; width: 1920px; height: 1080px; flex-shrink: 0; overflow: hidden; background: #080907; }
+    canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #brand { position: absolute; left: 50%; top: 416px; transform: translateX(-50%); display: flex; align-items: center; gap: 40px; height: 152px; white-space: nowrap; }
+    #logo-slot { width: 152px; height: 152px; flex: 0 0 152px; }
+    #title-mask { clip-path: inset(0 100% 0 0); }
+    h1 { margin: 0; color: #f7f7f5; font-family: 'Instrument Sans', sans-serif; font-size: 104px; font-weight: 560; font-variation-settings: 'wdth' 94, 'wght' 560; font-feature-settings: 'ss02' 1; letter-spacing: -3.64px; line-height: 1.2; }
+    #otf { position: absolute; width: 152px; height: 152px; opacity: 0; }
+    #otf svg { display: block; width: 100%; height: 100%; }
+    #announcement { position: absolute; top: 607px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; white-space: nowrap; opacity: 0; }
+    #announcement span { color: #e8e9e1; font-family: 'Instrument Sans', sans-serif; font-size: 54px; font-weight: 450; font-variation-settings: 'wdth' 100, 'wght' 450; letter-spacing: -0.8px; line-height: 1.2; }
+    #announcement img { display: block; width: 54px; height: 54px; transform: translateY(1px); }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-label="Onchain Traded Funds launch teaser">
+    <canvas id="field" width="3840" height="2160" aria-hidden="true"></canvas>
+    <div id="brand"><div id="logo-slot"></div><div id="title-mask"><h1>Onchain Traded Funds</h1></div></div>
+    <div id="otf"></div>
+    <div id="announcement"><span>Coming soon on Robinhood Chain</span><img src="/app/public/networks/robinhood-icon.png" alt="Robinhood"></div>
+  </main>
+  <script type="module">
+    const W = 1920, H = 1080, TAU = Math.PI * 2;
+    const canvas = document.querySelector('#field');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const otf = document.querySelector('#otf');
+    const title = document.querySelector('#title-mask');
+    const announcement = document.querySelector('#announcement');
+    const stage = document.querySelector('#stage');
+    const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+    const mix = (a, b, t) => a + (b - a) * t;
+    const ease = x => { x = clamp(x); return x * x * x * (x * (x * 6 - 15) + 10); };
+    const ramp = (a, b, t) => ease((t - a) / (b - a));
+    const fract = x => x - Math.floor(x);
+
+    // Preserve the supplied SVG markup and let its live text use the supplied font.
+    otf.innerHTML = await (await fetch('/packages/brand/assets/otf-icon.svg')).text();
+    await document.fonts.load('560 104px "Instrument Sans"');
+    await document.fonts.load('700 76px "Instrument Sans"');
+    await document.fonts.load('450 54px "Instrument Sans"');
+    await document.fonts.ready;
+    await document.querySelector('#announcement img').decode();
+
+    function glow(x, y, r, strength, warm = false) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${warm ? '236,255,177' : '204,255,0'},${strength})`);
+      g.addColorStop(0.12, `rgba(204,255,0,${strength * 0.42})`);
+      g.addColorStop(0.42, `rgba(116,143,9,${strength * 0.13})`);
+      g.addColorStop(1, 'rgba(8,9,7,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    function bezier(p, t) {
+      const u = 1 - t;
+      return [u*u*u*p[0][0] + 3*u*u*t*p[1][0] + 3*u*t*t*p[2][0] + t*t*t*p[3][0],
+              u*u*u*p[0][1] + 3*u*u*t*p[1][1] + 3*u*t*t*p[2][1] + t*t*t*p[3][1]];
+    }
+
+    function strand(index, t, tighten = 0) {
+      const q = (index - 31.5) / 31.5;
+      const drift = Math.sin(t * 0.44 + index * 0.115);
+      const pinch = (index - 31.5) * (2.75 - 2.3 * tighten);
+      const cx = 1050, cy = 520;
+      const sy = 520 + q * 398 + 24 * Math.sin(index * 0.51 + t * 0.19);
+      const ey = 540 + q * 340 + 89 * Math.sin(index * 0.21 + 1.8);
+      const left = [[-170, sy], [350, sy + q * 139 + drift * 29], [690, cy + pinch - 162 - drift * 26], [cx, cy + pinch]];
+      const right = [[cx, cy + pinch], [1230, cy + pinch + 145 + drift * 21], [1570, ey - q * 70], [2080, ey]];
+      return { left, right };
+    }
+
+    function curvePoint(curve, u) { return u <= 0.53 ? bezier(curve.left, u / 0.53) : bezier(curve.right, (u - 0.53) / 0.47); }
+
+    function strokeCurve(curve, from, to, color, width) {
+      if (to <= from) return;
+      ctx.beginPath();
+      const steps = Math.max(5, Math.ceil((to - from) * 180));
+      for (let k = 0; k <= steps; k++) {
+        const p = curvePoint(curve, mix(from, to, k / steps));
+        if (k === 0) ctx.moveTo(...p); else ctx.lineTo(...p);
+      }
+      ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke();
+    }
+
+    function pulse(curve, u, opacity, size = 1) {
+      const trail = 0.055;
+      for (let j = 0; j < 16; j++) {
+        const a = Math.max(0, u - trail + trail * j / 16);
+        const b = Math.max(0, u - trail + trail * (j + 1) / 16);
+        strokeCurve(curve, a, b, `rgba(218,255,102,${opacity * (j + 1) / 20})`, 1.4 * size);
+      }
+      const p = curvePoint(curve, u);
+      glow(...p, 12 * size, opacity * 0.31, true);
+      ctx.beginPath(); ctx.arc(...p, 1.4 * size, 0, TAU);
+      ctx.fillStyle = `rgba(244,255,207,${opacity})`; ctx.fill();
+    }
+
+    function drawField(t) {
+      const build = ramp(0.25, 5.8, t);
+      const tighten = ramp(6.0, 6.87, t);
+      const fieldAlpha = 1 - ramp(6.4, 7.06, t);
+      const camera = 0.97 + 0.083 * ramp(1.7, 6.2, t);
+      ctx.save();
+      ctx.translate(960, 540); ctx.scale(camera, camera); ctx.translate(-960, -540);
+      ctx.globalAlpha = fieldAlpha;
+      glow(1050, 520, 480, 0.09 + 0.20 * build);
+      const flow = ctx.createLinearGradient(-50, 0, 1980, 0);
+      flow.addColorStop(0, 'rgba(82,102,0,0)');
+      flow.addColorStop(0.19, '#a6cd0a');
+      flow.addColorStop(0.51, '#ccff00');
+      flow.addColorStop(0.59, '#efffb0');
+      flow.addColorStop(0.84, '#a9d208');
+      flow.addColorStop(1, 'rgba(82,102,0,0)');
+
+      // Paired strands extend the splash page's two cubic curves into a fine field.
+      for (let i = 0; i < 64; i++) {
+        const order = (i * 23) % 64;
+        const start = order === 0 ? -0.15 : 0.19 + order * 0.040;
+        const visible = ramp(start, start + 1.6, t);
+        if (visible <= 0) continue;
+        const c = strand(i, t, tighten);
+        const alpha = (0.075 + (i % 7) * 0.039) * (0.65 + 0.35 * build);
+        ctx.globalAlpha = fieldAlpha * alpha;
+        strokeCurve(c, 0, mix(0.12, 1, visible), flow, i % 9 === 0 ? 1.28 : 0.86);
+      }
+
+      // A visible opening sweep; later currents all travel into the focal point.
+      const lead = mix(0.13, 0.535, ramp(-0.32, 1.65, t));
+      ctx.globalAlpha = fieldAlpha;
+      if (t < 2.2) pulse(strand(21, t, tighten), lead, 1 - ramp(1.6, 2.2, t), 1.1);
+      for (let j = 0; j < 11; j++) {
+        const cycle = (t - 0.7 - j * 0.22) / (2.6 - build * 0.32);
+        if (cycle < 0) continue;
+        const p = fract(cycle);
+        const opacity = ramp(0, 0.12, p) * (1 - ramp(0.85, 1, p)) * ramp(0.8, 2.3, t) * (1 - ramp(6.12, 6.7, t));
+        pulse(strand((j * 17 + 9) % 64, t, tighten), mix(0.03, 0.529, p), opacity * 0.85, 0.84);
+      }
+
+      for (let j = 17; j >= 0; j--) {
+        const show = ramp(1.4 + j * 0.075, 2.9 + j * 0.085, t);
+        if (!show) continue;
+        const collapse = 1 - 0.77 * tighten;
+        const rx = (108 + j * 19) * collapse;
+        const ry = (42 + j * 8.3) * collapse;
+        const angle = (-27 + j * 2.35 + t * 2.5) * Math.PI / 180;
+        ctx.save(); ctx.translate(1050, 520); ctx.rotate(angle);
+        ctx.globalAlpha = fieldAlpha * show * (0.12 + (j % 5) * 0.045);
+        ctx.strokeStyle = j % 4 === 0 ? '#e4ffa0' : '#ccff00';
+        ctx.lineWidth = j % 5 === 0 ? 1.13 : 0.8;
+        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, TAU * show); ctx.stroke();
+        ctx.restore();
+      }
+
+      // The reference's steep ellipses give the orbit cluster its depth.
+      for (let j = 0; j < 3; j++) {
+        const show = ramp(2.0 + j * 0.38, 3.7 + j * 0.3, t);
+        const collapse = 1 - 0.79 * tighten;
+        const rx = (288 + j * 43) * collapse, ry = (102 + j * 17) * collapse;
+        const angle = (-69 + j * 20 + t * (1.4 + j * 0.22)) * Math.PI / 180;
+        ctx.save(); ctx.translate(1050, 520); ctx.rotate(angle);
+        ctx.globalAlpha = fieldAlpha * show;
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = `rgba(230,255,155,${0.38 - j * 0.065})`;
+        ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, TAU * show); ctx.stroke();
+        const phase = -t * 0.30 + j * 2.3;
+        const px = rx * Math.cos(phase), py = ry * Math.sin(phase);
+        glow(px, py, 15, 0.19 * show, true);
+        ctx.fillStyle = 'rgba(240,255,189,0.85)'; ctx.beginPath(); ctx.arc(px, py, 2, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.globalAlpha = fieldAlpha;
+      const coreReveal = 0.12 + 0.88 * ramp(0.3, 2.9, t);
+      const radius = (78 + 3 * Math.sin(t * 0.68)) * (1 - 0.39 * tighten);
+      glow(1050, 520, 112, coreReveal * (0.47 + tighten * 0.16), true);
+      ctx.strokeStyle = `rgba(231,255,164,${coreReveal * 0.5})`;
+      ctx.lineWidth = 1.15;
+      ctx.setLineDash([2.6, 7.8]); ctx.lineDashOffset = -t * 6;
+      ctx.beginPath(); ctx.arc(1050, 520, radius, 0, TAU); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 0.65; ctx.strokeStyle = `rgba(204,255,0,${coreReveal * 0.14})`;
+      ctx.beginPath(); ctx.arc(1050, 520, radius + 8, 0, TAU); ctx.stroke();
+      glow(1050, 520, 27, coreReveal * 0.76, true);
+      ctx.fillStyle = `rgba(247,255,216,${coreReveal})`; ctx.beginPath(); ctx.arc(1050, 520, 3.2, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    function drawRestingField(t) {
+      const alpha = ramp(6.8, 8, t);
+      if (!alpha) return;
+      ctx.save();
+      const g = ctx.createLinearGradient(0, 0, W, 0);
+      g.addColorStop(0, '#080907'); g.addColorStop(0.3, '#677e13'); g.addColorStop(0.66, '#809b1c'); g.addColorStop(1, '#080907');
+      ctx.globalAlpha = alpha * 0.11;
+      ctx.strokeStyle = g; ctx.lineWidth = 0.8;
+      for (let j = 0; j < 9; j++) {
+        const dy = Math.sin(t * 0.13 + j * 0.24) * 7;
+        ctx.beginPath(); ctx.moveTo(-100, 822 + j * 19 + dy);
+        ctx.bezierCurveTo(470, 1010 + j * 10, 1290, 770 + j * 15 + dy, 2050, 903 + j * 21); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-100, 180 - j * 20 - dy);
+        ctx.bezierCurveTo(720, 100 - j * 17, 1350, 315 - j * 15 - dy, 2040, 115 - j * 13); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    window.renderFrame = t => {
+      t = clamp(t, 0, 12);
+      ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#080907'; ctx.fillRect(0, 0, W, H);
+      const base = ctx.createRadialGradient(1050, 520, 80, 1050, 520, 1060);
+      base.addColorStop(0, 'rgba(41,49,12,0.21)'); base.addColorStop(1, 'rgba(8,9,7,0)');
+      ctx.fillStyle = base; ctx.fillRect(0, 0, W, H);
+      if (t < 7.08) drawField(t);
+      drawRestingField(t);
+
+      const arrival = ramp(6.32, 6.62, t) * (1 - ramp(6.62, 7.18, t));
+      if (arrival) glow(1057, 518, 239, arrival * 0.43, true);
+      const move = ramp(6.80, 7.21, t);
+      const bounds = document.querySelector('#logo-slot').getBoundingClientRect();
+      const stageBounds = stage.getBoundingClientRect();
+      const scale = stageBounds.width / W;
+      const finalX = (bounds.left - stageBounds.left) / scale + 76;
+      otf.style.left = `${mix(1057, finalX, move) - 76}px`;
+      otf.style.top = `${mix(518, 492, move) - 76}px`;
+      otf.style.opacity = ramp(6.53, 6.87, t);
+      title.style.clipPath = `inset(0 ${(1 - ramp(7.22, 7.76, t)) * 100}% 0 0)`;
+      announcement.style.opacity = ramp(7.54, 8, t);
+      window.currentTime = t;
+    };
+
+    const params = new URLSearchParams(location.search);
+    const fixed = params.has('t');
+    const fit = () => { stage.style.transform = `scale(${Math.min(innerWidth / W, innerHeight / H)})`; };
+    fit(); addEventListener('resize', fit);
+    window.renderFrame(fixed ? Number(params.get('t')) : 0);
+    window.teaserReady = true;
+    if (!fixed) {
+      let start;
+      const animate = now => { start ??= now; const t = (now - start) / 1000; window.renderFrame(Math.min(t, 12)); if (t < 12) requestAnimationFrame(animate); };
+      requestAnimationFrame(animate);
+      addEventListener('click', () => { start = undefined; requestAnimationFrame(animate); });
+    }
+  </script>
+</body>
+</html>

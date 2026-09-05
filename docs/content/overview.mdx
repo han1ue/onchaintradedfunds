@@ -5,9 +5,9 @@ description: Vault creation, accounting, fees, routing, and application behavior
 
 # Protocol overview
 
-An Onchain Traded Fund is an ERC-20 share token backed by an ordered basket of ERC-20 constituents. The creator fixes the basket, bootstrap units, fee rates, expense beneficiary, and fund thesis at creation. The vault then accounts for deposits and redemptions without an onchain price oracle.
+An Onchain Traded Fund is an ERC-20 share token backed by a basket of ERC-20 tokens, called constituents. The creator fixes their order, initial quantities (bootstrap units), fee rates, expense beneficiary, and fund thesis at creation.
 
-The contracts do not calculate NAV, fetch market data, or rebalance. Prices and weighting labels shown by the application are informational. The protocol is unaudited and not ready for production use.
+The vault tracks token quantities without a price oracle. It does not calculate net asset value (NAV) or rebalance. Prices and weighting labels in the application are informational.
 
 ## Architecture
 
@@ -28,98 +28,100 @@ offchain prices and creator percentages
                                       +---- UniswapV4Adapter ---- Universal Router
 ```
 
-`OTFFactory` creates minimal-proxy vaults and records their addresses. `ManagedOTFVault` owns the basket and issues shares. `OTFEntryExitRouter` can convert a single input or basket output through approved adapters, but users can always mint with constituents or redeem in kind without it.
+`OTFFactory` creates vault clones and records their addresses. Each `ManagedOTFVault` holds its basket and issues shares. Minting goes through `OTFEntryExitRouter`, which acquires the basket through approved trade adapters. Holders can redeem directly for basket tokens, or use the router to sell those tokens into one output asset.
 
 Protocol-token launch, vesting, rewards, and fee buybacks are separate contracts described in [OTF token economics](/token-and-fee-incentives).
 
-During the protocol-token bootstrap, the application routes OTF/WETH buys and sells through `OTFLaunchRouter`. It can stop at either exact range boundary, settle only the consumed input, and refund unused native ETH. Once permanent liquidity exists, protocol-token trades return to the ordinary Uniswap route.
+During the protocol-token launch, `OTFLaunchRouter` handles OTF/WETH trades. At a range boundary it takes only the input used and refunds unused native ETH. After graduation, the application uses the ordinary Uniswap route.
 
 ## Creating a vault
 
 The connected wallet becomes the vault creator. `OTFFactory.createVault` accepts:
 
-- name, symbol, and a non-empty fund thesis of at most 2,048 UTF-8 bytes;
-- two to 20 ordered constituents and the raw units required for `1e18` shares;
-- an expense beneficiary;
-- annual expense, mint, and redeem rates capped at 1,000, 200, and 100 basis points.
+- Name, symbol, and a fund thesis of one to 2,048 UTF-8 bytes.
+- Two to 20 ordered constituents and their raw token units per share (`1e18` share units).
+- An expense beneficiary who receives the creator portion of fees.
+- Annual expense, mint, and redeem rates, capped at 10%, 2%, and 1% respectively.
 
-The factory deploys an empty clone. Creation transfers no constituent tokens and promises no deterministic vault address.
+Creation deploys an empty vault without transferring constituent tokens.
 
 ### Application calculation
 
-The application uses current offchain prices, market caps, and token decimals to construct the initial basket. It starts in market-cap-weighted mode. Adding, replacing, or removing a constituent in that mode recalculates all percentages from current market caps. Editing a percentage switches to manual mode; new manual constituents start at 0%, and removing one does not change the remaining manual percentages. Selecting `Market-cap weighted` restores automatic normalization.
+The application starts with market-cap weights calculated from offchain data. Changing the basket recalculates those weights. Editing a percentage switches to manual mode: new tokens start at 0%, and removing a token leaves the other percentages unchanged. Selecting `Market-cap weighted` restores automatic weights.
 
-Percentages use 18-decimal fixed-point units and must be positive with an exact total of 100%. For target value `V = 1e18` USD WAD, percentage units `w_i`, total units `T`, USD price `P_i`, and token decimals `d_i`, the application calculates:
+Every percentage must be positive, and the total must be exactly 100%. The application uses 18-decimal percentage units. With a `$1` target `V = 1e18`, percentage units `w_i`, total percentage units `T`, USD price `P_i` scaled by `1e18`, and token decimals `d_i`:
 
 ```text
 allocationUsdWad_i = floor(V * w_i / T)
 bootstrapUnits_i   = floor(allocationUsdWad_i * 10**d_i / P_i)
 ```
 
-Every result must contain at least one raw token unit. The application shows the minimum viable percentage and the realized allocation after integer rounding.
+Each token must receive at least one raw unit. The application shows the minimum percentage needed and the allocation after rounding.
 
-The `$1` value is a calculation target for the initial basket. It is not a peg or a guaranteed market price. Prices, market caps, percentages, target value, and weighting method remain offchain. The vault stores only the final raw units and other creation parameters.
+The `$1` target is not a peg or guaranteed market price. Prices and weighting metadata stay offchain; the vault stores the final raw units and creation parameters.
 
-The label `Market-cap weighted` applies only when every final percentage unit equals the calculated default. Any difference produces `Modified market-cap weighted`. The creator's browser may retain this metadata after confirmation. If it is unavailable, the fund page reports `Weighting method unavailable` instead of inferring a method from current balances.
+The fund label is `Market-cap weighted` only if every final percentage exactly matches the calculated default; otherwise it is `Modified market-cap weighted`. The creator's browser can retain this allocation snapshot. Without it, the fund page shows `Weighting method unavailable`.
 
 ## Minting, redemption, and accounting
 
-Vault shares have 18 decimals. The first mint must request at least `1e16` shares, or `0.01` OTF. Required input for constituent `i` is proportional to the fixed bootstrap basket:
+Vault shares have 18 decimals. The first mint must deliver at least `0.01` shares (`1e16` raw units) to the depositor. Basket inputs cover both the depositor's shares and mint-fee shares. With `grossShares` equal to that combined amount, the first mint requires:
 
 ```text
-amountIn_i = ceil(bootstrapUnits_i * requestedShares / 1e18)
+amountIn_i = ceil(bootstrapUnits_i * grossShares / 1e18)
 ```
 
-After supply becomes nonzero, each mint uses the current accounted balance:
+Later mints use accounted balances and total supply after pending expense fees:
 
 ```text
-amountIn_i = ceil(accountedBalance_i * requestedShares / totalSupply)
+amountIn_i = ceil(accountedBalance_i * grossShares / totalSupply)
 ```
 
-A normal redemption pays the floored pro-rata accounted balance of each constituent. Redeeming the full supply returns every accounted balance exactly.
+A redemption pays each constituent's pro-rata accounted balance, rounded down, after any redemption fee. If the shares redeemed after fees equal total supply, the vault returns all accounted balances exactly.
 
-`accountedBalance` is the vault ledger, not the token contract's raw balance and not a valuation. Direct token donations remain unaccounted. Normal mint and redemption fail when actual backing falls below the ledger.
+`accountedBalance` tracks deposits and withdrawals. Direct token donations do not increase it. Normal minting and redemption fail if actual backing falls below this ledger.
 
-If a redemption leaves total supply below `0.01` OTF, the vault completes that redemption and enters permanent shutdown. A balance of exactly `0.01` remains live. Shutdown disables minting and fee accrual but keeps holder exits available; a vault that reaches zero cannot bootstrap again.
+After a redemption, supply below `0.01` shares triggers permanent shutdown; exactly `0.01` stays live. Shutdown stops minting and fee accrual but allows holder exits. A vault that reaches zero cannot restart.
 
-Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly, while the entry router uses the same vault redemption logic. Active redemptions accrue and charge the configured fees and require every unskipped asset to be fully backed. Shutdown redemptions accrue no new fees, charge no redemption fee, and limit payouts to `min(actual, accounted)`. A set bit in `skipMask` permanently forfeits your entitlement to that asset. The vault reduces its ledger without calling the token and leaves the tokens untouched. If backing is deficient, remaining holders may benefit from the balance left behind. The normal application does not expose this recovery control.
+Holders can call `redeemInKind(shares, receiver, minAmountsOut, skipMask)` directly. While active, the vault charges configured fees and requires full backing for each unskipped asset. After shutdown, exits charge no new fees and use the lower of actual and accounted balances.
+
+The recovery parameter `skipMask` lets a holder skip a broken token and permanently forfeit their entitlement to it. The vault reduces the ledger without calling or moving that token. If backing is deficient, remaining holders may benefit from the tokens left behind. The normal application does not expose this control.
 
 ## Fees
 
-All three fee rates and the beneficiary are immutable. Annual expense accrues through lazy share inflation. Mint and normal redemption fees also issue shares; shutdown exits are free of redemption fees. Preview and execution functions use the same integer arithmetic.
+The three fee rates and beneficiary cannot change. Annual expense accrues over time and is collected by issuing shares when fees are checkpointed. Mint and normal redemption fees also issue shares. Preview functions include pending fees and use the same rounding as execution.
 
-Fee shares go to `BuybackCollector`. The vault calculates the creator-versus-buyback split from its accounted OTF constituent balance and records both portions when it charges the fee. Later balance changes cannot alter that split, and direct OTF donations provide no benefit.
+Fee shares go to `BuybackCollector`. The vault determines the creator and buyback portions from its accounted protocol OTF balance when charging each fee. That split stays fixed; direct OTF donations do not affect it.
 
-Only the immutable beneficiary can settle a vault's pending fee account. The beneficiary chooses either a sale of the exact pending vault shares to WETH or an in-kind redemption followed by constituent sales to WETH. The collector pays the creator portion in WETH, routes the remaining WETH through the canonical OTF pool, and burns every OTF purchased. See [OTF token economics](/token-and-fee-incentives#immutable-fund-fees) for the split formula.
+Only the beneficiary can settle the complete pending fee account. They can sell the fee shares for WETH or redeem them and sell the basket. The collector pays the beneficiary in WETH, spends the rest buying OTF through the canonical pool, and burns the purchased OTF. See [fund fees](/token-and-fee-incentives#immutable-fund-fees) for formulas.
 
 ## Routed entry and exit
 
-The permissionless entry router accepts ordered `SwapLeg[]` routes. Legs can split an input across adapters, combine outputs, or spend output produced by an earlier leg. A leg can use only balance created during the current call, so pre-existing router dust cannot fund a route or become a refund.
+Anyone can submit an ordered `SwapLeg[]` route to the entry router. A leg is one swap instruction; legs can split input across adapters or spend an earlier leg's output. They can use and refund only balances created during the current call.
 
-The router owner manages the adapter allowlist. Approval requires adapter code that is immutably bound to that router; revocation takes effect immediately. This owner and every approved adapter are trust boundaries.
+The router owner approves and revokes adapters. Each approved adapter must be bound to that router, and revocation takes effect immediately. Users rely on the owner to approve safe adapter code.
 
 The current adapters support Uniswap V3 and V4:
 
 - `UniswapV3Adapter` accepts packed paths of at most three hops and authenticates each pool against its immutable factory.
 - `UniswapV4Adapter` accepts typed pool-key paths of at most three hops and checks initialized pools through its immutable StateView.
 
-Both adapters constrain the recipient, use temporary allowances, and preserve balances that existed before execution. The entry router contains no venue-specific path parser and no direct pool-swap method.
+Both adapters restrict recipients, clear temporary allowances, and preserve pre-existing balances. Each adapter validates its venue's path format.
 
 ### Native ETH boundary
 
-Native ETH is handled only by `mintFromNative` and `redeemToNative`. A native mint requires exact, nonzero `msg.value`, wraps it to the router's immutable canonical WETH, and returns transient WETH change as ETH. Native redemption routes constituents to WETH, enforces the aggregate minimum, unwraps the operation's output, and sends it atomically to the caller.
+For basket entry and exit, `mintFromNative` wraps the exact ETH input to canonical WETH and refunds WETH change as ETH. `redeemToNative` sells constituents for WETH, checks the minimum output, and unwraps it to ETH for the caller. A failed payout reverts the transaction.
 
-Vaults, adapter legs, pools, and buybacks never receive native ETH or a native-token sentinel. The router preserves pre-existing ETH and WETH and accepts callback ETH only from canonical WETH.
+Vaults, adapter legs, pools, and buybacks use ERC-20 tokens. The router preserves pre-existing ETH and WETH and accepts callback ETH only from canonical WETH.
 
 ## Application execution
 
-The Swap application requires a vault share or protocol OTF on at least one side. It is not a general token exchange. Fund pairs may request direct-pool, basket mint, basket burn, or burn-and-mint quotes. The application selects the fresh candidate with the highest integer expected output among the routes it queried and allows manual override.
+Apart from ETH/WETH wrapping, Swap requires a vault share or protocol OTF on at least one side. Fund routes can trade shares through a pool, mint a basket, redeem a basket, or redeem one fund into another. The application selects the fresh quote with the highest expected output among queried routes. Users can choose another route.
 
-Production direct quotes use the same-origin Uniswap Trading API integration. Robinhood testnet fund routes use configured Uniswap V3 pools, while WETH/OTF uses the canonical V4 pool. The testnet constituent pools support basket settlement and the separate liquidity utility; the Swap interface does not expose them as general constituent pairs.
+The production integration requests direct quotes through the Uniswap Trading API. Testnet fund routes use configured V3 pools; protocol OTF/WETH uses the canonical V4 pool. Constituent pools support basket settlement and the separate liquidity utility.
 
-ETH and WETH remain separate selector assets. The execution plan converts native ETH only at the router boundary, never requests token approval for ETH, and reserves gas when applying Max to a native balance.
+ETH and WETH appear separately in the asset selector. ETH needs no token approval, and `Max` leaves ETH for gas.
 
-Before submitting a selected plan, the application validates the exact sender, target, calldata, value, and route with `eth_call` and `estimateGas`. For an output vault with zero supply, the guaranteed minimum output must be at least `0.01` OTF. This special minimum no longer applies after the first mint.
+Before submission, the application simulates the exact transaction with `eth_call` and estimates gas. If the output vault has zero supply, its guaranteed minimum output must be at least `0.01` shares. Later mints have no bootstrap minimum.
 
 ## Verification
 

@@ -66,61 +66,61 @@ components:
 
 ## Design principles
 
-The application presents financial state with compact controls, clear hierarchy, and one Robinhood palette across light and dark appearances. Swap stays focused on one exchange task; creation, fund detail, and liquidity pages can use denser layouts where the workflow requires them.
+Use compact controls, clear hierarchy, and the Robinhood palette in both appearances. Swap focuses on one exchange; creation, fund detail, and liquidity pages can use denser layouts.
 
-Robinhood lime identifies an available action, active selection, keyboard focus, or confirmed state. Gold marks caution or unavailable behavior, and rose marks validation or transaction failure. Adjacent black surface tones and thin borders provide most visual separation.
+Color identifies actions and status. Surface tones and thin borders separate content.
 
-The splash screen is a separate entry surface. Its large Instrument Sans title, convergence field, and pale entry control end when the user enters the application. Interior routes use the same family at a compact operational scale.
+The splash uses a large Instrument Sans title, animated convergence field, and lime entry control. Interior routes keep the same typeface at a smaller scale.
 
 ## Color
 
-- `background` is the page field; `nav`, `card`, and `card-raised` define increasing surface emphasis.
-- `lime` is reserved for interaction and confirmed readiness, apart from the branded ambient field and logo.
+- `background` fills the page; `nav`, `card`, and `card-raised` distinguish surfaces.
+- `lime` marks available actions, active selections, focus, and confirmed states. It also appears in the ambient field and logo.
 - `gold` is reserved for experimental, unavailable, or cautionary states.
 - `danger` is reserved for errors and failed transactions.
 - Splash colors apply only to the entry screen.
 
-The appearance selector offers Browser, Light, and Dark. Both appearances use the Robinhood palette; there is no alternate brand theme. Dark uses olive-charcoal surfaces rather than pitch black, while Light uses warm off-white surfaces and a darker olive accent for readable text and focus states.
+The appearance selector offers Browser, Light, and Dark. Dark uses olive-charcoal surfaces. Light uses warm off-white surfaces with darker olive accents for readable text and focus states.
 
 ## Typography
 
-All interface text uses self-hosted Instrument Sans with system sans-serif fallbacks. Large text identifies the current route or fund; operational headings remain modest so values and controls dominate. Labels are compact and medium weight. Numeric content should remain easy to compare.
+Use self-hosted Instrument Sans with system sans-serif fallbacks. Large text identifies the route or fund; smaller headings let values and controls dominate. Labels are compact and medium weight. Use tabular numerals for comparison.
 
-The splash title uses the specified Instrument Sans width, weight, line height, and tracking. Its display scale remains exclusive to the splash.
+Reserve the splash title's display scale, width, weight, line height, and tracking for that screen.
 
 ## Layout
 
-Swap centers one compact surface in a broad field. Payment, reversal, receipt, current status, and the primary action form one vertical sequence. Alternate routes, fees, price impact, and hops remain behind a disclosure until requested.
+Center the compact Swap card. Arrange payment, reversal, receipt, status, and primary action vertically. Keep alternate routes, fees, price impact, and hops behind a disclosure.
 
-Other routes use wider ruled sections. The shared header uses an olive-black Robinhood surface with a lime keyline. It stays on one row down to 320 px, reducing or hiding the brand label before controls overflow.
+Other routes use wider ruled sections. The shared header has an olive-black surface and lime keyline. Keep it on one row down to 320 px, reducing or hiding the brand label before controls overflow.
 
-The splash fills the dynamic viewport below the warning. Desktop places the title on the left, convergence field on the right, and entry action at the lower right. At 760 px and below, the field moves behind the content and the copy and entry action align to a 20 px left edge. Short viewports reduce title size rather than add promotional sections or forced scrolling.
+The splash fills the dynamic viewport below the warning. On desktop, place the title left, convergence field right, and entry action lower right. At 760 px and below, move the field behind the content and align the text and action 20 px from the left edge. Reduce title size on short viewports.
 
 ## Surfaces and controls
 
-The primary Swap card uses a 16 px radius and the application's only diffuse resting shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Regular token marks and the protocol $OTF coin mark are circular. OTF fund-share marks are black squares with a heavy lime border.
+The Swap card uses a 16 px radius and a diffuse shadow. Actions and inputs use 8 px radii; grouped fields use 12 px. Token and protocol $OTF coin marks are circular. Fund-share marks are black squares with a heavy lime border.
 
-Primary buttons use lime only when the action can proceed. Disabled controls must name the blocking condition. Secondary controls use transparent or card-toned surfaces with a border. Focus remains visible without relying on animation.
+Use lime primary buttons when the action can proceed. Name what blocks disabled controls. Secondary controls use bordered, transparent or card-toned surfaces. Keep focus visible without animation.
 
-Inputs use the raised-black surface and ledger border. Focus changes the border to lime. Disabled or failed states pair color with explicit text.
+Inputs use the raised surface and a border. Focus uses the appearance's accent color. Pair disabled and failed states with explicit text.
 
-Navigation contains Swap, Funds, and `$OTF`, followed by the Robinhood network selector, wallet control, and settings. The closed network selector remains icon-only.
+Navigation contains Swap, Funds, `$OTF`, the Robinhood network selector, wallet control, and settings. The closed network selector shows only its icon.
 
 ## Splash
 
-The splash contains the three-line lowercase product name, the fixed tagline `the standard for the new era.`, and one entry action. The inline SVG convergence field uses fine gradient paths, tilted orbits, and a central ring; no raster image ships with it.
+The splash contains the product name on three lines with lime O, T, and F initials, the tagline `the standard for the new era`, and one entry action. The convergence field is an inline SVG with gradient paths, tilted orbits, and a central ring.
 
-Motion stays low-amplitude. Flow, drift, orbit, pulse, and rotation use cycles from 7 to 28 seconds. The entry control uses a 180 ms transition. `prefers-reduced-motion: reduce` stops every field animation and entry transition while preserving the static composition.
+Keep motion subtle, with field cycles of 7 to 28 seconds and a 180 ms entry transition. `prefers-reduced-motion: reduce` stops field animations and entry transitions while preserving the static composition.
 
 ## Product presentation rules
 
-- Show unavailable chain data as unavailable. Never substitute fixtures or previews for quotes, simulations, or submitted transactions.
+- Show missing chain data as unavailable. Use real quotes, simulations, and transaction results.
 - Keep market-cap weighting as an explicit mode. Recalculate on constituent changes while selected, switch to manual mode after a weight edit, and preserve remaining manual weights after removal.
 - Use `Market-cap weighted` only for exact default percentage units. Any exact-unit change is `Modified market-cap weighted`.
-- Present the `$1` value as an initial offchain calculation target. Avoid describing it as a peg or price guarantee. Keep the onchain thesis separate from offchain prices, percentages, weighting method, and market-cap snapshots.
-- Label NAV per share and AUM as informational offchain snapshots. Browser-local history never becomes a protocol oracle.
-- Keep transaction confirmation bound to the submitted payload. Lock editing and resubmission after broadcast until a failure or explicit revert makes retry safe.
+- Describe `$1` as the initial offchain calculation target, with no peg or price guarantee. Distinguish the onchain thesis from offchain prices, percentages, and weighting metadata.
+- Label NAV per share and AUM as informational offchain snapshots with browser-local history.
+- Confirm the submitted payload. Lock editing and resubmission after broadcast; only a confirmed revert allows retry.
 - Separate route, fee, gas, and price-impact information.
-- Keep production liquidity at the external venue. The built-in liquidity utility remains testnet-only and USDG-only.
-- Use verification language only for identity and ordinary metadata. Do not imply verified liquidity, route quality, economics, audit status, or investment safety.
-- Keep the splash to one viewport and one action. Do not extend its typography, field, or pale control into operating routes.
+- Link to external venues for production liquidity. The built-in utility is testnet-only and USDG-only.
+- Limit verification labels to identity and ordinary metadata. They do not verify liquidity, route quality, economics, audit status, or investment safety.
+- Keep the splash to one viewport and one action. Reserve its display typography and convergence field for that screen.
