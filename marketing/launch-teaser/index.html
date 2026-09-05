@@ -15,15 +15,15 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080907; }
     body { display: grid; place-items: center; }
-    #stage { position: relative; width: 1920px; height: 1080px; flex-shrink: 0; overflow: hidden; background: #080907; }
+    #stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; overflow: hidden; background: #080907; }
     canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
-    #brand { position: absolute; left: 50%; top: 416px; transform: translateX(-50%); display: flex; align-items: center; gap: 40px; height: 152px; white-space: nowrap; }
+    #brand { position: absolute; left: 50%; top: 384px; transform: translateX(-50%); display: flex; align-items: center; gap: 40px; height: 152px; white-space: nowrap; }
     #logo-slot { width: 152px; height: 152px; flex: 0 0 152px; }
     #title-mask { clip-path: inset(0 100% 0 0); }
     h1 { margin: 0; color: #f7f7f5; font-family: 'Instrument Sans', sans-serif; font-size: 104px; font-weight: 560; font-variation-settings: 'wdth' 94, 'wght' 560; font-feature-settings: 'ss02' 1; letter-spacing: -3.64px; line-height: 1.2; }
     #otf { position: absolute; width: 152px; height: 152px; opacity: 0; }
     #otf svg { display: block; width: 100%; height: 100%; }
-    #announcement { position: absolute; top: 607px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; white-space: nowrap; opacity: 0; }
+    #announcement { position: absolute; top: 639px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; white-space: nowrap; opacity: 0; }
     #announcement span { color: #e8e9e1; font-family: 'Instrument Sans', sans-serif; font-size: 54px; font-weight: 450; font-variation-settings: 'wdth' 100, 'wght' 450; letter-spacing: -0.8px; line-height: 1.2; }
     #announcement img { display: block; width: 54px; height: 54px; transform: translateY(1px); }
   </style>
@@ -236,8 +236,9 @@
       const stageBounds = stage.getBoundingClientRect();
       const scale = stageBounds.width / W;
       const finalX = (bounds.left - stageBounds.left) / scale + 76;
+      const finalY = (bounds.top - stageBounds.top) / scale + 76;
       otf.style.left = `${mix(1057, finalX, move) - 76}px`;
-      otf.style.top = `${mix(518, 492, move) - 76}px`;
+      otf.style.top = `${mix(518, finalY, move) - 76}px`;
       otf.style.opacity = ramp(6.53, 6.87, t);
       title.style.clipPath = `inset(0 ${(1 - ramp(7.22, 7.76, t)) * 100}% 0 0)`;
       announcement.style.opacity = ramp(7.54, 8, t);
@@ -246,7 +247,7 @@
 
     const params = new URLSearchParams(location.search);
     const fixed = params.has('t');
-    const fit = () => { stage.style.transform = `scale(${Math.min(innerWidth / W, innerHeight / H)})`; };
+    const fit = () => { stage.style.transform = `translate(-50%, -50%) scale(${Math.min(innerWidth / W, innerHeight / H)})`; };
     fit(); addEventListener('resize', fit);
     window.renderFrame(fixed ? Number(params.get('t')) : 0);
     window.teaserReady = true;

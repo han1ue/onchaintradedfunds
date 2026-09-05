@@ -7,9 +7,11 @@ import { Callout, Cards } from 'nextra/components'
 
 # Onchain Traded Funds
 
-Onchain Traded Funds (OTFs) are experimental vaults that hold a basket of ERC-20 tokens. Each vault issues shares in its basket. The creator fixes the basket, initial token quantities, fee rates, fee beneficiary, and fund thesis at creation.
+Onchain Traded Funds lets anyone create a fund backed by a basket of ERC-20 tokens. Each fund holds its assets in a vault and issues shares. You can trade those shares or redeem them for a proportional amount of the basket, after fees.
 
-The application uses offchain prices and a `$1` target to prepare the initial basket. The contracts do not calculate net asset value (NAV), maintain a dollar peg, or rebalance.
+The creator chooses the assets, initial allocation, and fees. The application uses offchain prices and a `$1` target to calculate the starting token quantities. The vault keeps the same token list and does not rebalance as prices change. The target is not a dollar peg.
+
+Fund shares represent a claim on one fund's basket. The separate [OTF protocol token](/token-and-fee-incentives) is used for rewards and fee buybacks.
 
 <Callout type="warning" emoji="">
   The protocol is deployed on Robinhood Chain Testnet. It is pre-mainnet and not ready to hold value.
@@ -27,4 +29,4 @@ The application uses offchain prices and a `$1` target to prepare the initial ba
 
 ## Scope
 
-These pages describe the current implementation. Start with the overview for how funds work, then use the security specification for contract requirements and the deployment page for network addresses and status.
+Start with the overview to understand creating, buying, and redeeming fund shares. The other pages explain fees and rewards, trusted roles and risks, contract requirements, and deployment status. All pages describe the current implementation.

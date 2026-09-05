@@ -1,22 +1,22 @@
 # Onchain Traded Funds
 
-Onchain Traded Funds (OTFs) are experimental ERC-20 basket vaults on Robinhood Chain. Each vault holds a fixed list of tokens and issues shares in that basket. The contracts do not use prices, calculate net asset value, or rebalance.
+Onchain Traded Funds lets anyone create an ERC-20 basket fund on Robinhood Chain. Each fund holds its assets in a vault and issues shares that holders can trade or redeem for basket tokens, after fees. The vault keeps a fixed token list and does not rebalance as prices change.
 
 The protocol is deployed on Robinhood Chain Testnet. It is pre-mainnet and not ready to hold value.
 
 ## How an OTF works
 
-The creator chooses the basket, allocation percentages, fund thesis, fee beneficiary, and fee rates. The application uses offchain prices and a `$1` target to calculate the initial token quantities per share. The vault stores those quantities; the target is not a price guarantee or peg.
+The creator chooses the assets, allocation percentages, fund thesis, fee beneficiary, and fee rates. The application uses offchain prices and a `$1` target to calculate the initial token quantities per share. The contract stores those quantities without a price oracle or net asset value calculation. The target is not a price guarantee or peg.
 
 Deposits enter through `OTFEntryExitRouter`. The first mint uses the initial basket quantities; later mints and redemptions use the vault's accounted balances. Direct token donations do not enter that ledger. A redemption that leaves fewer than `0.01` shares permanently shuts down the vault. Remaining holders can still redeem for basket tokens.
 
-Annual expense, mint, and redeem fees accrue as vault shares. `BuybackCollector` records the creator and buyback portions when each fee is charged. The beneficiary settles the pending fees to WETH: the creator portion goes to the beneficiary, and the rest buys OTF through the canonical pool for burning.
+Fees are paid in fund shares. Annual expense dilutes existing holders, mint fees increase the assets needed for new shares, and redeem fees reduce the assets returned. `BuybackCollector` records a creator portion and a buyback portion. The beneficiary settles both to WETH (wrapped ETH), receives the creator portion, and the rest buys protocol OTF for burning.
 
 The entry/exit router uses approved trade adapters for swaps and handles ETH wrapping and unwrapping. Vaults hold ERC-20 tokens. Holders can also redeem directly from a vault without swap liquidity. See the [protocol overview](docs/content/overview.mdx) for accounting, shutdown, and routing details.
 
 ## Protocol token
 
-`OTFToken` issues one billion OTF once. The deployment allocation is:
+Protocol OTF is separate from the share token issued by each fund. It funds rewards and is purchased and burned through fee buybacks. `OTFToken` issues one billion OTF once, allocated as follows:
 
 | Destination | OTF |
 | --- | ---: |

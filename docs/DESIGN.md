@@ -16,6 +16,8 @@ Nextra supplies navigation, search, page outline, previous and next links, repos
 
 The index opens with a plain description and testnet status, followed by links to the protocol overview, security specification, risk model, token economics, and deployment status. Each page explains a mechanism before its risks or operational requirements.
 
+Explain what a holder or creator can do and how it affects their assets before introducing contract names and formulas. Define fund shares separately from protocol OTF. Use short examples for proportional ownership, fees, and cumulative claims. Keep exact constants with the relevant mechanism, after the explanation, and preserve the security specification as a precise contract reference.
+
 ## Responsive and accessible behavior
 
 At 640 px and below, the expanded brand label and navbar `Open app` control are hidden. The footer stacks and retains its application link.

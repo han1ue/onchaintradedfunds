@@ -5,11 +5,12 @@ import { dirname, resolve, extname, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createRequire } from 'node:module';
 
 // Run with Node. Set RENDER_MODULES, FFMPEG_PATH and BROWSER_PATH if needed.
 // --serve opens the local source; --preview exports selected frames; default renders MP4.
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../../..');
+const root = resolve(here, '../..');
 const out = resolve(here, 'renders');
 const cache = resolve(root, 'cache/otf-launch-teaser');
 const runtimeModules = process.env.RENDER_MODULES || resolve(process.env.USERPROFILE, '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules');
@@ -29,7 +30,7 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404).end(); }
 });
 await new Promise((done, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', done); });
-const url = `http://127.0.0.1:${port}/packages/brand/launch-teaser/index.html`;
+const url = `http://127.0.0.1:${port}/marketing/launch-teaser/index.html`;
 console.log(url);
 if (process.argv.includes('--serve')) await new Promise(() => {});
 
@@ -53,7 +54,8 @@ try {
       await page.evaluate(t => window.renderFrame(t), t);
       await page.screenshot({ path: resolve(out, `frame-${t.toFixed(2)}.png`) });
     }
-    const { default: sharp } = await import(pathToFileURL(resolve(runtimeModules, 'sharp/lib/index.js')));
+    const require = createRequire(resolve(runtimeModules, 'package.json'));
+    const sharp = require('sharp');
     const times = ['0.00', '0.65', '2.00', '4.50', '6.20', '6.75', '7.45', '8.00', '11.97'];
     const tiles = await Promise.all(times.map(async (t, i) => ({ input: await sharp(resolve(out, `frame-${t}.png`)).resize(640, 360).png().toBuffer(), left: (i % 3) * 640, top: Math.floor(i / 3) * 360 })));
     await sharp({ create: { width: 1920, height: 1080, channels: 3, background: '#080907' } }).composite(tiles).png().toFile(resolve(out, 'contact-sheet.png'));
