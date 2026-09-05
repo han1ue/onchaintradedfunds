@@ -2312,7 +2312,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
     ? `Estimated depositor rewards APY for this fund ${rewardsApyText}, emission week ${rewardsApy.week}${rewardsApy.usesZeroAumBaseline ? ", modeled with a $100 fund AUM baseline" : ""}`
     : rewardsApy.state === "loading" ? "Estimated depositor rewards APY loading" : "Estimated depositor rewards APY unavailable";
   const weeklyEmissionText = rewardsApy.state === "ready"
-    ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} OTF`
+    ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} $OTF`
     : rewardsApy.state === "loading" ? "…" : "—";
   const weeklyDistributionLabel = rewardsApy.state === "ready"
     ? `${weeklyEmissionText} distributed in week ${rewardsApy.week}`

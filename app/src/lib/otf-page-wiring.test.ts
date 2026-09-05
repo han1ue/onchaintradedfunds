@@ -121,6 +121,7 @@ describe("$OTF page wiring", () => {
     expect(summary.indexOf('aria-label="Total AUM"')).toBeLessThan(summary.indexOf("weeklyDistributionLabel"));
     expect(summary).toContain('className="fundsMetricSeparator"');
     expect(summary).toContain("{weeklyEmissionText}");
+    expect(operate).toContain("weeklyEmissionOtf)} $OTF`");
     expect(summary).toContain("Distributed in week");
     expect(summary).not.toContain("{rewardsApyText} APY");
     expect(css).toContain(".fundsMetricSeparator { width: 1px;");
