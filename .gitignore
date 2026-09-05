@@ -12,8 +12,8 @@ lcov.info
 *.log
 *.tsbuildinfo
 
-# Generated marketing videos and preview frames
-/marketing/**/renders/
+# Local marketing work
+/marketing/
 
 project-bolt-*.zip
 .bolt-reference/
